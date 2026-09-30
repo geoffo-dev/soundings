@@ -37,7 +37,8 @@ const COLOR_GROUPS: { title: string; swatches: Swatch[] }[] = [
     swatches: [
       { name: 'border-subtle', className: 'border-subtle', kind: 'border', note: 'Row dividers' },
       { name: 'border', className: 'border-border', kind: 'border', note: 'Cards, menus' },
-      { name: 'border-strong', className: 'border-strong', kind: 'border', note: 'Inputs' },
+      { name: 'border-strong', className: 'border-strong', kind: 'border', note: 'Emphasis' },
+      { name: 'border-input', className: 'border-input', kind: 'border', note: 'Text fields, 3:1' },
       { name: 'border-control', className: 'border-control', kind: 'border', note: 'Checkboxes' },
     ],
   },

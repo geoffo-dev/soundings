@@ -5,12 +5,13 @@ import { cn } from '@/lib/utils'
 
 /** Shared by Input, Textarea, DatePicker and Select triggers so fields line up. */
 export const controlStyles = cn(
-  'w-full min-w-0 rounded-md border border-strong bg-surface text-primary',
+  // border-input meets WCAG 1.4.11 (3:1 against surface and elevated, both themes).
+  'w-full min-w-0 rounded-md border border-input bg-surface text-primary',
   // 16px on phones stops iOS zooming into the field; 14px from sm up.
   'text-lg placeholder:text-muted sm:text-base',
   'transition-[border-color,box-shadow] duration-150 outline-none',
-  'hover:border-control/60 focus-visible:border-focus focus-visible:ring-3 focus-visible:ring-focus/20',
-  'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-strong',
+  'hover:border-input-hover focus-visible:border-focus focus-visible:ring-3 focus-visible:ring-focus/20',
+  'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-input',
   'aria-invalid:border-danger aria-invalid:focus-visible:ring-danger/20',
 )
 

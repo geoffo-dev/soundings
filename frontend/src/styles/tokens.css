@@ -43,6 +43,9 @@
   --border-subtle: #ececef;
   --border-strong: #d1d1d7;
   --border-control: #8b8b94; /* checkbox/radio/switch outlines: ≥ 3:1 */
+  /* Text fields (Input, Textarea, Select, TagInput): ≥ 3:1 on surface and elevated (WCAG 1.4.11) */
+  --border-input: #8c8c95;
+  --border-input-hover: #6b6b75;
 
   --fg-primary: #1a1a1f;
   --fg-secondary: #4f4f58;
@@ -119,6 +122,8 @@
   --border-subtle: #25252a;
   --border-strong: #3c3c44;
   --border-control: #6f6f7a;
+  --border-input: #6d6d76;
+  --border-input-hover: #8e8e98;
 
   --fg-primary: #ededf0;
   --fg-secondary: #b4b4bd;

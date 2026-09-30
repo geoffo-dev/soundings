@@ -1,11 +1,12 @@
-"""Pure-ASGI middleware: request context (id, access log, metrics, 500s) and security headers."""
+"""Pure-ASGI middleware: request context (id, access log, metrics, 500s), security
+headers and trusted-host checking."""
 
 from __future__ import annotations
 
 import logging
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from time import perf_counter
 from typing import Any
 
@@ -13,7 +14,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.errors import internal_error_response
+from app.errors import internal_error_response, problem_response
 from app.observability import observe_request, request_id_var
 
 logger = logging.getLogger("soundings.request")
@@ -169,3 +170,64 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+PROBE_PATHS = frozenset({"/healthz", "/readyz"})
+"""Kubelet probes address pods by IP, so they are exempt from the host check."""
+
+
+def host_name(host_header: str) -> str:
+    """The host name of a ``Host`` header, lower-case, without port or brackets.
+
+    ``"Example.com:8443"`` -> ``"example.com"``, ``"[::1]:8000"`` -> ``"::1"``.
+    """
+    value = host_header.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[1:end] if end != -1 else ""
+    name, _, port = value.rpartition(":")
+    if name and port.isdigit():
+        value = name
+    return value.rstrip(".")
+
+
+class TrustedHostMiddleware:
+    """Refuses requests whose ``Host`` is not one of ours (400 ``invalid_host``).
+
+    Guards against Host-header attacks (poisoned links, cache poisoning, DNS
+    rebinding against a local dev server). Allowed: the host names of
+    ``SOUNDINGS_BASE_URLS`` (port ignored, like Starlette's middleware) plus, outside
+    production, localhost (see ``Settings.trusted_hosts``). ``/healthz`` and
+    ``/readyz`` are exempt so probes work.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        allowed_hosts: Collection[str],
+        exempt_paths: Collection[str] = PROBE_PATHS,
+    ) -> None:
+        self.app = app
+        self.allowed_hosts = frozenset(host.lower() for host in allowed_hosts)
+        self.exempt_paths = frozenset(exempt_paths)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] not in {"http", "websocket"} or scope["path"] in self.exempt_paths:
+            await self.app(scope, receive, send)
+            return
+        host = ""
+        for name, value in scope.get("headers", ()):
+            if name == b"host":
+                host = host_name(value.decode("latin-1"))
+                break
+        if host in self.allowed_hosts:
+            await self.app(scope, receive, send)
+            return
+        response = problem_response(
+            Request(scope),
+            status=400,
+            code="invalid_host",
+            detail="This server does not serve the requested host.",
+        )
+        await response(scope, receive, send)

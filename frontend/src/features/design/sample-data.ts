@@ -51,9 +51,15 @@ export interface SampleIdea {
   hidden?: boolean
   disagreement?: boolean
   tags: string[]
-  updated: string
-  updatedAt: number
+  /** ISO timestamp — shown with <RelativeTime> (lib/dates.ts). */
+  updatedAt: string
 }
+
+const HOUR = 3_600_000
+/** A timestamp `hours` before the page loaded, so relative times read naturally. */
+const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString()
+/** A due date `days` from now. */
+export const inDays = (days: number) => new Date(Date.now() + days * 24 * HOUR).toISOString()
 
 export const IDEAS: SampleIdea[] = [
   {
@@ -68,8 +74,7 @@ export const IDEAS: SampleIdea[] = [
     score: 3.8,
     disagreement: true,
     tags: ['Support', 'B2B'],
-    updated: '2h ago',
-    updatedAt: 5,
+    updatedAt: ago(2),
   },
   {
     id: 'i2',
@@ -82,8 +87,7 @@ export const IDEAS: SampleIdea[] = [
     submitted: 3,
     score: 4.4,
     tags: ['Sustainability'],
-    updated: 'Yesterday',
-    updatedAt: 4,
+    updatedAt: ago(26),
   },
   {
     id: 'i3',
@@ -96,8 +100,7 @@ export const IDEAS: SampleIdea[] = [
     submitted: 0,
     score: null,
     tags: ['Mobile'],
-    updated: '3d ago',
-    updatedAt: 3,
+    updatedAt: ago(72),
   },
   {
     id: 'i4',
@@ -110,8 +113,7 @@ export const IDEAS: SampleIdea[] = [
     submitted: 4,
     score: 4.1,
     tags: ['Platform', 'Partners'],
-    updated: 'Last week',
-    updatedAt: 2,
+    updatedAt: ago(170),
   },
   {
     id: 'i5',
@@ -125,8 +127,7 @@ export const IDEAS: SampleIdea[] = [
     submitted: 2,
     score: 2.3,
     tags: ['Onboarding'],
-    updated: 'Mar 12',
-    updatedAt: 1,
+    updatedAt: ago(4800),
   },
 ]
 

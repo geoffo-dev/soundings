@@ -11,7 +11,7 @@ Define tasks in feature modules and list those modules in :data:`TASK_MODULES`::
 Defer from API code with ``await send_email.defer_async(email_id=str(email.id))``
 (the API process opens a small job-queue pool in its lifespan). The worker runs
 with ``soundings worker``; the procrastinate schema is created by ``soundings
-migrate`` (see migrations/procrastinate/README.md).
+migrate`` (see app/migrations/procrastinate/README.md).
 """
 
 from __future__ import annotations

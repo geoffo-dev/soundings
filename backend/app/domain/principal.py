@@ -31,6 +31,7 @@ class Principal:
 
     ``scopes`` and ``project_ids`` are ``None`` when not narrowed (every session);
     an API key sets both (``project_ids`` stays ``None`` for an unrestricted key).
+    ``session_id`` / ``api_key_id`` identify the credential (audit, sign-out).
     """
 
     user: User
@@ -38,6 +39,7 @@ class Principal:
     scopes: frozenset[ApiKeyScope] | None = None
     project_ids: frozenset[UUID] | None = None
     api_key_id: UUID | None = None
+    session_id: UUID | None = None
 
     @property
     def user_id(self) -> UUID:

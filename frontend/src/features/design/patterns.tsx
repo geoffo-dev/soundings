@@ -1,21 +1,19 @@
-import {
-  CalendarDays,
-  Check,
-  Clock,
-  Lock,
-  MessageSquarePlus,
-  Sparkles,
-  TriangleAlert,
-} from 'lucide-react'
+import { Check, Clock, Lock, MessageSquarePlus, Sparkles, TriangleAlert } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DueDateLabel } from '@/components/ui/due-date'
 import { ProgressTicks } from '@/components/ui/progress-ticks'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { ScoreBar } from '@/components/ui/score-bar'
-import { SegmentedControl, scoreOptions } from '@/components/ui/segmented-control'
+import {
+  SCORE_GUIDANCE_PLACEHOLDER,
+  SegmentedControl,
+  scoreOptions,
+} from '@/components/ui/segmented-control'
 import {
   Sheet,
   SheetBody,
@@ -35,6 +33,7 @@ import { cn } from '@/lib/utils'
 import {
   CRITERION_RESULTS,
   IDEAS,
+  inDays,
   person,
   RUBRIC,
   type Criterion,
@@ -79,7 +78,7 @@ export function EvaluateCriterionRow({
         options={scoreOptions(criterion.guidance)}
         value={value}
         onValueChange={onValueChange}
-        guidancePlaceholder="Hover a score to see what it means"
+        guidancePlaceholder={SCORE_GUIDANCE_PLACEHOLDER}
       />
       {commenting ? (
         <Textarea
@@ -239,7 +238,11 @@ export function IdeaListRow({ idea }: { idea: SampleIdea }) {
             role="img"
           />
         )}
-        <span className="hidden w-16 text-right text-xs text-muted sm:block">{idea.updated}</span>
+        <RelativeTime
+          date={idea.updatedAt}
+          style="narrow"
+          className="hidden w-16 text-right text-xs text-muted sm:block"
+        />
       </span>
     </a>
   )
@@ -348,8 +351,7 @@ export function IdeaSidebar({ blind }: { blind: boolean }) {
           <span className="truncate">{owner.name}</span>
         </Property>
         <Property label="Due">
-          <CalendarDays aria-hidden="true" className="size-4 text-muted" />
-          Oct 7 <span className="text-muted">· in 7 days</span>
+          <DueDateLabel value={inDays(7)} className="text-primary" />
         </Property>
         <Property label="Tags">
           <span className="flex flex-wrap gap-1">

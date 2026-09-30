@@ -54,7 +54,8 @@ export default defineConfig({
   preview: { proxy },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // Production images must not ship source maps (they expose the source).
+    sourcemap: false,
   },
   test: {
     environment: 'jsdom',

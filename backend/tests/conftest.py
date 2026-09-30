@@ -7,7 +7,10 @@
   per test with ``@pytest.mark.settings(field=value)`` or per module by
   redefining the ``settings_overrides`` fixture.
 * ``app`` / ``client``: a fresh app (lifespan running) and an ``httpx.AsyncClient``
-  bound to it via ASGITransport.
+  bound to it via ASGITransport (not signed in).
+* ``login``: ``await login(user)`` -> a new client signed in as ``user`` through the
+  dev login, sending the CSRF header on every request. Build users and projects
+  with ``tests/factories.py``.
 * After every test that used the database, all tables except ``alembic_version``
   are truncated.
 """
@@ -16,7 +19,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.main import create_app
 from app.migrate import upgrade_database
+from app.models.user import User
 
 POSTGRES_IMAGE = "postgres:16-alpine"
 CONTAINER_PREFIX = os.environ.get("SOUNDINGS_TEST_CONTAINER_PREFIX", "soundings-test-")
@@ -133,6 +137,11 @@ def settings(
         "environment": "test",
         "database_url": database_url,
         "static_dir": tmp_path / "no-frontend-build",
+        # The test client's host (the trusted-host check refuses others).
+        "base_urls": ["http://testserver"],
+        # /metrics on the app port, so tests can scrape it through the client.
+        "metrics_port": 0,
+        "dev_login_enabled": True,
     }
     values.update(settings_overrides)
     marker = request.node.get_closest_marker("settings")
@@ -153,6 +162,28 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
         yield http
+
+
+Login = Callable[[User], Awaitable[httpx.AsyncClient]]
+
+
+@pytest.fixture
+async def login(app: FastAPI) -> AsyncIterator[Login]:
+    """``await login(user)``: a client with its own cookies, signed in as ``user``."""
+    clients: list[httpx.AsyncClient] = []
+
+    async def sign_in(user: User) -> httpx.AsyncClient:
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        http = httpx.AsyncClient(transport=transport, base_url="http://testserver")
+        clients.append(http)
+        response = await http.post("/api/v1/auth/dev/login", json={"user_id": str(user.id)})
+        assert response.status_code == 200, response.text
+        http.headers["X-CSRF-Token"] = http.cookies["soundings_csrf"]
+        return http
+
+    yield sign_in
+    for http in clients:
+        await http.aclose()
 
 
 @pytest.fixture

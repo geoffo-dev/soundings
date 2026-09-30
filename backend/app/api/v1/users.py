@@ -8,10 +8,12 @@ from fastapi import APIRouter, Query
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, load_project, require
+from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.base import SLUG_PATTERN
 from app.schemas.users import UserPage
+from app.services import users
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -30,10 +32,15 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def search_users(
     principal: PrincipalDep,
     page: PageParamsDep,
+    session: SessionDep,
     q: Annotated[str | None, Query(max_length=100, description="Part of a name or email.")] = None,
     project: Annotated[
         str | None,
         Query(max_length=48, pattern=SLUG_PATTERN, description="Project slug: members only."),
     ] = None,
 ) -> UserPage:
-    raise NotImplementedProblem
+    require(principal, Rule.USER_SEARCH)
+    in_project = None
+    if project is not None:
+        in_project, _ = await load_project(session, principal, project)
+    return await users.search_users(session, q=q, project=in_project, page=page)

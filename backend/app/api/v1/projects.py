@@ -9,7 +9,8 @@ from fastapi import APIRouter, Path, Query, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, load_project, require
+from app.db import SessionDep
 from app.schemas.base import SLUG_PATTERN
 from app.schemas.projects import (
     Member,
@@ -22,6 +23,7 @@ from app.schemas.projects import (
     TagInfo,
 )
 from app.schemas.rubric import Rubric, RubricUpdate
+from app.services import projects
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -41,9 +43,11 @@ ProjectSlug = Annotated[str, Path(max_length=48, pattern=SLUG_PATTERN, descripti
 )
 async def list_projects(
     principal: PrincipalDep,
+    session: SessionDep,
     include_archived: Annotated[bool, Query(description="Also list archived projects.")] = False,
 ) -> list[ProjectSummary]:
-    raise NotImplementedProblem
+    # project.view as a filter, in SQL (app.authz.visible_projects).
+    return await projects.list_projects(session, principal, include_archived=include_archived)
 
 
 @router.post(
@@ -58,8 +62,11 @@ async def list_projects(
     ),
     responses=problems(401, 403, 409, 422),
 )
-async def create_project(principal: PrincipalDep, body: ProjectCreate) -> Project:
-    raise NotImplementedProblem
+async def create_project(
+    principal: PrincipalDep, session: SessionDep, body: ProjectCreate
+) -> Project:
+    require(principal, Rule.PROJECT_CREATE)
+    return await projects.create_project(session, principal, body)
 
 
 @router.get(
@@ -69,8 +76,9 @@ async def create_project(principal: PrincipalDep, body: ProjectCreate) -> Projec
     description="Settings, resolved status labels, active rubric and your permissions.",
     responses=problems(401, 404),
 )
-async def get_project(principal: PrincipalDep, slug: ProjectSlug) -> Project:
-    raise NotImplementedProblem
+async def get_project(principal: PrincipalDep, session: SessionDep, slug: ProjectSlug) -> Project:
+    project, resource = await load_project(session, principal, slug)
+    return await projects.project_detail(session, principal, project, resource)
 
 
 @router.patch(
@@ -81,9 +89,12 @@ async def get_project(principal: PrincipalDep, slug: ProjectSlug) -> Project:
     responses=problems(401, 403, 404, 422),
 )
 async def update_project(
-    principal: PrincipalDep, slug: ProjectSlug, body: ProjectUpdate
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: ProjectUpdate
 ) -> Project:
-    raise NotImplementedProblem
+    project, resource = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_SETTINGS, for_update=True
+    )
+    return await projects.update_project(session, principal, project, resource, body)
 
 
 # --- Members -------------------------------------------------------------------------
@@ -94,8 +105,11 @@ async def update_project(
     description="Direct members, admins first, then by name. Anyone who can view the project.",
     responses=problems(401, 404),
 )
-async def list_project_members(principal: PrincipalDep, slug: ProjectSlug) -> list[Member]:
-    raise NotImplementedProblem
+async def list_project_members(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
+) -> list[Member]:
+    project, _ = await load_project(session, principal, slug)
+    return await projects.list_members(session, project)
 
 
 @router.post(
@@ -106,8 +120,13 @@ async def list_project_members(principal: PrincipalDep, slug: ProjectSlug) -> li
     description="Project admins. 409 already_member; 422 user_not_found for unknown/inactive.",
     responses=problems(401, 403, 404, 409, 422),
 )
-async def add_project_member(principal: PrincipalDep, slug: ProjectSlug, body: MemberAdd) -> Member:
-    raise NotImplementedProblem
+async def add_project_member(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: MemberAdd
+) -> Member:
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_MANAGE_MEMBERS, for_update=True
+    )
+    return await projects.add_member(session, principal, project, body)
 
 
 @router.patch(
@@ -118,9 +137,18 @@ async def add_project_member(principal: PrincipalDep, slug: ProjectSlug, body: M
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_project_member(
-    principal: PrincipalDep, slug: ProjectSlug, user_id: UUID, body: MemberUpdate
+    principal: PrincipalDep,
+    session: SessionDep,
+    slug: ProjectSlug,
+    user_id: UUID,
+    body: MemberUpdate,
 ) -> Member:
-    raise NotImplementedProblem
+    # The project row lock serialises membership changes, so two admins demoting
+    # each other at once can't both pass the last-admin check (c11).
+    project, resource = await load_project(
+        session, principal, slug, Rule.PROJECT_MANAGE_MEMBERS, for_update=True
+    )
+    return await projects.update_member(session, principal, project, resource, user_id, body)
 
 
 @router.delete(
@@ -134,8 +162,13 @@ async def update_project_member(
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def remove_project_member(principal: PrincipalDep, slug: ProjectSlug, user_id: UUID) -> None:
-    raise NotImplementedProblem
+async def remove_project_member(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, user_id: UUID
+) -> None:
+    project, resource = await load_project(
+        session, principal, slug, Rule.PROJECT_MANAGE_MEMBERS, for_update=True
+    )
+    await projects.remove_member(session, principal, project, resource, user_id)
 
 
 # --- Rubric and tags (read the rubric from get_project) -------------------------------
@@ -149,8 +182,13 @@ async def remove_project_member(principal: PrincipalDep, slug: ProjectSlug, user
     ),
     responses=problems(401, 403, 404, 422),
 )
-async def replace_rubric(principal: PrincipalDep, slug: ProjectSlug, body: RubricUpdate) -> Rubric:
-    raise NotImplementedProblem
+async def replace_rubric(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: RubricUpdate
+) -> Rubric:
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_RUBRIC, for_update=True
+    )
+    return await projects.replace_rubric(session, principal, project, body)
 
 
 @router.get(
@@ -163,5 +201,8 @@ async def replace_rubric(principal: PrincipalDep, slug: ProjectSlug, body: Rubri
     ),
     responses=problems(401, 404),
 )
-async def list_project_tags(principal: PrincipalDep, slug: ProjectSlug) -> list[TagInfo]:
-    raise NotImplementedProblem
+async def list_project_tags(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
+) -> list[TagInfo]:
+    project, _ = await load_project(session, principal, slug)
+    return await projects.list_tags(session, principal, project)

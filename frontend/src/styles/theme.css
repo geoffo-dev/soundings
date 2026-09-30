@@ -6,7 +6,8 @@
  * Utility cheat-sheet
  *   Backgrounds  bg-background · bg-surface · bg-elevated · bg-subtle · bg-subtle-hover · bg-overlay
  *   Text         text-primary · text-secondary · text-muted · text-accent · text-danger|warning|success|info
- *   Borders      border (default colour) · border-subtle · border-strong · border-control
+ *   Borders      border (default colour) · border-subtle · border-strong · border-control ·
+ *                border-input / border-input-hover (text fields, ≥ 3:1)
  *   Hairlines    bg-border (1px dividers drawn as boxes) · bg-control (switch track)
  *   Accent       bg-accent · bg-accent-hover · text-accent-foreground · bg-accent-subtle · ring-focus
  *   Feedback     bg-danger · bg-danger-subtle · text-danger · (same for warning / success / info)
@@ -95,6 +96,8 @@
   --color-control: var(--border-control);
   --border-color-subtle: var(--border-subtle);
   --border-color-strong: var(--border-strong);
+  --border-color-input: var(--border-input);
+  --border-color-input-hover: var(--border-input-hover);
 
   --text-color-primary: var(--fg-primary);
   --text-color-secondary: var(--fg-secondary);

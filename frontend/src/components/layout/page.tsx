@@ -52,6 +52,8 @@ export interface PageSectionProps {
   description?: ReactNode
   actions?: ReactNode
   children: ReactNode
+  /** Anchor for links such as /#evaluations; also labels the section for screen readers. */
+  id?: string
   className?: string
 }
 
@@ -60,13 +62,23 @@ export function PageSection({
   description,
   actions,
   children,
+  id,
   className,
 }: PageSectionProps) {
   return (
-    <section className={cn('flex flex-col gap-3', className)}>
+    <section
+      id={id}
+      aria-labelledby={id ? `${id}-heading` : undefined}
+      className={cn('flex scroll-mt-6 flex-col gap-3', className)}
+    >
       <div className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-0.5">
-          <h2 className="text-base font-semibold text-primary">{title}</h2>
+          <h2
+            id={id ? `${id}-heading` : undefined}
+            className="flex items-center gap-2 text-base font-semibold text-primary"
+          >
+            {title}
+          </h2>
           {description && <p className="text-sm text-muted">{description}</p>}
         </div>
         {actions}

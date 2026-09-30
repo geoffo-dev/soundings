@@ -8,11 +8,12 @@ from fastapi import APIRouter, Query
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.db import SessionDep
 from app.models.enums import IdeaStatus
 from app.pagination import PageParamsDep
 from app.schemas.ideas import IdeaPage
 from app.schemas.work import Work
+from app.services import work
 
 router = APIRouter(prefix="/me", tags=["work"])
 
@@ -24,8 +25,8 @@ router = APIRouter(prefix="/me", tags=["work"])
     description="Evaluations due, ideas I own by status, recent ideas, sidebar counts.",
     responses=problems(401),
 )
-async def get_my_work(principal: PrincipalDep) -> Work:
-    raise NotImplementedProblem
+async def get_my_work(principal: PrincipalDep, session: SessionDep) -> Work:
+    return await work.get_my_work(session, principal)
 
 
 @router.get(
@@ -40,9 +41,12 @@ async def get_my_work(principal: PrincipalDep) -> Work:
 )
 async def list_my_owned_ideas(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     status_: Annotated[
         list[IdeaStatus] | None, Query(alias="status", description="Only these statuses.")
     ] = None,
 ) -> IdeaPage:
-    raise NotImplementedProblem
+    return await work.list_my_owned_ideas(
+        session, principal, status_ or [], cursor=page.cursor, limit=page.limit
+    )

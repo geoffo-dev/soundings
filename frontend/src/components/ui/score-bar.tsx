@@ -14,6 +14,11 @@ export interface ScoreBarProps {
   max?: number
   /** Evaluators disagree strongly (e.g. spread ≥ 2). */
   disagreement?: boolean
+  /**
+   * A high score is bad (Effort, Risk). The value stays as entered, the label
+   * says "lower is better" and the colour follows the inverted score (6 − value).
+   */
+  inverted?: boolean
   /** Animate in (used when blind scores are revealed). */
   reveal?: boolean
   className?: string
@@ -32,6 +37,7 @@ export function ScoreBar({
   min,
   max,
   disagreement = false,
+  inverted = false,
   reveal = false,
   className,
   style,
@@ -41,7 +47,7 @@ export function ScoreBar({
   const valueText =
     value === null
       ? 'Not scored yet'
-      : `${formatScore(value)} out of 5${hasSpread ? `, individual scores range from ${min} to ${max}` : ''}${disagreement ? ', high disagreement' : ''}`
+      : `${formatScore(value)} out of 5${inverted ? ', lower is better' : ''}${hasSpread ? `, individual scores range from ${min} to ${max}` : ''}${disagreement ? ', high disagreement' : ''}`
 
   return (
     <div
@@ -50,6 +56,11 @@ export function ScoreBar({
     >
       <div className="flex items-center gap-2 text-sm">
         <span className="min-w-0 truncate text-secondary">{label}</span>
+        {inverted && (
+          <span aria-hidden="true" className="shrink-0 text-xs text-muted">
+            lower is better
+          </span>
+        )}
         {disagreement && (
           <WithTooltip
             content={
@@ -74,7 +85,10 @@ export function ScoreBar({
       >
         {value !== null && (
           <div
-            className={cn('h-full rounded-full', SCORE_FILL[scoreBand(value)])}
+            className={cn(
+              'h-full rounded-full',
+              SCORE_FILL[scoreBand(inverted ? SCORE_MAX + 1 - value : value)],
+            )}
             style={{ width: pct(value) }}
           />
         )}

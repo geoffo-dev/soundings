@@ -11,7 +11,7 @@ too. Responses never contain stack traces, exception messages or request input.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from http import HTTPStatus
 from typing import Any
 
@@ -81,12 +81,16 @@ class ProblemError(Exception):
         detail: str | None = None,
         *,
         headers: Mapping[str, str] | None = None,
+        errors: Sequence[FieldError] | None = None,
     ) -> None:
         self.status = status
         self.code = code
         self.title = title or _status_phrase(status)
         self.detail = detail
         self.headers = dict(headers or {})
+        # Per-field errors: the response becomes a ValidationProblem with ``errors``
+        # (e.g. 422 evaluation_incomplete lists each missing score).
+        self.errors = list(errors) if errors is not None else None
         super().__init__(detail or self.title)
 
 
@@ -146,6 +150,17 @@ def internal_error_response(request: Request) -> JSONResponse:
 
 
 def problem_from_problem_error(request: Request, exc: ProblemError) -> JSONResponse:
+    if exc.errors is not None:
+        return problem_response(
+            request,
+            status=exc.status,
+            code=exc.code,
+            title=exc.title,
+            detail=exc.detail,
+            headers=exc.headers,
+            model=ValidationProblem,
+            errors=exc.errors,
+        )
     return problem_response(
         request,
         status=exc.status,

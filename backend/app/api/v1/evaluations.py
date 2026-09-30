@@ -7,8 +7,9 @@ from fastapi import APIRouter
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.db import SessionDep
 from app.schemas.evaluations import EvaluationList, MyEvaluation, MyEvaluationIn
+from app.services import evaluations, ideas
 
 router = APIRouter(prefix="/ideas/{idea}/evaluations", tags=["evaluations"])
 
@@ -23,8 +24,11 @@ router = APIRouter(prefix="/ideas/{idea}/evaluations", tags=["evaluations"])
     ),
     responses=problems(401, 404),
 )
-async def list_evaluations(principal: PrincipalDep, idea: IdeaParam) -> EvaluationList:
-    raise NotImplementedProblem
+async def list_evaluations(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> EvaluationList:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await evaluations.list_evaluations(session, principal, loaded)
 
 
 @router.get(
@@ -34,8 +38,11 @@ async def list_evaluations(principal: PrincipalDep, idea: IdeaParam) -> Evaluati
     description="The evaluate sheet's state; null if you are not an evaluator of this idea.",
     responses=problems(401, 404),
 )
-async def get_my_evaluation(principal: PrincipalDep, idea: IdeaParam) -> MyEvaluation | None:
-    raise NotImplementedProblem
+async def get_my_evaluation(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> MyEvaluation | None:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await evaluations.my_evaluation(session, principal, loaded)
 
 
 @router.put(
@@ -52,6 +59,9 @@ async def get_my_evaluation(principal: PrincipalDep, idea: IdeaParam) -> MyEvalu
     responses=problems(401, 403, 404, 409, 422),
 )
 async def save_my_evaluation(
-    principal: PrincipalDep, idea: IdeaParam, body: MyEvaluationIn
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: MyEvaluationIn
 ) -> MyEvaluation:
-    raise NotImplementedProblem
+    # The idea row lock serialises submissions, so each aggregate recompute sees the
+    # evaluations committed before it.
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await evaluations.save_my_evaluation(session, principal, loaded, body)

@@ -16,7 +16,9 @@ npm run dev               # against a backend: proxies /api, /mcp, /metrics to
 npm run dev -- --port 5174   # any Vite flag works after `--`
 ```
 
-Open **`/design`** for the living design system (dev only — see below).
+Open **`/design`** for the living design system (dev only — see below). With `dev:mock` you
+sign in at `/login` by picking a fixture user; switch user any time from the user menu
+(**Switch user**, dev builds only).
 
 | Script                | What it does                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------ |
@@ -29,28 +31,60 @@ Open **`/design`** for the living design system (dev only — see below).
 | `npm run format`      | Prettier write (also sorts Tailwind classes)                                         |
 | `npm run test`        | Vitest unit/component tests (jsdom)                                                  |
 | `npm run test:pw`     | Playwright page tests + axe; starts `dev:mock` itself (port `PW_PORT`, 5174)         |
-| `npm run screenshots` | Light/dark/mobile screenshots into `../docs/screenshots/phase-0/` (`SCREENSHOT_DIR`) |
+| `npm run screenshots` | Light/dark/mobile screenshots into `../docs/screenshots/phase-1/` (`SCREENSHOT_DIR`) |
 | `npm run gen:api`     | `openapi-typescript src/api/generated/openapi.json -o src/api/generated/schema.d.ts` |
 | `npm run check`       | typecheck + lint + test + build — must pass before a task is done                    |
 
 Environment flags (build time): `VITE_API_MOCKS=true` starts MSW; `VITE_ENABLE_DESIGN=true`
 keeps `/design` in a production build (otherwise it 404s and its code is tree-shaken out).
+Production builds ship **no source maps**.
 
 ## Layout
 
 ```
 src/
-  api/            client.ts (openapi-fetch + CSRF + ApiError), query.ts (QueryClient), errors.ts
+  api/            the data layer (one module per area, below) · client.ts (openapi-fetch + CSRF +
+                  ApiError) · query.ts (QueryClient, global error toasts, 401 handling) · keys.ts
+                  (query-key factory) · cache.ts (optimistic helpers) · undo.ts · types.ts
   api/generated/  OpenAPI contract + generated types — owned by the lead, never edit by hand
   components/ui/  the design system: one component per file (shadcn/ui conventions on Radix)
   components/layout/  app shell: sidebar, top bar, Page/PageHeader, ⌘K palette, shortcut sheet
-  features/       feature code (screens' building blocks); features/design = the /design page
-  lib/            theme, branding, hotkeys + shortcut registry, status/score helpers, utils (cn)
-  mocks/          MSW: browser.ts, server.ts (vitest), handlers/<feature>.ts
-  routes/         TanStack Router file routes (routeTree.gen.ts is generated — commit it)
+  features/<area>/ screens and their pieces: auth, work (My work), new-idea, settings,
+                  project (Board/List, settings), idea (idea page, evaluate sheet), design (/design)
+  lib/            dates, dialogs, command-registry, list-navigation, search-params, hotkeys +
+                  shortcut registry, status/score helpers, theme, branding, utils (cn)
+  mocks/          MSW mock backend: db.ts (fixtures) · domain.ts (business rules) · http.ts ·
+                  session.ts · handlers/<area>.ts
+  routes/         TanStack Router file routes — thin: validate params, load, render a feature
   styles/         tokens.css (values) · theme.css (Tailwind mapping) · base.css · animations.css
-tests/            Playwright page tests (a11y, keyboard, shell) against dev:mock
+tests/            Playwright page tests (support.ts has the fixtures) against dev:mock
 ```
+
+### Routes
+
+| URL                                                              | Route file                                                                              | Renders                                  | Owner            |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------- |
+| `/login?next=`                                                   | `routes/login.tsx`                                                                      | `features/auth/login-page`               | foundation       |
+| `/`                                                              | `routes/_app/index.tsx`                                                                 | `features/work/my-work-page`             | foundation       |
+| `/p/$slug?view=board\|list&status=…`                             | `routes/_app/p.$slug.tsx` (layout: loads the project, 404, crumb) + `p.$slug.index.tsx` | `features/project/project-page`          | frontend-project |
+| `/p/$slug/settings`                                              | `routes/_app/p.$slug.settings.tsx`                                                      | `features/project/project-settings-page` | frontend-project |
+| `/ideas/$ideaKey?tab=overview\|evaluations\|proposal&evaluate=1` | `routes/_app/ideas.$ideaKey.tsx`                                                        | `features/idea/idea-page`                | frontend-idea    |
+| `/settings`                                                      | `routes/_app/settings.tsx`                                                              | `features/settings/settings-page`        | foundation       |
+| `/design`                                                        | `routes/design.tsx`                                                                     | `features/design` (dev only)             | —                |
+
+- `_app.tsx` is the signed-in layout: its `beforeLoad` is the **auth guard** (no session →
+  `/login?next=<here>`), it renders the shell and mounts the app-wide dialogs. Children read the
+  user with `useCurrentUser()` (`features/auth/current-user.ts`).
+- **Search params are readable** (`lib/search-params.ts`): arrays are comma lists, flags are
+  `1`, defaults are dropped — `?view=list&status=new,evaluating&needs_evaluators=1`. Every route
+  validates its own params (`features/project/project-search.ts`, `features/idea/idea-search.ts`);
+  unknown values are ignored, never an error. Idea URLs are canonicalised to the upper-case key.
+- **Breadcrumbs:** `staticData: { crumb }`, or a loader returning `{ crumb }` or
+  `{ crumbs: [{ label, to }] }` (several levels). **Titles:** `head()`.
+- **404s** use the same text whether a thing is missing or hidden (no leaks):
+  `ProjectNotFound`, `IdeaNotFound`.
+- `routeTree.gen.ts` is regenerated by the Vite plugin (`npm run dev` or `npx vite build`);
+  commit it.
 
 ## Design-system rules (read before building a screen)
 
@@ -67,7 +101,8 @@ tests/            Playwright page tests (a11y, keyboard, shell) against dev:mock
    - surfaces `bg-background` (canvas/sidebar) · `bg-surface` (panels, cards, inputs) ·
      `bg-elevated` (overlays) · `bg-subtle` / `bg-subtle-hover` (quiet fills, hover, selected)
    - text `text-primary` · `text-secondary` · `text-muted` · `text-accent` · `text-danger|warning|success|info`
-   - borders `border` (default colour) · `border-subtle` (row dividers) · `border-strong` (inputs) · `border-control`
+   - borders `border` (default colour) · `border-subtle` (row dividers) · `border-strong` (emphasis) ·
+     `border-input` (text fields, ≥ 3:1 per WCAG 1.4.11) · `border-control` (checkboxes, radios)
    - feedback `bg-danger` / `bg-danger-subtle` (same for warning, success, info)
    - status `bg-status-{new,evaluating,shortlisted,proposal,accepted,rejected,parked}` · scores `bg-score-{1..5}`
    - elevation `shadow-overlay` (menus, popovers, toasts) · `shadow-dialog` · `shadow-raised` (dragging).
@@ -85,37 +120,27 @@ tests/            Playwright page tests (a11y, keyboard, shell) against dev:mock
    icons get `aria-hidden`; icon-only buttons need `aria-label` (and usually `WithTooltip`).
 8. **Forms:** wrap every control in `<Field label description error>` — ids, `aria-describedby`
    and `aria-invalid` are wired automatically. Scores use `SegmentedControl variant="accent"`
-   with `scoreOptions(guidance)`; people use `Combobox` with `avatar` options.
+   with `scoreOptions(guidance)` and `guidancePlaceholder={SCORE_GUIDANCE_PLACEHOLDER}` (says
+   "Tap" on touch screens); people use `Combobox` with `avatar` options; tags use `TagInput`.
+   Forms people fill on a phone use `<DialogContent mobile="fullscreen">`.
 9. **Dark mode is automatic** if you only use tokens. Never use `dark:` for colours. The theme
    class can also be applied to a subtree (`<div className="dark">`).
+10. **Tables on phones:** `<Table mobile="cards">` turns rows into stacked cards below `md`; give
+    cells a `label` and mark the title cell `primary`. Avatar stacks: `AvatarGroup on="…"`
+    matches the ring to the background.
 
 ## Adding a screen
 
-1. Create a route file under `src/routes/_app/` (inside the app shell), e.g.
-   `src/routes/_app/projects.$projectId.tsx` → `/projects/:projectId`. Routes outside the shell
-   (public submit page) go directly in `src/routes/`. The router plugin regenerates
-   `routeTree.gen.ts` when the dev server or build runs.
-2. Breadcrumb: `staticData: { crumb: 'Settings' }`, or return `{ crumb }` from the loader for
-   dynamic titles. Page title: `head: () => ({ meta: [{ title: 'X · Soundings' }] })`.
-3. Compose with `Page` / `PageHeader` / `PageSection` from `components/layout/page.tsx`.
-4. Data: TanStack Query + the typed client:
-   ```ts
-   const ideas = useQuery({
-     queryKey: ['projects', projectId, 'ideas'],
-     queryFn: () =>
-       unwrap(
-         api.GET('/api/v1/projects/{project_id}/ideas', {
-           params: { path: { project_id: projectId } },
-         }),
-       ),
-   })
-   ```
-   Non-2xx responses throw `ApiError` (`status`, `code`, `title`, `detail`); 4xx are never
-   retried. Mutations: update optimistically, then `toast.success(...)` or `toastUndo(...)` for
-   destructive-ish actions. Unsafe requests carry `X-CSRF-Token` from the `soundings_csrf` cookie.
-5. Keyboard: register shortcuts in `src/lib/shortcuts.ts` (the `?` sheet lists them) and bind
-   with `useShortcut(id, handler)`. Add palette actions in `components/layout/app-commands.tsx`.
-6. Put reusable pieces in `src/features/<feature>/`; keep route files thin.
+1. Put the screen and its pieces in `src/features/<area>/`; keep the route file thin (validate
+   search params, call the loader, render one feature component).
+2. Compose with `Page` / `PageHeader` / `PageSection` (`components/layout/page.tsx`;
+   `PageSection id="…"` makes an anchor).
+3. Data only through the hooks in `src/api/` (next section). Use the API's `permissions`
+   booleans to show or hide controls — **never work out roles in the client**.
+4. Keyboard: register shortcuts in `src/lib/shortcuts.ts` (the `?` sheet lists them), bind with
+   `useShortcut(id, handler)`, and add palette actions with `useCommands()` (below). Lists get
+   j/k/↑/↓ navigation with `useListNavigation()` (below).
+5. Dates only through `src/lib/dates.ts` / `<RelativeTime>` / `<DueDateLabel>`.
 
 ### Every screen must have (review checklist)
 
@@ -129,24 +154,114 @@ tests/            Playwright page tests (a11y, keyboard, shell) against dev:mock
 - [ ] One primary button per view; toasts for feedback; Undo instead of confirm dialogs where possible.
 - [ ] Page test in `tests/` (axe: zero serious/critical in light and dark) + unit tests for logic.
 
-## Mock API (MSW)
+## Data layer (`src/api/`)
 
-1. Add `src/mocks/handlers/<feature>.ts`:
-   ```ts
-   import { http, HttpResponse } from 'msw'
-   import type { components } from '@/api/generated/schema'
-   type Idea = components['schemas']['Idea']
-   export const ideaHandlers = [
-     http.get('/api/v1/ideas/:id', ({ params }) => HttpResponse.json<Idea>({/* … */})),
-   ]
-   ```
-2. Spread it into `handlers` in `src/mocks/handlers/index.ts`.
-3. `npm run dev:mock` uses them in the browser; in Vitest use `server` from `@/mocks/server`
-   (`server.listen()` / `server.use(...)` — see `src/api/client.test.ts`). Problem responses
-   should be `application/problem+json` like the real API.
+One module per area, each exporting `…QueryOptions` (for loaders and prefetching) and hooks:
+
+| Module           | Queries                                                                                                         | Mutations                                                                                                                                                                                                                                                                                                           |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.ts`        | `useMe`, `useDevUsers`                                                                                          | `useDevLogin`, `useLogout`                                                                                                                                                                                                                                                                                          |
+| `users.ts`       | `useUserSearch({ q, project })` (people pickers)                                                                |                                                                                                                                                                                                                                                                                                                     |
+| `projects.ts`    | `useProjects`, `useProject(slug)`, `useProjectMembers`, `useProjectTags`                                        | `useCreateProject`, `useUpdateProject` (archive → Undo), `useAddProjectMember`, `useUpdateProjectMember` (Undo), `useRemoveProjectMember` (Undo), `useReplaceRubric`                                                                                                                                                |
+| `ideas.ts`       | `useIdeaList(slug, filters)` (infinite), `useBoard(slug, filters)`, `useIdea(key)`, `useCachedIdeaSummary(key)` | `useCreateIdea`, `useUpdateIdea` (inline edits), `useDeleteIdea`, `useChangeIdeaStatus` (board move + Undo), `useSetIdeaOwner` (Undo), `useVolunteerAsOwner` (Undo), `useAddEvaluators`, `useRemoveEvaluator` (deferred), `useSetEvaluationDueDate`, `useSetEvaluationClosed` (Undo), `useVoteIdea`, `useWatchIdea` |
+| `evaluations.ts` | `useEvaluations(key)`, `useMyEvaluation(key)`                                                                   | `useSaveMyEvaluation(key)`                                                                                                                                                                                                                                                                                          |
+| `activity.ts`    | `useIdeaActivity(key)` (infinite; `data.items` oldest → newest)                                                 | `useCreateComment`, `useUpdateComment`, `useDeleteComment` (deferred)                                                                                                                                                                                                                                               |
+| `work.ts`        | `useMyWork`, `useWorkCounts`, `useOwnedIdeas(status, cursor)` ("load more")                                     |                                                                                                                                                                                                                                                                                                                     |
+| `search.ts`      | `useGlobalSearch(q)` (debounced 150 ms), `useDebouncedValue`                                                    |                                                                                                                                                                                                                                                                                                                     |
+
+Conventions:
+
+- **Types** come only from the contract: `import type { IdeaDetail } from '@/api/types'`
+  (aliases of `generated/schema.d.ts`). Request paths are typed by openapi-fetch.
+- **Keys** come only from `queryKeys` (`keys.ts`). Ideas are cached by their **upper-case key**
+  (`queryKeys.ideas.detail('cust-12')` → `['ideas','detail','CUST-12']`); every `/ideas/{idea}`
+  endpoint accepts the key, so pass the key from the URL.
+- **Filters** (`IdeaFilters`) are normalised (empties dropped, arrays sorted) so equal filters
+  share a cache entry. `toIdeaFilters(search)` turns the project URL state into them. Board
+  "load more": `useIdeaList(slug, { ...filters, status: [column] }, { initialCursor: column.next_cursor })`.
+- **Optimistic updates:** mutations snapshot the affected caches (`cache.ts` `snapshot`),
+  patch the idea everywhere it is shown (`patchIdea`, `moveOnBoards`), roll back on error, then
+  store the server's answer and invalidate what depends on it. You don't do this in screens.
+- **Errors:** a failed mutation shows a toast automatically (friendly copy per error `code`
+  from `errors.ts` `describeError`); pass `meta: { silent: true }` when the screen shows the
+  error inline (forms: `useCreateIdea`, `useUpdateIdea`, `useSaveMyEvaluation`,
+  `useCreateProject`, `useReplaceRubric` are already silent — read `mutation.error`;
+  `ApiError.fieldErrors` / `error.problem.errors` have the 422 details).
+- **401** from any request (session ended) → toast + `/login?next=<here>` (`features/auth/session.ts`).
+- **Undo** (contract §3.14, `undo.ts`): hooks with an inverse call show the Undo toast
+  themselves (`useChangeIdeaStatus(key)`; pass `{ undo: false }` to opt out). The two deferred
+  ones — `useRemoveEvaluator(key)(user)` and `useDeleteComment(key)(commentId)` — hide the item
+  immediately (queries filter it via `useHiddenItems`), send the DELETE when the toast closes
+  or the page is hidden, and Undo restores it untouched. Deleting an idea has no undo: confirm.
+- **Blind evaluation:** render what the API sends. `score_hidden: true` → "Hidden until you
+  submit" (`<ScoreBadge hidden>`); never compute or cache scores client-side.
+
+## Mock backend (MSW, `src/mocks/`)
+
+`npm run dev:mock` answers **every operation in the contract** from an in-memory database
+(`handlers.test.ts` fails if one is missing). It follows the business rules closely enough to
+build and test screens: permissions booleans, blind evaluation (masking in lists, board, sort,
+filters, detail and evaluations), the aggregate (§3.8), filters/sorts/cursors (opaque, 400 on a
+foreign cursor), board columns and resolution counts, My work, search, Undo inverses, CSRF, and
+the documented error codes in the contract's check order. It is not the authority — the
+backend and its tests are.
+
+- **Fixtures** (`db.ts`, deterministic): 10 active users + 1 inactive, 3 projects (Customer
+  Innovation `CUST` internal; Internal Tools `TOOL` private; Sustainability `GREEN` internal,
+  volunteering off, renamed labels "Triage"/"Adopted"), 40 ideas in every status, evaluations,
+  drafts, comments, votes and activity. Useful people: **Alice Anders** (default in tests;
+  member, admin of Internal Tools, 4 evaluations due incl. 1 overdue and 1 draft, owns ideas in
+  every status), **Priya Natarajan** (platform admin), **Emma Lindqvist** (viewer in CUST),
+  **Ivan Petrov** (no project roles). Tests import `USERS` from `db.ts` (`tests/support.ts` for
+  Playwright).
+- **Rules** live in `domain.ts` (unit-tested in `domain.test.ts`); **handlers** in
+  `handlers/<area>.ts` use `route(method, path, ({ db, user, url, params, request }) => data)`
+  from `http.ts` and throw `fail(status, code)` / `failValidation([...])` for problems.
+- **Session:** dev login sets a readable `soundings_mock_session` cookie plus `soundings_csrf`.
+- **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
+  Customer Innovation (also in the user menu → Switch user → Mock data);
+  `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);
+  `soundings-mock-fail` = a path fragment (e.g. `/me/work`) that answers 500, to check error
+  states.
+- **In Vitest:** `server` from `@/mocks/server`, `resetDb()` in `beforeEach`, sign in with
+  `api.POST('/api/v1/auth/dev/login', { body: { user_id: USERS.alice } })`, override one
+  endpoint with `server.use(http.post('*/api/v1/…', () => problemResponse(409, 'code')))`.
 
 The service worker is served from `node_modules/msw` by a Vite plugin in dev/preview only —
 nothing MSW-related ends up in `dist/`.
+
+## Command palette, dialogs, keyboard
+
+- **Palette registry** (`lib/command-registry.ts`): pages add context actions while mounted;
+  they appear first. Only register what the user may do (API `permissions`).
+  ```tsx
+  useCommands({
+    id: 'idea',
+    heading: idea.key,
+    actions: [
+      { id: 'evaluate', label: 'Evaluate', icon: <Gauge />, shortcut: 'e', onSelect: openSheet },
+      { id: 'assign-owner', label: 'Assign owner…', icon: <UserRound />, onSelect: openPicker },
+    ],
+  })
+  ```
+  Built-in: jump to idea (server search, exact key first), jump to project, New idea, New
+  project (platform admins), My work, Settings, theme, shortcuts, sign out.
+- **App dialogs** (`lib/dialogs.ts`): `openNewIdea({ projectSlug })` (project views preselect
+  their project; "n" and the palette pass the project in view), `openCreateProject()`.
+  `useAppCommands().canCreateIdeas` says whether to show "New idea" at all.
+- **Lists:** `const { listRef } = useListNavigation()` on a container, `data-nav-item` on each
+  row's link → j/k anywhere, ↑/↓ inside, Enter opens.
+- **Shortcuts** in the registry: ⌘K palette, `?` sheet, `[` sidebar, `g m` My work, `j`/`k`,
+  `n` new idea, `e` evaluate (bind it on the idea page), ⌘Enter submit.
+
+## Testing
+
+- Vitest: `*.test.ts(x)` next to the code (jsdom). Data hooks: render with a real
+  `createQueryClient()` against the mock server (see `api/ideas.test.tsx`).
+- Playwright: import `test`/`expect` from `tests/support.ts` — pages start **signed in as
+  Alice** with mock latency off; `test.use({ signedInAs: USERS.priya })` or `null` for signed
+  out; `seriousViolations(page)` runs axe. Wait for the page's heading before pressing
+  shortcuts. `PW_PORT=5191 npm run test:pw` to use another port.
 
 ## Theme, branding and fonts
 

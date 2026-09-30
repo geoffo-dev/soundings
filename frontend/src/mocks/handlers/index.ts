@@ -1,12 +1,24 @@
 import type { RequestHandler } from 'msw'
 
+import { activityHandlers } from './activity'
+import { authHandlers } from './auth'
+import { evaluationHandlers } from './evaluations'
+import { ideaHandlers } from './ideas'
+import { projectHandlers } from './projects'
+import { userHandlers } from './users'
+import { workHandlers } from './work'
+
 /**
- * All MSW handlers. Each feature owns a file in this folder exporting an array,
- * e.g. `export const ideaHandlers = [http.get('/api/v1/ideas', …)]`, and adds it
- * here. Handlers should return data shaped by the generated OpenAPI types
- * (`components['schemas'][…]`) so mocks break when the contract changes.
+ * Every operation in the OpenAPI contract, backed by the in-memory database in
+ * `../db.ts` and the rules in `../domain.ts`. `handlers.test.ts` fails when an
+ * operation_id has no handler. Override one in a test with `server.use(...)`.
  */
 export const handlers: RequestHandler[] = [
-  // ...projectHandlers,
-  // ...ideaHandlers,
+  ...authHandlers,
+  ...userHandlers,
+  ...projectHandlers,
+  ...ideaHandlers,
+  ...evaluationHandlers,
+  ...activityHandlers,
+  ...workHandlers,
 ]

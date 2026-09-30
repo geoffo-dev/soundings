@@ -47,7 +47,10 @@ export function Toaster() {
   )
 }
 
-type ToastOptions = Omit<ExternalToast, 'action' | 'cancel'>
+type ToastOptions = Omit<ExternalToast, 'action' | 'cancel'> & {
+  /** One quiet follow-up action, e.g. "Copy link" after creating an idea. */
+  action?: { label: string; onClick: () => void }
+}
 
 /** Thin, typed wrapper so screens don't reach for sonner directly. */
 export const toast = {
@@ -60,7 +63,7 @@ export const toast = {
   dismiss: sonnerToast.dismiss,
 }
 
-export interface UndoToastOptions extends ToastOptions {
+export interface UndoToastOptions extends Omit<ToastOptions, 'action'> {
   /** Revert the optimistic change. */
   onUndo: () => void
   /**

@@ -3,7 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { SegmentedControl, scoreOptions } from '@/components/ui/segmented-control'
+import {
+  SCORE_GUIDANCE_PLACEHOLDER,
+  SegmentedControl,
+  scoreOptions,
+} from '@/components/ui/segmented-control'
 
 function ScoreHarness({
   initial = null,
@@ -107,5 +111,42 @@ describe('SegmentedControl', () => {
     await user.click(radio('2'))
     await press(user, 'ArrowRight')
     expect(guidance()).toHaveTextContent(/^3 · /)
+  })
+
+  it('says "Tap" instead of "Hover" on touch screens', () => {
+    const coarse = (query: string) =>
+      ({
+        matches: query === '(pointer: coarse)',
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as MediaQueryList
+    const options = scoreOptions()
+    const { rerender } = render(
+      <SegmentedControl
+        aria-label="Value"
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        guidancePlaceholder={SCORE_GUIDANCE_PLACEHOLDER}
+      />,
+    )
+    expect(guidance()).toHaveTextContent(SCORE_GUIDANCE_PLACEHOLDER.pointer)
+    vi.spyOn(window, 'matchMedia').mockImplementation(coarse)
+    rerender(
+      <SegmentedControl
+        key="touch"
+        aria-label="Value"
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        guidancePlaceholder={SCORE_GUIDANCE_PLACEHOLDER}
+      />,
+    )
+    expect(guidance()).toHaveTextContent(SCORE_GUIDANCE_PLACEHOLDER.touch)
   })
 })

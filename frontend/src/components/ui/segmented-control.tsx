@@ -3,7 +3,14 @@ import { RadioGroup as RadioGroupPrimitive } from 'radix-ui'
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import { useFieldContext } from '@/components/ui/field'
+import { useCoarsePointer } from '@/lib/pointer'
 import { cn } from '@/lib/utils'
+
+/** Guidance placeholder for 1–5 score controls: "Hover…" with a mouse, "Tap…" on touch. */
+export const SCORE_GUIDANCE_PLACEHOLDER = {
+  pointer: 'Hover or focus a score to see what it means',
+  touch: 'Tap a score to see what it means',
+} as const
 
 export interface SegmentedOption<T extends string = string> {
   value: T
@@ -24,8 +31,12 @@ export interface SegmentedControlProps<T extends string> {
   variant?: 'neutral' | 'accent'
   /** Stretch segments to fill the container (recommended on phones). */
   fullWidth?: boolean
-  /** Text shown in the guidance line before anything is hovered or chosen. */
-  guidancePlaceholder?: string
+  /**
+   * Text shown in the guidance line before anything is hovered or chosen. Pass
+   * `{ pointer, touch }` to word it for mouse vs touch ("Hover…" / "Tap…"),
+   * e.g. `SCORE_GUIDANCE_PLACEHOLDER`.
+   */
+  guidancePlaceholder?: string | { pointer: string; touch: string }
   name?: string
   disabled?: boolean
   required?: boolean
@@ -84,8 +95,13 @@ export function SegmentedControl<T extends string>({
   const [preview, setPreview] = useState<T | null>(null)
   const itemRefs = useRef(new Map<T, HTMLButtonElement>())
   const hasGuidance = options.some((option) => option.description)
+  const coarse = useCoarsePointer()
   const shown = options.find((option) => option.value === (preview ?? value))
-  const guidance = shown?.description ?? guidancePlaceholder
+  const placeholder =
+    typeof guidancePlaceholder === 'object'
+      ? guidancePlaceholder[coarse ? 'touch' : 'pointer']
+      : guidancePlaceholder
+  const guidance = shown?.description ?? placeholder
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return

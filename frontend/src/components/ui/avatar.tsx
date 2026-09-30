@@ -32,6 +32,8 @@ export interface AvatarProps extends VariantProps<typeof avatar> {
   className?: string
   /** Show the name in a tooltip on hover/focus. */
   tooltip?: boolean
+  /** The name is already written next to it: hide the avatar from assistive tech. */
+  decorative?: boolean
 }
 
 /** Deterministic hue so the same person always gets the same colour. */
@@ -46,14 +48,16 @@ export function Avatar({
   isAgent = false,
   className,
   tooltip = false,
+  decorative = false,
 }: AvatarProps) {
   const style = { '--avatar-hue': avatarHue(name) } as CSSProperties
   const node = (
     <span
       data-slot="avatar"
       className={cn(avatar({ size }), className)}
-      role="img"
-      aria-label={isAgent ? `${name} (AI agent)` : name}
+      role={decorative ? undefined : 'img'}
+      aria-label={decorative ? undefined : isAgent ? `${name} (AI agent)` : name}
+      aria-hidden={decorative || undefined}
     >
       <AvatarPrimitive.Root className="flex size-full overflow-hidden rounded-full">
         {src && !isAgent && (
@@ -89,14 +93,43 @@ export interface AvatarGroupProps {
   /** Visible avatars before collapsing into "+N". */
   max?: number
   size?: AvatarSize
+  /** The background the group sits on, so the separating ring matches it. */
+  on?: 'surface' | 'background' | 'elevated'
   className?: string
 }
 
-export function AvatarGroup({ people, max = 4, size = 'sm', className }: AvatarGroupProps) {
+/**
+ * Overlap per size, small enough that the next avatar (plus its 2px ring)
+ * never covers two-letter initials such as "MW".
+ */
+const GROUP_OVERLAP: Record<AvatarSize, string> = {
+  xs: 'space-x-0',
+  sm: '-space-x-px',
+  md: '-space-x-0.5',
+  lg: '-space-x-1',
+  xl: '-space-x-2',
+}
+
+const RING: Record<NonNullable<AvatarGroupProps['on']>, string> = {
+  surface: 'ring-2 ring-surface',
+  background: 'ring-2 ring-background',
+  elevated: 'ring-2 ring-elevated',
+}
+
+export function AvatarGroup({
+  people,
+  max = 4,
+  size = 'sm',
+  on = 'surface',
+  className,
+}: AvatarGroupProps) {
   const visible = people.slice(0, max)
   const hidden = people.slice(max)
   return (
-    <div data-slot="avatar-group" className={cn('flex items-center -space-x-1.5', className)}>
+    <div
+      data-slot="avatar-group"
+      className={cn('flex items-center', GROUP_OVERLAP[size], className)}
+    >
       {visible.map((person) => (
         <Avatar
           key={person.id ?? person.name}
@@ -105,7 +138,7 @@ export function AvatarGroup({ people, max = 4, size = 'sm', className }: AvatarG
           isAgent={person.isAgent}
           size={size}
           tooltip
-          className="ring-2 ring-surface"
+          className={RING[on]}
         />
       ))}
       {hidden.length > 0 && (
@@ -113,10 +146,7 @@ export function AvatarGroup({ people, max = 4, size = 'sm', className }: AvatarG
           <span
             role="img"
             aria-label={`${hidden.length} more: ${hidden.map((person) => person.name).join(', ')}`}
-            className={cn(
-              avatar({ size }),
-              'bg-subtle-hover font-medium text-secondary ring-2 ring-surface',
-            )}
+            className={cn(avatar({ size }), 'bg-subtle-hover font-medium text-secondary', RING[on])}
           >
             +{hidden.length}
           </span>

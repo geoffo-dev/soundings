@@ -1,14 +1,16 @@
 """The request's :class:`~app.domain.principal.Principal`, for every signed-in route.
 
-Routes depend on ``PrincipalDep``, not on the user directly, so Phase 5 (API keys:
-scopes and a project restriction) changes only :func:`get_principal`.
+Routes depend on ``PrincipalDep``, not on the user directly: the principal also
+says how the caller authenticated (session now; API key in Phase 5, with scopes and
+a project restriction), which the authorisation policy narrows by. The principal
+sources in :mod:`app.auth.sources` build it; adding one changes no route.
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from app.api.deps import CurrentUserDep
 from app.domain.principal import Principal
@@ -16,12 +18,15 @@ from app.domain.principal import Principal
 __all__ = ["PrincipalDep", "get_principal"]
 
 
-async def get_principal(user: CurrentUserDep) -> Principal:
-    """Phase 1: every caller is a session user (401/403 come from ``get_current_user``).
+async def get_principal(request: Request, user: CurrentUserDep) -> Principal:
+    """The principal ``get_current_user`` authenticated (401/403 come from there).
 
-    Phase 5 builds API-key principals here (or in ``app/api/deps.py``): bearer key ->
-    its owner, ``auth="api_key"``, the key's scopes and projects, no CSRF check.
+    Falls back to a plain session principal when ``get_current_user`` is overridden
+    (tests).
     """
+    principal = getattr(request.state, "principal", None)
+    if isinstance(principal, Principal) and principal.user is user:
+        return principal
     return Principal(user=user)
 
 

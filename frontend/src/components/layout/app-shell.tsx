@@ -50,7 +50,22 @@ function ShellLayout({ children, topBar, className }: AppShellProps) {
       </aside>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" hideClose className="md:hidden">
+        <SheetContent
+          side="left"
+          hideClose
+          className="md:hidden"
+          onOpenAutoFocus={(event) => {
+            // Start on the current page's link, not the first button (whose
+            // tooltip would pop up on a phone).
+            const current = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
+              '[data-status="active"], [data-current="true"]',
+            )
+            if (current) {
+              event.preventDefault()
+              current.focus()
+            }
+          }}
+        >
           <VisuallyHidden>
             <SheetTitle>Navigation</SheetTitle>
             <SheetDescription>Main navigation</SheetDescription>

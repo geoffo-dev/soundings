@@ -1,21 +1,54 @@
-"""The ``soundings`` command: ``api``, ``worker``, ``migrate`` and ``openapi``."""
+"""The ``soundings`` command: ``api``, ``worker``, ``migrate``, ``wait-for-db``, ``openapi``."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from app.config import BACKEND_DIR, get_settings
+from app.config import BACKEND_DIR, DatabaseSettings, Settings, get_database_settings, get_settings
 from app.observability import configure_logging
+
+logger = logging.getLogger("soundings.cli")
+
+# Commands that only talk to the database: they read DatabaseSettings, so they run
+# without the API's secrets (e.g. a Helm pre-upgrade migration Job).
+_DATABASE_COMMANDS = frozenset({"migrate", "wait-for-db"})
+
+
+def start_metrics_server(settings: Settings) -> None:
+    """Serve Prometheus ``/metrics`` on ``settings.metrics_port`` in a daemon thread.
+
+    Started in the ``soundings api`` process before uvicorn, so it survives worker
+    restarts. With several uvicorn workers set ``PROMETHEUS_MULTIPROC_DIR`` and every
+    worker's samples are aggregated here.
+    """
+    from prometheus_client import REGISTRY, CollectorRegistry, start_http_server
+    from prometheus_client.multiprocess import MultiProcessCollector
+
+    registry: CollectorRegistry = REGISTRY
+    if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+        registry = CollectorRegistry()
+        MultiProcessCollector(registry)  # type: ignore[no-untyped-call]
+    start_http_server(settings.metrics_port, addr=settings.host, registry=registry)
+    logger.info("metrics listening", extra={"port": settings.metrics_port})
 
 
 def _api(args: argparse.Namespace) -> int:
     import uvicorn
 
     settings = get_settings()
+    if args.reload:
+        # The reloader serves from a child process that re-reads the environment:
+        # serve /metrics on the app port there (development only) rather than an
+        # empty registry from this process.
+        os.environ["SOUNDINGS_METRICS_PORT"] = "0"
+    elif settings.metrics_port:
+        start_metrics_server(settings)
     uvicorn.run(
         "app.main:app",
         host=args.host or settings.host,
@@ -43,8 +76,15 @@ def _worker(args: argparse.Namespace) -> int:
 def _migrate(_: argparse.Namespace) -> int:
     from app.migrate import upgrade_database
 
-    upgrade_database(get_settings().sqlalchemy_url)
+    upgrade_database(get_database_settings().sqlalchemy_url)
     return 0
+
+
+def _wait_for_db(args: argparse.Namespace) -> int:
+    from app.migrate import wait_for_database
+
+    ready = wait_for_database(get_database_settings().database_dsn, timeout=args.timeout)
+    return 0 if ready else 1
 
 
 def _openapi(args: argparse.Namespace) -> int:
@@ -85,6 +125,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     migrate.set_defaults(func=_migrate)
 
+    wait = commands.add_parser(
+        "wait-for-db", help="wait until the database accepts connections (exit 1 on timeout)"
+    )
+    wait.add_argument(
+        "--timeout", type=float, default=60.0, help="seconds to wait before giving up (default 60)"
+    )
+    wait.set_defaults(func=_wait_for_db)
+
     openapi = commands.add_parser("openapi", help="export the OpenAPI document as sorted JSON")
     openapi.add_argument("--output", "-o", help="file to write (default: stdout)")
     openapi.set_defaults(func=_openapi)
@@ -93,7 +141,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    settings = get_settings()
+    settings: DatabaseSettings = (
+        get_database_settings() if args.command in _DATABASE_COMMANDS else get_settings()
+    )
     configure_logging(
         settings.log_level,
         redact_exception_messages=settings.is_production,

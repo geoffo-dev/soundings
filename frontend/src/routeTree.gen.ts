@@ -11,9 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as DesignRouteImport } from './routes/design'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
-import { Route as AppProjectsProjectIdRouteImport } from './routes/_app/projects.$projectId'
+import { Route as AppIdeasIdeaKeyRouteImport } from './routes/_app/ideas.$ideaKey'
+import { Route as AppPSlugRouteImport } from './routes/_app/p.$slug'
+import { Route as AppPSlugIndexRouteImport } from './routes/_app/p.$slug.index'
+import { Route as AppPSlugSettingsRouteImport } from './routes/_app/p.$slug.settings'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -22,6 +26,11 @@ const AppRoute = AppRouteImport.update({
 const DesignRoute = DesignRouteImport.update({
   id: '/design',
   path: '/design',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -34,49 +43,95 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
-const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
-  id: '/projects/$projectId',
-  path: '/projects/$projectId',
+const AppIdeasIdeaKeyRoute = AppIdeasIdeaKeyRouteImport.update({
+  id: '/ideas/$ideaKey',
+  path: '/ideas/$ideaKey',
   getParentRoute: () => AppRoute,
+} as any)
+const AppPSlugRoute = AppPSlugRouteImport.update({
+  id: '/p/$slug',
+  path: '/p/$slug',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPSlugIndexRoute = AppPSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppPSlugRoute,
+} as any)
+const AppPSlugSettingsRoute = AppPSlugSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppPSlugRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/design': typeof DesignRoute
+  '/login': typeof LoginRoute
   '/settings': typeof AppSettingsRoute
-  '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
+  '/p/$slug': typeof AppPSlugRouteWithChildren
+  '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/p/$slug/': typeof AppPSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
+  '/login': typeof LoginRoute
   '/settings': typeof AppSettingsRoute
   '/': typeof AppIndexRoute
-  '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
+  '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/p/$slug': typeof AppPSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/design': typeof DesignRoute
+  '/login': typeof LoginRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/': typeof AppIndexRoute
-  '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/_app/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
+  '/_app/p/$slug': typeof AppPSlugRouteWithChildren
+  '/_app/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/_app/p/$slug/': typeof AppPSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/design' | '/settings' | '/projects/$projectId'
+  fullPaths:
+    | '/'
+    | '/design'
+    | '/login'
+    | '/settings'
+    | '/ideas/$ideaKey'
+    | '/p/$slug'
+    | '/p/$slug/settings'
+    | '/p/$slug/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/design' | '/settings' | '/' | '/projects/$projectId'
+  to:
+    | '/design'
+    | '/login'
+    | '/settings'
+    | '/'
+    | '/ideas/$ideaKey'
+    | '/p/$slug/settings'
+    | '/p/$slug'
   id:
     | '__root__'
     | '/_app'
     | '/design'
+    | '/login'
     | '/_app/settings'
     | '/_app/'
-    | '/_app/projects/$projectId'
+    | '/_app/ideas/$ideaKey'
+    | '/_app/p/$slug'
+    | '/_app/p/$slug/settings'
+    | '/_app/p/$slug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   DesignRoute: typeof DesignRoute
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -95,6 +150,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/': {
       id: '/_app/'
       path: '/'
@@ -109,26 +171,63 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/projects/$projectId': {
-      id: '/_app/projects/$projectId'
-      path: '/projects/$projectId'
-      fullPath: '/projects/$projectId'
-      preLoaderRoute: typeof AppProjectsProjectIdRouteImport
+    '/_app/ideas/$ideaKey': {
+      id: '/_app/ideas/$ideaKey'
+      path: '/ideas/$ideaKey'
+      fullPath: '/ideas/$ideaKey'
+      preLoaderRoute: typeof AppIdeasIdeaKeyRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/p/$slug': {
+      id: '/_app/p/$slug'
+      path: '/p/$slug'
+      fullPath: '/p/$slug'
+      preLoaderRoute: typeof AppPSlugRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/p/$slug/': {
+      id: '/_app/p/$slug/'
+      path: '/'
+      fullPath: '/p/$slug/'
+      preLoaderRoute: typeof AppPSlugIndexRouteImport
+      parentRoute: typeof AppPSlugRoute
+    }
+    '/_app/p/$slug/settings': {
+      id: '/_app/p/$slug/settings'
+      path: '/settings'
+      fullPath: '/p/$slug/settings'
+      preLoaderRoute: typeof AppPSlugSettingsRouteImport
+      parentRoute: typeof AppPSlugRoute
     }
   }
 }
 
+interface AppPSlugRouteChildren {
+  AppPSlugSettingsRoute: typeof AppPSlugSettingsRoute
+  AppPSlugIndexRoute: typeof AppPSlugIndexRoute
+}
+
+const AppPSlugRouteChildren: AppPSlugRouteChildren = {
+  AppPSlugSettingsRoute: AppPSlugSettingsRoute,
+  AppPSlugIndexRoute: AppPSlugIndexRoute,
+}
+
+const AppPSlugRouteWithChildren = AppPSlugRoute._addFileChildren(
+  AppPSlugRouteChildren,
+)
+
 interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
-  AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
+  AppIdeasIdeaKeyRoute: typeof AppIdeasIdeaKeyRoute
+  AppPSlugRoute: typeof AppPSlugRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
-  AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
+  AppIdeasIdeaKeyRoute: AppIdeasIdeaKeyRoute,
+  AppPSlugRoute: AppPSlugRouteWithChildren,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -136,6 +235,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   DesignRoute: DesignRoute,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

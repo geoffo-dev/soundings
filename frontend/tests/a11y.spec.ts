@@ -1,19 +1,4 @@
-import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
-
-const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
-
-async function seriousViolations(page: Page) {
-  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()
-  return results.violations
-    .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
-    .map((violation) => ({
-      id: violation.id,
-      impact: violation.impact,
-      help: violation.help,
-      targets: violation.nodes.slice(0, 5).map((node) => node.target.join(' ')),
-    }))
-}
+import { expect, seriousViolations, test, USERS } from './support'
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`${colorScheme} mode`, () => {
@@ -37,7 +22,44 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test('/ (My work) has no serious or critical axe violations', async ({ page }) => {
       await page.goto('/')
       await expect(page.getByRole('heading', { level: 1, name: 'My work' })).toBeVisible()
+      await expect(
+        page.getByRole('link', { name: 'Gift cards with personal video messages', exact: true }),
+      ).toBeVisible()
+      await page.getByRole('button', { name: /Show closed/ }).click()
       expect(await seriousViolations(page)).toEqual([])
+    })
+
+    test('the New idea dialog has no serious or critical axe violations', async ({ page }) => {
+      await page.goto('/')
+      await expect(page.getByRole('heading', { level: 1, name: 'My work' })).toBeVisible()
+      await page.keyboard.press('n')
+      await expect(page.getByRole('dialog', { name: 'New idea' })).toBeVisible()
+      expect(await seriousViolations(page)).toEqual([])
+    })
+
+    test.describe('signed out', () => {
+      test.use({ signedInAs: null })
+
+      test('/login has no serious or critical axe violations', async ({ page }) => {
+        await page.goto('/login')
+        await expect(
+          page.getByRole('heading', { level: 1, name: 'Sign in to Soundings' }),
+        ).toBeVisible()
+        await expect(page.getByRole('button', { name: /Alice Anders/ })).toBeVisible()
+        expect(await seriousViolations(page)).toEqual([])
+      })
     })
   })
 }
+
+test.describe('a user without projects', () => {
+  test.use({ signedInAs: USERS.ivan })
+
+  test('My work is friendly and accessible when empty', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByText('Nothing to evaluate')).toBeVisible()
+    await expect(page.getByText('You don’t own any ideas yet')).toBeVisible()
+    await expect(page.getByText('You’re not in any projects yet')).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
+})

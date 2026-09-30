@@ -1,4 +1,9 @@
-"""Kubernetes probes and the Prometheus scrape endpoint (not part of the public API)."""
+"""Kubernetes probes and the Prometheus scrape endpoint (not part of the public API).
+
+``/metrics`` has its own router: normally it is served on a separate port
+(``SOUNDINGS_METRICS_PORT``, see ``app.cli``), and on the app port only outside
+production when that port is 0.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ logger = logging.getLogger(__name__)
 READINESS_TIMEOUT_SECONDS = 2.0
 
 router = APIRouter(include_in_schema=False)
+metrics_router = APIRouter(include_in_schema=False)
 
 
 @router.get("/healthz")
@@ -41,7 +47,7 @@ async def readyz(request: Request) -> Response:
     return JSONResponse({"status": "ok"})
 
 
-@router.get("/metrics")
+@metrics_router.get("/metrics")
 async def metrics() -> Response:
     payload, content_type = render_metrics()
     return Response(payload, media_type=content_type)

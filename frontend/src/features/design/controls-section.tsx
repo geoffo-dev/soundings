@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { TagInput } from '@/components/ui/tag-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 
@@ -142,6 +143,7 @@ export function FormsSection() {
   const [notify, setNotify] = useState(true)
   const [digest, setDigest] = useState('immediate')
   const [checked, setChecked] = useState<boolean | 'indeterminate'>(true)
+  const [tags, setTags] = useState(['returns', 'b2b'])
 
   return (
     <DesignSection
@@ -201,6 +203,16 @@ export function FormsSection() {
             description="Evaluators get a reminder 2 days before and on the day."
           >
             <DatePicker value={due} onValueChange={setDue} />
+          </Field>
+          <Field
+            label="Tags"
+            description="TagInput: Enter or comma adds, Backspace removes, ↑/↓ pick a suggestion. Pasting “a, b” adds both."
+          >
+            <TagInput
+              value={tags}
+              onValueChange={setTags}
+              suggestions={['returns', 'logistics', 'b2b', 'checkout', 'support']}
+            />
           </Field>
         </Specimen>
         <Specimen title="Select & Combobox (user picker)" className="flex flex-col gap-5">
@@ -304,7 +316,8 @@ export function SegmentedSection() {
         <>
           Radio semantics with roving focus: <Code>←</Code>/<Code>→</Code> move and select,{' '}
           <Code>Home</Code>/<Code>End</Code> jump, and typing <Code>1</Code>–<Code>5</Code> picks a
-          score directly. Hover or focus an option to preview its guidance. 44px tall on touch
+          score directly. Hover or focus an option to preview its guidance (the placeholder says
+          “Tap” on touch screens, via <Code>SCORE_GUIDANCE_PLACEHOLDER</Code>). 44px tall on touch
           screens.
         </>
       }

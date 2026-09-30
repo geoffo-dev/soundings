@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support'
 
 test('⌘K / Ctrl+K opens the command palette and navigates', async ({ page }) => {
   await page.goto('/')

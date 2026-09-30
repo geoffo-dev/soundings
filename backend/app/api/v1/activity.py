@@ -9,10 +9,11 @@ from fastapi import APIRouter, status
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.activity import ActivityPage, CommentActivity
 from app.schemas.comments import CommentCreate, CommentUpdate
+from app.services import comments, feed, ideas
 
 router = APIRouter(tags=["activity"])
 
@@ -25,9 +26,17 @@ router = APIRouter(tags=["activity"])
     responses=problems(400, 401, 404),
 )
 async def list_idea_activity(
-    principal: PrincipalDep, idea: IdeaParam, page: PageParamsDep
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, page: PageParamsDep
 ) -> ActivityPage:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await feed.list_activity(
+        session,
+        principal,
+        loaded.idea.id,
+        loaded.resource,
+        cursor=page.cursor,
+        limit=page.limit,
+    )
 
 
 @router.post(
@@ -39,9 +48,10 @@ async def list_idea_activity(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def create_comment(
-    principal: PrincipalDep, idea: IdeaParam, body: CommentCreate
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: CommentCreate
 ) -> CommentActivity:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await comments.create_comment(session, principal, loaded, body)
 
 
 @router.patch(
@@ -52,9 +62,10 @@ async def create_comment(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_comment(
-    principal: PrincipalDep, comment_id: UUID, body: CommentUpdate
+    principal: PrincipalDep, session: SessionDep, comment_id: UUID, body: CommentUpdate
 ) -> CommentActivity:
-    raise NotImplementedProblem
+    comment, loaded = await comments.load_comment(session, principal, comment_id)
+    return await comments.update_comment(session, principal, comment, loaded, body)
 
 
 @router.delete(
@@ -68,5 +79,6 @@ async def update_comment(
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def delete_comment(principal: PrincipalDep, comment_id: UUID) -> None:
-    raise NotImplementedProblem
+async def delete_comment(principal: PrincipalDep, session: SessionDep, comment_id: UUID) -> None:
+    comment, loaded = await comments.load_comment(session, principal, comment_id)
+    await comments.delete_comment(session, principal, comment, loaded)

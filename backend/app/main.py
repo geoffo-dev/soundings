@@ -21,6 +21,7 @@ from app.errors import install_exception_handlers
 from app.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
+    TrustedHostMiddleware,
     content_security_policy,
 )
 from app.observability import configure_logging
@@ -77,7 +78,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_exception_handlers(app, not_found_fallback=spa.fallback if spa else None)
 
     # add_middleware prepends: the last one added is the outermost, so security
-    # headers also land on the 500s that RequestContextMiddleware produces.
+    # headers also land on the 500s that RequestContextMiddleware produces, and
+    # refused hosts still get a request id, an access-log line and metrics.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         SecurityHeadersMiddleware,
@@ -85,6 +88,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(health.router)
+    if settings.metrics_on_app_port:
+        app.include_router(health.metrics_router)
     app.include_router(docs.router)
     app.include_router(api_router)
     if spa is not None:

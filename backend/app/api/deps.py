@@ -1,7 +1,10 @@
 """Request dependencies shared by the API routers: the signed-in user.
 
-Contract glue written with the Phase 1 API contract; the backend agent implements
-:func:`get_current_user` (the signature and the OpenAPI security scheme stay).
+:func:`get_current_user` authenticates the request through the principal sources in
+:mod:`app.auth.sources` (the session cookie in Phase 1; API keys in Phase 5), stores
+the :class:`~app.domain.principal.Principal` on ``request.state`` for
+:func:`app.api.v1.principal.get_principal`, and returns its user. Routes take
+``PrincipalDep``, never this directly.
 """
 
 from __future__ import annotations
@@ -11,8 +14,9 @@ from typing import Annotated
 from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyCookie
 
+from app.auth.cookies import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE
+from app.auth.sources import UnauthorizedProblem, authenticate
 from app.db import SessionDep
-from app.errors import NotImplementedProblem
 from app.models.user import User
 
 __all__ = [
@@ -23,15 +27,6 @@ __all__ = [
     "get_current_user",
     "session_cookie",
 ]
-
-SESSION_COOKIE = "soundings_session"
-"""HttpOnly, Secure (over HTTPS), SameSite=Lax cookie holding the session token."""
-
-CSRF_COOKIE = "soundings_csrf"
-"""Readable (non-HttpOnly) cookie with the session's CSRF token (double submit)."""
-
-CSRF_HEADER = "X-CSRF-Token"
-"""Header that must echo ``CSRF_COOKIE`` on POST/PUT/PATCH/DELETE."""
 
 session_cookie = APIKeyCookie(
     name=SESSION_COOKIE,
@@ -52,15 +47,20 @@ async def get_current_user(
 ) -> User:
     """The signed-in, active user.
 
-    To implement (Phase 1 backend):
+    * no credential, an unknown/expired session or a deactivated user -> 401
+      ``unauthorized``;
+    * a cookie-authenticated ``POST``/``PUT``/``PATCH``/``DELETE`` without the
+      session's ``X-CSRF-Token`` -> 403 ``csrf_failed``;
+    * refreshes ``last_seen_at`` (at most once a minute).
 
-    * look up ``user_sessions`` by SHA-256 of ``token``; missing, unknown or expired
-      -> 401 ``unauthorized``; deactivated user -> 401 ``unauthorized``;
-    * on POST/PUT/PATCH/DELETE require ``X-CSRF-Token`` == the session's
-      ``csrf_token`` (constant-time compare) -> 403 ``csrf_failed``;
-    * refresh ``last_seen_at`` (at most once a minute) and return the user.
+    ``token`` declares the OpenAPI security scheme; the session source reads the
+    cookie itself, next to the other principal sources.
     """
-    raise NotImplementedProblem("Sessions are not implemented yet.")
+    principal = await authenticate(request, session)
+    if principal is None:
+        raise UnauthorizedProblem
+    request.state.principal = principal
+    return principal.user
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]

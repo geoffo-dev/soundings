@@ -8,7 +8,7 @@ OPENAPI_OUT ?= openapi.json
 SWAGGER_UI_VERSION ?= 5.33.0
 SWAGGER_DIR := app/static/swagger
 
-.PHONY: help install fmt lint typecheck test check dev worker migrate revision openapi vendor-swagger
+.PHONY: help install fmt lint typecheck test test-slow check dev worker migrate revision openapi vendor-swagger
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
@@ -29,6 +29,9 @@ typecheck: ## Type-check (mypy --strict)
 
 test: ## Run tests (needs Docker, or TEST_DATABASE_URL pointing at a throwaway DB)
 	$(UV) run pytest
+
+test-slow: ## Performance checks only (10k ideas: list/board p95 and query plans)
+	$(UV) run pytest -m slow
 
 check: lint typecheck test ## Lint + typecheck + test
 

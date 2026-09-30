@@ -20,7 +20,14 @@ export function ShortcutSheet({
   const all: ShortcutDefinition[] = Object.values(SHORTCUTS)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
+      <DialogContent
+        size="md"
+        // Informational: focus the sheet itself, not the close button.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          ;(event.currentTarget as HTMLElement | null)?.focus()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>Shortcuts work anywhere except while you’re typing.</DialogDescription>

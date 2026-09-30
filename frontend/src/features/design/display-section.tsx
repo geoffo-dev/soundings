@@ -7,6 +7,8 @@ import { AddFilterChip, FilterChip, FilterValueChip } from '@/components/ui/filt
 import { Kbd, KbdShortcut } from '@/components/ui/kbd'
 import { Markdown } from '@/components/ui/markdown'
 import { ProgressTicks } from '@/components/ui/progress-ticks'
+import { DueDateLabel } from '@/components/ui/due-date'
+import { RelativeTime } from '@/components/ui/relative-time'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { ScoreBar } from '@/components/ui/score-bar'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -25,7 +27,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CLOSED_RESOLUTIONS, IDEA_STATUSES } from '@/lib/status'
 
-import { IDEAS, PEOPLE, person, SAMPLE_MARKDOWN, type SampleIdea } from './sample-data'
+import { IDEAS, inDays, PEOPLE, person, SAMPLE_MARKDOWN, type SampleIdea } from './sample-data'
+
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString()
 import { Code, DesignSection, Example, Specimen } from './specimen'
 
 export function BadgesSection() {
@@ -98,6 +102,11 @@ export function BadgesSection() {
             </Example>
             <Example label="AvatarGroup · max 4 · +N">
               <AvatarGroup people={PEOPLE} max={4} size="md" />
+            </Example>
+            <Example label='on="background" (ring matches the canvas)'>
+              <div className="rounded-md bg-background p-2">
+                <AvatarGroup people={PEOPLE} max={3} size="sm" on="background" />
+              </div>
             </Example>
           </div>
         </Specimen>
@@ -181,7 +190,11 @@ export function TableSection() {
   const rows = useMemo(() => {
     const filtered = IDEAS.filter((idea) => !needsEvaluators || idea.evaluatorIds.length < 3)
     const value = (idea: SampleIdea) =>
-      sort.key === 'title' ? idea.title : sort.key === 'score' ? (idea.score ?? -1) : idea.updatedAt
+      sort.key === 'title'
+        ? idea.title
+        : sort.key === 'score'
+          ? (idea.score ?? -1)
+          : Date.parse(idea.updatedAt)
     return [...filtered].sort((a, b) => {
       const av = value(a)
       const bv = value(b)
@@ -238,8 +251,17 @@ export function TableSection() {
         </FilterChip>
         <AddFilterChip />
       </Specimen>
-      <Specimen title="Table (List view)" flush>
-        <Table>
+      <Specimen
+        title="Table (List view)"
+        description={
+          <>
+            <Code>mobile=&quot;cards&quot;</Code>: below 768px the header hides and rows become
+            stacked cards; give cells a <Code>label</Code> and mark the title <Code>primary</Code>.
+          </>
+        }
+        flush
+      >
+        <Table mobile="cards">
           <TableHeader>
             <TableRow>
               <SortableTableHead sorted={sortedBy('title')} onSort={() => toggleSort('title')}>
@@ -264,13 +286,13 @@ export function TableSection() {
           <TableBody>
             {rows.map((idea) => (
               <TableRow key={idea.id}>
-                <TableCell className="max-w-80">
+                <TableCell primary className="max-w-80">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="shrink-0 text-xs text-muted tabular-nums">{idea.key}</span>
-                    <span className="truncate font-medium">{idea.title}</span>
+                    <span className="font-medium md:truncate">{idea.title}</span>
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell label="Owner">
                   {idea.ownerId ? (
                     <Avatar
                       name={person(idea.ownerId).name}
@@ -282,21 +304,24 @@ export function TableSection() {
                     <span className="text-sm text-muted">Unassigned</span>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell label="Evaluations">
                   {idea.evaluatorIds.length > 0 ? (
                     <ProgressTicks done={idea.submitted} total={idea.evaluatorIds.length} />
                   ) : (
                     <span className="text-sm text-muted">—</span>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell label="Score">
                   <ScoreBadge score={idea.score} size="sm" hidden={idea.hidden} />
                 </TableCell>
-                <TableCell>
+                <TableCell label="Status">
                   <StatusBadge status={idea.status} resolution={idea.resolution} variant="plain" />
                 </TableCell>
-                <TableCell className="text-right text-sm whitespace-nowrap text-muted">
-                  {idea.updated}
+                <TableCell
+                  label="Updated"
+                  className="text-right text-sm whitespace-nowrap text-muted max-md:text-left"
+                >
+                  <RelativeTime date={idea.updatedAt} style="narrow" />
                 </TableCell>
               </TableRow>
             ))}
@@ -338,6 +363,24 @@ export function ContentSection() {
                 The proposal editor, once the idea is shortlisted.
               </TabsContent>
             </Tabs>
+          </Specimen>
+          <Specimen title="Dates (lib/dates.ts)" className="flex flex-col gap-3">
+            <p className="text-sm text-muted">
+              One date util, locale-aware. <Code>RelativeTime</Code> shows the full date on hover;{' '}
+              <Code>DueDateLabel</Code> adds an icon so state is never colour alone.
+            </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              <RelativeTime date={hoursAgo(0.1)} />
+              <RelativeTime date={hoursAgo(3)} />
+              <RelativeTime date={hoursAgo(30)} style="narrow" />
+              <RelativeTime date={hoursAgo(24 * 20)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <DueDateLabel value={hoursAgo(50)} />
+              <DueDateLabel value={inDays(1)} />
+              <DueDateLabel value={inDays(4)} />
+              <DueDateLabel value={null} />
+            </div>
           </Specimen>
           <Specimen title="Kbd" className="flex flex-wrap items-center gap-5">
             <Example label="Kbd">

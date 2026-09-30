@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Path, Query, status
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, load_project
+from app.db import SessionDep
 from app.models.enums import IdeaStatus, Resolution
 from app.pagination import MAX_LIMIT, PageParamsDep
 from app.schemas.base import TagName
@@ -29,6 +30,7 @@ from app.schemas.ideas import (
     VoteState,
     WatchState,
 )
+from app.services import board, evaluations, ideas, votes
 
 router = APIRouter(tags=["ideas"])
 
@@ -105,6 +107,22 @@ def idea_filters(
 IdeaFiltersDep = Annotated[IdeaFilters, Depends(idea_filters)]
 
 
+def _filter(
+    filters: IdeaFilters,
+    statuses: list[IdeaStatus] | None = None,
+    resolutions: list[Resolution] | None = None,
+) -> board.IdeaFilter:
+    return board.IdeaFilter(
+        statuses=statuses or (),
+        resolutions=resolutions or (),
+        owner=filters.owner,
+        tags=filters.tag,
+        needs_evaluators=filters.needs_evaluators,
+        high_disagreement=filters.high_disagreement,
+        q=filters.q,
+    )
+
+
 # --- Lists ---------------------------------------------------------------------------
 @router.get(
     "/projects/{slug}/ideas",
@@ -118,13 +136,24 @@ IdeaFiltersDep = Annotated[IdeaFilters, Depends(idea_filters)]
 )
 async def list_ideas(
     principal: PrincipalDep,
+    session: SessionDep,
     slug: ProjectSlug,
     filters: IdeaFiltersDep,
     page: PageParamsDep,
     status_: StatusFilter = None,
     resolution: ResolutionFilter = None,
 ) -> IdeaPage:
-    raise NotImplementedProblem
+    project, resource = await load_project(session, principal, slug)
+    return await board.list_ideas(
+        session,
+        principal,
+        project,
+        resource.role,
+        _filter(filters, status_, resolution),
+        board.Sort(filters.sort),
+        cursor=page.cursor,
+        limit=page.limit,
+    )
 
 
 @router.get(
@@ -140,11 +169,21 @@ async def list_ideas(
 )
 async def get_board(
     principal: PrincipalDep,
+    session: SessionDep,
     slug: ProjectSlug,
     filters: IdeaFiltersDep,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT, description="Ideas per column.")] = 50,
 ) -> Board:
-    raise NotImplementedProblem
+    project, resource = await load_project(session, principal, slug)
+    return await board.get_board(
+        session,
+        principal,
+        project,
+        resource.role,
+        _filter(filters),
+        board.Sort(filters.sort),
+        limit=limit,
+    )
 
 
 # --- Create / read / update / delete -------------------------------------------------
@@ -156,8 +195,12 @@ async def get_board(
     description="Members and admins. Starts in New, unowned; the submitter watches it.",
     responses=problems(401, 403, 404, 409, 422),
 )
-async def create_idea(principal: PrincipalDep, slug: ProjectSlug, body: IdeaCreate) -> IdeaDetail:
-    raise NotImplementedProblem
+async def create_idea(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: IdeaCreate
+) -> IdeaDetail:
+    project, resource = await load_project(session, principal, slug, Rule.IDEA_CREATE)
+    idea = await ideas.create_idea(session, principal, project, body)
+    return await ideas.idea_detail(session, principal, ideas.LoadedIdea(idea, project, resource))
 
 
 @router.get(
@@ -166,8 +209,10 @@ async def create_idea(principal: PrincipalDep, slug: ProjectSlug, body: IdeaCrea
     summary="Get an idea (the idea page)",
     responses=problems(401, 404),
 )
-async def get_idea(principal: PrincipalDep, idea: IdeaParam) -> IdeaDetail:
-    raise NotImplementedProblem
+async def get_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> IdeaDetail:
+    return await ideas.idea_detail(
+        session, principal, await ideas.load_idea(session, principal, idea)
+    )
 
 
 @router.patch(
@@ -181,8 +226,12 @@ async def get_idea(principal: PrincipalDep, idea: IdeaParam) -> IdeaDetail:
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
-async def update_idea(principal: PrincipalDep, idea: IdeaParam, body: IdeaUpdate) -> IdeaDetail:
-    raise NotImplementedProblem
+async def update_idea(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: IdeaUpdate
+) -> IdeaDetail:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await ideas.update_idea(session, principal, loaded, body)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.delete(
@@ -196,8 +245,9 @@ async def update_idea(principal: PrincipalDep, idea: IdeaParam, body: IdeaUpdate
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def delete_idea(principal: PrincipalDep, idea: IdeaParam) -> None:
-    raise NotImplementedProblem
+async def delete_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> None:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await ideas.delete_idea(session, principal, loaded)
 
 
 # --- Status and owner ----------------------------------------------------------------
@@ -214,9 +264,11 @@ async def delete_idea(principal: PrincipalDep, idea: IdeaParam) -> None:
     responses=problems(401, 403, 404, 409, 422),
 )
 async def change_idea_status(
-    principal: PrincipalDep, idea: IdeaParam, body: StatusChange
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: StatusChange
 ) -> IdeaDetail:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await ideas.change_status(session, principal, loaded, body)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.put(
@@ -230,8 +282,12 @@ async def change_idea_status(
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
-async def set_idea_owner(principal: PrincipalDep, idea: IdeaParam, body: OwnerAssign) -> IdeaDetail:
-    raise NotImplementedProblem
+async def set_idea_owner(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: OwnerAssign
+) -> IdeaDetail:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await ideas.set_owner(session, principal, loaded, body.user_id)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.post(
@@ -245,8 +301,12 @@ async def set_idea_owner(principal: PrincipalDep, idea: IdeaParam, body: OwnerAs
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
-async def volunteer_as_owner(principal: PrincipalDep, idea: IdeaParam) -> IdeaDetail:
-    raise NotImplementedProblem
+async def volunteer_as_owner(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> IdeaDetail:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await ideas.volunteer(session, principal, loaded)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 # --- Evaluators and the evaluation window --------------------------------------------
@@ -262,9 +322,11 @@ async def volunteer_as_owner(principal: PrincipalDep, idea: IdeaParam) -> IdeaDe
     responses=problems(401, 403, 404, 409, 422),
 )
 async def add_evaluators(
-    principal: PrincipalDep, idea: IdeaParam, body: EvaluatorsAdd
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: EvaluatorsAdd
 ) -> IdeaDetail:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await evaluations.add_evaluators(session, principal, loaded, body)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.delete(
@@ -278,8 +340,12 @@ async def add_evaluators(
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def remove_evaluator(principal: PrincipalDep, idea: IdeaParam, user_id: UUID) -> IdeaDetail:
-    raise NotImplementedProblem
+async def remove_evaluator(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, user_id: UUID
+) -> IdeaDetail:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await evaluations.remove_evaluator(session, principal, loaded, user_id)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.put(
@@ -293,9 +359,11 @@ async def remove_evaluator(principal: PrincipalDep, idea: IdeaParam, user_id: UU
     responses=problems(401, 403, 404, 409, 422),
 )
 async def set_evaluation_due_date(
-    principal: PrincipalDep, idea: IdeaParam, body: EvaluationDueDate
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: EvaluationDueDate
 ) -> IdeaDetail:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await evaluations.set_due_date(session, principal, loaded, body.due_at)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.post(
@@ -308,8 +376,12 @@ async def set_evaluation_due_date(
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def close_evaluation(principal: PrincipalDep, idea: IdeaParam) -> IdeaDetail:
-    raise NotImplementedProblem
+async def close_evaluation(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> IdeaDetail:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await evaluations.set_evaluation_closed(session, principal, loaded, closed=True)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 @router.post(
@@ -319,8 +391,12 @@ async def close_evaluation(principal: PrincipalDep, idea: IdeaParam) -> IdeaDeta
     description="Owner or project admin. Idempotent. 409 idea_closed.",
     responses=problems(401, 403, 404, 409),
 )
-async def reopen_evaluation(principal: PrincipalDep, idea: IdeaParam) -> IdeaDetail:
-    raise NotImplementedProblem
+async def reopen_evaluation(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> IdeaDetail:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await evaluations.set_evaluation_closed(session, principal, loaded, closed=False)
+    return await ideas.idea_detail(session, principal, loaded)
 
 
 # --- Votes and watching --------------------------------------------------------------
@@ -331,8 +407,9 @@ async def reopen_evaluation(principal: PrincipalDep, idea: IdeaParam) -> IdeaDet
     description="Members and admins. Idempotent.",
     responses=problems(401, 403, 404, 409),
 )
-async def vote_idea(principal: PrincipalDep, idea: IdeaParam) -> VoteState:
-    raise NotImplementedProblem
+async def vote_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> VoteState:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await votes.set_vote(session, principal, loaded, voted=True)
 
 
 @router.delete(
@@ -342,8 +419,9 @@ async def vote_idea(principal: PrincipalDep, idea: IdeaParam) -> VoteState:
     description="Idempotent.",
     responses=problems(401, 403, 404, 409),
 )
-async def unvote_idea(principal: PrincipalDep, idea: IdeaParam) -> VoteState:
-    raise NotImplementedProblem
+async def unvote_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> VoteState:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await votes.set_vote(session, principal, loaded, voted=False)
 
 
 @router.put(
@@ -353,8 +431,9 @@ async def unvote_idea(principal: PrincipalDep, idea: IdeaParam) -> VoteState:
     description="Anyone who can view the idea. Idempotent.",
     responses=problems(401, 404),
 )
-async def watch_idea(principal: PrincipalDep, idea: IdeaParam) -> WatchState:
-    raise NotImplementedProblem
+async def watch_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> WatchState:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await votes.set_watch(session, principal, loaded, watching=True)
 
 
 @router.delete(
@@ -364,5 +443,6 @@ async def watch_idea(principal: PrincipalDep, idea: IdeaParam) -> WatchState:
     description="Idempotent.",
     responses=problems(401, 404),
 )
-async def unwatch_idea(principal: PrincipalDep, idea: IdeaParam) -> WatchState:
-    raise NotImplementedProblem
+async def unwatch_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> WatchState:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await votes.set_watch(session, principal, loaded, watching=False)

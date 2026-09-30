@@ -32,7 +32,7 @@ def test_models_match_migrations(database_url: str) -> None:
 def test_procrastinate_upgrade_has_matching_migrations() -> None:
     """Fails when procrastinate is upgraded but its new SQL migrations are not vendored.
 
-    See migrations/procrastinate/README.md for how to add them.
+    See app/migrations/procrastinate/README.md for how to add them.
     """
     shipped = Path(procrastinate.__file__).parent / "sql" / "migrations"
     newer = sorted(p.name for p in shipped.glob("*.sql") if p.name > PROCRASTINATE_APPLIED_UP_TO)

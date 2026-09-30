@@ -27,9 +27,6 @@ from app.models.user import User
 from app.openapi import export_openapi
 
 IDEA = "0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11"
-USER = "5f0e8c1a-2b3c-4d5e-8f90-a1b2c3d4e5f6"
-COMMENT = "9d8c7b6a-5f4e-4d3c-8b2a-190817161514"
-CRITERION = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 
 # (method, path template, operation_id)
 CONTRACT: list[tuple[str, str, str]] = [
@@ -78,94 +75,9 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/search", "global_search"),
 ]
 
-# operation_id -> a valid request (url with query string, JSON body or None).
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
-    "get_me": ("/api/v1/auth/me", None),
-    "list_dev_users": ("/api/v1/auth/dev/users", None),
-    "dev_login": ("/api/v1/auth/dev/login", {"user_id": USER}),
-    "logout": ("/api/v1/auth/logout", None),
-    "search_users": ("/api/v1/users?q=ada&project=customer-innovation&limit=10", None),
-    "list_projects": ("/api/v1/projects?include_archived=true", None),
-    "create_project": (
-        "/api/v1/projects",
-        {"name": "Customer Innovation", "slug": "customer-innovation", "key": "CUST"},
-    ),
-    "get_project": ("/api/v1/projects/customer-innovation", None),
-    "update_project": (
-        "/api/v1/projects/customer-innovation",
-        {"allow_volunteer_owners": False, "status_labels": {"shortlisted": "Short list"}},
-    ),
-    "list_project_members": ("/api/v1/projects/customer-innovation/members", None),
-    "add_project_member": (
-        "/api/v1/projects/customer-innovation/members",
-        {"user_id": USER, "role": "member"},
-    ),
-    "update_project_member": (
-        f"/api/v1/projects/customer-innovation/members/{USER}",
-        {"role": "admin"},
-    ),
-    "remove_project_member": (f"/api/v1/projects/customer-innovation/members/{USER}", None),
-    "replace_rubric": (
-        "/api/v1/projects/customer-innovation/rubric",
-        {
-            "criteria": [
-                {"id": CRITERION, "name": "Value", "guidance": {"1": "None", "5": "Huge"}},
-                {"name": "Effort", "weight": 1.25, "inverted": True},
-                {"name": "Fit", "description": "Strategic fit."},
-            ]
-        },
-    ),
-    "list_project_tags": ("/api/v1/projects/customer-innovation/tags", None),
-    "list_ideas": (
-        "/api/v1/projects/customer-innovation/ideas?status=new&status=evaluating&owner=me"
-        "&tag=ux&needs_evaluators=true&q=pricing&sort=-score&limit=25&resolution=parked",
-        None,
-    ),
-    "create_idea": (
-        "/api/v1/projects/customer-innovation/ideas",
-        {"title": "Self-service refunds", "summary": "Let customers refund.", "tags": ["UX"]},
-    ),
-    "get_board": (f"/api/v1/projects/customer-innovation/board?owner={USER}&limit=20", None),
-    "get_idea": ("/api/v1/ideas/CUST-12", None),
-    # Every idea route takes the UUID or the key.
-    "update_idea": ("/api/v1/ideas/cust-12", {"title": "Refunds in one click"}),
-    "delete_idea": (f"/api/v1/ideas/{IDEA}", None),
-    "change_idea_status": (
-        f"/api/v1/ideas/{IDEA}/status",
-        {"status": "closed", "resolution": "parked"},
-    ),
-    "set_idea_owner": (f"/api/v1/ideas/{IDEA}/owner", {"user_id": None}),
-    "volunteer_as_owner": (f"/api/v1/ideas/{IDEA}/volunteer", None),
-    "add_evaluators": (
-        f"/api/v1/ideas/{IDEA}/evaluators",
-        {"user_ids": [USER], "due_at": "2026-10-07T17:00:00Z"},
-    ),
-    "remove_evaluator": (f"/api/v1/ideas/{IDEA}/evaluators/{USER}", None),
-    "set_evaluation_due_date": (f"/api/v1/ideas/{IDEA}/evaluation/due-date", {"due_at": None}),
-    "close_evaluation": (f"/api/v1/ideas/{IDEA}/evaluation/close", None),
-    "reopen_evaluation": (f"/api/v1/ideas/{IDEA}/evaluation/reopen", None),
-    "list_evaluations": (f"/api/v1/ideas/{IDEA}/evaluations", None),
-    "get_my_evaluation": (f"/api/v1/ideas/{IDEA}/evaluations/me", None),
-    "save_my_evaluation": (
-        f"/api/v1/ideas/{IDEA}/evaluations/me",
-        {
-            "scores": [{"criterion_id": CRITERION, "score": 4, "comment": "Clear demand."}],
-            "recommendation": "go",
-            "submit": False,
-        },
-    ),
-    "vote_idea": ("/api/v1/ideas/CUST-12/vote", None),
-    "unvote_idea": (f"/api/v1/ideas/{IDEA}/vote", None),
-    "watch_idea": (f"/api/v1/ideas/{IDEA}/watch", None),
-    "unwatch_idea": (f"/api/v1/ideas/{IDEA}/watch", None),
-    "list_idea_activity": ("/api/v1/ideas/CUST-12/activity?limit=20", None),
-    "create_comment": (f"/api/v1/ideas/{IDEA}/comments", {"body_md": "Love it."}),
-    "update_comment": (f"/api/v1/comments/{COMMENT}", {"body_md": "Love it!"}),
-    "delete_comment": (f"/api/v1/comments/{COMMENT}", None),
-    "get_my_work": ("/api/v1/me/work", None),
-    "list_my_owned_ideas": ("/api/v1/me/owned-ideas?status=closed&limit=50", None),
-    "global_search": ("/api/v1/search?q=CUST-12&limit=5", None),
-}
+# operation_id -> a valid request (url with query string, JSON body or None). Empty:
+# every Phase 1 operation is implemented and tested (tests/api, tests/ideas).
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
 
 _METHODS = {operation_id: method for method, _, operation_id in CONTRACT}
 
@@ -239,11 +151,11 @@ async def test_stub_returns_501_problem(client: httpx.AsyncClient, operation_id:
 
 
 async def test_authentication_dependency_is_wired(client: httpx.AsyncClient) -> None:
-    # Without the override the (unimplemented) session lookup itself answers.
+    # Without the override the session lookup answers before the stub.
     response = await client.get("/api/v1/me/work")
 
-    assert response.status_code == 501
-    assert response.json()["detail"] == "Sessions are not implemented yet."
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthorized"
 
 
 async def test_invalid_request_is_rejected_before_the_stub(

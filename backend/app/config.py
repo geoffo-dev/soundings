@@ -2,11 +2,17 @@
 
 Every setting has a development-friendly default; production values come from the
 Helm chart. List settings accept either a JSON array or a comma-separated string.
+
+:class:`DatabaseSettings` holds only what talking to the database needs; the
+``migrate`` and ``wait-for-db`` commands use it, so they run without the API's
+secrets (``SECRET_KEY``). :class:`Settings` adds everything else and the production
+guards.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -17,7 +23,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-"""The ``backend/`` directory (contains ``app/`` and ``migrations/``)."""
+"""The ``backend/`` directory in a source checkout (contains ``app/`` and ``tests/``)."""
 
 DEV_SECRET_KEY = "dev-insecure-secret-key-change-me"  # noqa: S105 - rejected in production
 _ACCEPTED_DRIVERS = {"postgres", "postgresql", "postgresql+psycopg"}
@@ -36,18 +42,25 @@ def _split_csv(value: object) -> object:
     return value
 
 
-class Settings(BaseSettings):
-    """Runtime configuration. Construct via :func:`get_settings` in app code."""
+_SETTINGS_CONFIG = SettingsConfigDict(
+    env_prefix="SOUNDINGS_",
+    extra="ignore",
+    frozen=True,
+    # Validation errors must not echo values: they include passwords and keys.
+    hide_input_in_errors=True,
+)
 
-    model_config = SettingsConfigDict(
-        env_prefix="SOUNDINGS_",
-        extra="ignore",
-        frozen=True,
-        # Validation errors must not echo values: they include passwords and keys.
-        hide_input_in_errors=True,
-    )
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+"""Hosts always accepted outside production (dev servers, the Vite proxy)."""
+
+
+class DatabaseSettings(BaseSettings):
+    """What the database commands need: environment, logging and the database."""
+
+    model_config = _SETTINGS_CONFIG
 
     environment: Environment = "development"
+    log_level: LogLevel = "INFO"
 
     # --- Database -----------------------------------------------------------------
     database_url: str = Field(
@@ -61,56 +74,10 @@ class Settings(BaseSettings):
     )
     database_pool_size: int = Field(default=5, ge=1, le=100)
 
-    # --- HTTP -----------------------------------------------------------------------
-    base_urls: Annotated[list[str], NoDecode] = Field(
-        default=["http://localhost:8000"],
-        description="External origins the app is served on; the first is the default.",
-    )
-    trusted_proxies: Annotated[list[str], NoDecode] = Field(
-        default=["127.0.0.1"],
-        description="IPs/CIDRs whose X-Forwarded-* headers are trusted ('*' = all).",
-    )
-    host: str = "127.0.0.1"
-    port: int = Field(default=8000, ge=1, le=65535)
-    workers: int = Field(default=1, ge=1)
-    static_dir: Path = BACKEND_DIR.parent / "frontend" / "dist"
-
-    # --- Security -------------------------------------------------------------------
-    secret_key: SecretStr = SecretStr(DEV_SECRET_KEY)
-    dev_login_enabled: bool = False
-
-    # --- Observability / worker -----------------------------------------------------
-    log_level: LogLevel = "INFO"
-    otel_endpoint: str | None = Field(
-        default=None,
-        description="OTLP/HTTP base URL, e.g. http://otel-collector:4318 (unset: no tracing).",
-    )
-    worker_concurrency: int = Field(default=4, ge=1, le=64)
-
-    @field_validator("base_urls", "trusted_proxies", mode="before")
-    @classmethod
-    def _parse_list(cls, value: object) -> object:
-        return _split_csv(value)
-
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
-
-    @field_validator("base_urls")
-    @classmethod
-    def _validate_base_urls(cls, value: list[str]) -> list[str]:
-        if not value:
-            raise ValueError("at least one base URL is required")
-        normalised: list[str] = []
-        for raw in value:
-            parts = urlsplit(raw.strip())
-            if parts.scheme not in {"http", "https"} or not parts.netloc:
-                raise ValueError(f"base URL must be an absolute http(s) URL: {raw!r}")
-            if parts.query or parts.fragment:
-                raise ValueError(f"base URL must not have a query or fragment: {raw!r}")
-            normalised.append(f"{parts.scheme}://{parts.netloc.lower()}{parts.path.rstrip('/')}")
-        return normalised
 
     @field_validator("database_url")
     @classmethod
@@ -120,26 +87,6 @@ class Settings(BaseSettings):
             raise ValueError("database_url must be a postgresql:// or postgresql+psycopg:// URL")
         return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
 
-    @field_validator("otel_endpoint")
-    @classmethod
-    def _validate_otel_endpoint(cls, value: str | None) -> str | None:
-        if not value:
-            return None
-        if urlsplit(value).scheme not in {"http", "https"}:
-            raise ValueError("otel_endpoint must be an http(s) URL")
-        return value.rstrip("/")
-
-    @model_validator(mode="after")
-    def _production_guards(self) -> Settings:
-        if self.is_production:
-            secret = self.secret_key.get_secret_value()
-            if secret == DEV_SECRET_KEY or len(secret) < 32:
-                raise ValueError("SOUNDINGS_SECRET_KEY must be set to 32+ random characters")
-            if self.dev_login_enabled:
-                raise ValueError("SOUNDINGS_DEV_LOGIN_ENABLED must be false in production")
-        return self
-
-    # --- Derived values -------------------------------------------------------------
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
@@ -159,10 +106,131 @@ class Settings(BaseSettings):
             hide_password=False
         )
 
+
+class Settings(DatabaseSettings):
+    """Runtime configuration. Construct via :func:`get_settings` in app code."""
+
+    model_config = _SETTINGS_CONFIG
+
+    # --- HTTP -----------------------------------------------------------------------
+    base_urls: Annotated[list[str], NoDecode] = Field(
+        default=["http://localhost:8000"],
+        description=(
+            "External origins the app is served on; the first is the default. Requests "
+            "for any other host are refused (400), except /healthz and /readyz."
+        ),
+    )
+    trusted_proxies: Annotated[list[str], NoDecode] = Field(
+        default=["127.0.0.1"],
+        description="IPs/CIDRs whose X-Forwarded-* headers are trusted ('*' = all).",
+    )
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    workers: int = Field(default=1, ge=1)
+    static_dir: Path = BACKEND_DIR.parent / "frontend" / "dist"
+    metrics_port: int = Field(
+        default=9090,
+        ge=0,
+        le=65535,
+        description=(
+            "Port of the separate Prometheus endpoint (/metrics), bound to host. 0: no "
+            "separate port; outside production /metrics is then served on the app port."
+        ),
+    )
+
+    # --- Security -------------------------------------------------------------------
+    secret_key: SecretStr = SecretStr(DEV_SECRET_KEY)
+    dev_login_enabled: bool = False
+    session_idle_timeout: timedelta = Field(
+        default=timedelta(hours=12),
+        gt=timedelta(0),
+        description="A session ends after this long without a request (seconds or ISO 8601).",
+    )
+    session_max_age: timedelta = Field(
+        default=timedelta(days=7),
+        gt=timedelta(0),
+        description="A session ends this long after sign-in, however active it is.",
+    )
+    cookie_secure: bool | None = Field(
+        default=None,
+        description=(
+            "Secure flag on the session cookies. Default: set, except on plain-http "
+            "requests outside production. false is refused in production."
+        ),
+    )
+
+    # --- Observability / worker -----------------------------------------------------
+    otel_endpoint: str | None = Field(
+        default=None,
+        description="OTLP/HTTP base URL, e.g. http://otel-collector:4318 (unset: no tracing).",
+    )
+    worker_concurrency: int = Field(default=4, ge=1, le=64)
+
+    @field_validator("base_urls", "trusted_proxies", mode="before")
+    @classmethod
+    def _parse_list(cls, value: object) -> object:
+        return _split_csv(value)
+
+    @field_validator("base_urls")
+    @classmethod
+    def _validate_base_urls(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("at least one base URL is required")
+        normalised: list[str] = []
+        for raw in value:
+            parts = urlsplit(raw.strip())
+            if parts.scheme not in {"http", "https"} or not parts.netloc:
+                raise ValueError(f"base URL must be an absolute http(s) URL: {raw!r}")
+            if parts.query or parts.fragment:
+                raise ValueError(f"base URL must not have a query or fragment: {raw!r}")
+            normalised.append(f"{parts.scheme}://{parts.netloc.lower()}{parts.path.rstrip('/')}")
+        return normalised
+
+    @field_validator("otel_endpoint")
+    @classmethod
+    def _validate_otel_endpoint(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        if urlsplit(value).scheme not in {"http", "https"}:
+            raise ValueError("otel_endpoint must be an http(s) URL")
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def _production_guards(self) -> Settings:
+        if self.session_max_age < self.session_idle_timeout:
+            raise ValueError("session_max_age must be at least session_idle_timeout")
+        if self.is_production:
+            secret = self.secret_key.get_secret_value()
+            if secret == DEV_SECRET_KEY or len(secret) < 32:
+                raise ValueError("SOUNDINGS_SECRET_KEY must be set to 32+ random characters")
+            if self.dev_login_enabled:
+                raise ValueError("SOUNDINGS_DEV_LOGIN_ENABLED must be false in production")
+            if self.cookie_secure is False:
+                raise ValueError("SOUNDINGS_COOKIE_SECURE must not be false in production")
+        return self
+
+    # --- Derived values -------------------------------------------------------------
     @property
     def allowed_hosts(self) -> list[str]:
         """Host[:port] values of the configured base URLs."""
         return [urlsplit(url).netloc for url in self.base_urls]
+
+    @property
+    def trusted_hosts(self) -> frozenset[str]:
+        """Host names (no port) requests may be addressed to.
+
+        The configured base URLs' hosts; outside production also ``localhost``,
+        ``127.0.0.1`` and ``::1``.
+        """
+        hosts = {urlsplit(url).hostname or "" for url in self.base_urls} - {""}
+        if not self.is_production:
+            hosts |= LOCAL_HOSTS
+        return frozenset(hosts)
+
+    @property
+    def metrics_on_app_port(self) -> bool:
+        """Serve ``/metrics`` on the app port: only outside production, with no metrics port."""
+        return self.metrics_port == 0 and not self.is_production
 
     def base_url_for_host(self, host: str | None) -> str:
         """The configured base URL matching a request ``Host`` header.
@@ -187,3 +255,9 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Process-wide settings (cached). Tests build ``Settings`` directly instead."""
     return Settings()
+
+
+@lru_cache
+def get_database_settings() -> DatabaseSettings:
+    """Only the database settings: needs no API secrets (``migrate``, ``wait-for-db``)."""
+    return DatabaseSettings()

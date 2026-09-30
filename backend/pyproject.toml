@@ -12,8 +12,8 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.30",
     "psycopg[binary,pool]>=3.2",
     "alembic>=1.16",
-    # The procrastinate schema is vendored per version (migrations/procrastinate/);
-    # bumping this needs a migration, see migrations/procrastinate/README.md.
+    # The procrastinate schema is vendored per version (app/migrations/procrastinate/);
+    # bumping this needs a migration, see app/migrations/procrastinate/README.md.
     "procrastinate>=3.10,<4",
     "authlib>=1.3",
     "httpx>=0.27",
@@ -51,7 +51,7 @@ module-root = ""
 
 # --- Alembic (CLI use: `uv run alembic revision --autogenerate -m "..."`) ---------------
 [tool.alembic]
-script_location = "%(here)s/migrations"
+script_location = "%(here)s/app/migrations"
 file_template = "%%(year)d%%(month).2d%%(day).2d_%%(rev)s_%%(slug)s"
 prepend_sys_path = ["."]
 truncate_slug_length = 40
@@ -101,7 +101,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLW0603"]
-"migrations/versions/**" = ["N999"]
+"app/migrations/versions/**" = ["N999"]
+# The policy table mirrors docs/role-matrix.md column by column; aligned rows read best.
+"app/authz/policy.py" = ["E501"]
+"tests/authz/test_policy_matrix.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
@@ -112,7 +115,7 @@ python_version = "3.12"
 plugins = ["pydantic.mypy"]
 strict = true
 warn_unreachable = true
-files = ["app", "tests", "migrations"]
+files = ["app", "tests"]
 explicit_package_bases = true
 
 [tool.pydantic-mypy]
@@ -126,8 +129,11 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
-addopts = ["-ra", "--strict-markers", "--strict-config"]
-markers = ["settings(**overrides): override Settings fields for the test's app"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow"]
+markers = [
+    "settings(**overrides): override Settings fields for the test's app",
+    "slow: long-running performance checks, excluded by default (make -C backend test-slow)",
+]
 filterwarnings = [
     "error",
     # testcontainers' own deprecation shims and docker-py internals

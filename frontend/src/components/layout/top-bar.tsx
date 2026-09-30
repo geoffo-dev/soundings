@@ -16,14 +16,16 @@ export interface Crumb {
 }
 
 /**
- * Breadcrumbs from the matched routes: a static `staticData: { crumb }`, or a
- * dynamic `crumb` string returned by the route's loader (e.g. an idea title).
+ * Breadcrumbs from the matched routes: a static `staticData: { crumb }`, a
+ * dynamic `crumb` string returned by the route's loader (e.g. a project name),
+ * or a loader `crumbs` array for several levels (e.g. project › idea key).
  */
 function useRouteCrumbs(): Crumb[] {
   const matches = useMatches()
   return matches.flatMap((match) => {
-    const loaderCrumb: unknown = (match.loaderData as { crumb?: unknown } | undefined)?.crumb
-    const label = typeof loaderCrumb === 'string' ? loaderCrumb : match.staticData.crumb
+    const data = match.loaderData as { crumb?: unknown; crumbs?: unknown } | undefined
+    if (Array.isArray(data?.crumbs)) return data.crumbs as Crumb[]
+    const label = typeof data?.crumb === 'string' ? data.crumb : match.staticData.crumb
     return label ? [{ label, to: match.pathname }] : []
   })
 }
