@@ -377,7 +377,8 @@ function NewIdeaForm({ contextSlug }: { contextSlug?: string }) {
           Submit idea
           <KbdShortcut
             keys={SHORTCUTS.submitForm.keys}
-            className="ml-1 hidden sm:inline-flex [&_kbd]:border-white/25 [&_kbd]:bg-white/15 [&_kbd]:text-accent-foreground [&_kbd]:shadow-none"
+            tone="accent"
+            className="ml-1 hidden sm:inline-flex"
           />
         </Button>
       </DialogFooter>
@@ -395,8 +396,8 @@ function serverFieldErrors(error: unknown): Errors {
   if (!isApiError(error) || error.status !== 422) return {}
   const out: Errors = {}
   for (const entry of error.problem?.errors ?? []) {
-    const field = entry.loc?.[1]
-    const message = entry.msg ?? entry.message
+    const field = entry.loc[1]
+    const message = entry.msg
     if (!message) continue
     if (field === 'title' || field === 'summary' || field === 'tags') out[field] ??= message
     if (field === 'description_md') out.description ??= message

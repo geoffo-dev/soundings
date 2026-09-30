@@ -1,0 +1,45 @@
+{{- /*
+Demo data (demo.seed, development mode only): `soundings seed` after every install and
+upgrade. It migrates first, so it does not depend on the order in which the api pods'
+init containers and this hook run, and it does nothing once the database has projects
+(so upgrades keep whatever people changed). Runs after the release's ConfigMap, Secret
+and ServiceAccount exist, with the same settings as the app.
+*/ -}}
+{{- if .Values.demo.seed }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "soundings.fullname" . }}-seed
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "seed") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "soundings.podLabels" (dict "ctx" . "component" "seed") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "soundings.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      # Service links would inject SOUNDINGS_PORT=tcp://... for a Service named "soundings".
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with (include "soundings.imagePullSecrets" . | trim) }}{{ . | nindent 6 }}{{ end }}
+      initContainers:
+        {{- include "soundings.databaseContainer" (dict "ctx" . "name" "wait-for-db" "args" (include "soundings.waitForDatabaseArgs" .)) | nindent 8 }}
+        {{- include "soundings.databaseContainer" (dict "ctx" . "name" "migrate" "args" "- migrate") | nindent 8 }}
+      containers:
+        {{- include "soundings.databaseContainer" (dict "ctx" . "name" "seed" "args" "- seed") | nindent 8 }}
+      volumes:
+        {{- include "soundings.volumes" . | nindent 8 }}
+      {{- with (include "soundings.scheduling" . | trim) }}{{ . | nindent 6 }}{{ end }}
+{{- end }}

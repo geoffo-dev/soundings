@@ -9,7 +9,7 @@
 #
 # Areas: backend (make -C backend check), frontend (npm --prefix frontend run check),
 # helm (deploy/: helm lint + template, via the alpine/helm container),
-# e2e (typecheck), scripts (bash -n, shellcheck when installed or its image is pulled).
+# e2e (npm run check: tsc + prettier), scripts (bash -n, shellcheck when installed or its image is pulled).
 # Areas whose directory or toolchain is missing are skipped with a note.
 set -uo pipefail
 
@@ -106,7 +106,9 @@ check_e2e() {
   [ -f e2e/package.json ] || { skip e2e "no e2e/package.json"; return; }
   have npm || { skip e2e "npm not installed"; return; }
   [ -d e2e/node_modules ] || { skip e2e "run: npm --prefix e2e ci"; return; }
-  if grep -q '"typecheck"' e2e/package.json; then
+  if grep -q '"check"' e2e/package.json; then
+    run e2e npm --prefix e2e run check # tsc + prettier
+  elif grep -q '"typecheck"' e2e/package.json; then
     run e2e npm --prefix e2e run typecheck
   else
     run e2e npx --prefix e2e tsc --noEmit -p e2e

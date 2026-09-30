@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:pw": "playwright test",
-    "screenshots": "SCREENSHOTS=1 playwright test tests/screenshots.spec.ts",
+    "screenshots": "SCREENSHOTS=1 playwright test screenshots.spec.ts",
     "gen:api": "openapi-typescript src/api/generated/openapi.json -o src/api/generated/schema.d.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },

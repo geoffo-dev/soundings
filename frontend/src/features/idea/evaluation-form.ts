@@ -141,7 +141,7 @@ export function incompleteErrors(
   const criteria: string[] = []
   let recommendation = false
   for (const entry of error.problem?.errors ?? []) {
-    const loc = entry.loc ?? []
+    const loc = entry.loc
     if (loc[1] === 'recommendation') recommendation = true
     else if (loc[1] === 'scores') {
       const id = String(loc[2] ?? '').toLowerCase()

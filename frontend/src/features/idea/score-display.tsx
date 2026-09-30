@@ -17,16 +17,19 @@ const RECOMMENDATION_STYLE = {
 /** Go / Maybe / No: icon and word, never colour alone. */
 export function RecommendationBadge({
   value,
+  compact = false,
   className,
 }: {
   value: Recommendation
+  /** Icon only on phones (the word stays for screen readers), for tight tables. */
+  compact?: boolean
   className?: string
 }) {
   const { variant, Icon } = RECOMMENDATION_STYLE[value]
   return (
     <Badge variant={variant} className={className}>
       <Icon aria-hidden="true" />
-      {RECOMMENDATION_LABELS[value]}
+      <span className={cn(compact && 'max-sm:sr-only')}>{RECOMMENDATION_LABELS[value]}</span>
     </Badge>
   )
 }

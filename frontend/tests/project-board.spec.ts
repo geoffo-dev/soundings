@@ -169,6 +169,34 @@ test.describe('as a platform admin', () => {
     await expect(card(column(page, 'Evaluating'), 'CUST-1')).toBeVisible()
     await expect(card(column(page, 'Proposal'), 'CUST-1')).toHaveCount(0)
   })
+
+  test('a card loaded with "Show more" moves at once', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('soundings-mock-dataset', 'large'))
+    await page.goto('/p/customer-innovation?view=board')
+    const from = column(page, 'New')
+    const to = column(page, 'Shortlisted')
+    await expect(from.getByRole('link')).toHaveCount(50)
+    await from.getByRole('button', { name: 'Show 50 more' }).click()
+    await expect(from.getByRole('link')).toHaveCount(100)
+    const count = async (region: Locator) =>
+      Number((await region.getByRole('heading', { level: 2 }).innerText()).replace(/\D/g, ''))
+    const [before, target] = [await count(from), await count(to)]
+
+    const item = from.getByRole('link').nth(80)
+    const key = (await item.innerText()).split('\n')[0] ?? ''
+    // A slow server: the card must land before it answers (optimistic, not a refetch).
+    await page.evaluate(() => localStorage.setItem('soundings-mock-latency', '3000'))
+    await item.focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Space')
+
+    await expect(card(to, key)).toBeVisible({ timeout: 1000 })
+    await expect(card(from, key)).toHaveCount(0, { timeout: 1000 })
+    expect(await count(from)).toBe(before - 1)
+    expect(await count(to)).toBe(target + 1)
+  })
 })
 
 test('loads more of a column on request (10,000 ideas)', async ({ page }) => {

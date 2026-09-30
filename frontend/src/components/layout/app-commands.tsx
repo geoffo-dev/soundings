@@ -217,6 +217,8 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
   const query = search.trim()
   const ideaResults: CommandGroupData = {
     heading: 'Ideas',
+    // Still typing, or the previous query's results while this one loads.
+    pending: results.query !== query || results.isPlaceholderData,
     actions: query
       ? (results.data?.ideas ?? []).map((idea) => ({
           id: `idea-${idea.id}`,

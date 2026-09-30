@@ -104,11 +104,12 @@ export function FilterBar({
       >
         High disagreement
       </FilterChip>
+      {/* On phones this row scrolls sideways; Clear sits next to the count instead. */}
       {active && (
         <Button
           variant="ghost"
           size="sm"
-          className="text-muted"
+          className="text-muted max-sm:hidden"
           onClick={() => onChange(clearFilters(search))}
         >
           Clear

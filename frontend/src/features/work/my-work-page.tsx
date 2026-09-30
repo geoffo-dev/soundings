@@ -64,11 +64,8 @@ export function MyWorkPage() {
               New idea
               <KbdShortcut
                 keys={SHORTCUTS.newIdea.keys}
-                className={
-                  hasDue
-                    ? 'ml-1 hidden sm:inline-flex'
-                    : 'ml-1 hidden sm:inline-flex [&_kbd]:border-white/25 [&_kbd]:bg-white/15 [&_kbd]:text-accent-foreground [&_kbd]:shadow-none'
-                }
+                tone={hasDue ? 'default' : 'accent'}
+                className="ml-1 hidden sm:inline-flex"
               />
             </Button>
           )

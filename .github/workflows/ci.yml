@@ -1,5 +1,5 @@
-# Optional GitHub Actions mirror of the GitLab lint/test stages (.gitlab-ci.yml is the
-# primary pipeline: it also builds, scans and deploys the image to k3s).
+# Optional GitHub Actions mirror of the GitLab pipeline's checks (.gitlab-ci.yml is the
+# primary pipeline: it also scans the image and deploys it to k3s).
 name: ci
 
 on:
@@ -49,3 +49,66 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/check-task.sh helm scripts
+
+  # The generated API contract must match the backend: `make gen-api` leaves no diff.
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install "uv==0.8.17"
+      - run: uv sync --locked --project backend
+      - run: npm --prefix frontend ci
+      - run: make gen-api
+      - name: Generated files are up to date
+        run: |
+          git diff --exit-code -- frontend/src/api/generated || {
+            echo "::error::frontend/src/api/generated is stale: run 'make gen-api' and commit it"
+            exit 1
+          }
+
+  # Playwright end-to-end tests (e2e/, qa) against the real image with the demo data.
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - id: e2e
+        run: |
+          if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "No e2e/ yet: nothing to run."; fi
+      # Builds the image and runs Postgres + the app (dev login, demo data) on :8000.
+      - if: steps.e2e.outputs.present == 'true'
+        run: make demo
+      - if: steps.e2e.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - if: steps.e2e.outputs.present == 'true'
+        run: npm --prefix e2e ci
+      - if: steps.e2e.outputs.present == 'true'
+        run: npx --prefix e2e playwright install --with-deps chromium
+      - if: steps.e2e.outputs.present == 'true'
+        run: npm --prefix e2e run test
+        env:
+          E2E_BASE_URL: http://localhost:8000
+      - if: failure() && steps.e2e.outputs.present == 'true'
+        run: docker logs soundings-demo-app
+      - if: always() && steps.e2e.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+      - if: always()
+        run: make demo-down

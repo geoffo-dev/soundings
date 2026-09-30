@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gc
+
 import httpx
 import pytest
 
@@ -9,6 +11,13 @@ async def test_healthz_is_ok(client: httpx.AsyncClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+async def test_startup_freezes_the_heap(client: httpx.AsyncClient) -> None:
+    # app.main.freeze_startup_heap: the first full collection of everything imported
+    # at startup must not land on a request.
+    assert (await client.get("/healthz")).status_code == 200
+    assert gc.get_freeze_count() > 0
 
 
 async def test_readyz_checks_the_database(client: httpx.AsyncClient) -> None:

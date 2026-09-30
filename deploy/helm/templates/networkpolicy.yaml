@@ -1,8 +1,9 @@
 {{- /*
-Ingress-only policies: the API accepts traffic on its HTTP port (from ingressFrom /
-metricsFrom peers, or anyone when ingressFrom is empty), the worker accepts nothing,
-and the bundled Postgres only accepts this release's app pods. Egress stays open
-(IdP, SMTP, kagent and the database live in different places in every cluster).
+Ingress-only policies: the API accepts traffic on its HTTP port from ingressFrom peers
+and on its metrics port from metricsFrom peers (each: anyone when empty; this release's
+pods always), the worker accepts nothing, and the bundled Postgres only accepts this
+release's app pods and Jobs. Egress stays open (IdP, SMTP, kagent and the database
+live in different places in every cluster).
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -18,19 +19,18 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    {{- range $port, $peers := dict "http" .Values.networkPolicy.ingressFrom "metrics" .Values.networkPolicy.metricsFrom }}
     - ports:
-        - port: http
+        - port: {{ $port }}
           protocol: TCP
-      {{- if .Values.networkPolicy.ingressFrom }}
+      {{- if $peers }}
       from:
-        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
-        {{- with .Values.networkPolicy.metricsFrom }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- toYaml $peers | nindent 8 }}
         - podSelector:
             matchLabels:
-              {{- include "soundings.selectorLabels" . | nindent 14 }}
+              {{- include "soundings.selectorLabels" $ | nindent 14 }}
       {{- end }}
+    {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -70,6 +70,6 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
-                values: [api, worker, migrate]
+                values: [api, worker, migrate, seed]
 {{- end }}
 {{- end }}

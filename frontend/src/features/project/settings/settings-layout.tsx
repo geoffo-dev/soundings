@@ -73,11 +73,8 @@ export function FormActions({
         {saveLabel}
         <KbdShortcut
           keys={SHORTCUTS.saveSettings.keys}
-          className={cn(
-            'ml-1 hidden sm:inline-flex',
-            dirty &&
-              '[&_kbd]:border-white/25 [&_kbd]:bg-white/15 [&_kbd]:text-accent-foreground [&_kbd]:shadow-none',
-          )}
+          tone={dirty ? 'accent' : 'default'}
+          className="ml-1 hidden sm:inline-flex"
         />
       </Button>
     </div>

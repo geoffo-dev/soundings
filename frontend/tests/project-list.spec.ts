@@ -185,8 +185,40 @@ test('shows an error with a retry when the ideas fail to load', async ({ page })
 test('an unknown or private project is a plain not found', async ({ page }) => {
   await page.goto('/p/does-not-exist')
   await expect(
-    page.getByRole('heading', { name: 'This project doesn’t exist or you don’t have access' }),
+    page.getByRole('heading', {
+      level: 1,
+      name: 'This project doesn’t exist or you don’t have access',
+    }),
   ).toBeVisible()
+  expect(await seriousViolations(page)).toEqual([])
+})
+
+test('columns follow the room the list has, so titles stay readable', async ({ page }) => {
+  const title = (text: string) => page.getByText(text, { exact: true })
+  const votes = page.getByRole('columnheader', { name: 'Votes' })
+  const evaluators = page.getByRole('columnheader', { name: 'Evaluators' })
+
+  // Wide: every column.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openList(page)
+  await expect(votes).toBeVisible()
+  expect((await title('Self-serve returns portal').boundingBox())?.width).toBeGreaterThan(150)
+
+  // A laptop with the sidebar open: votes go, the title keeps its room.
+  await page.setViewportSize({ width: 1180, height: 800 })
+  await expect(votes).toBeHidden()
+  await expect(evaluators).toBeVisible()
+  const cell = page.getByRole('cell', { name: /CUST-1 Self-serve returns portal/ })
+  expect((await cell.boundingBox())?.width).toBeGreaterThan(250)
+  await expect(title('Self-serve returns portal')).toBeVisible()
+
+  // Narrower (a small laptop, a tablet): rows become cards, titles in full.
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await expect
+    .poll(async () => (await rows(page).first().boundingBox())?.height)
+    .toBeGreaterThan(60)
+  expect((await title('Loyalty tiers for B2B customers').boundingBox())?.width).toBeGreaterThan(180)
+  expect(await seriousViolations(page)).toEqual([])
 })
 
 for (const colorScheme of ['light', 'dark'] as const) {
@@ -217,5 +249,17 @@ test.describe('on a phone (390px)', () => {
     expect(overflow).toEqual({ page: 0, main: 0 })
     await expect(page.getByRole('button', { name: 'New idea' })).toBeVisible()
     expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test('filters scroll sideways; Clear stays next to the count', async ({ page }) => {
+    await page.goto('/p/customer-innovation?owner=me&needs_evaluators=1')
+    await expect(countText(page)).toHaveText('1 of 20 ideas')
+    // One matching idea: the list is as tall as its row, not the screen.
+    const list = await table(page).boundingBox()
+    expect(list?.height).toBeLessThan(150)
+    await page.getByRole('button', { name: 'Clear', exact: true }).click()
+    await expect(page).not.toHaveURL(/owner=|needs_evaluators/)
+    await expect(countText(page)).toHaveText('20 ideas')
+    await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0)
   })
 })

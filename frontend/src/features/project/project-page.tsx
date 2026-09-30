@@ -15,7 +15,7 @@ import {
 import { useRef, type ReactNode } from 'react'
 
 import { describeError } from '@/api/errors'
-import { useProject } from '@/api/projects'
+import { useProject, useUpdateProject } from '@/api/projects'
 import type { IdeaSort, Project, UserRef } from '@/api/types'
 import { Page, PageHeader } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
@@ -159,6 +159,7 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
     content = (
       <Panel>
         <EmptyState
+          headingLevel={2}
           role="alert"
           icon={<CloudOff />}
           title="We couldn’t load the ideas"
@@ -181,6 +182,7 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
     content = (
       <Panel>
         <EmptyState
+          headingLevel={2}
           icon={<FilterX />}
           title="No ideas match these filters"
           description="Try fewer filters, or clear them to see every idea."
@@ -196,6 +198,7 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
     content = (
       <Panel>
         <EmptyState
+          headingLevel={2}
           icon={<Lightbulb />}
           title="No ideas yet"
           description={
@@ -254,22 +257,14 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
               <Button variant="primary" className="max-sm:hidden" onClick={newIdea}>
                 <Plus />
                 New idea
-                <KbdShortcut
-                  keys={SHORTCUTS.newIdea.keys}
-                  className="ml-1 [&_kbd]:border-white/25 [&_kbd]:bg-white/15 [&_kbd]:text-accent-foreground [&_kbd]:shadow-none"
-                />
+                <KbdShortcut keys={SHORTCUTS.newIdea.keys} tone="accent" className="ml-1" />
               </Button>
             )}
           </>
         }
       />
 
-      {project.archived_at && (
-        <p className="-mt-1 flex items-center gap-2 rounded-md bg-subtle px-3 py-2 text-sm text-secondary">
-          <Archive aria-hidden="true" className="size-4 text-muted" />
-          This project is archived. Its ideas are read-only.
-        </p>
-      )}
+      {project.archived_at && <ArchivedNotice project={project} />}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <FilterBar
@@ -281,13 +276,25 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
           knownPeople={knownPeople}
         />
         <div className="flex shrink-0 items-center justify-between gap-3 sm:h-7 sm:justify-end">
-          <p className="text-sm text-muted tabular-nums" aria-live="polite">
-            {matching === undefined
-              ? ' '
-              : filtered
-                ? `${matching.toLocaleString()} of ${project.idea_count.toLocaleString()} ideas`
-                : `${matching.toLocaleString()} ${matching === 1 ? 'idea' : 'ideas'}`}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted tabular-nums" aria-live="polite">
+              {matching === undefined
+                ? ' '
+                : filtered
+                  ? `${matching.toLocaleString()} of ${project.idea_count.toLocaleString()} ideas`
+                  : `${matching.toLocaleString()} ${matching === 1 ? 'idea' : 'ideas'}`}
+            </p>
+            {filtered && (
+              <Button
+                variant="link"
+                size="sm"
+                className="sm:hidden"
+                onClick={() => setSearch(clearFilters(search))}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
           <SortMenu sort={search.sort} onChange={setSort} />
         </div>
       </div>
@@ -302,6 +309,27 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
         </div>
       )}
     </Page>
+  )
+}
+
+/** Archived projects are read-only; admins can restore them here (with Undo). */
+function ArchivedNotice({ project }: { project: Project }) {
+  const update = useUpdateProject(project.slug)
+  return (
+    <div className="-mt-1 flex items-center gap-2 rounded-md bg-subtle px-3 py-1.5 text-sm text-secondary">
+      <Archive aria-hidden="true" className="size-4 shrink-0 text-muted" />
+      <p className="min-w-0 flex-1">This project is archived. Its ideas are read-only.</p>
+      {project.permissions.can_manage && (
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={update.isPending}
+          onClick={() => update.mutate({ archived: false })}
+        >
+          Restore
+        </Button>
+      )}
+    </div>
   )
 }
 

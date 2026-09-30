@@ -6,6 +6,8 @@ the SPA. ``app`` is the module-level instance uvicorn serves (``app.main:app``).
 
 from __future__ import annotations
 
+import functools
+import gc
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -33,6 +35,19 @@ from app.worker import open_job_queue
 logger = logging.getLogger(__name__)
 
 
+@functools.cache
+def freeze_startup_heap() -> None:
+    """Move what is alive once the app has started (~160k objects: modules, routes,
+    schemas) out of the cyclic collector's reach, once per process.
+
+    Otherwise the first full collection walks all of it (~80 ms) and lands on
+    whichever request happens to trigger it (board p95 151 ms → 75 ms with 10k ideas;
+    tests/ideas/test_performance.py).
+    """
+    gc.collect()
+    gc.freeze()
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, redact_exception_messages=settings.is_production)
@@ -54,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             async with open_job_queue(settings) as job_queue:
                 app.state.job_queue = job_queue
+                freeze_startup_heap()
                 yield
         finally:
             await engine.dispose()

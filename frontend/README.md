@@ -20,20 +20,20 @@ Open **`/design`** for the living design system (dev only — see below). With `
 sign in at `/login` by picking a fixture user; switch user any time from the user menu
 (**Switch user**, dev builds only).
 
-| Script                | What it does                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| `npm run dev`         | Vite dev server with API proxy                                                       |
-| `npm run dev:mock`    | Dev server with MSW mocks (`VITE_API_MOCKS=true`)                                    |
-| `npm run build`       | `tsc -b && vite build` → `dist/`                                                     |
-| `npm run preview`     | Serve the production build                                                           |
-| `npm run typecheck`   | `tsc -b`                                                                             |
-| `npm run lint`        | ESLint (typescript-eslint strict, react-hooks, jsx-a11y) + Prettier check            |
-| `npm run format`      | Prettier write (also sorts Tailwind classes)                                         |
-| `npm run test`        | Vitest unit/component tests (jsdom)                                                  |
-| `npm run test:pw`     | Playwright page tests + axe; starts `dev:mock` itself (port `PW_PORT`, 5174)         |
-| `npm run screenshots` | Light/dark/mobile screenshots into `../docs/screenshots/phase-1/` (`SCREENSHOT_DIR`) |
-| `npm run gen:api`     | `openapi-typescript src/api/generated/openapi.json -o src/api/generated/schema.d.ts` |
-| `npm run check`       | typecheck + lint + test + build — must pass before a task is done                    |
+| Script                | What it does                                                                                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`         | Vite dev server with API proxy                                                                                                                                    |
+| `npm run dev:mock`    | Dev server with MSW mocks (`VITE_API_MOCKS=true`)                                                                                                                 |
+| `npm run build`       | `tsc -b && vite build` → `dist/`                                                                                                                                  |
+| `npm run preview`     | Serve the production build                                                                                                                                        |
+| `npm run typecheck`   | `tsc -b`                                                                                                                                                          |
+| `npm run lint`        | ESLint (typescript-eslint strict, react-hooks, jsx-a11y) + Prettier check                                                                                         |
+| `npm run format`      | Prettier write (also sorts Tailwind classes)                                                                                                                      |
+| `npm run test`        | Vitest unit/component tests (jsdom)                                                                                                                               |
+| `npm run test:pw`     | Playwright page tests + axe; starts `dev:mock` itself (port `PW_PORT`, 5174)                                                                                      |
+| `npm run screenshots` | Every `*screenshots.spec.ts` (mock data) into `../docs/screenshots/phase-1/mock/` (`SCREENSHOT_DIR`); the real-stack set is `npm --prefix ../e2e run screenshots` |
+| `npm run gen:api`     | `openapi-typescript src/api/generated/openapi.json -o src/api/generated/schema.d.ts`                                                                              |
+| `npm run check`       | typecheck + lint + test + build — must pass before a task is done                                                                                                 |
 
 Environment flags (build time): `VITE_API_MOCKS=true` starts MSW; `VITE_ENABLE_DESIGN=true`
 keeps `/design` in a production build (otherwise it 404s and its code is tree-shaken out).
@@ -126,8 +126,15 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
 9. **Dark mode is automatic** if you only use tokens. Never use `dark:` for colours. The theme
    class can also be applied to a subtree (`<div className="dark">`).
 10. **Tables on phones:** `<Table mobile="cards">` turns rows into stacked cards below `md`; give
-    cells a `label` and mark the title cell `primary`. Avatar stacks: `AvatarGroup on="…"`
-    matches the ring to the background.
+    cells a `label` and mark the title cell `primary`. `mobile="container-cards"` does the same
+    whenever the table's own container is under 48rem (tables beside the sidebar), and makes it
+    a CSS container so cells can drop columns with `@3xl:` / `@max-4xl:` variants. Avatar
+    stacks: `AvatarGroup on="…"` matches the ring to the background.
+11. **Smaller pieces:** `KbdShortcut tone="accent"` for shortcut keys inside a primary button;
+    `EmptyState headingLevel={1|2}` when the empty state is the page (h1) or a section (h2);
+    `SegmentedControl size="score"` (36px, 44px on touch) for 1–5 scores. The Markdown renderer
+    (~47 KB gzip) is imported directly by the idea page, whose route chunk needs it anyway,
+    and lazily (`lazy()`) where it is only a preview (New idea).
 
 ## Adding a screen
 
@@ -262,6 +269,9 @@ nothing MSW-related ends up in `dist/`.
   Alice** with mock latency off; `test.use({ signedInAs: USERS.priya })` or `null` for signed
   out; `seriousViolations(page)` runs axe. Wait for the page's heading before pressing
   shortcuts. `PW_PORT=5191 npm run test:pw` to use another port.
+- Two Playwright runs at once share `test-results/` (pass `--output=<own dir>`), and the Vite
+  dev server reloads pages whenever someone saves a file, so a busy shared tree makes page
+  tests flaky: run them when nobody is editing.
 
 ## Theme, branding and fonts
 

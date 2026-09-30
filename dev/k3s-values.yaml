@@ -9,8 +9,11 @@ image:
 baseUrls:
   - http://localhost:18081
 
-# Dev-only login stub, so the app is usable without Keycloak.
+# Dev-only login stub, so the app is usable without Keycloak, and the demo data
+# (hook Job running `soundings seed`; a no-op once the database has projects).
 devLogin: true
+demo:
+  seed: true
 logLevel: DEBUG
 
 ingress:

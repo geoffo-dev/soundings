@@ -1,4 +1,5 @@
-"""The ``soundings`` command: ``api``, ``worker``, ``migrate``, ``wait-for-db``, ``openapi``."""
+"""The ``soundings`` command: ``api``, ``worker``, ``migrate``, ``wait-for-db``, ``seed``,
+``openapi``."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ logger = logging.getLogger("soundings.cli")
 
 # Commands that only talk to the database: they read DatabaseSettings, so they run
 # without the API's secrets (e.g. a Helm pre-upgrade migration Job).
-_DATABASE_COMMANDS = frozenset({"migrate", "wait-for-db"})
+_DATABASE_COMMANDS = frozenset({"migrate", "wait-for-db", "seed"})
 
 
 def start_metrics_server(settings: Settings) -> None:
@@ -87,6 +88,20 @@ def _wait_for_db(args: argparse.Namespace) -> int:
     return 0 if ready else 1
 
 
+def _seed(args: argparse.Namespace) -> int:
+    from app.seed import SeedRefused, check_allowed, run_seed
+
+    settings = get_database_settings()
+    try:
+        check_allowed(settings, force=args.force)
+    except SeedRefused as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 1
+    report = asyncio.run(run_seed(settings, reset=args.reset))
+    sys.stdout.write(f"{report.summary()}\n")
+    return 0
+
+
 def _openapi(args: argparse.Namespace) -> int:
     from app.main import app
     from app.openapi import export_openapi
@@ -132,6 +147,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=float, default=60.0, help="seconds to wait before giving up (default 60)"
     )
     wait.set_defaults(func=_wait_for_db)
+
+    seed = commands.add_parser(
+        "seed",
+        help="load demo data: people, projects and ideas (development and demos only)",
+        description=(
+            "Load the demo data (sign in as alice, the platform admin, with the dev login). "
+            "Does nothing when the database already has projects, unless --reset."
+        ),
+    )
+    seed.add_argument(
+        "--reset", action="store_true", help="delete all application data first, then seed"
+    )
+    seed.add_argument(
+        "--force", action="store_true", help="allow seeding when SOUNDINGS_ENVIRONMENT=production"
+    )
+    seed.set_defaults(func=_seed)
 
     openapi = commands.add_parser("openapi", help="export the OpenAPI document as sorted JSON")
     openapi.add_argument("--output", "-o", help="file to write (default: stdout)")

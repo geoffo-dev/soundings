@@ -54,12 +54,15 @@ export function DevUserSwitcher({ currentUserId }: { currentUserId: string }) {
             disabled={login.isPending}
             onSelect={() => {
               if (user.id === currentUserId) return
-              login.mutate(user.id, {
-                onSuccess: () => {
+              // Not mutate()'s onSuccess: the menu (and this component) is gone by the
+              // time the sign-in answers, and those callbacks don't run after unmount.
+              login.mutateAsync(user.id).then(
+                () => {
                   void router.invalidate()
                   toast.success(`Signed in as ${user.display_name}`)
                 },
-              })
+                () => undefined, // the mutation's own error toast covers it
+              )
             }}
           >
             <Avatar name={user.display_name} src={user.avatar_url} size="xs" decorative />

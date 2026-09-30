@@ -45,6 +45,25 @@ logLevel: INFO
 # app to development mode. Never enable on a shared or internet-facing install.
 devLogin: false
 
+# Demo data for trying Soundings out (development mode only: needs devLogin).
+demo:
+  # -- After install and every upgrade, run `soundings seed` in a hook Job: 12 people
+  # (sign in as alice, the platform admin), 3 projects and 45 ideas. Does nothing once
+  # the database has projects, so upgrades keep your changes.
+  seed: false
+
+# Sign-in sessions (server-side; the cookie holds only a random token).
+sessions:
+  # -- A session ends after this long without a request: ISO 8601 duration or seconds.
+  idleTimeout: PT12H
+  # -- A session ends this long after sign-in, however active it is (>= idleTimeout).
+  maxAge: P7D
+
+# Prometheus metrics, on their own port so the ingress never exposes them.
+metrics:
+  # -- Container and Service port of /metrics (Service port name "metrics").
+  port: 9090
+
 # The key that signs sessions and CSRF tokens. Unless existingSecret is set, the chart
 # generates a random key on first install and keeps it across upgrades (Helm lookup).
 # With Argo CD or `helm template`, lookup does not work: set existingSecret instead.
@@ -123,7 +142,7 @@ kagent:
 
 otel:
   # -- OTLP/HTTP base URL for traces, e.g. http://otel-collector.observability:4318.
-  # Empty: tracing off. Metrics are always on /metrics (Prometheus).
+  # Empty: tracing off. Metrics are always on /metrics (metrics.port).
   endpoint: ""
 
 # -- Extra environment variables for the API, worker and migration containers
@@ -187,6 +206,7 @@ worker:
   livenessProbe: {}
   podAnnotations: {}
 
+# Migration Job and init containers (also used by the demo seed Job).
 migrations:
   # -- Give up on a migration run after this many seconds.
   activeDeadlineSeconds: 900
@@ -324,12 +344,14 @@ externalDatabase:
 
 networkPolicy:
   enabled: false
-  # -- Who may reach the API port, as NetworkPolicy peers (e.g. your ingress
+  # -- Who may reach the API's HTTP port, as NetworkPolicy peers (e.g. your ingress
   # controller's namespace). Empty: any source. Pods of this release are always allowed.
   ingressFrom: []
-  # -- Also allow the Prometheus namespace(s) to scrape /metrics, as peers.
+  # -- Who may scrape the metrics port (e.g. the Prometheus namespace), as peers.
+  # Empty: any source. Pods of this release are always allowed.
   metricsFrom: []
 
+# Prometheus Operator ServiceMonitor scraping the Service's "metrics" port.
 serviceMonitor:
   enabled: false
   interval: 30s

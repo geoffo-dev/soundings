@@ -102,18 +102,27 @@ export function PeopleList({
                     value={person.id}
                     disabled={Boolean(reason)}
                     onSelect={() => onSelect(person)}
-                    aria-selected={isSelected || undefined}
                     className="h-auto min-h-11 py-1.5 sm:h-auto sm:min-h-10"
                   >
-                    <Avatar name={person.display_name} src={person.avatar_url} size="sm" decorative />
+                    <Avatar
+                      name={person.display_name}
+                      src={person.avatar_url}
+                      size="sm"
+                      decorative
+                    />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate">
                         {person.display_name}
                         {person.id === meId && <span className="text-muted"> (you)</span>}
+                        {/* cmdk owns aria-selected (the highlight), so say "chosen" in words. */}
+                        {isSelected && <span className="sr-only">, chosen</span>}
                       </span>
                       <span className="truncate text-xs text-muted">
                         {reason ??
-                          [person.project_role ? ROLE_NAMES[person.project_role] : null, person.email]
+                          [
+                            person.project_role ? ROLE_NAMES[person.project_role] : null,
+                            person.email,
+                          ]
                             .filter(Boolean)
                             .join(' · ')}
                       </span>

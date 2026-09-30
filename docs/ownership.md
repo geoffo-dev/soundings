@@ -14,7 +14,7 @@ the lead. The rules below are the same in both. The agent types live in
 | Owner | Paths |
 |---|---|
 | **lead** | `SPEC.md` (read-only; product owner's brief), `CLAUDE.md`, `.claude/`, `.gitignore`, `docs/` (except the qa paths below), `backend/app/schemas/`, `frontend/src/api/generated/` (`openapi.json`, `schema.d.ts`) |
-| **backend** | `backend/app/**` except `auth/`, `authz/`, `api_keys/` and `schemas/`; `backend/migrations/`; `backend/tests/**` except the identity and qa test paths; `backend/pyproject.toml`, `backend/uv.lock`, `backend/Makefile`, `backend/README.md` |
+| **backend** | `backend/app/**` (incl. the migrations in `app/migrations/`) except `auth/`, `authz/`, `api_keys/` and `schemas/`; `backend/tests/**` except the identity and qa test paths; `backend/pyproject.toml`, `backend/uv.lock`, `backend/Makefile`, `backend/README.md` |
 | **identity** | `backend/app/auth/`, `backend/app/authz/`, `backend/app/api_keys/`; tests in `backend/tests/auth/`, `backend/tests/authz/`, `backend/tests/api_keys/` |
 | **frontend** | `frontend/**` except `frontend/src/api/generated/` |
 | **platform** | `deploy/` (Helm chart, kagent examples), `dev/`, `scripts/`, `Dockerfile`, `.dockerignore`, `.gitlab-ci.yml`, `.github/`, the root `Makefile`, `.k3s/` (local state, git-ignored) |

@@ -1,5 +1,5 @@
 import { SearchX } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import {
   Command,
@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
 import { VisuallyHidden } from '@/components/ui/visually-hidden'
+import { isMac } from '@/lib/utils'
 
 export interface CommandAction {
   id: string
@@ -31,6 +32,11 @@ export interface CommandAction {
 export interface CommandGroupData {
   heading: string
   actions: CommandAction[]
+  /**
+   * Results for an earlier query that are about to be replaced (server search in
+   * flight): the highlight only rests here until the fresh results arrive.
+   */
+  pending?: boolean
 }
 
 export interface CommandPaletteProps {
@@ -49,6 +55,12 @@ function itemValue(action: CommandAction): string {
   return `${action.label} ${action.id}`
 }
 
+/** The keys cmdk moves the highlight with (arrows, Home/End, Ctrl+N/P/J/K on macOS). */
+function isNavigationKey(event: KeyboardEvent<HTMLDivElement>): boolean {
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return true
+  return isMac && event.ctrlKey && ['n', 'p', 'j', 'k'].includes(event.key)
+}
+
 /** Data-driven ⌘K palette: pass groups of actions; filtering and keyboard nav come from cmdk. */
 export function CommandPalette({
   open,
@@ -64,19 +76,53 @@ export function CommandPalette({
   const value = search ?? localSearch
   const setValue = onSearchChange ?? setLocalSearch
   const visibleGroups = groups.filter((group) => group.actions.length > 0)
+  const settled = new Set(
+    visibleGroups
+      .filter((group) => !group.pending)
+      .flatMap((group) => group.actions.map(itemValue)),
+  )
   const firstValue = visibleGroups[0]?.actions[0]
-  const firstKey = firstValue ? itemValue(firstValue) : ''
-  // Keep the highlight on the best match as results arrive (server search is async).
-  const [selected, setSelected] = useState(firstKey)
-  const [lastFirst, setLastFirst] = useState(firstKey)
-  if (firstKey !== lastFirst) {
-    setLastFirst(firstKey)
-    setSelected(firstKey)
+  // Where the highlight belongs: the first result that won't be replaced, else the first.
+  const target = [...settled][0] ?? (firstValue ? itemValue(firstValue) : '')
+  const targetSettled = settled.has(target)
+
+  // What you see highlighted is what Enter opens, so late server results never move
+  // the highlight once it rests on a current item ("anchored"), or once you moved it
+  // yourself ("picked"). While it rests on results that are about to be replaced, it
+  // follows `target`. cmdk proposes highlights itself (the first match on a new query,
+  // the next item when the highlighted one goes): we take them, then correct them
+  // after commit, so cmdk's own state always follows the `value` prop.
+  const [highlight, setHighlight] = useState({ value: target, anchored: false })
+  const [picked, setPicked] = useState(false)
+  const [lastSearch, setLastSearch] = useState(value)
+  if (value !== lastSearch) {
+    // A new query: cmdk proposes its first item (below), and the highlight follows
+    // `target` again until it is anchored.
+    setLastSearch(value)
+    setPicked(false)
+  }
+  useLayoutEffect(() => {
+    if (picked) return
+    // Syncing with cmdk's store (it only re-reads `value` when the prop changes, so a
+    // proposal can't be refused during render); before paint, so nothing flickers.
+    // Functional: cmdk's proposal from this same commit is already queued.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHighlight((current) =>
+      current.anchored || (current.value === target && !targetSettled)
+        ? current
+        : { value: target, anchored: targetSettled },
+    )
+  }, [picked, highlight, target, targetSettled])
+
+  const reset = () => {
+    setLocalSearch('')
+    setPicked(false)
+    setHighlight((current) => ({ ...current, anchored: false }))
   }
 
   const close = (then: () => void) => {
     onOpenChange(false)
-    setLocalSearch('')
+    reset()
     // Let the dialog start closing before navigation/side effects run.
     requestAnimationFrame(then)
   }
@@ -86,7 +132,7 @@ export function CommandPalette({
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next)
-        if (!next) setLocalSearch('')
+        if (!next) reset()
       }}
     >
       <DialogContent position="top" size="lg" hideClose className="overflow-hidden p-0">
@@ -96,9 +142,17 @@ export function CommandPalette({
             Search for a command or page and press Enter to run it.
           </DialogDescription>
         </VisuallyHidden>
-        <Command loop shouldFilter={shouldFilter} value={selected} onValueChange={setSelected}>
+        <Command
+          loop
+          shouldFilter={shouldFilter}
+          value={highlight.value}
+          onValueChange={(next) => setHighlight({ value: next, anchored: settled.has(next) })}
+          onKeyDown={(event) => {
+            if (isNavigationKey(event)) setPicked(true)
+          }}
+        >
           <CommandInput placeholder={placeholder} value={value} onValueChange={setValue} />
-          <CommandList>
+          <CommandList onPointerMove={() => setPicked(true)}>
             {loading && (
               <CommandLoading>
                 <div className="px-3 py-2 text-sm text-muted">Searching…</div>
@@ -120,9 +174,12 @@ export function CommandPalette({
                     onSelect={() => close(action.onSelect)}
                   >
                     {action.icon}
-                    <span className="truncate">{action.label}</span>
+                    <span className="min-w-0 truncate">{action.label}</span>
                     {action.hint && (
-                      <span className="truncate text-sm text-muted">{action.hint}</span>
+                      // Gives way to the label first when the row is short (phones).
+                      <span className="min-w-0 shrink-4 truncate text-sm text-muted in-data-[selected=true]:text-secondary">
+                        {action.hint}
+                      </span>
                     )}
                     {action.shortcut && <CommandShortcut keys={action.shortcut} />}
                   </CommandItem>

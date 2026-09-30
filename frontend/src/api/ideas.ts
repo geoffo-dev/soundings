@@ -172,8 +172,10 @@ const IDEA_CACHES = [queryKeys.ideas.all, queryKeys.work.all]
 /** After a change to one idea: store the response and refresh what depends on it. */
 function settleIdea(queryClient: QueryClient, key: string, idea?: IdeaDetail) {
   if (idea) {
-    queryClient.setQueryData(queryKeys.ideas.detail(key), idea)
+    // Summaries first: patchIdea also touches the detail, and summary fields
+    // (e.g. `permissions: {can_change_status}`) must not replace detail-only ones.
     patchIdea(queryClient, key, () => summaryFields(idea))
+    queryClient.setQueryData(queryKeys.ideas.detail(key), idea)
   }
   void queryClient.invalidateQueries({ queryKey: queryKeys.activity.idea(key) })
   void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.lists() })

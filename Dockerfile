@@ -5,6 +5,7 @@
 #   docker run --rm -p 8000:8000 -e SOUNDINGS_DATABASE_URL=... soundings:dev            # API + SPA
 #   docker run --rm -e SOUNDINGS_DATABASE_URL=... soundings:dev worker                  # worker
 #   docker run --rm -e SOUNDINGS_DATABASE_URL=... soundings:dev migrate                 # migrations
+#   docker run --rm -e SOUNDINGS_DATABASE_URL=... soundings:dev seed                    # demo data
 #
 # Build-time HTTPS behind a TLS-intercepting proxy: pass the CA bundle as a BuildKit
 # secret (never stored in a layer):  docker build --secret id=build_ca,src=/path/ca.pem .
@@ -58,18 +59,13 @@ RUN --mount=type=secret,id=build_ca,required=false \
     if [ -s /run/secrets/build_ca ]; then export SSL_CERT_FILE=/run/secrets/build_ca; fi; \
     uv sync --locked --no-dev --no-install-project --extra otel
 
-# Then the project itself, installed as a wheel (not editable).
+# Then the project itself, installed as a wheel (not editable). The wheel includes the
+# Alembic migrations (app/migrations) and the demo data (app/seed).
 COPY backend/README.md ./
 COPY backend/app ./app
 RUN --mount=type=secret,id=build_ca,required=false \
     if [ -s /run/secrets/build_ca ]; then export SSL_CERT_FILE=/run/secrets/build_ca; fi; \
-    uv sync --locked --no-dev --no-editable --extra otel
-
-# app.migrate looks for Alembic scripts in <dir containing the app package>/migrations,
-# i.e. next to the installed package in site-packages.
-COPY backend/migrations /app/venv/lib/python3.12/site-packages/migrations
-RUN rm -rf /app/venv/lib/python3.12/site-packages/migrations/__pycache__ \
-    && /app/venv/bin/python -m compileall -q /app/venv/lib/python3.12/site-packages/migrations \
+    uv sync --locked --no-dev --no-editable --extra otel \
     && /app/venv/bin/soundings --help >/dev/null
 
 # ---------------------------------------------------------------------------------
@@ -130,7 +126,9 @@ LABEL org.opencontainers.image.title="Soundings" \
 
 WORKDIR /app
 USER 10001:10001
-EXPOSE 8000
+# 8000: API + SPA. 9090: Prometheus /metrics (SOUNDINGS_METRICS_PORT; not on 8000 in
+# production).
+EXPOSE 8000 9090
 # No HEALTHCHECK: Kubernetes probes /healthz (liveness) and /readyz (readiness).
 ENTRYPOINT ["soundings"]
 CMD ["api"]

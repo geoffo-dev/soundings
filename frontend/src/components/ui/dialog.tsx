@@ -59,8 +59,11 @@ export function DialogContent({
         data-mobile={mobile}
         onEscapeKeyDown={(event) => {
           // Esc first closes an open autocomplete inside the dialog (TagInput, comboboxes).
+          // cmdk's search field is always aria-expanded (its list is inline), so it doesn't count.
           const target = event.target instanceof Element ? event.target : null
-          if (target?.closest('[role="combobox"][aria-expanded="true"]')) event.preventDefault()
+          if (target?.closest('[role="combobox"][aria-expanded="true"]:not([cmdk-input])')) {
+            event.preventDefault()
+          }
           onEscapeKeyDown?.(event)
         }}
         className={cn(

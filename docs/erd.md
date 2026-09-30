@@ -1,7 +1,7 @@
 # Data model (ERD)
 
 Phase 1 schema: `backend/app/models/` (SQLAlchemy 2, typed), created by the Alembic
-revision `backend/migrations/versions/20260930_0002_domain_tables.py`. The procrastinate
+revision `backend/app/migrations/versions/20260930_0002_domain_tables.py`. The procrastinate
 job-queue tables (revision `0001`) are not shown. API shapes are in
 [api/contract-phase1.md](api/contract-phase1.md).
 

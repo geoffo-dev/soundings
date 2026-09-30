@@ -4,14 +4,14 @@ With the bundled Postgres the api/worker pods migrate in an init container inste
 because a pre-install hook would run before the StatefulSet exists (README "Migrations").
 
 Hooks run before the release's own ConfigMap, Secret and ServiceAccount exist, so the
-Job carries its settings inline, reads secrets from existingSecrets or from the hook
-Secret below, and runs under the namespace's default ServiceAccount (no token mounted).
+Job carries its settings inline, reads the database password from
+externalDatabase.existingSecret or from the hook Secret below, and runs under the
+namespace's default ServiceAccount (no token mounted). Migrations need no other secret.
 */ -}}
 {{- if not .Values.postgresql.enabled }}
 {{- $fullname := include "soundings.fullname" . }}
 {{- $hookSecret := printf "%s-migrate" $fullname }}
-{{- $needsHookSecret := or (not .Values.secretKey.existingSecret) (and (not .Values.externalDatabase.existingSecret) .Values.externalDatabase.password) }}
-{{- if $needsHookSecret }}
+{{- if and (not .Values.externalDatabase.existingSecret) .Values.externalDatabase.password }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -27,13 +27,7 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 type: Opaque
 data:
-  {{- if not .Values.secretKey.existingSecret }}
-  # Migrations never use the key; production settings only require one to be present.
-  secret-key: {{ randAlphaNum 64 | b64enc }}
-  {{- end }}
-  {{- if and (not .Values.externalDatabase.existingSecret) .Values.externalDatabase.password }}
   database-password: {{ .Values.externalDatabase.password | b64enc }}
-  {{- end }}
 ---
 {{- end }}
 apiVersion: batch/v1
@@ -70,8 +64,8 @@ spec:
         - name: wait-for-db
           image: {{ include "soundings.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command:
-            {{- include "soundings.waitForDatabaseCommand" . | nindent 12 }}
+          args:
+            {{- include "soundings.waitForDatabaseArgs" . | nindent 12 }}
           env:
             {{- include "soundings.migrateEnv" . | trim | nindent 12 }}
           {{- with .Values.extraEnvFrom }}

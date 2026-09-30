@@ -1,5 +1,5 @@
 import { Lock, TriangleAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import type { AggregateScore, IdeaDetail } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +8,7 @@ import { formatScore } from '@/lib/scores'
 import { cn } from '@/lib/utils'
 
 import { RECOMMENDATION_LABELS, RECOMMENDATIONS } from './evaluation-form'
+import { useIdeaPage } from './idea-context'
 import { revealDelay, useReducedMotion } from './score-display'
 
 /** Criteria where evaluators differ by 2 or more (the disagreement rule, contract §3.8). */
@@ -46,11 +47,17 @@ export function useRevealOnce(hidden: boolean): boolean {
  * bar per criterion — or, for a pending evaluator, nothing but a lock (blind
  * evaluation: no numbers, no counts, no flag; role matrix §3).
  */
-export function ScorePanel({ idea, className }: { idea: IdeaDetail; className?: string }) {
+export function ScorePanel({ className }: { className?: string }) {
+  const { idea } = useIdeaPage()
+  return <ScoreSummary idea={idea} className={className} />
+}
+
+export function ScoreSummary({ idea, className }: { idea: IdeaDetail; className?: string }) {
   const reveal = useRevealOnce(idea.score_hidden)
+  const headingId = useId()
   return (
-    <section aria-labelledby="idea-score-heading" className={cn('flex flex-col gap-3', className)}>
-      <h2 id="idea-score-heading" className="text-sm font-medium text-primary">
+    <section aria-labelledby={headingId} className={cn('flex flex-col gap-3', className)}>
+      <h2 id={headingId} className="text-sm font-medium text-primary">
         Score
       </h2>
       {idea.score_hidden ? (
@@ -61,7 +68,7 @@ export function ScorePanel({ idea, className }: { idea: IdeaDetail; className?: 
         <p className="text-sm text-muted">
           {idea.evaluator_progress.total > 0
             ? 'Scores appear here as evaluators submit.'
-            : 'No scores yet. Invite evaluators to score this idea.'}
+            : 'No scores yet.'}
         </p>
       )}
     </section>

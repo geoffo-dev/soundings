@@ -1,0 +1,17 @@
+# Demo install: dev login and the demo data hook Job (development mode), with the
+# NetworkPolicies (the seed Job must reach the bundled Postgres) and a ServiceMonitor.
+baseUrls:
+  - http://soundings.localtest.me
+
+devLogin: true
+demo:
+  seed: true
+
+ingress:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+
+serviceMonitor:
+  enabled: true

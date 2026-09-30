@@ -3,13 +3,23 @@ import { Search } from 'lucide-react'
 import type { ComponentProps } from 'react'
 
 import { KbdShortcut } from '@/components/ui/kbd'
-import { cn } from '@/lib/utils'
+import { cn, isMac } from '@/lib/utils'
 
-/** cmdk primitives styled for Soundings. Used by CommandPalette and Combobox. */
-export function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive>) {
+/**
+ * cmdk primitives styled for Soundings. Used by CommandPalette and Combobox.
+ *
+ * cmdk's Ctrl+N/P/J/K bindings are on for macOS only: elsewhere Ctrl+K is the command
+ * palette's shortcut (mod+k), which cmdk would swallow as "move up".
+ */
+export function Command({
+  className,
+  vimBindings = isMac,
+  ...props
+}: ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
       data-slot="command"
+      vimBindings={vimBindings}
       className={cn('flex size-full flex-col overflow-hidden text-primary', className)}
       {...props}
     />

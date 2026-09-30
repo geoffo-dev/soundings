@@ -14,6 +14,11 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
 {{- if .Values.devLogin }}
    Dev login is ON (development mode): pick a user on the sign-in page.
    Never use devLogin on a shared or internet-facing install.
+{{- if .Values.demo.seed }}
+   Demo data is loaded by the {{ $fullname }}-seed hook Job (12 people, 3 projects, 45
+   ideas; a no-op once the database has projects). Sign in as Alice Anders, the platform
+   admin, or anyone else on the list.
+{{- end }}
 {{- else if .Values.breakGlass.enabled }}
    Use the break-glass admin:
 {{- if .Values.breakGlass.existingSecret }}

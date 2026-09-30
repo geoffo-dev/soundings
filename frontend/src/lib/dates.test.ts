@@ -7,6 +7,7 @@ import {
   formatDate,
   formatRelative,
   formatShortDate,
+  formatTime,
 } from '@/lib/dates'
 
 // Local-time fixture: Wednesday 30 September 2026, 12:00.
@@ -78,6 +79,14 @@ describe('formatDate', () => {
   it('follows the locale', () => {
     expect(formatDate(at(3), { now: NOW, locale: 'en-US' })).toBe('Sat, Oct 3')
     expect(formatDate(at(3), { now: NOW, locale: 'de' })).toBe('Sa., 3. Okt.')
+  })
+})
+
+describe('formatTime', () => {
+  it('gives the time today and the date on other days', () => {
+    expect(formatTime(at(0, -2, 5), en)).toBe('10:05')
+    expect(formatTime(at(-2, 6, 10), en)).toBe('28 Sept')
+    expect(formatTime(at(-1, 11, 59), en)).toBe('29 Sept')
   })
 })
 

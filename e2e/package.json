@@ -1,0 +1,30 @@
+{
+  "name": "soundings-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Playwright end-to-end tests against the real Soundings stack (API + built SPA + Postgres).",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "screenshots": "SCREENSHOTS=1 playwright test --project=screenshots",
+    "stack:start": "scripts/start-stack.sh",
+    "stack:stop": "scripts/stop-stack.sh",
+    "stack:reseed": "scripts/reseed.sh",
+    "check": "tsc --noEmit && prettier --check .",
+    "format": "prettier --write .",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.20.4",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "playwright-core": "1.56.1"
+  }
+}

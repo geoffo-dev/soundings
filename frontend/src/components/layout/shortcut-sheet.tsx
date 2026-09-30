@@ -21,7 +21,7 @@ export function ShortcutSheet({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        size="md"
+        size="xl"
         // Informational: focus the sheet itself, not the close button.
         onOpenAutoFocus={(event) => {
           event.preventDefault()
@@ -32,12 +32,24 @@ export function ShortcutSheet({
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>Shortcuts work anywhere except while you’re typing.</DialogDescription>
         </DialogHeader>
-        <DialogBody className="flex flex-col gap-5 pb-5">
+        {/* Two columns from sm, so it fits a laptop screen without scrolling. Scrolls on
+            short screens: focusable so the keyboard can scroll it too (axe
+            scrollable-region-focusable); a named region says what it is. */}
+        <DialogBody
+          tabIndex={0}
+          role="region"
+          aria-label="Shortcuts"
+          className="pb-5 focus-visible:outline-offset-[-2px] sm:columns-2 sm:gap-8"
+        >
           {SHORTCUT_GROUPS.map((group) => {
             const items = all.filter((shortcut) => shortcut.group === group)
             if (items.length === 0) return null
             return (
-              <section key={group} aria-labelledby={`shortcuts-${group}`}>
+              <section
+                key={group}
+                aria-labelledby={`shortcuts-${group}`}
+                className="mb-5 break-inside-avoid last:mb-0"
+              >
                 <h3 id={`shortcuts-${group}`} className="mb-1.5 text-xs font-medium text-muted">
                   {group}
                 </h3>

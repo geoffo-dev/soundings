@@ -14,6 +14,7 @@ import { CLOSED_RESOLUTIONS, IDEA_STATUSES, type IdeaStatus } from '@/lib/status
 
 import { FormActions, SettingsSection } from './settings-layout'
 import { DEFAULT_LABELS as DEFAULTS, labelChanges, type LabelKey } from './status-labels'
+
 const MAX_LENGTH = 24
 
 /**
@@ -29,6 +30,16 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
 
   const body = labelChanges(form, saved)
   const dirty = Object.keys(body).length > 0
+
+  // Saved elsewhere (another tab, a refetch): follow the server unless there are edits here.
+  const [seen, setSeen] = useState(project.status_labels)
+  if (project.status_labels !== seen) {
+    setSeen(project.status_labels)
+    if (!dirty) {
+      setSaved(project.status_labels)
+      setForm(project.status_labels)
+    }
+  }
   const shown = (key: LabelKey) => form[key].trim() || DEFAULTS[key]
 
   const set = (key: LabelKey, value: string) => {

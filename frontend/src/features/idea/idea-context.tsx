@@ -13,8 +13,8 @@ import { DEFAULT_RESOLUTION_LABELS, DEFAULT_STATUS_LABELS } from '@/lib/status'
 
 import type { IdeaTab } from './idea-search'
 
-/** Pickers opened from the sidebar, the palette, shortcuts or the phone action sheet. */
-export type IdeaDialog = 'status' | 'owner' | 'invite'
+/** Pickers opened from the sidebar, the palette, shortcuts or the phone details sheet. */
+export type IdeaDialog = 'status' | 'owner' | 'invite' | 'delete'
 
 export interface IdeaPageContextValue {
   /** The upper-case key from the URL (every `/ideas/{idea}` call uses it). */
@@ -33,9 +33,11 @@ export interface IdeaPageContextValue {
   openEvaluate: () => void
   /** Switches to Overview and focuses the comment box. */
   focusComment: () => void
+  /** The comment box calls this when it mounts or the request changes: true = focus yourself. */
+  takeCommentFocus: () => boolean
+  /** Bumped by `focusComment` so a mounted comment box knows to check. */
+  commentFocusRequest: number
   setTab: (tab: IdeaTab) => void
-  /** Polite screen-reader announcement (saves, reveals). */
-  announce: (message: string) => void
 }
 
 const IdeaPageContext = createContext<IdeaPageContextValue | null>(null)

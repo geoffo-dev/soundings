@@ -1,10 +1,11 @@
 import { useRouter } from '@tanstack/react-router'
-import { CircleAlert, Globe, Lock } from 'lucide-react'
+import { Archive, ArchiveRestore, CircleAlert, Globe, Lock } from 'lucide-react'
 import { useState } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
 import { useUpdateProject } from '@/api/projects'
 import type { Project, ProjectUpdate, ProjectVisibility } from '@/api/types'
+import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -82,6 +83,17 @@ export function GeneralSettings({ project, active }: { project: Project; active:
 
   const body = changes(form, saved)
   const dirty = Object.keys(body).length > 0
+
+  // Saved elsewhere (another tab, a refetch): follow the server unless there are edits here.
+  const [seen, setSeen] = useState(project)
+  if (project !== seen) {
+    setSeen(project)
+    if (!dirty) {
+      const fresh = fromProject(project)
+      setSaved(fresh)
+      setForm(fresh)
+    }
+  }
 
   const set = (patch: Partial<GeneralForm>) => {
     setForm((current) => ({ ...current, ...patch }))
@@ -249,7 +261,40 @@ export function GeneralSettings({ project, active }: { project: Project; active:
           }}
         />
       </form>
+      <ArchiveProject project={project} />
     </SettingsSection>
+  )
+}
+
+/**
+ * Archive or restore, applied at once with an Undo toast (wireframe 07:
+ * destructive-ish actions undo rather than confirm).
+ */
+function ArchiveProject({ project }: { project: Project }) {
+  const update = useUpdateProject(project.slug)
+  const archived = Boolean(project.archived_at)
+  return (
+    <div className="flex max-w-2xl flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-sm font-medium text-primary">
+          {archived ? 'This project is archived' : 'Archive this project'}
+        </h3>
+        <p className="text-sm text-muted">
+          {archived
+            ? 'Its ideas are read-only and it is hidden from the sidebar, search and My work. Restore it to work on it again.'
+            : 'Makes its ideas read-only and hides it from the sidebar, search and My work. Nothing is deleted; you can restore it at any time.'}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        className="shrink-0"
+        loading={update.isPending}
+        onClick={() => update.mutate({ archived: !archived })}
+      >
+        {archived ? <ArchiveRestore /> : <Archive />}
+        {archived ? 'Restore project' : 'Archive project'}
+      </Button>
+    </div>
   )
 }
 

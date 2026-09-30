@@ -17,3 +17,8 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: http
       protocol: TCP
+    # Prometheus /metrics (ServiceMonitor). The ingress / HTTPRoute only route "http".
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP

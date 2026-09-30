@@ -6,6 +6,7 @@
  *   formatRelative(iso, { style: 'narrow' })   "5m ago" (dense tables)
  *   formatDate(iso)          "Fri 3 Oct" (+ year when not this year)
  *   formatDateTime(iso)      "Friday, 3 October 2026 at 15:20" (tooltips, title attributes)
+ *   formatTime(iso)          "15:20" today, else "12 Sept" (e.g. "Draft saved 15:20")
  *   dueDate(iso)             { label: "Due tomorrow" | "Overdue 2 days" | …, tone }
  *
  * UI code renders times with <RelativeTime> (components/ui/relative-time.tsx),
@@ -97,6 +98,18 @@ export function formatDateTime(
   return new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short' }).format(
     toDate(value),
   )
+}
+
+/**
+ * "10:42" today, "28 Sept" on any other day (e.g. "Draft saved 10:42"): a bare time
+ * from two days ago would read as today.
+ */
+export function formatTime(
+  value: DateInput,
+  { now = Date.now(), locale = currentLocale() }: FormatOptions = {},
+) {
+  if (calendarDaysBetween(value, now) !== 0) return formatShortDate(value, { now, locale })
+  return new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(toDate(value))
 }
 
 export interface RelativeOptions extends FormatOptions {

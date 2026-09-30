@@ -199,6 +199,9 @@ SOUNDINGS_BASE_URLS: {{ join "," .Values.baseUrls | quote }}
 SOUNDINGS_TRUSTED_PROXIES: {{ join "," .Values.trustedProxies | quote }}
 SOUNDINGS_LOG_LEVEL: {{ .Values.logLevel | quote }}
 SOUNDINGS_DATABASE_URL: {{ include "soundings.databaseUrl" . | quote }}
+SOUNDINGS_METRICS_PORT: {{ .Values.metrics.port | quote }}
+SOUNDINGS_SESSION_IDLE_TIMEOUT: {{ .Values.sessions.idleTimeout | quote }}
+SOUNDINGS_SESSION_MAX_AGE: {{ .Values.sessions.maxAge | quote }}
 SOUNDINGS_WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
 SOUNDINGS_FEATURE_PUBLIC_SUBMISSION: {{ .Values.features.publicSubmission | quote }}
 SOUNDINGS_FEATURE_AI: {{ .Values.features.ai | quote }}
@@ -232,13 +235,8 @@ SOUNDINGS_SMTP_CA_BUNDLE: {{ include "soundings.smtpCaPath" . | quote }}
 {{- end }}
 
 {{/* env entries for the secrets of api/worker pods (the chart's Secrets exist by then). */}}
-{{- define "soundings.secretEnv" -}}
-{{- $fullname := include "soundings.fullname" . -}}
-- name: SOUNDINGS_SECRET_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "soundings.secretKey.secretName" . }}
-      key: {{ include "soundings.secretKey.key" . }}
+{{/* env entry for the database password, when there is one (api/worker pods and Jobs). */}}
+{{- define "soundings.databasePasswordEnv" -}}
 {{- if include "soundings.database.hasPassword" . }}
 - name: SOUNDINGS_DATABASE_PASSWORD
   valueFrom:
@@ -246,6 +244,27 @@ SOUNDINGS_SMTP_CA_BUNDLE: {{ include "soundings.smtpCaPath" . | quote }}
       name: {{ include "soundings.database.secretName" . }}
       key: {{ include "soundings.database.secretKey" . }}
 {{- end }}
+{{- end }}
+
+{{/*
+env for containers that only talk to the database (wait-for-db, migrate, seed): the
+password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
+*/}}
+{{- define "soundings.databaseEnv" -}}
+{{ include "soundings.databasePasswordEnv" . }}
+{{- with .Values.extraEnv }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{- define "soundings.secretEnv" -}}
+{{- $fullname := include "soundings.fullname" . -}}
+- name: SOUNDINGS_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "soundings.secretKey.secretName" . }}
+      key: {{ include "soundings.secretKey.key" . }}
+{{- include "soundings.databasePasswordEnv" . }}
 {{- if and .Values.oidc.issuer (or .Values.oidc.existingSecret .Values.oidc.clientSecret) }}
 - name: SOUNDINGS_OIDC_CLIENT_SECRET
   valueFrom:
@@ -314,28 +333,10 @@ SOUNDINGS_SMTP_CA_BUNDLE: {{ include "soundings.smtpCaPath" . | quote }}
 Pods
 --------------------------------------------------------------------------- */}}
 
-{{/*
-Command for an init container that waits until the database accepts connections
-(same image, same settings as the app). Argument: seconds to wait.
-*/}}
-{{- define "soundings.waitForDatabaseCommand" -}}
-- python
-- -c
-- |
-  import sys, time
-  import psycopg
-  from app.config import get_settings
-  deadline = time.monotonic() + float(sys.argv[1])
-  while True:
-      try:
-          psycopg.connect(get_settings().database_dsn, connect_timeout=5).close()
-          print("database is reachable")
-          break
-      except psycopg.OperationalError as exc:
-          if time.monotonic() > deadline:
-              sys.exit(f"database not reachable: {exc}")
-          print("waiting for the database...")
-          time.sleep(2)
+{{/* Arguments of a container that waits until the database accepts connections. */}}
+{{- define "soundings.waitForDatabaseArgs" -}}
+- wait-for-db
+- --timeout
 - {{ .Values.migrations.waitForDatabaseSeconds | quote }}
 {{- end }}
 
@@ -392,42 +393,42 @@ schema themselves (after waiting for the database); see README "Migrations".
 {{- define "soundings.appInitContainers" -}}
 {{- if .Values.postgresql.enabled }}
 initContainers:
-  - name: wait-for-db
-    image: {{ include "soundings.image" . }}
-    imagePullPolicy: {{ .Values.image.pullPolicy }}
-    command:
-      {{- include "soundings.waitForDatabaseCommand" . | nindent 6 }}
-    envFrom:
-      {{- include "soundings.envFrom" . | nindent 6 }}
-    env:
-      {{- include "soundings.secretEnv" . | nindent 6 }}
-    resources:
-      {{- toYaml .Values.migrations.resources | nindent 6 }}
-    securityContext:
-      {{- toYaml .Values.securityContext | nindent 6 }}
-    volumeMounts:
-      {{- include "soundings.volumeMounts" . | nindent 6 }}
-  - name: migrate
-    image: {{ include "soundings.image" . }}
-    imagePullPolicy: {{ .Values.image.pullPolicy }}
-    args: ["migrate"]
-    envFrom:
-      {{- include "soundings.envFrom" . | nindent 6 }}
-    env:
-      {{- include "soundings.secretEnv" . | nindent 6 }}
-    resources:
-      {{- toYaml .Values.migrations.resources | nindent 6 }}
-    securityContext:
-      {{- toYaml .Values.securityContext | nindent 6 }}
-    volumeMounts:
-      {{- include "soundings.volumeMounts" . | nindent 6 }}
+  {{- include "soundings.databaseContainer" (dict "ctx" . "name" "wait-for-db" "args" (include "soundings.waitForDatabaseArgs" .)) | nindent 2 }}
+  {{- include "soundings.databaseContainer" (dict "ctx" . "name" "migrate" "args" "- migrate") | nindent 2 }}
 {{- end }}
 {{- end }}
 
 {{/*
+A container of the app image that only needs the database settings (ConfigMap) and
+password: wait-for-db, migrate, seed.
+Usage: include "soundings.databaseContainer" (dict "ctx" $ "name" "migrate" "args" "- migrate")
+*/}}
+{{- define "soundings.databaseContainer" -}}
+{{- $ctx := .ctx -}}
+- name: {{ .name }}
+  image: {{ include "soundings.image" $ctx }}
+  imagePullPolicy: {{ $ctx.Values.image.pullPolicy }}
+  args:
+    {{- .args | nindent 4 }}
+  envFrom:
+    {{- include "soundings.envFrom" $ctx | nindent 4 }}
+  {{- with (include "soundings.databaseEnv" $ctx | trim) }}
+  env:
+    {{- . | nindent 4 }}
+  {{- end }}
+  resources:
+    {{- toYaml $ctx.Values.migrations.resources | nindent 4 }}
+  securityContext:
+    {{- toYaml $ctx.Values.securityContext | nindent 4 }}
+  volumeMounts:
+    {{- include "soundings.volumeMounts" $ctx | nindent 4 }}
+{{- end }}
+
+{{/*
 env and volume mounts of the migration hook Job (external database only): settings
-inline and secrets from existingSecrets or the "<fullname>-migrate" hook Secret, because
-hooks run before the release's ConfigMap and Secret exist.
+inline and the database password from externalDatabase.existingSecret or the
+"<fullname>-migrate" hook Secret, because hooks run before the release's ConfigMap and
+Secret exist. Migrations need no other secret.
 */}}
 {{- define "soundings.migrateEnv" -}}
 {{- $hookSecret := printf "%s-migrate" (include "soundings.fullname" .) -}}
@@ -435,11 +436,6 @@ hooks run before the release's ConfigMap and Secret exist.
 - name: {{ $name }}
   value: {{ $value | quote }}
 {{- end }}
-- name: SOUNDINGS_SECRET_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.secretKey.existingSecret | default $hookSecret }}
-      key: {{ include "soundings.secretKey.key" . }}
 {{- if .Values.externalDatabase.existingSecret }}
 - name: SOUNDINGS_DATABASE_PASSWORD
   valueFrom:
@@ -481,6 +477,9 @@ Validation (errors a JSON schema cannot express)
 {{- end }}
 {{- if and .Values.httpRoute.enabled (not .Values.httpRoute.parentRefs) }}
 {{- fail "httpRoute.parentRefs is required when httpRoute.enabled=true" }}
+{{- end }}
+{{- if and .Values.demo.seed (not .Values.devLogin) }}
+{{- fail "demo.seed needs devLogin=true: demo data is only loaded in development mode" }}
 {{- end }}
 {{- if and .Values.autoscaling.enabled (lt (int .Values.autoscaling.maxReplicas) (int .Values.autoscaling.minReplicas)) }}
 {{- fail "autoscaling.maxReplicas must be >= autoscaling.minReplicas" }}

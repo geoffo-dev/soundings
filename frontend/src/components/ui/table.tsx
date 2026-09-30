@@ -4,16 +4,69 @@ import { createContext, use, type ComponentProps, type ReactNode, type Ref } fro
 import { cn } from '@/lib/utils'
 
 /**
- * How a table behaves below `md` (768px):
+ * How a table behaves when it is narrow:
  * - `scroll` (default): the table keeps its columns and scrolls sideways.
- * - `cards`: the header is hidden and every row becomes a stacked card; each
- *   cell shows its `label` above the value, and the `primary` cell (the title)
- *   spans the full width. Explicit ARIA roles keep the table semantics that
- *   `display: block/flex` would otherwise drop in some browsers.
+ * - `cards`: below `md` (768px viewport) the header is hidden and every row
+ *   becomes a stacked card; each cell shows its `label` above the value, and
+ *   the `primary` cell (the title) spans the full width. Explicit ARIA roles
+ *   keep the table semantics that `display: block/flex` would otherwise drop
+ *   in some browsers.
+ * - `container-cards`: the same cards, but whenever the table's own container
+ *   is narrower than 48rem (768px) — for tables that share the screen with a
+ *   sidebar, where the viewport says little about the room left. The
+ *   container is a CSS container, so cells can also use `@3xl:` / `@max-3xl:`
+ *   (and wider) variants to hide columns as the table narrows.
  */
-export type TableMobileLayout = 'scroll' | 'cards'
+export type TableMobileLayout = 'scroll' | 'cards' | 'container-cards'
+
+type CardLayout = Exclude<TableMobileLayout, 'scroll'>
+
+/** The card styles per layout (static class names, so Tailwind generates them). */
+const CARDS: Record<
+  CardLayout,
+  {
+    container: string
+    table: string
+    header: string
+    body: string
+    row: string
+    cell: string
+    primary: string
+    field: string
+    label: string
+  }
+> = {
+  cards: {
+    container: 'md:overflow-x-auto',
+    table: 'max-md:block',
+    header: 'max-md:sr-only',
+    body: 'max-md:block',
+    row: 'max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:gap-y-2 max-md:px-4 max-md:py-3',
+    cell: 'max-md:h-auto max-md:p-0 max-md:first:pl-0 max-md:last:pr-0',
+    primary: 'max-md:basis-full',
+    field: 'max-md:flex max-md:flex-col max-md:gap-0.5',
+    label: 'md:hidden',
+  },
+  'container-cards': {
+    container: '@container overflow-x-auto',
+    table: '@max-3xl:block',
+    header: '@max-3xl:sr-only',
+    body: '@max-3xl:block',
+    row: '@max-3xl:flex @max-3xl:flex-wrap @max-3xl:items-center @max-3xl:gap-x-4 @max-3xl:gap-y-2 @max-3xl:px-4 @max-3xl:py-3',
+    cell: '@max-3xl:h-auto @max-3xl:p-0 @max-3xl:first:pl-0 @max-3xl:last:pr-0',
+    primary: '@max-3xl:basis-full',
+    field: '@max-3xl:flex @max-3xl:flex-col @max-3xl:gap-0.5',
+    label: '@3xl:hidden',
+  },
+}
 
 const TableLayout = createContext<TableMobileLayout>('scroll')
+
+/** The card styles of the table around, or null for a plain (scrolling) table. */
+function useCards() {
+  const layout = use(TableLayout)
+  return layout === 'scroll' ? null : CARDS[layout]
+}
 
 export interface TableProps extends ComponentProps<'table'> {
   mobile?: TableMobileLayout
@@ -29,7 +82,7 @@ export function Table({
   containerClassName,
   ...props
 }: TableProps) {
-  const cards = mobile === 'cards'
+  const cards = mobile === 'scroll' ? null : CARDS[mobile]
   return (
     <TableLayout value={mobile}>
       <div
@@ -37,17 +90,13 @@ export function Table({
         data-slot="table-container"
         className={cn(
           'relative w-full',
-          cards ? 'md:overflow-x-auto' : 'overflow-x-auto',
+          cards ? cards.container : 'overflow-x-auto',
           containerClassName,
         )}
       >
         <table
           role={cards ? 'table' : undefined}
-          className={cn(
-            'w-full caption-bottom border-collapse text-sm',
-            cards && 'max-md:block',
-            className,
-          )}
+          className={cn('w-full caption-bottom border-collapse text-sm', cards?.table, className)}
           {...props}
         />
       </div>
@@ -56,40 +105,35 @@ export function Table({
 }
 
 export function TableHeader({ className, ...props }: ComponentProps<'thead'>) {
-  const cards = use(TableLayout) === 'cards'
+  const cards = useCards()
   return (
     <thead
       role={cards ? 'rowgroup' : undefined}
-      className={cn(
-        '[&_tr]:border-b [&_tr]:hover:bg-transparent',
-        cards && 'max-md:sr-only',
-        className,
-      )}
+      className={cn('[&_tr]:border-b [&_tr]:hover:bg-transparent', cards?.header, className)}
       {...props}
     />
   )
 }
 
 export function TableBody({ className, ...props }: ComponentProps<'tbody'>) {
-  const cards = use(TableLayout) === 'cards'
+  const cards = useCards()
   return (
     <tbody
       role={cards ? 'rowgroup' : undefined}
-      className={cn('[&_tr:last-child]:border-0', cards && 'max-md:block', className)}
+      className={cn('[&_tr:last-child]:border-0', cards?.body, className)}
       {...props}
     />
   )
 }
 
 export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
-  const cards = use(TableLayout) === 'cards'
+  const cards = useCards()
   return (
     <tr
       role={cards ? 'row' : undefined}
       className={cn(
         'border-b border-subtle transition-colors duration-100 hover:bg-subtle data-[state=selected]:bg-accent-subtle',
-        cards &&
-          'max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:gap-y-2 max-md:px-4 max-md:py-3',
+        cards?.row,
         className,
       )}
       {...props}
@@ -98,7 +142,7 @@ export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
 }
 
 export function TableHead({ className, ...props }: ComponentProps<'th'>) {
-  const cards = use(TableLayout) === 'cards'
+  const cards = useCards()
   return (
     <th
       role={cards ? 'columnheader' : undefined}
@@ -174,21 +218,20 @@ export function TableCell({
   children,
   ...props
 }: TableCellProps) {
-  const cards = use(TableLayout) === 'cards'
+  const cards = useCards()
   return (
     <td
       role={cards ? 'cell' : undefined}
       className={cn(
         'h-11 px-3 align-middle text-primary first:pl-4 last:pr-4',
-        cards && 'max-md:h-auto max-md:p-0 max-md:first:pl-0 max-md:last:pr-0',
-        cards && primary && 'max-md:basis-full',
-        cards && !primary && 'max-md:flex max-md:flex-col max-md:gap-0.5',
+        cards?.cell,
+        cards && (primary ? cards.primary : cards.field),
         className,
       )}
       {...props}
     >
       {cards && label && !primary && (
-        <span aria-hidden="true" className="text-xs text-muted md:hidden">
+        <span aria-hidden="true" className={cn('text-xs text-muted', cards.label)}>
           {label}
         </span>
       )}

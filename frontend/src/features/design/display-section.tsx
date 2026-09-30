@@ -395,6 +395,12 @@ export function ContentSection() {
             <Example label='keys="shift+enter"'>
               <KbdShortcut keys="shift+enter" />
             </Example>
+            <Example label='tone="accent" (in a primary button)'>
+              <span className="inline-flex h-8 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-accent-foreground">
+                New idea
+                <KbdShortcut keys="n" tone="accent" />
+              </span>
+            </Example>
           </Specimen>
           <Specimen title="Separator & ScrollArea">
             <ScrollArea focusable aria-label="Idea titles" className="h-32 rounded-md border">

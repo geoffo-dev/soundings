@@ -9,10 +9,11 @@
  */
 import type { InfiniteData, QueryClient, QueryKey } from '@tanstack/react-query'
 
-import { ideaCacheId, queryKeys } from '@/api/keys'
+import { ideaCacheId, normaliseFilters, queryKeys } from '@/api/keys'
 import type {
   Board,
   IdeaDetail,
+  IdeaFilters,
   IdeaPage,
   IdeaStatus,
   IdeaSummary,
@@ -106,34 +107,76 @@ function mapPages(
   return { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map(map) })) }
 }
 
-/** Moves a card between board columns (status change), keeping counts right. */
+/**
+ * Moves a card between board columns (status change), keeping counts right.
+ * The card may be on a column's first page (the board) or on a page loaded
+ * with "Show more" (that column's `list_ideas` query with the board's filters).
+ */
 export function moveOnBoards(
   queryClient: QueryClient,
   ref: string,
   to: { status: IdeaStatus; resolution: Resolution | null; status_label: string },
 ): void {
-  queryClient.setQueriesData<Board>({ queryKey: queryKeys.ideas.boards() }, (data) => {
-    if (!data) return data
-    const card = data.columns.flatMap((column) => column.items).find((item) => matches(item, ref))
-    if (!card) return data
-    const moved: IdeaSummary = { ...card, ...to, last_activity_at: new Date().toISOString() }
-    return {
-      columns: data.columns.map((column) => {
-        const had = column.items.some((item) => matches(item, ref))
-        const gets = column.status === to.status
-        let items = had ? column.items.filter((item) => !matches(item, ref)) : column.items
-        if (gets) items = [moved, ...items]
-        const count = column.count - (had ? 1 : 0) + (gets ? 1 : 0)
-        let resolutionCounts = column.resolution_counts
-        if (resolutionCounts && column.status === 'closed') {
-          resolutionCounts = { ...resolutionCounts }
-          if (had && card.resolution) resolutionCounts[card.resolution] -= 1
-          if (gets && to.resolution) resolutionCounts[to.resolution] += 1
-        }
-        return { ...column, items, count, resolution_counts: resolutionCounts }
-      }),
-    }
-  })
+  for (const [key, data] of queryClient.getQueriesData<Board>({
+    queryKey: queryKeys.ideas.boards(),
+  })) {
+    if (!data) continue
+    const [, , slug, filters] = key as readonly [string, string, string, IdeaFilters | undefined]
+    const card =
+      data.columns.flatMap((column) => column.items).find((item) => matches(item, ref)) ??
+      findLoadedMore(queryClient, slug, filters, ref)
+    if (card) queryClient.setQueryData<Board>(key, moveCard(data, card, to))
+  }
+}
+
+function moveCard(
+  data: Board,
+  card: IdeaSummary,
+  to: { status: IdeaStatus; resolution: Resolution | null; status_label: string },
+): Board {
+  const moved: IdeaSummary = { ...card, ...to, last_activity_at: new Date().toISOString() }
+  return {
+    columns: data.columns.map((column) => {
+      const leaves = column.status === card.status
+      const gets = column.status === to.status
+      let items = column.items.filter((item) => item.id !== card.id)
+      if (gets) items = [moved, ...items]
+      const count = column.count - (leaves ? 1 : 0) + (gets ? 1 : 0)
+      let resolutionCounts = column.resolution_counts
+      if (resolutionCounts && column.status === 'closed') {
+        resolutionCounts = { ...resolutionCounts }
+        if (leaves && card.resolution) resolutionCounts[card.resolution] -= 1
+        if (gets && to.resolution) resolutionCounts[to.resolution] += 1
+      }
+      return { ...column, items, count, resolution_counts: resolutionCounts }
+    }),
+  }
+}
+
+/** A card from a column's "Show more" pages: a one-status list with the board's filters. */
+function findLoadedMore(
+  queryClient: QueryClient,
+  slug: string,
+  boardFilters: IdeaFilters | undefined,
+  ref: string,
+): IdeaSummary | undefined {
+  const board = filterKey(boardFilters ?? {})
+  for (const [key, data] of queryClient.getQueriesData<InfiniteData<IdeaPage>>({
+    queryKey: queryKeys.ideas.projectLists(slug),
+  })) {
+    const { status, resolution: _resolution, ...rest } = (key[3] ?? {}) as IdeaFilters
+    if (status?.length !== 1 || filterKey(rest) !== board) continue
+    const found = data?.pages.flatMap((page) => page.items).find((item) => matches(item, ref))
+    if (found) return found
+  }
+  return undefined
+}
+
+/** Normalised filters as a string that ignores key order. */
+function filterKey(filters: IdeaFilters): string {
+  return JSON.stringify(
+    Object.entries(normaliseFilters(filters)).sort(([a], [b]) => a.localeCompare(b)),
+  )
 }
 
 /** Finds an idea's summary in any list, board or My work cache (for instant titles). */

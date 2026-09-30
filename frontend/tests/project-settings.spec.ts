@@ -190,6 +190,29 @@ test('status labels: rename with a live preview, then the board uses them', asyn
   await expect(page.getByText('Unsaved changes')).toBeVisible()
 })
 
+test('archive applies at once with Undo; admins restore it from the board', async ({ page }) => {
+  await openSettings(page)
+  await page.getByRole('button', { name: 'Archive project' }).click()
+  await expect(toast(page, 'Internal Tools archived')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'This project is archived' })).toBeVisible()
+  // It leaves the sidebar (archived projects are hidden by default).
+  const sidebar = page.getByRole('navigation', { name: 'Main' })
+  await expect(sidebar.getByRole('link', { name: /Internal Tools/ })).toHaveCount(0)
+  await toast(page, 'Internal Tools archived').getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByRole('button', { name: 'Archive project' })).toBeVisible()
+  await expect(sidebar.getByRole('link', { name: /Internal Tools/ })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Archive project' }).click()
+  await page.getByRole('link', { name: 'Back to ideas' }).click()
+  await expect(page.getByText('This project is archived. Its ideas are read-only.')).toBeVisible()
+  const main = page.getByRole('main')
+  await expect(main.getByRole('button', { name: /New idea/ })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Restore', exact: true }).click()
+  await expect(toast(page, 'Internal Tools restored')).toBeVisible()
+  await expect(page.getByText('This project is archived. Its ideas are read-only.')).toBeHidden()
+  await expect(main.getByRole('button', { name: /New idea/ })).toBeVisible()
+})
+
 test('members of a project see its settings read-only', async ({ page }) => {
   await page.goto('/p/customer-innovation/settings')
   await expect(
@@ -217,7 +240,7 @@ test.describe('on a phone (390px)', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
   test('settings fit the screen', async ({ page }) => {
-    for (const tab of ['', 'members', 'rubric']) {
+    for (const tab of ['', 'members', 'rubric', 'statuses']) {
       await openSettings(page, tab)
       const overflow = await page.evaluate(() => {
         const main = document.querySelector('main')

@@ -1,18 +1,14 @@
+import type { ValidationProblem } from '@/api/types'
+
 /**
  * The API reports failures as RFC 9457 problem+json. Every non-2xx response is
  * turned into an ApiError, so UI code can rely on `status`, `code`, `title`.
+ *
+ * The body is the contract's `Problem` (or `ValidationProblem` with field `errors`,
+ * `loc` + `msg`). Every field is optional: a proxy or gateway in front of the API
+ * may answer with no body or a different one.
  */
-export interface ProblemDetails {
-  type?: string
-  title?: string
-  status?: number
-  detail?: string
-  instance?: string
-  /** Stable machine-readable error code, e.g. "evaluation_closed". */
-  code?: string
-  /** Field-level validation messages, if any. */
-  errors?: { field?: string; loc?: (string | number)[]; message?: string; msg?: string }[]
-}
+export type ProblemDetails = Partial<ValidationProblem>
 
 export class ApiError extends Error {
   readonly status: number
@@ -53,9 +49,10 @@ export class ApiError extends Error {
   get fieldErrors(): Record<string, string> {
     const out: Record<string, string> = {}
     for (const entry of this.problem?.errors ?? []) {
-      const field = entry.field ?? entry.loc?.[entry.loc.length - 1]
-      const message = entry.message ?? entry.msg
-      if (field !== undefined && message && !(String(field) in out)) out[String(field)] = message
+      const field = entry.loc.at(-1)
+      if (field !== undefined && entry.msg && !(String(field) in out)) {
+        out[String(field)] = entry.msg
+      }
     }
     return out
   }

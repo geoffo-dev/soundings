@@ -1,12 +1,11 @@
 # Keep the build context small and free of local state. The Dockerfile only needs
-# backend/{pyproject.toml,uv.lock,README.md,app,migrations} and frontend sources.
+# backend/{pyproject.toml,uv.lock,README.md,app} and frontend sources.
 **
 
 !backend/pyproject.toml
 !backend/uv.lock
 !backend/README.md
 !backend/app/
-!backend/migrations/
 
 !frontend/
 frontend/node_modules/

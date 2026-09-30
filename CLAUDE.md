@@ -30,17 +30,19 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 ## Repository layout
 
 ```
-backend/          FastAPI app (app/), Alembic (migrations/), tests/ — uv, Python 3.12
+backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the wheel),
+                  tests/ — uv, Python 3.12; app/seed/ is the demo story (`soundings seed`)
   app/schemas/      API contract (lead)          app/authz/ app/auth/ app/api_keys/ (identity)
 frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 4
   src/api/generated/  openapi.json + schema.d.ts (lead, generated)
   src/components/ui/  design system; /design shows it (dev only)
 deploy/helm/      Helm chart          deploy/kagent/  example agent manifests
 dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit
-e2e/              Playwright acceptance tests + screenshots (qa; from Phase 1)
+e2e/              Playwright e2e against the real stack + review screenshots (qa)
 scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers
 docs/             ADRs, role matrix, ownership, wireframes, guides, research,
-                  screenshots/phase-N/ (review screenshots, light/dark/390 px)
+                  test-plans/phase-N.md (qa), screenshots/phase-N/ (real-stack review
+                  screenshots, light/dark/390 px; the frontend's mock ones in mock/)
 .claude/          settings.json (team env, permissions, hook), agents/ (8 agent types)
 Dockerfile        one image: API + built SPA; `worker` and `migrate` subcommands
 Makefile          root tasks (below)
@@ -57,31 +59,51 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make check-frontend` | `npm --prefix frontend run check`: tsc, eslint + prettier, vitest, build |
 | `make check-helm` | `helm lint --strict` + `helm template` for defaults and `deploy/helm/ci/*-values.yaml`, via the helm container |
 | `make check-scripts` | `bash -n` + shellcheck (when available) on `scripts/` |
+| `scripts/check-task.sh [area…]` | The TaskCompleted gate by hand: `backend frontend helm e2e scripts` (e2e = `npm --prefix e2e run check`); no args = areas with uncommitted changes, `CHECK_TASK_ALL=1` = all |
 | `make dev-up` / `dev-down` / `dev-logs` | Dev services via `docker compose -f dev/docker-compose.yml` |
 | `make dev` | Prints how to run API, worker and SPA against the dev services |
-| `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`) |
-| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`soundings-k3s`), import image, load + `helm upgrade --install`, smoke test |
+| `make seed` | Migrate + load the demo data into `SOUNDINGS_DATABASE_URL` (default: the dev compose DB); a no-op once there are projects, `RESET=1` wipes app data first. Who's who: `dev/README.md` |
+| `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`). This sandbox has no Debian mirror: add `IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export then fails) |
+| `make demo` / `demo-down` | Build the image and run it with Postgres, dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`; `scripts/demo.sh`) / remove it all |
+| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`) |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
-| `make e2e` | Playwright e2e in `e2e/` (placeholder until qa creates it in Phase 1) |
-| `make seed` | Demo data (placeholder until Phase 1) |
+| `make e2e` | Playwright e2e in `e2e/` against `E2E_BASE_URL` (default http://localhost:8000, i.e. `make demo`); CI runs it against the built image with the demo data |
 
 Backend (`make -C backend <target>`): `install` (uv sync --locked), `check`, `lint`,
-`typecheck`, `test`, `fmt`, `dev` (API on :8000 with reload; also serves the SPA from
-`frontend/dist` once built), `worker`, `migrate`, `revision m="..."` (backend owner
-only), `openapi`, `vendor-swagger` (refresh the bundled Swagger UI).
+`typecheck`, `test`, `test-slow` (10k-idea performance checks, excluded from `test`),
+`fmt`, `dev` (API on :8000 with reload; also serves the SPA from `frontend/dist` once
+built), `worker`, `migrate`, `revision m="..."` (backend owner only), `openapi`,
+`vendor-swagger` (refresh the bundled Swagger UI). The `soundings` CLI (`uv run soundings
+<cmd>` in `backend/`, the image's entrypoint): `api`, `worker`, `migrate`,
+`wait-for-db --timeout N`, `seed [--reset] [--force]` (refuses production without
+`--force`), `openapi`.
 
 Frontend (`npm --prefix frontend run <script>`, after `npm --prefix frontend ci`):
 `dev` (Vite on :5173, proxies `/api`, `/mcp`, `/metrics` to :8000), `dev:mock` (MSW, no
 backend), `check`, `typecheck`, `test` (vitest), `test:pw` (Playwright + axe against
-dev:mock on :5174; `PW_PORT` overrides), `screenshots` (into
-`docs/screenshots/phase-0/`; `SCREENSHOT_DIR` overrides), `gen:api`, `build`, `lint`,
-`format`.
+dev:mock on :5174; `PW_PORT` overrides; pages start signed in as Alice through
+`tests/support.ts`), `screenshots` (every `*screenshots.spec.ts` against the mock, into
+`docs/screenshots/phase-1/mock/`; `SCREENSHOT_DIR` overrides), `gen:api`, `build`,
+`lint`, `format`. The mock keeps toggles in localStorage (latency, forced failures, the
+10k-idea dataset) and adds a dev-only "Switch user" to the account menu.
+
+E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
+from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
+Vite build into `e2e/.stack/dist`, `soundings api` on :8100 with dev login), runs 60+
+specs and stops it. `E2E_BASE_URL=<url>` tests a running app instead (nothing started
+or reseeded; it needs the demo data and dev login: `make demo`, CI). `E2E_KEEP_STACK=1`
+keeps the stack (the next run only reseeds), `E2E_SKIP_BUILD=1` reuses the SPA build,
+`E2E_PORT` / `E2E_PG_PORT` / `E2E_PREFIX` (default `p1-qa-`) / `E2E_WORKERS` (2).
+`npm --prefix e2e run screenshots` writes `docs/screenshots/phase-1/` from freshly
+seeded data (the local stack reseeds on start); `npm --prefix e2e run check` = tsc +
+prettier. Test plan and case IDs: `docs/test-plans/phase-1.md`.
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
-Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000, Vite 5173,
-Playwright 5174, k3s API 16443, k3s ingress 18081. Dev logins are in `dev/README.md`.
+Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000 (and
+`/metrics` on 9090 unless `--reload`), Vite 5173, Playwright 5174, k3s API 16443, k3s
+ingress 18081. Dev logins and the demo people are in `dev/README.md`.
 
 ## Conventions
 
@@ -138,6 +160,14 @@ Playwright 5174, k3s API 16443, k3s ingress 18081. Dev logins are in `dev/README
 - **testcontainers:** set `RYUK_CONTAINER_IMAGE=testcontainers/ryuk:0.11.0` (the
   default 0.8.1 isn't pulled); import `PostgresContainer` from
   `testcontainers.community.postgres`.
+- **Local e2e stack:** the API serves `e2e/.stack/dist` and caches `index.html` at
+  startup, so after rebuilding the SPA restart the API too (`e2e/scripts/stop-stack.sh`
+  then run again); a rebuild under a running API gives a blank page.
+- **Shared tree:** the Vite dev server reloads pages whenever anyone saves a file, and
+  parallel Playwright runs share `test-results/` (pass `--output=<dir>`): run page tests
+  when nobody is editing. `pkill -f <pattern>` also matches the calling shell's own
+  command line and kills it; stop servers by pid.
+- **`ruff format`** also formats Python code blocks in `backend/README.md`.
 - **Library pins that matter:** TypeScript 5.9.x (7.x breaks typescript-eslint and
   openapi-typescript), MSW 2.15, `mcp` 2.x (`MCPServer`, not `FastMCP`), WeasyPrint 70
   (new URL-fetcher API), Python `altcha` 2.x with the `altcha@3` widget.
@@ -202,4 +232,9 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
 ## Status
 
 - **Phase 0** (plan and scaffold): docs, ADRs, role matrix, ownership, wireframes,
-  agent setup, backend/frontend/Helm/dev/CI scaffolds. Stop for review before Phase 1.
+  agent setup, backend/frontend/Helm/dev/CI scaffolds.
+- **Phase 1** (ideas, owners, evaluators): sessions + dev login, the authz policy,
+  projects/members/rubric/labels, ideas, board and list, owners, evaluators, blind
+  evaluation, aggregate and ranking, My work, search, ⌘K, the demo seed, e2e suite and
+  screenshots (`docs/screenshots/phase-1/`). Decisions: `docs/decisions.md` (Phase 1).
+  Stop for review before Phase 2.

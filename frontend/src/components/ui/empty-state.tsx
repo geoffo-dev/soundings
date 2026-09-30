@@ -12,6 +12,8 @@ export interface EmptyStateProps extends Omit<ComponentProps<'div'>, 'title'> {
   secondaryAction?: ReactNode
   /** `compact` for inside a section or card; default for a whole page/panel. */
   size?: 'default' | 'compact'
+  /** Heading level of the title: 1 when it is the whole page (a 404), 2 right under a page title. */
+  headingLevel?: 1 | 2 | 3
 }
 
 /** Friendly empty state: say what this place is for and what to do next. */
@@ -22,10 +24,12 @@ export function EmptyState({
   action,
   secondaryAction,
   size = 'default',
+  headingLevel = 3,
   className,
   ...props
 }: EmptyStateProps) {
   const compact = size === 'compact'
+  const Heading = `h${headingLevel}` as const
   return (
     <div
       data-slot="empty-state"
@@ -47,9 +51,9 @@ export function EmptyState({
           {icon}
         </div>
       )}
-      <h3 className={cn('font-semibold text-primary', compact ? 'text-base' : 'text-lg')}>
+      <Heading className={cn('font-semibold text-primary', compact ? 'text-base' : 'text-lg')}>
         {title}
-      </h3>
+      </Heading>
       {description && (
         <p className={cn('max-w-sm text-muted', compact ? 'text-sm' : 'text-base')}>
           {description}

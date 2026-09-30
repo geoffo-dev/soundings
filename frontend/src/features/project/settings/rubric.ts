@@ -1,4 +1,4 @@
-import type { RubricCriterion, RubricUpdate } from '@/api/types'
+import type { FieldError, RubricCriterion, RubricUpdate } from '@/api/types'
 
 /**
  * The rubric editor's form model and rules (contract §3.1): 3–6 criteria with
@@ -158,12 +158,12 @@ export function moveItem<T>(items: T[], from: number, to: number): T[] {
  */
 export function serverRubricErrors(
   drafts: CriterionDraft[],
-  problemErrors: { loc?: (string | number)[]; msg?: string; message?: string }[],
+  problemErrors: Pick<FieldError, 'loc' | 'msg'>[],
 ): RubricErrors {
   const result: RubricErrors = { rows: {} }
   for (const entry of problemErrors) {
-    const loc = entry.loc ?? []
-    const message = entry.msg ?? entry.message ?? 'Check this value.'
+    const loc = entry.loc
+    const message = entry.msg === '' ? 'Check this value.' : entry.msg
     const index = loc[2]
     const field = loc[3]
     const draft = typeof index === 'number' ? drafts[index] : undefined

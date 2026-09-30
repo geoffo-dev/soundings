@@ -330,6 +330,32 @@ function CriterionRow({
     },
   }
 
+  // Next to the name on phones, at the end of the controls on wider screens.
+  const remove = (className: string) => (
+    <div className={className}>
+      <WithTooltip
+        content={
+          count <= MIN_CRITERIA
+            ? `A rubric needs at least ${MIN_CRITERIA} criteria`
+            : `Remove ${label}`
+        }
+      >
+        <span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Remove ${label}`}
+            disabled={count <= MIN_CRITERIA}
+            onClick={onRemove}
+            {...moveKeys}
+          >
+            <Trash2 />
+          </Button>
+        </span>
+      </WithTooltip>
+    </div>
+  )
+
   return (
     <li
       ref={setNodeRef}
@@ -353,18 +379,27 @@ function CriterionRow({
 
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-          <Field label="Name" hideLabel error={error('name')} id={`${idBase}-name`}>
-            <Input
-              value={draft.name}
-              maxLength={LIMITS.name + 10}
-              placeholder="Name, e.g. Value"
-              autoComplete="off"
-              className="font-medium"
-              onChange={(event) => onChange({ name: event.target.value })}
-              onBlur={() => onBlur('name')}
-              {...moveKeys}
-            />
-          </Field>
+          <div className="flex min-w-0 items-start gap-1">
+            <Field
+              label="Name"
+              hideLabel
+              error={error('name')}
+              id={`${idBase}-name`}
+              className="min-w-0 flex-1"
+            >
+              <Input
+                value={draft.name}
+                maxLength={LIMITS.name + 10}
+                placeholder="Name, e.g. Value"
+                autoComplete="off"
+                className="font-medium"
+                onChange={(event) => onChange({ name: event.target.value })}
+                onBlur={() => onBlur('name')}
+                {...moveKeys}
+              />
+            </Field>
+            {remove('pt-1 sm:hidden')}
+          </div>
           <Field
             label="Description"
             hideLabel
@@ -435,28 +470,7 @@ function CriterionRow({
               </span>
             )}
           </Button>
-          <div className="ml-auto">
-            <WithTooltip
-              content={
-                count <= MIN_CRITERIA
-                  ? `A rubric needs at least ${MIN_CRITERIA} criteria`
-                  : `Remove ${label}`
-              }
-            >
-              <span>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remove ${label}`}
-                  disabled={count <= MIN_CRITERIA}
-                  onClick={onRemove}
-                  {...moveKeys}
-                >
-                  <Trash2 />
-                </Button>
-              </span>
-            </WithTooltip>
-          </div>
+          {remove('ml-auto max-sm:hidden')}
         </div>
         {error('weight') && (
           <p id={`${idBase}-weight-error`} className="-mt-1 text-sm text-danger">

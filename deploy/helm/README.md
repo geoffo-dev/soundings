@@ -13,7 +13,14 @@ helm upgrade --install soundings ./deploy/helm -n soundings -f my-values.yaml
 ```
 
 `NOTES.txt` prints the URL and the first sign-in steps. `helm test soundings -n soundings`
-checks `/readyz` and the SPA through the Service.
+checks `/readyz` and the SPA through the Service (with the first base URL's `Host`).
+
+```sh
+# A demo with sample data and the dev login (development mode; never on a shared install):
+helm install soundings ./deploy/helm -n soundings --create-namespace \
+  --set 'baseUrls[0]=http://localhost:8000' --set devLogin=true --set demo.seed=true
+kubectl -n soundings port-forward svc/soundings 8000:80   # then open http://localhost:8000
+```
 
 Requirements: Kubernetes 1.27+, an ingress controller or Gateway API implementation, a
 default StorageClass for the bundled Postgres (or `externalDatabase.*`).
@@ -25,7 +32,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 
 | Key | Default | Description |
 |---|---|---|
-| `baseUrls` | `[http://localhost:8000]` | Origins the app is served on (`scheme://host[:port]`, no path). First = default for email links. Sign-in redirect URIs and ingress/HTTPRoute hosts derive from these. |
+| `baseUrls` | `[http://localhost:8000]` | Origins the app is served on (`scheme://host[:port]`, no path). First = default for email links. Sign-in redirect URIs and ingress/HTTPRoute hosts derive from these. The app answers **only** these hosts (400 `invalid_host` otherwise, except `/healthz` and `/readyz`): list every public host, and call it from inside the cluster with one of them as `Host`. |
 | `nameOverride` / `fullnameOverride` | `""` | Override the chart name / the release-scoped base name (max 50 chars). |
 | `global.imageRegistry` | `""` | Registry for **every** image (app + Postgres), for air-gapped mirrors. |
 | `image.registry` / `.repository` / `.tag` / `.digest` | `""` / `soundings` / appVersion / `""` | The Soundings image. |
@@ -33,6 +40,9 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `trustedProxies` | private ranges | IPs/CIDRs whose `X-Forwarded-*` headers are trusted (ingress controller). |
 | `logLevel` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR`. JSON logs, no PII. |
 | `devLogin` | `false` | Dev login stub; also switches the app to development mode. Never on shared installs. |
+| `demo.seed` | `false` | Load the demo data after install and upgrades (hook Job, see [Demo data](#demo-data)). Needs `devLogin`. |
+| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `P7D` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds. |
+| `metrics.port` | `9090` | Port of Prometheus `/metrics` (container and Service port `metrics`); never the app port. |
 | `secretKey.existingSecret` / `.existingSecretKey` | `""` / `secret-key` | Session/CSRF signing key. Empty: generated once, kept across upgrades. |
 | `oidc.issuer` | `""` | OIDC issuer URL. Empty: SSO off (configure later). |
 | `oidc.clientId` / `.clientSecret` | `soundings` / `""` | Client credentials (prefer `oidc.existingSecret`, key `oidc.existingSecretKey`, default `client-secret`). |
@@ -45,7 +55,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `breakGlass.enabled` / `.existingSecret` | `true` / `""` | Local admin for first sign-in and SSO outages (keys `username`, `password`). Empty secret: user `admin`, random password. |
 | `features.publicSubmission` / `.ai` | `true` / `false` | Allow public submission per project; AI assistance via kagent. |
 | `kagent.enabled` / `.namespace` / `.examples` | `false` / `kagent` / `false` | Placeholders for Phase 6 (`deploy/kagent/README.md`). |
-| `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics`. |
+| `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics` (`metrics.port`). |
 | `extraEnv` / `extraEnvFrom` | `[]` | Extra env for api, worker and migration containers. |
 | `extraVolumes` / `extraVolumeMounts` | `[]` | Extra volumes, e.g. a DB CA for `sslmode=verify-full` (+ `PGSSLROOTCERT`). |
 | `api.replicas` / `.resources` | `1` / 100m, 256Mi-512Mi | API size (replicas ignored with autoscaling). |
@@ -53,7 +63,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `api.podAnnotations` / `.topologySpreadConstraints` | `{}` / `[]` | |
 | `worker.enabled` / `.replicas` / `.concurrency` | `true` / `1` / `4` | Background worker; jobs per pod. |
 | `worker.terminationGracePeriodSeconds` / `.resources` / `.livenessProbe` / `.podAnnotations` | `60` / 50m, 192Mi-512Mi / `{}` / `{}` | |
-| `migrations.activeDeadlineSeconds` / `.backoffLimit` / `.waitForDatabaseSeconds` / `.resources` | `900` / `2` / `300` / small | Migration Job and init containers. |
+| `migrations.activeDeadlineSeconds` / `.backoffLimit` / `.waitForDatabaseSeconds` / `.resources` | `900` / `2` / `300` / small | Migration Job, init containers and the demo seed Job. |
 | `autoscaling.enabled` / `.minReplicas` / `.maxReplicas` / `.targetCPUUtilizationPercentage` | `false` / `2` / `6` / `75` | HPA for the API. |
 | `podDisruptionBudget.enabled` / `.maxUnavailable` | `true` / `1` | PDB for the API (never blocks drains). |
 | `service.type` / `.port` / `.annotations` | `ClusterIP` / `80` / `{}` | |
@@ -73,8 +83,8 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `externalDatabase.host` / `.port` / `.database` / `.user` | `""` / `5432` / `soundings` / `soundings` | Used when `postgresql.enabled=false` (host required). |
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
 | `externalDatabase.sslmode` | `require` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. |
-| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `false` / `[]` / `[]` | Ingress-only policies (see below). |
-| `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` / `.labels` | `false` / `30s` / `10s` / `{}` | Prometheus Operator scrape of `/metrics`. |
+| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `false` / `[]` / `[]` | Ingress-only policies: peers for the HTTP port / the metrics port (see below). |
+| `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` / `.labels` | `false` / `30s` / `10s` / `{}` | Prometheus Operator scrape of the Service's `metrics` port. |
 
 ## Migrations: why two paths
 
@@ -86,19 +96,35 @@ or concurrently is safe.
   `helm.sh/hook: pre-install,pre-upgrade` (weight 0, deleted on success and before the
   next run) and `argocd.argoproj.io/hook: PreSync`. The database exists before the
   release, so the schema is migrated before any new pod starts; a failed migration
-  stops the upgrade with the old pods still serving. An init container waits up to
-  `migrations.waitForDatabaseSeconds` for the database first. Because hooks run before
-  the release's own ConfigMap, Secret and ServiceAccount exist, the Job carries its
-  settings inline, reads secrets from your `existingSecret`s or from a hook Secret
-  (`<release>-soundings-migrate`, weight -10, deleted after success), and runs under the
-  namespace's default ServiceAccount without a token.
+  stops the upgrade with the old pods still serving. An init container
+  (`soundings wait-for-db`) waits up to `migrations.waitForDatabaseSeconds` for the
+  database first. Because hooks run before the release's own ConfigMap, Secret and
+  ServiceAccount exist, the Job carries its settings inline, reads the database password
+  from `externalDatabase.existingSecret` or from a hook Secret
+  (`<release>-soundings-migrate`, weight -10, deleted after success; only when the
+  password is in values), and runs under the namespace's default ServiceAccount without a
+  token. Migrations need no other secret (no `SOUNDINGS_SECRET_KEY`).
 - **Bundled Postgres** (`postgresql.enabled=true`, the default): a pre-install hook would
   run before the StatefulSet exists and wait forever, and making Postgres itself a hook
   would take it out of normal release management (never upgraded, never uninstalled). So
-  instead the api and worker pods run two init containers, `wait-for-db` and `migrate`.
+  instead the api and worker pods run two init containers, `wait-for-db` and `migrate`
+  (with only the database password, not the app's other secrets).
   This works the same with `helm install --wait`, `helm upgrade` and Argo CD, and during
   a rolling upgrade the old pods keep serving until the new ones have migrated and are
   ready.
+
+## Demo data
+
+`devLogin=true` plus `demo.seed=true` adds a Job (`<release>-soundings-seed`,
+`helm.sh/hook: post-install,post-upgrade`, `argocd.argoproj.io/hook: PostSync`, deleted
+after success) that runs `soundings wait-for-db`, `soundings migrate` and
+`soundings seed`: 12 people (Alice Anders is the platform admin), three projects and 45
+ideas in every status, with owners, blind evaluations, comments and votes over the last
+few weeks. It migrates itself, so it does not depend on the api pods' init containers,
+and it does nothing once the database has projects, so upgrades keep what people
+changed. To start over: `kubectl -n <ns> exec deploy/<release>-soundings-api -- soundings
+seed --reset`. The chart refuses `demo.seed` without `devLogin` (the app refuses to seed
+in production mode).
 
 ## Secrets
 
@@ -125,7 +151,8 @@ every render, so there set `secretKey.existingSecret`, `breakGlass.existingSecre
 Non-secret settings go into the ConfigMap `<release>-soundings` as `SOUNDINGS_*`
 variables: `ENVIRONMENT` (`production`, or `development` with `devLogin`),
 `DEV_LOGIN_ENABLED`, `BASE_URLS`, `TRUSTED_PROXIES`, `LOG_LEVEL`, `DATABASE_URL`
-(`postgresql+psycopg://user@host:port/db?sslmode=...`, no password), `WORKER_CONCURRENCY`,
+(`postgresql+psycopg://user@host:port/db?sslmode=...`, no password), `METRICS_PORT`,
+`SESSION_IDLE_TIMEOUT`, `SESSION_MAX_AGE`, `WORKER_CONCURRENCY`,
 `OTEL_ENDPOINT`, `FEATURE_PUBLIC_SUBMISSION`, `FEATURE_AI`, `BREAK_GLASS_ENABLED`,
 `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_GROUPS_CLAIM`, `OIDC_EXTERNAL_ID_CLAIM`,
 `OIDC_SCOPES` (comma-separated), `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_FROM`,
@@ -134,7 +161,9 @@ Secrets arrive as env vars from Secrets: `SOUNDINGS_SECRET_KEY`,
 `SOUNDINGS_DATABASE_PASSWORD`, `SOUNDINGS_OIDC_CLIENT_SECRET`, `SOUNDINGS_SMTP_USERNAME`,
 `SOUNDINGS_SMTP_PASSWORD`, `SOUNDINGS_BREAK_GLASS_USERNAME`,
 `SOUNDINGS_BREAK_GLASS_PASSWORD`. Service links are disabled in every pod (a Service
-named `soundings` would otherwise inject `SOUNDINGS_PORT=tcp://...`).
+named `soundings` would otherwise inject `SOUNDINGS_PORT=tcp://...`). The session
+cookies' `Secure` flag is automatic (always set in production); `SOUNDINGS_COOKIE_SECURE`
+in `extraEnv` overrides it (`false` is refused in production).
 
 ## Security
 
@@ -142,13 +171,16 @@ named `soundings` would otherwise inject `SOUNDINGS_PORT=tcp://...`).
   Postgres uid 70), read-only root filesystem with an emptyDir `/tmp`, all capabilities
   dropped, no privilege escalation, seccomp `RuntimeDefault`, no ServiceAccount token.
   `scripts/k3s-install.sh` installs into a namespace that enforces it.
-- `networkPolicy.enabled`: the API accepts traffic on its port from `ingressFrom` (+
-  `metricsFrom`) peers and this release's pods (any source when `ingressFrom` is empty);
-  the worker accepts nothing; the bundled Postgres accepts only this release's api,
-  worker and migration pods. Egress is not restricted (IdP, SMTP, kagent and the database
-  differ per cluster); add your own egress policy if you need one.
-- `/metrics` is served on the app port, so the ingress exposes it too. Block `/metrics`
-  at the ingress (or use `networkPolicy`) if that matters to you.
+- `networkPolicy.enabled`: the API accepts traffic on its HTTP port from `ingressFrom`
+  peers and on its metrics port from `metricsFrom` peers, plus this release's pods (each
+  port: any source when its list is empty); the worker accepts nothing; the bundled
+  Postgres accepts only this release's api, worker, migration and seed pods. Egress is
+  not restricted (IdP, SMTP, kagent and the database differ per cluster); add your own
+  egress policy if you need one.
+- `/metrics` is served only on `metrics.port` (Service port `metrics`), never on the app
+  port, so the ingress and HTTPRoute (which route `http` only) do not expose it.
+- The app refuses requests for hosts that are not in `baseUrls`, so a spoofed `Host`
+  cannot steer links or sign-in redirects.
 
 ## Air-gapped installs
 
@@ -167,5 +199,7 @@ make k3s-down
 ```
 
 `ci/default-values.yaml`, `ci/production-values.yaml` (external DB, ingress + TLS, SSO,
-SMTP via existingSecret, HPA, NetworkPolicy, ServiceMonitor) and
-`ci/gateway-values.yaml` (Gateway API) are linted and rendered in CI.
+SMTP via existingSecret, HPA, NetworkPolicy, ServiceMonitor), `ci/gateway-values.yaml`
+(Gateway API) and `ci/demo-values.yaml` (dev login + demo seed Job with NetworkPolicies)
+are linted and rendered in CI. `scripts/k3s-smoke.sh` also signs in through the ingress
+when the dev login is on (session + CSRF) and reads My work.

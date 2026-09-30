@@ -1,10 +1,19 @@
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 
+import { findCachedIdea } from '@/api/cache'
 import { isApiError } from '@/api/errors'
 import { ideaQueryOptions } from '@/api/ideas'
 import { retryIfCancelled } from '@/api/query'
+import type { IdeaSummary } from '@/api/types'
 import { IdeaNotFound, IdeaPage, IdeaPageSkeleton } from '@/features/idea/idea-page'
 import { validateIdeaSearch } from '@/features/idea/idea-search'
+
+function crumbsFor(idea: Pick<IdeaSummary, 'key' | 'title' | 'project'>) {
+  return {
+    crumbs: [{ label: idea.project.name, to: `/p/${idea.project.slug}` }, { label: idea.key }],
+    title: `${idea.key} ${idea.title}`,
+  }
+}
 
 /** /ideas/$ideaKey?tab=overview|evaluations|proposal&evaluate=1 */
 export const Route = createFileRoute('/_app/ideas/$ideaKey')({
@@ -21,14 +30,18 @@ export const Route = createFileRoute('/_app/ideas/$ideaKey')({
     }
   },
   loader: async ({ context, params }) => {
+    // Opened from a list, board or My work: paint at once from what they know;
+    // the page shows skeletons (or the not-found state) while the detail loads.
+    const cached = findCachedIdea(context.queryClient, params.ideaKey)
+    if (cached) {
+      void context.queryClient.query(ideaQueryOptions(params.ideaKey)).catch(() => undefined)
+      return crumbsFor(cached)
+    }
     try {
       const idea = await retryIfCancelled(() =>
         context.queryClient.query({ ...ideaQueryOptions(params.ideaKey), staleTime: 'static' }),
       )
-      return {
-        crumbs: [{ label: idea.project.name, to: `/p/${idea.project.slug}` }, { label: idea.key }],
-        title: `${idea.key} ${idea.title}`,
-      }
+      return crumbsFor(idea)
     } catch (error) {
       if (isApiError(error) && (error.status === 404 || error.status === 422)) throw notFound()
       throw error

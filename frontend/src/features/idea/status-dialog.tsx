@@ -4,7 +4,13 @@ import { useState } from 'react'
 import { useChangeIdeaStatus } from '@/api/ideas'
 import type { IdeaStatus, Resolution } from '@/api/types'
 import { Button } from '@/components/ui/button'
-import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import {
+  Command,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import {
   Dialog,
   DialogContent,
@@ -88,6 +94,8 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
           onValueChange={setSearch}
           placeholder="Accepted, rejected or parked?"
           aria-label="Resolution"
+          // The second step of the picker: typing filters right away.
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
         />
         <CommandList>
@@ -124,6 +132,8 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
         onValueChange={setSearch}
         placeholder="Move to…"
         aria-label="Status"
+        // The picker's only field: typing filters right away.
+        // eslint-disable-next-line jsx-a11y/no-autofocus
         autoFocus
       />
       <CommandList>
@@ -143,7 +153,9 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
                   } else choose(status)
                 }}
               >
-                <StatusDot tone={closed ? statusTone('closed', idea.resolution ?? 'parked') : status} />
+                <StatusDot
+                  tone={closed ? statusTone('closed', idea.resolution ?? 'parked') : status}
+                />
                 {statusLabel(status)}
                 {closed ? (
                   <>

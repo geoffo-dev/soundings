@@ -1,6 +1,6 @@
 # Soundings CI for self-hosted GitLab.
 #
-# Stages: lint -> test -> build -> scan -> deploy-test.
+# Stages: lint -> test -> build -> scan -> deploy-test (k3s install/upgrade, e2e).
 #
 # Air-gapped runners: every image is a variable. Point REGISTRY_MIRROR at your Docker Hub
 # proxy (e.g. harbor.internal/dockerhub) and set, as CI/CD variables when needed:
@@ -31,6 +31,7 @@ variables:
   REGISTRY_MIRROR: docker.io
   PYTHON_IMAGE: ${REGISTRY_MIRROR}/library/python:3.12-slim
   NODE_IMAGE: ${REGISTRY_MIRROR}/library/node:22-alpine
+  POSTGRES_IMAGE: ${REGISTRY_MIRROR}/library/postgres:16-alpine
   PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.56.1-noble
   DOCKER_IMAGE: ${REGISTRY_MIRROR}/library/docker:28-cli
   DIND_IMAGE: ${REGISTRY_MIRROR}/library/docker:28-dind
@@ -114,6 +115,33 @@ frontend:lint:
     - npm --prefix frontend run typecheck
     - npm --prefix frontend run lint
 
+# The generated API contract must match the backend: `make gen-api` leaves no diff. Split
+# in two because no single image has both Python/uv and Node: the backend's OpenAPI export
+# must equal the committed openapi.json, and the TypeScript types generated from that file
+# must equal the committed schema.d.ts.
+contract:openapi:
+  extends: .backend
+  stage: lint
+  script:
+    - uv run soundings openapi --output /tmp/openapi.json
+    - |
+      diff -u ../frontend/src/api/generated/openapi.json /tmp/openapi.json || {
+        echo "frontend/src/api/generated/openapi.json is stale: run 'make gen-api' and commit it"
+        exit 1
+      }
+
+contract:types:
+  extends: .frontend
+  stage: lint
+  script:
+    - cp frontend/src/api/generated/schema.d.ts /tmp/schema.d.ts
+    - npm --prefix frontend run gen:api
+    - |
+      diff -u /tmp/schema.d.ts frontend/src/api/generated/schema.d.ts || {
+        echo "frontend/src/api/generated/schema.d.ts is stale: run 'make gen-api' and commit it"
+        exit 1
+      }
+
 helm:lint:
   stage: lint
   image:
@@ -131,9 +159,10 @@ helm:lint:
       done
     # The schema must reject invalid values.
     - |
-      for bad in "smtp.security=ssl" "logLevel=verbose" "unknownKey=1" "baseUrls[0]=ftp://x"; do
+      for bad in "smtp.security=ssl" "logLevel=verbose" "unknownKey=1" "baseUrls[0]=ftp://x" \
+                 "metrics.port=8000" "sessions.idleTimeout=12h" "demo.seed=true"; do
         if helm template ci deploy/helm --set "$bad" > /dev/null 2>&1; then
-          echo "schema accepted invalid value: $bad"; exit 1
+          echo "chart accepted invalid value: $bad"; exit 1
         fi
       done
 
@@ -170,23 +199,6 @@ frontend:build:
   artifacts:
     expire_in: 1 day
     paths: [frontend/dist]
-
-e2e:
-  stage: test
-  image: ${PLAYWRIGHT_IMAGE}
-  rules:
-    - exists: [e2e/package.json]
-      when: manual
-  allow_failure: true
-  before_script:
-    - *ca-bundle
-    - npm --prefix e2e ci --no-audit --no-fund
-  script:
-    - npm --prefix e2e test
-  artifacts:
-    when: always
-    expire_in: 1 week
-    paths: [e2e/playwright-report, e2e/test-results]
 
 # --- build ------------------------------------------------------------------------------
 
@@ -256,6 +268,62 @@ image:trivy:
 
 # --- deploy-test ------------------------------------------------------------------------
 
+# Playwright end-to-end tests (e2e/, qa) against the image just built: Postgres and the
+# app run as services, the app migrated and seeded with the demo data and the dev login
+# on. The tests get the app's URL in E2E_BASE_URL.
+e2e:
+  stage: deploy-test
+  image: ${PLAYWRIGHT_IMAGE}
+  needs: [image:build]
+  rules:
+    - exists: [e2e/package.json]
+  services:
+    - name: ${POSTGRES_IMAGE}
+      alias: postgres
+    - name: ${IMAGE_REPOSITORY}:${IMAGE_TAG}
+      alias: app
+      entrypoint: ["sh", "-c"]
+      command:
+        - soundings wait-for-db --timeout 120 && soundings migrate && soundings seed && exec soundings api
+  variables:
+    # Services reach each other by alias (the app talks to postgres).
+    FF_NETWORK_PER_BUILD: "true"
+    POSTGRES_DB: soundings
+    POSTGRES_USER: soundings
+    POSTGRES_PASSWORD: soundings
+    SOUNDINGS_DATABASE_URL: postgresql+psycopg://soundings:soundings@postgres:5432/soundings
+    SOUNDINGS_ENVIRONMENT: development
+    SOUNDINGS_DEV_LOGIN_ENABLED: "true"
+    SOUNDINGS_BASE_URLS: http://app:8000
+    E2E_BASE_URL: http://app:8000
+  cache:
+    key:
+      files: [e2e/package-lock.json]
+      prefix: e2e
+    paths: [.cache/npm]
+  before_script:
+    - *ca-bundle
+    - npm --prefix e2e ci --no-audit --no-fund
+    # Wait (up to 3 minutes) for the app to have migrated, seeded and started.
+    - |
+      node -e '
+        const url = process.env.E2E_BASE_URL + "/readyz";
+        const deadline = Date.now() + 180000;
+        (async () => {
+          for (;;) {
+            try { if ((await fetch(url)).ok) { console.log("app ready:", url); return; } } catch {}
+            if (Date.now() > deadline) { console.error("app not ready:", url); process.exit(1); }
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        })();'
+  script:
+    - npm --prefix e2e run test
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [e2e/playwright-report, e2e/test-results]
+
+
 # Install, upgrade and smoke-test the chart on k3s running in docker:dind, with the same
 # scripts as local development (scripts/k3s-*.sh), in a namespace that enforces the
 # Restricted Pod Security Standard. Also exercises the external-database path.
@@ -281,6 +349,7 @@ k3s:install-upgrade:
   script:
     - scripts/k3s-up.sh
     - scripts/k3s-load-image.sh soundings:ci
+    # dev/k3s-values.yaml: dev login and the demo seed hook Job (smoke-tested below).
     - scripts/k3s-install.sh --set image.tag=ci
     - scripts/k3s-smoke.sh
     # Upgrade: a config change (rolls every pod) and a second API replica.

@@ -41,6 +41,7 @@ export function ProjectPageSkeleton() {
 export function ProjectNotFound() {
   return (
     <EmptyState
+      headingLevel={1}
       icon={<FolderSearch />}
       title="This project doesn’t exist or you don’t have access"
       description="Check the link, or ask a project admin to add you."

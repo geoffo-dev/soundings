@@ -26,7 +26,8 @@ export interface SegmentedControlProps<T extends string> {
   options: readonly SegmentedOption<T>[]
   value: T | null | undefined
   onValueChange: (value: T) => void
-  size?: 'sm' | 'md' | 'lg'
+  /** `score`: 1–5 rows in forms people fill on a phone (36px with a mouse, 44px on touch). */
+  size?: 'sm' | 'md' | 'lg' | 'score'
   /** `accent` fills the selected segment with the brand colour (scores); `neutral` for view toggles. */
   variant?: 'neutral' | 'accent'
   /** Stretch segments to fill the container (recommended on phones). */
@@ -43,6 +44,8 @@ export interface SegmentedControlProps<T extends string> {
   className?: string
   'aria-label'?: string
   'aria-labelledby'?: string
+  /** Extra description ids (e.g. a criterion's text or an error), added to the Field's. */
+  'aria-describedby'?: string
 }
 
 const segment = cva(
@@ -59,6 +62,7 @@ const segment = cva(
         sm: 'h-6 min-w-7 px-2 text-xs',
         md: 'h-7 min-w-9 px-3 text-sm pointer-coarse:h-10 pointer-coarse:min-w-11',
         lg: 'h-10 min-w-11 px-4 text-base',
+        score: 'h-9 min-w-11 px-3 text-base pointer-coarse:h-11',
       },
       variant: {
         neutral:
@@ -129,7 +133,9 @@ export function SegmentedControl<T extends string>({
           aria['aria-labelledby'] ?? (aria['aria-label'] ? undefined : field?.labelId)
         }
         aria-label={aria['aria-label']}
-        aria-describedby={field?.describedBy}
+        aria-describedby={
+          [field?.describedBy, aria['aria-describedby']].filter(Boolean).join(' ') || undefined
+        }
         onKeyDown={onKeyDown}
         className={cn(
           'flex gap-0.5 rounded-md bg-subtle p-0.5',

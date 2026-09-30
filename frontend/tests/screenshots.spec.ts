@@ -6,14 +6,17 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './support'
 
 /**
- * Captures review screenshots (not a regression test). Run with:
- *   npm run screenshots            # → ../docs/screenshots/phase-1/
+ * Captures review screenshots against the MSW mock (not a regression test). Run with:
+ *   npm run screenshots            # all *screenshots.spec.ts → ../docs/screenshots/phase-1/mock/
  *   SCREENSHOT_DIR=… npm run screenshots
+ * The real-stack review set is e2e/'s (`npm --prefix e2e run screenshots`), written
+ * to ../docs/screenshots/phase-1/ itself; the names overlap, so keep them apart.
  */
 test.skip(!process.env.SCREENSHOTS, 'Set SCREENSHOTS=1 (npm run screenshots) to capture')
 
-const outDir = path.resolve(process.env.SCREENSHOT_DIR ?? '../docs/screenshots/phase-1')
-mkdirSync(outDir, { recursive: true })
+const outDir = path.resolve(process.env.SCREENSHOT_DIR ?? '../docs/screenshots/phase-1/mock')
+// Only when capturing: loading a skipped file must not create folders.
+if (process.env.SCREENSHOTS) mkdirSync(outDir, { recursive: true })
 
 async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready)

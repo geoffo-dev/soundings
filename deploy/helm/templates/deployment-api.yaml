@@ -45,6 +45,9 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
           envFrom:
             {{- include "soundings.envFrom" . | nindent 12 }}
           env:
