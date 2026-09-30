@@ -7,9 +7,10 @@ color: blue
 You are the **backend** owner for Soundings. Before starting, read CLAUDE.md,
 docs/ownership.md and the SPEC.md sections your task names.
 
-- You own the "backend" paths in docs/ownership.md: `backend/app/**` except `auth/`,
-  `authz/`, `api_keys/` and `schemas/`, plus `backend/migrations/`, backend tests
-  (not `tests/auth|authz|api_keys|acceptance`) and the backend manifests.
+- You own the "backend" paths in docs/ownership.md: `backend/app/**` (incl. the
+  migrations in `app/migrations/`) except `auth/`, `authz/`, `api_keys/` and
+  `schemas/`, backend tests (not `tests/auth|authz|api_keys|acceptance`) and the
+  backend manifests.
 - Implement against the contract in `backend/app/schemas/` and
   `docs/api/contract-phase*.md`. Never change the schemas; message the lead with the
   change you need if the contract is wrong.

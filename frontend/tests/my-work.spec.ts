@@ -41,8 +41,12 @@ test('j/k and arrows move between rows, Enter opens, e evaluates', async ({ page
 
   await page.keyboard.press('e')
   await expect(page).toHaveURL(/\/ideas\/CUST-1\?evaluate=1$/)
+  // The URL changes before the idea page renders: wait for the sheet itself (back
+  // before that would leave My work in place, focus still on the row).
+  await expect(page.getByRole('dialog', { name: 'Evaluate' })).toBeVisible()
 
   await page.goBack()
+  await expect(page.getByRole('heading', { name: 'My work', level: 1 })).toBeVisible()
   await page.keyboard.press('j')
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/ideas\/CUST-7$/)
