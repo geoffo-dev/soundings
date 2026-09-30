@@ -1,0 +1,79 @@
+# Soundings local dev services: Postgres, Keycloak (realm "soundings") and Mailpit.
+#
+#   make dev-up      # docker compose -f dev/docker-compose.yml up -d --wait
+#   make dev-down    # ... down (add -v to also drop the database volume)
+#
+# Host ports default to the standard ones and can be changed in dev/.env
+# (copy dev/.env.example). See dev/README.md for URLs and test users.
+# Dev only: fixed passwords, Keycloak in dev mode, no TLS.
+name: soundings-dev
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_DB: soundings
+      POSTGRES_USER: soundings
+      POSTGRES_PASSWORD: soundings
+    ports:
+      - "${SOUNDINGS_DEV_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soundings -d soundings -h 127.0.0.1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-keycloak/keycloak:26.0}
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      # Tokens' issuer follows the URL the browser used (http://localhost:<port>/realms/soundings).
+      KC_HOSTNAME_STRICT: "false"
+      KC_LOG_LEVEL: warn,org.keycloak.exportimport:info
+    ports:
+      - "${SOUNDINGS_DEV_KEYCLOAK_PORT:-8080}:8080"
+    volumes:
+      - ./keycloak/realm-soundings.json:/opt/keycloak/data/import/realm-soundings.json:ro
+    healthcheck:
+      # The image has no curl: speak HTTP to the management port with bash.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"UP"' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    depends_on:
+      mailpit:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mailpit:
+    image: ${MAILPIT_IMAGE:-axllent/mailpit:latest}
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_MAX_MESSAGES: "5000"
+    ports:
+      - "${SOUNDINGS_DEV_MAILPIT_UI_PORT:-8025}:8025"
+      - "${SOUNDINGS_DEV_MAILPIT_SMTP_PORT:-1025}:1025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  pgdata:

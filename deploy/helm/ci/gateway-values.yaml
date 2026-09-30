@@ -1,0 +1,31 @@
+# Gateway API variant: an HTTPRoute attached to a shared Gateway instead of an Ingress.
+# Bundled Postgres with an explicit password and SMTP credentials in values (dev-ish).
+baseUrls:
+  - https://ideas.example.com
+
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: shared-gateway
+      namespace: gateway-system
+      sectionName: https
+
+postgresql:
+  enabled: true
+  auth:
+    password: not-a-real-password
+  persistence:
+    size: 2Gi
+
+oidc:
+  issuer: https://keycloak.example.com/realms/soundings
+  clientSecret: not-a-real-secret
+  externalIdClaim: employee_no
+
+smtp:
+  host: mail.example.com
+  port: 465
+  security: tls
+  username: soundings
+  password: not-a-real-password
+  from: ideas@example.com

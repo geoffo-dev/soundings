@@ -1,0 +1,56 @@
+{{- $fullname := include "soundings.fullname" . -}}
+Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+1. Open Soundings
+{{- if or .Values.ingress.enabled .Values.httpRoute.enabled }}
+   {{ first .Values.baseUrls }}
+{{- else }}
+   No ingress or HTTPRoute is enabled. For a quick look:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ $fullname }} 8000:{{ .Values.service.port }}
+   then open http://localhost:8000 (it must be listed in baseUrls, currently: {{ join ", " .Values.baseUrls }}).
+{{- end }}
+
+2. Sign in for the first time
+{{- if .Values.devLogin }}
+   Dev login is ON (development mode): pick a user on the sign-in page.
+   Never use devLogin on a shared or internet-facing install.
+{{- else if .Values.breakGlass.enabled }}
+   Use the break-glass admin:
+{{- if .Values.breakGlass.existingSecret }}
+     username and password: keys "username" / "password" of Secret {{ .Values.breakGlass.existingSecret }}
+{{- else }}
+     username: admin
+     password: kubectl -n {{ .Release.Namespace }} get secret {{ $fullname }} -o jsonpath='{.data.break-glass-password}' | base64 -d; echo
+{{- end }}
+   Then, as platform admin:
+     a. connect SSO{{ if .Values.oidc.issuer }} (configured: {{ .Values.oidc.issuer }}){{ else }} (set oidc.issuer, oidc.clientId and oidc.existingSecret, then helm upgrade){{ end }},
+     b. map your IdP admin group to Soundings' platform admins (Admin > Groups),
+     c. sign in with SSO once. Break-glass sign-in is then switched off automatically;
+        every break-glass sign-in is audited.
+{{- else if .Values.oidc.issuer }}
+   Sign in with SSO ({{ .Values.oidc.issuer }}).
+{{- else }}
+   WARNING: no way to sign in is enabled (oidc.issuer is empty, breakGlass.enabled and
+   devLogin are false). Enable breakGlass or configure oidc.*.
+{{- end }}
+
+3. Email
+{{- if .Values.smtp.host }}
+   Sending through {{ .Values.smtp.host }}:{{ .Values.smtp.port }} ({{ .Values.smtp.security }}) as {{ .Values.smtp.from }}.
+   Check it with Admin > Email > "Send test email".
+{{- else }}
+   SMTP is not configured: notifications are in-app only. Set smtp.host, smtp.from and
+   smtp.existingSecret to send email.
+{{- end }}
+
+4. Database
+{{- if .Values.postgresql.enabled }}
+   Bundled single-replica PostgreSQL ({{ include "soundings.postgresql.fullname" . }}), for dev and small
+   installs. Back up its volume; for production use externalDatabase (managed Postgres or
+   CloudNativePG). The pods run migrations on start.
+{{- else }}
+   External PostgreSQL at {{ .Values.externalDatabase.host }}:{{ .Values.externalDatabase.port }}. Migrations run as a
+   pre-install/pre-upgrade hook Job ({{ $fullname }}-migrate).
+{{- end }}
+
+Check the release: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

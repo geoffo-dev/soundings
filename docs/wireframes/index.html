@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soundings wireframes</title>
+<meta name="description"
+  content="Low-fi wireframes of the seven Soundings screens for Phase 0 review.">
+<style>
+:root {
+  --bg: #f6f6f7; --surface: #ffffff; --fg: #1a1a1f; --muted: #5d5d66;
+  --border: #e2e2e7; --code-bg: #f1f2f5; --accent: #1d5fa8; --accent-fg: #ffffff;
+  --accent-subtle: #e8f0fa; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111114; --surface: #19191d; --fg: #ececf1; --muted: #a3a3ad;
+    --border: #2c2c33; --code-bg: #141418; --accent: #7fb0ea; --accent-fg: #0b1522;
+    --accent-subtle: #17263a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111114; --surface: #19191d; --fg: #ececf1; --muted: #a3a3ad;
+  --border: #2c2c33; --code-bg: #141418; --accent: #7fb0ea; --accent-fg: #0b1522;
+  --accent-subtle: #17263a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, pre:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-start;
+  justify-content: space-between; margin-bottom: 8px; }
+h1 { font-size: 26px; line-height: 1.2; margin: 0 0 4px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 0; }
+button.theme {
+  font: inherit; font-size: 13px; color: var(--fg); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+}
+.intro { max-width: 72ch; }
+nav ol { list-style: none; padding: 0; margin: 20px 0 32px; display: flex;
+  flex-wrap: wrap; gap: 8px; }
+nav li { margin: 0; }
+nav a { display: inline-block; padding: 6px 12px; border-radius: 999px;
+  background: var(--accent-subtle); text-decoration: none; font-size: 14px; }
+section { background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px; margin: 0 0 24px; }
+section h2 { font-size: 21px; margin: 0 0 8px; }
+section h3 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); margin: 28px 0 8px; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 8px 0;
+  font: 12.5px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre code { font: inherit; background: none; padding: 0; }
+code { font: 0.92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+ul { padding-left: 20px; } li { margin: 6px 0; } li, p { max-width: 80ch; }
+footer { color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) { section { padding: 16px; } h1 { font-size: 22px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>Soundings wireframes</h1>
+    <p class="sub">Low-fi, Phase 0 review &middot; seven screens from SPEC section 5</p>
+  </div>
+  <button type="button" class="theme" id="theme">Theme: system</button>
+</header>
+<p class="intro">Each screen shows desktop and mobile layouts with notes on the
+primary action, loading, empty and error states, keyboard use and mobile behaviour.
+<code>[## Label ##]</code> marks the single primary (accent) button;
+<code>[ Label ]</code> is secondary; <code>2/3</code> is evaluator progress;
+<code>!</code> flags high disagreement. Permissions follow
+<a href="../role-matrix.md">docs/role-matrix.md</a>.</p>
+<nav aria-label="Screens"><ol><li><a href="#my-work">1. My work (home)</a></li><li><a href="#project-board-list">2. Project: Board and List</a></li><li><a href="#idea-page">3. Idea page</a></li><li><a href="#evaluate-sheet">4. Evaluate sheet</a></li><li><a href="#proposal-editor">5. Proposal editor</a></li><li><a href="#submit-idea">6. Submit idea (internal and public)</a></li><li><a href="#settings">7. Settings (project and admin)</a></li></ol></nav>
+<main>
+<section id="my-work" aria-labelledby="my-work-h"><h2 id="my-work-h">1. My work (home)</h2><p class="sub">Source: <a href="01-my-work.md">docs/wireframes/01-my-work.md</a></p>
+<p>Route <code>/</code> · everyone signed in · SPEC 5, screen 1. Answers &quot;what needs me now?&quot; at a glance: evaluations due, ideas I own, and what changed in my projects.</p>
+<h3>Desktop (1440 px)</h3>
+<pre tabindex="0"><code>+------------------------+--------------------------------------------------------------+
+| [S] Soundings          |  My work                                  [ New idea    N ]  |
+|                        |                                                              |
+| [ Search...  Cmd+K ]   |  Evaluations due  2                                          |
+|                        |  +--------------------------------------------------------+  |
+| &gt; My work              |  | CUST-12  Self-serve returns portal     Due tomorrow    |  |
+|     Evaluations    2   |  |          Customer Innovation - owner Bob               |  |
+|     Ideas I own    5   |  |                                     [## Evaluate ##]   |  |
+|                        |  |--------------------------------------------------------|  |
+| Projects               |  | TOOL-4   Shared test data service      Due Fri 3 Oct   |  |
+|   Customer Innovation  |  |          Internal Tools - owner Carol [  Evaluate  ]   |  |
+|   Internal Tools       |  +--------------------------------------------------------+  |
+|                        |                                                              |
+|                        |  Ideas I own  5                                              |
+|                        |  New          CUST-19  Loyalty tiers for B2B    0/0   --     |
+|                        |  Evaluating   CUST-15  Returns QR labels        2/3   --     |
+|                        |               TOOL-7   Flaky test dashboard     3/3   3.8    |
+|                        |  Shortlisted  CUST-9   Partner API              4/4   4.2 !  |
+|                        |  Proposal     CUST-3   Subscription boxes       5/5   4.4    |
+|                        |                                          Show closed (7) &gt;   |
+|                        |                                                              |
+|                        |  Recently updated in my projects                             |
+|                        |  CUST-21  Carol commented on &quot;Gift cards&quot;          5 min     |
+|                        |  TOOL-9   Status New -&gt; Evaluating (Dave)          1 h       |
+|                        |  CUST-18  New idea &quot;Chat handover&quot; by Bob          3 h       |
+|                        |                                                              |
+| [A] Alice Anders   [?] |                                                              |
++------------------------+--------------------------------------------------------------+</code></pre>
+<p>Legend (all wireframes): <code>[## Label ##]</code> is the one primary (accent) button; <code>[ Label ]</code> is secondary; <code>2/3</code> is evaluator progress; <code>!</code> is the high-disagreement flag (icon plus text on hover, never colour alone); <code>--</code> means no score yet.</p>
+<h3>Mobile (390 px)</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+| [=]  My work                    [+]  |
++--------------------------------------+
+| Evaluations due  2                   |
+| +----------------------------------+ |
+| | CUST-12                          | |
+| | Self-serve returns portal        | |
+| | Due tomorrow                     | |
+| | [########## Evaluate ##########] | |
+| +----------------------------------+ |
+| | TOOL-4  Shared test data service | |
+| | Due Fri 3 Oct       [ Evaluate ] | |
+| +----------------------------------+ |
+|                                      |
+| Ideas I own  5                       |
+|  Evaluating                          |
+|   CUST-15 Returns QR labels   2/3    |
+|  Shortlisted                         |
+|   CUST-9  Partner API     4/4  4.2 ! |
+|                                      |
+| Recently updated                     |
+|  CUST-21 Carol commented      5m     |
++--------------------------------------+</code></pre>
+<h3>Notes</h3>
+<ul><li><strong>Primary action:</strong> &quot;Evaluate&quot; on the most urgent evaluation (overdue first, then soonest due). Every other row&#x27;s Evaluate is secondary. &quot;New idea&quot; is a secondary button in the header (<code>N</code>).</li><li><strong>Content rules:</strong> Evaluations due lists ideas where I&#x27;m an evaluator and haven&#x27;t submitted, sorted by due date; overdue rows say &quot;Overdue 2 days&quot; with an icon. Ideas I own are grouped by status in the fixed order; closed ones are collapsed. Recently updated shows the last 20 events in projects I can view.</li><li><strong>Blind evaluation:</strong> a score is never shown for an idea where I&#x27;m a pending evaluator; the cell reads &quot;Hidden&quot; (see <a href="../role-matrix.md">role matrix §3</a>).</li><li><strong>Sidebar counts:</strong> Evaluations = due and not submitted; Ideas I own = not closed. Screen readers hear &quot;Evaluations, 2 due&quot;.</li><li><strong>Loading:</strong> the header renders at once; each section shows 3 skeleton rows of the final height. No spinners.</li><li><strong>Empty:</strong> per section, friendly and actionable. Evaluations: &quot;Nothing to evaluate. When someone asks for your view, it appears here.&quot; Ideas I own: &quot;You don&#x27;t own any ideas yet. Open a project and volunteer for one you care about.&quot; [Browse projects]. A brand-new user with no projects sees internal projects they can browse and a hint to ask a project admin for access.</li><li><strong>Error:</strong> an inline message with Retry inside the failing section; the other sections still render.</li><li><strong>Keyboard:</strong> <code>↑</code>/<code>↓</code> move between rows, <code>Enter</code> opens the idea, <code>E</code> opens the evaluate sheet for the focused due row, <code>N</code> new idea, <code>⌘K</code> palette, <code>?</code> shortcuts. A skip link jumps past the sidebar.</li><li><strong>Mobile:</strong> the sidebar becomes a drawer (<code>[=]</code>); sections stack; the primary Evaluate button is full width; touch targets are at least 44 px.</li></ul></section>
+<section id="project-board-list" aria-labelledby="project-board-list-h"><h2 id="project-board-list-h">2. Project: Board and List</h2><p class="sub">Source: <a href="02-project-board-list.md">docs/wireframes/02-project-board-list.md</a></p>
+<p>Route <code>/p/{project}</code> (<code>?view=board|list</code>, filters in the query string) · anyone who passes <code>project.view</code> · SPEC 5, screen 2. One project&#x27;s ideas, as a board by status or a sortable table. The view choice is remembered per user.</p>
+<h3>Desktop, List view (1440 px)</h3>
+<pre tabindex="0"><code>+------------------------+-------------------------------------------------------------------+
+| (sidebar as My work)   |  Customer Innovation       [Board | List]  [## New idea ##]       |
+|                        |                                                                   |
+|                        |  [Status v] [Owner v] [Tag v] [Needs evaluators] [High disagr.]   |
+|                        |  42 ideas                                Sort: Score (high) v     |
+|                        |  +-------------------------------------------------------------+  |
+|                        |  | Idea                    Owner Evals Score  Status      Upd. |  |
+|                        |  |-------------------------------------------------------------|  |
+|                        |  | CUST-3  Subscription    (C)   5/5   4.4    Proposal     1 d |  |
+|                        |  | CUST-9  Partner API     (B)   4/4   4.2 !  Shortlisted  2 h |  |
+|                        |  | TOOL-7  Flaky tests     (A)   3/3   3.8    Evaluating   4 h |  |
+|                        |  | CUST-15 QR returns      (A)   2/3   Hidden Evaluating   3 h |  |
+|                        |  | CUST-19 Loyalty tiers   --    0/0   --     New          5 m |  |
+|                        |  | ...  (virtualised: 10k rows scroll smoothly)                |  |
+|                        |  +-------------------------------------------------------------+  |
++------------------------+-------------------------------------------------------------------+</code></pre>
+<h3>Desktop, Board view</h3>
+<pre tabindex="0"><code>+------------------------------------------------------------------------------------------+
+|  Customer Innovation                              [Board | List]  [## New idea ##]       |
+|  [Status v] [Owner v] [Tag v] [Needs evaluators] [High disagreement]                     |
+|                                                                                          |
+|  New  6            Evaluating  9      Shortlisted  4     Proposal  2       Closed  21 &gt;  |
+|  +--------------+  +--------------+   +--------------+   +--------------+                |
+|  | CUST-19      |  | CUST-15      |   | CUST-9       |   | CUST-3       |                |
+|  | Loyalty tiers|  | Returns QR   |   | Partner API  |   | Subscription |                |
+|  | for B2B      |  | labels       |   |              |   | boxes        |                |
+|  | --   0/0  -- |  | (A)  2/3 Hid.|   | (B) 4/4 4.2 !|   | (C) 5/5 4.4  |                |
+|  +--------------+  +--------------+   +--------------+   +--------------+                |
+|  +--------------+  +--------------+   +--------------+                                   |
+|  | CUST-21 ...  |  | TOOL-7 ...   |   | CUST-11 ...  |                                   |
+|  +--------------+  +--------------+   +--------------+                                   |
++------------------------------------------------------------------------------------------+</code></pre>
+<h3>Mobile (390 px)</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+| [=] Customer Innov.     [Board|List] |
+| [Filters (2)]            Sort: Score |
++--------------------------------------+
+| CUST-3  Subscription boxes           |
+| Proposal - (C) - 5/5 - 4.4      1 d  |
+|--------------------------------------|
+| CUST-9  Partner API                  |
+| Shortlisted - (B) - 4/4 - 4.2 !  2 h |
+|--------------------------------------|
+| CUST-15 Returns QR labels            |
+| Evaluating - (A) - 2/3 - Hidden  3 h |
++--------------------------------------+
+|              [+ New idea]            |
++--------------------------------------+</code></pre>
+<p>Board on mobile: one column at a time, with status tabs across the top.</p>
+<h3>Notes</h3>
+<ul><li><strong>Primary action:</strong> &quot;New idea&quot; (pre-selects this project). Moving cards and sorting are direct manipulation, not buttons.</li><li><strong>Board:</strong> columns are the five fixed statuses with the project&#x27;s labels. Closed is collapsed to a count and expands to Accepted / Rejected / Parked. Owners and admins can drag (<code>idea.change_status</code>); for everyone else cards have no drag handle. Dropping on Closed opens a small resolution picker. Moves are optimistic with an Undo toast; a failed move snaps back with an error toast.</li><li><strong>List:</strong> sortable headers (<code>aria-sort</code>), default sort by last update; the score sort follows the blind rule (hidden ideas sort as unscored). Rows are virtualised.</li><li><strong>Filters:</strong> chips for status, owner, tag, &quot;Needs evaluators&quot; (not closed, no evaluators yet) and &quot;High disagreement&quot;. Filters live in the URL so views can be shared; &quot;Clear&quot; appears when any chip is active.</li><li><strong>Loading:</strong> skeleton rows (list) or skeleton cards (board) of final size.</li><li><strong>Empty:</strong> new project: &quot;No ideas yet. Start with one you&#x27;ve been thinking about.&quot; [New idea] (or, for viewers, &quot;Ideas will appear here&quot;). Filtered empty: &quot;No ideas match these filters&quot; [Clear filters].</li><li><strong>Error:</strong> inline panel with Retry in place of the list; filters stay usable.</li><li><strong>Keyboard:</strong> <code>↑</code>/<code>↓</code> rows, <code>Enter</code> open, <code>N</code> new idea, <code>F</code> focuses filters, <code>V</code> toggles Board/List. Board moves with the keyboard: focus a card, <code>Space</code> to lift, arrow keys to move between columns, <code>Space</code> to drop, <code>Esc</code> to cancel; each step is announced to screen readers.</li><li><strong>Mobile:</strong> list is the default; the board shows one status at a time. Filters open in a bottom sheet. &quot;New idea&quot; is a sticky footer button.</li></ul></section>
+<section id="idea-page" aria-labelledby="idea-page-h"><h2 id="idea-page-h">3. Idea page</h2><p class="sub">Source: <a href="03-idea-page.md">docs/wireframes/03-idea-page.md</a></p>
+<p>Route <code>/p/{project}/ideas/{key}</code> (e.g. <code>CUST-15</code>) · anyone who passes <code>idea.view</code> · SPEC 5, screen 3. The single place for an idea: content and conversation on the left, state and people on the right. Tabs only for Overview / Evaluations / Proposal.</p>
+<h3>Desktop (1440 px), viewed by the owner</h3>
+<pre tabindex="0"><code>+------------------------+----------------------------------------------------------------------+
+| (sidebar)              | Customer Innovation / CUST-15                [Watch] [Vote 12] [...] |
+|                        | Returns QR labels                           [## Close evaluation ##] |
+|                        | Print-free returns: customers show a QR code at the drop-off point.  |
+|                        | [Overview]  Evaluations 2/3   Proposal                               |
+|                        |---------------------------------------------+------------------------|
+|                        | Description                                 | Status  [Evaluating v] |
+|                        | Today customers print a label, which ...    | Owner   (A) Alice      |
+|                        | - works with the carrier&#x27;s existing API     |                        |
+|                        | - no printer needed                         | Evaluators        2/3  |
+|                        |                                             |  (B) Bob        [v]    |
+|                        | Activity                                    |  (C) Carol      [v]    |
+|                        | (B) Bob submitted an evaluation      2 h    |  (D) Dave       [ ]    |
+|                        | (C) Carol                            1 h    |  [+ Invite evaluator]  |
+|                        |     Have we checked the carrier API         | Due     Fri 3 Oct      |
+|                        |     limits?                     [Reply]     |                        |
+|                        | --- Alice moved New -&gt; Evaluating   1 d     | Score   3.8   n=2   !  |
+|                        |                                             |  Value      ####-  4.0 |
+|                        | +-----------------------------------------+ |  Feasibil.  ###--  3.0 |
+|                        | | Write a comment, @ to mention           | |  Effort*    ####-  4.0 |
+|                        | |                            [ Comment ]  | |  Strat. fit ####-  3.5 |
+|                        | +-----------------------------------------+ |  Risk*      ####-  4.5 |
+|                        |                                             |  * inverted            |
+|                        |                                             | Tags  returns  +       |
+|                        |                                             |                        |
+|                        |                                             |                        |
++------------------------+---------------------------------------------+------------------------+</code></pre>
+<h3>Sidebar for a pending evaluator (blind)</h3>
+<pre tabindex="0"><code>| Evaluators        2/3  |
+|  (B) Bob        [v]    |
+|  (C) Carol      [v]    |
+|  (D) You        [ ]    |
+| Due     Fri 3 Oct      |
+|                        |
+| Score   Hidden until   |
+|         you submit     |
+| [##### Evaluate #####] |</code></pre>
+<h3>Evaluations tab</h3>
+<pre tabindex="0"><code>| Evaluations  2 submitted of 3                  Aggregate 3.8 (n=2)  High disagreement |
+|---------------------------------------------------------------------------------------|
+| (B) Bob       Go      Value 4  Feas. 4  Effort 3  Fit 4  Risk 4   &quot;Solid, cheap...&quot;   |
+| (C) Carol     Maybe   Value 4  Feas. 2  Effort 5  Fit 3  Risk 5   &quot;Carrier API...&quot;    |
+| [AI] Evaluator agent  Maybe  Value 3 ...   Excluded from score  [ Include ]  Sources &gt;|
+| (D) Dave      not submitted yet                                                       |</code></pre>
+<h3>Mobile (390 px)</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+| &lt;  CUST-15             [Watch] [...] |
+| Returns QR labels                    |
+| Print-free returns: customers ...    |
+| Evaluating - (A) Alice - Due 3 Oct   |
+| [Details v]  (status, evaluators,    |
+|              score, tags)            |
+| [Overview] Evaluations  Proposal     |
+|--------------------------------------|
+| Description ...                      |
+| Activity ...                         |
+| [Write a comment...]                 |
++--------------------------------------+
+| [############ Evaluate ############] |
++--------------------------------------+</code></pre>
+<h3>Notes</h3>
+<ul><li><strong>Primary action (one per view, top right, depends on who is looking):</strong> pending evaluator: &quot;Evaluate&quot; (<code>E</code>). Owner: the next step for the status: &quot;Invite evaluators&quot; when there are none, &quot;Close evaluation&quot; when all are in, &quot;Start proposal&quot; when shortlisted. Everyone else: none; &quot;Comment&quot; is secondary.</li><li><strong>Inline editing:</strong> title, summary, description and tags are click-to-edit for people allowed to (<code>idea.edit_own</code> / <code>idea.edit_any</code>), with Save/Cancel and <code>Esc</code>. Status is a dropdown for owner and admins, a plain badge for others. Owner shows &quot;I&#x27;ll own this&quot; when unowned and volunteering is allowed.</li><li><strong>Score panel:</strong> aggregate with <code>n</code>, per-criterion bars (inverted criteria marked), and the disagreement flag with an explanation on hover/focus (&quot;Scores for Effort differ by 2 or more&quot;). Hidden entirely for pending evaluators (role matrix §3).</li><li><strong>Activity:</strong> comments and events in one feed, newest last, with the composer at the bottom. Markdown with a preview; <code>@</code> opens a member picker. AI research notes appear here with an AI badge and sources (Phase 6).</li><li><strong>Loading:</strong> title and tabs render from the list cache immediately; description, activity and sidebar show skeletons.</li><li><strong>Empty:</strong> no description: &quot;No details yet&quot; (owner/submitter see &quot;Add details&quot;). No activity: &quot;No comments yet. Ask a question or share a thought.&quot; No evaluators (owner): &quot;Invite 2–4 people to evaluate this idea.&quot;</li><li><strong>Error / not found:</strong> 404 shows &quot;This idea doesn&#x27;t exist or you don&#x27;t have access&quot; (same text for both, to avoid leaking). Failed saves keep the edit open with an inline error.</li><li><strong>Keyboard:</strong> <code>E</code> evaluate, <code>C</code> focus comment box, <code>S</code> status menu (owner/admin), <code>A</code> assign owner (admin), <code>1</code>/<code>2</code>/<code>3</code> switch tabs, <code>⌘Enter</code> posts a comment.</li><li><strong>Mobile:</strong> one column; the sidebar collapses into &quot;Details&quot;; the primary action is a sticky bottom bar.</li></ul></section>
+<section id="evaluate-sheet" aria-labelledby="evaluate-sheet-h"><h2 id="evaluate-sheet-h">4. Evaluate sheet</h2><p class="sub">Source: <a href="04-evaluate-sheet.md">docs/wireframes/04-evaluate-sheet.md</a></p>
+<p>Opens from the idea page (<code>E</code>), from My work, or from the email link (<code>/p/{project}/ideas/{key}?evaluate=1</code>) · assigned evaluators (<code>evaluation.submit_own</code>) · SPEC 5, screen 4. A side sheet over the idea page, so the idea stays readable while scoring.</p>
+<h3>Desktop (1440 px): scoring</h3>
+<pre tabindex="0"><code>+--------------------------------------------------+------------------------------------------+
+| (idea page, dimmed but readable)                 | Evaluate                             [x] |
+|                                                  | CUST-15 Returns QR labels                |
+|                                                  | Due Fri 3 Oct - draft saved 10:42        |
+|                                                  |------------------------------------------|
+|                                                  | Value                          weight 3  |
+|                                                  | How much does it help customers or us?   |
+|                                                  | ( 1 | 2 | 3 |[4]| 5 )                    |
+|                                                  | 4: clear benefit for a large group       |
+|                                                  | [ Add a comment (optional)            ]  |
+|                                                  |------------------------------------------|
+|                                                  | Feasibility                    weight 2  |
+|                                                  | ( 1 | 2 | 3 | 4 | 5 )                    |
+|                                                  |------------------------------------------|
+|                                                  | Effort                         weight 2  |
+|                                                  | 1 = very little, 5 = a lot.              |
+|                                                  | Lower is better; the score inverts it.   |
+|                                                  | ( 1 | 2 |[3]| 4 | 5 )                    |
+|                                                  |------------------------------------------|
+|                                                  | ... Strategic fit, Risk                  |
+|                                                  |------------------------------------------|
+|                                                  | Overall recommendation                   |
+|                                                  | ( Go | Maybe | No )                      |
+|                                                  | [ Overall comment (optional)          ]  |
+|                                                  |------------------------------------------|
+|                                                  | 3 of 5 scored          [## Submit ##]    |
++--------------------------------------------------+------------------------------------------+</code></pre>
+<h3>After submitting: the reveal</h3>
+<pre tabindex="0"><code>+------------------------------------------+
+| Evaluate                             [x] |
+| Submitted. You can edit until the owner  |
+| closes evaluation.                       |
+|------------------------------------------|
+| Value         you 4   others 4  4        |
+|               mean 4.0                   |
+| Feasibility   you 4   others 4  2        |
+|               mean 3.3  ! spread 2       |
+| Effort*       you 3   others 3  5        |
+| ...                                      |
+|------------------------------------------|
+| Aggregate 3.8 (n=3)   High disagreement  |
+| Recommendations  Go 1  Maybe 2  No 0     |
+|------------------------------------------|
+| [ Edit my evaluation ]      [## Done ##] |
++------------------------------------------+</code></pre>
+<h3>Mobile (390 px)</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+| [x]  Evaluate CUST-15     Due 3 Oct  |
+|--------------------------------------|
+| Value                                |
+| How much does it help us?            |
+| +------+------+------+------+------+ |
+| |  1   |  2   |  3   | [4]  |  5   | |
+| +------+------+------+------+------+ |
+| 4: clear benefit for a large group   |
+| [ Comment (optional) ]               |
+|--------------------------------------|
+| Feasibility ...                      |
+|                                      |
++--------------------------------------+
+| 3 of 5 scored     [#### Submit ####] |
++--------------------------------------+</code></pre>
+<h3>Notes</h3>
+<ul><li><strong>Primary action:</strong> Submit. After submitting: Done.</li><li><strong>Scoring controls:</strong> one row per active criterion in rubric order: name, weight, one-line description, a 1–5 segmented control (a radio group), guidance for the hovered/focused score (from the rubric), and an optional comment that expands on focus. Inverted criteria say so in words, not only with a mark.</li><li><strong>Drafts:</strong> every change autosaves as a draft (debounced), with &quot;Saving… / Draft saved 10:42&quot;. Closing the sheet never loses input. Drafts are private.</li><li><strong>Validation:</strong> Submit stays enabled; if something is missing it moves focus to the first unscored criterion with &quot;Pick a score&quot; (no disabled-button dead ends).</li><li><strong>Reveal:</strong> on success, other submitted scores fade in per criterion (200 ms, staggered; none with reduced motion). Includes AI evaluations only if the viewer can see them; the aggregate uses the included set (ADR 0006).</li><li><strong>Loading:</strong> the sheet opens instantly with skeleton rows while the rubric and draft load.</li><li><strong>Errors:</strong> load failure: inline message with Retry. Submit failure: toast with Retry, input kept. Evaluation closed meanwhile (409 <code>evaluation_closed</code>): banner &quot;Alice closed evaluation; your draft wasn&#x27;t submitted&quot;, controls read-only.</li><li><strong>Empty:</strong> not applicable (a rubric always has 3–6 criteria). If you&#x27;re not an evaluator, <code>E</code> does nothing and the URL param is ignored.</li><li><strong>Keyboard:</strong> focus starts on the first unscored criterion. <code>Tab</code> moves between criteria; <code>←</code>/<code>→</code> or <code>1</code>–<code>5</code> set the focused score; <code>G</code> / <code>M</code> / <code>N</code> set the recommendation when it&#x27;s focused; <code>⌘Enter</code> submits; <code>Esc</code> closes (draft kept). Focus is trapped in the sheet and returns to the Evaluate button on close.</li><li><strong>Mobile:</strong> full-height sheet; segments at least 44 px; the footer with the count and Submit is sticky.</li></ul></section>
+<section id="proposal-editor" aria-labelledby="proposal-editor-h"><h2 id="proposal-editor-h">5. Proposal editor</h2><p class="sub">Source: <a href="05-proposal-editor.md">docs/wireframes/05-proposal-editor.md</a></p>
+<p>Route <code>/p/{project}/ideas/{key}/proposal</code> (the idea page&#x27;s Proposal tab) · readers: <code>proposal.view</code>; writers: <code>proposal.write</code> (owner, admins) · SPEC 5, screen 5. A calm Markdown editor over the fixed template, with the outline on the left and comment threads in the right margin.</p>
+<h3>Desktop (1440 px), owner editing</h3>
+<pre tabindex="0"><code>+-----------------------------------------------------------------------------------------+
+| CUST-3 Subscription boxes / Proposal          Saved 10:42        [## Export v ##]       |
+|-----------------------------------------------------------------------------------------|
+| OUTLINE            | 1. Summary                    [Write | Preview] | Comments (3)     |
+| (*) Summary        | [B] [I] [Link] [List] [Draft with AI]           |                  |
+| (*) Problem        | +---------------------------------------------+ | Summary          |
+| ( ) Solution       | | A monthly curated box for existing          | | (C) Carol  2 h   |
+| ( ) Market &amp; users | | customers, starting with coffee and tea.    | | Can we quantify  |
+| ( ) Cost &amp; effort  | |                                             | | churn impact?    |
+| ( ) Benefits       | +---------------------------------------------+ | [Reply][Resolve] |
+| ( ) Risks          |                                                 |                  |
+| ( ) Next steps     | 2. Problem                                      | Problem          |
+|     / the ask      | +---------------------------------------------+ | (B) Bob    1 h   |
+|                    | | Repeat purchase rate dropped 8% ...         | | Source for 8%?   |
+|  (*) has content   | +---------------------------------------------+ | [Reply][Resolve] |
+|                    |                                                 |                  |
+|                    | 3. Solution                                     |                  |
+|                    | +---------------------------------------------+ | [+ Comment on    |
+|                    | | (empty: &quot;Describe what we&#x27;d build...&quot;)      | |    this section] |
+|                    | +---------------------------------------------+ |                  |
++-----------------------------------------------------------------------------------------+</code></pre>
+<h3>Suggested text (member suggestion or &quot;Draft with AI&quot;, Phase 6)</h3>
+<pre tabindex="0"><code>| 3. Solution                                                         |
+| +---------------------------------------------------------------+   |
+| | Suggested by [AI] Research agent - 3 sources          [v]     |   |
+| | We would partner with two local roasters and ...              |   |
+| |                                    [ Discard ]  [## Accept ##]|   |
+| +---------------------------------------------------------------+   |</code></pre>
+<h3>Mobile (390 px)</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+| &lt;  Proposal - CUST-3      [Export v] |
+| Section: [ 1. Summary            v ] |
+|--------------------------------------|
+| [Write | Preview]                    |
+| +----------------------------------+ |
+| | A monthly curated box for ...    | |
+| +----------------------------------+ |
+|                                      |
+| [ Comments (3) ]  opens bottom sheet |
++--------------------------------------+</code></pre>
+<h3>Notes</h3>
+<ul><li><strong>Primary action:</strong> Export (menu: PDF, Markdown). Saving is automatic. Before a proposal exists, the Proposal tab&#x27;s primary action is &quot;Start proposal&quot; (owner, once shortlisted); others see &quot;The owner will write a proposal once this idea is shortlisted.&quot;</li><li><strong>Editor:</strong> one auto-growing native <code>&lt;textarea&gt;</code> per template section with a Write/Preview toggle (react-markdown), a small toolbar (bold, italic, link, list) and native spellcheck. No editor library (research R2). Sections are fixed: Summary, Problem, Solution, Market &amp; users, Cost &amp; effort, Benefits/revenue, Risks, Next steps / the ask. The outline marks which have content.</li><li><strong>Comments:</strong> threads attach to a section (not character ranges), with Reply and Resolve; resolved threads collapse. Members and evaluators comment (<code>proposal.comment</code>); viewers read.</li><li><strong>Saving:</strong> debounced autosave with &quot;Saving… / Saved 10:42&quot;. If someone else saved the same section meanwhile, a banner offers &quot;Reload&quot; or &quot;Keep mine&quot; (no silent overwrite).</li><li><strong>Loading:</strong> outline and headings render first; section bodies show skeleton lines.</li><li><strong>Empty:</strong> each empty section shows a one-line prompt as placeholder (&quot;Who has this problem, and how do we know?&quot;).</li><li><strong>Errors:</strong> save failure keeps the text, shows an inline &quot;Not saved. Retry&quot; by the section and a warning if you try to leave. Export failure: toast with Retry.</li><li><strong>Keyboard:</strong> <code>⌘B</code> / <code>⌘I</code> / <code>⌘K</code> (link, inside the editor only), <code>⌘⇧P</code> toggles preview, <code>⌘⌥M</code> comments on the current section, <code>⌘S</code> saves now. The outline is a list of links that move focus to the section.</li><li><strong>Mobile:</strong> readable and commentable; editing works but isn&#x27;t the target. The outline becomes a section picker; comments open in a bottom sheet.</li></ul></section>
+<section id="submit-idea" aria-labelledby="submit-idea-h"><h2 id="submit-idea-h">6. Submit idea (internal and public)</h2><p class="sub">Source: <a href="06-submit-idea.md">docs/wireframes/06-submit-idea.md</a></p>
+<p>Internal: a dialog opened with <code>N</code>, &quot;New idea&quot; or the palette · <code>idea.create</code>. Public: a branded page at <code>/{project}/submit</code> · <code>public.submit</code> (only when the project enables it) · SPEC 5, screen 6, and SPEC 10.</p>
+<h3>Internal (dialog over any page)</h3>
+<pre tabindex="0"><code>+------------------------------------------------------------+
+| New idea                                               [x] |
+|------------------------------------------------------------|
+| Project      [ Customer Innovation                     v ] |
+|                                                            |
+| Title        [ Print-free returns with a QR code         ] |
+|              A short name people will recognise.           |
+|                                                            |
+| Summary      [ One or two sentences: what and why        ] |
+|                                                            |
+| Description  [Write | Preview]                  optional   |
+|              +-------------------------------------------+ |
+|              | Markdown. Who is it for? What changes?    | |
+|              +-------------------------------------------+ |
+|                                                            |
+| Tags         [ returns x ] [ logistics x ] [ + tag       ] |
+|------------------------------------------------------------|
+|                         [ Cancel ]   [## Submit idea ##]   |
++------------------------------------------------------------+</code></pre>
+<h3>Public (branded page, 1440 px)</h3>
+<pre tabindex="0"><code>+------------------------------------------------------------------------------+
+|                          [Acme logo]  Acme Ideas                             |
+|                                                                              |
+|                  Share an idea with our Customer team                        |
+|         We read every idea. You&#x27;ll get a private link to follow it.          |
+|                                                                              |
+|   Title          [                                                    ]      |
+|   Summary        [                                                    ]      |
+|   Description    [                                                    ]      |
+|                  [                                          optional  ]      |
+|                                                                              |
+|   Your name      [                    ]  optional                            |
+|   Your email     [                    ]  optional, for updates               |
+|                  [x] Email me when the status changes                        |
+|                                                                              |
+|   [v] Verified you&#x27;re human (runs in your browser, no puzzle)                |
+|                                                                              |
+|                         [####### Send idea #######]                          |
+|                                                                              |
+|          Privacy: we store only what you enter here. Powered by Soundings    |
++------------------------------------------------------------------------------+</code></pre>
+<h3>Public confirmation</h3>
+<pre tabindex="0"><code>+------------------------------------------------------------------------------+
+|                          [Acme logo]  Acme Ideas                             |
+|                                                                              |
+|                   Thanks! Your idea &quot;Print-free returns&quot; is in.              |
+|                                                                              |
+|   Keep this private link to see its status:                                  |
+|   [ https://ideas.acme.example/t/5pX...Qe                    ] [## Copy ##]  |
+|   We&#x27;ve also emailed it to you. (Check your inbox to confirm your address.)  |
++------------------------------------------------------------------------------+</code></pre>
+<h3>Mobile (390 px), public</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+|        [logo] Acme Ideas             |
+| Share an idea                        |
+| Title                                |
+| [                                  ] |
+| Summary                              |
+| [                                  ] |
+| Description (optional)               |
+| [                                  ] |
+| Email (optional)                     |
+| [                                  ] |
+| [v] Verified you&#x27;re human            |
+| [########## Send idea ###########]   |
++--------------------------------------+</code></pre>
+<h3>Notes</h3>
+<ul><li><strong>Primary action:</strong> &quot;Submit idea&quot; (internal) / &quot;Send idea&quot; (public).</li><li><strong>Fields:</strong> only title and summary are required. Limits are shown as you approach them, not up front. The project picker is preselected from context and hidden when there&#x27;s only one project you can submit to.</li><li><strong>After internal submit:</strong> the dialog closes, the new idea opens, and a toast says &quot;CUST-22 created&quot; with &quot;Copy link&quot;. The draft is kept in the dialog if you close it by accident (per-browser, not synced).</li><li><strong>Public anti-abuse:</strong> a hidden honeypot field, a per-IP rate limit (proxy-aware), and the ALTCHA proof-of-work widget, which solves itself in the background and works offline. Optional email verification and moderation (the idea stays hidden until an admin approves it). Name and email are optional and erasable by admins.</li><li><strong>Branding:</strong> the public page uses the project&#x27;s (or global) logo, colours and font; it shows nothing about the project beyond its name and intro, even for private projects.</li><li><strong>Loading:</strong> the internal dialog opens instantly; the tag picker loads lazily. The public page is small and server-light; the ALTCHA challenge loads with it.</li><li><strong>Empty:</strong> not applicable. Public submission disabled: 404 page &quot;This form isn&#x27;t available&quot; (no hint whether the project exists).</li><li><strong>Errors:</strong> field errors inline, focus moves to the first; rate-limited: &quot;You&#x27;ve sent several ideas in a short time. Try again in a few minutes.&quot;; verification failed: &quot;We couldn&#x27;t verify this browser. Retry&quot;.</li><li><strong>Keyboard:</strong> <code>N</code> opens the dialog anywhere; <code>⌘Enter</code> submits; <code>Esc</code> closes (asks only if there&#x27;s unsaved text). Labels are visible, not placeholders.</li><li><strong>Mobile:</strong> single column, large fields, sticky submit on the internal dialog (which becomes a full-screen sheet).</li></ul></section>
+<section id="settings" aria-labelledby="settings-h"><h2 id="settings-h">7. Settings (project and admin)</h2><p class="sub">Source: <a href="07-settings.md">docs/wireframes/07-settings.md</a></p>
+<p>Project settings: <code>/p/{project}/settings</code> · project admins and platform admins. Admin settings: <code>/admin</code> · platform admins. Personal settings (profile, notification preferences, API keys): <code>/me</code>. SPEC 5, screen 7. Plain forms, sensible defaults, no sprawl: each page is one short form with one Save.</p>
+<h3>Project settings: Rubric (1440 px)</h3>
+<pre tabindex="0"><code>+------------------------+-------------------------------------------------------------------+
+| (sidebar)              | Customer Innovation / Settings                                    |
+|                        |                                                                   |
+|                        | General | Members | [Rubric] | Statuses | Public form | Branding  |
+|                        |-------------------------------------------------------------------|
+|                        | Rubric                                                            |
+|                        | 3 to 6 criteria. Weights are relative. Inverted: lower is better. |
+|                        |                                                                   |
+|                        | ::  Value          [How much does it help customers or us?]       |
+|                        |                    Weight [ 3 ]  [ ] Inverted  [Guidance v]  [..] |
+|                        | ::  Feasibility    [Can we build and run it?              ]       |
+|                        |                    Weight [ 2 ]  [ ] Inverted  [Guidance v]  [..] |
+|                        | ::  Effort         [How much work is it?                  ]       |
+|                        |                    Weight [ 2 ]  [x] Inverted  [Guidance v]  [..] |
+|                        | ::  Strategic fit  [Does it fit where we&#x27;re going?        ]       |
+|                        |                    Weight [ 2 ]  [ ] Inverted  [Guidance v]  [..] |
+|                        | ::  Risk           [What could go wrong?                  ]       |
+|                        |                    Weight [ 1 ]  [x] Inverted  [Guidance v]  [..] |
+|                        | [+ Add criterion]                                                 |
+|                        |                                                                   |
+|                        | Changing the rubric recalculates scores for all ideas.            |
+|                        |                                [ Discard ]  [## Save rubric ##]   |
++------------------------+-------------------------------------------------------------------+</code></pre>
+<h3>Project settings: Members</h3>
+<pre tabindex="0"><code>+------------------------------------------------------------------------------------------+
+| Members          [ Add people or groups...        ] [Member v]  [## Add ##]              |
+|------------------------------------------------------------------------------------------|
+| (A) Alice Anders   alice@example.com         [Admin v]                 [Remove]          |
+| (B) Bob Brown      bob@example.com           [Member v]                [Remove]          |
+| [G] /innovation/members (group, 14 people)   [Member v]                [Remove]          |
+| (C) Carol Chen     via /innovation/members   Member (edit the group, not her)            |
++------------------------------------------------------------------------------------------+</code></pre>
+<h3>Admin settings: Email (1440 px)</h3>
+<pre tabindex="0"><code>+------------------------+-------------------------------------------------------------------+
+| Admin                  | Email (SMTP)                                   Status: Working    |
+|   Users                |                                                                   |
+|   Groups               | These values come from the Helm release; change them there.       |
+|   Sign-in (SSO)        |   Host       smtp.example.com       Port      587                 |
+| &gt; Email                |   Security   STARTTLS               Timeout   10 s                |
+|   Branding             |   From       Soundings &lt;ideas@example.com&gt;                        |
+|   API keys             |   Reply-to   --                     Username  soundings           |
+|   Agents               |   Password   ********  (Secret soundings-smtp)                    |
+|   Audit log            |   CA bundle  custom (1 certificate)                               |
+|                        |                                                                   |
+|                        | Send a test email to [ alice@example.com    ] [## Send test ##]   |
+|                        |                                                                   |
+|                        | Failed sends  2                                                   |
+|                        |  bob@example.com   &quot;You&#x27;ve been asked to evaluate...&quot;             |
+|                        |      8 attempts - 535 authentication failed - 2 h    [ Retry ]    |
++------------------------+-------------------------------------------------------------------+</code></pre>
+<h3>Mobile (390 px)</h3>
+<pre tabindex="0"><code>+--------------------------------------+
+| &lt;  Settings                          |
+| [ Rubric                         v ] |
+|--------------------------------------|
+| Value                           [..] |
+| [How much does it help us?       ]   |
+| Weight [3]   [ ] Inverted            |
+|--------------------------------------|
+| Feasibility                     [..] |
+| ...                                  |
++--------------------------------------+
+| [ Discard ]    [### Save rubric ###] |
++--------------------------------------+</code></pre>
+<h3>Pages and what&#x27;s on them</h3>
+<ul><li><strong>Project:</strong> General (name, description, visibility private/internal, volunteer owners on/off, evaluation window in days, archive); Members (people and groups with a role; group-derived members are read-only here); Rubric; Statuses (rename the five labels, with a live preview of the board header); Public form (on/off, moderation, email verification, intro text, link to copy); Branding (optional override of the global branding, live preview).</li><li><strong>Admin:</strong> Users (pre-create, external IDs, deactivate, sign-out everywhere); Groups (IdP mappings, managed/additive, &quot;Test mapping&quot; box); Sign-in (effective OIDC config, login matching, break-glass status); Email (effective SMTP config, test, failed sends); Branding (global, live preview); API keys (all keys, revoke); Agents (registered kagent agents, purpose, service account); Audit log.</li><li><strong>Me:</strong> profile, notification preferences per type (immediate / daily digest / off), personal API keys (name, scopes, expiry, project restriction; the key is shown once).</li></ul>
+<h3>Notes</h3>
+<ul><li><strong>Primary action:</strong> Save on each form (disabled-looking only while nothing changed; it still explains &quot;No changes&quot; if pressed). &quot;Send test&quot; on Email; &quot;Add&quot; on Members.</li><li><strong>Defaults:</strong> every setting has a working default; a fresh project needs only a name. Settings that come from Helm (SMTP, OIDC) are shown read-only with where to change them.</li><li><strong>Destructive-ish actions</strong> (remove member, archive project, revoke key) apply at once with an Undo toast, except those that can&#x27;t be undone (erase submitter data, delete a key&#x27;s secret), which confirm in a dialog that names the thing.</li><li><strong>Loading:</strong> the form skeleton matches the final layout; no layout jump.</li><li><strong>Empty:</strong> no members besides you: &quot;Add people or a group to start collaborating.&quot; No failed sends: &quot;All emails delivered.&quot; No API keys: &quot;Create a key to use the API or connect an MCP client.&quot;</li><li><strong>Errors:</strong> field errors inline; save failure keeps the form dirty with a banner. SMTP test failure shows the server&#x27;s reply (e.g. &quot;535 authentication failed&quot;) and what to check.</li><li><strong>Keyboard:</strong> tabs are a proper tablist (<code>←</code>/<code>→</code>); rubric rows reorder with the drag handle or <code>Alt+↑</code>/<code>Alt+↓</code>; <code>⌘S</code> saves the current form.</li><li><strong>Mobile:</strong> the tab row becomes a page picker; forms are single column; Save is a sticky footer.</li></ul></section>
+</main>
+<footer>Generated from <code>docs/wireframes/0*.md</code> by
+<code>python3 docs/wireframes/build_index.py</code>. Edit the Markdown, then re-run.</footer>
+</div>
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  var order = ['system', 'light', 'dark'], mode = 'system';
+  try { mode = localStorage.getItem('wireframes-theme') || 'system'; } catch (e) {}
+  function apply() {
+    if (mode === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', mode);
+    btn.textContent = 'Theme: ' + mode;
+  }
+  btn.addEventListener('click', function () {
+    mode = order[(order.indexOf(mode) + 1) % order.length];
+    try { localStorage.setItem('wireframes-theme', mode); } catch (e) {}
+    apply();
+  });
+  apply();
+})();
+</script>
+</body>
+</html>

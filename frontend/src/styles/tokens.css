@@ -1,0 +1,174 @@
+/*
+ * Soundings design tokens — the single source of colour, elevation and motion.
+ *
+ * Raw values live here as plain custom properties and switch with the `.light`
+ * / `.dark` class (set on <html> by the theme code; also usable on any subtree).
+ * styles/theme.css maps them onto Tailwind utilities (bg-surface, text-muted,
+ * border-subtle, …). Components use the utilities, never these raw names or hex.
+ *
+ * Branding: --brand-primary / --brand-accent / --brand-font may be overridden at
+ * runtime (see lib/branding.ts). Every accent token below derives from them.
+ */
+
+:root {
+  --brand-primary: #1d5fa8;
+  --brand-accent: #1d5fa8;
+  --brand-font: 'Inter Variable';
+
+  /* Motion — use with transition/animation; reduced-motion users get ~0ms. */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout */
+  --sidebar-width: 15rem;
+  --topbar-height: 3rem;
+}
+
+:root,
+.light {
+  color-scheme: light;
+
+  /* Neutral surfaces (keep in sync with THEME_SURFACES in lib/branding.ts) */
+  --background: #f6f6f7; /* app canvas behind panels, sidebar */
+  --surface: #ffffff; /* content panels, cards, inputs */
+  --elevated: #ffffff; /* popovers, menus, dialogs, sheets */
+  --subtle: rgb(24 24 32 / 0.045); /* quiet fills: chips, secondary buttons, skeletons */
+  --subtle-hover: rgb(24 24 32 / 0.08); /* hover/pressed/selected fills */
+  --overlay: rgb(16 16 22 / 0.32); /* modal backdrop */
+
+  --border: #e4e4e8;
+  --border-subtle: #ececef;
+  --border-strong: #d1d1d7;
+  --border-control: #8b8b94; /* checkbox/radio/switch outlines: ≥ 3:1 */
+
+  --fg-primary: #1a1a1f;
+  --fg-secondary: #4f4f58;
+  --fg-muted: #6b6b75; /* ≥ 4.5:1 on background and surface */
+
+  /* Brand accent (derived; applyBranding() may replace with contrast-checked values) */
+  --accent: var(--brand-primary);
+  --accent-hover: color-mix(in oklch, var(--brand-primary), black 14%);
+  --accent-foreground: #ffffff;
+  --accent-subtle: color-mix(in oklch, var(--brand-primary) 9%, var(--surface));
+  --fg-accent: var(--brand-primary);
+  --focus: var(--brand-primary);
+
+  /* Feedback */
+  --danger: #d42a2a;
+  --danger-hover: #b92222;
+  --danger-foreground: #ffffff;
+  --fg-danger: #c42424;
+  --warning: #e58a0b;
+  --warning-foreground: #1a1a1f;
+  --fg-warning: #a55108;
+  --success: #177a3c;
+  --success-foreground: #ffffff;
+  --fg-success: #177a3c;
+  --info: #0a6aa0;
+  --info-foreground: #ffffff;
+  --fg-info: #0a6aa0;
+  --danger-subtle: color-mix(in oklch, var(--danger) 9%, var(--surface));
+  --warning-subtle: color-mix(in oklch, var(--warning) 12%, var(--surface));
+  --success-subtle: color-mix(in oklch, var(--success) 9%, var(--surface));
+  --info-subtle: color-mix(in oklch, var(--info) 9%, var(--surface));
+
+  /* Idea status — dots, column accents. Labels always accompany the colour. */
+  --status-new: #3f7fe0;
+  --status-evaluating: #e0960b;
+  --status-shortlisted: #8a5cf0;
+  --status-proposal: #0f9e94;
+  --status-accepted: #1f9d55;
+  --status-rejected: #dc3b3b;
+  --status-parked: #9a9aa4;
+
+  /* Scores 1 (poor) → 5 (strong) — bars, tints, badges */
+  --score-1: #e5484d;
+  --score-2: #ee7d2b;
+  --score-3: #e2a50c;
+  --score-4: #8fb51d;
+  --score-5: #2f9e57;
+
+  /* Avatars: hue comes from a hash of the name, lightness/chroma from here */
+  --avatar-bg-l: 0.9;
+  --avatar-bg-c: 0.05;
+  --avatar-fg-l: 0.38;
+  --avatar-fg-c: 0.08;
+
+  /* Elevation — overlays only; content never casts shadows */
+  --elevation-overlay:
+    0 0 0 1px rgb(16 16 22 / 0.04), 0 4px 12px -2px rgb(16 16 22 / 0.1),
+    0 12px 32px -8px rgb(16 16 22 / 0.12);
+  --elevation-dialog: 0 0 0 1px rgb(16 16 22 / 0.05), 0 16px 48px -12px rgb(16 16 22 / 0.24);
+  --elevation-raised: 0 1px 2px rgb(16 16 22 / 0.06), 0 8px 20px -6px rgb(16 16 22 / 0.16);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: #151518;
+  --surface: #1b1b1f;
+  --elevated: #222227;
+  --subtle: rgb(255 255 255 / 0.05);
+  --subtle-hover: rgb(255 255 255 / 0.085);
+  --overlay: rgb(0 0 0 / 0.55);
+
+  --border: #2d2d34;
+  --border-subtle: #25252a;
+  --border-strong: #3c3c44;
+  --border-control: #6f6f7a;
+
+  --fg-primary: #ededf0;
+  --fg-secondary: #b4b4bd;
+  --fg-muted: #8e8e98;
+
+  --accent: var(--brand-primary);
+  --accent-hover: color-mix(in oklch, var(--brand-primary), black 14%);
+  --accent-foreground: #ffffff;
+  --accent-subtle: color-mix(in oklch, var(--brand-primary) 22%, var(--surface));
+  --fg-accent: color-mix(in oklch, var(--brand-primary) 58%, white);
+  --focus: color-mix(in oklch, var(--brand-primary) 58%, white);
+
+  --danger: #d42a2a;
+  --danger-hover: #b92222;
+  --danger-foreground: #ffffff;
+  --fg-danger: #f47171;
+  --warning: #e8a02a;
+  --warning-foreground: #1a1a1f;
+  --fg-warning: #f1b233;
+  --success: #1f8a47;
+  --success-foreground: #ffffff;
+  --fg-success: #4fd07f;
+  --info: #0f79b5;
+  --info-foreground: #ffffff;
+  --fg-info: #4cb6ee;
+  --danger-subtle: color-mix(in oklch, var(--danger) 16%, var(--surface));
+  --warning-subtle: color-mix(in oklch, var(--warning) 14%, var(--surface));
+  --success-subtle: color-mix(in oklch, var(--success) 16%, var(--surface));
+  --info-subtle: color-mix(in oklch, var(--info) 16%, var(--surface));
+
+  --status-new: #5b95f0;
+  --status-evaluating: #f0aa2e;
+  --status-shortlisted: #a07cf5;
+  --status-proposal: #26b3a8;
+  --status-accepted: #3dbb6e;
+  --status-rejected: #ec5b5b;
+  --status-parked: #7c7c87;
+
+  --score-1: #ec5d61;
+  --score-2: #f08f45;
+  --score-3: #edb42c;
+  --score-4: #a3c83a;
+  --score-5: #44b56c;
+
+  --avatar-bg-l: 0.34;
+  --avatar-bg-c: 0.06;
+  --avatar-fg-l: 0.88;
+  --avatar-fg-c: 0.06;
+
+  --elevation-overlay: 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.5);
+  --elevation-dialog: 0 0 0 1px rgb(255 255 255 / 0.07), 0 24px 64px -12px rgb(0 0 0 / 0.65);
+  --elevation-raised: 0 0 0 1px rgb(255 255 255 / 0.06), 0 10px 24px -6px rgb(0 0 0 / 0.55);
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Copy a local Docker image into the k3s node's containerd (no registry needed).
+#
+#   scripts/k3s-load-image.sh [image]        # default: soundings:dev
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR source=lib/k3s-env.sh
+source "$(dirname "$0")/lib/k3s-env.sh"
+
+IMAGE="${1:-${IMAGE:-soundings:dev}}"
+require_k3s
+docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image '$IMAGE' not found (run: make image)"
+
+log "importing $IMAGE into k3s '$K3S_NAME'"
+docker save "$IMAGE" | docker exec -i "$K3S_NAME" ctr -n k8s.io images import --all-platforms - >/dev/null
+docker exec "$K3S_NAME" ctr -n k8s.io images ls -q | grep -F "${IMAGE%%:*}" >&2 || die "import failed"

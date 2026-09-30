@@ -1,0 +1,76 @@
+import { cva, type VariantProps } from 'class-variance-authority'
+import { Slot } from 'radix-ui'
+import type { ComponentProps } from 'react'
+
+import { Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
+
+export const buttonVariants = cva(
+  [
+    'relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap select-none',
+    'transition-[background-color,border-color,color,box-shadow,opacity] duration-150',
+    'disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  ],
+  {
+    variants: {
+      variant: {
+        primary: 'bg-accent text-accent-foreground hover:bg-accent-hover active:bg-accent-hover',
+        secondary: 'bg-subtle text-primary hover:bg-subtle-hover',
+        outline: 'border bg-surface text-primary hover:border-strong hover:bg-subtle',
+        ghost: 'text-secondary hover:bg-subtle hover:text-primary data-[state=open]:bg-subtle',
+        destructive: 'bg-danger text-danger-foreground hover:bg-danger-hover',
+        link: 'h-auto! px-0! text-accent underline-offset-4 hover:underline',
+      },
+      size: {
+        sm: "h-7 px-2.5 text-sm [&_svg:not([class*='size-'])]:size-3.5",
+        md: 'h-8 px-3 text-sm',
+        lg: 'h-10 gap-2 px-4 text-base',
+        icon: 'size-8',
+        'icon-sm': "size-7 [&_svg:not([class*='size-'])]:size-3.5",
+      },
+    },
+    defaultVariants: { variant: 'secondary', size: 'md' },
+  },
+)
+
+export interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
+  /** Render the child element (e.g. a router <Link>) with button styles. */
+  asChild?: boolean
+  /** Shows a spinner, disables the button and sets aria-busy. */
+  loading?: boolean
+}
+
+export function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  loading = false,
+  disabled,
+  children,
+  type,
+  ...props
+}: ButtonProps) {
+  const classes = cn(buttonVariants({ variant, size }), className)
+  if (asChild) {
+    return (
+      <Slot.Root data-slot="button" className={classes} {...props}>
+        {children}
+      </Slot.Root>
+    )
+  }
+  return (
+    <button
+      data-slot="button"
+      type={type ?? 'button'}
+      className={classes}
+      disabled={disabled ?? loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading && <Spinner />}
+      {children}
+    </button>
+  )
+}

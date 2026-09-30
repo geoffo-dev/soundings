@@ -1,0 +1,205 @@
+# Soundings: notes for Claude Code sessions
+
+Living notes. Keep them current: when you learn a command, convention or gotcha that
+the next session needs, add it here (lead-owned; teammates send additions to the lead).
+
+## What Soundings is
+
+Soundings (working name "ideas-pipeline" in SPEC.md) is a calm, fast web app where
+people submit ideas, including anonymously through a public form. Each idea gets one
+accountable **owner** and several **evaluators**, who score it **blind** against a
+short rubric. Scores roll up into a weighted aggregate with a disagreement flag, and
+strong ideas become a commercial proposal exported to PDF or Markdown. kagent agents
+can act as an extra evaluator or research assistant through our MCP server. It is
+one container image and one Helm chart, needs only PostgreSQL, sends mail through any
+SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
+
+## Read first
+
+| File | Why |
+|---|---|
+| `SPEC.md` | The product brief and source of truth (read-only) |
+| `docs/ownership.md` | Which paths you may edit; how to ask other owners for changes |
+| `docs/role-matrix.md` | Every permission rule by stable name, and the exact blind-evaluation rules |
+| `docs/adr/` | Architecture decisions (stack, jobs, image, sessions, scoring, authz…) |
+| `docs/decisions.md` | Product decisions and simplifications, incl. SPEC section 16 answers |
+| `docs/api/contract-phase*.md`, `docs/erd.md` | The current API contract and data model |
+| `docs/wireframes/` | Low-fi wireframes of the seven screens (`index.html` shows all) |
+| `docs/research/` | Verified library, kagent, A2A and Claude Code facts (with caveats) |
+
+## Repository layout
+
+```
+backend/          FastAPI app (app/), Alembic (migrations/), tests/ — uv, Python 3.12
+  app/schemas/      API contract (lead)          app/authz/ app/auth/ app/api_keys/ (identity)
+frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 4
+  src/api/generated/  openapi.json + schema.d.ts (lead, generated)
+  src/components/ui/  design system; /design shows it (dev only)
+deploy/helm/      Helm chart          deploy/kagent/  example agent manifests
+dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit
+e2e/              Playwright acceptance tests + screenshots (qa; from Phase 1)
+scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers
+docs/             ADRs, role matrix, ownership, wireframes, guides, research,
+                  screenshots/phase-N/ (review screenshots, light/dark/390 px)
+.claude/          settings.json (team env, permissions, hook), agents/ (8 agent types)
+Dockerfile        one image: API + built SPA; `worker` and `migrate` subcommands
+Makefile          root tasks (below)
+```
+
+## Commands
+
+Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
+
+| Target | What it does |
+|---|---|
+| `make check` | Every check: `check-backend check-frontend check-helm check-scripts` |
+| `make check-backend` | `make -C backend check`: ruff, mypy --strict, pytest (needs Docker) |
+| `make check-frontend` | `npm --prefix frontend run check`: tsc, eslint + prettier, vitest, build |
+| `make check-helm` | `helm lint --strict` + `helm template` for defaults and `deploy/helm/ci/*-values.yaml`, via the helm container |
+| `make check-scripts` | `bash -n` + shellcheck (when available) on `scripts/` |
+| `make dev-up` / `dev-down` / `dev-logs` | Dev services via `docker compose -f dev/docker-compose.yml` |
+| `make dev` | Prints how to run API, worker and SPA against the dev services |
+| `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`) |
+| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`soundings-k3s`), import image, load + `helm upgrade --install`, smoke test |
+| `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
+| `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
+| `make e2e` | Playwright e2e in `e2e/` (placeholder until qa creates it in Phase 1) |
+| `make seed` | Demo data (placeholder until Phase 1) |
+
+Backend (`make -C backend <target>`): `install` (uv sync --locked), `check`, `lint`,
+`typecheck`, `test`, `fmt`, `dev` (API on :8000 with reload; also serves the SPA from
+`frontend/dist` once built), `worker`, `migrate`, `revision m="..."` (backend owner
+only), `openapi`, `vendor-swagger` (refresh the bundled Swagger UI).
+
+Frontend (`npm --prefix frontend run <script>`, after `npm --prefix frontend ci`):
+`dev` (Vite on :5173, proxies `/api`, `/mcp`, `/metrics` to :8000), `dev:mock` (MSW, no
+backend), `check`, `typecheck`, `test` (vitest), `test:pw` (Playwright + axe against
+dev:mock on :5174; `PW_PORT` overrides), `screenshots` (into
+`docs/screenshots/phase-0/`; `SCREENSHOT_DIR` overrides), `gen:api`, `build`, `lint`,
+`format`.
+
+Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
+
+Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000, Vite 5173,
+Playwright 5174, k3s API 16443, k3s ingress 18081. Dev logins are in `dev/README.md`.
+
+## Conventions
+
+- **Contract first.** The lead writes Pydantic schemas in `backend/app/schemas/`, 501
+  route stubs and `docs/api/contract-phaseN.md`, then `make gen-api`. Builders never
+  change the contract; they message the lead (ADR 0008).
+- **File ownership** per `docs/ownership.md`. Only backend writes migrations. Only the
+  lead commits. Never run `git stash/reset/checkout --/clean/restore` in the shared
+  tree (settings.json makes these ask).
+- **API shape:** `/api/v1`, snake_case JSON, RFC 9457 problem+json with a stable
+  `code`, opaque cursor pagination (`items`, `next_cursor`), UUID ids plus idea keys
+  like `CUST-12`. Check order: 401 → 404 → 403 → 422 → 409.
+- **Database:** psycopg 3 only (SQLAlchemy `postgresql+psycopg://` and procrastinate);
+  no asyncpg. Enums are `VARCHAR` + `CHECK`. Tests use testcontainers Postgres, not
+  mocks.
+- **Authorisation:** one policy module, deny by default, rules named as in the role
+  matrix. Routes, MCP tools, jobs and emails call the policy; nothing checks roles
+  directly (ADR 0010).
+- **Blind evaluation:** pending evaluators see no score data anywhere; emails never
+  contain scores (role matrix section 3, ADR 0006).
+- **Email:** outbox row + job deferred in the same transaction (ADR 0003).
+- **Tests first** for authz, login matching and group sync, blind-evaluation
+  visibility, API-key scoping and the email outbox.
+- **Frontend:** only design-system components and tokens (no hex values, no arbitrary
+  Tailwind values); loading, empty and error states, dark mode, keyboard, 390 px for
+  every screen; API only through `src/api/client.ts`.
+- **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
+- **Dependencies:** one-line justification each, in the owner's report.
+- **Commits** (lead): small conventional commits, no secrets.
+
+## Environment gotchas (this build machine)
+
+- **Docker:** if `docker info` fails, start the daemon:
+  `(nohup dockerd > /tmp/dockerd.log 2>&1 &)`. Docker Hub pulls go through the
+  `mirror.gcr.io` registry mirror (direct Hub pulls may 429). Pre-pulled:
+  `postgres:16-alpine`, `python:3.12-slim`, `node:22-alpine`, `alpine/helm:3.16.2`,
+  `rancher/k3s:v1.31.4-k3s1`, `keycloak/keycloak:26.0`, `axllent/mailpit`,
+  `testcontainers/ryuk:0.11.0`.
+- **Blocked hosts:** quay.io, get.helm.sh, GitHub release downloads, ui.shadcn.com,
+  kagent.dev, modelcontextprotocol.io, deb.debian.org (so apt in the image build
+  fails; see `IMAGE_BUILD_ARGS` in the Makefile). pypi.org, registry.npmjs.org and
+  code.claude.com work. To check a library's API, read the installed source.
+- **TLS proxy:** outbound HTTPS is intercepted; the CA bundle is
+  `/root/.ccr/ca-bundle.crt` (`SSL_CERT_FILE`). `make image` passes it as a BuildKit
+  secret (`BUILD_CA`); k3s trusts it via `scripts/k3s-up.sh`.
+- **Helm and kubectl** are not installed as binaries. Use the make targets;
+  `scripts/lib/k3s-env.sh` defines `helm` (alpine/helm container on the k3s network)
+  and `kubectl` (`docker exec -i soundings-k3s kubectl …`). The kubeconfig is in
+  `.k3s/soundings-k3s/` (git-ignored). In-cluster pulls need the `registries.yaml`
+  mirror that `k3s-up.sh` writes.
+- **Playwright:** Chromium is pre-installed at `/opt/pw-browsers`
+  (`PLAYWRIGHT_BROWSERS_PATH`). Pin `@playwright/test` to **1.56.1**. Never run
+  `playwright install` (denied in settings.json).
+- **testcontainers:** set `RYUK_CONTAINER_IMAGE=testcontainers/ryuk:0.11.0` (the
+  default 0.8.1 isn't pulled); import `PostgresContainer` from
+  `testcontainers.community.postgres`.
+- **Library pins that matter:** TypeScript 5.9.x (7.x breaks typescript-eslint and
+  openapi-typescript), MSW 2.15, `mcp` 2.x (`MCPServer`, not `FastMCP`), WeasyPrint 70
+  (new URL-fetcher API), Python `altcha` 2.x with the `altcha@3` widget.
+- **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
+  stop what you start, never kill other agents' processes or containers.
+
+## Claude Code multi-agent setup
+
+`.claude/settings.json` (verified against code.claude.com on 2026-09-30 and the
+published settings schema):
+
+- `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` enables agent teams. Project `env` and
+  `allow` rules apply only after the folder is trusted.
+- **allow:** `make`, the `scripts/k3s-*.sh` and `check-task.sh` helpers, `uv sync`,
+  `uv run pytest|ruff|mypy|alembic|soundings`, `npm ci`, `npm run` (also with
+  `--prefix frontend|e2e`), `npx playwright test|show-report`,
+  `docker compose -f dev/docker-compose.yml`, `docker exec [-i] soundings-k3s kubectl`
+  (local k3s only), and read-only git. Helm has no direct rule: a wildcard over
+  `docker run` flags would also approve `--privileged` or arbitrary mounts, so run it
+  through `make check-helm` / `make k3s-install`.
+- **ask:** git commands that rewrite the shared working tree, and `docker * prune`.
+- **deny:** `playwright install`.
+- **TaskCompleted hook** runs `scripts/check-task.sh` (exec form, 20 min timeout) when
+  any agent marks a task completed with TaskUpdate, or a teammate stops with tasks in
+  progress. Exit 2 keeps the task open and feeds the failing output back to the agent.
+  The hook input has no list of touched files, so the script checks every area with
+  uncommitted changes (`git status`): in a busy shared tree that can include other
+  owners' red areas. Unverified: the hook firing inside a real team session.
+
+Agent types in `.claude/agents/` (all `model: inherit`): `backend`, `identity`,
+`frontend`, `platform`, `qa` (builders) and `code-reviewer`, `ux-reviewer`,
+`researcher` (read-only). Spawn teammates **named after their type** (e.g. "spawn a
+teammate named backend using the backend agent type"). With teams enabled, any
+subagent given a name becomes a teammate, so spawn researchers and reviewers
+unnamed. Teammates can't spawn teammates; one team per session.
+
+## How to run a phase
+
+1. **Plan** (plan mode): re-read the phase in SPEC section 13, `docs/decisions.md` and
+   open requests. List assumptions and questions for the human.
+2. **Contract:** write schemas, 501 stubs and `docs/api/contract-phaseN.md`; update
+   `docs/role-matrix.md` for new rules and `docs/erd.md`; run `make gen-api`; commit.
+3. **Tasks:** 5–6 tasks per teammate, each with a clear deliverable, the paths it
+   touches, and dependencies. Acceptance criteria become qa tasks first.
+4. **Team:** spawn 3–5 teammates by agent type with task-specific context (ports,
+   container prefix, which docs to read). Example kick-off from the human:
+   > Enter plan mode. We're starting Phase N from SPEC.md. Write the Phase N contract
+   > and task list, then create an agent team: backend, frontend, platform and qa
+   > teammates using those agent types. Enforce docs/ownership.md. Wait for all
+   > teammates to finish, run code-reviewer and ux-reviewer, then give me the phase
+   > summary with screenshots.
+5. **Wait**, route cross-owner requests, and don't implement teammates' tasks.
+6. **Review:** run `code-reviewer` and `ux-reviewer` subagents; assign fixes back.
+7. **Close:** `make check`, a clean `make k3s-install k3s-smoke`, light/dark/mobile
+   screenshots, docs updated (this file, decisions, ADRs, guides), lead commits, then
+   stop for the human's review.
+
+The same flow works with Claude Code workflows (a script that fans out subagents): the
+lead's script supplies each agent's owned paths, ports and prefix; agents report
+"Requests for other owners" in their final message instead of messaging peers.
+
+## Status
+
+- **Phase 0** (plan and scaffold): docs, ADRs, role matrix, ownership, wireframes,
+  agent setup, backend/frontend/Helm/dev/CI scaffolds. Stop for review before Phase 1.

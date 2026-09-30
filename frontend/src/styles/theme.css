@@ -1,0 +1,160 @@
+/*
+ * Exposes tokens.css to Tailwind v4. Tailwind's default colour palette, font
+ * sizes, weights, radii and shadows are removed on purpose: if a utility isn't
+ * generated, it isn't part of the design system.
+ *
+ * Utility cheat-sheet
+ *   Backgrounds  bg-background · bg-surface · bg-elevated · bg-subtle · bg-subtle-hover · bg-overlay
+ *   Text         text-primary · text-secondary · text-muted · text-accent · text-danger|warning|success|info
+ *   Borders      border (default colour) · border-subtle · border-strong · border-control
+ *   Hairlines    bg-border (1px dividers drawn as boxes) · bg-control (switch track)
+ *   Accent       bg-accent · bg-accent-hover · text-accent-foreground · bg-accent-subtle · ring-focus
+ *   Feedback     bg-danger · bg-danger-subtle · text-danger · (same for warning / success / info)
+ *   Status       bg-status-new|evaluating|shortlisted|proposal|accepted|rejected|parked
+ *   Scores       bg-score-1 … bg-score-5 (also text-/fill-/border-)
+ *   Type         text-xs 12/16 · text-sm 13/20 · text-base 14/22 · text-lg 16/24 · text-xl 20/28 · text-2xl 24/32 · text-3xl 30/36
+ *   Radii        rounded-sm 4 · rounded-md 6 (controls) · rounded-lg 8 (cards) · rounded-xl 12 (dialogs)
+ *   Elevation    shadow-overlay (menus, popovers) · shadow-dialog (dialogs, sheets) · shadow-raised (dragging)
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  --font-*: initial;
+  --font-sans:
+    var(--brand-font), 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-*: initial;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-xl--letter-spacing: -0.01em;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-2xl--letter-spacing: -0.015em;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-3xl--letter-spacing: -0.02em;
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --radius-*: initial;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  --ease-*: initial;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --breakpoint-xs: 26rem;
+
+  --animate-*: initial;
+  --animate-spin: spin 0.8s linear infinite;
+  --animate-pulse: pulse 1.8s ease-in-out infinite;
+  --animate-fade-in: fade-in 160ms var(--ease-standard);
+  --animate-fade-out: fade-out 120ms var(--ease-standard);
+  --animate-pop-in: pop-in 160ms var(--ease-emphasized);
+  --animate-pop-out: pop-out 120ms var(--ease-standard);
+  --animate-sheet-in-right: sheet-in-right 200ms var(--ease-emphasized);
+  --animate-sheet-out-right: sheet-out-right 160ms var(--ease-standard);
+  --animate-sheet-in-left: sheet-in-left 200ms var(--ease-emphasized);
+  --animate-sheet-out-left: sheet-out-left 160ms var(--ease-standard);
+  --animate-sheet-in-bottom: sheet-in-bottom 220ms var(--ease-emphasized);
+  --animate-sheet-out-bottom: sheet-out-bottom 160ms var(--ease-standard);
+  --animate-reveal: reveal 320ms var(--ease-emphasized) both;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --background-color-subtle: var(--subtle);
+  --background-color-subtle-hover: var(--subtle-hover);
+  --background-color-overlay: var(--overlay);
+
+  --color-border: var(--border);
+  --color-control: var(--border-control);
+  --border-color-subtle: var(--border-subtle);
+  --border-color-strong: var(--border-strong);
+
+  --text-color-primary: var(--fg-primary);
+  --text-color-secondary: var(--fg-secondary);
+  --text-color-muted: var(--fg-muted);
+  --text-color-accent: var(--fg-accent);
+  --text-color-danger: var(--fg-danger);
+  --text-color-warning: var(--fg-warning);
+  --text-color-success: var(--fg-success);
+  --text-color-info: var(--fg-info);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-focus: var(--focus);
+
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+
+  --color-status-new: var(--status-new);
+  --color-status-evaluating: var(--status-evaluating);
+  --color-status-shortlisted: var(--status-shortlisted);
+  --color-status-proposal: var(--status-proposal);
+  --color-status-accepted: var(--status-accepted);
+  --color-status-rejected: var(--status-rejected);
+  --color-status-parked: var(--status-parked);
+
+  --color-score-1: var(--score-1);
+  --color-score-2: var(--score-2);
+  --color-score-3: var(--score-3);
+  --color-score-4: var(--score-4);
+  --color-score-5: var(--score-5);
+
+  --shadow-*: initial;
+  --shadow-overlay: var(--elevation-overlay);
+  --shadow-dialog: var(--elevation-dialog);
+  --shadow-raised: var(--elevation-raised);
+}
+
+/* Avatar fallback tint: hue from --avatar-hue (set inline), L/C from tokens. */
+@utility avatar-tint {
+  background-color: oklch(var(--avatar-bg-l) var(--avatar-bg-c) var(--avatar-hue, 260));
+  color: oklch(var(--avatar-fg-l) var(--avatar-fg-c) var(--avatar-hue, 260));
+}
+
+/* Hide scrollbars while keeping scrolling (horizontal chip rows, tabs). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

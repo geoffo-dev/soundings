@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make *)",
+      "Bash(scripts/check-task.sh *)",
+      "Bash(scripts/k3s-up.sh *)",
+      "Bash(scripts/k3s-down.sh *)",
+      "Bash(scripts/k3s-load-image.sh *)",
+      "Bash(scripts/k3s-install.sh *)",
+      "Bash(scripts/k3s-smoke.sh *)",
+      "Bash(uv sync *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run mypy *)",
+      "Bash(uv run alembic *)",
+      "Bash(uv run soundings *)",
+      "Bash(npm ci)",
+      "Bash(npm --prefix frontend ci)",
+      "Bash(npm --prefix e2e ci)",
+      "Bash(npm run *)",
+      "Bash(npm --prefix frontend run *)",
+      "Bash(npm --prefix e2e run *)",
+      "Bash(npx playwright test *)",
+      "Bash(npx playwright show-report *)",
+      "Bash(docker compose -f dev/docker-compose.yml *)",
+      "Bash(docker exec soundings-k3s kubectl *)",
+      "Bash(docker exec -i soundings-k3s kubectl *)",
+      "Bash(python3 docs/wireframes/build_index.py)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git ls-files *)",
+      "Bash(git rev-parse *)",
+      "Bash(git blame *)"
+    ],
+    "ask": [
+      "Bash(git stash *)",
+      "Bash(git reset *)",
+      "Bash(git clean *)",
+      "Bash(git checkout -- *)",
+      "Bash(git restore *)",
+      "Bash(docker system prune *)",
+      "Bash(docker volume prune *)",
+      "Bash(docker container prune *)",
+      "Bash(docker image prune *)"
+    ],
+    "deny": [
+      "Bash(npx playwright install *)",
+      "Bash(playwright install *)"
+    ]
+  },
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/scripts/check-task.sh",
+            "args": [],
+            "timeout": 1200
+          }
+        ]
+      }
+    ]
+  }
+}

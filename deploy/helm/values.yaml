@@ -1,0 +1,338 @@
+# Soundings Helm chart values.
+#
+# Minimal install (bundled Postgres, sign in with the generated break-glass admin):
+#   helm install soundings ./deploy/helm --set baseUrls[0]=https://ideas.example.com \
+#     --set ingress.enabled=true
+# Every value is validated by values.schema.json. See README.md for a table and examples.
+
+global:
+  # -- Registry for every image in the chart (app, bundled Postgres). Set this for
+  # air-gapped installs that mirror images into one internal registry.
+  imageRegistry: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # -- Registry of the Soundings image (ignored when global.imageRegistry is set).
+  registry: ""
+  repository: soundings
+  # -- Defaults to the chart's appVersion.
+  tag: ""
+  # -- Optional digest (sha256:...); when set it pins the image in addition to the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+  # -- Names of existing docker-registry Secrets, e.g. [regcred].
+  pullSecrets: []
+
+# -- External origins Soundings is served on (scheme://host[:port], no path). The first
+# is the default for links in emails. Sign-in redirect URIs are derived from these, and
+# the ingress / HTTPRoute hostnames default to their hosts.
+baseUrls:
+  - http://localhost:8000
+
+# -- IPs/CIDRs whose X-Forwarded-For/-Proto headers are trusted (your ingress controller
+# or gateway). The defaults are the private ranges clusters normally use for pods.
+trustedProxies:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+
+# -- DEBUG | INFO | WARNING | ERROR. Logs are JSON on stdout and never contain PII.
+logLevel: INFO
+
+# -- Dev-only login stub (pick any seeded user without a password). Also switches the
+# app to development mode. Never enable on a shared or internet-facing install.
+devLogin: false
+
+# The key that signs sessions and CSRF tokens. Unless existingSecret is set, the chart
+# generates a random key on first install and keeps it across upgrades (Helm lookup).
+# With Argo CD or `helm template`, lookup does not work: set existingSecret instead.
+secretKey:
+  # -- Existing Secret holding the key (32+ random characters).
+  existingSecret: ""
+  existingSecretKey: secret-key
+
+# -- Sign-in with OpenID Connect (code flow + PKCE; the browser never sees tokens).
+# Leave issuer empty to configure SSO later (the break-glass admin can sign in meanwhile).
+oidc:
+  # -- e.g. https://keycloak.example.com/realms/soundings or
+  # https://login.microsoftonline.com/<tenant>/v2.0
+  issuer: ""
+  clientId: soundings
+  # -- Client secret in plain values (stored in the chart's Secret). Prefer existingSecret.
+  clientSecret: ""
+  # -- Existing Secret with the client secret under existingSecretKey.
+  existingSecret: ""
+  existingSecretKey: client-secret
+  # -- Claim with the user's IdP groups (Keycloak "/path" values are normalised).
+  groupsClaim: groups
+  # -- Optional claim used to link pre-created users, e.g. employee_no.
+  externalIdClaim: ""
+  scopes:
+    - openid
+    - profile
+    - email
+
+# Outgoing email through any SMTP server. Leave host empty and Soundings works with
+# in-app notifications only (admins see a banner).
+smtp:
+  host: ""
+  port: 587
+  # -- none | starttls | tls (implicit TLS, usually port 465)
+  security: starttls
+  # -- Optional credentials in plain values. Prefer existingSecret.
+  username: ""
+  password: ""
+  # -- Existing Secret with keys `username` and `password` (both optional).
+  existingSecret: ""
+  # -- Sender address; required when host is set.
+  from: ""
+  fromName: Soundings
+  replyTo: ""
+  # -- Custom CA bundle for the SMTP server's certificate, from an existing ConfigMap.
+  caBundle:
+    configMap: ""
+    key: ca.crt
+  # -- Connection timeout in seconds.
+  timeout: 10
+
+# Break-glass admin: a local account for first sign-in and for when SSO is broken.
+# The app switches it off once SSO is configured, and audits every use.
+breakGlass:
+  enabled: true
+  # -- Existing Secret with keys `username` and `password`. When empty, the chart
+  # creates user "admin" with a random password (kept across upgrades); NOTES.txt shows
+  # how to read it.
+  existingSecret: ""
+
+features:
+  # -- Allow projects to turn on public (anonymous) idea submission.
+  publicSubmission: true
+  # -- AI assistance through kagent (Phase 6). Needs kagent in the cluster.
+  ai: false
+
+# kagent integration (Phase 6: AI evaluator, research and drafting assistant).
+# Placeholders only for now; see deploy/kagent/README.md.
+kagent:
+  enabled: false
+  # -- Namespace where kagent runs.
+  namespace: kagent
+  # -- Also install the example Agent manifests and the MCP server registration.
+  examples: false
+
+otel:
+  # -- OTLP/HTTP base URL for traces, e.g. http://otel-collector.observability:4318.
+  # Empty: tracing off. Metrics are always on /metrics (Prometheus).
+  endpoint: ""
+
+# -- Extra environment variables for the API, worker and migration containers
+# (list of Kubernetes EnvVar objects).
+extraEnv: []
+# -- Extra envFrom sources (ConfigMaps/Secrets) for the same containers.
+extraEnvFrom: []
+# -- Extra volumes for app pods, e.g. a CA bundle for externalDatabase.sslmode=verify-full
+# (mount it with extraVolumeMounts and set PGSSLROOTCERT through extraEnv).
+extraVolumes: []
+# -- Extra volume mounts for the API, worker and migration containers.
+extraVolumeMounts: []
+
+api:
+  # -- Ignored when autoscaling.enabled is true.
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 30
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  podAnnotations: {}
+  topologySpreadConstraints: []
+
+worker:
+  enabled: true
+  replicas: 1
+  # -- Jobs (emails, agent runs) processed in parallel per worker pod.
+  concurrency: 4
+  # -- Time for running jobs to finish on shutdown.
+  terminationGracePeriodSeconds: 60
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+  # -- The worker serves no HTTP; add an exec probe here if you need one.
+  livenessProbe: {}
+  podAnnotations: {}
+
+migrations:
+  # -- Give up on a migration run after this many seconds.
+  activeDeadlineSeconds: 900
+  backoffLimit: 2
+  # -- How long to wait for the database to accept connections first.
+  waitForDatabaseSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# Horizontal Pod Autoscaler for the API.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+
+# PodDisruptionBudget for the API. maxUnavailable 1 never blocks node drains.
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+ingress:
+  enabled: false
+  # -- IngressClass, e.g. nginx or traefik. Empty: the cluster default.
+  className: ""
+  annotations: {}
+  # -- Hostnames. Empty: the hosts of baseUrls.
+  hosts: []
+  # -- e.g. [{secretName: soundings-tls, hosts: [ideas.example.com]}]
+  tls: []
+
+# Gateway API HTTPRoute (alternative to ingress; needs the Gateway API CRDs).
+httpRoute:
+  enabled: false
+  annotations: {}
+  # -- Gateways to attach to, e.g. [{name: shared, namespace: gateway-system, sectionName: https}]
+  parentRefs: []
+  # -- Hostnames. Empty: the hosts of baseUrls.
+  hostnames: []
+
+serviceAccount:
+  create: true
+  # -- Name to use (generated from the release when empty and create is true).
+  name: ""
+  annotations: {}
+
+# Restricted Pod Security Standard for every pod in the chart.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Size limit of the writable /tmp (emptyDir) in app pods.
+tmpSizeLimit: 256Mi
+
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Bundled PostgreSQL: a single-replica StatefulSet for dev and small installs.
+# For production use a managed database or an operator (e.g. CloudNativePG) through
+# externalDatabase and set postgresql.enabled=false.
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: library/postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  auth:
+    database: soundings
+    username: soundings
+    # -- Empty: generated on first install and kept across upgrades. Only applied when
+    # the data directory is initialised; changing it later does not change the role.
+    password: ""
+    # -- Existing Secret with the password under existingSecretKey.
+    existingSecret: ""
+    existingSecretKey: password
+  persistence:
+    enabled: true
+    # -- Empty: the cluster's default StorageClass.
+    storageClass: ""
+    size: 8Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # -- The postgres user in the official Alpine image.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    runAsGroup: 70
+    fsGroup: 70
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+
+# External PostgreSQL 14+ (used when postgresql.enabled=false).
+externalDatabase:
+  host: ""
+  port: 5432
+  database: soundings
+  user: soundings
+  # -- Plain password (stored in the chart's Secret). Prefer existingSecret.
+  password: ""
+  # -- Existing Secret with the password under existingSecretPasswordKey
+  # (e.g. the "<cluster>-app" Secret CloudNativePG creates, key "password").
+  existingSecret: ""
+  existingSecretPasswordKey: password
+  # -- libpq sslmode: disable | allow | prefer | require | verify-ca | verify-full
+  sslmode: require
+
+networkPolicy:
+  enabled: false
+  # -- Who may reach the API port, as NetworkPolicy peers (e.g. your ingress
+  # controller's namespace). Empty: any source. Pods of this release are always allowed.
+  ingressFrom: []
+  # -- Also allow the Prometheus namespace(s) to scrape /metrics, as peers.
+  metricsFrom: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # -- Extra labels so your Prometheus picks it up, e.g. {release: kube-prometheus-stack}.
+  labels: {}

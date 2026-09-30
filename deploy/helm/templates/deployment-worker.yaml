@@ -1,0 +1,56 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "soundings.fullname" . }}-worker
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "soundings.podLabels" (dict "ctx" . "component" "worker") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.worker.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "soundings.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      # Service links would inject SOUNDINGS_PORT=tcp://... for a Service named "soundings".
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with (include "soundings.imagePullSecrets" . | trim) }}{{ . | nindent 6 }}{{ end }}
+      {{- with (include "soundings.appInitContainers" . | trim) }}{{ . | nindent 6 }}{{ end }}
+      containers:
+        - name: worker
+          image: {{ include "soundings.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker"]
+          envFrom:
+            {{- include "soundings.envFrom" . | nindent 12 }}
+          env:
+            {{- include "soundings.secretEnv" . | nindent 12 }}
+          {{- with .Values.worker.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "soundings.volumeMounts" . | nindent 12 }}
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      volumes:
+        {{- include "soundings.volumes" . | nindent 8 }}
+      {{- with (include "soundings.scheduling" . | trim) }}{{ . | nindent 6 }}{{ end }}
+{{- end }}

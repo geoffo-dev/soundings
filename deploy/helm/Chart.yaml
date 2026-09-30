@@ -1,0 +1,14 @@
+apiVersion: v2
+name: soundings
+description: >-
+  Soundings: people submit ideas, each idea gets an accountable owner, and several
+  evaluators score it blind against a short rubric. One image (API + SPA, worker),
+  PostgreSQL as the only stateful dependency.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+keywords:
+  - ideas
+  - innovation
+  - evaluation

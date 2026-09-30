@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "soundings.fullname" . }}-test-connection
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    # Kept after success so `helm test --logs` can read it; replaced on the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  {{- with (include "soundings.imagePullSecrets" . | trim) }}{{ . | nindent 2 }}{{ end }}
+  containers:
+    # Uses the app image (already present, works air-gapped) as an HTTP client.
+    - name: check
+      image: {{ include "soundings.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command:
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          base = sys.argv[1]
+          for path, expected in (("/readyz", "application/json"), ("/", "text/html")):
+              with urllib.request.urlopen(base + path, timeout=10) as response:
+                  kind = response.headers.get("content-type", "")
+                  print(path, response.status, kind)
+                  if response.status != 200 or not kind.startswith(expected):
+                      sys.exit(f"unexpected response for {path}")
+        - {{ printf "http://%s:%v" (include "soundings.fullname" .) .Values.service.port | quote }}
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 16Mi

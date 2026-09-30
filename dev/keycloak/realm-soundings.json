@@ -1,0 +1,253 @@
+{
+  "realm": "soundings",
+  "displayName": "Soundings (dev)",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 36000,
+  "internationalizationEnabled": false,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "keycloak@soundings.local",
+    "fromDisplayName": "Soundings Keycloak (dev)",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+  "groups": [
+    {
+      "name": "innovation",
+      "path": "/innovation",
+      "subGroups": [
+        {
+          "name": "admins",
+          "path": "/innovation/admins",
+          "subGroups": []
+        },
+        {
+          "name": "members",
+          "path": "/innovation/members",
+          "subGroups": []
+        }
+      ]
+    },
+    {
+      "name": "tools",
+      "path": "/tools",
+      "subGroups": [
+        {
+          "name": "members",
+          "path": "/tools/members",
+          "subGroups": []
+        }
+      ]
+    },
+    {
+      "name": "viewers",
+      "path": "/viewers",
+      "subGroups": []
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Anders",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/innovation/admins",
+        "/tools/members"
+      ],
+      "requiredActions": [],
+      "attributes": {
+        "employee_no": [
+          "E1001"
+        ]
+      }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Brown",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/innovation/members"
+      ],
+      "requiredActions": [],
+      "attributes": {
+        "employee_no": [
+          "E1002"
+        ]
+      }
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Chen",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/innovation/members",
+        "/tools/members"
+      ],
+      "requiredActions": [],
+      "attributes": {
+        "employee_no": [
+          "E1003"
+        ]
+      }
+    },
+    {
+      "username": "dave",
+      "enabled": true,
+      "email": "dave@example.com",
+      "emailVerified": true,
+      "firstName": "Dave",
+      "lastName": "Davies",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/tools/members"
+      ],
+      "requiredActions": []
+    },
+    {
+      "username": "erin",
+      "enabled": true,
+      "email": "erin@example.com",
+      "emailVerified": true,
+      "firstName": "Erin",
+      "lastName": "Evans",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/viewers"
+      ],
+      "requiredActions": []
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "soundings",
+      "name": "Soundings",
+      "description": "Soundings web app (dev). Confidential client, code flow + PKCE S256.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "soundings-dev-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": "",
+      "baseUrl": "http://localhost:8000/",
+      "redirectUris": [
+        "http://localhost:8000/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:8000/*",
+        "http://localhost:18081/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:5173/*##http://127.0.0.1:8000/*##http://localhost:18081/*",
+        "backchannel.logout.session.required": "true"
+      },
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "claim.name": "groups",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "employee_no",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "employee_no",
+            "claim.name": "employee_no",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"employee_no\",\"displayName\":\"Employee number\",\"validations\":{\"length\":{\"max\":32}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}]}"
+          ]
+        }
+      }
+    ]
+  }
+}

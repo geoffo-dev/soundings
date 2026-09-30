@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Soundings</title>
+    <!--
+      Applies the saved/system theme before first paint (no flash). Keep in sync
+      with src/lib/theme.ts. If a strict CSP is enabled, allow this script by hash
+      (see README "Content Security Policy").
+    -->
+    <script>
+      ;(function () {
+        var theme = 'light'
+        try {
+          var saved = localStorage.getItem('soundings-theme')
+          var dark =
+            saved === 'dark' ||
+            (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+          theme = dark ? 'dark' : 'light'
+        } catch (e) {}
+        document.documentElement.classList.add(theme)
+        document.documentElement.style.colorScheme = theme
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

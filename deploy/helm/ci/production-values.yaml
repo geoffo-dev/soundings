@@ -1,0 +1,129 @@
+# Production-like install: external database, ingress with TLS, SSO, SMTP from an
+# existing Secret, HPA, NetworkPolicy and ServiceMonitor. Secrets referenced here are
+# created out of band (e.g. by External Secrets or sealed-secrets).
+global:
+  imageRegistry: registry.internal.example.com
+
+image:
+  repository: platform/soundings
+  tag: "0.1.0"
+  pullSecrets:
+    - regcred
+
+baseUrls:
+  - https://ideas.example.com
+  - https://ideas.example.org
+
+logLevel: INFO
+
+secretKey:
+  existingSecret: soundings-app
+  existingSecretKey: secret-key
+
+oidc:
+  issuer: https://login.example.com/realms/example
+  clientId: soundings
+  existingSecret: soundings-oidc
+  groupsClaim: groups
+  externalIdClaim: employee_no
+
+smtp:
+  host: smtp.example.com
+  port: 587
+  security: starttls
+  existingSecret: soundings-smtp
+  from: ideas@example.com
+  fromName: Example Ideas
+  replyTo: innovation@example.com
+  caBundle:
+    configMap: corporate-ca
+    key: ca.crt
+  timeout: 15
+
+breakGlass:
+  enabled: true
+  existingSecret: soundings-break-glass
+
+features:
+  publicSubmission: true
+  ai: false
+
+otel:
+  endpoint: http://otel-collector.observability:4318
+
+postgresql:
+  enabled: false
+
+externalDatabase:
+  host: soundings-db-rw.databases.svc
+  port: 5432
+  database: soundings
+  user: soundings
+  existingSecret: soundings-db-app
+  existingSecretPasswordKey: password
+  sslmode: verify-full
+
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: soundings-db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/soundings/db-ca
+    readOnly: true
+extraEnv:
+  - name: PGSSLROOTCERT
+    value: /etc/soundings/db-ca/ca.crt
+
+api:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      memory: 768Mi
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: soundings
+          app.kubernetes.io/component: api
+
+worker:
+  replicas: 2
+  concurrency: 8
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+  tls:
+    - secretName: soundings-tls
+      hosts:
+        - ideas.example.com
+        - ideas.example.org
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kube-prometheus-stack

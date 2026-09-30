@@ -1,0 +1,9 @@
+{{- include "soundings.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "soundings.fullname" . }}
+  labels:
+    {{- include "soundings.labels" . | nindent 4 }}
+data:
+  {{- include "soundings.configEnv" . | nindent 2 }}

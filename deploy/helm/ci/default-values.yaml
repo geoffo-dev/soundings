@@ -1,0 +1,2 @@
+# Chart defaults (bundled Postgres, no ingress). Used by `helm lint` / `helm template`
+# in CI; intentionally empty so the defaults themselves are what gets tested.

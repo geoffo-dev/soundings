@@ -1,0 +1,291 @@
+# Soundings CI for self-hosted GitLab.
+#
+# Stages: lint -> test -> build -> scan -> deploy-test.
+#
+# Air-gapped runners: every image is a variable. Point REGISTRY_MIRROR at your Docker Hub
+# proxy (e.g. harbor.internal/dockerhub) and set, as CI/CD variables when needed:
+#   PIP_INDEX_URL / UV_DEFAULT_INDEX   PyPI mirror        NPM_CONFIG_REGISTRY  npm mirror
+#   DEBIAN_MIRROR                       Debian mirror for the image's runtime packages
+#   CI_BUILD_CA (type File)             extra CA bundle for TLS-intercepting proxies
+#   TRIVY_DB_REPOSITORY / TRIVY_JAVA_DB_REPOSITORY   mirrors of the Trivy databases
+# docker:dind (backend tests, deploy-test) pulls postgres/k3s/busybox images itself: give
+# the runner's dind a registry mirror (--registry-mirror) or keep them in REGISTRY_MIRROR.
+# kaniko is archived upstream (Google, 2025); KANIKO_IMAGE can point at a maintained fork.
+
+stages:
+  - lint
+  - test
+  - build
+  - scan
+  - deploy-test
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+variables:
+  REGISTRY_MIRROR: docker.io
+  PYTHON_IMAGE: ${REGISTRY_MIRROR}/library/python:3.12-slim
+  NODE_IMAGE: ${REGISTRY_MIRROR}/library/node:22-alpine
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.56.1-noble
+  DOCKER_IMAGE: ${REGISTRY_MIRROR}/library/docker:28-cli
+  DIND_IMAGE: ${REGISTRY_MIRROR}/library/docker:28-dind
+  HELM_IMAGE: ${REGISTRY_MIRROR}/alpine/helm:3.16.2
+  TRIVY_IMAGE: ${REGISTRY_MIRROR}/aquasec/trivy:0.67.2
+  KANIKO_IMAGE: gcr.io/kaniko-project/executor:v1.23.2-debug
+  K3S_IMAGE: ${REGISTRY_MIRROR}/rancher/k3s:v1.31.4-k3s1
+  UV_VERSION: "0.8.17"
+  # Where the built image is pushed (defaults to this project's container registry).
+  IMAGE_REPOSITORY: ${CI_REGISTRY_IMAGE}
+  IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+  # Caches live in the project dir so GitLab can cache them.
+  UV_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/uv
+  UV_LINK_MODE: copy
+  UV_PYTHON_DOWNLOADS: never
+  npm_config_cache: ${CI_PROJECT_DIR}/.cache/npm
+  PIP_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/pip
+
+# --- Templates --------------------------------------------------------------------------
+
+.ca-bundle: &ca-bundle
+  # Trust CI_BUILD_CA (a File variable) in pip/uv/npm/curl when it is set.
+  - |
+    if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then
+      export SSL_CERT_FILE="$CI_BUILD_CA" PIP_CERT="$CI_BUILD_CA" NODE_EXTRA_CA_CERTS="$CI_BUILD_CA" CURL_CA_BUNDLE="$CI_BUILD_CA"
+    fi
+
+.backend:
+  image: ${PYTHON_IMAGE}
+  cache:
+    key:
+      files: [backend/uv.lock]
+      prefix: backend
+    paths: [.cache/uv, .cache/pip]
+  before_script:
+    - *ca-bundle
+    - pip install "uv==${UV_VERSION}"
+    - cd backend
+    - uv sync --locked
+
+.frontend:
+  image: ${NODE_IMAGE}
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+      prefix: frontend
+    paths: [.cache/npm]
+  before_script:
+    - *ca-bundle
+    - npm --prefix frontend ci --no-audit --no-fund
+
+.dind:
+  services:
+    - name: ${DIND_IMAGE}
+      alias: docker
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+
+# --- lint -------------------------------------------------------------------------------
+
+backend:lint:
+  extends: .backend
+  stage: lint
+  script:
+    - uv run ruff check .
+    - uv run ruff format --check .
+
+backend:typecheck:
+  extends: .backend
+  stage: lint
+  script:
+    - uv run mypy
+
+frontend:lint:
+  extends: .frontend
+  stage: lint
+  script:
+    - npm --prefix frontend run typecheck
+    - npm --prefix frontend run lint
+
+helm:lint:
+  stage: lint
+  image:
+    name: ${HELM_IMAGE}
+    entrypoint: [""]
+  script:
+    # helm lint validates values against values.schema.json; helm template also runs
+    # the chart's own `fail` checks, which lint only reports as INFO.
+    - helm lint --strict deploy/helm
+    - |
+      for values in deploy/helm/ci/*-values.yaml; do
+        echo "--- $values"
+        helm lint --strict deploy/helm -f "$values"
+        helm template ci deploy/helm -f "$values" > /dev/null
+      done
+    # The schema must reject invalid values.
+    - |
+      for bad in "smtp.security=ssl" "logLevel=verbose" "unknownKey=1" "baseUrls[0]=ftp://x"; do
+        if helm template ci deploy/helm --set "$bad" > /dev/null 2>&1; then
+          echo "schema accepted invalid value: $bad"; exit 1
+        fi
+      done
+
+# --- test -------------------------------------------------------------------------------
+
+backend:test:
+  extends: [.backend, .dind]
+  stage: test
+  variables:
+    # testcontainers talks to the dind service; published ports live on that host.
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+    # The dind daemon is thrown away with the job, so the reaper container is not needed.
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+  script:
+    - uv run pytest -p no:cacheprovider --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: backend/report.xml
+
+frontend:test:
+  extends: .frontend
+  stage: test
+  script:
+    - npm --prefix frontend run test
+
+frontend:build:
+  extends: .frontend
+  stage: test
+  script:
+    - npm --prefix frontend run build
+  artifacts:
+    expire_in: 1 day
+    paths: [frontend/dist]
+
+e2e:
+  stage: test
+  image: ${PLAYWRIGHT_IMAGE}
+  rules:
+    - exists: [e2e/package.json]
+      when: manual
+  allow_failure: true
+  before_script:
+    - *ca-bundle
+    - npm --prefix e2e ci --no-audit --no-fund
+  script:
+    - npm --prefix e2e test
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [e2e/playwright-report, e2e/test-results]
+
+# --- build ------------------------------------------------------------------------------
+
+image:build:
+  stage: build
+  image:
+    name: ${KANIKO_IMAGE}
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - >-
+      printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY"
+      "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')"
+      > /kaniko/.docker/config.json
+    - |
+      set -- --build-arg "VCS_REF=$CI_COMMIT_SHORT_SHA" \
+             --build-arg "BUILD_DATE=$CI_JOB_STARTED_AT" \
+             --build-arg "SOURCE_URL=$CI_PROJECT_URL"
+      for arg in NPM_CONFIG_REGISTRY PIP_INDEX_URL UV_DEFAULT_INDEX DEBIAN_MIRROR; do
+        eval "value=\${$arg:-}"
+        [ -z "$value" ] || set -- "$@" --build-arg "$arg=$value"
+      done
+      # The Dockerfile reads the CA from the BuildKit secret path; kaniko has no
+      # secrets, so place it there and keep that path out of the image layers.
+      if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then
+        cat "$CI_BUILD_CA" >> /kaniko/ssl/certs/ca-certificates.crt
+        mkdir -p /run/secrets && cp "$CI_BUILD_CA" /run/secrets/build_ca
+        set -- "$@" --ignore-path=/run/secrets
+      fi
+      destinations="--destination=$IMAGE_REPOSITORY:$IMAGE_TAG"
+      [ -z "${CI_COMMIT_TAG:-}" ] || destinations="$destinations --destination=$IMAGE_REPOSITORY:$CI_COMMIT_TAG"
+      # shellcheck disable=SC2086
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
+        $destinations \
+        --cache=true --cache-repo="$IMAGE_REPOSITORY/cache" \
+        --build-arg "VERSION=${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}" \
+        "$@"
+
+# --- scan -------------------------------------------------------------------------------
+
+image:trivy:
+  stage: scan
+  image:
+    name: ${TRIVY_IMAGE}
+    entrypoint: [""]
+  needs: [image:build]
+  variables:
+    TRIVY_USERNAME: ${CI_REGISTRY_USER}
+    TRIVY_PASSWORD: ${CI_REGISTRY_PASSWORD}
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/trivy
+  cache:
+    key: trivy
+    paths: [.cache/trivy]
+  script:
+    # Full report for the merge request widget...
+    - trivy image --exit-code 0 --format template --template "@/contrib/gitlab.tpl"
+        --output gl-container-scanning-report.json "$IMAGE_REPOSITORY:$IMAGE_TAG"
+    # ...and the gate: fail on HIGH/CRITICAL vulnerabilities that have a fix.
+    - trivy image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "$IMAGE_REPOSITORY:$IMAGE_TAG"
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json
+
+# --- deploy-test ------------------------------------------------------------------------
+
+# Install, upgrade and smoke-test the chart on k3s running in docker:dind, with the same
+# scripts as local development (scripts/k3s-*.sh), in a namespace that enforces the
+# Restricted Pod Security Standard. Also exercises the external-database path.
+k3s:install-upgrade:
+  extends: .dind
+  stage: deploy-test
+  image: ${DOCKER_IMAGE}
+  needs: [image:build, helm:lint]
+  variables:
+    K3S_NAME: soundings-ci
+    K3S_BIND_ADDRESS: 0.0.0.0
+    K3S_CONNECT_HOST: docker
+    # Set to your Docker Hub mirror, or "" when the dind daemon can reach Docker Hub.
+    K3S_REGISTRY_MIRROR: https://mirror.gcr.io
+  before_script:
+    - *ca-bundle
+    - export K3S_EXTRA_CA="${CI_BUILD_CA:-}"
+    # docker:cli is Alpine without bash/curl; use an image that has them when offline.
+    - command -v bash >/dev/null && command -v curl >/dev/null || apk add --no-cache bash curl tar
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker pull "$IMAGE_REPOSITORY:$IMAGE_TAG"
+    - docker tag "$IMAGE_REPOSITORY:$IMAGE_TAG" soundings:ci
+  script:
+    - scripts/k3s-up.sh
+    - scripts/k3s-load-image.sh soundings:ci
+    - scripts/k3s-install.sh --set image.tag=ci
+    - scripts/k3s-smoke.sh
+    # Upgrade: a config change (rolls every pod) and a second API replica.
+    - scripts/k3s-install.sh --set image.tag=ci --set logLevel=DEBUG --set api.replicas=2
+    - scripts/k3s-smoke.sh
+    - IMAGE_TAG=ci scripts/k3s-test-external-db.sh
+  after_script:
+    - scripts/k3s-down.sh || true

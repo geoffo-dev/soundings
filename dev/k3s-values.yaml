@@ -1,0 +1,33 @@
+# Values for the local k3s cluster (scripts/k3s-install.sh, make k3s-install).
+# The image is imported straight into the node (scripts/k3s-load-image.sh), never pulled.
+image:
+  repository: soundings
+  tag: dev
+  pullPolicy: Never
+
+# k3s-install.sh overrides this with http://localhost:$K3S_HTTP_PORT.
+baseUrls:
+  - http://localhost:18081
+
+# Dev-only login stub, so the app is usable without Keycloak.
+devLogin: true
+logLevel: DEBUG
+
+ingress:
+  enabled: true
+  className: traefik
+
+postgresql:
+  persistence:
+    size: 1Gi
+
+api:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+worker:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi

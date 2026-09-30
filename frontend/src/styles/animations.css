@@ -1,0 +1,70 @@
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+}
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-out-bottom {
+  to {
+    transform: translateY(100%);
+  }
+}
+/* Used when hidden scores are revealed after submitting an evaluation. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(2px);
+  }
+}

@@ -1,0 +1,141 @@
+{{- /*
+Bundled PostgreSQL: one replica, for dev and small installs. Regular release resources
+(not hooks), so upgrades and uninstalls manage them normally; the PersistentVolumeClaim
+from volumeClaimTemplates is kept on uninstall.
+*/ -}}
+{{- if .Values.postgresql.enabled }}
+{{- $pg := .Values.postgresql }}
+{{- $name := include "soundings.postgresql.fullname" . }}
+{{- if not $pg.auth.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+type: Opaque
+data:
+  {{- if $pg.auth.password }}
+  password: {{ $pg.auth.password | b64enc }}
+  {{- else }}
+  password: {{ include "soundings.lookupOrGenerate" (dict "ctx" . "name" $name "key" "password" "length" 32) }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "soundings.podLabels" (dict "ctx" . "component" "postgresql") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # Service links would inject SOUNDINGS_PORT=tcp://... for a Service named "soundings".
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml $pg.podSecurityContext | nindent 8 }}
+      {{- with (include "soundings.imagePullSecrets" . | trim) }}{{ . | nindent 6 }}{{ end }}
+      containers:
+        - name: postgresql
+          image: {{ include "soundings.postgresql.image" . }}
+          imagePullPolicy: {{ $pg.image.pullPolicy }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: {{ $pg.auth.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ $pg.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "soundings.postgresql.secretName" . }}
+                  key: {{ include "soundings.postgresql.secretKey" . }}
+            # A subdirectory, so initdb does not trip over the volume's lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 60
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if not $pg.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with (include "soundings.scheduling" . | trim) }}{{ . | nindent 6 }}{{ end }}
+  {{- if $pg.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml $pg.persistence.accessModes | nindent 10 }}
+        {{- with $pg.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $pg.persistence.size }}
+  {{- end }}
+{{- end }}

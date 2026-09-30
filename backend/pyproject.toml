@@ -1,0 +1,136 @@
+[project]
+name = "soundings"
+version = "0.1.0"
+description = "Soundings: submit ideas, give each an owner, and evaluate them blind."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.7",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "psycopg[binary,pool]>=3.2",
+    "alembic>=1.16",
+    # The procrastinate schema is vendored per version (migrations/procrastinate/);
+    # bumping this needs a migration, see migrations/procrastinate/README.md.
+    "procrastinate>=3.10,<4",
+    "authlib>=1.3",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "aiosmtplib>=3.0",
+    "prometheus-client>=0.20",
+    "python-json-logger>=3.1",
+]
+
+[project.optional-dependencies]
+# OpenTelemetry trace export (enabled by SOUNDINGS_OTEL_ENDPOINT).
+otel = ["fastapi[opentelemetry]>=0.142"]
+
+[project.scripts]
+soundings = "app.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=1.0",
+    "testcontainers[postgres]>=4.8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    # So mypy and the tests cover app/tracing.py.
+    "fastapi[opentelemetry]>=0.142",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""
+
+# --- Alembic (CLI use: `uv run alembic revision --autogenerate -m "..."`) ---------------
+[tool.alembic]
+script_location = "%(here)s/migrations"
+file_template = "%%(year)d%%(month).2d%%(day).2d_%%(rev)s_%%(slug)s"
+prepend_sys_path = ["."]
+truncate_slug_length = 40
+
+[[tool.alembic.post_write_hooks]]
+name = "ruff_fix"
+type = "module"
+module = "ruff"
+options = "check --fix REVISION_SCRIPT_FILENAME"
+
+[[tool.alembic.post_write_hooks]]
+name = "ruff_format"
+type = "module"
+module = "ruff"
+options = "format REVISION_SCRIPT_FILENAME"
+
+# --- Ruff ------------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["app/static"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",  # pycodestyle, pyflakes
+    "I",            # isort
+    "UP",           # pyupgrade
+    "B",            # bugbear
+    "S",            # bandit (security)
+    "BLE",          # blind except
+    "A",            # shadowed builtins
+    "C4",           # comprehensions
+    "DTZ",          # naive datetimes
+    "T20",          # print
+    "RET",          # return hygiene
+    "SIM",          # simplify
+    "PT",           # pytest style
+    "ASYNC",        # async pitfalls
+    "N",            # naming
+    "RUF",
+    "PLE", "PLW",   # pylint errors/warnings
+]
+ignore = [
+    "RET504",  # assignment before return often reads better
+    "N818",    # problem exceptions are named *Problem (NotFoundProblem), not *Error
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLW0603"]
+"migrations/versions/**" = ["N999"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# --- mypy ------------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unreachable = true
+files = ["app", "tests", "migrations"]
+explicit_package_bases = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --- pytest ----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = ["settings(**overrides): override Settings fields for the test's app"]
+filterwarnings = [
+    "error",
+    # testcontainers' own deprecation shims and docker-py internals
+    "ignore::DeprecationWarning:testcontainers.*",
+    "ignore::DeprecationWarning:docker.*",
+]
