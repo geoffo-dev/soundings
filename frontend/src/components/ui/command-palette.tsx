@@ -1,5 +1,12 @@
 import { SearchX } from 'lucide-react'
-import { useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 
 import {
   Command,
@@ -73,6 +80,13 @@ export function CommandPalette({
   loading = false,
 }: CommandPaletteProps) {
   const [localSearch, setLocalSearch] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Radix moves focus in only when the content mounts. Reopened while it is still
+  // animating closed (⌘K straight after picking something, e.g. New idea then Esc), it
+  // never unmounted, and focus would stay in the dialog closing behind it.
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
   const value = search ?? localSearch
   const setValue = onSearchChange ?? setLocalSearch
   const visibleGroups = groups.filter((group) => group.actions.length > 0)
@@ -151,7 +165,12 @@ export function CommandPalette({
             if (isNavigationKey(event)) setPicked(true)
           }}
         >
-          <CommandInput placeholder={placeholder} value={value} onValueChange={setValue} />
+          <CommandInput
+            ref={inputRef}
+            placeholder={placeholder}
+            value={value}
+            onValueChange={setValue}
+          />
           <CommandList onPointerMove={() => setPicked(true)}>
             {loading && (
               <CommandLoading>
@@ -177,7 +196,7 @@ export function CommandPalette({
                     <span className="min-w-0 truncate">{action.label}</span>
                     {action.hint && (
                       // Gives way to the label first when the row is short (phones).
-                      <span className="min-w-0 shrink-4 truncate text-sm text-muted in-data-[selected=true]:text-secondary">
+                      <span className="min-w-0 shrink-4 truncate text-sm text-muted">
                         {action.hint}
                       </span>
                     )}

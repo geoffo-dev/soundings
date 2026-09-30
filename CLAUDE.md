@@ -163,9 +163,10 @@ ingress 18081. Dev logins and the demo people are in `dev/README.md`.
 - **Local e2e stack:** the API serves `e2e/.stack/dist` and caches `index.html` at
   startup, so after rebuilding the SPA restart the API too (`e2e/scripts/stop-stack.sh`
   then run again); a rebuild under a running API gives a blank page.
-- **Shared tree:** the Vite dev server reloads pages whenever anyone saves a file, and
-  parallel Playwright runs share `test-results/` (pass `--output=<dir>`): run page tests
-  when nobody is editing. `pkill -f <pattern>` also matches the calling shell's own
+- **Shared tree:** the Vite dev server reloads pages whenever anyone saves a file
+  (`VITE_NO_HMR=1` turns that off; `test:pw` sets it for the server it starts, not for a
+  running one it reuses), and parallel Playwright runs share `test-results/` (pass
+  `--output=<dir>`). `pkill -f <pattern>` also matches the calling shell's own
   command line and kills it; stop servers by pid.
 - **`ruff format`** also formats Python code blocks in `backend/README.md`.
 - **Library pins that matter:** TypeScript 5.9.x (7.x breaks typescript-eslint and

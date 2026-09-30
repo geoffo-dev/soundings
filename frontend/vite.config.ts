@@ -50,7 +50,12 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
-  server: { proxy },
+  server: {
+    proxy,
+    // VITE_NO_HMR=1 (the Playwright page tests set it): saved files no longer reload
+    // open pages, so tests don't flake while someone edits the shared tree.
+    hmr: !process.env.VITE_NO_HMR,
+  },
   preview: { proxy },
   build: {
     outDir: 'dist',

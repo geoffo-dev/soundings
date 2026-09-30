@@ -56,6 +56,8 @@ test('creates an idea and toggles the theme', async ({ page }) => {
   await page.keyboard.press('Escape')
 
   const dark = await page.locator('html').evaluate((html) => html.classList.contains('dark'))
+  // Straight after Esc: the palette reopens while New idea is still closing, and must
+  // take focus from it (it used to stay behind, so typing went nowhere).
   await openPalette(page)
   await page.keyboard.type('theme')
   await page.getByRole('option', { name: dark ? /light theme/ : /dark theme/ }).click()

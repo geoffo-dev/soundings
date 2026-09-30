@@ -961,6 +961,13 @@ const LARGE_WORDS = {
 export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = {}): MockDb {
   const rand = prng(20260930)
   const iso = (ms: number) => new Date(ms).toISOString()
+  // 17:00 local, `days` calendar days from today: a date due in 1 day reads "Due
+  // tomorrow" at any time of day (now + 27 h was two days away after 21:00).
+  const daysAhead = (days: number) => {
+    const date = new Date(now)
+    date.setDate(date.getDate() + days)
+    return date.setHours(17, 0, 0, 0)
+  }
   const counters: Record<number, number> = {}
   const nextId = (kind: number) => {
     counters[kind] = (counters[kind] ?? 0) + 1
@@ -1131,7 +1138,7 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
           ? iso(invitedAt + 7 * DAY)
           : spec.dueIn === null
             ? null
-            : iso(now + spec.dueIn * DAY + (spec.dueIn < 0 ? 0 : 3 * HOUR))
+            : iso(spec.dueIn < 0 ? now + spec.dueIn * DAY : daysAhead(spec.dueIn))
       for (const evaluator of evaluators) {
         const userId = USERS[evaluator.user]
         db.assignments.push({ idea_id: id, user_id: userId, invited_at: iso(invitedAt) })

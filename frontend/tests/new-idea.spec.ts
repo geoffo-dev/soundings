@@ -63,6 +63,10 @@ test('is a full-screen form on a phone', async ({ page }) => {
   await page.keyboard.press('n')
   const dialog = page.getByRole('dialog', { name: 'New idea' })
   await expect(dialog).toBeVisible()
+  // Measure once the open animation (a slight scale-up) has finished.
+  await dialog.evaluate(async (node) => {
+    await Promise.all(node.getAnimations().map((animation) => animation.finished))
+  })
   const box = await dialog.boundingBox()
   expect(box?.width).toBeCloseTo(390, 0)
   const submit = dialog.getByRole('button', { name: /Submit idea/ })

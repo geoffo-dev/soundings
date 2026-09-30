@@ -201,7 +201,7 @@ function CreateProjectForm() {
             id="create-project-slug"
           >
             <div className="flex items-center">
-              <span className="flex h-9 shrink-0 items-center rounded-l-md border border-r-0 border-input bg-subtle px-2.5 text-sm text-secondary sm:h-8">
+              <span className="flex h-9 shrink-0 items-center rounded-l-md border border-r-0 border-input bg-subtle px-2.5 text-sm text-muted sm:h-8">
                 /p/
               </span>
               <Input

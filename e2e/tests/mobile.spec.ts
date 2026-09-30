@@ -124,3 +124,20 @@ test('MO-02: board, list, idea page and settings fit the screen, with no axe vio
     expect(await seriousViolations(page), path).toEqual([])
   }
 })
+
+test('MO-03: the Evaluations tab keeps the Mean column on screen', async ({ page }) => {
+  // TOOLS-6: four evaluations, Alice's among them, so she sees everyone's scores.
+  await signIn(page, 'alice')
+  await page.goto('/ideas/TOOLS-6?tab=evaluations')
+  const table = page.getByRole('region', { name: 'Score comparison' })
+  await expect(table).toBeVisible()
+  await settled(page)
+  expect(await horizontalOverflow(page)).toEqual({ page: 0, main: 0 })
+  const mean = table.getByRole('columnheader', { name: 'Mean' })
+  await expect(mean).toBeInViewport({ ratio: 1 })
+  // Pinned at the right edge while the evaluators' columns scroll underneath.
+  await table.evaluate((node) => node.scrollTo({ left: node.scrollWidth }))
+  await expect(mean).toBeInViewport({ ratio: 1 })
+  await table.evaluate((node) => node.scrollTo({ left: 0 }))
+  await expect(mean).toBeInViewport({ ratio: 1 })
+})

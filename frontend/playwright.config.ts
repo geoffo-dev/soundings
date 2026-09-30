@@ -22,6 +22,8 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: `npm run dev:mock -- --port ${port} --strictPort`,
+    // No hot reload: an edit elsewhere in the tree must not reload a page mid-test.
+    env: { VITE_NO_HMR: '1' },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

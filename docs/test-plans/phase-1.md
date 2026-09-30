@@ -158,6 +158,7 @@ Status: ✅ passes, ❌ fails (a product bug, owner in brackets; see
 |---|---|---|---|
 | MO-01 | From My work to a submitted evaluation: full-height sheet, 44 px targets, Submit in view, reveal, score shown, bar gone | `mobile.spec.ts` | ✅ |
 | MO-02 | List, board, idea page, rubric settings: no sideways page scroll, no serious axe violations | `mobile.spec.ts` | ✅ |
+| MO-03 | Evaluations tab on a phone: the Mean column stays on screen, also with the scores table scrolled sideways | `mobile.spec.ts` | ✅ |
 
 ### A11Y: accessibility (axe, WCAG 2.2 AA rules; bar: zero serious/critical)
 
@@ -185,8 +186,7 @@ integration:
 |---|---|
 | KB-06 | The palette's highlight no longer follows late results once it rests on a current item or one you moved to (`components/ui/command-palette.tsx`; results for an earlier query are marked `pending`). |
 | A11Y shortcut sheet (light, dark) | The scrolling list is a focusable, named region; from `sm` the sheet has two columns and doesn't scroll at 900 px. |
-| A11Y command palette (dark) | The hint on the highlighted row uses `text-secondary`. |
-| A11Y create project dialog (dark) | The "/p/" prefix uses `text-secondary`. |
+| A11Y command palette (dark), A11Y create project dialog (dark) | The root cause was the `--fg-muted` token: below 4.5:1 under the quiet fills (`bg-subtle`, `bg-subtle-hover`) in dark mode. It now clears 4.5:1 on every canvas and fill in both themes, checked by `frontend/src/styles/tokens.test.ts`. |
 
 ## Screenshot review (2026-09-30)
 
@@ -199,7 +199,7 @@ findings, and what the integration did with them:
 | evaluations-tab-390 | The scores table is wider than the phone; the Mean column is off-screen. | Fixed: "lower is better" under the name, icon-only recommendations and a pinned Mean column on phones. |
 | evaluations-tab-1440 | The aggregate appears twice side by side (tab card and sidebar). | Fixed: the tab's card shows only below `lg`. |
 | command-palette-390 | The idea title is cut to ~15 characters while the hint takes half the row. | Fixed: the hint gives way first. |
-| command-palette-1440-dark | Muted hint on the selected row: 3.75:1. | Fixed (`text-secondary`). |
+| command-palette-1440-dark | Muted hint on the selected row: 3.75:1. | Fixed at the token (`--fg-muted`), with a token contrast test. |
 | shortcut-sheet | Idea shortcuts below the fold; the list can't be focused. | Fixed: two columns from `sm`, focusable region. |
 | project-list-390 | Card rows differ in height (the date wraps on some). | Fixed: tighter gaps on card rows. |
 | project-list-1440 | With a filter applied the chips wrap to a second line. | Kept: a filter bar may wrap; it doesn't with the sidebar collapsed. |

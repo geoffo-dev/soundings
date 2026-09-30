@@ -169,7 +169,7 @@ async with Session() as s, s.begin():
 
 - `schema.sql` is **not idempotent**: a second `schema --apply` fails with "type
   procrastinate_job_status already exists". procrastinate keeps no migration log.
-- The repo's approach is correct. `backend/migrations/procrastinate/schema-3.10.0.sql`
+- The repo's approach is correct. `backend/app/migrations/procrastinate/schema-3.10.0.sql`
   is **byte-identical** to the 3.10.0 package's `schema.sql`, and
   `exec_driver_sql(sql, execution_options={"no_parameters": True})` applied it cleanly
   through SQLAlchemy and psycopg; the `%` characters in `RAISE` are safe.
