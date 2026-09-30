@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
+
+# Local env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Tooling
+.DS_Store
+*.log
+.idea/
+.vscode/
+/tmp/
+kubeconfig*
