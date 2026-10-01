@@ -16,7 +16,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
-import { formatTime } from '@/lib/dates'
+import { useNow } from '@/components/ui/relative-time'
+import { focusWithoutPreview } from '@/components/ui/segmented-control'
+import { formatRelative } from '@/lib/dates'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -52,7 +54,8 @@ function focusFirstGap(root: HTMLElement | null, errors: FormErrors) {
   const radio =
     group?.querySelector<HTMLElement>('[role="radio"][data-state="checked"]') ??
     group?.querySelector<HTMLElement>('[role="radio"]')
-  radio?.focus()
+  // Without previewing "1 · …" under it, which read as if 1 had been picked.
+  if (radio) focusWithoutPreview(radio)
 }
 
 /**
@@ -342,18 +345,32 @@ function FormFooter({ rubric, session }: { rubric: RubricCriterion[]; session: S
   )
 }
 
-/** "Saving…" / "Draft saved 10:42" / "Couldn't save — Retry", announced politely. */
+/**
+ * "Saving draft…" / "Draft saved just now" / "Couldn't save — Retry". Only the
+ * words are announced (politely), not the time ticking on.
+ */
 function SaveStatus({ state, onRetry }: { state: SaveState; onRetry: () => void }) {
+  const now = useNow()
   return (
     <span className="inline-flex items-center gap-2">
-      <span role="status" className={cn(state.kind === 'error' ? 'text-danger' : 'text-muted')}>
-        {state.kind === 'saving'
-          ? 'Saving draft…'
-          : state.kind === 'saved'
-            ? `Draft saved ${formatTime(state.at)}`
-            : state.kind === 'error'
-              ? 'Couldn’t save your draft'
-              : 'Your draft saves as you go'}
+      <span className={cn(state.kind === 'error' ? 'text-danger' : 'text-muted')}>
+        <span role="status">
+          {state.kind === 'saving'
+            ? 'Saving draft…'
+            : state.kind === 'saved'
+              ? 'Draft saved'
+              : state.kind === 'error'
+                ? 'Couldn’t save your draft'
+                : 'Your draft saves as you go'}
+        </span>
+        {state.kind === 'saved' && (
+          <span aria-hidden="true">
+            {' '}
+            {new Date(state.at).getTime() > now - 45_000
+              ? 'just now'
+              : formatRelative(state.at, { now })}
+          </span>
+        )}
       </span>
       {state.kind === 'error' && (
         <Button variant="link" size="sm" onClick={onRetry}>

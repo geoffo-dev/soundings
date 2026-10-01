@@ -191,6 +191,13 @@ function Comparison({
                     decorative
                     className="mx-auto"
                   />
+                  {/* Initials alone need a hover, which touch screens don't have. */}
+                  <span
+                    aria-hidden="true"
+                    className="mx-auto mt-0.5 block max-w-20 truncate text-xs font-normal text-secondary"
+                  >
+                    {name.split(' ')[0]}
+                  </span>
                 </th>
               )
             })}
@@ -279,6 +286,10 @@ function EvaluationCard({
   const name = evaluation.evaluator.display_name
   const isMe = evaluation.evaluator.id === me.id
   const headingId = `evaluation-${evaluation.id}`
+  const commented = rubric.flatMap((criterion) => {
+    const entry = evaluation.scores.find((s) => s.criterion_id === criterion.id)
+    return entry?.comment ? [{ criterion, entry }] : []
+  })
   return (
     <article aria-labelledby={headingId} className="rounded-lg border bg-surface">
       <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-subtle px-4 py-3">
@@ -310,37 +321,34 @@ function EvaluationCard({
           </span>
         </span>
       </header>
-      <dl className="flex flex-col divide-y divide-subtle">
-        {rubric.map((criterion) => {
-          const entry = evaluation.scores.find((s) => s.criterion_id === criterion.id)
-          return (
-            <div
-              key={criterion.id}
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2.5"
-            >
-              <dt className="text-sm text-secondary">{criterion.name}</dt>
-              <dd>
-                {entry ? (
-                  <ScoreChip
-                    score={entry.score}
-                    inverted={criterion.inverted}
-                    label={`${criterion.name}: ${entry.score} out of 5`}
-                  />
-                ) : (
-                  <span className="text-sm text-muted">Not scored</span>
-                )}
-              </dd>
-              {entry?.comment && (
-                <dd className="col-span-2 text-sm whitespace-pre-line text-primary">
-                  {entry.comment}
-                </dd>
-              )}
+      {/* The scores are in the table above: the card is for what people wrote. */}
+      {commented.length > 0 && (
+        <dl className="flex flex-col divide-y divide-subtle">
+          {commented.map(({ criterion, entry }) => (
+            <div key={criterion.id} className="flex flex-col gap-1 px-4 py-2.5">
+              <dt className="flex items-center justify-between gap-3 text-sm text-secondary">
+                {criterion.name}
+                <ScoreChip
+                  score={entry.score}
+                  inverted={criterion.inverted}
+                  label={`${criterion.name}: ${entry.score} out of 5`}
+                />
+              </dt>
+              <dd className="text-sm whitespace-pre-line text-primary">{entry.comment}</dd>
             </div>
-          )
-        })}
-      </dl>
+          ))}
+        </dl>
+      )}
+      {commented.length === 0 && !evaluation.comment && (
+        <p className="px-4 py-3 text-sm text-muted">No comments.</p>
+      )}
       {evaluation.comment && (
-        <div className="flex flex-col gap-1 border-t border-subtle px-4 py-3">
+        <div
+          className={cn(
+            'flex flex-col gap-1 px-4 py-3',
+            commented.length > 0 && 'border-t border-subtle',
+          )}
+        >
           <p className="text-xs font-medium text-muted">Overall comment</p>
           <p className="text-sm whitespace-pre-line text-primary">{evaluation.comment}</p>
         </div>

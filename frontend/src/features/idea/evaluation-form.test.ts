@@ -122,7 +122,7 @@ describe('submit validation', () => {
     expect(missing).toEqual({ criteria: ['c-value', 'c-effort', 'c-fit'], recommendation: true })
     expect(hasErrors(missing)).toBe(true)
     expect(describeMissing(RUBRIC, missing)).toBe(
-      '3 criteria need a score, and choose Go, Maybe or No',
+      '3 criteria need a score, and the overall recommendation is missing',
     )
   })
 

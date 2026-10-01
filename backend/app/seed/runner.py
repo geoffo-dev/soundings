@@ -64,7 +64,14 @@ from app.seed.content import IDEAS, PEOPLE, PROJECTS, IdeaSeed, ProjectSeed, Rev
 from app.services import comments, evaluations, ideas, projects, votes
 from app.services.scoring import active_criteria
 
-__all__ = ["SeedRefused", "SeedReport", "check_allowed", "seed_demo_data", "wipe_app_data"]
+__all__ = [
+    "SeedRefused",
+    "SeedReport",
+    "check_allowed",
+    "check_reset_allowed",
+    "seed_demo_data",
+    "wipe_app_data",
+]
 
 logger = logging.getLogger("soundings.seed")
 
@@ -82,7 +89,8 @@ _FUTURE_COLUMNS: Final = frozenset({"ideas.evaluation_due_at"})
 
 
 class SeedRefused(Exception):
-    """Seeding is not allowed here (production without ``--force``)."""
+    """Seeding is not allowed here (production, or a reset of a database with real
+    people, without ``--force``)."""
 
 
 @dataclass
@@ -119,6 +127,25 @@ def check_allowed(settings: DatabaseSettings, *, force: bool = False) -> None:
         )
 
 
+async def check_reset_allowed(db: AsyncSession, *, force: bool = False) -> None:
+    """``--reset`` empties every table, so without ``--force`` it only runs on a
+    database whose people are all demo people (by email, so SSO sign-ins of the demo
+    accounts count) or that has none: a development, demo or e2e database.
+
+    The environment check alone fails open: ``SOUNDINGS_ENVIRONMENT`` defaults to
+    development, so a hand-run ``seed --reset`` pointed at a real database would
+    otherwise wipe it.
+    """
+    if force:
+        return
+    demo_emails = [person.email.lower() for person in PEOPLE]
+    if await db.scalar(select(exists().where(func.lower(User.email).not_in(demo_emails)))):
+        raise SeedRefused(
+            "Refusing to --reset: the database has people who are not in the demo data, "
+            "so it may hold real data. Use --force if you really mean to delete everything."
+        )
+
+
 async def wipe_app_data(db: AsyncSession) -> None:
     """Empty every application table (not the migration history or the job queue)."""
     preparer = db.get_bind().dialect.identifier_preparer
@@ -127,15 +154,17 @@ async def wipe_app_data(db: AsyncSession) -> None:
 
 
 async def seed_demo_data(
-    db: AsyncSession, *, reset: bool = False, now: datetime | None = None
+    db: AsyncSession, *, reset: bool = False, force: bool = False, now: datetime | None = None
 ) -> SeedReport:
     """Load the demo data in the caller's transaction (the caller commits).
 
     Without ``reset`` a database that already has projects is left alone (a Helm hook
-    re-running on upgrade is a no-op). ``reset`` wipes application data first.
+    re-running on upgrade is a no-op). ``reset`` wipes application data first, if
+    :func:`check_reset_allowed` (``force`` skips that check).
     """
     await db.execute(select(func.pg_advisory_xact_lock(_LOCK_KEY)))
     if reset:
+        await check_reset_allowed(db, force=force)
         await wipe_app_data(db)
     elif await db.scalar(select(exists().where(Project.id.is_not(None)))):
         return SeedReport(

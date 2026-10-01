@@ -21,6 +21,7 @@ from app.config import Settings, get_settings
 from app.db import create_engine, create_sessionmaker
 from app.errors import install_exception_handlers
 from app.middleware import (
+    BodySizeLimitMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
     TrustedHostMiddleware,
@@ -95,7 +96,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # add_middleware prepends: the last one added is the outermost, so security
     # headers also land on the 500s that RequestContextMiddleware produces, and
-    # refused hosts still get a request id, an access-log line and metrics.
+    # refused hosts and oversized bodies still get a request id, an access-log line
+    # and metrics. No middleware reads the body, so the size limit needs no more.
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(

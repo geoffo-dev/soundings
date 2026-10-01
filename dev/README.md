@@ -42,7 +42,10 @@ three projects and 45 ideas in every status, with owners, blind evaluations (sub
 drafts, not started), due dates (some overdue), comments, votes and tags. It is the same
 every time (people keep their ids), refuses `SOUNDINGS_ENVIRONMENT=production` unless
 `--force`, and does nothing once the database has projects: `make seed RESET=1`
-(`soundings seed --reset`) wipes all application data and loads it again.
+(`soundings seed --reset`) wipes all application data and loads it again. `--reset`
+also wants `--force` once anyone who is not a demo person has an account (a real
+sign-in): a hand-run reset defaults to development mode, so it never wipes a real
+database by accident.
 
 | Project | Key | Visibility | Notes |
 |---|---|---|---|

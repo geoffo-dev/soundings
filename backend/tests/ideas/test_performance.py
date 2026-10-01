@@ -1,10 +1,11 @@
-"""The list and the board stay fast at 10k ideas (SPEC section 12, contract section 3.9).
+"""The list, the board, My work and search stay fast at 10k ideas (SPEC section 12,
+contract sections 3.9 to 3.11).
 
 Slow: excluded from the default run; ``make -C backend test-slow`` runs it. It seeds
 one project with 10,000 ideas (tags, owners, a quarter of them evaluated by three
 evaluators, one of whom is still pending, so blind masking is in every query),
-recomputes every aggregate, then times each list and board request through the
-whole app and asserts p95 < 150 ms. It also checks that the default orders are
+recomputes every aggregate, then times each list, board, My work and search request
+through the whole app and asserts p95 < 150 ms. It also checks that the default orders are
 served by the keyset indexes rather than a sequential scan of ``ideas``.
 
 Before timing, the startup heap is frozen (``gc.freeze()``): otherwise a full
@@ -200,10 +201,18 @@ async def test_list_and_board_at_10k_ideas(
         "board filtered": (viewer, "board", {"tag": ["tag-1"], "q": "refunds"}),
     }
     admin_client = await login(admin)
+    owner_client = await login(owner)
     scenarios["board (admin)"] = (admin_client, "board", {})
+    # My work and search (code review F9); the pending evaluator owes 1,000 evaluations.
+    scenarios["my work (evaluator)"] = (viewer, "/me/work", {})
+    scenarios["my work (owner)"] = (owner_client, "/me/work", {})
+    scenarios["search"] = (viewer, "/search", {"q": "pricing"})
+    scenarios["search key"] = (viewer, "/search", {"q": "big-4242"})
+    work = ok(await viewer.get(f"{API}/me/work"))
+    assert work["counts"]["evaluations_due"] == len(work["evaluations_due"]) == 1_000
     results: dict[str, float] = {}
     for name, (client, what, query) in scenarios.items():
-        url = f"{API}/projects/big/{what}"
+        url = f"{API}{what}" if what.startswith("/") else f"{API}/projects/big/{what}"
 
         def call(client: httpx.AsyncClient = client, url: str = url, query: Any = query) -> Any:
             return client.get(url, params=query)

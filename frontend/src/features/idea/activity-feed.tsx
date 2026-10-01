@@ -36,7 +36,8 @@ import { KbdShortcut } from '@/components/ui/kbd'
 import { Markdown } from '@/components/ui/markdown'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
-import { activityActor, describeActivity } from '@/lib/activity'
+import { activityActor, describeEntry, groupActivity, type ActivityEntry } from '@/lib/activity'
+import { draftKey } from '@/lib/drafts'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -98,11 +99,11 @@ export function ActivitySection() {
                 'before:absolute before:inset-y-3 before:left-3 before:w-px before:bg-subtle-hover',
               )}
             >
-              {items.map((item) =>
-                item.type === 'comment' && !item.comment.deleted ? (
-                  <CommentItem key={item.id} item={item} />
+              {groupActivity(items).map((entry) =>
+                entry.item.type === 'comment' && !entry.item.comment.deleted ? (
+                  <CommentItem key={entry.item.id} item={entry.item} />
                 ) : (
-                  <EventItem key={item.id} item={item} />
+                  <EventItem key={entry.item.id} entry={entry} />
                 ),
               )}
             </ol>
@@ -156,8 +157,9 @@ const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> =
 }
 
 /** One quiet line: icon, "Alice moved it from New to Evaluating", time. */
-function EventItem({ item }: { item: ActivityItem }) {
+function EventItem({ entry }: { entry: ActivityEntry }) {
   const { statusLabel } = useIdeaPage()
+  const { item } = entry
   const icon = item.type === 'comment' ? <MessageSquare /> : EVENT_ICONS[item.type]
   return (
     <li className="relative flex items-start gap-2.5 py-1.5 text-sm">
@@ -169,7 +171,7 @@ function EventItem({ item }: { item: ActivityItem }) {
       </span>
       <p className="min-w-0 pt-0.5 text-secondary">
         <span className="font-medium text-primary">{activityActor(item)}</span>{' '}
-        {describeActivity(item, statusLabel)}
+        {describeEntry(entry, statusLabel)}
         <span aria-hidden="true" className="text-muted">
           {' '}
           ·{' '}
@@ -314,7 +316,8 @@ function writeDraft(key: string, value: string) {
 function CommentComposer() {
   const { ideaKey, me, takeCommentFocus, commentFocusRequest } = useIdeaPage()
   const create = useCreateComment(ideaKey)
-  const storageKey = `soundings-comment-draft:${ideaKey}`
+  // Per user, and cleared when the session ends (lib/drafts).
+  const storageKey = draftKey(me.id, `comment:${ideaKey}`)
   const [body, setBody] = useState(() => readDraft(storageKey))
   const inputRef = useRef<HTMLTextAreaElement>(null)
 

@@ -179,6 +179,14 @@ export function describeError(error: unknown): { title: string; description?: st
   }
   const copy = ERROR_COPY[error.code]
   if (copy) return { title: copy.title, description: copy.description ?? error.detail }
+  // A server error's title is an HTTP reason ("Internal Server Error") and its detail
+  // is meant for logs: say what it means for the person instead.
+  if (error.status >= 500) {
+    return {
+      title: defaultTitle(error.status),
+      description: 'Try again in a moment. If it keeps happening, let an admin know.',
+    }
+  }
   return { title: error.title, description: error.detail }
 }
 

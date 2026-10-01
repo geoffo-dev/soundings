@@ -282,8 +282,14 @@ class EvaluationIncompleteProblem(ProblemError):
 async def save_my_evaluation(
     db: AsyncSession, principal: Principal, loaded: LoadedIdea, body: MyEvaluationIn
 ) -> MyEvaluation:
-    """Replace your saved evaluation; ``submit`` submits it (contract section 3.6)."""
-    require(principal, Rule.EVALUATION_SUBMIT_OWN, loaded.resource)
+    """Replace your saved evaluation; ``submit`` submits it (contract section 3.6).
+
+    Check order (contract): a denial's 403 comes first, its 409
+    (evaluation closed, project archived) only after the body's own 422s.
+    """
+    decision = authorize(principal, Rule.EVALUATION_SUBMIT_OWN, loaded.resource)
+    if not decision.allowed and decision.status != 409:
+        raise decision.problem()
     idea = loaded.idea
     rubric = await _rubric(db, loaded)
     active = {criterion.id for criterion in rubric}
@@ -310,7 +316,9 @@ async def save_my_evaluation(
             )
         if errors:
             raise EvaluationIncompleteProblem(errors)
-    elif already_submitted:
+    if not decision.allowed:
+        raise decision.problem()
+    if not body.submit and already_submitted:
         raise ConflictProblem(
             "A submitted evaluation can be edited, not turned back into a draft.",
             code="evaluation_already_submitted",

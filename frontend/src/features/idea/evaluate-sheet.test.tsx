@@ -67,11 +67,16 @@ describe('EvaluateSheet', () => {
     expect(within(sheet).getByText('Choose Go, Maybe or No')).toBeInTheDocument()
     // Shown in the footer and announced in the sheet's live region.
     expect(
-      within(sheet).getAllByText('4 criteria need a score, and choose Go, Maybe or No'),
+      within(sheet).getAllByText(
+        '4 criteria need a score, and the overall recommendation is missing',
+      ),
     ).toHaveLength(2)
     const feasibility = within(sheet).getByRole('radiogroup', { name: 'Feasibility' })
     expect(feasibility).toHaveAccessibleDescription(/Pick a score/)
     await waitFor(() => expect(within(feasibility).getByRole('radio', { name: '1' })).toHaveFocus())
+    // Focus alone doesn't show "1 · …" under the scores, as if 1 had been picked.
+    const guidance = feasibility.parentElement?.querySelector('[data-slot="segmented-guidance"]')
+    expect(guidance).not.toHaveTextContent(/^1 ·/)
 
     // Fixing a gap clears its message, not the others.
     await user.click(within(feasibility).getByRole('radio', { name: '3' }))

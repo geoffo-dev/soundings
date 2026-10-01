@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GeneralSettings, GeneralSummary } from '@/features/project/settings/general-settings'
 import { MembersSettings } from '@/features/project/settings/members-settings'
 import { RubricEditor, RubricSummary } from '@/features/project/settings/rubric-editor'
+import { UnsavedChangesGuard } from '@/features/project/settings/settings-layout'
 import { StatusLabelsSettings } from '@/features/project/settings/status-labels-settings'
 import { SETTINGS_TABS, type SettingsTab } from '@/features/project/settings/settings-tabs'
 
@@ -59,49 +60,51 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
           </Button>
         }
       />
-      <Tabs
-        value={current}
-        onValueChange={(next) =>
-          void navigate({
-            to: '/p/$slug/settings',
-            params: { slug: project.slug },
-            search: { tab: next === 'general' ? undefined : (next as SettingsTab) },
-            replace: true,
-          })
-        }
-        className="flex flex-col gap-6"
-      >
-        <TabsList aria-label="Settings">
-          {tabs.map((value) => (
-            <TabsTrigger key={value} value={value}>
-              {TAB_LABELS[value]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {/* Forms stay mounted, so switching tabs never loses unsaved edits. */}
-        <TabsContent value="general" forceMount className="pt-0 data-[state=inactive]:hidden">
-          {canManage ? (
-            <GeneralSettings project={project} active={current === 'general'} />
-          ) : (
-            <GeneralSummary project={project} />
-          )}
-        </TabsContent>
-        <TabsContent value="members" forceMount className="pt-0 data-[state=inactive]:hidden">
-          <MembersSettings project={project} />
-        </TabsContent>
-        <TabsContent value="rubric" forceMount className="pt-0 data-[state=inactive]:hidden">
-          {canManage ? (
-            <RubricEditor project={project} active={current === 'rubric'} />
-          ) : (
-            <RubricSummary project={project} />
-          )}
-        </TabsContent>
-        {canManage && (
-          <TabsContent value="statuses" forceMount className="pt-0 data-[state=inactive]:hidden">
-            <StatusLabelsSettings project={project} active={current === 'statuses'} />
+      <UnsavedChangesGuard>
+        <Tabs
+          value={current}
+          onValueChange={(next) =>
+            void navigate({
+              to: '/p/$slug/settings',
+              params: { slug: project.slug },
+              search: { tab: next === 'general' ? undefined : (next as SettingsTab) },
+              replace: true,
+            })
+          }
+          className="flex flex-col gap-6"
+        >
+          <TabsList aria-label="Settings">
+            {tabs.map((value) => (
+              <TabsTrigger key={value} value={value}>
+                {TAB_LABELS[value]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {/* Forms stay mounted, so switching tabs never loses unsaved edits. */}
+          <TabsContent value="general" forceMount className="pt-0 data-[state=inactive]:hidden">
+            {canManage ? (
+              <GeneralSettings project={project} active={current === 'general'} />
+            ) : (
+              <GeneralSummary project={project} />
+            )}
           </TabsContent>
-        )}
-      </Tabs>
+          <TabsContent value="members" forceMount className="pt-0 data-[state=inactive]:hidden">
+            <MembersSettings project={project} />
+          </TabsContent>
+          <TabsContent value="rubric" forceMount className="pt-0 data-[state=inactive]:hidden">
+            {canManage ? (
+              <RubricEditor project={project} active={current === 'rubric'} />
+            ) : (
+              <RubricSummary project={project} />
+            )}
+          </TabsContent>
+          {canManage && (
+            <TabsContent value="statuses" forceMount className="pt-0 data-[state=inactive]:hidden">
+              <StatusLabelsSettings project={project} active={current === 'statuses'} />
+            </TabsContent>
+          )}
+        </Tabs>
+      </UnsavedChangesGuard>
     </Page>
   )
 }

@@ -1,5 +1,5 @@
 import { CircleAlert, FileText, Pencil } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import { describeError } from '@/api/errors'
 import { useUpdateIdea } from '@/api/ideas'
@@ -26,6 +26,14 @@ export function DescriptionSection() {
   const [error, setError] = useState<string | null>(null)
   const errorId = useId()
   const description = idea.description_md.trim()
+  // Closing the editor removes the focused field: go back to "Edit" (or "Add details").
+  const editButtonRef = useRef<HTMLButtonElement>(null)
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (editing || !refocus.current) return
+    refocus.current = false
+    editButtonRef.current?.focus()
+  }, [editing])
 
   const start = () => {
     setDraft(idea.description_md)
@@ -33,6 +41,7 @@ export function DescriptionSection() {
     setEditing(true)
   }
   const cancel = () => {
+    refocus.current = true
     setEditing(false)
     setError(null)
   }
@@ -44,7 +53,7 @@ export function DescriptionSection() {
     update.mutate(
       { description_md: draft.trim() },
       {
-        onSuccess: () => setEditing(false),
+        onSuccess: cancel,
         onError: (failure) => {
           const { title, description: detail } = describeError(failure)
           setError(detail ? `${title}. ${detail}` : title)
@@ -61,7 +70,13 @@ export function DescriptionSection() {
         </h2>
         {canEdit && !editing && description && (
           <WithTooltip content="Edit description">
-            <Button variant="ghost" size="icon-sm" aria-label="Edit description" onClick={start}>
+            <Button
+              ref={editButtonRef}
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Edit description"
+              onClick={start}
+            >
               <Pencil />
             </Button>
           </WithTooltip>
@@ -104,6 +119,7 @@ export function DescriptionSection() {
         <Markdown>{idea.description_md}</Markdown>
       ) : canEdit ? (
         <button
+          ref={editButtonRef}
           type="button"
           onClick={start}
           className="flex items-center gap-2 rounded-lg border border-dashed px-4 py-5 text-left text-sm text-muted transition-colors hover:border-strong hover:text-primary"

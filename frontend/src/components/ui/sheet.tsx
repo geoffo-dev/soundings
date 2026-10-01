@@ -4,6 +4,7 @@ import { Dialog as SheetPrimitive } from 'radix-ui'
 import type { ComponentProps } from 'react'
 
 import { DialogOverlay } from '@/components/ui/dialog'
+import { FocusOrigin, useReturnFocus } from '@/components/ui/return-focus'
 import { cn } from '@/lib/utils'
 
 export const Sheet = SheetPrimitive.Root
@@ -48,16 +49,23 @@ export function SheetContent({
   side = 'right',
   size = 'md',
   hideClose = false,
+  onCloseAutoFocus,
+  ref,
   ...props
 }: SheetContentProps) {
+  // Opened from code (no Trigger): focus goes back to where it was (return-focus.ts).
+  const { attach, capture, closeAutoFocus } = useReturnFocus(ref, onCloseAutoFocus)
   return (
     <SheetPrimitive.Portal>
       <DialogOverlay />
       <SheetPrimitive.Content
+        ref={attach}
         data-slot="sheet-content"
         className={cn(sheet({ side, size }), className)}
+        onCloseAutoFocus={closeAutoFocus}
         {...props}
       >
+        <FocusOrigin capture={capture} />
         {side === 'right' && (
           <span
             aria-hidden="true"

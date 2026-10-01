@@ -4,6 +4,7 @@ import { api, unwrap } from '@/api/client'
 import { queryKeys } from '@/api/keys'
 import type { CurrentUser } from '@/api/types'
 import { flushPendingCommits } from '@/api/undo'
+import { clearDrafts } from '@/lib/drafts'
 
 /** The signed-in user. A 401 means "signed out" (the auth guard redirects). */
 export const meQueryOptions = () =>
@@ -44,13 +45,17 @@ export function useDevLogin() {
       unwrap(api.POST('/api/v1/auth/dev/login', { body: { user_id: userId } })),
     onSuccess: (user: CurrentUser) => {
       queryClient.clear()
+      clearDrafts()
       queryClient.setQueryData(queryKeys.auth.me(), user)
     },
     meta: { errorTitle: 'Couldn’t sign in' },
   })
 }
 
-/** Signs out: sends pending deferred deletes first, then clears every cached query. */
+/**
+ * Signs out: sends pending deferred deletes first, then clears every cached query
+ * and every unsent draft (lib/drafts).
+ */
 export function useLogout() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -58,7 +63,10 @@ export function useLogout() {
       await flushPendingCommits({ keepalive: false })
       await api.POST('/api/v1/auth/logout')
     },
-    onSettled: () => queryClient.clear(),
+    onSettled: () => {
+      queryClient.clear()
+      clearDrafts()
+    },
     meta: { silent: true },
   })
 }

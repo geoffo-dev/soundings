@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import type { ComponentProps } from 'react'
 
+import { FocusOrigin, useReturnFocus } from '@/components/ui/return-focus'
 import { cn } from '@/lib/utils'
 
 export const Dialog = DialogPrimitive.Root
@@ -49,14 +50,20 @@ export function DialogContent({
   position = 'center',
   mobile = 'inset',
   onEscapeKeyDown,
+  onCloseAutoFocus,
+  ref,
   ...props
 }: DialogContentProps) {
+  // Opened from code (no Trigger): focus goes back to where it was (return-focus.ts).
+  const { attach, capture, closeAutoFocus } = useReturnFocus(ref, onCloseAutoFocus)
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
+        ref={attach}
         data-slot="dialog-content"
         data-mobile={mobile}
+        onCloseAutoFocus={closeAutoFocus}
         onEscapeKeyDown={(event) => {
           // Esc first closes an open autocomplete inside the dialog (TagInput, comboboxes).
           // cmdk's search field is always aria-expanded (its list is inline), so it doesn't count.
@@ -78,6 +85,7 @@ export function DialogContent({
         )}
         {...props}
       >
+        <FocusOrigin capture={capture} />
         {children}
         {!hideClose && (
           <DialogPrimitive.Close

@@ -94,10 +94,10 @@ def _seed(args: argparse.Namespace) -> int:
     settings = get_database_settings()
     try:
         check_allowed(settings, force=args.force)
+        report = asyncio.run(run_seed(settings, reset=args.reset, force=args.force))
     except SeedRefused as exc:
         sys.stderr.write(f"{exc}\n")
         return 1
-    report = asyncio.run(run_seed(settings, reset=args.reset))
     sys.stdout.write(f"{report.summary()}\n")
     return 0
 
@@ -160,7 +160,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--reset", action="store_true", help="delete all application data first, then seed"
     )
     seed.add_argument(
-        "--force", action="store_true", help="allow seeding when SOUNDINGS_ENVIRONMENT=production"
+        "--force",
+        action="store_true",
+        help=(
+            "allow seeding when SOUNDINGS_ENVIRONMENT=production, and --reset of a "
+            "database with people who are not demo people"
+        ),
     )
     seed.set_defaults(func=_seed)
 

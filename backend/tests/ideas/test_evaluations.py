@@ -3,11 +3,12 @@ evaluation (3.6), the evaluations list and the aggregate (3.8)."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +44,11 @@ def iso(value: datetime) -> str:
 
 def parse(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def days_ahead(days: int, hour: int = 17) -> datetime:
+    """A due date ``days`` from today at ``hour`` UTC (due dates must be near now)."""
+    return (utcnow() + timedelta(days=days)).replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
 # --- Invite ----------------------------------------------------------------------------------
@@ -101,7 +107,7 @@ async def test_first_invite_keeps_an_existing_due_date(
 ) -> None:
     idea = await make_idea(db_session, team.project)
     ada = await api(team.admin)
-    due = datetime(2026, 12, 1, 17, tzinfo=UTC)
+    due = days_ahead(60)
     ok(await ada.put(f"/ideas/{idea.id}/evaluation/due-date", {"due_at": iso(due)}))
 
     detail = ok(
@@ -114,8 +120,9 @@ async def test_first_invite_keeps_an_existing_due_date(
 async def test_invite_with_a_due_date(api: AsUser, team: Team, db_session: AsyncSession) -> None:
     idea = await make_idea(db_session, team.project)
     ada = await api(team.admin)
-    due = datetime(2026, 10, 7, 17, tzinfo=UTC)
-    body = {"user_ids": [str(team.evaluators[0].id)], "due_at": "2026-10-07T19:00:00+02:00"}
+    due = days_ahead(7)
+    in_paris = due.astimezone(timezone(timedelta(hours=2))).isoformat()  # "…T19:00:00+02:00"
+    body = {"user_ids": [str(team.evaluators[0].id)], "due_at": in_paris}
 
     detail = ok(await ada.post(f"/ideas/{idea.id}/evaluators", body))
     ok(await ada.post(f"/ideas/{idea.id}/evaluators", body))  # same date again: no event
@@ -245,7 +252,7 @@ async def test_remove_rules(api: AsUser, team: Team, db_session: AsyncSession) -
 async def test_due_date(api: AsUser, team: Team, db_session: AsyncSession) -> None:
     idea = await make_idea(db_session, team.project, owner=team.owner)
     olive = await api(team.owner)
-    due = datetime(2026, 10, 7, 17, tzinfo=UTC)
+    due = days_ahead(7)
 
     set_ = ok(await olive.put(f"/ideas/{idea.id}/evaluation/due-date", {"due_at": iso(due)}))
     ok(await olive.put(f"/ideas/{idea.id}/evaluation/due-date", {"due_at": iso(due)}))
@@ -263,6 +270,50 @@ async def test_due_date(api: AsUser, team: Team, db_session: AsyncSession) -> No
     assert_problem(await olive.put(path, {"due_at": "2026-10-07"}), 422, "validation_error")
     ok(await olive.post(f"/ideas/{idea.id}/evaluation/close"))
     assert_problem(await olive.put(path, {"due_at": None}), 409, "evaluation_closed")
+
+
+@pytest.mark.parametrize(
+    "due_at",
+    [
+        # Code review F5: these overflowed in astimezone(UTC) (500) or were stored as-is.
+        "0001-01-01T00:00:00+05:00",
+        "9999-12-31T23:59:00-05:00",
+        "0001-01-01T00:00:00Z",
+        "9999-12-31T23:59:59Z",
+        "far-past",
+        "far-future",
+    ],
+)
+async def test_due_dates_outside_a_sane_window_are_a_422(
+    api: AsUser, team: Team, db_session: AsyncSession, due_at: str
+) -> None:
+    """A due date is at most a year in the past and five years ahead (both routes)."""
+    if due_at == "far-past":
+        due_at = iso(utcnow() - timedelta(days=367))
+    elif due_at == "far-future":
+        due_at = iso(utcnow() + timedelta(days=5 * 366 + 1))
+    idea = await make_idea(db_session, team.project, owner=team.owner)
+    olive = await api(team.owner)
+
+    response = await olive.put(f"/ideas/{idea.id}/evaluation/due-date", {"due_at": due_at})
+    body = assert_problem(response, 422, "validation_error")
+    assert body["errors"][0]["loc"] == ["body", "due_at"]
+    invite = {"user_ids": [str(team.evaluators[0].id)], "due_at": due_at}
+    response = await olive.post(f"/ideas/{idea.id}/evaluators", invite)
+    assert_problem(response, 422, "validation_error")
+    assert await feed(db_session, idea) == []
+
+
+async def test_due_dates_inside_the_window_are_fine(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    idea = await make_idea(db_session, team.project, owner=team.owner)
+    olive = await api(team.owner)
+    path = f"/ideas/{idea.id}/evaluation/due-date"
+
+    for due in (utcnow() - timedelta(days=360), utcnow() + timedelta(days=5 * 365 - 1)):
+        detail = ok(await olive.put(path, {"due_at": iso(due)}))
+        assert parse(detail["evaluation_due_at"]) == due
 
 
 async def test_close_and_reopen_are_idempotent(
@@ -464,6 +515,27 @@ async def test_unknown_and_archived_criteria_are_refused(
         {"recommendation": "yes"},
     ):
         assert_problem(await eve.put(path, body), 422, "validation_error")
+
+
+async def test_save_checks_422_before_409(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    """The contract's check order ends 403, 422 business codes, 409: a closed evaluation
+    still answers a bad body with its 422 (the code review's contract deviation)."""
+    idea = await make_idea(db_session, team.project)
+    await add_evaluator(db_session, idea, team.evaluators[0])
+    ok(await (await api(team.admin)).post(f"/ideas/{idea.id}/evaluation/close"))
+    eve = await api(team.evaluators[0])
+    path = f"/ideas/{idea.id}/evaluations/me"
+
+    unknown = {"scores": [{"criterion_id": str(uuid4()), "score": 3}], "submit": False}
+    assert_problem(await eve.put(path, unknown), 422, "unknown_criterion")
+    incomplete = {"scores": full_scores(team, 3)[:2], "submit": True}
+    assert_problem(await eve.put(path, incomplete), 422, "evaluation_incomplete")
+    complete = {"scores": full_scores(team, 3), "recommendation": "go", "submit": True}
+    assert_problem(await eve.put(path, complete), 409, "evaluation_closed")
+    # 403 still comes first: not an evaluator.
+    assert_problem(await (await api(team.member)).put(path, unknown), 403, "forbidden")
 
 
 async def criteria_of(db: AsyncSession, project_id: Any) -> list[Any]:

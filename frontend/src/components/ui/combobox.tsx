@@ -4,7 +4,6 @@ import { useId, useState } from 'react'
 import { Avatar, AvatarGroup } from '@/components/ui/avatar'
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -111,11 +110,13 @@ export function Combobox(props: ComboboxProps) {
           <ChevronsUpDown aria-hidden="true" className="ml-auto size-4 shrink-0 text-muted" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-(--radix-popover-trigger-width) min-w-60 p-0">
+      <PopoverContent
+        className="w-(--radix-popover-trigger-width) min-w-60 p-0"
+        aria-label={props['aria-label'] ?? placeholder}
+      >
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
-          <CommandList id={listId}>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+          <CommandList id={listId} empty={emptyText}>
             <CommandGroup>
               {options.map((option) => {
                 const isSelected = selectedValues.includes(option.value)

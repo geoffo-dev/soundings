@@ -1,5 +1,5 @@
 import { CloudOff, UserMinus, UsersRound } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 
 import { describeError } from '@/api/errors'
 import {
@@ -123,6 +123,7 @@ function AddMember({ project, members }: { project: Project; members: Member[] }
   const add = useAddProjectMember(project.slug)
   const [person, setPerson] = useState<UserSearchResult | null>(null)
   const [role, setRole] = useState<ProjectRole>('member')
+  const pickerRef = useRef<HTMLButtonElement>(null)
 
   const submit = () => {
     if (!person || add.isPending) return
@@ -134,6 +135,8 @@ function AddMember({ project, members }: { project: Project; members: Member[] }
             `${member.user.display_name} added as ${roleLabel(member.role).toLowerCase()}`,
           )
           setPerson(null)
+          // "Add" is disabled again: ready for the next person instead of losing focus.
+          pickerRef.current?.focus()
         },
       },
     )
@@ -149,6 +152,7 @@ function AddMember({ project, members }: { project: Project; members: Member[] }
     >
       <Field label="Add a person" className="min-w-0 flex-1">
         <PersonPicker
+          ref={pickerRef}
           value={person}
           onChange={setPerson}
           exclude={members.map((member) => member.user.id)}

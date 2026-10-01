@@ -31,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TagInput } from '@/components/ui/tag-input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
+import { useCurrentUser } from '@/features/auth/current-user'
 import { closeDialog, useAppDialog } from '@/lib/dialogs'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
@@ -85,10 +86,11 @@ function NewIdeaForm({ contextSlug }: { contextSlug?: string }) {
   const navigate = useNavigate()
   const projects = useProjects()
   const create = useCreateIdea()
-  const [draft, setDraft] = useState<IdeaDraft>(readDraft)
+  const me = useCurrentUser()
+  const [draft, setDraft] = useState<IdeaDraft>(() => readDraft(me.id))
   const [restored, setRestored] = useState(() => hasContent(draft))
   const [chosenSlug, setChosenSlug] = useState(
-    () => contextSlug ?? draft.projectSlug ?? readLastProject(),
+    () => contextSlug ?? draft.projectSlug ?? readLastProject(me.id),
   )
   const [mode, setMode] = useState<'write' | 'preview'>('write')
   const [errors, setErrors] = useState<Errors>({})
@@ -100,8 +102,8 @@ function NewIdeaForm({ contextSlug }: { contextSlug?: string }) {
   const tags = useProjectTags(wantTags ? project?.slug : undefined)
 
   useEffect(() => {
-    writeDraft({ ...draft, projectSlug: project?.slug })
-  }, [draft, project?.slug])
+    writeDraft(me.id, { ...draft, projectSlug: project?.slug })
+  }, [me.id, draft, project?.slug])
 
   const update = (patch: Partial<IdeaDraft>) => {
     setDraft((current) => ({ ...current, ...patch }))
@@ -141,8 +143,8 @@ function NewIdeaForm({ contextSlug }: { contextSlug?: string }) {
       },
       {
         onSuccess: (idea) => {
-          clearDraft()
-          writeLastProject(project.slug)
+          clearDraft(me.id)
+          writeLastProject(me.id, project.slug)
           closeDialog()
           setDraft(EMPTY_DRAFT)
           void navigate({ to: '/ideas/$ideaKey', params: { ideaKey: idea.key } })
@@ -176,7 +178,7 @@ function NewIdeaForm({ contextSlug }: { contextSlug?: string }) {
   useShortcut('submitForm', submit)
 
   const discard = () => {
-    clearDraft()
+    clearDraft(me.id)
     setDraft(EMPTY_DRAFT)
     setRestored(false)
     setErrors({})

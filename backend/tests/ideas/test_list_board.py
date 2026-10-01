@@ -259,6 +259,61 @@ async def test_bad_cursors(api: AsUser, team: Team, ideas: dict[str, Idea]) -> N
     assert_problem(await client.get(path, status="done"), 422, "validation_error")
 
 
+@pytest.mark.parametrize(
+    ("sort", "value"),
+    [
+        # Cursors are not signed: values the column can't hold must not reach PostgreSQL
+        # (code review F4: numeric overflow was a 500).
+        ("-score", "1e999999"),
+        ("-score", "1e131072"),
+        ("score", "-1e131072"),
+        ("-score", "0.9"),
+        ("-score", "5.1"),
+        ("-score", "Infinity"),
+        ("votes", 10**40),
+        ("-votes", 2**31),
+        ("votes", -1),
+        ("-updated", "0001-01-01T00:00:00+05:00"),
+        ("-created", "9999-12-31T23:59:00-05:00"),
+    ],
+)
+async def test_cursor_values_out_of_range_are_invalid(
+    api: AsUser, team: Team, ideas: dict[str, Idea], sort: str, value: object
+) -> None:
+    client = await api(team.member)
+    raw = json.dumps({"sort": sort, "v": value, "id": str(uuid4())})
+    cursor = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+    response = await client.get(f"/projects/{team.slug}/ideas", sort=sort, cursor=cursor)
+
+    assert_problem(response, 400, "invalid_cursor")
+
+
+@pytest.mark.parametrize(
+    ("sort", "value"),
+    [("-score", "5"), ("score", "1.0"), ("-score", "3.5"), ("votes", 2**31 - 1), ("votes", 0)],
+)
+async def test_cursor_values_at_the_edges_are_valid(
+    api: AsUser, team: Team, ideas: dict[str, Idea], sort: str, value: object
+) -> None:
+    client = await api(team.member)
+    raw = json.dumps({"sort": sort, "v": value, "id": str(uuid4())})
+    cursor = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+    ok(await client.get(f"/projects/{team.slug}/ideas", sort=sort, cursor=cursor))
+
+
+async def test_activity_cursor_out_of_range_is_invalid(
+    api: AsUser, team: Team, ideas: dict[str, Idea]
+) -> None:
+    client = await api(team.member)
+    for when in ("0001-01-01T00:00:00+05:00", "9999-12-31T23:59:00-05:00"):
+        raw = json.dumps({"t": when, "id": str(uuid4())})
+        cursor = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+        response = await client.get(f"/ideas/{ideas['alpha'].id}/activity", cursor=cursor)
+        assert_problem(response, 400, "invalid_cursor")
+
+
 async def test_list_needs_view_access(api: AsUser, team: Team, ideas: dict[str, Idea]) -> None:
     otto = await api(team.outsider)
 

@@ -58,7 +58,8 @@ test.describe('a user without projects', () => {
   test('My work is friendly and accessible when empty', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByText('Nothing to evaluate')).toBeVisible()
-    await expect(page.getByText('You don’t own any ideas yet')).toBeVisible()
+    // Not a member anywhere: no advice to volunteer or submit.
+    await expect(page.getByText('No ideas to own')).toBeVisible()
     await expect(page.getByText('You’re not in any projects yet')).toBeVisible()
     expect(await seriousViolations(page)).toEqual([])
   })

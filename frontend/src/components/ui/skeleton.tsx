@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -17,16 +17,34 @@ export function Skeleton({ className, ...props }: ComponentProps<'div'>) {
   )
 }
 
-/** Wraps skeletons so assistive tech hears "Loading…" once. */
+/** How long a load may take before it is announced: quick ones stay silent. */
+const ANNOUNCE_AFTER_MS = 300
+
+/**
+ * Wraps skeletons so assistive tech hears "Loading…" once. Live regions only
+ * announce what changes inside them, so the words go in a moment after the
+ * region appears (text it is created with is not read out).
+ */
 export function SkeletonGroup({
   label = 'Loading…',
   className,
   children,
   ...props
 }: ComponentProps<'div'> & { label?: string }) {
+  const [announce, setAnnounce] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAnnounce(true), ANNOUNCE_AFTER_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
   return (
-    <div role="status" aria-live="polite" className={className} {...props}>
-      <span className="sr-only">{label}</span>
+    <div
+      role="status"
+      aria-live="polite"
+      data-slot="skeleton-group"
+      className={className}
+      {...props}
+    >
+      <span className="sr-only">{announce ? label : ''}</span>
       {children}
     </div>
   )

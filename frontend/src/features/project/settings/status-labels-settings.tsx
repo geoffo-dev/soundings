@@ -159,7 +159,7 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
             {CLOSED_RESOLUTIONS.map((resolution) => row(resolution, null))}
           </ul>
         </div>
-        <div className="flex flex-col gap-2" aria-live="polite">
+        <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-primary">Preview</h3>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-background px-4 py-3">
             {IDEA_STATUSES.map((status) => (
@@ -180,6 +180,7 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
           </div>
         </div>
         <FormActions
+          form="the status labels"
           dirty={dirty}
           saving={update.isPending}
           notice={notice}

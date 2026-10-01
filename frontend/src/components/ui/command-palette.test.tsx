@@ -103,3 +103,11 @@ describe('CommandPalette with local filtering', () => {
     expect(selected()).toHaveTextContent('New idea')
   })
 })
+
+describe('CommandPalette with no results', () => {
+  it('says so outside the listbox (a listbox may only hold options)', () => {
+    render(<Palette search="zzqx" ideas={[]} local={[]} />)
+    expect(screen.getByText('No results for “zzqx”')).toBeInTheDocument()
+    expect(screen.getByRole('listbox')).toHaveTextContent(/^$/)
+  })
+})

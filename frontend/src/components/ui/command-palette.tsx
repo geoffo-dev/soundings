@@ -10,7 +10,6 @@ import {
 
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -171,18 +170,22 @@ export function CommandPalette({
             value={value}
             onValueChange={setValue}
           />
-          <CommandList onPointerMove={() => setPicked(true)}>
-            {loading && (
-              <CommandLoading>
-                <div className="px-3 py-2 text-sm text-muted">Searching…</div>
-              </CommandLoading>
-            )}
-            <CommandEmpty>
-              <div className="flex flex-col items-center gap-2">
-                <SearchX aria-hidden="true" className="size-5 text-muted" />
-                <span>No results for “{value}”</span>
-              </div>
-            </CommandEmpty>
+          {loading && (
+            <CommandLoading>
+              <div className="px-3 py-2 text-sm text-muted">Searching…</div>
+            </CommandLoading>
+          )}
+          <CommandList
+            onPointerMove={() => setPicked(true)}
+            empty={
+              loading ? undefined : (
+                <div className="flex flex-col items-center gap-2">
+                  <SearchX aria-hidden="true" className="size-5 text-muted" />
+                  <span>No results for “{value}”</span>
+                </div>
+              )
+            }
+          >
             {visibleGroups.map((group) => (
               <CommandGroup key={group.heading} heading={group.heading}>
                 {group.actions.map((action) => (

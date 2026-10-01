@@ -1,5 +1,5 @@
 import { CircleAlert } from 'lucide-react'
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
 import { Button } from '@/components/ui/button'
@@ -51,16 +51,26 @@ export function InlineText({
   const [error, setError] = useState<string | null>(null)
   const errorId = useId()
   const fieldRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  const editButtonRef = useRef<HTMLButtonElement>(null)
+  // Closing the editor removes the focused field: go back to the text's edit button.
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (editing || !refocus.current) return
+    refocus.current = false
+    editButtonRef.current?.focus()
+  }, [editing])
 
   const start = () => {
     setDraft(value)
     setError(null)
     setEditing(true)
   }
-  const cancel = () => {
+  const close = () => {
+    refocus.current = true
     setEditing(false)
     setError(null)
   }
+  const cancel = close
   const save = () => {
     const next = draft.trim()
     if (!next) {
@@ -69,8 +79,7 @@ export function InlineText({
       fieldRef.current?.focus()
       return
     }
-    setEditing(false)
-    setError(null)
+    close()
     if (next === value.trim()) return
     onSave(next).catch((failure: unknown) => {
       // The optimistic change was rolled back: reopen with what they typed.
@@ -155,6 +164,7 @@ export function InlineText({
     >
       {children}
       <button
+        ref={editButtonRef}
         type="button"
         onClick={start}
         aria-label={`Edit ${label.toLowerCase()}`}

@@ -15,7 +15,7 @@ from app.authz import Rule, load_project
 from app.db import SessionDep
 from app.models.enums import IdeaStatus, Resolution
 from app.pagination import MAX_LIMIT, PageParamsDep
-from app.schemas.base import TagName
+from app.schemas.base import NoNul, TagName
 from app.schemas.ideas import (
     Board,
     EvaluationDueDate,
@@ -91,6 +91,7 @@ def idea_filters(
             max_length=200,
             description="Text in the title or summary (case-insensitive), or an idea key.",
         ),
+        NoNul,
     ] = None,
     sort: Annotated[IdeaSort, Query(description="Order; '-' prefix = descending.")] = "-updated",
 ) -> IdeaFilters:

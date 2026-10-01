@@ -65,3 +65,45 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
 export function activityActor(item: ActivityItem): string {
   return item.actor?.display_name ?? 'Someone'
 }
+
+/** Invitations this close together read as one: "invited Bob, Carol and Dave to evaluate". */
+const GROUP_WITHIN_MS = 10 * 60_000
+
+export interface ActivityEntry {
+  /** The run's latest event (its time is shown). */
+  item: ActivityItem
+  /** Everyone invited in a run of invitations by one person; undefined otherwise. */
+  invited?: string[]
+}
+
+/**
+ * Folds consecutive "invited X to evaluate" events by the same person, a few
+ * minutes apart, into one line, so inviting four evaluators isn't four lines.
+ */
+export function groupActivity(items: readonly ActivityItem[]): ActivityEntry[] {
+  const entries: ActivityEntry[] = []
+  for (const item of items) {
+    const previous = entries.at(-1)
+    const name = item.type === 'evaluator_added' ? item.evaluator?.display_name : undefined
+    if (
+      name &&
+      previous?.item.type === 'evaluator_added' &&
+      previous.item.actor?.id === item.actor?.id &&
+      new Date(item.created_at).getTime() - new Date(previous.item.created_at).getTime() <=
+        GROUP_WITHIN_MS
+    ) {
+      const invited = previous.invited ?? [previous.item.evaluator?.display_name ?? 'someone']
+      entries[entries.length - 1] = { item, invited: [...invited, name] }
+    } else {
+      entries.push({ item })
+    }
+  }
+  return entries
+}
+
+/** describeActivity for a grouped entry. */
+export function describeEntry(entry: ActivityEntry, labels?: StatusLabelLookup): string {
+  return entry.invited && entry.invited.length > 1
+    ? `invited ${list(entry.invited)} to evaluate`
+    : describeActivity(entry.item, labels)
+}

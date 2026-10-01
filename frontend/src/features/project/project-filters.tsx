@@ -16,15 +16,13 @@ import { useDebouncedValue } from '@/api/search'
 import type { IdeaStatus, Project, StatusLabels, UserRef } from '@/api/types'
 import { useUserSearch } from '@/api/users'
 import { Avatar } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
+  useTopResult,
 } from '@/components/ui/command'
 import { FilterChip } from '@/components/ui/filter-chip'
 import { Input } from '@/components/ui/input'
@@ -34,13 +32,7 @@ import { useCurrentUser } from '@/features/auth/current-user'
 import { IDEA_STATUSES, statusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
-import {
-  clearFilters,
-  hasActiveFilters,
-  toggleValue,
-  type ProjectSearch,
-  type ProjectView,
-} from './project-search'
+import { toggleValue, type ProjectSearch, type ProjectView } from './project-search'
 
 export interface FilterBarProps {
   project: Project
@@ -55,8 +47,8 @@ export interface FilterBarProps {
 
 /**
  * Filter chips (wireframe 02): text search, status (List only), owner, tag,
- * "Needs evaluators", "High disagreement", and Clear. Everything lives in the
- * URL, so a filtered view is a shareable link.
+ * "Needs evaluators" and "High disagreement" (Clear sits beside the count).
+ * Everything lives in the URL, so a filtered view is a shareable link.
  */
 export function FilterBar({
   project,
@@ -67,13 +59,12 @@ export function FilterBar({
   knownPeople,
 }: FilterBarProps) {
   const set = (patch: Partial<ProjectSearch>) => onChange({ ...search, ...patch })
-  const active = hasActiveFilters(search, view)
 
   return (
     <div
       role="group"
       aria-label="Filters"
-      className="-mx-4 scrollbar-none flex items-center gap-2 overflow-x-auto px-4 py-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+      className="-mx-4 scrollbar-none flex items-center gap-2 overflow-x-auto px-4 py-0.5 sm:mx-0 sm:flex-wrap sm:gap-1.5 sm:overflow-visible sm:px-0"
     >
       <SearchField value={search.q} onChange={(q) => set({ q })} inputRef={searchRef} />
       {view === 'list' && (
@@ -104,17 +95,6 @@ export function FilterBar({
       >
         High disagreement
       </FilterChip>
-      {/* On phones this row scrolls sideways; Clear sits next to the count instead. */}
-      {active && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted max-sm:hidden"
-          onClick={() => onChange(clearFilters(search))}
-        >
-          Clear
-        </Button>
-      )}
     </div>
   )
 }
@@ -161,7 +141,7 @@ function SearchField({
       startIcon={<Search />}
       value={text}
       maxLength={200}
-      className="w-44 shrink-0 sm:w-52 [&_input]:h-7 sm:[&_input]:text-sm"
+      className="w-44 shrink-0 [&_input]:h-7 sm:[&_input]:text-sm"
       onChange={(event) => {
         const next = event.target.value
         setText(next)
@@ -241,7 +221,7 @@ function FilterMenu({
             <ChevronDown aria-hidden="true" className="opacity-60" />
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-0" align="start">
+        <PopoverContent className="w-64 p-0" align="start" aria-label={`Filter by ${label}`}>
           {children(() => setOpen(false))}
         </PopoverContent>
       </Popover>
@@ -411,11 +391,16 @@ function OwnerOptions({
   const showMe = !needle || 'me'.includes(needle)
   const showNone = !needle || 'no owner unowned nobody'.includes(needle)
   const others = (people.data?.items ?? []).filter((person) => person.id !== meId)
+  const highlight = useTopResult([
+    ...(showMe ? ['me'] : []),
+    ...(showNone ? ['none'] : []),
+    ...others.map((person) => person.id),
+  ])
 
   return (
-    <Command shouldFilter={false}>
+    <Command shouldFilter={false} {...highlight}>
       <CommandInput value={q} onValueChange={setQ} placeholder="Search people…" />
-      <CommandList aria-label="Owners">
+      <CommandList aria-label="Owners" empty={people.isFetching ? undefined : 'No one matches'}>
         {(showMe || showNone) && (
           <CommandGroup>
             {showMe && (
@@ -432,9 +417,11 @@ function OwnerOptions({
             )}
           </CommandGroup>
         )}
-        {(showMe || showNone) && others.length > 0 && <CommandSeparator />}
         {others.length > 0 && (
-          <CommandGroup heading="People">
+          <CommandGroup
+            heading="People"
+            className={cn((showMe || showNone) && 'mt-1 border-t border-subtle pt-1')}
+          >
             {others.map((person) => (
               <OptionItem
                 key={person.id}
@@ -447,9 +434,6 @@ function OwnerOptions({
               </OptionItem>
             ))}
           </CommandGroup>
-        )}
-        {!showMe && !showNone && others.length === 0 && !people.isFetching && (
-          <CommandEmpty>No one matches</CommandEmpty>
         )}
       </CommandList>
     </Command>
@@ -489,39 +473,45 @@ function TagFilter({
       {() => (
         <Command>
           <CommandInput placeholder="Search tags…" />
-          <CommandList aria-label="Tags">
-            {tags.isPending ? (
-              <p className="px-3 py-6 text-center text-sm text-muted">Loading tags…</p>
-            ) : (
-              <>
-                <CommandEmpty>
-                  {tags.data?.length ? 'No tags match' : 'No ideas are tagged yet'}
-                </CommandEmpty>
-                <CommandGroup>
-                  {/* Chosen tags that no visible idea carries any more stay removable. */}
-                  {chosen
-                    .filter(
-                      (name) =>
-                        !tags.data?.some((t) => t.name.toLowerCase() === name.toLowerCase()),
-                    )
-                    .map((name) => (
-                      <OptionItem key={name} value={name} checked onSelect={() => toggle(name)}>
-                        <span className="truncate">{name}</span>
-                      </OptionItem>
-                    ))}
-                  {tags.data?.map((tag) => (
-                    <OptionItem
-                      key={tag.id}
-                      value={tag.name}
-                      checked={isChosen(tag.name)}
-                      onSelect={() => toggle(tag.name)}
-                    >
-                      <span className="truncate">{tag.name}</span>
-                      <span className="text-xs text-muted tabular-nums">{tag.idea_count}</span>
+          {tags.isPending && (
+            <p role="status" className="px-3 py-6 text-center text-sm text-muted">
+              Loading tags…
+            </p>
+          )}
+          <CommandList
+            aria-label="Tags"
+            empty={
+              tags.isPending
+                ? undefined
+                : tags.data?.length
+                  ? 'No tags match'
+                  : 'No ideas are tagged yet'
+            }
+          >
+            {!tags.isPending && (
+              <CommandGroup>
+                {/* Chosen tags that no visible idea carries any more stay removable. */}
+                {chosen
+                  .filter(
+                    (name) => !tags.data?.some((t) => t.name.toLowerCase() === name.toLowerCase()),
+                  )
+                  .map((name) => (
+                    <OptionItem key={name} value={name} checked onSelect={() => toggle(name)}>
+                      <span className="truncate">{name}</span>
                     </OptionItem>
                   ))}
-                </CommandGroup>
-              </>
+                {tags.data?.map((tag) => (
+                  <OptionItem
+                    key={tag.id}
+                    value={tag.name}
+                    checked={isChosen(tag.name)}
+                    onSelect={() => toggle(tag.name)}
+                  >
+                    <span className="truncate">{tag.name}</span>
+                    <span className="text-xs text-muted tabular-nums">{tag.idea_count}</span>
+                  </OptionItem>
+                ))}
+              </CommandGroup>
             )}
           </CommandList>
         </Command>

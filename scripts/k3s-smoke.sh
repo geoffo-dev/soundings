@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke-test the Soundings install through the k3s ingress: /healthz, /readyz, the SPA and
-# the OpenAPI document; /metrics only on its own port; with dev login on, sign in over
-# the ingress (session + CSRF cookies) and read My work. Then `helm test`.
+# the OpenAPI document; /metrics only on its own port; 413 for a 2 MiB body; with dev
+# login on, sign in over the ingress (session + CSRF cookies) and read My work. Then
+# `helm test`.
 #
 #   RELEASE / NAMESPACE as for k3s-install.sh
 #   K3S_CONNECT_HOST  where the ingress port is reachable when not on localhost (CI with
@@ -67,6 +68,23 @@ if grep -q '^# TYPE' <<<"$pod_metrics"; then
 else
   fail "no Prometheus metrics on port $metrics_port"
 fi
+
+# Request bodies over 1 MiB: 413 from the app itself, anonymous, both with a
+# Content-Length and streamed (chunked), so they never fill the API pod's memory.
+big="$workdir/big.json"
+head -c $((2 * 1024 * 1024)) /dev/zero | tr '\0' 'x' >"$big"
+for mode in content-length chunked; do
+  extra=()
+  if [ "$mode" = chunked ]; then extra=(-H 'Transfer-Encoding: chunked'); fi
+  status="$(curl -sS "${curl_args[@]}" -o /dev/null -w '%{http_code}' \
+    -H 'Content-Type: application/json' ${extra[@]+"${extra[@]}"} --data-binary "@$big" \
+    "$BASE_URL/api/v1/projects" 2>/dev/null || true)"
+  if [ "$status" = "413" ]; then
+    ok "2 MiB POST ($mode): 413"
+  else
+    fail "2 MiB POST ($mode): status $status (want 413)"
+  fi
+done
 
 # Dev login (only when the release enables it): sign in as the first listed user (a
 # platform admin), check CSRF on a write, and read My work.

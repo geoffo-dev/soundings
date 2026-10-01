@@ -320,12 +320,8 @@ function MobileSummary({ onOpenDetails }: { onOpenDetails: () => void }) {
         <DueDateLabel value={idea.evaluation_due_at} hideWhenNone />
       )}
       {total > 0 && (
-        <ScoreBadge
-          score={idea.score?.overall ?? null}
-          hidden={idea.score_hidden}
-          count={idea.score?.count}
-          size="sm"
-        />
+        // "2/3 evaluated" sits beside it, so no "· 2" count on the chip.
+        <ScoreBadge score={idea.score?.overall ?? null} hidden={idea.score_hidden} size="sm" />
       )}
       <Button variant="outline" size="sm" className="ml-auto max-sm:h-9" onClick={onOpenDetails}>
         Details

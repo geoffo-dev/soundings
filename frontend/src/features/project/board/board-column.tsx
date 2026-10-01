@@ -16,6 +16,7 @@ import { SkeletonBoardCard, SkeletonGroup } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { StatusDot } from '@/components/ui/status-badge'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { NAV_COLUMN_ATTRIBUTE } from '@/lib/list-navigation'
 import { CLOSED_RESOLUTIONS, statusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -98,6 +99,7 @@ export function BoardColumn({
       ref={setNodeRef}
       aria-labelledby={headingId}
       data-over={isOver || undefined}
+      {...{ [NAV_COLUMN_ATTRIBUTE]: '' }}
       className={cn(
         'flex max-h-full min-h-0 shrink-0 snap-start flex-col gap-2 rounded-lg bg-background p-2',
         'transition-[background-color,box-shadow] duration-150',

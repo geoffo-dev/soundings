@@ -274,6 +274,7 @@ export function RubricEditor({ project, active }: { project: Project; active: bo
         </div>
 
         <FormActions
+          form="the rubric"
           dirty={dirty}
           saving={replace.isPending}
           notice={notice}

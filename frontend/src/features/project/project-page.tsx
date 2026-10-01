@@ -37,6 +37,7 @@ import { ListSkeleton, ListView } from '@/features/project/list/list-view'
 import { useCommands } from '@/lib/command-registry'
 import { openNewIdea } from '@/lib/dialogs'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
+import { cn } from '@/lib/utils'
 
 import { ProjectPageSkeleton } from './project-page-states'
 import { FilterBar } from './project-filters'
@@ -44,7 +45,7 @@ import { projectBoardOptions, projectListOptions } from './project-queries'
 import {
   clearFilters,
   hasActiveFilters,
-  SORT_OPTIONS,
+  sortMenuOptions,
   sortLabel,
   toIdeaFilters,
   withView,
@@ -207,8 +208,9 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
               : 'Ideas will appear here once members add them.'
           }
           action={
+            // The header (phones: the bottom bar) has the primary "New idea".
             canCreate && (
-              <Button variant="primary" onClick={newIdea}>
+              <Button variant="outline" onClick={newIdea}>
                 <Plus /> New idea
               </Button>
             )
@@ -266,38 +268,41 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
 
       {project.archived_at && <ArchivedNotice project={project} />}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <FilterBar
-          project={project}
-          search={search}
-          view={view}
-          onChange={setSearch}
-          searchRef={searchRef}
-          knownPeople={knownPeople}
-        />
-        <div className="flex shrink-0 items-center justify-between gap-3 sm:h-7 sm:justify-end">
-          <div className="flex items-center gap-2">
-            <p className="text-sm text-muted tabular-nums" aria-live="polite">
-              {matching === undefined
-                ? ' '
-                : filtered
-                  ? `${matching.toLocaleString()} of ${project.idea_count.toLocaleString()} ideas`
-                  : `${matching.toLocaleString()} ${matching === 1 ? 'idea' : 'ideas'}`}
-            </p>
-            {filtered && (
-              <Button
-                variant="link"
-                size="sm"
-                className="sm:hidden"
-                onClick={() => setSearch(clearFilters(search))}
-              >
-                Clear
-              </Button>
-            )}
+      {/* Nothing to filter or sort in an empty project. */}
+      {!(matching === 0 && !filtered) && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <FilterBar
+            project={project}
+            search={search}
+            view={view}
+            onChange={setSearch}
+            searchRef={searchRef}
+            knownPeople={knownPeople}
+          />
+          <div className="flex shrink-0 items-center justify-between gap-3 sm:h-7 sm:justify-end">
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-muted tabular-nums" aria-live="polite">
+                {matching === undefined
+                  ? ' '
+                  : filtered
+                    ? `${matching.toLocaleString()} of ${project.idea_count.toLocaleString()} ideas`
+                    : `${matching.toLocaleString()} ${matching === 1 ? 'idea' : 'ideas'}`}
+              </p>
+              {filtered && (
+                <Button variant="link" size="sm" onClick={() => setSearch(clearFilters(search))}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            {/* The List sorts by its column headers once they show (wide screens). */}
+            <SortMenu
+              sort={search.sort}
+              onChange={setSort}
+              className={cn(view === 'list' && 'xl:hidden')}
+            />
           </div>
-          <SortMenu sort={search.sort} onChange={setSort} />
         </div>
-      </div>
+      )}
 
       {content}
 
@@ -383,14 +388,16 @@ function ViewToggle({
 function SortMenu({
   sort,
   onChange,
+  className,
 }: {
   sort: IdeaSort | undefined
   onChange: (sort: IdeaSort | undefined) => void
+  className?: string
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-secondary">
+        <Button variant="ghost" size="sm" className={cn('text-secondary', className)}>
           <ArrowUpDown aria-hidden="true" />
           <span className="sr-only">Sort: </span>
           {sortLabel(sort)}
@@ -404,7 +411,7 @@ function SortMenu({
             onChange(value === '-updated' ? undefined : (value as IdeaSort))
           }
         >
-          {SORT_OPTIONS.map((option) => (
+          {sortMenuOptions(sort).map((option) => (
             <DropdownMenuRadioItem key={option.value} value={option.value}>
               {option.label}
             </DropdownMenuRadioItem>

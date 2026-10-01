@@ -57,7 +57,8 @@ test('sorts by score through the API; hidden scores sort as unscored', async ({ 
   await expect(page).toHaveURL(/sort=-score/)
   const header = page.getByRole('columnheader', { name: 'Score' })
   await expect(header).toHaveAttribute('aria-sort', 'descending')
-  await expect(page.getByRole('button', { name: /Highest score/ })).toBeVisible()
+  // The headers sort a wide List, so the sort menu steps aside.
+  await expect(page.getByRole('button', { name: /^Sort:/ })).toBeHidden()
 
   const scores = await rowScores(page)
   const numbers = scores.filter((score): score is number => typeof score === 'number')

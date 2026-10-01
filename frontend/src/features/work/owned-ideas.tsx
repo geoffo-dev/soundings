@@ -24,7 +24,7 @@ export function OwnedIdeasSection({
   groups: WorkOwnedGroup[] | undefined
   openCount: number | undefined
 }) {
-  const { openCommandPalette } = useAppCommands()
+  const { openCommandPalette, canCreateIdeas } = useAppCommands()
   const [showClosed, setShowClosed] = useState(false)
   const open = groups?.filter((group) => group.status !== 'closed') ?? []
   const closed = groups?.find((group) => group.status === 'closed')
@@ -47,17 +47,27 @@ export function OwnedIdeasSection({
         </SkeletonGroup>
       ) : groups.length === 0 ? (
         <div className="rounded-lg border">
-          <EmptyState
-            size="compact"
-            icon={<Lightbulb />}
-            title="You don’t own any ideas yet"
-            description="Open a project and volunteer for an idea you care about, or submit your own."
-            action={
-              <Button variant="outline" onClick={openCommandPalette}>
-                Browse projects
-              </Button>
-            }
-          />
+          {canCreateIdeas ? (
+            <EmptyState
+              size="compact"
+              icon={<Lightbulb />}
+              title="You don’t own any ideas yet"
+              description="Open a project and volunteer for an idea you care about, or submit your own."
+              action={
+                <Button variant="outline" onClick={openCommandPalette}>
+                  Find a project
+                </Button>
+              }
+            />
+          ) : (
+            // Viewers (or people in no project) can't own or submit ideas: don't suggest it.
+            <EmptyState
+              size="compact"
+              icon={<Lightbulb />}
+              title="No ideas to own"
+              description="Project members submit and own ideas. To join in, ask a project admin to add you as a member."
+            />
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-5">

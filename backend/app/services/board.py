@@ -16,7 +16,7 @@ from __future__ import annotations
 import operator
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Final, Literal
 from uuid import UUID
@@ -43,6 +43,7 @@ from app.authz import viewable_ideas, visible_aggregate_score, visible_high_disa
 from app.domain.idea_keys import parse_idea_key
 from app.domain.labels import resolved_labels
 from app.domain.principal import Principal
+from app.domain.scoring import MAX_SCORE, MIN_SCORE
 from app.models.enums import IdeaStatus, ProjectRole, Resolution
 from app.models.idea import Idea, IdeaEvaluator, IdeaTag
 from app.models.project import Project, Tag
@@ -90,6 +91,11 @@ class IdeaFilter:
 
 
 # --- Sorts and cursors ---------------------------------------------------------------------
+# Cursors are not signed, so decoded values are kept to what the columns hold: anything
+# else would reach PostgreSQL and fail there (numeric overflow, a 500).
+_MAX_INT: Final = 2**31 - 1
+
+
 def _decimal(value: object) -> Decimal | None:
     if value is None:
         return None
@@ -99,8 +105,8 @@ def _decimal(value: object) -> Decimal | None:
         number = Decimal(value)
     except InvalidOperation as exc:
         raise ValueError("not a decimal") from exc
-    if not number.is_finite():
-        raise ValueError("not a finite decimal")
+    if not number.is_finite() or not MIN_SCORE <= number <= MAX_SCORE:
+        raise ValueError("not an aggregate score")
     return number
 
 
@@ -110,12 +116,18 @@ def _datetime(value: object) -> datetime:
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError("timestamps carry an offset")
+    try:
+        parsed.astimezone(UTC)
+    except OverflowError as exc:  # e.g. 0001-01-01T00:00+05:00
+        raise ValueError("timestamp out of range") from exc
     return parsed
 
 
 def _int(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError("not an integer")
+    if not 0 <= value <= _MAX_INT:
+        raise ValueError("not a vote count")
     return value
 
 

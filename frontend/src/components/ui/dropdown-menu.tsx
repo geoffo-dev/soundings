@@ -5,7 +5,17 @@ import type { ComponentProps } from 'react'
 import { KbdShortcut } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 
-export const DropdownMenu = DropdownMenuPrimitive.Root
+/**
+ * Non-modal: a modal menu hides the rest of the page from screen readers
+ * (aria-hidden) while the focused trigger stays in it (axe aria-hidden-focus), and
+ * blocks scrolling. Esc, outside clicks and focus return work the same.
+ */
+export function DropdownMenu({
+  modal = false,
+  ...props
+}: ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  return <DropdownMenuPrimitive.Root modal={modal} {...props} />
+}
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 export const DropdownMenuGroup = DropdownMenuPrimitive.Group
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -73,10 +74,16 @@ def test_idea_summary_cannot_be_cleared() -> None:
 
 def test_due_date_is_replaced_explicitly() -> None:
     assert EvaluationDueDate.model_validate({"due_at": None}).due_at is None
-    EvaluationDueDate.model_validate({"due_at": "2026-10-07T17:00:00+01:00"})
-    for body in ({}, {"due_at": "2026-10-07T17:00:00"}):  # missing; no UTC offset
+    soon = datetime.now(UTC) + timedelta(days=7)
+    EvaluationDueDate.model_validate({"due_at": soon.astimezone(timezone(timedelta(hours=1)))})
+    naive = soon.replace(tzinfo=None).isoformat()
+    for body in ({}, {"due_at": naive}):  # missing; no UTC offset
         with pytest.raises(ValidationError):
             EvaluationDueDate.model_validate(body)
+    # Near now only: at most a year back and five years ahead (code review F5).
+    for due_at in ("0001-01-01T00:00:00+05:00", "9999-12-31T23:59:00-05:00", "0001-01-01T00:00Z"):
+        with pytest.raises(ValidationError, match="due date"):
+            EvaluationDueDate.model_validate({"due_at": due_at})
 
 
 @pytest.mark.parametrize(

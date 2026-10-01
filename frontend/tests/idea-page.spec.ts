@@ -120,9 +120,10 @@ test('the owner invites evaluators and sets a due date', async ({ page }) => {
   await expect(list).toContainText('Carol Díaz')
   await expect(list.getByRole('img', { name: 'Not submitted yet' })).toHaveCount(2)
   await expect(details(page).getByRole('button', { name: /Change due date/ })).toBeVisible()
-  await expect(activity(page)).toContainText('invited Carol Díaz to evaluate')
+  // Invitations sent together read as one line.
+  await expect(activity(page)).toContainText('invited Bob Chen and Carol Díaz to evaluate')
   await expect(activity(page)).toContainText('set the due date to')
-  await expect(page.getByText('Invited Bob Chen and Carol Díaz')).toBeVisible()
+  await expect(page.getByText('Invited Bob Chen and Carol Díaz', { exact: true })).toBeVisible()
 
   // Removing an evaluator is deferred with Undo.
   await list.getByRole('button', { name: 'Remove Bob Chen as evaluator' }).click()
@@ -301,8 +302,10 @@ test.describe('a platform admin', () => {
     await expect(activity(page)).toContainText('made Hannah Weber the owner')
 
     await page.getByRole('button', { name: 'Undo' }).click()
-    await expect(details(page).getByRole('button', { name: 'Assign', exact: true })).toBeVisible()
-    await expect(details(page).getByRole('button', { name: /^Owner:/ })).toHaveCount(0)
+    await expect(
+      details(page).getByRole('button', { name: 'Owner: none. Assign owner' }),
+    ).toBeVisible()
+    await expect(details(page).getByRole('button', { name: /^Owner: Hannah/ })).toHaveCount(0)
     await expect(primary).toHaveAccessibleName('Assign owner')
   })
 })

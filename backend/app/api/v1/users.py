@@ -11,7 +11,7 @@ from app.api.v1.responses import problems
 from app.authz import Rule, load_project, require
 from app.db import SessionDep
 from app.pagination import PageParamsDep
-from app.schemas.base import SLUG_PATTERN
+from app.schemas.base import SLUG_PATTERN, NoNul
 from app.schemas.users import UserPage
 from app.services import users
 
@@ -33,7 +33,9 @@ async def search_users(
     principal: PrincipalDep,
     page: PageParamsDep,
     session: SessionDep,
-    q: Annotated[str | None, Query(max_length=100, description="Part of a name or email.")] = None,
+    q: Annotated[
+        str | None, Query(max_length=100, description="Part of a name or email."), NoNul
+    ] = None,
     project: Annotated[
         str | None,
         Query(max_length=48, pattern=SLUG_PATTERN, description="Project slug: members only."),

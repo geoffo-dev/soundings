@@ -187,21 +187,32 @@ export function nextSort(sort: IdeaSort | undefined, column: SortColumn): IdeaSo
   return next === DEFAULT_SORT ? undefined : next
 }
 
-/** The sort menu (Board, and the List on phones where headers are hidden). */
-export const SORT_OPTIONS: { value: IdeaSort; label: string }[] = [
-  { value: '-updated', label: 'Recently updated' },
-  { value: '-score', label: 'Highest score' },
-  { value: 'score', label: 'Lowest score' },
-  { value: '-votes', label: 'Most votes' },
-  { value: '-created', label: 'Newest' },
-  { value: 'created', label: 'Oldest' },
-  { value: 'title', label: 'Title A–Z' },
-  { value: '-title', label: 'Title Z–A' },
-  { value: 'updated', label: 'Least recently updated' },
-  { value: 'votes', label: 'Fewest votes' },
-]
+/** What each sort is called (the menu, and the button when a header chose it). */
+const SORT_LABELS: Record<IdeaSort, string> = {
+  '-updated': 'Recently updated',
+  updated: 'Least recently updated',
+  '-score': 'Highest score',
+  score: 'Lowest score',
+  '-votes': 'Most votes',
+  votes: 'Fewest votes',
+  '-created': 'Newest',
+  created: 'Oldest',
+  title: 'Title A–Z',
+  '-title': 'Title Z–A',
+}
+
+/**
+ * The sort menu (Board, and the List where its headers are hidden): the five
+ * orders people want. The others are a click on a List header away (it flips
+ * the direction), and show up in the menu while they're in use.
+ */
+const SORT_MENU: IdeaSort[] = ['-updated', '-score', '-votes', '-created', 'title']
+
+export function sortMenuOptions(sort: IdeaSort | undefined): { value: IdeaSort; label: string }[] {
+  const values = sort && !SORT_MENU.includes(sort) ? [...SORT_MENU, sort] : SORT_MENU
+  return values.map((value) => ({ value, label: SORT_LABELS[value] }))
+}
 
 export function sortLabel(sort: IdeaSort | undefined): string {
-  const value = sort ?? DEFAULT_SORT
-  return SORT_OPTIONS.find((option) => option.value === value)?.label ?? 'Recently updated'
+  return SORT_LABELS[sort ?? DEFAULT_SORT]
 }

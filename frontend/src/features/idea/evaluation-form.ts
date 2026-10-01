@@ -161,7 +161,8 @@ export function describeMissing(rubric: readonly RubricCriterion[], errors: Form
   const parts: string[] = []
   if (names.length === 1) parts.push(`${names[0] ?? ''} needs a score`)
   else if (names.length > 1) parts.push(`${names.length} criteria need a score`)
-  if (errors.recommendation) parts.push('choose Go, Maybe or No')
+  // The field itself says "Choose Go, Maybe or No": name what's missing instead.
+  if (errors.recommendation) parts.push('the overall recommendation is missing')
   const text = parts.join(', and ')
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
 }

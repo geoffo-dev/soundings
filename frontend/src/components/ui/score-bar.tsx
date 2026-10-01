@@ -1,5 +1,5 @@
 import { TriangleAlert } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 
 import { WithTooltip } from '@/components/ui/tooltip'
 import { formatScore, SCORE_FILL, SCORE_MAX, scoreBand } from '@/lib/scores'
@@ -74,41 +74,67 @@ export function ScoreBar({
         )}
         <span className="ml-auto font-medium text-primary tabular-nums">{formatScore(value)}</span>
       </div>
-      <div
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={SCORE_MAX}
-        aria-valuenow={value ?? 0}
-        aria-valuetext={valueText}
-        className="h-1.5 overflow-hidden rounded-full bg-subtle-hover"
-      >
-        {value !== null && (
+      {/* Hover the bar for what the whisker under it means (screen readers get it in
+          the meter's value text). */}
+      <ScoreRangeTooltip min={min} max={max}>
+        <div className="flex flex-col gap-1.5">
           <div
-            className={cn(
-              'h-full rounded-full',
-              SCORE_FILL[scoreBand(inverted ? SCORE_MAX + 1 - value : value)],
+            role="meter"
+            aria-label={label}
+            aria-valuemin={0}
+            aria-valuemax={SCORE_MAX}
+            aria-valuenow={value ?? 0}
+            aria-valuetext={valueText}
+            className="h-1.5 overflow-hidden rounded-full bg-subtle-hover"
+          >
+            {value !== null && (
+              <div
+                className={cn(
+                  'h-full rounded-full',
+                  SCORE_FILL[scoreBand(inverted ? SCORE_MAX + 1 - value : value)],
+                )}
+                style={{ width: pct(value) }}
+              />
             )}
-            style={{ width: pct(value) }}
-          />
-        )}
-      </div>
-      {hasRange && (
-        // Range whisker: lowest to highest individual score (a single tick when all agree).
-        <div aria-hidden="true" className="relative -mt-0.5 h-1.5">
-          {hasSpread && (
-            <span
-              className="absolute top-1/2 h-px -translate-y-1/2 bg-control"
-              style={{ left: pct(min), width: `calc(${pct(max)} - ${pct(min)})` }}
-            />
+          </div>
+          {hasRange && (
+            // Range whisker: lowest to highest individual score (a single tick when all agree).
+            <div aria-hidden="true" className="relative -mt-0.5 h-1.5">
+              {hasSpread && (
+                <span
+                  className="absolute top-1/2 h-px -translate-y-1/2 bg-control"
+                  style={{ left: pct(min), width: `calc(${pct(max)} - ${pct(min)})` }}
+                />
+              )}
+              <span className="absolute inset-y-0 w-px bg-control" style={{ left: pct(min) }} />
+              <span
+                className="absolute inset-y-0 w-px -translate-x-full bg-control"
+                style={{ left: pct(max) }}
+              />
+            </div>
           )}
-          <span className="absolute inset-y-0 w-px bg-control" style={{ left: pct(min) }} />
-          <span
-            className="absolute inset-y-0 w-px -translate-x-full bg-control"
-            style={{ left: pct(max) }}
-          />
         </div>
-      )}
+      </ScoreRangeTooltip>
     </div>
+  )
+}
+
+function ScoreRangeTooltip({
+  min,
+  max,
+  children,
+}: {
+  min?: number
+  max?: number
+  children: ReactElement
+}) {
+  if (min === undefined || max === undefined) return children
+  return (
+    <WithTooltip
+      content={max > min ? `Individual scores ${min}–${max}` : `Every score was ${min}`}
+      side="bottom"
+    >
+      {children}
+    </WithTooltip>
   )
 }

@@ -122,17 +122,18 @@ function WatchButton() {
   const watch = useWatchIdea(ideaKey)
   return (
     <WithTooltip content={idea.watching ? 'Stop getting updates' : 'Get updates about this idea'}>
+      {/* The label says the state ("Watching"), so no aria-pressed: a toggle's name
+          must not change. Neutral when on: owners watch by default, and it shouldn't
+          outshine the page's primary action. */}
       <Button
         variant="ghost"
         size="sm"
-        aria-pressed={idea.watching}
+        aria-label={idea.watching ? 'Watching. Stop watching' : 'Watch'}
         onClick={() => watch.mutate({ watch: !idea.watching })}
-        className={cn(
-          idea.watching && 'bg-accent-subtle text-accent hover:bg-accent-subtle hover:text-accent',
-        )}
+        className={cn(idea.watching && 'bg-subtle text-primary')}
       >
         <Eye />
-        <span className="max-sm:sr-only">Watch</span>
+        <span className="max-sm:sr-only">{idea.watching ? 'Watching' : 'Watch'}</span>
       </Button>
     </WithTooltip>
   )

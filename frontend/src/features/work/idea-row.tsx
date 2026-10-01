@@ -31,7 +31,7 @@ export function IdeaRow({ idea, showStatus = false }: { idea: IdeaSummary; showS
         <span className="w-16 shrink-0 text-xs text-muted tabular-nums max-sm:hidden">
           {idea.key}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
+        <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-primary sm:truncate">
           <span className="mr-2 text-xs font-normal text-muted tabular-nums sm:hidden">
             {idea.key}
           </span>

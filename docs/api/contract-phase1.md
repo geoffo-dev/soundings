@@ -580,3 +580,20 @@ For the frontend (MSW handlers and screens) and the backend. Regenerated
 - **Database:** deferred `evaluation_scores.criterion_id` FK, `evaluations.is_ai`
   dropped, `evaluations.edited_at` added, `project_effective_roles` view, unique active
   criterion names, keyset and due-date indexes, `pg_trgm` kept on downgrade.
+- **Code review fixes (Phase 1 close; no schema or OpenAPI change, the generated
+  client is unchanged):**
+  - Any request body over 1 MiB: 413 `content_too_large` (problem+json), before
+    authentication; a too-large `Content-Length` is refused unread, chunked bodies are
+    cut off at the limit.
+  - A NUL character (`\u0000`) in any body string, in `q` (list, board, `/search`,
+    `/users`) or `tag`: 422 `validation_error`. A cursor carrying one, or a value its
+    column can't hold (score outside 1–5, votes outside 0..2³¹−1, a timestamp that
+    overflows UTC): 400 `invalid_cursor`.
+  - `due_at` (`set_evaluation_due_date`, `add_evaluators`): at most a year ago and five
+    years ahead, else 422 `validation_error` at `["body", "due_at"]`.
+  - `save_my_evaluation` follows the check order: 403, then its 422s
+    (`unknown_criterion`, `evaluation_incomplete`), then 409 (`evaluation_closed`,
+    `project_archived`, `evaluation_already_submitted`).
+  - Writes to an idea lock its project row (`FOR KEY SHARE`) before the idea row, so
+    they serialise with `replace_rubric` instead of deadlocking (500) or leaving a stale
+    cached aggregate.

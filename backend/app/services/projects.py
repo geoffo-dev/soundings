@@ -394,6 +394,11 @@ async def replace_rubric(
     removals and renames are flushed before new criteria are inserted, and renamed
     criteria pass through a temporary name so two can swap names. Every idea's
     aggregate is recomputed.
+
+    The caller holds the project row ``FOR UPDATE`` (``load_project(for_update=True)``)
+    and idea writes hold ``FOR KEY SHARE`` on it before they lock their idea
+    (:func:`app.services.ideas.load_idea`), so this runs strictly before or after
+    every evaluation save in the project, never interleaved with one.
     """
     active = await _active_criteria(db, project.id)
     by_id = {criterion.id: criterion for criterion in active}

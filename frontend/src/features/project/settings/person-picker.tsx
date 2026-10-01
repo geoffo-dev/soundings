@@ -1,5 +1,5 @@
 import { ChevronsUpDown } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useId, useState, type Ref } from 'react'
 
 import { useDebouncedValue } from '@/api/search'
 import type { UserSearchResult } from '@/api/types'
@@ -7,11 +7,11 @@ import { useUserSearch } from '@/api/users'
 import { Avatar } from '@/components/ui/avatar'
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
+  useTopResult,
 } from '@/components/ui/command'
 import { useFieldControl } from '@/components/ui/field'
 import { controlStyles } from '@/components/ui/input'
@@ -29,6 +29,7 @@ export function PersonPicker({
   excludeHint = 'Already added',
   placeholder = 'Add a person…',
   className,
+  ref,
 }: {
   value: UserSearchResult | null
   onChange: (person: UserSearchResult | null) => void
@@ -36,6 +37,8 @@ export function PersonPicker({
   excludeHint?: string
   placeholder?: string
   className?: string
+  /** The trigger button (e.g. to focus it again after adding someone). */
+  ref?: Ref<HTMLButtonElement>
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -43,6 +46,11 @@ export function PersonPicker({
   const people = useUserSearch({ q: debounced }, { enabled: open })
   const listId = useId()
   const aria = useFieldControl({})
+  const highlight = useTopResult(
+    (people.data?.items ?? [])
+      .filter((person) => !exclude.includes(person.id))
+      .map((person) => person.id),
+  )
 
   return (
     <Popover
@@ -54,6 +62,7 @@ export function PersonPicker({
     >
       <PopoverTrigger asChild>
         <button
+          ref={ref}
           type="button"
           role="combobox"
           aria-expanded={open}
@@ -77,14 +86,22 @@ export function PersonPicker({
           <ChevronsUpDown aria-hidden="true" className="ml-auto size-4 shrink-0 text-muted" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-(--radix-popover-trigger-width) min-w-72 p-0">
-        <Command shouldFilter={false}>
+      <PopoverContent
+        className="w-(--radix-popover-trigger-width) min-w-72 p-0"
+        aria-label="Find a person"
+      >
+        <Command shouldFilter={false} {...highlight}>
           <CommandInput value={q} onValueChange={setQ} placeholder="Search by name or email…" />
-          <CommandList id={listId} aria-label="People">
-            {!people.isPending && <CommandEmpty>No one matches “{q}”</CommandEmpty>}
-            {people.isPending && (
-              <p className="px-3 py-6 text-center text-sm text-muted">Searching…</p>
-            )}
+          {people.isPending && (
+            <p role="status" className="px-3 py-6 text-center text-sm text-muted">
+              Searching…
+            </p>
+          )}
+          <CommandList
+            id={listId}
+            aria-label="People"
+            empty={people.isPending ? undefined : `No one matches “${q}”`}
+          >
             <CommandGroup>
               {people.data?.items.map((person) => {
                 const taken = exclude.includes(person.id)

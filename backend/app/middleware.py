@@ -1,5 +1,5 @@
 """Pure-ASGI middleware: request context (id, access log, metrics, 500s), security
-headers and trusted-host checking."""
+headers, trusted-host checking and the request body size limit."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ import re
 import uuid
 from collections.abc import Collection, Sequence
 from time import perf_counter
-from typing import Any
+from typing import Any, Final
 
 from starlette.datastructures import MutableHeaders
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -229,5 +230,91 @@ class TrustedHostMiddleware:
             status=400,
             code="invalid_host",
             detail="This server does not serve the requested host.",
+        )
+        await response(scope, receive, send)
+
+
+MAX_REQUEST_BODY_BYTES: Final = 1024 * 1024
+"""1 MiB: the largest valid body (an idea with a 50,000-character description, JSON
+escaped) is well under it. Phase 1 has no uploads."""
+
+_TOO_LARGE_DETAIL: Final = "The request body is larger than 1 MiB."
+
+
+class _BodyTooLarge(HTTPException):
+    """Raised from ``receive`` once a streamed body passes the limit. An
+    ``HTTPException``, so FastAPI's body reading re-raises it and the app's handler
+    answers 413 problem+json."""
+
+    def __init__(self) -> None:
+        # The rest of the body is never read: the server closes the connection.
+        super().__init__(413, _TOO_LARGE_DETAIL, headers={"Connection": "close"})
+
+
+def _declared_length(scope: Scope) -> int | None:
+    for name, value in scope.get("headers", ()):
+        if name == b"content-length":
+            return int(value) if value.isdigit() else None
+    return None
+
+
+class BodySizeLimitMiddleware:
+    """Refuses request bodies over ``max_bytes`` with 413 ``content_too_large``.
+
+    FastAPI reads the whole body before any dependency runs, so without this one
+    anonymous request could hold hundreds of MB in the API process (its pod has a
+    512Mi limit). A ``Content-Length`` over the limit is answered at once, without
+    reading the body; a body without one (chunked) is counted as it streams in and
+    cut off just past the limit. Ingress body limits (docs in deploy/helm/README.md)
+    are a second line, not the only one.
+    """
+
+    def __init__(self, app: ASGIApp, *, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        declared = _declared_length(scope)
+        if declared is not None and declared > self.max_bytes:
+            await self._too_large(scope, receive, send)
+            return
+
+        received = 0
+        response_started = False
+
+        async def counting_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise _BodyTooLarge
+            return message
+
+        async def tracking_send(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, tracking_send)
+        except _BodyTooLarge:
+            # Read outside FastAPI's handlers (none today): still a 413, not a 500.
+            if response_started:
+                raise
+            await self._too_large(scope, receive, send)
+
+    @staticmethod
+    async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
+        response = problem_response(
+            Request(scope),
+            status=413,
+            code="content_too_large",
+            detail=_TOO_LARGE_DETAIL,
+            headers={"Connection": "close"},  # the unread body is never drained
         )
         await response(scope, receive, send)

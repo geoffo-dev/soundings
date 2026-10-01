@@ -105,7 +105,8 @@ ingress:
   enabled: true
   className: nginx
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    # The app refuses bodies over 1 MiB itself (413); refuse them at the edge too.
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
   tls:
     - secretName: soundings-tls
       hosts:

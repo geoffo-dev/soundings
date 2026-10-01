@@ -10,7 +10,7 @@ is the same for everyone who can view the idea, pending evaluators included.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -191,8 +191,9 @@ async def list_activity(
             created = datetime.fromisoformat(str(after["t"]))
             if created.tzinfo is None:
                 raise ValueError("no offset")
+            created.astimezone(UTC)  # OverflowError out of range (unsigned cursor)
             position = (created, UUID(str(after["id"])))
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, OverflowError) as exc:
             raise InvalidCursorProblem from exc
         statement = statement.where(tuple_(ActivityEvent.created_at, ActivityEvent.id) < position)
     events = list(

@@ -14,7 +14,10 @@ import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
 
 import { rowLink } from './idea-row'
 
-/** "Recently updated in my projects": the 20 most recently active ideas. */
+/** A glance, not a feed: the full lists are a click away in each project. */
+const RECENT_SHOWN = 10
+
+/** "Recently updated in my projects": the most recently active ideas. */
 export function RecentIdeasSection({ recent }: { recent: WorkRecentIdea[] | undefined }) {
   return (
     <PageSection id="recent" title="Recently updated in my projects">
@@ -38,7 +41,7 @@ export function RecentIdeasSection({ recent }: { recent: WorkRecentIdea[] | unde
         <NoRecentActivity />
       ) : (
         <ul className="divide-y divide-subtle overflow-hidden rounded-lg border bg-surface">
-          {recent.map(({ idea, latest_activity: activity }) => (
+          {recent.slice(0, RECENT_SHOWN).map(({ idea, latest_activity: activity }) => (
             <li key={idea.id}>
               <Link
                 to="/ideas/$ideaKey"
@@ -59,7 +62,9 @@ export function RecentIdeasSection({ recent }: { recent: WorkRecentIdea[] | unde
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span className="shrink-0 text-xs text-muted tabular-nums">{idea.key}</span>
-                    <span className="truncate text-sm font-medium text-primary">{idea.title}</span>
+                    <span className="line-clamp-2 text-sm font-medium text-primary sm:truncate">
+                      {idea.title}
+                    </span>
                   </span>
                   <span className="truncate text-sm text-muted">
                     {activity ? (

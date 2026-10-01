@@ -9,7 +9,9 @@ export function useSignOut(): () => void {
   const logout = useLogout()
   return useCallback(() => {
     logout.mutate(undefined, {
-      onSettled: () => void navigate({ to: '/login', search: {}, replace: true }),
+      // Signed out already: unsaved-changes guards can't help any more.
+      onSettled: () =>
+        void navigate({ to: '/login', search: {}, replace: true, ignoreBlocker: true }),
     })
   }, [logout, navigate])
 }

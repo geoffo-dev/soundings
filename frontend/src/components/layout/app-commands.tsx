@@ -22,11 +22,7 @@ import { useGlobalSearch } from '@/api/search'
 import { ProjectTile } from '@/components/layout/project-tile'
 import { ShortcutSheet } from '@/components/layout/shortcut-sheet'
 import { useTheme } from '@/components/theme-provider'
-import {
-  CommandPalette,
-  type CommandAction,
-  type CommandGroupData,
-} from '@/components/ui/command-palette'
+import { CommandPalette, type CommandGroupData } from '@/components/ui/command-palette'
 import { StatusDot } from '@/components/ui/status-badge'
 import { useSignOut } from '@/features/auth/use-sign-out'
 import { useRegisteredCommands } from '@/lib/command-registry'
@@ -230,13 +226,17 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
       : [],
   }
 
+  // Commands and projects (instant, local) above the ideas (server, late): the top
+  // row, which Enter opens, doesn't move when the ideas arrive underneath.
   const groups: CommandGroupData[] = [
-    ...contextGroups.map((group) => ({
-      heading: group.heading,
-      actions: filterActions(group.actions, query),
-    })),
+    ...rankGroups(
+      [
+        ...contextGroups.map((group) => ({ heading: group.heading, actions: group.actions })),
+        ...staticGroups,
+      ],
+      query,
+    ),
     ideaResults,
-    ...staticGroups.map((group) => ({ ...group, actions: filterActions(group.actions, query) })),
   ]
 
   return (
@@ -260,22 +260,37 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
   )
 }
 
-const MIN_SCORE = 0.02
+/**
+ * Word starts and prefixes score 0.15 and up ("n" → New idea, "tools" → Internal
+ * Tools); letters scattered across the words score about 0.03 or less.
+ */
+const MIN_SCORE = 0.1
 
-/** cmdk's fuzzy scoring, applied to local actions (server results are already ranked). */
-function filterActions(actions: CommandAction[], query: string): CommandAction[] {
-  if (!query) return actions
-  return (
-    actions
-      .map((action) => ({
-        action,
-        score: defaultFilter(`${action.label} ${action.hint ?? ''}`, query, action.keywords),
-      }))
-      // Drop scattered one-letter matches (e.g. "return" in "customer-innovation").
-      .filter(({ score }) => score >= MIN_SCORE)
-      .sort((a, b) => b.score - a.score)
-      .map(({ action }) => action)
-  )
+/**
+ * cmdk's fuzzy scoring for the local actions (server results are already ranked):
+ * drops weak matches, sorts each group, and puts the group with the best match first
+ * ("sign" → Sign out before Design system). Page actions come first on a tie.
+ */
+export function rankGroups(groups: CommandGroupData[], query: string): CommandGroupData[] {
+  if (!query) return groups
+  return groups
+    .map((group) => {
+      const scored = group.actions
+        .map((action) => ({
+          action,
+          score: defaultFilter(`${action.label} ${action.hint ?? ''}`, query, action.keywords),
+        }))
+        // Drop scattered matches ("whats" in "My work … evaluations"): they would sit
+        // above the ideas that do match.
+        .filter(({ score }) => score >= MIN_SCORE)
+        .sort((a, b) => b.score - a.score)
+      return {
+        group: { ...group, actions: scored.map(({ action }) => action) },
+        best: scored[0]?.score ?? 0,
+      }
+    })
+    .sort((a, b) => b.best - a.best)
+    .map(({ group }) => group)
 }
 
 export function useAppCommands(): AppCommands {

@@ -30,7 +30,7 @@ from app.models import (
     User,
 )
 from app.models.base import utcnow
-from app.seed import SeedRefused, SeedReport, check_allowed, run_seed
+from app.seed import SeedRefused, SeedReport, check_allowed, check_reset_allowed, run_seed
 from app.seed.content import IDEAS, PEOPLE, PROJECTS
 from app.seed.runner import DEMO_ID_NAMESPACE
 from app.services.scoring import recompute_aggregates
@@ -63,12 +63,56 @@ def test_cli_refuses_production_before_touching_the_database(
     assert "production" in capsys.readouterr().err
 
 
+async def test_reset_needs_force_unless_everyone_is_a_demo_person(
+    db_session: AsyncSession,
+) -> None:
+    """``seed --reset`` without ``SOUNDINGS_ENVIRONMENT`` defaults to development, so
+    the environment alone can't protect a real database: its people can."""
+    await check_reset_allowed(db_session)  # empty
+    for person in PEOPLE[:3]:
+        db_session.add(
+            User(
+                id=uuid5(DEMO_ID_NAMESPACE, person.email),
+                email=person.email,
+                display_name=person.name,
+            )
+        )
+    await db_session.commit()
+    await check_reset_allowed(db_session)  # demo people only
+
+    await make_user(db_session, "Real Person", email="real.person@example.org")
+    with pytest.raises(SeedRefused, match="--force"):
+        await check_reset_allowed(db_session)
+    await check_reset_allowed(db_session, force=True)
+
+
+def test_cli_refuses_a_reset_it_is_not_sure_about(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[tuple[bool, bool]] = []
+
+    async def refusing_run_seed(
+        settings: object, *, reset: bool = False, force: bool = False
+    ) -> SeedReport:
+        calls.append((reset, force))
+        raise SeedRefused("Refusing to --reset: use --force")
+
+    monkeypatch.setattr(cli, "get_database_settings", make_settings)
+    monkeypatch.setattr(seed, "run_seed", refusing_run_seed)
+
+    assert cli.main(["seed", "--reset"]) == 1
+    assert calls == [(True, False)]
+    assert "--force" in capsys.readouterr().err
+
+
 def test_cli_seeds_and_prints_a_summary(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     calls: list[bool] = []
 
-    async def fake_run_seed(settings: object, *, reset: bool = False) -> SeedReport:
+    async def fake_run_seed(
+        settings: object, *, reset: bool = False, force: bool = False
+    ) -> SeedReport:
         calls.append(reset)
         return SeedReport(users=12, projects=3, ideas=45)
 
@@ -241,6 +285,7 @@ async def test_seed_tells_the_demo_story(
 
 async def test_reset_replaces_existing_data(settings: Settings, db_session: AsyncSession) -> None:
     stranger = await make_user(db_session, "Stranger Danger", email="stranger@example.org")
+    stranger_id = stranger.id
     await make_project(
         db_session, slug="old-project", key="OLD", members={stranger: ProjectRole.ADMIN}
     )
@@ -249,8 +294,13 @@ async def test_reset_replaces_existing_data(settings: Settings, db_session: Asyn
     assert skipped.skipped is not None
     assert await db_session.scalar(select(func.count()).select_from(Idea)) == 0
     await db_session.rollback()  # end the read transaction: TRUNCATE waits for it
+    # Someone who is not a demo person: --reset alone refuses (code review F8).
+    with pytest.raises(SeedRefused, match="--force"):
+        await run_seed(settings, reset=True)
+    assert await db_session.scalar(select(User.email).where(User.id == stranger_id))
+    await db_session.rollback()
 
-    report = await run_seed(settings, reset=True)
+    report = await run_seed(settings, reset=True, force=True)
 
     assert report.skipped is None
     assert (report.users, report.projects, report.ideas) == (12, 3, 45)

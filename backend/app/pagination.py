@@ -36,6 +36,7 @@ from uuid import UUID
 from fastapi import Depends, Query
 
 from app.errors import ProblemError
+from app.schemas.base import reject_nul
 from app.schemas.common import Page
 
 __all__ = [
@@ -89,6 +90,10 @@ def decode_cursor(cursor: str) -> dict[str, Any]:
         raise InvalidCursorProblem from exc
     if not isinstance(data, dict):
         raise InvalidCursorProblem
+    try:
+        reject_nul(data)  # values go into queries: PostgreSQL text can't hold NUL
+    except ValueError as exc:
+        raise InvalidCursorProblem from exc
     return data
 
 

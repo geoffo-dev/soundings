@@ -18,6 +18,9 @@ export const SHORTCUTS = {
   goToMyWork: { keys: 'g m', label: 'Go to My work', group: 'Navigation' },
   nextItem: { keys: 'j', label: 'Next item (or ↓)', group: 'Lists' },
   previousItem: { keys: 'k', label: 'Previous item (or ↑)', group: 'Lists' },
+  // ←/→ are handled by useListNavigation while a board card has focus.
+  previousColumn: { keys: 'arrowleft', label: 'Previous column (board)', group: 'Lists' },
+  nextColumn: { keys: 'arrowright', label: 'Next column (board)', group: 'Lists' },
   openItem: { keys: 'enter', label: 'Open the focused item', group: 'Lists' },
   toggleView: { keys: 'v', label: 'Switch between Board and List', group: 'Lists' },
   focusFilters: { keys: 'f', label: 'Search and filter ideas', group: 'Lists' },

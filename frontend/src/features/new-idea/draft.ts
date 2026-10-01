@@ -1,6 +1,9 @@
+import { draftKey } from '@/lib/drafts'
+
 /**
- * The New idea draft, kept per browser (not synced) so closing the dialog by
- * accident loses nothing (wireframe 06). Cleared after a successful submit.
+ * The New idea draft, kept in this browser for the signed-in user (not synced) so
+ * closing the dialog by accident loses nothing (wireframe 06). Cleared after a
+ * successful submit, and with every other draft when the session ends (lib/drafts).
  */
 export interface IdeaDraft {
   projectSlug?: string
@@ -10,8 +13,8 @@ export interface IdeaDraft {
   tags: string[]
 }
 
-const DRAFT_KEY = 'soundings-new-idea-draft'
-const LAST_PROJECT_KEY = 'soundings-new-idea-project'
+const draftKeyFor = (userId: string) => draftKey(userId, 'new-idea')
+const lastProjectKey = (userId: string) => draftKey(userId, 'new-idea-project')
 
 export const EMPTY_DRAFT: IdeaDraft = { title: '', summary: '', description: '', tags: [] }
 
@@ -21,9 +24,9 @@ export function hasContent(draft: IdeaDraft): boolean {
   )
 }
 
-export function readDraft(): IdeaDraft {
+export function readDraft(userId: string): IdeaDraft {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY)
+    const raw = localStorage.getItem(draftKeyFor(userId))
     if (!raw) return EMPTY_DRAFT
     const value = JSON.parse(raw) as Partial<IdeaDraft>
     return {
@@ -38,35 +41,35 @@ export function readDraft(): IdeaDraft {
   }
 }
 
-export function writeDraft(draft: IdeaDraft): void {
+export function writeDraft(userId: string, draft: IdeaDraft): void {
   try {
-    if (hasContent(draft)) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-    else localStorage.removeItem(DRAFT_KEY)
+    if (hasContent(draft)) localStorage.setItem(draftKeyFor(userId), JSON.stringify(draft))
+    else localStorage.removeItem(draftKeyFor(userId))
   } catch {
     // Storage unavailable: the draft just isn't kept.
   }
 }
 
-export function clearDraft(): void {
+export function clearDraft(userId: string): void {
   try {
-    localStorage.removeItem(DRAFT_KEY)
+    localStorage.removeItem(draftKeyFor(userId))
   } catch {
     // ignore
   }
 }
 
 /** The project last submitted to (the picker's default outside a project). */
-export function readLastProject(): string | undefined {
+export function readLastProject(userId: string): string | undefined {
   try {
-    return localStorage.getItem(LAST_PROJECT_KEY) ?? undefined
+    return localStorage.getItem(lastProjectKey(userId)) ?? undefined
   } catch {
     return undefined
   }
 }
 
-export function writeLastProject(slug: string): void {
+export function writeLastProject(userId: string, slug: string): void {
   try {
-    localStorage.setItem(LAST_PROJECT_KEY, slug)
+    localStorage.setItem(lastProjectKey(userId), slug)
   } catch {
     // ignore
   }

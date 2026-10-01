@@ -52,6 +52,7 @@ import { cn } from '@/lib/utils'
 
 import { DueDateField } from './due-date-field'
 import { useIdeaPage } from './idea-context'
+import { primaryAction } from './primary-action'
 import { ScorePanel } from './score-panel'
 
 /**
@@ -121,20 +122,30 @@ function OwnerField() {
   const owner = idea.owner
 
   if (!owner) {
-    if (!permissions.can_assign_owner && !permissions.can_volunteer) {
-      return <span className="text-muted">No owner</span>
+    if (permissions.can_assign_owner) {
+      // Like the owned case: the value is the control.
+      return (
+        <WithTooltip content="Assign owner" shortcut={SHORTCUTS.assignOwner.keys}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 font-normal text-muted"
+            aria-label="Owner: none. Assign owner"
+            onClick={() => openDialog('owner')}
+          >
+            <UserRoundPen />
+            No owner
+            <ChevronDown aria-hidden="true" />
+          </Button>
+        </WithTooltip>
+      )
     }
+    // "I'll own this" is usually the page's primary action already (header, phone bar).
+    const offerHere = permissions.can_volunteer && primaryAction(idea, me.id)?.kind !== 'volunteer'
     return (
-      <div className="-ml-2 flex flex-wrap items-center gap-1">
-        {permissions.can_assign_owner && (
-          <WithTooltip content="Assign owner" shortcut={SHORTCUTS.assignOwner.keys}>
-            <Button variant="ghost" size="sm" onClick={() => openDialog('owner')}>
-              <UserRoundPen />
-              Assign
-            </Button>
-          </WithTooltip>
-        )}
-        {permissions.can_volunteer && (
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-muted">No owner</span>
+        {offerHere && (
           <Button variant="ghost" size="sm" onClick={() => volunteer.mutate({})}>
             I’ll own this
           </Button>
@@ -196,6 +207,29 @@ function EvaluatorsSection() {
   const { submitted, total } = idea.evaluator_progress
   const evaluationClosed = idea.evaluation_closed_at !== null && idea.status !== 'closed'
   const headingId = useId()
+  const inviteRef = useRef<HTMLButtonElement>(null)
+  // "Close evaluation" and "Reopen" replace each other: keep focus on the one shown.
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const toggleHadFocus = useRef(false)
+  useEffect(() => {
+    if (!toggleHadFocus.current) return
+    toggleHadFocus.current = false
+    toggleRef.current?.focus()
+  }, [evaluationClosed])
+  const toggleClosed = (closed: boolean) => {
+    toggleHadFocus.current = true
+    setClosed.mutate({ closed })
+  }
+  const removeEvaluator = (evaluator: IdeaEvaluator, button: HTMLElement) => {
+    // The row goes at once (Undo in the toast): focus the next remove button, else
+    // the previous one, else "Invite evaluators", rather than losing it.
+    const buttons = [
+      ...(button.closest('ul')?.querySelectorAll<HTMLElement>('[data-remove-evaluator]') ?? []),
+    ]
+    const index = buttons.indexOf(button)
+    ;(buttons[index + 1] ?? buttons[index - 1] ?? inviteRef.current)?.focus()
+    remove(evaluator.user)
+  }
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
@@ -239,6 +273,7 @@ function EvaluatorsSection() {
                 {removable && (
                   <WithTooltip content="Remove evaluator">
                     <Button
+                      data-remove-evaluator
                       variant="ghost"
                       size="icon-sm"
                       aria-label={`Remove ${evaluator.user.display_name} as evaluator`}
@@ -247,7 +282,7 @@ function EvaluatorsSection() {
                         'absolute right-1 bg-subtle opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
                         'pointer-coarse:static pointer-coarse:-mr-1 pointer-coarse:bg-transparent pointer-coarse:opacity-100',
                       )}
-                      onClick={() => remove(evaluator.user)}
+                      onClick={(event) => removeEvaluator(evaluator, event.currentTarget)}
                     >
                       <X />
                     </Button>
@@ -261,6 +296,7 @@ function EvaluatorsSection() {
 
       {permissions.can_invite_evaluators && (
         <Button
+          ref={inviteRef}
           variant="ghost"
           size="sm"
           className="-ml-2 self-start text-secondary"
@@ -298,10 +334,11 @@ function EvaluatorsSection() {
           </span>
           {permissions.can_close_evaluation && (
             <Button
+              ref={toggleRef}
               variant="ghost"
               size="sm"
               className="-mr-1"
-              onClick={() => setClosed.mutate({ closed: false })}
+              onClick={() => toggleClosed(false)}
             >
               <LockOpen />
               Reopen
@@ -312,10 +349,11 @@ function EvaluatorsSection() {
         permissions.can_close_evaluation &&
         total > 0 && (
           <Button
+            ref={toggleRef}
             variant="ghost"
             size="sm"
             className="-ml-2 self-start text-secondary"
-            onClick={() => setClosed.mutate({ closed: true })}
+            onClick={() => toggleClosed(true)}
           >
             <Lock />
             Close evaluation

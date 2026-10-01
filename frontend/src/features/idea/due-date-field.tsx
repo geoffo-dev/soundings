@@ -58,7 +58,12 @@ export function DueDateField() {
           {label}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" collisionPadding={16} className="w-72">
+      <PopoverContent
+        align="end"
+        collisionPadding={16}
+        className="w-72"
+        aria-label="Evaluation due date"
+      >
         {open && <DueDateEditor onDone={() => setOpen(false)} />}
       </PopoverContent>
     </Popover>

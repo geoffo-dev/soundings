@@ -251,6 +251,7 @@ export function GeneralSettings({ project, active }: { project: Project; active:
           </div>
         </Field>
         <FormActions
+          form="the general settings"
           dirty={dirty}
           saving={update.isPending}
           notice={notice}
@@ -314,7 +315,7 @@ export function GeneralSummary({ project }: { project: Project }) {
     ['Evaluation window', `${project.default_evaluation_days} days from the first invite`],
   ]
   return (
-    <SettingsSection title="General" description="Only project admins can change these settings.">
+    <SettingsSection title="General" description="The project’s name, visibility and defaults.">
       <dl className="flex max-w-2xl flex-col divide-y divide-subtle rounded-lg border">
         {rows.map(([label, value]) => (
           <div

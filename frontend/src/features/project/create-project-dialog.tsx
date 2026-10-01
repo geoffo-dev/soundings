@@ -132,6 +132,11 @@ function CreateProjectForm() {
           closeDialog()
           toast.success(`${project.name} created`, {
             description: 'Add members and adjust the rubric in project settings.',
+            action: {
+              label: 'Open settings',
+              onClick: () =>
+                void navigate({ to: '/p/$slug/settings', params: { slug: project.slug } }),
+            },
           })
           void navigate({ to: '/p/$slug', params: { slug: project.slug } })
         },
@@ -188,7 +193,7 @@ function CreateProjectForm() {
             value={form.name}
             maxLength={LIMITS.name}
             autoComplete="off"
-            placeholder="e.g. Customer Innovation"
+            placeholder="e.g. Product Ideas"
             onChange={(event) => set({ name: event.target.value })}
           />
         </Field>
@@ -209,7 +214,7 @@ function CreateProjectForm() {
                 maxLength={LIMITS.slug}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="customer-innovation"
+                placeholder="product-ideas"
                 className="rounded-l-none"
                 onChange={(event) => {
                   setEdited((current) => ({ ...current, slug: true }))
@@ -230,7 +235,7 @@ function CreateProjectForm() {
               maxLength={6}
               autoComplete="off"
               spellCheck={false}
-              placeholder="CUST"
+              placeholder="PROD"
               className="uppercase"
               onChange={(event) => {
                 setEdited((current) => ({ ...current, key: true }))

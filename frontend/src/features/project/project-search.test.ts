@@ -11,6 +11,7 @@ import {
   parseSort,
   sortDirectionFor,
   sortLabel,
+  sortMenuOptions,
   toIdeaFilters,
   toggleValue,
   validateProjectSearch,
@@ -150,5 +151,17 @@ describe('sort mapping', () => {
     expect(sortDirectionFor('title', 'title')).toBe('asc')
     expect(sortDirectionFor('title', 'votes')).toBe(false)
     expect(sortLabel('-score')).toBe('Highest score')
+  })
+})
+
+describe('sort menu', () => {
+  it('offers five orders, plus the one in use when a header picked another', () => {
+    const values = (sort?: Parameters<typeof sortMenuOptions>[0]) =>
+      sortMenuOptions(sort).map((option) => option.value)
+    expect(values()).toEqual(['-updated', '-score', '-votes', '-created', 'title'])
+    expect(values('-score')).toHaveLength(5)
+    expect(values('score')).toEqual(['-updated', '-score', '-votes', '-created', 'title', 'score'])
+    expect(sortLabel('score')).toBe('Lowest score')
+    expect(sortLabel(undefined)).toBe('Recently updated')
   })
 })

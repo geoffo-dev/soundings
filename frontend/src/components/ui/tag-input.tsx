@@ -192,6 +192,7 @@ export function TagInput({
       <PopoverContent
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
+        aria-label="Tag suggestions"
         className="w-(--radix-popover-trigger-width) min-w-48 p-1"
       >
         <ul id={listId} role="listbox" aria-label="Suggested tags">

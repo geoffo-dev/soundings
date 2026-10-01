@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppIdeasIdeaKeyRouteImport } from './routes/_app/ideas.$ideaKey'
 import { Route as AppPSlugRouteImport } from './routes/_app/p.$slug'
@@ -36,6 +37,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSplatRoute = AppSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/$': typeof AppSplatRoute
   '/settings': typeof AppSettingsRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/p/$slug': typeof AppPSlugRouteWithChildren
@@ -77,6 +84,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/$': typeof AppSplatRoute
   '/settings': typeof AppSettingsRoute
   '/': typeof AppIndexRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/_app/$': typeof AppSplatRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/': typeof AppIndexRoute
   '/_app/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
@@ -101,6 +110,7 @@ export interface FileRouteTypes {
     | '/'
     | '/design'
     | '/login'
+    | '/$'
     | '/settings'
     | '/ideas/$ideaKey'
     | '/p/$slug'
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
   to:
     | '/design'
     | '/login'
+    | '/$'
     | '/settings'
     | '/'
     | '/ideas/$ideaKey'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/design'
     | '/login'
+    | '/_app/$'
     | '/_app/settings'
     | '/_app/'
     | '/_app/ideas/$ideaKey'
@@ -162,6 +174,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/$': {
+      id: '/_app/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof AppSplatRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -217,6 +236,7 @@ const AppPSlugRouteWithChildren = AppPSlugRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppSplatRoute: typeof AppSplatRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppIdeasIdeaKeyRoute: typeof AppIdeasIdeaKeyRoute
@@ -224,6 +244,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppSplatRoute: AppSplatRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppIdeasIdeaKeyRoute: AppIdeasIdeaKeyRoute,

@@ -91,6 +91,16 @@ async def load_idea(
 
     ``for_update`` locks the idea row until commit, so concurrent writes to one
     idea (e.g. two evaluators submitting) apply one after the other.
+
+    Lock order: **project, then idea.** Project-wide writes (``replace_rubric``)
+    lock the project row ``FOR UPDATE`` and then update every idea row, while an
+    idea write that inserts a row referencing the project (an activity event) or a
+    criterion (a score) needs the project row after the idea row. So ``for_update``
+    first takes ``FOR KEY SHARE`` on the project row, in its own statement: idea
+    writes in one project still run side by side (key-share locks don't conflict),
+    but a rubric replacement waits for them and they wait for it, instead of
+    deadlocking, recomputing from stale evaluations, or deleting a criterion that
+    a save is scoring (tests/ideas/test_lock_order.py).
     """
     try:
         parsed = parse_idea_ref(ref)
@@ -102,6 +112,12 @@ async def load_idea(
     else:
         statement = statement.where(Idea.id == parsed)
     if for_update:
+        key_share = statement.with_only_columns(Project.id).with_for_update(
+            of=Project, read=True, key_share=True
+        )
+        if await db.scalar(key_share) is None:
+            raise not_found()
+        # A new statement (READ COMMITTED): it sees what a replacement we waited for wrote.
         statement = statement.with_for_update(of=Idea)
     row = (await db.execute(statement)).first()
     if row is None:

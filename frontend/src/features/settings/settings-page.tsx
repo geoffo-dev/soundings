@@ -1,31 +1,72 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, Settings } from 'lucide-react'
+import { ArrowUpRight, Monitor, Moon, Sun } from 'lucide-react'
 
 import { useProjects } from '@/api/projects'
 import { Page, PageHeader, PageSection } from '@/components/layout/page'
 import { ProjectTile } from '@/components/layout/project-tile'
-import { EmptyState } from '@/components/ui/empty-state'
+import { useTheme } from '@/components/theme-provider'
+import { Avatar } from '@/components/ui/avatar'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { useCurrentUser } from '@/features/auth/current-user'
+import type { ThemePreference } from '@/lib/theme'
+
+const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+]
 
 /**
- * /settings — Phase 1 placeholder for profile and platform administration.
- * Projects the user manages link to their own settings page.
+ * /settings: who you're signed in as, the theme, and links to the settings of
+ * the projects you manage.
  */
 export function SettingsPage() {
+  const me = useCurrentUser()
+  const { preference, setPreference } = useTheme()
   const projects = useProjects()
   const managed = projects.data?.filter((project) => project.permissions.can_manage) ?? []
+
   return (
     <Page>
-      <PageHeader title="Settings" description="Your profile, notifications and administration." />
-      <div className="rounded-lg border">
-        <EmptyState
-          icon={<Settings />}
-          title="More settings arrive with sign-in in Phase 2"
-          description="Profile, notification preferences, users, groups and single sign-on will live here. Sensible defaults apply until then."
+      <PageHeader title="Settings" description="Your account, appearance and projects." />
+
+      <PageSection id="account" title="Account">
+        <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+          <Avatar name={me.display_name} src={me.avatar_url} size="md" decorative />
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium text-primary">{me.display_name}</span>
+            <span className="truncate text-sm text-muted">{me.email}</span>
+          </div>
+        </div>
+      </PageSection>
+
+      <PageSection
+        id="appearance"
+        title="Appearance"
+        description="System follows your device’s light or dark setting. Saved on this device."
+      >
+        <SegmentedControl
+          aria-labelledby="appearance-heading"
+          value={preference}
+          onValueChange={setPreference}
+          className="self-start"
+          options={THEMES.map(({ value, label, icon: Icon }) => ({
+            value,
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                <Icon aria-hidden="true" className="size-3.5" />
+                {label}
+              </span>
+            ),
+            ariaLabel: label,
+          }))}
         />
-      </div>
+      </PageSection>
+
       {(projects.isPending || managed.length > 0) && (
         <PageSection
+          id="projects"
           title="Projects you manage"
           description="Members, rubric and status labels are set per project."
         >

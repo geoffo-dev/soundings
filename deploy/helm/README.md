@@ -123,8 +123,8 @@ ideas in every status, with owners, blind evaluations, comments and votes over t
 few weeks. It migrates itself, so it does not depend on the api pods' init containers,
 and it does nothing once the database has projects, so upgrades keep what people
 changed. To start over: `kubectl -n <ns> exec deploy/<release>-soundings-api -- soundings
-seed --reset`. The chart refuses `demo.seed` without `devLogin` (the app refuses to seed
-in production mode).
+seed --reset` (add `--force` once people other than the demo ones have signed in). The
+chart refuses `demo.seed` without `devLogin` (the app refuses to seed in production mode).
 
 ## Secrets
 
@@ -181,6 +181,16 @@ in `extraEnv` overrides it (`false` is refused in production).
   port, so the ingress and HTTPRoute (which route `http` only) do not expose it.
 - The app refuses requests for hosts that are not in `baseUrls`, so a spoofed `Host`
   cannot steer links or sign-in redirects.
+- **Request bodies over 1 MiB** get 413 `content_too_large` from the app itself, before
+  authentication and without reading them into memory (a too-large `Content-Length` is
+  refused at once; chunked bodies are counted as they stream in), so no ingress setting
+  is needed to keep the API pod under its memory limit. To refuse them at the edge as
+  well: ingress-nginx does by default (`nginx.ingress.kubernetes.io/proxy-body-size`
+  defaults to `1m`; keep it at `1m` if you set it); Traefik (k3s's default) has no limit
+  unless you reference a `buffering` Middleware with `maxRequestBodyBytes: 1048576`
+  through the `traefik.ingress.kubernetes.io/router.middlewares:
+  <namespace>-<name>@kubernetescrd` annotation; Gateway API has no standard body limit.
+  `scripts/k3s-smoke.sh` checks the 413 through the ingress.
 
 ## Air-gapped installs
 

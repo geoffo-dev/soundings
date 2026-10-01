@@ -238,7 +238,8 @@ function IdeaTableRow({
           <span className="min-w-16 shrink-0 text-xs whitespace-nowrap text-muted tabular-nums @3xl:min-w-20">
             {idea.key}
           </span>
-          <span className="truncate font-medium text-primary">{idea.title}</span>
+          {/* Stacked rows (phones) have room for two lines. */}
+          <span className="line-clamp-2 font-medium text-primary @3xl:truncate">{idea.title}</span>
         </Link>
       </TableCell>
       <TableCell className="@max-3xl:order-2">

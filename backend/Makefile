@@ -30,7 +30,7 @@ typecheck: ## Type-check (mypy --strict)
 test: ## Run tests (needs Docker, or TEST_DATABASE_URL pointing at a throwaway DB)
 	$(UV) run pytest
 
-test-slow: ## Performance checks only (10k ideas: list/board p95 and query plans)
+test-slow: ## Performance checks only (10k ideas: list, board, My work, search p95; query plans)
 	$(UV) run pytest -m slow
 
 check: lint typecheck test ## Lint + typecheck + test

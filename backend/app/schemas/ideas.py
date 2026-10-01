@@ -7,11 +7,11 @@ from an assigned evaluator until they submit their own evaluation (``score_hidde
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Final, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field, field_validator, model_validator
+from pydantic import AfterValidator, AwareDatetime, Field, field_validator, model_validator
 
 from app.models.enums import EvaluatorState, IdeaStatus, Resolution
 from app.schemas.base import RequestModel, ResponseModel, TagName
@@ -20,12 +20,15 @@ from app.schemas.projects import ProjectRef
 from app.schemas.users import UserRef
 
 __all__ = [
+    "DUE_DATE_MAX_AHEAD",
+    "DUE_DATE_MAX_BACK",
     "MAX_TAGS_PER_IDEA",
     "AggregateScore",
     "AggregateScoreSummary",
     "Board",
     "BoardColumn",
     "CriterionAggregate",
+    "DueAt",
     "EvaluationDueDate",
     "EvaluatorProgress",
     "EvaluatorsAdd",
@@ -322,11 +325,30 @@ class OwnerAssign(RequestModel):
     )
 
 
+DUE_DATE_MAX_BACK: Final = timedelta(days=366)
+DUE_DATE_MAX_AHEAD: Final = timedelta(days=5 * 366)
+
+
+def _near_now(value: datetime) -> datetime:
+    try:
+        utc = value.astimezone(UTC)
+    except OverflowError:  # e.g. 0001-01-01T00:00+05:00
+        raise ValueError("the due date is out of range") from None
+    now = datetime.now(UTC)
+    if not now - DUE_DATE_MAX_BACK <= utc <= now + DUE_DATE_MAX_AHEAD:
+        raise ValueError("the due date must be at most a year ago and five years ahead")
+    return value
+
+
+DueAt = Annotated[AwareDatetime, AfterValidator(_near_now)]
+"""A request's due date: with an offset, at most a year ago and five years ahead."""
+
+
 class EvaluatorsAdd(RequestModel):
     """Invite evaluators. Users already assigned are ignored."""
 
     user_ids: list[UUID] = Field(min_length=1, max_length=20)
-    due_at: AwareDatetime | None = Field(
+    due_at: DueAt | None = Field(
         default=None,
         description=(
             "Also set the evaluation due date. If omitted on the first invite (the idea "
@@ -339,4 +361,4 @@ class EvaluatorsAdd(RequestModel):
 class EvaluationDueDate(RequestModel):
     """``PUT`` body: the complete new value (``null`` clears the due date)."""
 
-    due_at: AwareDatetime | None = Field(description="New due date, or null for none.")
+    due_at: DueAt | None = Field(description="New due date, or null for none.")

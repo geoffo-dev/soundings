@@ -12,6 +12,19 @@ export const SCORE_GUIDANCE_PLACEHOLDER = {
   touch: 'Tap a score to see what it means',
 } as const
 
+const quietFocus = new WeakSet<Element>()
+
+/**
+ * Focus an option without previewing its guidance, for focus the person didn't
+ * move there themselves (e.g. "this still needs a score" after Submit): the
+ * preview would read as if that option had been chosen.
+ */
+export function focusWithoutPreview(element: HTMLElement): void {
+  quietFocus.add(element)
+  element.focus()
+  quietFocus.delete(element)
+}
+
 export interface SegmentedOption<T extends string = string> {
   value: T
   label: ReactNode
@@ -155,7 +168,9 @@ export function SegmentedControl<T extends string>({
             aria-describedby={option.description ? `${id}-${option.value}-guidance` : undefined}
             onPointerEnter={() => setPreview(option.value)}
             onPointerLeave={() => setPreview(null)}
-            onFocus={() => setPreview(option.value)}
+            onFocus={(event) => {
+              if (!quietFocus.has(event.currentTarget)) setPreview(option.value)
+            }}
             onBlur={() => setPreview(null)}
             className={segment({ size, variant, fullWidth })}
           >
