@@ -151,6 +151,12 @@ Status: ✅ passes, ❌ fails (a product bug, owner in brackets; see
 | KB-05 | `j`/`k` and Enter in the list | `keyboard.spec.ts` | ✅ |
 | KB-06 | ⌘K keeps your selection when search results arrive late | `keyboard.spec.ts`; frontend `command-palette.test.tsx` | ✅ |
 | KB-07 | Ctrl/⌘+K straight after a palette jump reopens the palette; typing stays in it (no "s" → Change status on the page behind) | `keyboard.spec.ts` | ✅ |
+| KB-08 | Focus returns to the opener after every overlay (button, `n`, ⌘K, `?`, `s`, `a`, a menu item) and after an inline title edit | `keyboard-flow.spec.ts`; frontend `keyboard-flow.spec.ts` (mock) | ✅ |
+| KB-09 | Owner picker: typing highlights the top match, "Remove owner" hides while searching, Enter assigns (server state checked) | `keyboard-flow.spec.ts` | ✅ |
+| KB-10 | Invite: type, Enter picks, ⌘/Ctrl+Enter from the search field invites (server state checked) | `keyboard-flow.spec.ts` | ✅ |
+| KB-11 | ⌘K highlights its top row; commands sit above idea results | `keyboard-flow.spec.ts` | ✅ |
+| KB-12 | Project settings ask before leaving with unsaved edits (Keep editing / Discard; nothing saved) | `keyboard-flow.spec.ts` | ✅ |
+| KB-13 | An unsent New idea draft is gone after sign-out; the next person sees an empty form and no draft keys | `keyboard-flow.spec.ts` | ✅ |
 
 ### MO: phone (390 × 844, touch)
 
@@ -204,3 +210,12 @@ findings, and what the integration did with them:
 | project-list-390 | Card rows differ in height (the date wraps on some). | Fixed: tighter gaps on card rows. |
 | project-list-1440 | With a filter applied the chips wrap to a second line. | Kept: a filter bar may wrap; it doesn't with the sidebar collapsed. |
 | my-work-390 | The first Evaluate is full width, the others compact. | Kept by design: it is the page's one primary action, in thumb reach (`my-work.spec.ts` asserts it). |
+
+## Screenshot review (2026-10-01, Phase 1 close)
+
+All 42 re-captured from a fresh seed after the review fixes and read one by one.
+
+| Screen | Problem | Status |
+|---|---|---|
+| command-palette-390 | The idea title was still cut ("Accessibility audit of the ch…") while the hint kept "CUST-12 · Cu…". | Fixed: the hint takes only the room the label leaves (`command-palette.tsx`). |
+| evaluate-sheet (all) | "Draft saved 3 days ago" (relative since the UX review, m3). | Kept: relative up to a week, then a date. |

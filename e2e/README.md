@@ -23,6 +23,7 @@ npx --prefix e2e playwright test tests/board.spec.ts --headed
 | `E2E_KEEP_STACK`           | unset        | `1`: don't stop the local stack after the run.                                                                             |
 | `E2E_SKIP_BUILD`           | unset        | `1`: reuse the last SPA build in `e2e/.stack/dist`.                                                                        |
 | `E2E_WORKERS`              | 2            | Parallel browsers.                                                                                                         |
+| `E2E_STATE_DIR`            | `e2e/.stack` | SPA build, API pid and log of the local stack. Give each stack run in parallel its own, with its own ports and prefix.     |
 | `SCREENSHOTS`              | unset        | Set by `npm run screenshots`: runs only the screenshots project.                                                           |
 
 **The local stack** (`scripts/start-stack.sh`, run by `global-setup.ts`): Postgres 16 in

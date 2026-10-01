@@ -198,8 +198,9 @@ export function CommandPalette({
                     {action.icon}
                     <span className="min-w-0 truncate">{action.label}</span>
                     {action.hint && (
-                      // Gives way to the label first when the row is short (phones).
-                      <span className="min-w-0 shrink-4 truncate text-sm text-muted">
+                      // Only the room the label leaves: on a short row (phones) the
+                      // hint is cut before the label is.
+                      <span className="min-w-0 grow basis-0 truncate text-sm text-muted">
                         {action.hint}
                       </span>
                     )}

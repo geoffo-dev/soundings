@@ -26,6 +26,7 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 | `docs/api/contract-phase*.md`, `docs/erd.md` | The current API contract and data model |
 | `docs/wireframes/` | Low-fi wireframes of the seven screens (`index.html` shows all) |
 | `docs/research/` | Verified library, kagent, A2A and Claude Code facts (with caveats) |
+| `docs/phase-summaries/` | What each phase built, its evidence, review outcomes and known issues |
 
 ## Repository layout
 
@@ -42,7 +43,8 @@ e2e/              Playwright e2e against the real stack + review screenshots (qa
 scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers
 docs/             ADRs, role matrix, ownership, wireframes, guides, research,
                   test-plans/phase-N.md (qa), screenshots/phase-N/ (real-stack review
-                  screenshots, light/dark/390 px; the frontend's mock ones in mock/)
+                  screenshots, light/dark/390 px; the frontend's mock ones in mock/),
+                  phase-summaries/phase-N.md (lead), user-guide.md, operator-guide.md
 .claude/          settings.json (team env, permissions, hook), agents/ (8 agent types)
 Dockerfile        one image: API + built SPA; `worker` and `migrate` subcommands
 Makefile          root tasks (below)
@@ -94,7 +96,9 @@ Vite build into `e2e/.stack/dist`, `soundings api` on :8100 with dev login), run
 specs and stops it. `E2E_BASE_URL=<url>` tests a running app instead (nothing started
 or reseeded; it needs the demo data and dev login: `make demo`, CI). `E2E_KEEP_STACK=1`
 keeps the stack (the next run only reseeds), `E2E_SKIP_BUILD=1` reuses the SPA build,
-`E2E_PORT` / `E2E_PG_PORT` / `E2E_PREFIX` (default `p1-qa-`) / `E2E_WORKERS` (2).
+`E2E_PORT` / `E2E_PG_PORT` / `E2E_PREFIX` (default `p1-qa-`) / `E2E_WORKERS` (2) /
+`E2E_STATE_DIR` (default `e2e/.stack`: SPA build, pid, log; give each parallel stack its
+own, with its own ports and prefix).
 `npm --prefix e2e run screenshots` writes `docs/screenshots/phase-1/` from freshly
 seeded data (the local stack reseeds on start); `npm --prefix e2e run check` = tsc +
 prettier. Test plan and case IDs: `docs/test-plans/phase-1.md`.
@@ -124,12 +128,27 @@ ingress 18081. Dev logins and the demo people are in `dev/README.md`.
   directly (ADR 0010).
 - **Blind evaluation:** pending evaluators see no score data anywhere; emails never
   contain scores (role matrix section 3, ADR 0006).
+- **Locking:** every write to an idea loads it with `load_idea(for_update=True)`, which
+  locks the project row (`FOR KEY SHARE`) before the idea row; whole-project writes
+  (`replace_rubric`) take the project `FOR UPDATE`. One order, so no deadlocks or stale
+  cached aggregates.
+- **Input limits:** bodies over 1 MiB get 413 before auth; request models extend
+  `RequestModel` (rejects NUL, unknown fields); cursors are validated on decode
+  (`app/pagination.py`). Malformed input is a 4xx, never a 500.
+- **Demo data:** `soundings seed --reset` needs `--force` once anyone who is not a demo
+  person has an account; it refuses production without `--force`.
 - **Email:** outbox row + job deferred in the same transaction (ADR 0003).
 - **Tests first** for authz, login matching and group sync, blind-evaluation
   visibility, API-key scoping and the email outbox.
 - **Frontend:** only design-system components and tokens (no hex values, no arbitrary
   Tailwind values); loading, empty and error states, dark mode, keyboard, 390 px for
-  every screen; API only through `src/api/client.ts`.
+  every screen; API only through `src/api/client.ts`. Dialogs and sheets restore focus
+  themselves (`components/ui/return-focus.ts`; `onCloseAutoFocus` only picks a
+  replacement when the opener is gone);
+  server-filtered cmdk lists use `useTopResult` so Enter picks the visible top row, and
+  pass empty/loading/error messages as `CommandList empty` (outside the listbox).
+  Unsent drafts go through `lib/drafts.ts` (`draftKey(userId, name)`), which clears them
+  on sign-out, 401 and user switch.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -236,6 +255,10 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   agent setup, backend/frontend/Helm/dev/CI scaffolds.
 - **Phase 1** (ideas, owners, evaluators): sessions + dev login, the authz policy,
   projects/members/rubric/labels, ideas, board and list, owners, evaluators, blind
-  evaluation, aggregate and ranking, My work, search, ⌘K, the demo seed, e2e suite and
-  screenshots (`docs/screenshots/phase-1/`). Decisions: `docs/decisions.md` (Phase 1).
-  Stop for review before Phase 2.
+  evaluation, aggregate and ranking, My work, search, ⌘K, settings, the demo seed, e2e
+  suite and screenshots (`docs/screenshots/phase-1/`). Code/security and UX reviews
+  applied (1 MiB body limit, lock order, input hardening, focus return, pickers, per-user
+  drafts). Closed on 2026-10-01 with every check green and a clean k3s install, upgrade
+  and smoke: [docs/phase-summaries/phase-1.md](docs/phase-summaries/phase-1.md) (known
+  issues and deferred items there). Decisions: `docs/decisions.md` (Phase 1). Stop for
+  review before Phase 2.

@@ -11,7 +11,9 @@
 | [research/](research/) | Verified library, kagent and tooling facts from Phase 0 |
 | `erd.md`, `api/` | Data model and API contract (written with the Phase 1 contract) |
 | `test-plans/` | Acceptance test plans (qa) |
-| [user-guide.md](user-guide.md) | End-user guide (skeleton, filled in per phase) |
-| [operator-guide.md](operator-guide.md) | Install and operations guide (skeleton, filled in per phase) |
+| [phase-summaries/](phase-summaries/phase-1.md) | Per phase: what was built, acceptance evidence, review outcomes, known issues, screenshots |
+| `screenshots/` | Review screenshots per phase (real app, light/dark/390 px) |
+| [user-guide.md](user-guide.md) | End-user guide (filled in per phase; Phase 1 done) |
+| [operator-guide.md](operator-guide.md) | Install and operations guide (filled in per phase; Phase 0–1 done) |
 
 Agents: start with [../CLAUDE.md](../CLAUDE.md), then [ownership.md](ownership.md).

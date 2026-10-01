@@ -35,3 +35,13 @@ export function dateInputInDays(days: number, now: number = Date.now()): string 
 export function todayInput(now: number = Date.now()): string {
   return toDateInput(new Date(now).toISOString())
 }
+
+/**
+ * The latest day the picker offers (its `max`): five years ahead. The API refuses a
+ * `due_at` more than 5 × 366 days away (422), so this stays inside that in any time zone.
+ */
+export function latestDueInput(now: number = Date.now()): string {
+  const date = new Date(now)
+  date.setFullYear(date.getFullYear() + 5)
+  return toDateInput(date.toISOString())
+}

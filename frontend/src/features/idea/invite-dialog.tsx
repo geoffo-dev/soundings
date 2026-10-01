@@ -20,7 +20,7 @@ import { toast } from '@/components/ui/toaster'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import { ariaKeys, ButtonShortcut } from './button-shortcut'
-import { dateInputInDays, fromDateInput, toDateInput, todayInput } from './due-date'
+import { dateInputInDays, fromDateInput, latestDueInput, toDateInput, todayInput } from './due-date'
 import { useIdeaPage } from './idea-context'
 import { toUserRef } from './owner-dialog'
 import { PeopleList } from './people-list'
@@ -169,7 +169,12 @@ function InviteForm({ onDone }: { onDone: () => void }) {
               : 'No due date: evaluators won’t see a deadline.'
           }
         >
-          <DatePicker value={due} onValueChange={setDue} min={todayInput()} />
+          <DatePicker
+            value={due}
+            onValueChange={setDue}
+            min={todayInput()}
+            max={latestDueInput()}
+          />
         </Field>
       </DialogBody>
       <DialogFooter>

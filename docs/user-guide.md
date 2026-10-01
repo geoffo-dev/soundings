@@ -11,7 +11,8 @@
 Phase 1 has a development sign-in only: pick who you are from the list (type to filter)
 and you're in. Single sign-on (Keycloak or Microsoft Entra ID) replaces it in Phase 2.
 A session lasts up to 7 days and ends after 12 hours without activity; after that the
-app takes you back to the sign-in page and then to where you were.
+app takes you back to the sign-in page and then to where you were. Signing out (account
+menu, or "Sign out" in the palette) also clears the drafts this browser kept for you.
 
 ### Finding your way: My work, projects, the command palette (⌘K)
 
@@ -19,7 +20,7 @@ app takes you back to the sign-in page and then to where you were.
   - **Evaluations due**: ideas waiting for your scores, overdue first. The most urgent
     one has the page's only blue button; "Continue" means you have a saved draft.
   - **Ideas I own**, grouped by status (Closed is folded away).
-  - **Recent activity** in your projects.
+  - **Recently updated in my projects**: the ten ideas with the latest activity.
   The sidebar repeats the counts and shows a red dot when an evaluation is overdue.
 - **Projects** are listed in the sidebar. A project page has two views of the same
   ideas: a **Board** (a column per status) and a **List** (sortable columns); `V`
@@ -40,18 +41,26 @@ app takes you back to the sign-in page and then to where you were.
 | Where | Keys |
 |---|---|
 | Everywhere | `⌘K` palette · `?` shortcuts · `[` sidebar · `G` `M` My work · `N` new idea · `⌘↵` submit a form or comment |
-| Lists (My work, project list) | `J` / `K` or `↓` / `↑` move · `Enter` opens · in My work `E` evaluates the focused idea (or the most urgent one) |
-| Project page | `V` board/list · `F` search and filter · on a focused board card `Space` picks it up, arrows move it, `Space` drops it |
+| Lists (My work, project list, board) | `J` / `K` or `↓` / `↑` move · `Enter` opens · in My work `E` evaluates the focused idea (or the most urgent one) |
+| Project page | `V` board/list · `F` search and filter · on the board `←` / `→` move between columns; on a focused card `Space` picks it up, arrows move it, `Space` drops it (`Esc` puts it back) |
 | Idea page | `E` evaluate · `S` change status · `A` assign owner · `C` comment · `1` `2` `3` Overview / Evaluations / Proposal |
 | Evaluate sheet | `1`–`5` score the focused criterion · `Tab` next criterion · `⌘↵` submit · `Esc` close (your draft is kept) |
+| Pickers (owner, evaluators, members, filters) | type to filter · `↑` / `↓` · `Enter` picks the highlighted entry (the best match is highlighted as you type) · in Invite evaluators `⌘↵` sends the invitation |
+| Project settings | `⌘S` saves the section you are editing |
 
-On macOS `⌘` is Command; elsewhere it is Ctrl.
+On macOS `⌘` is Command; elsewhere it is Ctrl. When a dialog, sheet or menu closes,
+focus goes back to where you were, so you can carry on with the keyboard.
 
 ### Light and dark mode
 
-The app follows your system setting. To choose, open the account menu (your name at the
-bottom of the sidebar) or type "theme" in the palette. The choice is remembered on this
-device.
+The app follows your system setting. To choose, use **Settings → Appearance** (System,
+Light or Dark), the account menu (your name at the bottom of the sidebar) or type
+"theme" in the palette. The choice is remembered on this device.
+
+### Your settings page
+
+**Settings** in the sidebar shows your account (name and email, from sign-in), the
+theme, and links to the settings of every project you manage.
 
 ## Ideas [Phase 1]
 
@@ -59,8 +68,8 @@ device.
 
 Press `N` or "New idea". Only a **title** and a one-line **summary** are required; add a
 description (Markdown, with a preview) and tags if you like. In a project the dialog
-picks that project for you. If you close the dialog, what you typed is kept on this
-device until you submit. The idea gets a key such as `CUST-12` that never changes, and
+picks that project for you. If you close the dialog, what you typed is kept in this
+browser, for you only, until you submit or sign out. The idea gets a key such as `CUST-12` that never changes, and
 you start watching it.
 
 ### Statuses: New, Evaluating, Shortlisted, Proposal, Closed
@@ -78,7 +87,8 @@ toast puts it back exactly.
   seconds. Comments are flat in Phase 1; @mentions come with notifications in Phase 3.
 - **Votes** show support (one per person, any status). They don't affect the score.
 - **Watching** an idea will send you its updates once notifications arrive (Phase 3).
-  You watch ideas you submit, own, evaluate or comment on.
+  You watch ideas you submit, own, evaluate or comment on; the Watch button stops or
+  starts it.
 
 ### Editing an idea
 
@@ -109,6 +119,7 @@ themselves, and submitted evaluations are never removed.
 
 See [Statuses](#statuses-new-evaluating-shortlisted-proposal-closed). Moving to
 Evaluating doesn't invite anyone or set a date: invite evaluators when you are ready.
+Due dates can be up to five years ahead.
 
 ### Closing and reopening evaluation
 
@@ -148,9 +159,11 @@ closes; the change is marked "Edited after submission" for everyone to see.
 The score (for example **3.7 / 5 · 3 evaluations**) is a weighted average of the
 criteria: each criterion's average across the submitted evaluations, weighted as the
 project's rubric says (inverted criteria turned round first), rounded to one decimal.
-The per-criterion bars show each average and the range of scores. **High disagreement**
-means that on some criterion two evaluators are 2 or more points apart: worth a
-conversation before deciding. The Evaluations tab shows every evaluation side by side.
+The per-criterion bars show each average and the range of scores (hover a range mark
+for the lowest and highest). **High disagreement** means that on some criterion two
+evaluators are 2 or more points apart: worth a conversation before deciding. The
+Evaluations tab (`2`) shows every score side by side in one table, with each
+evaluator's recommendation, and their comments below it.
 In a project, sort by "Highest score" to rank ideas; ideas without a score (or whose
 score is hidden from you) come last.
 
@@ -179,8 +192,9 @@ score is hidden from you) come last.
 
 ## For project admins [Phase 1–4]
 
-Project settings are behind the gear icon on the project page. Members see them
-read-only.
+Project settings are behind the gear icon on the project page (or Settings → Projects
+you manage). Members see them read-only. Each section saves on its own (`⌘S`); if you
+try to leave with unsaved changes, the app asks first.
 
 ### Members and groups
 

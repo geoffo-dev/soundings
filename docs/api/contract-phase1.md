@@ -453,7 +453,8 @@ Inverse calls emit their own events (the feed shows both); that is intended.
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `invalid_cursor` | malformed or foreign cursor |
+| 400 | `invalid_cursor` | malformed or foreign cursor, or one holding a value its column can't hold |
+| 400 | `invalid_host` | `Host` not in `SOUNDINGS_BASE_URLS` (localhost allowed outside production; `/healthz`, `/readyz` exempt) |
 | 401 | `unauthorized` | no valid session |
 | 403 | `forbidden` | can view, may not act (generic) |
 | 403 | `csrf_failed` | missing or wrong `X-CSRF-Token` |
@@ -472,6 +473,7 @@ Inverse calls emit their own events (the feed shows both); that is intended.
 | 409 | `evaluation_closed` | evaluation not open (save, invite, due date) |
 | 409 | `evaluation_already_submitted` | saving a submitted evaluation as a draft |
 | 409 | `evaluator_has_submitted` | removing an evaluator who submitted |
+| 413 | `content_too_large` | request body over 1 MiB (checked before authentication) |
 | 422 | `validation_error` | request path/query/body invalid (`errors[]`) |
 | 422 | `user_not_found` | unknown or inactive user in a body |
 | 422 | `assignee_not_eligible` | owner/evaluator without member/admin role |
@@ -531,6 +533,7 @@ the contract review of 2026-09-30.
 | Removing a member keeps their assignments (they grant nothing until re-added). | Matches role matrix §1; admins can see and fix them. |
 | Members list, projects list and tags are not paginated. | Small by nature; group grants (Phase 2) may revisit members. |
 | Comments are flat; mentions and notifications come in Phase 3. | SPEC: flat comments in Phase 1. |
+| `GET /me/work` returns every evaluation due, uncapped, and `counts.evaluations_due` stays "= length of the list" (code review F9 weighed, kept for Phase 1). | p95 118 ms for an evaluator with 1,000 due among 10k ideas (`test_performance.py`), inside the 150 ms budget; nobody has hundreds due in practice. Revisit (cap at 100, count = total) if real data says otherwise. |
 
 ## 6. Room for later phases
 
