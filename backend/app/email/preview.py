@@ -179,27 +179,32 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
         ),
         "submission_received": EmailContent(
             template="submission_received",
-            subject='We received your idea: "Recycle packaging at the till"',
-            preheader="Thanks for your idea for Customer Innovation.",
+            subject="Confirm your idea for Customer Innovation",
+            preheader="Someone sent an idea to Customer Innovation and gave this email address.",
             context={
-                "title": "Recycle packaging at the till",
                 "project": "Customer Innovation",
-                "key": "CUST-31",
-                "tracking_url": None,
+                "confirm_url": f"{base_url}/verify#sample-confirmation-token",
+                "tracking_url": f"{base_url}/track#sample-tracking-token",
+                "held_until_confirmed": True,
+                "wants_updates": True,
             },
-            reason="You submitted an idea to Customer Innovation.",
+            button=Button(
+                "Confirm my email address", f"{base_url}/verify#sample-confirmation-token"
+            ),
+            reason="Someone gave this address on the public idea form of Customer Innovation.",
         ),
         "submission_status_changed": EmailContent(
             template="submission_status_changed",
-            subject='Your idea "Recycle packaging at the till" moved to Shortlisted',
-            preheader="Your idea is now Shortlisted.",
+            subject='Your idea "Recycle packaging at the till" is now Shortlisted',
+            preheader="Your idea for Customer Innovation is now Shortlisted.",
             context={
                 "title": "Recycle packaging at the till",
                 "project": "Customer Innovation",
                 "status": "Shortlisted",
-                "tracking_url": None,
+                "tracking_url": f"{base_url}/track#sample-tracking-token",
             },
-            reason="You asked for updates on an idea you submitted to Customer Innovation.",
+            button=Button("See where your idea stands", f"{base_url}/track#sample-tracking-token"),
+            reason="You asked for updates on an idea you sent to Customer Innovation.",
         ),
     }
 

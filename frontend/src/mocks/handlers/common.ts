@@ -17,6 +17,7 @@ import {
   projectOf,
 } from '@/mocks/domain'
 import { conflict, failValidation, notFound, type RouteContext } from '@/mocks/http'
+import { forgetProposal } from '@/mocks/proposals'
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -79,8 +80,20 @@ export function ensureNotArchived(project: MockProject): void {
   if (project.archived_at !== null) conflict('project_archived', 'This project is archived.')
 }
 
-export function ensureIdeaWritable(db: MockDb, idea: MockIdea): void {
+/**
+ * Idea writes: 409 `project_archived` in an archived project, and (c19,
+ * contract-phase4 §3.6) 409 `awaiting_moderation` on an idea held for
+ * moderation, except deleting it (`allowHeld`).
+ */
+export function ensureIdeaWritable(
+  db: MockDb,
+  idea: MockIdea,
+  { allowHeld = false }: { allowHeld?: boolean } = {},
+): void {
   ensureNotArchived(projectOf(db, idea))
+  if (idea.held_for && !allowHeld) {
+    conflict('awaiting_moderation', 'This idea is waiting for moderation.')
+  }
 }
 
 /** c4: owners and evaluators need an effective member/admin role in the project. */
@@ -115,6 +128,27 @@ export function emit(
   // Notified once the request's last write is done (contract-phase3 §3.3; http.ts).
   db.pendingEvents.push(event)
   idea.last_activity_at = at
+}
+
+/**
+ * Deletes an idea and everything that hangs off it (`delete_idea`, and Phase 4's
+ * `reject_submission`): evaluations, comments, activity, votes, watchers, its
+ * proposal, its public submission and the submitter's emails.
+ */
+export function deleteIdeaRows(db: MockDb, idea: MockIdea): void {
+  const index = db.ideas.indexOf(idea)
+  if (index >= 0) db.ideas.splice(index, 1)
+  for (const list of [db.assignments, db.evaluations, db.comments, db.events] as {
+    idea_id: string
+  }[][]) {
+    for (let i = list.length - 1; i >= 0; i--) if (list[i]?.idea_id === idea.id) list.splice(i, 1)
+  }
+  for (const set of [db.votes, db.watchers]) {
+    for (const entry of [...set]) if (entry.startsWith(`${idea.id}:`)) set.delete(entry)
+  }
+  forgetProposal(db, idea.id)
+  db.publicSubmissions = db.publicSubmissions.filter((s) => s.idea_id !== idea.id)
+  db.outbox = db.outbox.filter((row) => row.idea_id !== idea.id)
 }
 
 export function addWatcher(db: MockDb, ideaId: string, userId: string): void {

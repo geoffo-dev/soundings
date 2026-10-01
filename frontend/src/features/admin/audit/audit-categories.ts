@@ -69,6 +69,12 @@ export const AUDIT_CATEGORIES = [
   { id: 'status', label: 'Status changes', actions: ['idea.status_change'] },
   { id: 'deleted_ideas', label: 'Deleted ideas', actions: ['idea.delete'] },
   { id: 'email', label: 'Email (test and retry)', actions: ['email.test_send', 'email.retry'] },
+  {
+    id: 'public_submissions',
+    label: 'Public submissions',
+    actions: ['submission.approve', 'submission.reject', 'submission.erase'],
+  },
+  { id: 'branding', label: 'Branding', actions: ['branding.update'] },
 ] as const satisfies readonly { id: string; label: string; actions: readonly AuditAction[] }[]
 
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number]['id']

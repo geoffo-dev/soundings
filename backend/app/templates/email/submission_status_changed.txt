@@ -1,6 +1,10 @@
 {% extends "_layout.txt" %}
 {% block content %}
-Your idea moved to {{ status }}
+Your idea is now {{ status }}
 
-Your idea "{{ title }}" in {{ project }} is now {{ status }}.
+The idea you sent to {{ project }}, "{{ title }}", is now {{ status }}.
+{% if tracking_url %}
+
+Stop these emails on your private tracking page: {{ tracking_url }}
+{% endif %}
 {%- endblock %}

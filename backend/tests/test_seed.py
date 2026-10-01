@@ -37,6 +37,7 @@ from app.models.project import project_effective_roles
 from app.models.user import UserExternalId
 from app.seed import SeedRefused, SeedReport, check_allowed, check_reset_allowed, run_seed
 from app.seed.content import GROUPS, IDEAS, PEOPLE, PROJECTS
+from app.seed.public import CUST_BRANDING, GLOBAL_FOOTER, PUBLIC_IDEAS
 from app.seed.runner import DEMO_ID_NAMESPACE
 from app.services.scoring import recompute_aggregates
 from tests.conftest import Login, make_settings
@@ -184,7 +185,7 @@ async def test_seed_tells_the_demo_story(
     report = await run_seed(settings)
 
     assert report.skipped is None
-    assert (report.users, report.projects, report.ideas) == (12, 3, 45)
+    assert (report.users, report.projects, report.ideas) == (12, 3, 48)
     assert report.evaluations_submitted > 60
     assert report.evaluations_draft >= 2
     assert report.evaluators_pending >= 8
@@ -340,6 +341,54 @@ async def test_seed_tells_the_demo_story(
     assert owner_view["score"] is not None
     assert owner_view["high_disagreement"] is True
 
+    # Phase 4: branding, Customer Innovation's public form and three public ideas,
+    # numbered after every other demo idea (the demo's keys stay the same).
+    assert (report.public_ideas, report.awaiting_moderation) == (3, 2)
+    assert "3 ideas from the public form (2 waiting for review)" in report.summary()
+    cust_keys = [
+        f"CUST-{number}"
+        for number, title in (
+            await db_session.execute(
+                select(Idea.number, Idea.title)
+                .join(Project, Project.id == Idea.project_id)
+                .where(Project.key == "CUST")
+                .order_by(Idea.number)
+            )
+        ).all()
+        if title in {public.title for public in PUBLIC_IDEAS}
+    ]
+    seeded = sum(idea.project == "CUST" for idea in IDEAS)
+    assert cust_keys == [f"CUST-{seeded + n}" for n in (1, 2, 3)]
+    await db_session.rollback()
+    assert (await api.get(f"{API}/branding")).json()["app_name"] == "Soundings"
+    global_branding = (await api.get(f"{API}/admin/branding")).json()
+    assert global_branding["email_footer"] == GLOBAL_FOOTER
+    project_branding = (await api.get(f"{API}/projects/customer-innovation/branding")).json()
+    assert project_branding["primary_color"] == CUST_BRANDING["primary_color"]
+    assert project_branding["logo"]["content_type"] == "image/svg+xml"
+    assert project_branding["favicon"]["content_type"] == "image/svg+xml"
+    logo = await api.get(project_branding["logo"]["url"])
+    assert logo.status_code == 200
+    assert logo.content.startswith(b'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns=')
+    form = (await api.get(f"{API}/projects/customer-innovation/public-form")).json()
+    assert (form["enabled"], form["moderation_required"]) == (True, True)
+    assert form["awaiting_moderation"] == 2
+    public = (await api.get(f"{API}/public/projects/customer-innovation")).json()
+    assert public["branding"]["logo_url"] == project_branding["logo"]["url"]
+    queue = (await api.get(f"{API}/projects/customer-innovation/moderation")).json()
+    assert [item["title"] for item in queue["items"]] == [
+        public.title for public in PUBLIC_IDEAS if public.approved_after is None
+    ]
+    approved = (await api.get(f"{API}/ideas/{cust_keys[0]}/submission")).json()
+    assert approved["held_for"] is None
+    assert approved["contact"] == {
+        "email": "sam.okafor@example.org",
+        "email_verified": True,
+        "wants_updates": True,
+    }
+    assert audited["submission.approve"] == 1
+    assert audited["branding.update"] == 1
+
     # The dev login lists the demo people, alice first.
     listed = (await api.get(f"{API}/auth/dev/users")).json()
     assert len(listed) == 12
@@ -366,7 +415,7 @@ async def test_reset_replaces_existing_data(settings: Settings, db_session: Asyn
     report = await run_seed(settings, reset=True, force=True)
 
     assert report.skipped is None
-    assert (report.users, report.projects, report.ideas) == (12, 3, 45)
+    assert (report.users, report.projects, report.ideas) == (12, 3, 48)
     emails = set(await db_session.scalars(select(User.email)))
     assert "stranger@example.org" not in emails
     assert await db_session.scalar(select(Project.id).where(Project.key == "OLD")) is None

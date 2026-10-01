@@ -358,6 +358,57 @@ describe('audit sentences', () => {
     )
   })
 
+  it('describes moderation, erasure and branding without personal data', () => {
+    const onIdea = (action: string, details: Record<string, unknown>, extra = {}) =>
+      say(
+        entry(action, {
+          target_type: 'idea',
+          target_id: 'i-9',
+          target_label: 'GREEN-9',
+          details,
+          ...extra,
+        }),
+      )
+    expect(onIdea('submission.approve', { rule: 'idea.moderate' })).toBe(
+      'Alice Anders approved GREEN-9 from the public form',
+    )
+    // Rejected ideas are deleted: the key comes from details.
+    expect(
+      say(
+        entry('submission.reject', {
+          target_type: 'idea',
+          target_id: 'i-11',
+          details: { rule: 'idea.moderate', key: 'GREEN-11' },
+        }),
+      ),
+    ).toBe('Alice Anders rejected and deleted GREEN-11 from the public form')
+    expect(onIdea('submission.erase', { rule: 'public.erase_submitter' })).toBe(
+      'Alice Anders erased the submitter’s details of GREEN-9',
+    )
+    expect(
+      onIdea('submission.erase', { reason: 'submitter' }, { actor: null, actor_id: null }),
+    ).toBe('The submitter of GREEN-9 erased their details')
+    expect(
+      onIdea('submission.erase', { reason: 'retention' }, { actor: null, actor_id: null }),
+    ).toBe('The submitter’s details of GREEN-9 were erased automatically (closed for 180 days)')
+    expect(
+      say(
+        entry('branding.update', {
+          details: { rule: 'platform.edit_branding', fields: ['primary_color', 'logo_asset_id'] },
+        }),
+      ),
+    ).toBe('Alice Anders changed the primary colour and logo of the branding')
+    expect(say(entry('branding.update'))).toBe('Alice Anders changed the branding')
+    expect(
+      say(
+        entry('project.update', {
+          project: CUST,
+          details: { fields: ['public_submission_enabled', 'public_moderation_required'] },
+        }),
+      ),
+    ).toBe('Alice Anders changed the public form and public form moderation of Customer Innovation')
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -401,6 +452,10 @@ describe('audit categories', () => {
       'evaluation.reopen': true,
       'email.test_send': true,
       'email.retry': true,
+      'submission.approve': true,
+      'submission.reject': true,
+      'submission.erase': true,
+      'branding.update': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

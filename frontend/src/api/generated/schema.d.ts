@@ -2261,7 +2261,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -3586,6 +3586,8 @@ export interface components {
             evaluators: components["schemas"]["IdeaEvaluator"][];
             /** Has Voted */
             has_voted: boolean;
+            /** @description Phase 4: moderation = a public submission waiting for review (only project and platform admins can open it; every permission but can_delete is false: show Approve / Reject from GET /ideas/{idea}/submission). Otherwise null. */
+            held_for: components["schemas"]["HoldReason"] | null;
             /**
              * High Disagreement
              * @description Always false while score_hidden.
@@ -3638,6 +3640,11 @@ export interface components {
             tags: string[];
             /** Title */
             title: string;
+            /**
+             * Via Public Form
+             * @description Phase 4: sent through the project's public form (submitted_by is null): show "via the public form" and the submission panel (GET /ideas/{idea}/submission). False for every internal idea.
+             */
+            via_public_form: boolean;
             /** Vote Count */
             vote_count: number;
             /** Watching */

@@ -1,5 +1,10 @@
 {#- The shared layout of every HTML email: table-based, max 600 px, inline styles,
-    system fonts, no images or external resources. Light colours are set inline on
+    no images or external resources. Branded (app.services.branding): the app name as
+    the wordmark beside its initial on the primary colour (with a text colour chosen
+    for >= 4.5:1 contrast), links in the primary colour darkened to >= 4.5:1 on the
+    card, the chosen font first in a stack that ends in system fonts (nothing is
+    downloaded), and the footer text, line by line. Every branding value is either
+    validated hex, a fixed font stack or escaped text. Light colours are set inline on
     every block (readable everywhere, contrast >= 4.5:1); clients that honour
     prefers-color-scheme get the dark overrides in <style>. -#}
 {% import "_macros.html" as m %}
@@ -58,7 +63,7 @@
 {% if reason %}<p style="margin:0 0 6px 0;">{{ reason }}</p>{% endif %}
 <p style="margin:0;">{% if preferences_url %}<a class="sx-muted" href="{{ preferences_url }}" style="color:{{ c.muted }};text-decoration:underline;">Email preferences</a>{% endif %}{% if preferences_url and unsubscribe_url %} &nbsp;·&nbsp; {% endif %}{% if unsubscribe_url %}<a class="sx-muted" href="{{ unsubscribe_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from {{ unsubscribe_label }}</a>{% endif %}</p>
 {% if unsubscribe_all_url %}<p style="margin:4px 0 0 0;"><a class="sx-muted" href="{{ unsubscribe_all_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from all email</a></p>{% endif %}
-<p style="margin:10px 0 0 0;">{{ brand.footer_text or "Sent by " ~ brand.product_name ~ "." }}</p>
+<p style="margin:10px 0 0 0;">{% for line in brand.footer_lines %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
 </td>
 </tr>
 </table>

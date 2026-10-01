@@ -238,6 +238,58 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'This email can’t be retried',
     description: 'Only failed emails from the last few days can be sent again.',
   },
+  // Phase 4: proposals (contract-phase4 §4)
+  proposal_not_available: {
+    title: 'The proposal is read-only now',
+    description: 'Proposals can be edited while the idea is Shortlisted or in Proposal.',
+  },
+  proposal_exists: { title: 'This idea already has a proposal' },
+  proposal_conflict: {
+    title: 'Someone else changed this section',
+    description: 'Compare their version with yours, then choose one.',
+  },
+  too_many_comments: {
+    title: 'This proposal can’t take more comments',
+    description: 'Resolve or delete some threads first.',
+  },
+  awaiting_moderation: {
+    title: 'This idea is waiting for review',
+    description: 'Approve it first to make changes.',
+  },
+  export_busy: {
+    title: 'The PDF export is busy',
+    description: 'Try again in a few seconds.',
+  },
+  // Phase 4: public submission, moderation and branding (contract-phase4 §4)
+  public_submission_unavailable: {
+    title: 'Public forms aren’t available for this project',
+    description:
+      'They are turned off for this Soundings instance, or the project’s address is reserved.',
+  },
+  not_awaiting_moderation: {
+    title: 'This idea isn’t waiting for review any more',
+    description: 'Someone may have approved or rejected it already.',
+  },
+  challenge_failed: {
+    title: 'We couldn’t verify this browser',
+    description: 'Try again.',
+  },
+  email_required: { title: 'This form needs your email address' },
+  no_email: { title: 'There’s no email address for this idea' },
+  already_verified: { title: 'This email address is already confirmed' },
+  unsupported_media_type: {
+    title: 'The form couldn’t be read',
+    description: 'Reload the page and try again.',
+  },
+  content_too_large: { title: 'That is too large to send' },
+  invalid_image: {
+    title: 'That image can’t be used',
+    description: 'Upload a PNG or SVG file.',
+  },
+  invalid_asset: {
+    title: 'That image can’t be used here',
+    description: 'Upload it again, then save.',
+  },
   network_error: { title: 'Can’t reach the server', description: 'Check your connection.' },
 }
 

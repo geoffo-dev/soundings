@@ -1,5 +1,6 @@
 """Per-client-IP throttles for the public sign-in endpoints (contract-phase2 sections
-3.2 and 3.8).
+3.2 and 3.8) and the public form, tracking and confirmation links (contract-phase4
+sections 3.5 and 3.7: :mod:`app.auth.public_form`).
 
 In-process sliding windows: simple, no table or job, and enough for what they guard.
 ``GET /auth/login`` (60 starts a minute; it stores nothing, but each start mints a
@@ -24,13 +25,37 @@ from typing import Any, Final
 
 from starlette.requests import Request
 
-__all__ = ["BREAK_GLASS_THROTTLE", "LOGIN_THROTTLE", "Throttle", "client_key", "get_throttle"]
+__all__ = [
+    "ALTCHA_THROTTLE",
+    "BREAK_GLASS_THROTTLE",
+    "LOGIN_THROTTLE",
+    "PUBLIC_TOKEN_THROTTLE",
+    "Throttle",
+    "client_key",
+    "get_throttle",
+    "public_submission_throttle",
+]
 
 LOGIN_THROTTLE: Final = ("login", 60, 60.0)
 """``GET /auth/login``: 60 starts per client per minute."""
 
 BREAK_GLASS_THROTTLE: Final = ("break_glass", 5, 15 * 60.0)
 """``POST /auth/break-glass``: 5 failed attempts per client per 15 minutes."""
+
+ALTCHA_THROTTLE: Final = ("public_altcha", 30, 60.0)
+"""``GET /public/projects/{slug}/altcha``: 30 challenges per client per minute."""
+
+PUBLIC_TOKEN_THROTTLE: Final = ("public_token", 60, 60.0)
+"""Tracking and confirmation links (track, updates, resend, erase, verify): 60
+requests per client per minute, shared. Tokens can't be guessed (256 bits or signed);
+this only bounds load."""
+
+
+def public_submission_throttle(per_hour: int) -> tuple[str, int, float]:
+    """``POST /public/projects/{slug}/submissions``: ``SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP``
+    attempts per client per hour, across projects, every attempt counted."""
+    return ("public_submission", per_hour, 60 * 60.0)
+
 
 MAX_KEYS: Final = 50_000
 """Clients tracked at once; beyond this the oldest are forgotten (bounded memory)."""
@@ -68,6 +93,7 @@ class Throttle:
         self._max_keys = max_keys
         self._hits: dict[str, deque[float]] = {}
         self._refused_until: dict[str, float] = {}
+        self._noticed_at: dict[str, float] = {}
 
     def _recent(self, key: str, now: float) -> deque[float]:
         hits = self._hits.get(key)
@@ -106,6 +132,20 @@ class Throttle:
         if len(self._refused_until) >= self._max_keys:
             self._refused_until = {k: v for k, v in self._refused_until.items() if v > now}
         self._refused_until[key] = now + retry
+        return True
+
+    def first_notice(self, key: str, period: float) -> bool:
+        """True at most once per ``period`` seconds per key (log the first refusal of
+        an hour at WARNING, the rest at INFO)."""
+        now = self._clock()
+        last = self._noticed_at.get(key)
+        if last is not None and now - last < period:
+            return False
+        if len(self._noticed_at) >= self._max_keys:
+            self._noticed_at = {k: v for k, v in self._noticed_at.items() if now - v < period}
+            if len(self._noticed_at) >= self._max_keys:
+                self._noticed_at.clear()
+        self._noticed_at[key] = now
         return True
 
     def _forget(self, now: float) -> None:

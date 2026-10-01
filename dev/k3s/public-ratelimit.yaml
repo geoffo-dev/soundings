@@ -1,0 +1,17 @@
+# An edge rate limit for the public form's API in the local k3s cluster (dev only): a
+# Traefik RateLimit middleware that scripts/k3s-install.sh applies in the release's
+# namespace and attaches through the chart's optional second Ingress
+# (ingress.publicApi.annotations: router.middlewares <namespace>-public-ratelimit@kubernetescrd),
+# which covers only /api/v1/public. scripts/k3s-smoke.sh checks that a burst gets
+# Traefik's 429 while the rest of the app is unaffected. The app's own per-address and
+# per-project limits apply behind it either way (per API pod / per project).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: public-ratelimit
+spec:
+  rateLimit:
+    # 2 requests a second on average per client address, bursts of 40.
+    average: 120
+    period: 1m
+    burst: 40

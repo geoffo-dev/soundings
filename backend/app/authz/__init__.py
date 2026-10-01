@@ -9,7 +9,8 @@ rule X on resource Y", for every rule in docs/role-matrix.md. Deny by default.
 * :class:`Resource` (+ :class:`ProjectFacts`, :class:`IdeaFacts`): the facts a decision
   needs; :mod:`app.authz.loaders` builds them from the database.
 * SQL for lists (:mod:`app.authz.queries`): :func:`visible_projects`,
-  :func:`viewable_ideas`, :func:`score_visible` and the masked score columns.
+  :func:`listed_ideas` (alias :func:`viewable_ideas`: never a held idea),
+  :func:`score_visible` and the masked score columns.
 * ``permissions`` response objects: :mod:`app.authz.permissions`.
 
 Nothing else inspects roles: routes, MCP tools, jobs and emails call this package.
@@ -28,6 +29,7 @@ from app.authz.loaders import (
 from app.authz.permissions import idea_permissions, idea_summary_permissions, project_permissions
 from app.authz.policy import (
     ASSIGNABLE_ROLES,
+    FROZEN_WHILE_HELD,
     POLICY,
     Decision,
     IdeaFacts,
@@ -43,6 +45,7 @@ from app.authz.policy import (
 )
 from app.authz.queries import (
     effective_role,
+    listed_ideas,
     pending_evaluator,
     score_visible,
     viewable_ideas,
@@ -54,6 +57,7 @@ from app.authz.rules import RULE_SCOPES, SESSION_ONLY_RULES, Rule
 
 __all__ = [
     "ASSIGNABLE_ROLES",
+    "FROZEN_WHILE_HELD",
     "POLICY",
     "RULE_SCOPES",
     "SESSION_ONLY_RULES",
@@ -73,6 +77,7 @@ __all__ = [
     "idea_permissions",
     "idea_resource",
     "idea_summary_permissions",
+    "listed_ideas",
     "load_project",
     "not_found",
     "other_platform_admins",

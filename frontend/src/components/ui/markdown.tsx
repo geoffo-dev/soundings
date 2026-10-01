@@ -122,6 +122,48 @@ const components: Components = {
     ),
 }
 
+/**
+ * Headings inside one section of a longer document whose section titles are
+ * already h2 (the proposal editor): `#` starts at h3, as the exported PDF
+ * demotes them (contract-phase4 §3.4), and no deeper than h6.
+ */
+const nestedHeadingClass = {
+  strong: 'mt-5 mb-1.5 text-base font-semibold first:mt-0',
+  quiet: 'mt-4 mb-1 text-base font-medium first:mt-0',
+}
+const nestedHeadings: Components = {
+  h1: ({ node: _node, children, ...props }) => (
+    <h3 className={nestedHeadingClass.strong} {...props}>
+      {children}
+    </h3>
+  ),
+  h2: ({ node: _node, children, ...props }) => (
+    <h4 className={nestedHeadingClass.strong} {...props}>
+      {children}
+    </h4>
+  ),
+  h3: ({ node: _node, children, ...props }) => (
+    <h5 className={nestedHeadingClass.quiet} {...props}>
+      {children}
+    </h5>
+  ),
+  h4: ({ node: _node, children, ...props }) => (
+    <h6 className={nestedHeadingClass.quiet} {...props}>
+      {children}
+    </h6>
+  ),
+  h5: ({ node: _node, children, ...props }) => (
+    <h6 className={nestedHeadingClass.quiet} {...props}>
+      {children}
+    </h6>
+  ),
+  h6: ({ node: _node, children, ...props }) => (
+    <h6 className={nestedHeadingClass.quiet} {...props}>
+      {children}
+    </h6>
+  ),
+}
+
 /* ------------------------------------------------------------------ */
 /* @mentions (contract-phase3 §3.8)                                    */
 /* ------------------------------------------------------------------ */
@@ -200,12 +242,15 @@ export interface MarkdownProps {
   className?: string
   /** Mentions of this user (you) are highlighted. */
   mentionSelfId?: string
+  /** Section text under an h2 section title (proposals): headings start at h3. */
+  nested?: boolean
 }
 
-export function Markdown({ children, className, mentionSelfId }: MarkdownProps) {
+export function Markdown({ children, className, mentionSelfId, nested = false }: MarkdownProps) {
   const withMentions = useMemo<Components>(
     () => ({
       ...components,
+      ...(nested ? nestedHeadings : {}),
       span: ({ node: _node, children: content, ...props }) => {
         const userId = (props as Record<string, unknown>)['data-mention']
         if (typeof userId !== 'string') return <span {...props}>{content}</span>
@@ -222,7 +267,7 @@ export function Markdown({ children, className, mentionSelfId }: MarkdownProps) 
         )
       },
     }),
-    [mentionSelfId],
+    [mentionSelfId, nested],
   )
   return (
     <div

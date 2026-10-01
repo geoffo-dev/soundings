@@ -44,6 +44,7 @@ import {
   userRef,
   userRefById,
 } from './domain'
+import { queueSubmitterStatusEmail } from './public'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -353,6 +354,7 @@ export function fanOut(db: MockDb, event: MockEvent): void {
       return
     }
     case 'status_changed': {
+      queueSubmitterStatusEmail(db, idea, event)
       const people = [
         ...(idea.owner_id ? [idea.owner_id] : []),
         ...rowsForIdea(db.assignments, idea.id).map((a) => a.user_id),

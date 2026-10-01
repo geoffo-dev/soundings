@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import AfterValidator, AwareDatetime, Field, field_validator, model_validator
 
-from app.models.enums import EvaluatorState, IdeaStatus, Resolution
+from app.models.enums import EvaluatorState, HoldReason, IdeaStatus, Resolution
 from app.schemas.base import RequestModel, ResponseModel, SingleLine, TagName
 from app.schemas.common import Page
 from app.schemas.projects import ProjectRef
@@ -224,6 +224,20 @@ class IdeaDetail(IdeaSummary):
     )
     watching: bool
     permissions: IdeaPermissions
+    held_for: HoldReason | None = Field(
+        description=(
+            "Phase 4: moderation = a public submission waiting for review (only project "
+            "and platform admins can open it; every permission but can_delete is false: "
+            "show Approve / Reject from GET /ideas/{idea}/submission). Otherwise null."
+        )
+    )
+    via_public_form: bool = Field(
+        description=(
+            "Phase 4: sent through the project's public form (submitted_by is null): "
+            'show "via the public form" and the submission panel (GET '
+            "/ideas/{idea}/submission). False for every internal idea."
+        )
+    )
 
 
 class IdeaPage(Page[IdeaSummary]):

@@ -42,7 +42,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `logLevel` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR`. JSON logs, no PII. |
 | `devLogin` | `false` | Dev login stub; also switches the app to development mode. Never on shared installs. |
 | `demo.seed` | `false` | Load the demo data after install and upgrades (hook Job, see [Demo data](#demo-data)). Needs `devLogin`. |
-| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `PT24H` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds. |
+| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `PT24H` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds (passed to the app as `PT<n>S`). |
 | `metrics.port` | `9090` | Port of Prometheus `/metrics` (container and Service port `metrics`); never the app port. |
 | `secretKey.existingSecret` / `.existingSecretKey` | `""` / `secret-key` | Session/CSRF signing key. Empty: generated once, kept across upgrades. |
 | `oidc.issuer` | `""` | OIDC issuer URL, exactly the provider's `issuer` (https unless `devLogin`). Empty: SSO off; the break-glass admin works instead. See [Single sign-on](#single-sign-on). |
@@ -60,7 +60,10 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `timezone` | `UTC` | IANA time zone of the organisation: digests and reminders follow it, emails show dates in it. |
 | `notifications.digestHour` / `.reminderDays` | `8` / `[2, 0]` | Hour (0-23, in `timezone`) of daily digests and reminders; evaluation reminders N days before the due date (0 = on the day, at most 5 values, `[]` = none). |
 | `breakGlass.enabled` / `.existingSecret` | `true` / `""` | Local platform admin for the first sign-in and SSO outages, available only while `oidc.issuer` is empty (keys `username`, `password`, 16+ characters). Empty secret: user `admin`, random 24-character password. |
-| `features.publicSubmission` / `.ai` | `true` / `false` | Allow public submission per project; AI assistance via kagent. |
+| `features.publicSubmission` / `.ai` | `true` / `false` | Allow projects to turn on their public form (`<baseUrl>/<project>/submit`); `false`: every public form, tracking and confirmation link answers 404. AI assistance via kagent. See [Public submission](#public-submission). |
+| `publicSubmission.perIpPerHour` / `.perProjectPerHour` | `10` / `100` | Public submissions per client address (IPv6: /64) per hour, counted **per API pod**; per project per hour from everyone (in the database). |
+| `publicSubmission.altcha.cost` / `.expiry` | `5000` / `PT30M` | ALTCHA proof of work: PBKDF2 iterations per attempt (1000-1000000); how long a challenge stays valid (1 minute to 1 day). |
+| `branding.maxUploadBytes` | `524288` | Largest logo or favicon upload (16 KiB-900 KiB, under the 1 MiB request limit). |
 | `kagent.enabled` / `.namespace` / `.examples` | `false` / `kagent` / `false` | Placeholders for Phase 6 (`deploy/kagent/README.md`). |
 | `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics` (`metrics.port`). |
 | `extraEnv` / `extraEnvFrom` | `[]` | Extra env for api, worker and migration containers. |
@@ -76,10 +79,11 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `service.type` / `.port` / `.annotations` | `ClusterIP` / `80` / `{}` | |
 | `ingress.enabled` / `.className` / `.annotations` | `false` / `""` / `{}` | |
 | `ingress.hosts` / `.tls` | `[]` (hosts of `baseUrls`) / `[]` | TLS entries: `{secretName, hosts}`. |
+| `ingress.publicApi.annotations` | `{}` | Not empty: a second Ingress `<release>-soundings-public` for `/api/v1/public` (the anonymous form's API) with only these annotations, e.g. an edge rate limit. See [Public submission](#public-submission). |
 | `httpRoute.enabled` / `.parentRefs` / `.hostnames` / `.annotations` | `false` / `[]` / `[]` (hosts of `baseUrls`) / `{}` | Gateway API `HTTPRoute` (v1). `parentRefs` required when enabled. |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | No API token is mounted. |
 | `podSecurityContext` / `securityContext` | Restricted | uid/gid 10001, non-root, seccomp `RuntimeDefault`, read-only root FS, no capabilities, no privilege escalation. |
-| `tmpSizeLimit` | `256Mi` | The writable `/tmp` emptyDir. |
+| `tmpSizeLimit` | `256Mi` | The writable `/tmp` emptyDir (fontconfig's cache under `/tmp/cache`, PDF export's temporary font files). |
 | `podLabels` / `nodeSelector` / `tolerations` / `affinity` | empty | Applied to every app pod (and Postgres). |
 | `postgresql.enabled` | `true` | Bundled single-replica Postgres (dev/small installs). |
 | `postgresql.image.*` | `docker.io/library/postgres:16-alpine` | |
@@ -129,7 +133,7 @@ or concurrently is safe.
 `devLogin=true` plus `demo.seed=true` adds a Job (`<release>-soundings-seed`,
 `helm.sh/hook: post-install,post-upgrade`, `argocd.argoproj.io/hook: PostSync`, deleted
 after success) that runs `soundings wait-for-db`, `soundings migrate` and
-`soundings seed`: 12 people (Alice Anders is the platform admin), three projects and 45
+`soundings seed`: 12 people (Alice Anders is the platform admin), three projects and 48
 ideas in every status, with owners, blind evaluations, comments and votes over the last
 few weeks. It migrates itself, so it does not depend on the api pods' init containers,
 and it does nothing once the database has projects, so upgrades keep what people
@@ -163,8 +167,10 @@ Non-secret settings go into the ConfigMap `<release>-soundings` as `SOUNDINGS_*`
 variables: `ENVIRONMENT` (`production`, or `development` with `devLogin`),
 `DEV_LOGIN_ENABLED`, `BASE_URLS`, `TRUSTED_PROXIES`, `LOG_LEVEL`, `DATABASE_URL`
 (`postgresql+psycopg://user@host:port/db?sslmode=...`, no password), `METRICS_PORT`,
-`SESSION_IDLE_TIMEOUT`, `SESSION_MAX_AGE`, `WORKER_CONCURRENCY`,
-`OTEL_ENDPOINT`, `FEATURE_PUBLIC_SUBMISSION`, `FEATURE_AI`, `BREAK_GLASS_ENABLED`,
+`SESSION_IDLE_TIMEOUT`, `SESSION_MAX_AGE` (ISO 8601), `WORKER_CONCURRENCY`,
+`OTEL_ENDPOINT`, `PUBLIC_SUBMISSION_ENABLED`, `PUBLIC_SUBMISSIONS_PER_IP`,
+`PUBLIC_SUBMISSIONS_PER_PROJECT`, `ALTCHA_COST`, `ALTCHA_EXPIRY` (ISO 8601),
+`BRANDING_MAX_UPLOAD_BYTES`, `FEATURE_AI`, `BREAK_GLASS_ENABLED`,
 `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_GROUPS_CLAIM`, `OIDC_EXTERNAL_ID_CLAIM`,
 `OIDC_EXTERNAL_ID_KIND`, `OIDC_MATCH_VERIFIED_EMAIL`, `OIDC_AUTO_CREATE_USERS`,
 `OIDC_SCOPES` (comma-separated; all `OIDC_*` only when `oidc.issuer` is set), `TIMEZONE`,
@@ -358,12 +364,78 @@ app ignores them until the issuer is unset.
   <namespace>-<name>@kubernetescrd` annotation; Gateway API has no standard body limit.
   `scripts/k3s-smoke.sh` checks the 413 through the ingress.
 
+## Public submission
+
+With `features.publicSubmission` on (the default), a project admin can turn on the
+project's public form (Settings > Public form): anyone can then send an idea at
+`<baseUrl>/<project>/submit` without an account, and follows it through a private
+tracking link (`/track#<token>`; the token is after `#`, so it never reaches a server,
+proxy or access log). Nothing extra is deployed: the form, `/track` and `/verify` are
+pages of the SPA, and their API is under `/api/v1/public/` (plus `/api/v1/branding` and
+`/api/v1/branding/assets/<id>` for the logo and favicon), on the same Service, Ingress
+or HTTPRoute.
+
+Anti-abuse in the app: a honeypot field, an ALTCHA proof of work (computed in the
+visitor's browser and checked by the app: no third-party service, works air-gapped;
+`publicSubmission.altcha.*`), JSON-only writes (415 otherwise, so other sites can't post
+the form through their visitors' browsers), a per-address limit
+(`publicSubmission.perIpPerHour`, per API pod) and a per-project limit
+(`perProjectPerHour`, across pods). Optional email confirmation and moderation are
+per-project settings.
+
+- **Client addresses matter here.** The per-address limit uses the address from
+  `X-Forwarded-For` as described under [Security](#security) (`trustedProxies`,
+  `trustedProxyHops`). If every request seems to come from one address (the load
+  balancer or a node after SNAT), the whole internet shares one budget of
+  `perIpPerHour` submissions: check that your ingress controller passes the real
+  client address before you publish a form.
+- **Edge rate limiting (optional).** `ingress.publicApi.annotations` renders a second
+  Ingress for `/api/v1/public` only (the longer path wins over `/`), so a rate limit
+  applies to anonymous traffic and not to signed-in people. It gets only these
+  annotations, with the class, hosts and TLS of the main Ingress (cert-manager
+  annotations stay on the main one, so one certificate has one owner):
+  - ingress-nginx: `nginx.ingress.kubernetes.io/limit-rpm: "30"` (per client address,
+    per controller pod; `limit-burst-multiplier` for bursts);
+  - Traefik: a `RateLimit` Middleware in the release's namespace, referenced as
+    `traefik.ingress.kubernetes.io/router.middlewares: <namespace>-<name>@kubernetescrd`
+    (`dev/k3s/public-ratelimit.yaml` is the one `scripts/k3s-install.sh` uses);
+  - Gateway API has no standard rate limit: use your implementation's policy on an
+    HTTPRoute of your own for `/api/v1/public`.
+- **Body size.** Every request body is limited to 1 MiB by the app (413 before
+  anything else); public submissions are small JSON (tens of KiB at most) and logo or
+  favicon uploads are at most `branding.maxUploadBytes` (512 KiB by default, never more
+  than 900 KiB), so an edge limit of `1m` (ingress-nginx's default `proxy-body-size`)
+  never refuses a valid request. Don't set it lower than `1m`.
+- **Caching and headers.** Keep the app's headers: the SPA and API send a
+  `Content-Security-Policy`, `X-Content-Type-Options: nosniff` and `X-Frame-Options`;
+  API responses are `Cache-Control: no-store` (they may be private, including
+  `/api/v1/public/track`), so a CDN or proxy must not cache `/api/` except
+  `/api/v1/branding/assets/<id>`, which is `public, max-age=31536000, immutable`
+  (a new image gets a new id) with its own sandboxing CSP. Hashed SPA files under
+  `/assets/` are immutable too; `index.html` is `no-cache`. Don't add a CSP at the edge:
+  browsers enforce both, and the app's is the one the SPA (incl. the ALTCHA widget) is
+  tested with.
+- `features.publicSubmission: false` turns every form off at once (existing tracking
+  links then answer 404 too) without touching project settings.
+
+### PDF export
+
+Proposals export to PDF with WeasyPrint inside the API pods: the image (Ubuntu 24.04)
+carries Pango, HarfBuzz, fontconfig, the four branding fonts and DejaVu as the fallback.
+Nothing is fetched (the renderer only answers `data:` URIs and the bundled fonts), so no
+egress rule is needed. Each render runs in a child process of the API (about 100 MiB at
+its peak for the largest proposal, one at a time per pod, killed after 20 s with a 503
+`export_busy`); the default `api.resources.limits.memory` (512Mi) has room for it, so
+keep at least that. With a read-only root filesystem, fontconfig caches under
+`/tmp/cache` (the `/tmp` emptyDir; `XDG_CACHE_HOME` is set in the image).
+
 ## Air-gapped installs
 
 Mirror `soundings:<tag>` and `postgres:16-alpine` into your registry and set
 `global.imageRegistry` (plus `image.repository` / `postgresql.image.repository` if the
-paths differ, and `image.pullSecrets`). Nothing is fetched at runtime: fonts, Swagger UI
-and the SPA are in the image. The Helm test uses the app image.
+paths differ, and `image.pullSecrets`). Nothing is fetched at runtime: fonts (for the SPA,
+emails and PDF export), Swagger UI, the ALTCHA widget and the SPA are in the image. The
+Helm test uses the app image.
 
 ## Develop and test
 
@@ -384,6 +456,12 @@ login + demo seed Job with NetworkPolicies) are linted and rendered in CI.
 `scripts/k3s-smoke.sh` also signs in through the ingress when the dev login is on
 (session + CSRF) and reads My work, and when break-glass is available signs in with the
 credentials from its Secret (as `NOTES.txt` says) after a wrong password is refused.
+It then runs `scripts/public-smoke.sh` through the ingress: the public form's project,
+branding and logo headers anonymously, and with the dev login an anonymous submission
+(the ALTCHA solved with the api pod's Python), approved, shortlisted, its proposal
+written and exported as PDF (rendered in the api pod) and Markdown, then deleted; and
+checks the Traefik rate limit `scripts/k3s-install.sh` puts on `/api/v1/public` through
+`ingress.publicApi.annotations` (`dev/k3s/public-ratelimit.yaml`).
 
 Single sign-on end to end on k3s, with Keycloak in the cluster (`dev/k3s/keycloak.yaml`,
 the dev realm, issuer `http://keycloak.localhost:18081/realms/soundings`):

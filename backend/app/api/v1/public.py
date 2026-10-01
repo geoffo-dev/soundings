@@ -13,11 +13,17 @@ through its visitors' browsers. Business rules: docs/api/contract-phase4.md sect
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.auth import altcha
+from app.auth.public_form import JsonOnlyRoute, check_throttle
+from app.auth.throttle import ALTCHA_THROTTLE, PUBLIC_TOKEN_THROTTLE
+from app.config import Settings
+from app.db import SessionDep
+from app.models.base import utcnow
+from app.public import forms, submit, tracking
 from app.schemas.public import (
     AltchaChallenge,
     EmailVerified,
@@ -30,7 +36,27 @@ from app.schemas.public import (
     VerificationRequest,
 )
 
-router = APIRouter(prefix="/public", tags=["public"])
+# Every write here must be application/json (415 before the body is read).
+router = APIRouter(prefix="/public", tags=["public"], route_class=JsonOnlyRoute)
+
+_TOO_MANY_CHALLENGES = "Too many requests from your network. Wait a minute and try again."
+_TOO_MANY_LINK_REQUESTS = "Too many requests from your network. Wait a minute and try again."
+
+
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
+
+
+def _link_throttle(request: Request) -> None:
+    """The tracking and confirmation routes share one per-IP throttle, counted before
+    the token is looked up (it bounds load; tokens can't be guessed)."""
+    check_throttle(
+        request,
+        PUBLIC_TOKEN_THROTTLE,
+        detail=_TOO_MANY_LINK_REQUESTS,
+        event="public link request refused",
+    )
 
 
 @router.get(
@@ -44,8 +70,12 @@ router = APIRouter(prefix="/public", tags=["public"])
     ),
     responses=problems(404),
 )
-async def get_public_project(slug: ProjectSlug) -> PublicProject:
-    raise NotImplementedProblem
+async def get_public_project(
+    request: Request, session: SessionDep, slug: ProjectSlug
+) -> PublicProject:
+    settings = _settings(request)
+    project = await forms.load_form(session, settings, slug)
+    return await forms.public_project(session, settings, project)
 
 
 @router.get(
@@ -59,8 +89,21 @@ async def get_public_project(slug: ProjectSlug) -> PublicProject:
     ),
     responses=problems(404, 429),
 )
-async def get_altcha_challenge(slug: ProjectSlug) -> AltchaChallenge:
-    raise NotImplementedProblem
+async def get_altcha_challenge(
+    request: Request, session: SessionDep, slug: ProjectSlug
+) -> AltchaChallenge:
+    settings = _settings(request)
+    project = await forms.load_form(session, settings, slug)
+    check_throttle(
+        request,
+        ALTCHA_THROTTLE,
+        detail=_TOO_MANY_CHALLENGES,
+        event="altcha challenge refused",
+        log_fields={"project_id": str(project.id)},
+    )
+    return AltchaChallenge.model_validate(
+        altcha.new_challenge(settings, project.slug, now=utcnow())
+    )
 
 
 @router.post(
@@ -79,9 +122,9 @@ async def get_altcha_challenge(slug: ProjectSlug) -> AltchaChallenge:
     responses=problems(404, 415, 422, 429),
 )
 async def submit_public_idea(
-    slug: ProjectSlug, body: PublicSubmissionCreate
+    request: Request, session: SessionDep, slug: ProjectSlug, body: PublicSubmissionCreate
 ) -> PublicSubmissionReceipt:
-    raise NotImplementedProblem
+    return await submit.submit(session, _settings(request), request, slug, body, now=utcnow())
 
 
 @router.post(
@@ -95,8 +138,13 @@ async def submit_public_idea(
     ),
     responses=problems(404, 415, 422, 429),
 )
-async def track_submission(body: TrackingRequest) -> TrackedSubmission:
-    raise NotImplementedProblem
+async def track_submission(
+    request: Request, session: SessionDep, body: TrackingRequest
+) -> TrackedSubmission:
+    _link_throttle(request)
+    settings = _settings(request)
+    found = await tracking.find(session, settings, body.token)
+    return await tracking.tracked_submission(session, settings, found, now=utcnow())
 
 
 @router.put(
@@ -109,8 +157,13 @@ async def track_submission(body: TrackingRequest) -> TrackedSubmission:
     ),
     responses=problems(404, 409, 415, 422, 429),
 )
-async def set_submission_updates(body: TrackingUpdatesRequest) -> TrackedSubmission:
-    raise NotImplementedProblem
+async def set_submission_updates(
+    request: Request, session: SessionDep, body: TrackingUpdatesRequest
+) -> TrackedSubmission:
+    _link_throttle(request)
+    return await tracking.set_updates(
+        session, _settings(request), body.token, body.wants_updates, now=utcnow()
+    )
 
 
 @router.post(
@@ -125,8 +178,11 @@ async def set_submission_updates(body: TrackingUpdatesRequest) -> TrackedSubmiss
     ),
     responses=problems(404, 409, 415, 422, 429),
 )
-async def resend_verification_email(body: TrackingRequest) -> TrackedSubmission:
-    raise NotImplementedProblem
+async def resend_verification_email(
+    request: Request, session: SessionDep, body: TrackingRequest
+) -> TrackedSubmission:
+    _link_throttle(request)
+    return await tracking.resend_confirmation(session, _settings(request), body.token, now=utcnow())
 
 
 @router.post(
@@ -142,8 +198,11 @@ async def resend_verification_email(body: TrackingRequest) -> TrackedSubmission:
     ),
     responses=problems(404, 415, 422, 429),
 )
-async def erase_tracked_submission(body: TrackingRequest) -> None:
-    raise NotImplementedProblem
+async def erase_tracked_submission(
+    request: Request, session: SessionDep, body: TrackingRequest
+) -> None:
+    _link_throttle(request)
+    await tracking.erase_own_details(session, _settings(request), body.token, now=utcnow())
 
 
 @router.post(
@@ -161,5 +220,8 @@ async def erase_tracked_submission(body: TrackingRequest) -> None:
     ),
     responses=problems(404, 415, 422, 429),
 )
-async def verify_submission_email(body: VerificationRequest) -> EmailVerified:
-    raise NotImplementedProblem
+async def verify_submission_email(
+    request: Request, session: SessionDep, body: VerificationRequest
+) -> EmailVerified:
+    _link_throttle(request)
+    return await tracking.verify_email(session, _settings(request), body.token, now=utcnow())

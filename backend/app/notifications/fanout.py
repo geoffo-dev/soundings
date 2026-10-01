@@ -46,6 +46,7 @@ from app.models.notification import Notification
 from app.models.project import Project
 from app.notifications import access, preferences
 from app.notifications.access import Recipient
+from app.public.emails import queue_status_email
 from app.schemas.admin_users import is_reserved_email
 from app.services.sql import any_of
 from app.worker import procrastinate_app
@@ -484,8 +485,10 @@ async def _notify_event(
                 for key in ("from_status", "from_resolution", "to_status", "to_resolution")
             }
             await notify(NotificationType.STATUS_CHANGED, people, data)
-            # Phase 4: an opted-in public submitter gets a submission_status_changed
-            # email here (outbox row with to_address, no notification row).
+            # Phase 4: an opted-in, confirmed public submitter gets a
+            # submission_status_changed email (outbox row with to_address, no
+            # notification row; idempotent per event).
+            await queue_status_email(db, writer.settings, event, idea)
         case "comment":
             comment = await db.get(Comment, event.comment_id) if event.comment_id else None
             if comment is not None:

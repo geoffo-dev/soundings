@@ -17,7 +17,7 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    Dev login is ON (development mode): pick a user on the sign-in page.
    Never use devLogin on a shared or internet-facing install.
 {{- if .Values.demo.seed }}
-   Demo data is loaded by the {{ $fullname }}-seed hook Job (12 people, 3 projects, 45
+   Demo data is loaded by the {{ $fullname }}-seed hook Job (12 people, 3 projects, 48
    ideas; a no-op once the database has projects). Sign in as Alice Anders, the platform
    admin, or anyone else on the list.
 {{- end }}
@@ -94,8 +94,20 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
 
 5. Network
    networkPolicy.ingressFrom is empty: any pod in the cluster can reach the API directly
-   and send its own X-Forwarded-For (the sign-in throttles' client address). Set it to
-   your ingress controller's namespace, and narrow trustedProxies to its pods.
+   and send its own X-Forwarded-For (the client address of the sign-in throttles and the
+   public form's limit). Set it to your ingress controller's namespace, and narrow
+   trustedProxies to its pods.
+{{- end }}
+{{- if .Values.features.publicSubmission }}
+
+Public form
+   Project admins can let anyone send ideas without an account (Settings > Public
+   form): {{ first .Values.baseUrls }}/<project>/submit. Limits: a proof of work, {{ int .Values.publicSubmission.perIpPerHour }} submissions
+   per client address and hour (per API pod), {{ int .Values.publicSubmission.perProjectPerHour }} per project and hour.
+   Before publishing a form, check that the app sees real client addresses
+   (trustedProxies, trustedProxyHops). Edge rate limiting: ingress.publicApi.annotations
+   (chart README, "Public submission"). Off for the whole instance:
+   features.publicSubmission=false.
 {{- end }}
 
 Check the release: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

@@ -6,8 +6,12 @@ return SQLAlchemy expressions that agree with :func:`app.authz.policy.authorize`
 roles only through the ``project_effective_roles`` view.
 
 * :func:`visible_projects`: ``WHERE`` over ``projects`` for ``project.view``.
-* :func:`viewable_ideas`: ``WHERE`` over ``ideas`` for ``idea.view`` (the single
-  place Phase 4 adds moderation, c12).
+* :func:`listed_ideas` (also :func:`viewable_ideas`): ``WHERE`` over ``ideas`` for
+  every list, board, search, count, My work and the inbox: ``idea.view`` for ideas
+  that are not held. A public submission held for email confirmation or moderation
+  (``ideas.held_for``, contract-phase4 section 3.6) is listed nowhere, for anyone:
+  admins open one held for moderation by its link or from the moderation queue, which
+  the policy (c12) allows and :func:`app.services.ideas.load_idea` checks per idea.
 * :func:`score_visible`: ``score.view_aggregate`` / ``evaluation.view_others`` for
   ideas already filtered by :func:`viewable_ideas`: false while the principal is a
   pending evaluator (blind evaluation). :func:`visible_aggregate_score` and
@@ -43,6 +47,7 @@ from app.models.project import Project, project_effective_roles
 
 __all__ = [
     "effective_role",
+    "listed_ideas",
     "pending_evaluator",
     "pending_ideas",
     "score_visible",
@@ -93,16 +98,27 @@ def visible_projects(principal: Principal | None) -> ColumnElement[bool]:
     return clause
 
 
-def viewable_ideas(principal: Principal | None) -> ColumnElement[bool]:
-    """``idea.view`` over ``ideas``: ideas in projects the principal can view.
-
-    Phase 4 adds c12 here (ideas awaiting moderation only for platform and project
-    admins), so every list, board, search, count and My work query picks it up.
-    """
+def listed_ideas(principal: Principal | None) -> ColumnElement[bool]:
+    """The ideas a list may show: ``idea.view`` over ``ideas`` (ideas in projects the
+    principal can view) for ideas that are **not held** (c12, contract-phase4 section
+    3.6). Every list, board, count, search, My work, tag list and the inbox uses this,
+    so a held idea appears in none of them for anyone, admins included."""
     # Not correlated: queries that also select from projects must not narrow this.
-    return Idea.project_id.in_(
-        select(Project.id).where(visible_projects(principal)).correlate(None)
+    return and_(
+        Idea.held_for.is_(None),
+        Idea.project_id.in_(select(Project.id).where(visible_projects(principal)).correlate(None)),
     )
+
+
+def viewable_ideas(principal: Principal | None) -> ColumnElement[bool]:
+    """The list filter, by its Phase 1 name: :func:`listed_ideas`.
+
+    Every caller is a list, board, search, count, My work query or the inbox, so held
+    ideas are left out here for everyone (c12). The one place an admin sees an idea
+    held for moderation is its own page and the moderation queue: per idea through the
+    policy (``idea.view``, c12), never through this filter.
+    """
+    return listed_ideas(principal)
 
 
 def pending_ideas(principal: Principal) -> Select[UUID]:

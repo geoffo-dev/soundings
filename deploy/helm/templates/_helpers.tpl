@@ -202,6 +202,20 @@ Configuration
 {{- end }}
 
 {{/*
+A duration value (ISO 8601 such as PT12H, or a number of seconds) as the ISO 8601
+string the app parses: 3600 -> PT3600S (the app reads only ISO 8601 durations).
+*/}}
+{{- define "soundings.duration" -}}
+{{- if or (kindIs "float64" .) (kindIs "int" .) (kindIs "int64" .) }}
+{{- printf "PT%dS" (int64 .) }}
+{{- else if regexMatch "^[0-9]+$" (toString .) }}
+{{- printf "PT%sS" (toString .) }}
+{{- else }}
+{{- . }}
+{{- end }}
+{{- end }}
+
+{{/*
 Non-secret SOUNDINGS_* settings as a YAML map (the ConfigMap's data, and inline env
 for the pre-install migration Job, which runs before the ConfigMap exists).
 */}}
@@ -214,10 +228,15 @@ SOUNDINGS_TRUSTED_PROXY_HOPS: {{ .Values.trustedProxyHops | quote }}
 SOUNDINGS_LOG_LEVEL: {{ .Values.logLevel | quote }}
 SOUNDINGS_DATABASE_URL: {{ include "soundings.databaseUrl" . | quote }}
 SOUNDINGS_METRICS_PORT: {{ .Values.metrics.port | quote }}
-SOUNDINGS_SESSION_IDLE_TIMEOUT: {{ .Values.sessions.idleTimeout | quote }}
-SOUNDINGS_SESSION_MAX_AGE: {{ .Values.sessions.maxAge | quote }}
+SOUNDINGS_SESSION_IDLE_TIMEOUT: {{ include "soundings.duration" .Values.sessions.idleTimeout | quote }}
+SOUNDINGS_SESSION_MAX_AGE: {{ include "soundings.duration" .Values.sessions.maxAge | quote }}
 SOUNDINGS_WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
-SOUNDINGS_FEATURE_PUBLIC_SUBMISSION: {{ .Values.features.publicSubmission | quote }}
+SOUNDINGS_PUBLIC_SUBMISSION_ENABLED: {{ .Values.features.publicSubmission | quote }}
+SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP: {{ int .Values.publicSubmission.perIpPerHour | quote }}
+SOUNDINGS_PUBLIC_SUBMISSIONS_PER_PROJECT: {{ int .Values.publicSubmission.perProjectPerHour | quote }}
+SOUNDINGS_ALTCHA_COST: {{ int .Values.publicSubmission.altcha.cost | quote }}
+SOUNDINGS_ALTCHA_EXPIRY: {{ include "soundings.duration" .Values.publicSubmission.altcha.expiry | quote }}
+SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES: {{ int .Values.branding.maxUploadBytes | quote }}
 SOUNDINGS_FEATURE_AI: {{ .Values.features.ai | quote }}
 SOUNDINGS_BREAK_GLASS_ENABLED: {{ .Values.breakGlass.enabled | quote }}
 {{- with .Values.otel.endpoint }}

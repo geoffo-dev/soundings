@@ -56,12 +56,22 @@ if [ "$SMTP" = "1" ]; then
   values_label="$values_label + dev/k3s-smtp-values.yaml"
 fi
 
+# An edge rate limit for the public form's API (dev/k3s/public-ratelimit.yaml), attached
+# through the chart's second Ingress, when Traefik's CRDs are there (k3s ships them).
+edge_args=()
+if kubectl get crd middlewares.traefik.io >/dev/null 2>&1; then
+  kubectl -n "$NAMESPACE" apply -f - <"$REPO_ROOT/dev/k3s/public-ratelimit.yaml" >/dev/null
+  edge_args=(--set-string "ingress.publicApi.annotations.traefik\\.ingress\\.kubernetes\\.io/router\\.middlewares=$NAMESPACE-public-ratelimit@kubernetescrd")
+  values_label="$values_label + Traefik rate limit on /api/v1/public"
+fi
+
 log "helm upgrade --install $RELEASE (namespace $NAMESPACE, values $values_label)"
 helm upgrade --install "$RELEASE" deploy/helm \
   --namespace "$NAMESPACE" \
   --values "$VALUES" \
   ${sso_args[@]+"${sso_args[@]}"} \
   ${smtp_args[@]+"${smtp_args[@]}"} \
+  ${edge_args[@]+"${edge_args[@]}"} \
   --set "baseUrls[0]=http://localhost:$K3S_HTTP_PORT" \
   --wait --timeout "$TIMEOUT" \
   "$@"

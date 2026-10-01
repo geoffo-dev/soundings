@@ -20,6 +20,7 @@ from app.notifications.excerpt import shorten
 
 __all__ = [
     "DEFAULT_BRANDING",
+    "SYSTEM_FONT_STACK",
     "TYPE_LABELS",
     "Branding",
     "Button",
@@ -49,29 +50,56 @@ TYPE_LABELS: Final[Mapping[NotificationType, str]] = {
 """"Unsubscribe from <label>" in an email's footer."""
 
 
+SYSTEM_FONT_STACK: Final = (
+    "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif"
+)
+_FONT_STACK: Final = re.compile(r"[A-Za-z0-9 ,'-]{1,200}")
+"""Font family names, commas, spaces and single quotes only: nothing that can end the
+inline ``font-family`` declaration (``;``, ``:``, ``(``, ``"``, ``<``...)."""
+
+
 @dataclass(frozen=True, slots=True)
 class Branding:
-    """The product name, colours and footer line of every email. Phase 4's branding
-    profiles replace :data:`DEFAULT_BRANDING` (accent text must keep >= 4.5:1 contrast on
-    the accent)."""
+    """The product name, colours, font and footer of every email: the effective
+    branding (``app.services.branding``: global for staff, the project's for public
+    submitters). Accent text must keep >= 4.5:1 contrast on the accent, and ``link``
+    on the white card."""
 
     product_name: str = "Soundings"
     accent: str = "#1d5fa8"
     accent_text: str = "#ffffff"
     footer_text: str | None = None
+    link: str | None = None
+    """Links in the body; ``None``: the accent."""
+    font_stack: str = SYSTEM_FONT_STACK
 
     def __post_init__(self) -> None:
         # Colours go into inline CSS and bgcolor attributes, where HTML escaping
         # doesn't stop "#fff;background:url(...)": only hex colours are accepted.
-        for colour in (self.accent, self.accent_text):
+        for colour in (self.accent, self.accent_text, self.link or self.accent):
             if not _HEX_COLOUR.fullmatch(colour):
                 raise ValueError(
                     f"branding colours must be a hex colour such as #1d5fa8: {colour!r}"
                 )
+        if not _FONT_STACK.fullmatch(self.font_stack):
+            raise ValueError(f"not a plain font stack: {self.font_stack!r}")
 
     @property
     def initial(self) -> str:
         return (self.product_name.strip()[:1] or "S").upper()
+
+    @property
+    def link_colour(self) -> str:
+        return self.link or self.accent
+
+    @property
+    def footer_lines(self) -> list[str]:
+        """The footer's lines (up to 5, as saved), or the default line."""
+        if self.footer_text:
+            lines = [line for line in self.footer_text.splitlines() if line.strip()]
+            if lines:
+                return lines
+        return [f"Sent by {self.product_name}."]
 
 
 DEFAULT_BRANDING: Final = Branding()

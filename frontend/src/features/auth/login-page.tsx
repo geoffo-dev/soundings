@@ -9,6 +9,7 @@ import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { useAppBranding } from '@/lib/branding'
 import { cn } from '@/lib/utils'
 
 import { BreakGlassForm } from './break-glass-form'
@@ -32,6 +33,7 @@ export interface LoginPageProps {
 export function LoginPage({ next, error, signed_out, expired }: LoginPageProps) {
   const config = useAuthConfig()
   const message = loginMessage({ error, signed_out, expired })
+  const appName = useAppBranding().app_name
 
   return (
     <div className="flex min-h-dvh flex-col items-center bg-background px-4 py-10 sm:justify-center sm:py-16">
@@ -39,7 +41,7 @@ export function LoginPage({ next, error, signed_out, expired }: LoginPageProps) 
         <div className="flex flex-col items-center gap-3 text-center">
           <LogoMark className="size-10" />
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold text-primary">Sign in to Soundings</h1>
+            <h1 className="text-2xl font-semibold text-primary">Sign in to {appName}</h1>
             <p className="text-base text-muted">Share ideas, own them, and score them fairly.</p>
           </div>
         </div>

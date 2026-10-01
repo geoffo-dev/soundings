@@ -84,6 +84,10 @@ const AUDIT_ACTIONS: AuditAction[] = [
   'evaluation.reopen',
   'email.test_send',
   'email.retry',
+  'submission.approve',
+  'submission.reject',
+  'submission.erase',
+  'branding.update',
 ]
 
 function requirePlatformAdmin(ctx: RouteContext): void {

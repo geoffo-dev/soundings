@@ -29,3 +29,12 @@ smtp:
   username: soundings
   password: not-a-real-password
   from: ideas@example.com
+
+# No public form on this instance: every public route answers 404, and the second
+# Ingress is never rendered (HTTPRoute here anyway).
+features:
+  publicSubmission: false
+sessions:
+  # Seconds work too (the chart passes PT3600S to the app).
+  idleTimeout: 3600
+  maxAge: 86400

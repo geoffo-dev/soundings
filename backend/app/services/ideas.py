@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Final
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,7 @@ from app.models.enums import EvaluationStatus, EvaluatorState, IdeaStatus, Proje
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator, IdeaTag, IdeaWatcher
 from app.models.project import Project, Tag
+from app.models.public import PublicSubmission
 from app.models.user import User
 from app.schemas.ideas import (
     AggregateScore,
@@ -242,6 +243,10 @@ async def idea_detail(db: AsyncSession, principal: Principal, loaded: LoadedIdea
         evaluation_open=resource.idea is not None and resource.idea.evaluation_open,
         aggregate=await _aggregate(db, idea) if visible else None,
         watching=watching is not None,
+        held_for=idea.held_for,
+        via_public_form=bool(
+            await db.scalar(select(exists().where(PublicSubmission.idea_id == idea.id)))
+        ),
     )
 
 

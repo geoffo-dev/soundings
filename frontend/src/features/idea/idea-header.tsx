@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { PublicSubmitterLine } from '@/features/moderation/idea-submission'
 import { cn } from '@/lib/utils'
 
 import { copyIdeaLink } from './idea-commands'
@@ -40,6 +41,7 @@ export function IdeaHeader({ primary }: { primary: ReactNode }) {
             <RelativeTime date={idea.created_at} tooltip={false} />
           </span>
         )}
+        {!idea.submitted_by && <PublicSubmitterLine idea={idea} ideaKey={ideaKey} />}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <VoteButton />
           <WatchButton />

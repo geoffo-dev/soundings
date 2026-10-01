@@ -69,6 +69,11 @@ class AuditAction(StrEnum):
     # Email (Admin settings -> Email; contract-phase3 section 3.10)
     EMAIL_TEST_SEND = "email.test_send"
     EMAIL_RETRY = "email.retry"
+    # Public submissions and branding (contract-phase4 section 3.14)
+    SUBMISSION_APPROVE = "submission.approve"
+    SUBMISSION_REJECT = "submission.reject"
+    SUBMISSION_ERASE = "submission.erase"
+    BRANDING_UPDATE = "branding.update"
 
 
 class AuditEntry(ResponseModel):

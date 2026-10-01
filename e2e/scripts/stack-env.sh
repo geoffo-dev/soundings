@@ -37,9 +37,16 @@ MAILPIT_IMAGE="${MAILPIT_IMAGE:-axllent/mailpit:latest}"
 # The instance time zone (digests, reminders, dates in emails): the browser's, as set
 # in playwright.config.ts.
 E2E_TIMEZONE="${E2E_TIMEZONE:-Europe/London}"
+# Public form (Phase 4): every spec submits from 127.0.0.1, and the API keeps its
+# per-address count (per hour, in memory) across runs that reuse it, so the stack
+# allows E2E_PUBLIC_PER_IP submissions per hour (the app's default is 10; a spec that
+# tests the limit can restart the stack with a low value). E2E_ALTCHA_COST, when set,
+# overrides the proof-of-work cost (the app's default, 5000, when unset).
+E2E_PUBLIC_PER_IP="${E2E_PUBLIC_PER_IP:-1000}"
+E2E_ALTCHA_COST="${E2E_ALTCHA_COST:-}"
 # What the running API and worker were started with (start-stack.sh restarts them when
 # this changes).
-stack_mode="sso=$E2E_SSO kc=$E2E_KC_PORT break_glass=$E2E_BREAK_GLASS smtp=$E2E_SMTP mailpit=$E2E_MAILPIT_SMTP_PORT tz=$E2E_TIMEZONE"
+stack_mode="sso=$E2E_SSO kc=$E2E_KC_PORT break_glass=$E2E_BREAK_GLASS smtp=$E2E_SMTP mailpit=$E2E_MAILPIT_SMTP_PORT tz=$E2E_TIMEZONE public_per_ip=$E2E_PUBLIC_PER_IP altcha_cost=$E2E_ALTCHA_COST"
 
 # Every `soundings` command below talks to this database. Development mode: the dev
 # login works and `seed` is allowed.
@@ -76,6 +83,9 @@ seed_demo_data() {
 app_env() {
   export SOUNDINGS_BASE_URLS="$E2E_URL,http://127.0.0.1:$E2E_PORT"
   export SOUNDINGS_TIMEZONE="$E2E_TIMEZONE"
+  export SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP="$E2E_PUBLIC_PER_IP"
+  unset SOUNDINGS_ALTCHA_COST
+  if [ -n "$E2E_ALTCHA_COST" ]; then export SOUNDINGS_ALTCHA_COST="$E2E_ALTCHA_COST"; fi
   export SOUNDINGS_BREAK_GLASS_ENABLED=false
   if [ "$E2E_BREAK_GLASS" = "1" ]; then
     export SOUNDINGS_BREAK_GLASS_ENABLED=true

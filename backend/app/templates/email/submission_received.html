@@ -1,6 +1,8 @@
 {% extends "_layout.html" %}
 {% block content %}
-<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Thanks, we received your idea</h1>
-<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Your idea <strong>{{ title }}</strong> was submitted to {{ project }}{% if key %} as {{ key }}{% endif %}. The team reviews new ideas regularly.</p>
-{% if tracking_url %}<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Keep this email: its link shows where your idea stands.</p>{% endif %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Confirm your idea for {{ project }}</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Someone sent an idea to {{ project }} and gave this email address.</p>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{% if held_until_confirmed %}Confirm your address and the team gets your idea{% if wants_updates %}, and we'll email you when its status changes{% endif %}.{% elif wants_updates %}Confirm your address and we'll email you when the idea's status changes.{% else %}Confirm your address so the team knows it's really yours.{% endif %} The link works for 3 days.</p>
+{% if tracking_url %}<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Follow the idea with your private link (keep it to yourself): <a class="sx-link" href="{{ tracking_url }}" style="color:{{ c.link }};">see where it stands</a>.</p>{% endif %}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">If this wasn't you, ignore this email: nothing more will be sent unless you confirm.</p>
 {% endblock %}

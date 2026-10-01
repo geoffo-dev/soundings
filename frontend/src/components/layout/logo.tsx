@@ -1,10 +1,25 @@
+import { useAppBranding } from '@/lib/branding'
 import { cn } from '@/lib/utils'
 
 /**
  * Soundings mark: a sounding line — depth readings narrowing as they go down.
- * Coloured with --brand-accent so runtime branding recolours it.
+ * Coloured with --brand-accent so runtime branding recolours it. With an
+ * uploaded logo (contract-phase4 §3.10) the image takes its place, always
+ * through `<img src>` (never inline SVG: an image can't run script).
  */
-export function LogoMark({ className }: { className?: string }) {
+export function LogoMark({ className, src }: { className?: string; src?: string | null }) {
+  const branding = useAppBranding()
+  const logo = src === undefined ? branding.logo_url : src
+  if (logo) {
+    return (
+      <img
+        src={logo}
+        alt=""
+        aria-hidden="true"
+        className={cn('h-6 w-auto max-w-24 shrink-0 rounded-sm object-contain', className)}
+      />
+    )
+  }
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true" className={cn('size-6 shrink-0', className)}>
       <rect width="32" height="32" rx="8" fill="var(--brand-accent)" />
@@ -18,11 +33,15 @@ export function LogoMark({ className }: { className?: string }) {
   )
 }
 
-export function Logo({ name = 'Soundings', className }: { name?: string; className?: string }) {
+/** The mark and the app name (the instance's branding unless a name is given). */
+export function Logo({ name, className }: { name?: string; className?: string }) {
+  const branding = useAppBranding()
   return (
-    <span className={cn('inline-flex items-center gap-2', className)}>
+    <span className={cn('inline-flex min-w-0 items-center gap-2', className)}>
       <LogoMark />
-      <span className="text-base font-semibold tracking-tight text-primary">{name}</span>
+      <span className="truncate text-base font-semibold tracking-tight text-primary">
+        {name ?? branding.app_name}
+      </span>
     </span>
   )
 }

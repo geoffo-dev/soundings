@@ -5,6 +5,7 @@ import { AppCommandsProvider } from '@/components/layout/app-commands'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/toaster'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { RuntimeBranding } from '@/features/branding/runtime-branding'
 
 export interface RouterContext {
   queryClient: QueryClient
@@ -20,6 +21,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <RuntimeBranding />
         <TooltipProvider>
           <HeadContent />
           <AppCommandsProvider>

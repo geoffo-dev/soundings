@@ -3,9 +3,12 @@
 Twelve people (``alice`` is the platform admin; alice, bob and carol have the
 ``employee_no`` external IDs of the dev Keycloak realm), three projects, five groups
 mapped to the realm's groups and granted project roles, and 45 ideas in every status,
-with owners, blind evaluations, comments and votes spread over the last few weeks. The
-content is in :mod:`app.seed.content`; :mod:`app.seed.runner` plays it through the
-application services.
+with owners, blind evaluations, comments and votes spread over the last few weeks.
+Phase 4 adds branding (a global email footer; Customer Innovation's colours, font, logo
+and favicon), Customer Innovation's public form, and three ideas sent through it (one
+approved, two waiting for review). The content is in :mod:`app.seed.content` and
+:mod:`app.seed.public`; :mod:`app.seed.runner` plays it through the application
+services.
 """
 
 from __future__ import annotations

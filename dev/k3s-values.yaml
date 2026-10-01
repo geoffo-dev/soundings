@@ -20,6 +20,12 @@ ingress:
   enabled: true
   className: traefik
 
+# The smoke tests (scripts/public-smoke.sh) and demos send the public form from one
+# address; the app's default is 10 an hour. (scripts/k3s-install.sh also puts a Traefik
+# rate limit in front of /api/v1/public: dev/k3s/public-ratelimit.yaml.)
+publicSubmission:
+  perIpPerHour: 100
+
 postgresql:
   persistence:
     size: 1Gi

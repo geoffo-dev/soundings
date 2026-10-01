@@ -3,10 +3,20 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   applyBranding,
   brandingStylesheet,
+  brandPreviewProperties,
+  brandTitle,
+  currentBranding,
   DEFAULT_BRANDING,
+  DEFAULT_EFFECTIVE_BRANDING,
   deriveBrandTokens,
+  readableOn,
   resetBranding,
+  resetRuntimeBranding,
+  restoreRememberedBranding,
+  sanitizeEffectiveBranding,
   sanitizeFontFamily,
+  setBrandingOverride,
+  setGlobalBranding,
   THEME_SURFACES,
 } from '@/lib/branding'
 import { contrastHex } from '@/lib/color'
@@ -24,7 +34,10 @@ const BRANDS = [
   '#10b981',
 ]
 
-afterEach(() => resetBranding())
+afterEach(() => {
+  resetRuntimeBranding()
+  resetBranding()
+})
 
 describe('deriveBrandTokens', () => {
   for (const brand of BRANDS) {
@@ -101,5 +114,107 @@ describe('tokens.css', () => {
       }
     }
     expect(tokensCss).toContain(`--brand-primary: ${DEFAULT_BRANDING.primary};`)
+  })
+})
+
+const ASSET = '/api/v1/branding/assets/0f0f0f0f-0000-4000-8000-000000000001'
+const ACME = {
+  app_name: 'Acme Ideas',
+  primary_color: '#b42318',
+  accent_color: '#2e7d4f',
+  font: 'ibm_plex_sans' as const,
+  logo_url: ASSET,
+  favicon_url: ASSET,
+}
+
+describe('runtime branding (GET /branding)', () => {
+  it('checks every field before it reaches the page', () => {
+    expect(
+      sanitizeEffectiveBranding({
+        app_name: 'Acme\u202e',
+        primary_color: 'red; } body { display: none',
+        accent_color: 'url(javascript:alert(1))',
+        font: 'Comic Sans"; } *{',
+        logo_url: 'https://evil.example/x.svg',
+        favicon_url: 'javascript:alert(1)',
+      }),
+    ).toEqual(DEFAULT_EFFECTIVE_BRANDING)
+    expect(sanitizeEffectiveBranding(ACME)).toEqual(ACME)
+    expect(sanitizeEffectiveBranding(null)).toEqual(DEFAULT_EFFECTIVE_BRANDING)
+  })
+
+  it('applies colours, font, favicon and the app name in titles', () => {
+    document.head.innerHTML = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+    document.title = 'My work · Soundings'
+    setGlobalBranding(ACME)
+    const css = document.getElementById('soundings-branding')?.textContent ?? ''
+    expect(css).toContain('--brand-primary: #b42318')
+    expect(css).toContain('--brand-accent: #2e7d4f')
+    expect(css).toContain('--brand-font: "IBM Plex Sans"')
+    expect(document.querySelector('link[rel="icon"]')?.getAttribute('href')).toBe(ASSET)
+    expect(document.title).toBe('My work · Acme Ideas')
+    expect(currentBranding().app_name).toBe('Acme Ideas')
+    // Remembered for the next load (no flash of the defaults).
+    expect(JSON.parse(localStorage.getItem('soundings-branding') ?? '{}')).toEqual(ACME)
+  })
+
+  it('lets a public page show its project’s branding, then restores the global one', () => {
+    setGlobalBranding(ACME)
+    setBrandingOverride({ ...ACME, app_name: 'Green Ideas', primary_color: '#2e7d4f' })
+    expect(currentBranding().app_name).toBe('Green Ideas')
+    expect(document.getElementById('soundings-branding')?.textContent).toContain(
+      '--brand-primary: #2e7d4f',
+    )
+    setBrandingOverride(null)
+    expect(currentBranding().app_name).toBe('Acme Ideas')
+  })
+
+  it('restores only valid remembered branding', () => {
+    localStorage.setItem(
+      'soundings-branding',
+      JSON.stringify({ ...ACME, primary_color: '#000; } html { display:none' }),
+    )
+    restoreRememberedBranding()
+    expect(currentBranding().primary_color).toBe(DEFAULT_EFFECTIVE_BRANDING.primary_color)
+    expect(currentBranding().app_name).toBe('Acme Ideas')
+    localStorage.setItem('soundings-branding', '{not json')
+    expect(() => restoreRememberedBranding()).not.toThrow()
+  })
+
+  it('goes back to the defaults (no custom stylesheet)', () => {
+    setGlobalBranding(ACME)
+    setGlobalBranding(DEFAULT_EFFECTIVE_BRANDING)
+    expect(document.getElementById('soundings-branding')).toBeNull()
+  })
+})
+
+describe('brandTitle', () => {
+  it('replaces the product name at the end of a title', () => {
+    expect(brandTitle('Soundings', 'Acme')).toBe('Acme')
+    expect(brandTitle('CUST-12 · Soundings', 'Acme')).toBe('CUST-12 · Acme')
+    expect(brandTitle('Soundings research', 'Acme')).toBe('Soundings research')
+  })
+})
+
+describe('brandPreviewProperties', () => {
+  it('sets only derived hex tokens and a bundled family', () => {
+    const props = brandPreviewProperties(
+      { primary_color: 'red;}', accent_color: '#2e7d4f', font: 'source_serif_4' },
+      'dark',
+    )
+    expect(props['--brand-primary']).toBe(DEFAULT_BRANDING.primary)
+    expect(props['--brand-accent']).toBe('#2e7d4f')
+    expect(props['--font-sans']).toMatch(/^"Source Serif 4", /)
+    for (const [name, value] of Object.entries(props)) {
+      if (name.includes('font')) continue
+      expect(value).toMatch(/^#[0-9a-f]{6}$/)
+    }
+  })
+})
+
+describe('readableOn', () => {
+  it('picks white or ink text, whichever reads better', () => {
+    expect(readableOn('#1d5fa8').color).toBe('#ffffff')
+    expect(readableOn('#ffeb3b').color).not.toBe('#ffffff')
   })
 })

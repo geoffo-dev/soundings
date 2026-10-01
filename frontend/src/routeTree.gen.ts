@@ -12,7 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as TrackRouteImport } from './routes/track'
 import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
+import { Route as VerifyRouteImport } from './routes/verify'
+import { Route as SlugSubmitRouteImport } from './routes/$slug.submit'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
@@ -23,8 +26,10 @@ import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings.ind
 import { Route as AppSettingsAdminRouteImport } from './routes/_app/settings._admin'
 import { Route as AppSettingsNotificationsRouteImport } from './routes/_app/settings.notifications'
 import { Route as AppPSlugIndexRouteImport } from './routes/_app/p.$slug.index'
+import { Route as AppPSlugReviewRouteImport } from './routes/_app/p.$slug.review'
 import { Route as AppPSlugSettingsRouteImport } from './routes/_app/p.$slug.settings'
 import { Route as AppSettingsAdminAuditRouteImport } from './routes/_app/settings._admin.audit'
+import { Route as AppSettingsAdminBrandingRouteImport } from './routes/_app/settings._admin.branding'
 import { Route as AppSettingsAdminEmailRouteImport } from './routes/_app/settings._admin.email'
 import { Route as AppSettingsAdminSsoRouteImport } from './routes/_app/settings._admin.sso'
 import { Route as AppSettingsAdminUsersRouteImport } from './routes/_app/settings._admin.users'
@@ -46,9 +51,24 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrackRoute = TrackRouteImport.update({
+  id: '/track',
+  path: '/track',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
   path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyRoute = VerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SlugSubmitRoute = SlugSubmitRouteImport.update({
+  id: '/$slug/submit',
+  path: '/$slug/submit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -101,6 +121,11 @@ const AppPSlugIndexRoute = AppPSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppPSlugRoute,
 } as any)
+const AppPSlugReviewRoute = AppPSlugReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AppPSlugRoute,
+} as any)
 const AppPSlugSettingsRoute = AppPSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -111,6 +136,12 @@ const AppSettingsAdminAuditRoute = AppSettingsAdminAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppSettingsAdminRoute,
 } as any)
+const AppSettingsAdminBrandingRoute =
+  AppSettingsAdminBrandingRouteImport.update({
+    id: '/branding',
+    path: '/branding',
+    getParentRoute: () => AppSettingsAdminRoute,
+  } as any)
 const AppSettingsAdminEmailRoute = AppSettingsAdminEmailRouteImport.update({
   id: '/email',
   path: '/email',
@@ -149,7 +180,10 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/track': typeof TrackRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/verify': typeof VerifyRoute
+  '/$slug/submit': typeof SlugSubmitRoute
   '/$': typeof AppSplatRoute
   '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRouteWithChildren
@@ -157,8 +191,10 @@ export interface FileRoutesByFullPath {
   '/p/$slug': typeof AppPSlugRouteWithChildren
   '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/p/$slug/review': typeof AppPSlugReviewRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
+  '/settings/branding': typeof AppSettingsAdminBrandingRoute
   '/settings/email': typeof AppSettingsAdminEmailRoute
   '/settings/sso': typeof AppSettingsAdminSsoRoute
   '/settings/users': typeof AppSettingsAdminUsersRouteWithChildren
@@ -170,15 +206,20 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/track': typeof TrackRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/verify': typeof VerifyRoute
+  '/$slug/submit': typeof SlugSubmitRoute
   '/$': typeof AppSplatRoute
   '/notifications': typeof AppNotificationsRoute
   '/': typeof AppIndexRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/settings': typeof AppSettingsIndexRoute
   '/settings/notifications': typeof AppSettingsNotificationsRoute
+  '/p/$slug/review': typeof AppPSlugReviewRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
+  '/settings/branding': typeof AppSettingsAdminBrandingRoute
   '/settings/email': typeof AppSettingsAdminEmailRoute
   '/settings/sso': typeof AppSettingsAdminSsoRoute
   '/settings/users': typeof AppSettingsAdminUsersRouteWithChildren
@@ -192,7 +233,10 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/track': typeof TrackRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/verify': typeof VerifyRoute
+  '/$slug/submit': typeof SlugSubmitRoute
   '/_app/$': typeof AppSplatRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
@@ -202,8 +246,10 @@ export interface FileRoutesById {
   '/_app/settings/_admin': typeof AppSettingsAdminRouteWithChildren
   '/_app/settings/notifications': typeof AppSettingsNotificationsRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/p/$slug/review': typeof AppPSlugReviewRoute
   '/_app/p/$slug/settings': typeof AppPSlugSettingsRoute
   '/_app/settings/_admin/audit': typeof AppSettingsAdminAuditRoute
+  '/_app/settings/_admin/branding': typeof AppSettingsAdminBrandingRoute
   '/_app/settings/_admin/email': typeof AppSettingsAdminEmailRoute
   '/_app/settings/_admin/sso': typeof AppSettingsAdminSsoRoute
   '/_app/settings/_admin/users': typeof AppSettingsAdminUsersRouteWithChildren
@@ -218,7 +264,10 @@ export interface FileRouteTypes {
     | '/'
     | '/design'
     | '/login'
+    | '/track'
     | '/unsubscribe'
+    | '/verify'
+    | '/$slug/submit'
     | '/$'
     | '/notifications'
     | '/settings'
@@ -226,8 +275,10 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/settings/notifications'
     | '/settings/'
+    | '/p/$slug/review'
     | '/p/$slug/settings'
     | '/settings/audit'
+    | '/settings/branding'
     | '/settings/email'
     | '/settings/sso'
     | '/settings/users'
@@ -239,15 +290,20 @@ export interface FileRouteTypes {
   to:
     | '/design'
     | '/login'
+    | '/track'
     | '/unsubscribe'
+    | '/verify'
+    | '/$slug/submit'
     | '/$'
     | '/notifications'
     | '/'
     | '/ideas/$ideaKey'
     | '/settings'
     | '/settings/notifications'
+    | '/p/$slug/review'
     | '/p/$slug/settings'
     | '/settings/audit'
+    | '/settings/branding'
     | '/settings/email'
     | '/settings/sso'
     | '/settings/users'
@@ -260,7 +316,10 @@ export interface FileRouteTypes {
     | '/_app'
     | '/design'
     | '/login'
+    | '/track'
     | '/unsubscribe'
+    | '/verify'
+    | '/$slug/submit'
     | '/_app/$'
     | '/_app/notifications'
     | '/_app/settings'
@@ -270,8 +329,10 @@ export interface FileRouteTypes {
     | '/_app/settings/_admin'
     | '/_app/settings/notifications'
     | '/_app/settings/'
+    | '/_app/p/$slug/review'
     | '/_app/p/$slug/settings'
     | '/_app/settings/_admin/audit'
+    | '/_app/settings/_admin/branding'
     | '/_app/settings/_admin/email'
     | '/_app/settings/_admin/sso'
     | '/_app/settings/_admin/users'
@@ -285,7 +346,10 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   DesignRoute: typeof DesignRoute
   LoginRoute: typeof LoginRoute
+  TrackRoute: typeof TrackRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
+  VerifyRoute: typeof VerifyRoute
+  SlugSubmitRoute: typeof SlugSubmitRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -311,11 +375,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/track': {
+      id: '/track'
+      path: '/track'
+      fullPath: '/track'
+      preLoaderRoute: typeof TrackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/unsubscribe': {
       id: '/unsubscribe'
       path: '/unsubscribe'
       fullPath: '/unsubscribe'
       preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify': {
+      id: '/verify'
+      path: '/verify'
+      fullPath: '/verify'
+      preLoaderRoute: typeof VerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$slug/submit': {
+      id: '/$slug/submit'
+      path: '/$slug/submit'
+      fullPath: '/$slug/submit'
+      preLoaderRoute: typeof SlugSubmitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -388,6 +473,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPSlugIndexRouteImport
       parentRoute: typeof AppPSlugRoute
     }
+    '/_app/p/$slug/review': {
+      id: '/_app/p/$slug/review'
+      path: '/review'
+      fullPath: '/p/$slug/review'
+      preLoaderRoute: typeof AppPSlugReviewRouteImport
+      parentRoute: typeof AppPSlugRoute
+    }
     '/_app/p/$slug/settings': {
       id: '/_app/p/$slug/settings'
       path: '/settings'
@@ -400,6 +492,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/settings/audit'
       preLoaderRoute: typeof AppSettingsAdminAuditRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/branding': {
+      id: '/_app/settings/_admin/branding'
+      path: '/branding'
+      fullPath: '/settings/branding'
+      preLoaderRoute: typeof AppSettingsAdminBrandingRouteImport
       parentRoute: typeof AppSettingsAdminRoute
     }
     '/_app/settings/_admin/email': {
@@ -462,6 +561,7 @@ const AppSettingsAdminUsersRouteWithChildren =
 
 interface AppSettingsAdminRouteChildren {
   AppSettingsAdminAuditRoute: typeof AppSettingsAdminAuditRoute
+  AppSettingsAdminBrandingRoute: typeof AppSettingsAdminBrandingRoute
   AppSettingsAdminEmailRoute: typeof AppSettingsAdminEmailRoute
   AppSettingsAdminSsoRoute: typeof AppSettingsAdminSsoRoute
   AppSettingsAdminUsersRoute: typeof AppSettingsAdminUsersRouteWithChildren
@@ -471,6 +571,7 @@ interface AppSettingsAdminRouteChildren {
 
 const AppSettingsAdminRouteChildren: AppSettingsAdminRouteChildren = {
   AppSettingsAdminAuditRoute: AppSettingsAdminAuditRoute,
+  AppSettingsAdminBrandingRoute: AppSettingsAdminBrandingRoute,
   AppSettingsAdminEmailRoute: AppSettingsAdminEmailRoute,
   AppSettingsAdminSsoRoute: AppSettingsAdminSsoRoute,
   AppSettingsAdminUsersRoute: AppSettingsAdminUsersRouteWithChildren,
@@ -498,11 +599,13 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 )
 
 interface AppPSlugRouteChildren {
+  AppPSlugReviewRoute: typeof AppPSlugReviewRoute
   AppPSlugSettingsRoute: typeof AppPSlugSettingsRoute
   AppPSlugIndexRoute: typeof AppPSlugIndexRoute
 }
 
 const AppPSlugRouteChildren: AppPSlugRouteChildren = {
+  AppPSlugReviewRoute: AppPSlugReviewRoute,
   AppPSlugSettingsRoute: AppPSlugSettingsRoute,
   AppPSlugIndexRoute: AppPSlugIndexRoute,
 }
@@ -535,7 +638,10 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   DesignRoute: DesignRoute,
   LoginRoute: LoginRoute,
+  TrackRoute: TrackRoute,
   UnsubscribeRoute: UnsubscribeRoute,
+  VerifyRoute: VerifyRoute,
+  SlugSubmitRoute: SlugSubmitRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

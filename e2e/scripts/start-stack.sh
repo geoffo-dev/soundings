@@ -29,7 +29,10 @@
 # Idempotent: if the app already answers on $E2E_PORT in the same mode it only reseeds
 # (fresh data per run), empties Mailpit and starts the worker if it isn't running; in
 # another mode (E2E_SSO, E2E_KC_PORT, E2E_BREAK_GLASS, E2E_SMTP, E2E_MAILPIT_SMTP_PORT,
-# E2E_TIMEZONE) it restarts the API and the worker. E2E_SKIP_BUILD=1 reuses the last SPA
+# E2E_TIMEZONE, E2E_PUBLIC_PER_IP, E2E_ALTCHA_COST) it restarts the API and the worker.
+# Phase 4 needs nothing more: the public form (/{slug}/submit, /track, /verify) is the
+# SPA served by the same API, and PDF export renders in a child of the API process
+# (WeasyPrint with the host's Pango, as in backend tests). E2E_SKIP_BUILD=1 reuses the last SPA
 # build. Stop everything: stop-stack.sh.
 #
 #   E2E_PORT      app port (default 8100)         E2E_PG_PORT   Postgres port (55433)
@@ -39,6 +42,8 @@
 #                 (default 1: admin / e2e-break-glass-password)
 #   E2E_SMTP      0: no SMTP, no Mailpit          E2E_MAILPIT_PORT  inbox + API (8125)
 #   E2E_MAILPIT_SMTP_PORT  SMTP (1125)            E2E_TIMEZONE  instance zone (Europe/London)
+#   E2E_PUBLIC_PER_IP  public submissions per address and hour (1000; the app's is 10)
+#   E2E_ALTCHA_COST    ALTCHA proof-of-work cost (unset: the app's default, 5000)
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

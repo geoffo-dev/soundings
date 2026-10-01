@@ -72,7 +72,7 @@ What makes it work:
 
 `make seed` (or `soundings seed` in `backend/`, or the image's `seed` command) loads a
 story told through the real services, backdated over the last two months: 12 people,
-three projects and 45 ideas in every status, with owners, blind evaluations (submitted,
+three projects and 48 ideas in every status, with owners, blind evaluations (submitted,
 drafts, not started), due dates (some overdue), comments, votes and tags. It is the same
 every time (people keep their ids), refuses `SOUNDINGS_ENVIRONMENT=production` unless
 `--force`, and does nothing once the database has projects: `make seed RESET=1`
@@ -134,9 +134,20 @@ make demo-down         # remove the containers and their data
 ```
 
 `make demo` re-run after a change rebuilds the image and restarts the app on it, keeping
-the data (`DEMO_RESET=1` reseeds). No Debian mirror reachable (e.g. this sandbox)?
-`make demo IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export then fails).
-`make e2e` runs the Playwright suite in `e2e/` against it.
+the data (`DEMO_RESET=1` reseeds). The app and worker containers run as in Kubernetes:
+read-only root filesystem with a writable `/tmp`, no capabilities. The image is Ubuntu
+24.04 with its Python 3.12 and the Pango stack, so PDF export works in it (ADR 0011);
+an internal Ubuntu mirror goes in `IMAGE_BUILD_ARGS="--build-arg
+UBUNTU_MIRROR=http://mirror.internal/ubuntu"`. `make e2e` runs the Playwright suite in
+`e2e/` against it.
+
+The public form, branding and proposal export end to end (Customer Innovation's form
+is on and moderated in the demo data): `make public-smoke` (default
+http://localhost:8000; `PUBLIC_BASE_URL=` for another) sends an anonymous idea with a
+solved ALTCHA, approves and shortlists it as Alice, writes and exports its proposal as
+PDF and Markdown, and deletes it again. It solves the ALTCHA with `backend/`'s Python
+(`ALTCHA_PYTHON=` for another, e.g. `docker exec -i soundings-demo-app python`).
+`DEMO_PUBLIC_PER_IP=` raises the form's per-address limit (10 an hour) for `make demo`.
 
 ## Keycloak realm `soundings`
 
@@ -290,5 +301,9 @@ scripts/k3s-mailpit.sh scale 0|1    # the SMTP outage by hand; `down` removes it
 
 `export KUBECONFIG=$PWD/.k3s/soundings-k3s/kubeconfig` for your own kubectl, or use
 `docker exec soundings-k3s kubectl ...`. Scripts and their settings: `scripts/k3s-*.sh`.
-No Debian mirror reachable (e.g. a locked-down sandbox)? Build without the PDF libraries:
-`make image IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export then fails).
+`make k3s-install` also puts a Traefik rate limit in front of the public form's API
+(`dev/k3s/public-ratelimit.yaml`, through the chart's `ingress.publicApi.annotations`),
+and `make k3s-smoke` runs `scripts/public-smoke.sh` through the ingress (PDF export in
+the api pod) and checks that limit. The kubelet's disk eviction thresholds are 1 GiB
+(`K3S_EVICTION_HARD`), not its percentage defaults, which evict every pod on a large
+shared disk with gigabytes still free.

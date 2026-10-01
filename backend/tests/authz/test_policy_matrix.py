@@ -20,7 +20,13 @@ import pytest
 
 from app.authz import POLICY, Decision, IdeaFacts, ProjectFacts, Resource, Rule, authorize
 from app.domain.principal import Principal
-from app.models.enums import EvaluatorState, IdeaStatus, ProjectRole, ProjectVisibility
+from app.models.enums import (
+    EvaluatorState,
+    HoldReason,
+    IdeaStatus,
+    ProjectRole,
+    ProjectVisibility,
+)
 from app.models.user import User
 
 ROLE_MATRIX = Path(__file__).resolve().parents[3] / "docs" / "role-matrix.md"
@@ -106,11 +112,16 @@ CONDITION_RESPONSES: dict[str, dict[str, tuple[int, str]]] = {
     "c5": {"closed": (409, "idea_closed")},
     "c6": {"evaluation_closed": (409, "evaluation_closed"), "idea_closed": (409, "evaluation_closed")},
     "c7": {"too_early": (409, "proposal_not_available")},
-    "c8": {"disabled": (404, "not_found")},
-    "c9": {"no_token": (404, "not_found")},
+    "c8": {
+        "disabled": (404, "not_found"),
+        "instance_off": (404, "not_found"),
+        "archived": (404, "not_found"),
+        "reserved_slug": (404, "not_found"),
+    },
+    "c9": {"no_token": (404, "not_found"), "instance_off": (404, "not_found")},
     "c10": {"no_ai": (409, "ai_unavailable")},
     "c11": {"no_admin_left": (409, "last_admin")},
-    "c12": {"moderation": (404, "not_found")},
+    "c12": {"moderation": (404, "not_found"), "verification": (404, "not_found")},
     "c13": {"owned": (409, "idea_has_owner")},
     "c14": {"no_token": (404, "not_found"), "narrow_token": (403, "insufficient_scope")},
     "c15": {"session": (401, "unauthorized"), "no_scope": (403, "insufficient_scope")},
@@ -196,11 +207,13 @@ class State:
     archived: bool = False
     allow_volunteer_owners: bool = True
     public_submission_enabled: bool = True
+    public_submission_on: bool = True
+    slug_reserved: bool = False
     status: IdeaStatus = IdeaStatus.EVALUATING
     owner_id: UUID | None = None
     submitted_by_id: UUID | None = field(default_factory=lambda: OTHER)
     evaluation_closed: bool = False
-    awaiting_moderation: bool = False
+    held_for: HoldReason | None = None
     my_evaluation: EvaluatorState | None = None
     comment_author_id: UUID | None = None
     assignee_roles: tuple[ProjectRole | None, ...] | None = None
@@ -221,6 +234,7 @@ class State:
             archived=self.archived,
             allow_volunteer_owners=self.allow_volunteer_owners,
             public_submission_enabled=self.public_submission_enabled,
+            slug_reserved=self.slug_reserved,
         )
         idea = IdeaFacts(
             id=uuid4(),
@@ -228,7 +242,7 @@ class State:
             owner_id=self.owner_id,
             submitted_by_id=self.submitted_by_id,
             evaluation_closed=self.evaluation_closed,
-            awaiting_moderation=self.awaiting_moderation,
+            held_for=self.held_for,
             my_evaluation=self.my_evaluation,
         )
         return principal, Resource(
@@ -241,6 +255,7 @@ class State:
             ai_available=self.ai_available,
             token_valid=self.token_valid,
             token_covers_request=self.token_covers_request,
+            public_submission_on=self.public_submission_on,
         )
 
 
@@ -309,11 +324,22 @@ BREAKS: dict[str, dict[str, Callable[[State, str], State]]] = {
         "idea_closed": lambda s, _: replace(s, status=IdeaStatus.CLOSED),
     },
     "c7": {"too_early": lambda s, _: replace(s, status=IdeaStatus.EVALUATING)},
-    "c8": {"disabled": lambda s, _: replace(s, public_submission_enabled=False)},
-    "c9": {"no_token": lambda s, _: replace(s, token_valid=False)},
+    "c8": {
+        "disabled": lambda s, _: replace(s, public_submission_enabled=False),
+        "instance_off": lambda s, _: replace(s, public_submission_on=False),
+        "archived": lambda s, _: replace(s, archived=True),
+        "reserved_slug": lambda s, _: replace(s, slug_reserved=True),
+    },
+    "c9": {
+        "no_token": lambda s, _: replace(s, token_valid=False),
+        "instance_off": lambda s, _: replace(s, public_submission_on=False),
+    },
     "c10": {"no_ai": lambda s, _: replace(s, ai_available=False)},
     "c11": {"no_admin_left": lambda s, _: replace(s, admins_after_change=0)},
-    "c12": {"moderation": lambda s, _: replace(s, awaiting_moderation=True)},
+    "c12": {
+        "moderation": lambda s, _: replace(s, held_for=HoldReason.MODERATION),
+        "verification": lambda s, _: replace(s, held_for=HoldReason.EMAIL_VERIFICATION),
+    },
     "c13": {"owned": lambda s, _: replace(s, owner_id=OTHER)},
     "c14": {
         "no_token": lambda s, _: replace(s, token_valid=False),
@@ -410,25 +436,66 @@ def test_every_condition_is_exercised() -> None:
     assert exercised == set(CONDITION_RESPONSES)
 
 
-# --- Idea-level rules: moderation (c12) hides the idea from non-admins ----------------------
+# --- Held ideas: c12 hides them, c19 freezes them (contract-phase4 section 3.6) --------------
 IDEA_RULES = sorted(rule for rule, spec in POLICY.items() if spec.scope == "idea")
+# c19: every idea write but delete and moderate, plus watching (contract-phase4 section 2).
+FROZEN_WHILE_HELD = (IDEA_WRITES - {"idea.create", "idea.delete", "idea.moderate"}) | {"idea.watch"}
 
 
 @pytest.mark.parametrize("rule", IDEA_RULES)
 @pytest.mark.parametrize("column", ["Mem", "Vwr", "NMi", "+Own", "+Evl"])
 def test_idea_awaiting_moderation_is_404_for_non_admins(rule: str, column: str) -> None:
-    state = replace(happy_state(rule, column), awaiting_moderation=True)
+    state = replace(happy_state(rule, column), held_for=HoldReason.MODERATION)
 
     assert outcome(decide(rule, state)) == "404"
 
 
 @pytest.mark.parametrize("rule", IDEA_RULES)
 @pytest.mark.parametrize("column", ["PA", "PAd"])
-def test_admins_see_ideas_awaiting_moderation(rule: str, column: str) -> None:
+def test_admins_see_ideas_awaiting_moderation_but_cannot_change_them(
+    rule: str, column: str
+) -> None:
     happy = decide(rule, happy_state(rule, column))
-    moderated = decide(rule, replace(happy_state(rule, column), awaiting_moderation=True))
+    moderated = decide(rule, replace(happy_state(rule, column), held_for=HoldReason.MODERATION))
 
-    assert outcome(moderated) == outcome(happy)
+    if happy.allowed and rule in FROZEN_WHILE_HELD:
+        assert (moderated.status, moderated.code) == (409, "awaiting_moderation")
+        assert moderated.condition == "c19"
+    else:
+        assert outcome(moderated) == outcome(happy)
+
+
+@pytest.mark.parametrize("rule", ["idea.delete", "idea.moderate", "public.erase_submitter"])
+@pytest.mark.parametrize("column", ["PA", "PAd"])
+def test_admins_can_delete_moderate_and_erase_a_held_idea(rule: str, column: str) -> None:
+    state = replace(happy_state(rule, column), held_for=HoldReason.MODERATION)
+
+    assert decide(rule, state).allowed
+
+
+@pytest.mark.parametrize("rule", IDEA_RULES)
+@pytest.mark.parametrize("column", COLUMNS)
+def test_an_idea_awaiting_email_confirmation_is_404_for_everyone(rule: str, column: str) -> None:
+    state = replace(happy_state(rule, column), held_for=HoldReason.EMAIL_VERIFICATION)
+
+    decision = decide(rule, state)
+
+    if column == "Pub":
+        assert outcome(decision) == "401"
+    else:
+        assert outcome(decision) == "404"
+        assert decision.code == "not_found"
+
+
+def test_held_ideas_are_frozen_before_other_state_conditions() -> None:
+    """An archived project still answers project_archived first (it leads the 409s),
+    then c19 before the rule's own conditions (c7 here)."""
+    state = replace(happy_state("proposal.write", "PA"), status=IdeaStatus.NEW)
+    held = replace(state, held_for=HoldReason.MODERATION)
+
+    assert decide("proposal.write", state).code == "proposal_not_available"
+    assert decide("proposal.write", held).code == "awaiting_moderation"
+    assert decide("proposal.write", replace(held, archived=True)).code == "project_archived"
 
 
 # --- Archived projects (contract section 2) -------------------------------------------------
@@ -439,5 +506,8 @@ def test_archived_project(rule: str, column: str) -> None:
 
     if happy.allowed and rule in IDEA_WRITES:
         assert (archived.status, archived.code) == (409, "project_archived")
+    elif rule == "public.submit":
+        # c8: an archived project's public form is unavailable (404, like unknown).
+        assert (archived.status, archived.code) == (404, "not_found")
     else:
         assert outcome(archived) == outcome(happy)

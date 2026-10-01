@@ -602,7 +602,11 @@
           "evaluation.close",
           "evaluation.reopen",
           "email.test_send",
-          "email.retry"
+          "email.retry",
+          "submission.approve",
+          "submission.reject",
+          "submission.erase",
+          "branding.update"
         ],
         "title": "AuditAction",
         "type": "string"
@@ -3300,6 +3304,17 @@
             "title": "Has Voted",
             "type": "boolean"
           },
+          "held_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 4: moderation = a public submission waiting for review (only project and platform admins can open it; every permission but can_delete is false: show Approve / Reject from GET /ideas/{idea}/submission). Otherwise null."
+          },
           "high_disagreement": {
             "description": "Always false while score_hidden.",
             "title": "High Disagreement",
@@ -3403,6 +3418,11 @@
             "title": "Title",
             "type": "string"
           },
+          "via_public_form": {
+            "description": "Phase 4: sent through the project's public form (submitted_by is null): show \"via the public form\" and the submission panel (GET /ideas/{idea}/submission). False for every internal idea.",
+            "title": "Via Public Form",
+            "type": "boolean"
+          },
           "vote_count": {
             "title": "Vote Count",
             "type": "integer"
@@ -3441,7 +3461,9 @@
           "evaluation_closed_at",
           "evaluation_open",
           "aggregate",
-          "watching"
+          "watching",
+          "held_for",
+          "via_public_form"
         ],
         "title": "IdeaDetail",
         "type": "object"

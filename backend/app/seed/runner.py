@@ -44,7 +44,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import Rule, load_project, require
-from app.config import DatabaseSettings
+from app.config import BRANDING_UPLOAD_MAX_BYTES, DatabaseSettings
 from app.domain.principal import Principal
 from app.models import (
     Base,
@@ -61,13 +61,15 @@ from app.models import (
     User,
 )
 from app.models.base import utcnow
-from app.models.enums import NotificationMode, NotificationType
+from app.models.enums import BrandAssetKind, HoldReason, NotificationMode, NotificationType
 from app.models.group import Group, GroupMembership
 from app.models.notification import Notification
+from app.models.public import PublicSubmission
 from app.models.user import UserExternalId
 from app.notifications import fanout
 from app.notifications import preferences as notification_preferences
 from app.schemas.admin_users import ExternalIdIn, ExternalIdsReplace
+from app.schemas.branding import BrandingUpdate
 from app.schemas.comments import CommentCreate
 from app.schemas.evaluations import MyEvaluationIn, MyScoreIn
 from app.schemas.groups import GroupCreate, GroupMemberAdd, ProjectGroupGrantAdd
@@ -85,12 +87,27 @@ from app.seed.content import (
     ProjectSeed,
     Review,
 )
+from app.seed.public import (
+    CUST_BRANDING,
+    CUST_FAVICON,
+    CUST_LOGO,
+    GLOBAL_FOOTER,
+    PUBLIC_FORM_INTRO,
+    PUBLIC_IDEAS,
+    PUBLIC_PROJECT,
+    PublicIdeaSeed,
+)
 from app.services import (
+    activity,
     admin_groups,
     admin_users,
+    audit,
+    brand_assets,
+    branding,
     comments,
     evaluations,
     ideas,
+    moderation,
     project_groups,
     projects,
     votes,
@@ -152,6 +169,8 @@ class SeedReport:
     evaluators_pending: int = 0
     comments: int = 0
     votes: int = 0
+    public_ideas: int = 0
+    awaiting_moderation: int = 0
 
     def summary(self) -> str:
         if self.skipped:
@@ -160,7 +179,8 @@ class SeedReport:
             f"Seeded {self.users} users, {self.projects} projects and {self.ideas} ideas: "
             f"{self.evaluations_submitted} submitted evaluations, {self.evaluations_draft} "
             f"drafts, {self.evaluators_pending} evaluators yet to start, {self.comments} "
-            f"comments and {self.votes} votes; {self.groups} groups."
+            f"comments and {self.votes} votes; {self.groups} groups; {self.public_ideas} "
+            f"ideas from the public form ({self.awaiting_moderation} waiting for review)."
         )
 
 
@@ -253,6 +273,10 @@ async def _report(db: AsyncSession) -> SeedReport:
         evaluators_pending=await count(pending),
         comments=await count(select(func.count()).select_from(Comment)),
         votes=await count(select(func.count()).select_from(IdeaVote)),
+        public_ideas=await count(select(func.count()).select_from(PublicSubmission)),
+        awaiting_moderation=await count(
+            select(func.count()).where(Idea.held_for == HoldReason.MODERATION)
+        ),
     )
 
 
@@ -312,6 +336,7 @@ class _Player:
         self.windows = {project.key: project.default_evaluation_days for project in PROJECTS}
         self.criteria: dict[str, list[uuid.UUID]] = {}
         self.keys: dict[int, str] = {}
+        self.public_keys: dict[int, str] = {}
 
     # -- helpers --------------------------------------------------------------------------
     def days_ago(self, days: float) -> datetime:
@@ -353,6 +378,10 @@ class _Player:
             self._group(group)
         for index, idea in enumerate(IDEAS):
             self._idea(index, idea)
+        self._branding()
+        self._public_form()
+        for index, public_idea in enumerate(PUBLIC_IDEAS):
+            self._public_idea(index, public_idea)
         retime = _retime_statement()
         for step in sorted(self.steps):
             mark = utcnow()
@@ -588,6 +617,145 @@ class _Player:
 
             at = created + timedelta(hours=2 + position)
             self.add(at, f"grant {seed.name} a role in {project_key}", add_grant)
+
+    # -- Phase 4: branding and the public form (app/seed/public.py) ------------------
+    def _public_project(self) -> ProjectSeed:
+        return next(project for project in PROJECTS if project.key == PUBLIC_PROJECT)
+
+    def _branding(self) -> None:
+        """The platform admin adds an email footer to the global branding; Customer
+        Innovation's admin gives the project its colours, font, logo and favicon
+        (uploaded and checked like any upload)."""
+        project_seed = self._public_project()
+
+        async def global_branding() -> None:
+            principal = await self.principal(self._platform_admin())
+            await branding.update_global(
+                self.db, principal, BrandingUpdate(email_footer=GLOBAL_FOOTER)
+            )
+
+        async def project_branding() -> None:
+            principal = await self.principal(project_seed.admin)
+            project, resource = await load_project(
+                self.db, principal, project_seed.slug, Rule.PROJECT_EDIT_SETTINGS, for_update=True
+            )
+            images = {}
+            for kind, data in (
+                (BrandAssetKind.LOGO, CUST_LOGO),
+                (BrandAssetKind.FAVICON, CUST_FAVICON),
+            ):
+                asset = await brand_assets.store_upload(
+                    self.db,
+                    project_id=project.id,
+                    kind=kind,
+                    data=data,
+                    max_bytes=BRANDING_UPLOAD_MAX_BYTES,
+                    uploaded_by=principal.user_id,
+                    now=utcnow(),
+                )
+                images[f"{kind.value}_asset_id"] = asset.id
+            body = BrandingUpdate.model_validate({**CUST_BRANDING, **images})
+            await branding.update_project(self.db, principal, project, resource, body)
+
+        self.add(self.days_ago(50), "global branding", global_branding)
+        self.add(self.days_ago(49), f"branding of {project_seed.key}", project_branding)
+
+    def _public_form(self) -> None:
+        """Customer Innovation's admin turns its public form on (moderated, no address
+        required) two days ago. Written like ``update_public_form_settings`` without
+        the instance's settings, which the seed doesn't read (it needs only the
+        database): on, with the default moderation and an intro."""
+        project_seed = self._public_project()
+
+        async def open_form() -> None:
+            principal = await self.principal(project_seed.admin)
+            project, _ = await load_project(
+                self.db, principal, project_seed.slug, Rule.PROJECT_EDIT_SETTINGS, for_update=True
+            )
+            project.public_submission_enabled = True
+            project.public_moderation_required = True
+            project.public_require_email_verification = False
+            project.public_intro_md = PUBLIC_FORM_INTRO
+            await self.db.flush()
+            await audit.record(
+                self.db,
+                "project.update",
+                actor=principal,
+                target_type="project",
+                target_id=project.id,
+                project_id=project.id,
+                details={
+                    "rule": Rule.PROJECT_EDIT_SETTINGS,
+                    "fields": ["public_submission_enabled", "public_intro_md"],
+                },
+            )
+
+        self.add(self.days_ago(2), f"public form of {project_seed.key}", open_form)
+
+    def _public_idea(self, index: int, seed: PublicIdeaSeed) -> None:
+        """An idea through the public form (as ``app.public.submit`` creates it, without
+        the form's checks or a tracking link), held for moderation; the project admin
+        approves some of them."""
+        project_seed = self._public_project()
+        sent = self.now - timedelta(hours=seed.hours_ago)
+
+        async def submit() -> None:
+            project = await self.db.scalar(
+                select(Project)
+                .where(Project.slug == project_seed.slug)
+                .with_for_update(key_share=True)
+            )
+            assert project is not None  # noqa: S101 - created by an earlier step
+            number = await self.db.scalar(
+                update(Project)
+                .where(Project.id == project.id)
+                .values(next_idea_number=Project.next_idea_number + 1)
+                .returning(Project.next_idea_number - 1)
+                .execution_options(synchronize_session=False)
+            )
+            assert number is not None  # noqa: S101 - the row is locked
+            idea = Idea(
+                id=uuid.uuid4(),
+                project_id=project.id,
+                number=number,
+                title=seed.title,
+                summary=seed.summary,
+                description_md=seed.description,
+                status=IdeaStatus.NEW,
+                submitted_by_id=None,
+                held_for=HoldReason.MODERATION,
+            )
+            self.db.add(idea)
+            await self.db.flush()
+            await activity.emit(self.db, idea, "idea_created", actor=None)
+            self.db.add(
+                PublicSubmission(
+                    id=uuid.uuid4(),
+                    idea_id=idea.id,
+                    project_id=project.id,
+                    name=seed.name,
+                    email=seed.email,
+                    email_verified_at=utcnow() if seed.confirmed else None,
+                    wants_updates=seed.wants_updates,
+                    submitted_title=seed.title,
+                    submitted_summary=seed.summary,
+                )
+            )
+            self.public_keys[index] = f"{project.key}-{number}"
+
+        self.add(sent, f"public idea {seed.title!r}", submit)
+
+        if seed.approved_after is not None:
+
+            async def approve() -> None:
+                principal = await self.principal(project_seed.admin)
+                loaded = await ideas.load_idea(
+                    self.db, principal, self.public_keys[index], for_update=True
+                )
+                await moderation.approve(self.db, principal, loaded, now=utcnow())
+
+            at = sent + timedelta(hours=seed.approved_after)
+            self.add(at, f"approve public idea {seed.title!r}", approve)
 
     def _idea(self, index: int, seed: IdeaSeed) -> None:
         # A deterministic time of day per idea (within 2.5 hours either way), so ideas

@@ -20,6 +20,11 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *              ['admin', 'sso'] · ['admin', 'email'] · ['admin', 'email', 'outbox', …]
  *   notifications ['notifications', 'summary'] · ['notifications', 'list', {unread}] ·
  *              ['notifications', 'preferences'] · ['notifications', 'unsubscribe', token]
+ *   proposals  ['proposals', KEY, 'view' | 'threads']
+ *   public     ['public', 'project', slug] · ['public', 'track', token] (public pages, no session)
+ *   branding   ['branding', 'effective'] · ['branding', 'global'] · ['branding', 'project', slug]
+ *   submissions ['submissions', 'form', slug] · ['submissions', 'moderation', slug] ·
+ *              ['submissions', 'idea', KEY]
  *
  * Ideas are cached by their upper-case key ("CUST-12"): the SPA's URLs use keys
  * and every `/ideas/{idea}` route accepts one. Use `ideaCacheId()` to normalise.
@@ -132,6 +137,35 @@ export const queryKeys = {
     outbox: (filters: Record<string, unknown>) =>
       ['admin', 'email', 'outbox', 'list', filters] as const,
     outboxEmail: (id: string) => ['admin', 'email', 'outbox', 'detail', id.toLowerCase()] as const,
+  },
+  /** Phase 4: an idea's proposal (`api/proposals.ts`): the tab's view and its margin threads. */
+  proposals: {
+    all: ['proposals'] as const,
+    idea: (idea: string) => ['proposals', ideaCacheId(idea)] as const,
+    view: (idea: string) => ['proposals', ideaCacheId(idea), 'view'] as const,
+    threads: (idea: string) => ['proposals', ideaCacheId(idea), 'threads'] as const,
+  },
+  /** Phase 4: the public form and tracking pages (`api/public.ts`); no session. */
+  public: {
+    all: ['public'] as const,
+    project: (slug: string) => ['public', 'project', slug.toLowerCase()] as const,
+    /** In memory only (the token never reaches a URL the server sees). */
+    tracking: (token: string) => ['public', 'track', token] as const,
+  },
+  /** Phase 4: branding (`api/branding.ts`): what the app shows, and the settings forms. */
+  branding: {
+    all: ['branding'] as const,
+    effective: () => ['branding', 'effective'] as const,
+    global: () => ['branding', 'global'] as const,
+    project: (slug: string) => ['branding', 'project', slug] as const,
+  },
+  /** Phase 4: public form settings, moderation and submitters (`api/submissions.ts`). */
+  submissions: {
+    all: ['submissions'] as const,
+    form: (slug: string) => ['submissions', 'form', slug] as const,
+    moderation: (slug: string) => ['submissions', 'moderation', slug] as const,
+    moderationAll: () => ['submissions', 'moderation'] as const,
+    idea: (idea: string) => ['submissions', 'idea', ideaCacheId(idea)] as const,
   },
   /** The inbox, the bell's summary and email preferences (`api/notifications.ts`). */
   notifications: {

@@ -1,0 +1,211 @@
+import { Check, ChevronDown, CircleAlert, FileDown, FileText, GitCompareArrows } from 'lucide-react'
+import { useRef, useState } from 'react'
+
+import { describeError, isApiError } from '@/api/errors'
+import { useExportProposal, type ProposalExportFormat } from '@/api/proposals'
+import type { Proposal } from '@/api/types'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { RelativeTime } from '@/components/ui/relative-time'
+import { Spinner } from '@/components/ui/spinner'
+import { toast } from '@/components/ui/toaster'
+import { formatTime } from '@/lib/dates'
+
+import { useProposalEditor } from './editor-context'
+import { SectionJump } from './outline'
+import { useEditorSaveSummary, type ProposalSaveStore } from './save-store'
+
+/**
+ * The editor's bar, stuck to the top while scrolling: where saving is (or who
+ * last edited, for readers), the section jump list below `xl`, and Export.
+ */
+export function EditorBar({ proposal }: { proposal: Proposal }) {
+  return (
+    <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle bg-surface px-4 py-2.5 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+      <SaveState proposal={proposal} />
+      <div className="ml-auto flex min-w-0 items-center gap-2">
+        <SectionJump sections={proposal.sections} className="xl:hidden" />
+        <ExportMenu />
+      </div>
+    </div>
+  )
+}
+
+function SaveState({ proposal }: { proposal: Proposal }) {
+  const { store, permissions, focusSection, me } = useProposalEditor()
+  const summary = useEditorSaveSummary(store, null)
+  const lastEditor = proposal.sections
+    .filter((section) => section.updated_by)
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]
+
+  let content
+  if (!permissions.can_edit) {
+    content = (
+      <span className="text-muted">
+        {lastEditor?.updated_by ? (
+          <>
+            Edited <RelativeTime date={lastEditor.updated_at} /> by{' '}
+            {lastEditor.updated_by.display_name}
+          </>
+        ) : (
+          <>
+            Started <RelativeTime date={proposal.created_at} />
+          </>
+        )}
+      </span>
+    )
+  } else if (summary.kind === 'saving') {
+    content = (
+      <span className="flex items-center gap-1.5 text-muted">
+        <Spinner className="size-3.5" />
+        Saving…
+      </span>
+    )
+  } else if (summary.kind === 'conflict') {
+    const first = store.all().find(([, state]) => state.status === 'conflict')?.[0]
+    content = (
+      <button
+        type="button"
+        onClick={() => first && focusSection(first)}
+        className="flex items-center gap-1.5 rounded-sm font-medium text-warning hover:underline"
+      >
+        <GitCompareArrows aria-hidden="true" className="size-4" />
+        {summary.count === 1
+          ? 'A section changed while you were editing'
+          : `${String(summary.count)} sections changed while you were editing`}
+      </button>
+    )
+  } else if (summary.kind === 'unsaved') {
+    const first = store.all().find(([, state]) => state.status === 'error')?.[0]
+    content = (
+      <button
+        type="button"
+        onClick={() => first && focusSection(first)}
+        className="flex items-center gap-1.5 rounded-sm font-medium text-danger hover:underline"
+      >
+        <CircleAlert aria-hidden="true" className="size-4" />
+        {summary.count === 1
+          ? 'A section isn’t saved'
+          : `${String(summary.count)} sections aren’t saved`}
+      </button>
+    )
+  } else {
+    content = (
+      <span className="flex min-w-0 items-center gap-1.5 text-muted">
+        <Check aria-hidden="true" className="size-4 shrink-0 text-success" />
+        {summary.at ? (
+          // Saved from this tab: when.
+          <span>
+            Saved<span className="hidden sm:inline"> {formatTime(summary.at)}</span>
+          </span>
+        ) : (
+          <span className="min-w-0 truncate">
+            Saved
+            {lastEditor?.updated_by && (
+              <span className="hidden sm:inline">
+                {' '}
+                · edited <RelativeTime date={lastEditor.updated_at} /> by{' '}
+                {lastEditor.updated_by.id === me.id ? 'you' : lastEditor.updated_by.display_name}
+              </span>
+            )}
+          </span>
+        )}
+      </span>
+    )
+  }
+  return (
+    <p role="status" aria-live="polite" className="min-w-0 text-sm">
+      {content}
+    </p>
+  )
+}
+
+export const FORMAT_LABEL: Record<ProposalExportFormat, string> = {
+  pdf: 'PDF',
+  markdown: 'Markdown',
+}
+
+/**
+ * Exporting (the menu and the ⌘K palette share it): pending saves go out
+ * first, then the download; failures toast with Retry. One export at a time.
+ */
+export function useExportRunner(ideaKey: string, store: ProposalSaveStore) {
+  const exporter = useExportProposal(ideaKey)
+  const [format, setFormat] = useState<ProposalExportFormat | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  const busy = useRef(false)
+
+  const run = (next: ProposalExportFormat) => {
+    if (busy.current) return
+    busy.current = true
+    setFormat(next)
+    setAnnouncement(`Preparing the ${FORMAT_LABEL[next]}…`)
+    void store
+      .flush()
+      .then(() => exporter.mutateAsync(next))
+      .then(() => setAnnouncement(`${FORMAT_LABEL[next]} downloaded.`))
+      .catch((error: unknown) => {
+        setAnnouncement('')
+        const { title, description } = describeError(error)
+        const wait =
+          isApiError(error) && error.retryAfterSeconds
+            ? ` Try again in ${String(error.retryAfterSeconds)} seconds.`
+            : ''
+        toast.error(`Couldn’t export the ${FORMAT_LABEL[next]}`, {
+          description: `${[title, description].filter(Boolean).join('. ')}${wait}`,
+          action: { label: 'Retry', onClick: () => run(next) },
+        })
+      })
+      .finally(() => {
+        busy.current = false
+        setFormat(null)
+      })
+  }
+  return { run, format, announcement }
+}
+
+/** Export (the view's primary action): PDF or Markdown. */
+function ExportMenu() {
+  const { permissions, exporting } = useProposalEditor()
+  if (!permissions.can_export) return null
+  const { run, format, announcement } = exporting
+  const busy = format !== null
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          {/* Busy, not disabled: focus comes back here when the menu closes. */}
+          <Button variant="primary" aria-busy={busy || undefined} data-primary-action="">
+            {busy && <Spinner />}
+            {busy ? `Exporting ${FORMAT_LABEL[format]}…` : 'Export'}
+            {!busy && <ChevronDown aria-hidden="true" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-56">
+          <DropdownMenuItem className="h-auto py-1.5 sm:h-auto" onSelect={() => run('pdf')}>
+            <FileDown />
+            <span className="flex flex-col">
+              PDF
+              <span className="text-xs text-muted">Branded, for sharing and print</span>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem className="h-auto py-1.5 sm:h-auto" onSelect={() => run('markdown')}>
+            <FileText />
+            <span className="flex flex-col">
+              Markdown
+              <span className="text-xs text-muted">Plain text, for editing elsewhere</span>
+            </span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <span aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
+    </>
+  )
+}

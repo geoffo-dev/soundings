@@ -124,6 +124,25 @@ const PROJECT_FIELDS: Record<string, string> = {
   evaluation_window_days: 'evaluation window',
   status_labels: 'status labels',
   archived: 'archive state',
+  // Phase 4 (contract-phase4 §3.14): project branding and the public form.
+  branding: 'branding',
+  public_submission_enabled: 'public form',
+  public_require_email_verification: 'public form email confirmation',
+  public_moderation_required: 'public form moderation',
+  public_intro_md: 'public form intro',
+}
+
+/** Global branding fields (`branding.update` details.fields). */
+const BRANDING_FIELDS: Record<string, string> = {
+  app_name: 'app name',
+  primary_color: 'primary colour',
+  accent_color: 'accent colour',
+  font: 'font',
+  email_footer: 'email footer',
+  logo_asset_id: 'logo',
+  favicon_asset_id: 'favicon',
+  logo: 'logo',
+  favicon: 'favicon',
 }
 
 function fieldWords(fields: string[], words: Record<string, string>): string {
@@ -157,6 +176,9 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
   }
   const idea = (): AuditPart => {
     if (entry.target_type === 'idea' && entry.target_label) return name(entry.target_label)
+    // A rejected public idea is deleted: the entry keeps its key (contract-phase4 §3.14).
+    const key = str(details, 'key')
+    if (key) return name(key)
     const number = num(details, 'number')
     if (entry.project && number !== undefined) return name(`${entry.project.key}-${number}`)
     const fallback = entry.project ? `an idea in ${entry.project.name}` : 'an idea'
@@ -451,6 +473,34 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
         return [actor, text(` retried ${plural(count, 'failed email')} (Retry all failed)`)]
       }
       return [actor, text(' retried a failed email')]
+    }
+
+    /* Public submissions and branding (contract-phase4 §3.14): never personal data */
+    case 'submission.approve':
+      return [actor, text(' approved '), idea(), text(' from the public form')]
+    case 'submission.reject':
+      return [actor, text(' rejected and deleted '), idea(), text(' from the public form')]
+    case 'submission.erase': {
+      if (entry.actor) return [actor, text(' erased the submitter’s details of '), idea()]
+      if (str(details, 'reason') === 'retention') {
+        return [
+          text('The submitter’s details of '),
+          idea(),
+          text(' were erased automatically (closed for 180 days)'),
+        ]
+      }
+      return [text('The submitter of '), idea(), text(' erased their details')]
+    }
+    case 'branding.update': {
+      const fields = list(details, 'fields')
+      return [
+        actor,
+        text(
+          fields.length
+            ? ` changed the ${fieldWords(fields, BRANDING_FIELDS)} of the branding`
+            : ' changed the branding',
+        ),
+      ]
     }
   }
   // An action this screen doesn't know yet: say what is certain.

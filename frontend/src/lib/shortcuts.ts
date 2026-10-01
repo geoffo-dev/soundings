@@ -8,7 +8,7 @@ import { useHotkey, type HotkeyOptions } from '@/lib/hotkeys'
 export interface ShortcutDefinition {
   keys: string
   label: string
-  group: 'General' | 'Navigation' | 'Lists' | 'Ideas' | 'Idea page'
+  group: 'General' | 'Navigation' | 'Lists' | 'Ideas' | 'Idea page' | 'Proposal'
 }
 
 export const SHORTCUTS = {
@@ -37,6 +37,18 @@ export const SHORTCUTS = {
   overviewTab: { keys: '1', label: 'Overview tab', group: 'Idea page' },
   evaluationsTab: { keys: '2', label: 'Evaluations tab', group: 'Idea page' },
   proposalTab: { keys: '3', label: 'Proposal tab', group: 'Idea page' },
+  // The proposal editor (features/proposal, wireframe 05).
+  proposalSave: { keys: 'mod+s', label: 'Save the proposal now', group: 'Proposal' },
+  proposalPreview: {
+    keys: 'mod+enter',
+    label: 'Switch the section between Write and Preview',
+    group: 'Proposal',
+  },
+  proposalNextSection: { keys: 'j', label: 'Next section', group: 'Proposal' },
+  proposalPreviousSection: { keys: 'k', label: 'Previous section', group: 'Proposal' },
+  proposalComment: { keys: 'c', label: 'Comment on the section in view', group: 'Proposal' },
+  proposalBold: { keys: 'mod+b', label: 'Bold (while writing)', group: 'Proposal' },
+  proposalItalic: { keys: 'mod+i', label: 'Italic (while writing)', group: 'Proposal' },
 } as const satisfies Record<string, ShortcutDefinition>
 
 export type ShortcutId = keyof typeof SHORTCUTS
@@ -47,6 +59,7 @@ export const SHORTCUT_GROUPS: ShortcutDefinition['group'][] = [
   'Lists',
   'Ideas',
   'Idea page',
+  'Proposal',
 ]
 
 export function useShortcut(

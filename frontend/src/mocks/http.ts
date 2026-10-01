@@ -25,8 +25,11 @@ const TITLES: Record<number, string> = {
   404: 'Not Found',
   409: 'Conflict',
   422: 'Unprocessable Content',
+  413: 'Content Too Large',
+  415: 'Unsupported Media Type',
   429: 'Too Many Requests',
   500: 'Internal Server Error',
+  503: 'Service Unavailable',
 }
 
 export function problemResponse(
@@ -75,6 +78,18 @@ export function forbidden(code = 'forbidden', detail?: string): never {
 
 export function conflict(code: string, detail?: string): never {
   fail(409, code, detail)
+}
+
+/** 429 `too_many_attempts` (or another code) with `Retry-After` in seconds. */
+export function tooManyAttempts(
+  retryAfterSeconds: number,
+  detail = 'Too many attempts. Try again shortly.',
+  code = 'too_many_attempts',
+  status = 429,
+): never {
+  const response = problemResponse(status, code, detail)
+  response.headers.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterSeconds))))
+  throw response
 }
 
 /* ------------------------------------------------------------------ */

@@ -2,7 +2,7 @@
 
 One proposal per idea over the fixed template, edited section by section with
 optimistic concurrency, margin comment threads per section, and PDF / Markdown export.
-Business rules: docs/api/contract-phase4.md sections 3.1-3.3; rules ``proposal.*``
+Business rules: docs/api/contract-phase4.md sections 3.1-3.4; rules ``proposal.*``
 (role matrix section E).
 """
 
@@ -11,16 +11,22 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Path, status
-from fastapi.responses import Response
+from fastapi import APIRouter, Path, Request, status
+from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import binary, problems
-from app.errors import PROBLEM_CONTENT_TYPE, NotImplementedProblem
+from app.config import Settings
+from app.db import SessionDep
+from app.errors import PROBLEM_CONTENT_TYPE, PROBLEM_TYPE_PREFIX
+from app.models.base import utcnow
 from app.models.enums import ProposalSectionKey
+from app.observability import request_id_var
+from app.proposals import comments, export, service
 from app.schemas.proposals import (
     ProposalCommentCreate,
+    ProposalConflictProblem,
     ProposalSection,
     ProposalSectionUpdate,
     ProposalThread,
@@ -28,6 +34,7 @@ from app.schemas.proposals import (
     ProposalThreadList,
     ProposalView,
 )
+from app.services import ideas
 
 router = APIRouter(tags=["proposals"])
 
@@ -50,6 +57,24 @@ _SECTION_CONFLICT: dict[int | str, dict[str, Any]] = {
     }
 }
 
+
+def _conflict(request: Request, current: ProposalSection) -> JSONResponse:
+    """409 ``proposal_conflict`` with the section as saved now (``current`` keeps its
+    nulls, unlike the other fields of a problem)."""
+    problem = ProposalConflictProblem(
+        type=PROBLEM_TYPE_PREFIX + "proposal_conflict",
+        title="Conflict",
+        status=409,
+        detail="Someone else changed this section since you started editing it.",
+        instance=request.url.path,
+        code="proposal_conflict",
+        request_id=request_id_var.get(),
+    )
+    body = problem.model_dump(mode="json", exclude_none=True)
+    body["current"] = current.model_dump(mode="json")
+    return JSONResponse(body, status_code=409, media_type=PROBLEM_CONTENT_TYPE)
+
+
 _DOWNLOAD_HEADERS = {
     "Content-Disposition": 'attachment; filename="<KEY>-proposal.<ext>" (e.g. CUST-12).',
 }
@@ -65,8 +90,11 @@ _DOWNLOAD_HEADERS = {
     ),
     responses=problems(401, 404),
 )
-async def get_proposal(principal: PrincipalDep, idea: IdeaParam) -> ProposalView:
-    raise NotImplementedProblem
+async def get_proposal(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> ProposalView:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await service.proposal_view(session, principal, loaded)
 
 
 @router.post(
@@ -83,8 +111,12 @@ async def get_proposal(principal: PrincipalDep, idea: IdeaParam) -> ProposalView
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def create_proposal(principal: PrincipalDep, idea: IdeaParam) -> ProposalView:
-    raise NotImplementedProblem
+async def create_proposal(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> ProposalView:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await service.create_proposal(session, principal, loaded)
+    return await service.proposal_view(session, principal, loaded)
 
 
 @router.put(
@@ -98,15 +130,22 @@ async def create_proposal(principal: PrincipalDep, idea: IdeaParam) -> ProposalV
         "(same version). The text is kept verbatim (no trimming). 404 when there is no "
         "proposal."
     ),
+    response_model=ProposalSection,
     responses={**problems(401, 403, 404, 422), **_SECTION_CONFLICT},
 )
 async def update_proposal_section(
+    request: Request,
     principal: PrincipalDep,
+    session: SessionDep,
     idea: IdeaParam,
     section_key: SectionKeyParam,
     body: ProposalSectionUpdate,
-) -> ProposalSection:
-    raise NotImplementedProblem
+) -> ProposalSection | JSONResponse:
+    loaded = await service.load_idea_shared(session, principal, idea)
+    try:
+        return await service.update_section(session, principal, loaded, section_key, body)
+    except service.SectionConflict as conflict:
+        return _conflict(request, conflict.current)
 
 
 @router.get(
@@ -126,8 +165,15 @@ async def update_proposal_section(
         **problems(401, 404, 429),
     },
 )
-async def export_proposal_markdown(principal: PrincipalDep, idea: IdeaParam) -> Response:
-    raise NotImplementedProblem
+async def export_proposal_markdown(
+    request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> Response:
+    settings: Settings = request.app.state.settings
+    loaded = await ideas.load_idea(session, principal, idea)
+    document = await export.export_document(
+        session, principal, loaded, settings, request.app, now=utcnow()
+    )
+    return await export.markdown_response(document)
 
 
 @router.get(
@@ -148,8 +194,17 @@ async def export_proposal_markdown(principal: PrincipalDep, idea: IdeaParam) -> 
         **problems(401, 404, 429, 503),
     },
 )
-async def export_proposal_pdf(principal: PrincipalDep, idea: IdeaParam) -> Response:
-    raise NotImplementedProblem
+async def export_proposal_pdf(
+    request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> Response:
+    settings: Settings = request.app.state.settings
+    loaded = await ideas.load_idea(session, principal, idea)
+    document = await export.export_document(
+        session, principal, loaded, settings, request.app, now=utcnow()
+    )
+    # Nothing to write: end the transaction before the (slow) render.
+    await session.commit()
+    return await export.pdf_response(request.app.state, document, loaded.idea.id)
 
 
 @router.get(
@@ -162,8 +217,11 @@ async def export_proposal_pdf(principal: PrincipalDep, idea: IdeaParam) -> Respo
     ),
     responses=problems(401, 404),
 )
-async def list_proposal_threads(principal: PrincipalDep, idea: IdeaParam) -> ProposalThreadList:
-    raise NotImplementedProblem
+async def list_proposal_threads(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> ProposalThreadList:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await comments.list_threads(session, principal, loaded)
 
 
 @router.post(
@@ -178,9 +236,10 @@ async def list_proposal_threads(principal: PrincipalDep, idea: IdeaParam) -> Pro
     responses=problems(401, 403, 404, 409, 422),
 )
 async def create_proposal_thread(
-    principal: PrincipalDep, idea: IdeaParam, body: ProposalThreadCreate
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: ProposalThreadCreate
 ) -> ProposalThread:
-    raise NotImplementedProblem
+    loaded = await service.load_idea_shared(session, principal, idea)
+    return await comments.create_thread(session, principal, loaded, body)
 
 
 @router.post(
@@ -195,9 +254,14 @@ async def create_proposal_thread(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def reply_to_proposal_thread(
-    principal: PrincipalDep, idea: IdeaParam, thread_id: ThreadId, body: ProposalCommentCreate
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    thread_id: ThreadId,
+    body: ProposalCommentCreate,
 ) -> ProposalThread:
-    raise NotImplementedProblem
+    loaded = await service.load_idea_shared(session, principal, idea)
+    return await comments.reply(session, principal, loaded, thread_id, body)
 
 
 @router.put(
@@ -208,9 +272,10 @@ async def reply_to_proposal_thread(
     responses=problems(401, 403, 404, 409),
 )
 async def resolve_proposal_thread(
-    principal: PrincipalDep, idea: IdeaParam, thread_id: ThreadId
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, thread_id: ThreadId
 ) -> ProposalThread:
-    raise NotImplementedProblem
+    loaded = await service.load_idea_shared(session, principal, idea)
+    return await comments.set_resolved(session, principal, loaded, thread_id, resolved=True)
 
 
 @router.delete(
@@ -221,9 +286,10 @@ async def resolve_proposal_thread(
     responses=problems(401, 403, 404, 409),
 )
 async def reopen_proposal_thread(
-    principal: PrincipalDep, idea: IdeaParam, thread_id: ThreadId
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, thread_id: ThreadId
 ) -> ProposalThread:
-    raise NotImplementedProblem
+    loaded = await service.load_idea_shared(session, principal, idea)
+    return await comments.set_resolved(session, principal, loaded, thread_id, resolved=False)
 
 
 @router.delete(
@@ -239,6 +305,11 @@ async def reopen_proposal_thread(
     responses=problems(401, 403, 404, 409),
 )
 async def delete_proposal_comment(
-    principal: PrincipalDep, idea: IdeaParam, thread_id: ThreadId, comment_id: CommentId
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    thread_id: ThreadId,
+    comment_id: CommentId,
 ) -> None:
-    raise NotImplementedProblem
+    loaded = await service.load_idea_shared(session, principal, idea)
+    await comments.delete_comment(session, principal, loaded, thread_id, comment_id)

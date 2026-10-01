@@ -62,7 +62,10 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
     enabled: permissions.can_change_status,
   })
   useShortcut('assignOwner', () => openDialog('owner'), { enabled: permissions.can_assign_owner })
-  useShortcut('focusComment', focusComment, { enabled: permissions.can_comment })
+  // On the Proposal tab "c" comments on the section in view (features/proposal).
+  useShortcut('focusComment', focusComment, {
+    enabled: permissions.can_comment && page.tab !== 'proposal',
+  })
   useShortcut('overviewTab', () => setTab('overview'))
   useShortcut('evaluationsTab', () => setTab('evaluations'))
   useShortcut('proposalTab', () => setTab('proposal'))

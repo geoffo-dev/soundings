@@ -16,6 +16,7 @@ import type {
   EmailStatus,
   EmailType,
   GroupSyncMode,
+  HoldReason,
   IdeaStatus,
   NotificationMode,
   NotificationType,
@@ -27,7 +28,16 @@ import type {
 } from '@/api/types'
 
 import { seedAccess } from './access-fixtures'
+import type { MockBrandAsset, MockBrandingProfile } from './branding'
 import { seedNotifications } from './notification-fixtures'
+import { seedPhase4 } from './phase4-fixtures'
+import type {
+  MockProposal,
+  MockProposalComment,
+  MockProposalSection,
+  MockProposalThread,
+} from './proposals'
+import type { MockPublicForm, MockPublicSubmission } from './public'
 
 export interface MockUser {
   id: string
@@ -149,6 +159,11 @@ export interface MockIdea {
   evaluation_closed_at: string | null
   /** Tag ids. */
   tag_ids: string[]
+  /**
+   * Phase 4 (contract-phase4 §3.6): a public idea waiting for its submitter's
+   * confirmation or for moderation. Held ideas are in no list or count.
+   */
+  held_for?: HoldReason | null
 }
 
 export interface MockTag {
@@ -248,6 +263,8 @@ export interface MockOutboxEmail {
   created_at: string
   updated_at: string
   sent_at: string | null
+  /** Phase 4: the idea a submitter email is about (required for those, contract-phase4 §3.8). */
+  idea_id?: string | null
 }
 
 /** The mock instance's email settings (knob `soundings-mock-email`: unset, `off`, `failing`). */
@@ -293,6 +310,23 @@ export interface MockDb {
   email: MockEmailSettings
   /** Events emitted by the request being handled: fanned out after its last write (http.ts). */
   pendingEvents: MockEvent[]
+  /* Phase 4 (contract-phase4; records in proposals.ts, public.ts, branding.ts) */
+  proposals: MockProposal[]
+  proposalSections: MockProposalSection[]
+  proposalThreads: MockProposalThread[]
+  proposalComments: MockProposalComment[]
+  /** Export times (ms) per user id, for the 10-a-minute limit. */
+  proposalExports: Record<string, number[]>
+  /** `SOUNDINGS_PUBLIC_SUBMISSION_ENABLED` (knob `soundings-mock-public` = `off`). */
+  publicSubmissionEnabled: boolean
+  publicForms: MockPublicForm[]
+  publicSubmissions: MockPublicSubmission[]
+  /** ALTCHA challenges already used (replay protection). */
+  altchaUsed: Set<string>
+  /** Public submission attempts (ms) from "this browser" (the mock's one client address). */
+  publicAttempts: number[]
+  brandingProfiles: MockBrandingProfile[]
+  brandAssets: MockBrandAsset[]
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -304,6 +338,8 @@ export interface DbOptions {
   dataset?: 'default' | 'large'
   /** Email settings: `off` = SMTP not configured, `failing` = the server is down. */
   email?: 'default' | 'off' | 'failing'
+  /** Phase 4: `off` = the instance switch for public submission is off. */
+  publicSubmission?: 'default' | 'off'
 }
 
 /* ------------------------------------------------------------------ */
@@ -329,6 +365,8 @@ export const ID_KIND = {
   audit: 'b',
   notification: 'c',
   outbox: 'd',
+  /** Phase 4: proposals, sections' threads and comments, submissions, branding assets. */
+  phase4: 'e',
 } as const
 
 const HOUR = 3_600_000
@@ -1128,6 +1166,7 @@ export function createDb({
   now = Date.now(),
   dataset = 'default',
   email = 'default',
+  publicSubmission = 'default',
 }: DbOptions = {}): MockDb {
   const rand = prng(20260930)
   const iso = (ms: number) => new Date(ms).toISOString()
@@ -1171,6 +1210,18 @@ export function createDb({
     outbox: [],
     email: { configured: email !== 'off', failing: email === 'failing' },
     pendingEvents: [],
+    proposals: [],
+    proposalSections: [],
+    proposalThreads: [],
+    proposalComments: [],
+    proposalExports: {},
+    publicSubmissionEnabled: publicSubmission !== 'off',
+    publicForms: [],
+    publicSubmissions: [],
+    altchaUsed: new Set(),
+    publicAttempts: [],
+    brandingProfiles: [],
+    brandAssets: [],
     seq: 1_000_000,
   }
 
@@ -1456,6 +1507,7 @@ export function createDb({
   db.events.sort((a, b) => a.created_at.localeCompare(b.created_at))
   seedAccess(db, { users: USERS, projects: PROJECTS, nextId })
   seedNotifications(db, { users: USERS, nextId })
+  seedPhase4(db, { users: USERS, projects: PROJECTS, nextId })
   return db
 }
 
@@ -1466,7 +1518,11 @@ export function createDb({
 let current: MockDb | null = null
 
 export function getDb(): MockDb {
-  current ??= createDb({ dataset: readDatasetPreference(), email: readEmailPreference() })
+  current ??= createDb({
+    dataset: readDatasetPreference(),
+    email: readEmailPreference(),
+    publicSubmission: readPublicPreference(),
+  })
   return current
 }
 
@@ -1496,6 +1552,20 @@ function readEmailPreference(): 'default' | 'off' | 'failing' {
     const value =
       typeof localStorage === 'undefined' ? null : localStorage.getItem(MOCK_EMAIL_STORAGE_KEY)
     return value === 'off' || value === 'failing' ? value : 'default'
+  } catch {
+    return 'default'
+  }
+}
+
+/** `localStorage['soundings-mock-public']`: `off` turns public submission off for the instance. */
+export const MOCK_PUBLIC_STORAGE_KEY = 'soundings-mock-public'
+
+function readPublicPreference(): 'default' | 'off' {
+  try {
+    return typeof localStorage !== 'undefined' &&
+      localStorage.getItem(MOCK_PUBLIC_STORAGE_KEY) === 'off'
+      ? 'off'
+      : 'default'
   } catch {
     return 'default'
   }

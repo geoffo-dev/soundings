@@ -295,11 +295,16 @@ VERIFICATION_TOKEN = "eyJ2IjoxLCJzIjoiNWYwZThhNTIifQ.c2lnbmF0dXJlLXNpZ25hdHVyZQ"
 _PROPOSAL = "/api/v1/ideas/CUST-12/proposal"
 
 # operation_id -> a valid request for every operation still answered with 501. Every
-# Phase 1, 2 and 3 operation is implemented and tested (tests/api, tests/ideas,
-# tests/identity, tests/admin, tests/notifications). Add a row per stub; delete it when
-# you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
-    # --- Phase 4: proposals ---------------------------------------------------------
+# Phase 1-4 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
+# tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
+# tests/moderation). Add a row per stub of a later phase; delete it when you implement it.
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+
+# Phase 4 operations already implemented (their behaviour is tested in tests/public and
+# elsewhere): a valid request each, for the shape and session checks below. Move a row
+# here from STUBS when you implement it.
+PHASE4_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Proposals (tests/proposals) ----------------------------------------------------
     "get_proposal": (_PROPOSAL, None),
     "create_proposal": (_PROPOSAL, None),
     "update_proposal_section": (
@@ -323,7 +328,7 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
         f"{_PROPOSAL}/threads/{THREAD}/comments/{PROPOSAL_COMMENT}",
         None,
     ),
-    # --- Phase 4: public submission ---------------------------------------------------
+    # --- Public submission (no session) ------------------------------------------------
     "get_public_project": ("/api/v1/public/projects/cust", None),
     "get_altcha_challenge": ("/api/v1/public/projects/cust/altcha", None),
     "submit_public_idea": (
@@ -350,17 +355,19 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
     ),
     "erase_tracked_submission": ("/api/v1/public/track/erase", {"token": TRACKING_TOKEN}),
     "verify_submission_email": ("/api/v1/public/verify-email", {"token": VERIFICATION_TOKEN}),
+    # --- Public submissions inside the app ---------------------------------------------
+    "get_idea_submission": ("/api/v1/ideas/CUST-12/submission", None),
+    "erase_submitter": ("/api/v1/ideas/CUST-12/submission/erase", None),
+    # --- Public form settings and moderation (tests/moderation) -------------------------
     "get_public_form_settings": ("/api/v1/projects/cust/public-form", None),
     "update_public_form_settings": (
         "/api/v1/projects/cust/public-form",
         {"enabled": True, "moderation_required": True, "intro_md": "We read every idea."},
     ),
     "list_moderation_queue": ("/api/v1/projects/cust/moderation?limit=20", None),
-    "get_idea_submission": ("/api/v1/ideas/CUST-12/submission", None),
     "approve_submission": ("/api/v1/ideas/CUST-12/submission/approve", None),
     "reject_submission": ("/api/v1/ideas/CUST-12/submission/reject", None),
-    "erase_submitter": ("/api/v1/ideas/CUST-12/submission/erase", None),
-    # --- Phase 4: branding ------------------------------------------------------------
+    # --- Branding (tests/branding) -----------------------------------------------------
     "get_branding": ("/api/v1/branding", None),
     "get_brand_asset": (f"/api/v1/branding/assets/{ASSET}", None),
     "get_global_branding": ("/api/v1/admin/branding", None),
@@ -559,6 +566,16 @@ def test_signed_in_routes_take_the_principal() -> None:
         assert (get_principal in calls) == (route.name not in PUBLIC_OPERATIONS), route.name
 
 
+async def test_implemented_public_routes_need_no_session(client: httpx.AsyncClient) -> None:
+    """The public form and its links answer anonymous requests (404 here: no such form,
+    token or image; the effective branding is always there), never 401."""
+    for operation_id in sorted(PUBLIC_OPERATIONS & set(PHASE4_REQUESTS)):
+        url, body = PHASE4_REQUESTS[operation_id]
+        response = await client.request(_METHODS[operation_id], url, json=body)
+        expected = 200 if operation_id == "get_branding" else 404
+        assert response.status_code == expected, (operation_id, response.text)
+
+
 async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
     """Sign-in routes answer without a session (here: 501, not 401)."""
     for operation_id in sorted(PUBLIC_OPERATIONS & set(STUBS)):
@@ -568,7 +585,7 @@ async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
 
 
 async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
-    requests = PHASE2_REQUESTS | STUBS
+    requests = PHASE2_REQUESTS | PHASE4_REQUESTS | STUBS
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
         url, body = requests[operation_id]
         response = await client.request(_METHODS[operation_id], url, json=body)
@@ -701,8 +718,8 @@ async def test_one_click_unsubscribe_accepts_the_rfc8058_form_post(
 
 # --- Phase 4 ---------------------------------------------------------------------------
 _LONG = "x" * 20_001
-_SUBMISSION = STUBS["submit_public_idea"][1] or {}
-_BRANDING = STUBS["update_global_branding"][1] or {}
+_SUBMISSION = PHASE4_REQUESTS["submit_public_idea"][1] or {}
+_BRANDING = PHASE4_REQUESTS["update_global_branding"][1] or {}
 
 
 @pytest.mark.usefixtures("signed_in")
@@ -753,7 +770,7 @@ _BRANDING = STUBS["update_global_branding"][1] or {}
 async def test_invalid_phase4_requests_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS.get(operation_id, ("", None))
+    valid_url, valid_body = (PHASE4_REQUESTS | STUBS).get(operation_id, ("", None))
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -794,7 +811,7 @@ async def test_invalid_phase4_requests_are_rejected_before_the_endpoint(
 async def test_invalid_public_requests_are_rejected_without_a_session(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS[operation_id]
+    valid_url, valid_body = (PHASE4_REQUESTS | STUBS)[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -850,20 +867,20 @@ def test_a_section_conflict_carries_the_current_section(app: FastAPI) -> None:
 
 async def test_a_long_honeypot_value_is_still_a_valid_body(client: httpx.AsyncClient) -> None:
     """A filled honeypot must look like any submission: never a 422 of its own."""
-    url, body = STUBS["submit_public_idea"]
+    url, body = PHASE4_REQUESTS["submit_public_idea"]
 
     response = await client.post(url, json=(body or {}) | {"website": "x" * 5_000})
 
-    assert response.status_code == 501, response.text
+    assert response.status_code == 404, response.text  # past the shape check: no such form
 
 
 @pytest.mark.usefixtures("signed_in")
 async def test_whitespace_only_section_text_is_a_valid_body(client: httpx.AsyncClient) -> None:
     """Section text isn't trimmed (contract-phase4 section 3.2): indentation and blank
     lines are valid bodies, as is a section someone emptied."""
-    url, _ = STUBS["update_proposal_section"]
+    url, _ = PHASE4_REQUESTS["update_proposal_section"]
 
     for text in ("    code\n\n", "\n\n", ""):
         response = await client.put(url, json={"body_md": text, "base_version": 1})
 
-        assert response.status_code == 501, response.text
+        assert response.status_code == 404, response.text  # past the shape check: no idea

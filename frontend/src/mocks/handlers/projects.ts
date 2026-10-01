@@ -9,6 +9,7 @@ import {
   canViewProject,
   DEFAULT_STATUS_LABELS,
   findUser,
+  isListed,
   isPickable,
   member,
   projectDetail,
@@ -461,7 +462,8 @@ export const projectHandlers = [
     const project = viewProject(ctx)
     const counts = new Map<string, number>()
     for (const idea of ctx.db.ideas) {
-      if (idea.project_id !== project.id || !canViewIdea(ctx.db, idea, ctx.user)) continue
+      if (idea.project_id !== project.id || !isListed(idea) || !canViewIdea(ctx.db, idea, ctx.user))
+        continue
       for (const id of idea.tag_ids) counts.set(id, (counts.get(id) ?? 0) + 1)
     }
     return ctx.db.tags

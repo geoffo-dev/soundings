@@ -7,8 +7,8 @@ IMAGE ?= soundings:dev
 # CA bundle trusted by the image build's npm/pip/uv (TLS-intercepting proxies). Passed
 # as a BuildKit secret, never stored in the image. Empty: none.
 BUILD_CA ?= $(SSL_CERT_FILE)
-# Extra `docker build` flags, e.g. --build-arg RUNTIME_APT_PACKAGES= when no Debian
-# mirror is reachable, or --build-arg NPM_CONFIG_REGISTRY=https://npm.internal/.
+# Extra `docker build` flags, e.g. --build-arg UBUNTU_MIRROR=http://mirror.internal/ubuntu
+# or --build-arg NPM_CONFIG_REGISTRY=https://npm.internal/.
 IMAGE_BUILD_ARGS ?=
 VCS_REF := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 OPENAPI_JSON := frontend/src/api/generated/openapi.json
@@ -27,13 +27,16 @@ SSO_BASE_URL ?= http://localhost:8000
 # `make email-smoke` runs against this app (dev login, worker, Mailpit: MAILPIT_URL,
 # MAILPIT_CONTAINER; defaults: the dev compose Mailpit).
 EMAIL_BASE_URL ?= http://localhost:8000
+# `make public-smoke` runs against this app (demo data and dev login: `make dev` or
+# `make demo`).
+PUBLIC_BASE_URL ?= http://localhost:8000
 
 comma := ,
 build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(BUILD_CA))
 
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
         check-scripts e2e image demo demo-down k3s-up k3s-load k3s-keycloak k3s-mailpit k3s-install k3s-smoke \
-        k3s-down openapi gen-api seed sso-smoke email-smoke
+        k3s-down openapi gen-api seed sso-smoke email-smoke public-smoke
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
@@ -110,7 +113,7 @@ k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (d
 	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' scripts/k3s-install.sh \
 	  --set image.repository="$${image%:*}" --set image.tag="$${image##*:}"
 
-k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, then helm test (SSO=1: + SSO flow; SMTP=1: + email)
+k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, then helm test (SSO=1: + SSO flow; SMTP=1: + email)
 	SSO='$(SSO)' SMTP='$(SMTP)' scripts/k3s-smoke.sh
 
 k3s-down: ## Delete the local k3s cluster
@@ -121,6 +124,9 @@ sso-smoke: ## Scripted SSO sign-in + groups -> access against SSO_BASE_URL (defa
 
 email-smoke: ## Invite -> branded email in Mailpit, then an SMTP outage -> delivered once (EMAIL_BASE_URL, MAILPIT_URL)
 	scripts/email-smoke.sh $(EMAIL_BASE_URL)
+
+public-smoke: ## Public form + branding, then anonymous idea -> approved -> proposal -> PDF/Markdown export (PUBLIC_BASE_URL)
+	scripts/public-smoke.sh $(PUBLIC_BASE_URL)
 
 # --- API contract ------------------------------------------------------------------------
 openapi: ## Export the backend's OpenAPI document to $(OPENAPI_JSON)

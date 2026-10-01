@@ -1,6 +1,8 @@
 """Authenticated encryption with the app's secret key, for values the server must get
 back unread and unchanged: the SSO sign-in attempt in the ``soundings_oidc`` cookie
-(contract-phase2 section 3.2) and the ID token kept for sign-out (section 3.9).
+(contract-phase2 section 3.2), the ID token kept for sign-out (section 3.9) and a public
+submitter's tracking token, so later emails can carry their link (contract-phase4
+section 3.7).
 
 AES-256-GCM with a key derived per purpose from ``SOUNDINGS_SECRET_KEY`` (HKDF-SHA256),
 so a value sealed for one purpose never opens as another. A sealed value is
@@ -26,7 +28,7 @@ from app.config import Settings
 
 __all__ = ["Purpose", "seal", "unseal"]
 
-Purpose = Literal["oidc-login-attempt", "session-id-token"]
+Purpose = Literal["oidc-login-attempt", "session-id-token", "submission-tracking-token"]
 
 _NONCE_BYTES: Final = 12
 _TAG_BYTES: Final = 16

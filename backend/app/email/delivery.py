@@ -47,13 +47,13 @@ from app.config import Settings
 from app.db import SessionMaker, session_scope
 from app.email import content, outbox
 from app.email.message import build_message
-from app.email.model import DEFAULT_BRANDING
 from app.email.render import render
 from app.email.smtp import Failure, SmtpTransport, Transport, classify, internal_failure
 from app.models.base import utcnow
 from app.models.enums import EmailStatus, EmailType
 from app.models.notification import OutboundEmail
 from app.observability import EMAILS_CANCELLED, EMAILS_FAILED, EMAILS_QUEUED, EMAILS_SENT
+from app.services.branding import email_branding_for
 
 __all__ = [
     "WORKER_STOPPED",
@@ -170,6 +170,7 @@ async def _claim(runtime: Runtime, email_id: UUID) -> content.OutboxRow | None:
                     OutboundEmail.to_address,
                     OutboundEmail.requested_by_id,
                     OutboundEmail.payload,
+                    OutboundEmail.idea_id,
                 )
                 .execution_options(synchronize_session=False)
             )
@@ -187,6 +188,7 @@ async def _claim(runtime: Runtime, email_id: UUID) -> content.OutboxRow | None:
         to_address=row.to_address,
         requested_by_id=row.requested_by_id,
         payload=row.payload or {},
+        idea_id=row.idea_id,
     )
 
 
@@ -194,11 +196,15 @@ async def _attempt(runtime: Runtime, email: content.OutboxRow) -> content.Cancel
     """Steps 2-4: ``None`` when the server accepted the message."""
     settings = runtime.settings
     async with runtime.sessionmaker() as db:
-        prepared = await content.prepare(db, settings, email, now=runtime.clock())
+        # Phase 4: the effective branding (global; a public submitter's project's).
+        branding = await email_branding_for(db, email.type, email.idea_id)
+        prepared = await content.prepare(
+            db, settings, email, now=runtime.clock(), branding=branding
+        )
         await db.rollback()  # read-only
     if isinstance(prepared, content.Cancelled):
         return prepared
-    rendered = render(prepared.content, DEFAULT_BRANDING)
+    rendered = render(prepared.content, branding)
     message = build_message(
         rendered,
         prepared.content,

@@ -5,7 +5,8 @@
 # Air-gapped runners: every image is a variable. Point REGISTRY_MIRROR at your Docker Hub
 # proxy (e.g. harbor.internal/dockerhub) and set, as CI/CD variables when needed:
 #   PIP_INDEX_URL / UV_DEFAULT_INDEX   PyPI mirror        NPM_CONFIG_REGISTRY  npm mirror
-#   DEBIAN_MIRROR                       Debian mirror for the image's runtime packages
+#   UBUNTU_MIRROR                       Ubuntu archive mirror (http://mirror.internal/ubuntu)
+#                                       for the image's packages and the backend test job
 #   CI_BUILD_CA (type File)             extra CA bundle for TLS-intercepting proxies
 #   TRIVY_DB_REPOSITORY / TRIVY_JAVA_DB_REPOSITORY   mirrors of the Trivy databases
 # docker:dind (backend tests, deploy-test) pulls postgres/k3s/busybox images itself: give
@@ -33,6 +34,9 @@ workflow:
 variables:
   REGISTRY_MIRROR: docker.io
   PYTHON_IMAGE: ${REGISTRY_MIRROR}/library/python:3.12-slim
+  # The image's base (ADR 0011), pinned; the backend tests run on it too (Ubuntu's
+  # Python 3.12 and the Pango stack WeasyPrint needs). Update the digest with the tag.
+  UBUNTU_IMAGE: ${REGISTRY_MIRROR}/library/ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
   NODE_IMAGE: ${REGISTRY_MIRROR}/library/node:22-alpine
   POSTGRES_IMAGE: ${REGISTRY_MIRROR}/library/postgres:16-alpine
   PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.56.1-noble
@@ -177,7 +181,10 @@ helm:lint:
                  "smtp.host=s.example.com,smtp.from=a@example.com,smtp.existingSecret=x,smtp.username=u" \
                  "smtp.port=70000" "smtp.timeout=0" "timezone=Europe/London;x" \
                  "notifications.digestHour=24" "notifications.reminderDays={1,1}" \
-                 "notifications.reminderDays={31}" "networkPolicy.egress.smtp.port=0"; do
+                 "notifications.reminderDays={31}" "networkPolicy.egress.smtp.port=0" \
+                 "publicSubmission.perIpPerHour=0" "publicSubmission.perProjectPerHour=20000" \
+                 "publicSubmission.altcha.cost=10" "publicSubmission.altcha.expiry=30m" \
+                 "branding.maxUploadBytes=1048576" "ingress.publicApi.foo=1"; do
         if helm template ci deploy/helm --set "$bad" > /dev/null 2>&1; then
           echo "chart accepted invalid value: $bad"; exit 1
         fi
@@ -188,6 +195,27 @@ helm:lint:
 backend:test:
   extends: [.backend, .dind]
   stage: test
+  # The runtime image's OS and interpreter (ADR 0011): Ubuntu 24.04, /usr/bin/python3.12,
+  # and the Pango stack, so the PDF export tests render as the image does.
+  image: ${UBUNTU_IMAGE}
+  before_script:
+    - *ca-bundle
+    - |
+      export DEBIAN_FRONTEND=noninteractive
+      if [ -n "${UBUNTU_MIRROR:-}" ]; then
+        sed -i -E "s#https?://(archive|security|ports)\.ubuntu\.com/ubuntu(-ports)?/?#${UBUNTU_MIRROR%/}/#g" \
+          /etc/apt/sources.list.d/ubuntu.sources
+      fi
+      apt_ca=""
+      if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then apt_ca="-o Acquire::https::CaInfo=$CI_BUILD_CA"; fi
+      apt-get $apt_ca update -qq
+      apt-get $apt_ca install -y -qq --no-install-recommends python3.12 python3.12-venv \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fontconfig fonts-dejavu-core \
+        ca-certificates tzdata >/dev/null
+    - python3.12 -m venv /opt/uv && /opt/uv/bin/pip install -q "uv==${UV_VERSION}"
+    - export PATH="/opt/uv/bin:$PATH" UV_PYTHON=/usr/bin/python3.12
+    - cd backend
+    - uv sync --locked
   # dind for testcontainers (Postgres), and Keycloak 26 for the identity integration
   # tests (tests/identity/test_keycloak.py: the real code flow, group sync and the SPEC
   # acceptance). The service can't read the repository, so the dev realm is loaded
@@ -225,7 +253,7 @@ backend:test:
     SOUNDINGS_TEST_MAILPIT_URL: http://mailpit:8025
     SOUNDINGS_TEST_MAILPIT_SMTP: mailpit:1025
   script:
-    - python3 ../dev/keycloak/import_realm.py http://keycloak:8080 --origin http://testserver
+    - python3.12 ../dev/keycloak/import_realm.py http://keycloak:8080 --origin http://testserver
     - uv run pytest -p no:cacheprovider --junitxml=report.xml
   artifacts:
     when: always
@@ -263,8 +291,10 @@ image:build:
     - |
       set -- --build-arg "VCS_REF=$CI_COMMIT_SHORT_SHA" \
              --build-arg "BUILD_DATE=$CI_JOB_STARTED_AT" \
-             --build-arg "SOURCE_URL=$CI_PROJECT_URL"
-      for arg in NPM_CONFIG_REGISTRY PIP_INDEX_URL UV_DEFAULT_INDEX DEBIAN_MIRROR; do
+             --build-arg "SOURCE_URL=$CI_PROJECT_URL" \
+             --build-arg "UBUNTU_IMAGE=$UBUNTU_IMAGE" \
+             --build-arg "NODE_IMAGE=$NODE_IMAGE"
+      for arg in NPM_CONFIG_REGISTRY PIP_INDEX_URL UV_DEFAULT_INDEX UBUNTU_MIRROR; do
         eval "value=\${$arg:-}"
         [ -z "$value" ] || set -- "$@" --build-arg "$arg=$value"
       done
@@ -358,6 +388,8 @@ e2e:
     SOUNDINGS_SMTP_FROM: soundings@example.com
     SOUNDINGS_TIMEZONE: Europe/London
     E2E_MAILPIT_URL: http://mailpit:8025
+    # Every spec sends the public form from this job's address (as in the local stack).
+    SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP: "1000"
     # The break-glass admin, as in the local e2e stack (e2e/scripts/stack-env.sh).
     SOUNDINGS_BREAK_GLASS_ENABLED: "true"
     SOUNDINGS_BREAK_GLASS_USERNAME: admin
@@ -443,6 +475,7 @@ e2e:sso:
     SOUNDINGS_SMTP_SECURITY: none
     SOUNDINGS_SMTP_FROM: soundings@example.com
     SOUNDINGS_TIMEZONE: Europe/London
+    SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP: "1000"
     E2E_MAILPIT_URL: http://mailpit:8025
     E2E_BASE_URL: http://app:8000
     E2E_SSO: "1"

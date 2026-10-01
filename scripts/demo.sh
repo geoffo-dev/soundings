@@ -16,6 +16,8 @@
 #   DEMO_BREAK_GLASS_PASSWORD  set: the break-glass admin "admin" with this password
 #   DEMO_SMTP=0     no Mailpit and no SMTP: in-app notifications only (admins see a banner)
 #   DEMO_TIMEZONE   instance time zone of digests, reminders and dates in emails (UTC)
+#   DEMO_PUBLIC_PER_IP  public-form submissions per client address and hour (the app's
+#                   default, 10, when unset; CI's e2e sends more from one address)
 #   POSTGRES_IMAGE  (default postgres:16-alpine)   MAILPIT_IMAGE  (axllent/mailpit:latest)
 # Development mode only: fixed database password, no TLS, anyone can sign in as anyone.
 set -euo pipefail
@@ -57,9 +59,16 @@ if [ -n "${DEMO_BREAK_GLASS_PASSWORD:-}" ]; then
   app_env+=(-e SOUNDINGS_BREAK_GLASS_ENABLED=true -e SOUNDINGS_BREAK_GLASS_USERNAME=admin
     -e "SOUNDINGS_BREAK_GLASS_PASSWORD=$DEMO_BREAK_GLASS_PASSWORD")
 fi
+if [ -n "${DEMO_PUBLIC_PER_IP:-}" ]; then
+  app_env+=(-e "SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP=$DEMO_PUBLIC_PER_IP")
+fi
+# The app and the worker run as in Kubernetes: read-only root filesystem with a
+# writable /tmp (fontconfig's cache, PDF export), no capabilities.
+hardening=(--read-only --tmpfs "/tmp:rw,nosuid,nodev,size=256m" --cap-drop ALL
+  --security-opt no-new-privileges)
 
 soundings() {
-  docker run --rm --network "$network" "${app_env[@]}" "$IMAGE" "$@"
+  docker run --rm --network "$network" "${hardening[@]}" "${app_env[@]}" "$IMAGE" "$@"
 }
 
 # Run a command quietly; show its output only if it fails.
@@ -119,10 +128,11 @@ up() {
 
   docker rm -f "$app" "$worker" >/dev/null 2>&1 || true
   log "starting the app '$app' on $url and the worker '$worker'"
-  docker run -d --name "$app" --network "$network" "${app_env[@]}" \
+  docker run -d --name "$app" --network "$network" "${hardening[@]}" "${app_env[@]}" \
     -p "$DEMO_BIND_ADDRESS:$DEMO_PORT:8000" "$IMAGE" api >/dev/null
   # The worker sends the email the app queues, and runs reminders and digests.
-  docker run -d --name "$worker" --network "$network" "${app_env[@]}" "$IMAGE" worker >/dev/null
+  docker run -d --name "$worker" --network "$network" "${hardening[@]}" "${app_env[@]}" \
+    "$IMAGE" worker >/dev/null
 
   for _ in $(seq 1 60); do
     if curl -fsS --noproxy '*' --max-time 2 -o /dev/null "$url/readyz" 2>/dev/null; then

@@ -56,7 +56,7 @@ devLogin: false
 # Demo data for trying Soundings out (development mode only: needs devLogin).
 demo:
   # -- After install and every upgrade, run `soundings seed` in a hook Job: 12 people
-  # (sign in as alice, the platform admin), 3 projects and 45 ideas. Does nothing once
+  # (sign in as alice, the platform admin), 3 projects and 48 ideas. Does nothing once
   # the database has projects, so upgrades keep your changes.
   seed: false
 
@@ -179,10 +179,39 @@ breakGlass:
   existingSecret: ""
 
 features:
-  # -- Allow projects to turn on public (anonymous) idea submission.
+  # -- Allow projects to turn on their public (anonymous) idea form at
+  # <baseUrl>/<project>/submit (Settings > Public form). false: every public form,
+  # tracking link and confirmation link answers 404, and no project can turn one on.
   publicSubmission: true
   # -- AI assistance through kagent (Phase 6). Needs kagent in the cluster.
   ai: false
+
+# Anti-abuse limits of the public form (features.publicSubmission). The form also has a
+# honeypot field and an ALTCHA proof of work (computed in the visitor's browser, no
+# third-party service). README "Public submission" has the edge (ingress) settings.
+publicSubmission:
+  # -- Submissions one client address (IPv6: per /64) may send per hour, across all
+  # projects (1-1000). Counted per API pod, so N replicas allow up to N times this; the
+  # address comes from X-Forwarded-For through trustedProxies / trustedProxyHops.
+  perIpPerHour: 10
+  # -- Submissions one project accepts per hour from everyone (1-10000; counted in the
+  # database, so across replicas).
+  perProjectPerHour: 100
+  altcha:
+    # -- Proof-of-work cost: PBKDF2/SHA-256 iterations per attempt (1000-1000000).
+    # Higher is slower for bots and for people on old phones.
+    cost: 5000
+    # -- How long a challenge can be solved and sent: ISO 8601 duration, 1 minute to
+    # 1 day (PT30M) or seconds.
+    expiry: PT30M
+
+# Branding (Settings > Branding): app name, colours, font, logo and favicon. Logos and
+# favicons are stored in the database (PNG or SVG; SVGs are checked against an
+# allow-list) and served by the app, so there is nothing to mount.
+branding:
+  # -- Largest logo or favicon upload in bytes (16384-921600: an upload must fit the
+  # app's 1 MiB request limit).
+  maxUploadBytes: 524288
 
 # kagent integration (Phase 6: AI evaluator, research and drafting assistant).
 # Placeholders only for now; see deploy/kagent/README.md.
@@ -299,6 +328,15 @@ ingress:
   hosts: []
   # -- e.g. [{secretName: soundings-tls, hosts: [ideas.example.com]}]
   tls: []
+  # Optional second Ingress for the public form's API (/api/v1/public: anonymous
+  # submissions, tracking and email confirmation) with its own annotations, e.g. an edge
+  # rate limit for anonymous traffic only. Rendered when annotations is not empty (and
+  # features.publicSubmission is on), with the class, hosts and TLS above but only these
+  # annotations (ingress.annotations are not copied).
+  publicApi:
+    # -- e.g. {nginx.ingress.kubernetes.io/limit-rpm: "30"}, or for Traefik
+    # {traefik.ingress.kubernetes.io/router.middlewares: <ns>-<ratelimit>@kubernetescrd}.
+    annotations: {}
 
 # Gateway API HTTPRoute (alternative to ingress; needs the Gateway API CRDs).
 httpRoute:

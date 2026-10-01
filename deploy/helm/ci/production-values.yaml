@@ -48,6 +48,16 @@ features:
   publicSubmission: true
   ai: false
 
+publicSubmission:
+  perIpPerHour: 5
+  perProjectPerHour: 200
+  altcha:
+    cost: 20000
+    expiry: PT15M
+
+branding:
+  maxUploadBytes: 262144
+
 otel:
   endpoint: http://otel-collector.observability:4318
 
@@ -107,6 +117,12 @@ ingress:
   annotations:
     # The app refuses bodies over 1 MiB itself (413); refuse them at the edge too.
     nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    cert-manager.io/cluster-issuer: letsencrypt
+  # An edge rate limit for the anonymous form's API only (a second Ingress).
+  publicApi:
+    annotations:
+      nginx.ingress.kubernetes.io/limit-rpm: "30"
+      nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
   tls:
     - secretName: soundings-tls
       hosts:

@@ -1,5 +1,6 @@
 # Soundings: one image for the REST API (which also serves the built SPA) and the
-# background worker.
+# background worker. Ubuntu 24.04 with Ubuntu's Python 3.12 and the Pango stack for
+# WeasyPrint's PDF export (ADR 0011).
 #
 #   docker build -t soundings:dev .
 #   docker run --rm -p 8000:8000 -e SOUNDINGS_DATABASE_URL=... soundings:dev            # API + SPA
@@ -10,10 +11,11 @@
 # Build-time HTTPS behind a TLS-intercepting proxy: pass the CA bundle as a BuildKit
 # secret (never stored in a layer):  docker build --secret id=build_ca,src=/path/ca.pem .
 # Air-gapped mirrors: --build-arg NPM_CONFIG_REGISTRY=... / PIP_INDEX_URL=... /
-# UV_DEFAULT_INDEX=... and override the base images with NODE_IMAGE / PYTHON_IMAGE.
+# UV_DEFAULT_INDEX=... / UBUNTU_MIRROR=http://mirror.internal/ubuntu, and override the
+# base images with NODE_IMAGE / UBUNTU_IMAGE.
 
 ARG NODE_IMAGE=node:22-alpine
-ARG PYTHON_IMAGE=python:3.12-slim
+ARG UBUNTU_IMAGE=ubuntu:24.04
 
 # ---------------------------------------------------------------------------------
 # 1. Frontend: Vite build -> /src/frontend/dist
@@ -32,24 +34,78 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------------
-# 2. Backend: a self-contained virtualenv at /app/venv (non-editable, no dev deps)
+# 2. Base: Ubuntu, its Python 3.12 and the runtime libraries (shared by the backend
+#    build and the runtime, so the venv's interpreter, /usr/bin/python3.12, and the
+#    libraries WeasyPrint loads are the same in both)
 # ---------------------------------------------------------------------------------
-FROM ${PYTHON_IMAGE} AS backend
+FROM ${UBUNTU_IMAGE} AS base
+# python3.12: the interpreter (no pip, no venv module). libpango-1.0-0, libpangoft2-1.0-0
+# and libharfbuzz-subset0 (pulling GLib, HarfBuzz, FreeType and fontconfig's library):
+# what WeasyPrint dlopen()s. fontconfig: its config and fc-cache, so the system font
+# cache is built here and not at runtime. fonts-dejavu-core: the fallback for glyphs the
+# bundled fonts lack (Greek, Cyrillic, symbols). ca-certificates: TLS to the IdP, SMTP
+# and the database. tzdata: SOUNDINGS_TIMEZONE (zoneinfo reads the system database).
+# RUNTIME_APT_PACKAGES adds packages (an internal mirror's keyring, debugging tools).
+ARG RUNTIME_APT_PACKAGES=""
+# e.g. http://mirror.internal/ubuntu (replaces archive.ubuntu.com, security.ubuntu.com
+# and ports.ubuntu.com). An https mirror behind a TLS-intercepting proxy uses the
+# build_ca secret.
+ARG UBUNTU_MIRROR=""
+# Not version-pinned on purpose: rebuilds pick up Ubuntu security fixes (Trivy gate).
+# hadolint ignore=DL3008,DL3009,SC2086
+RUN --mount=type=secret,id=build_ca,required=false \
+    set -eu; export DEBIAN_FRONTEND=noninteractive; \
+    if [ -n "${UBUNTU_MIRROR}" ]; then \
+      sed -i -E "s#https?://(archive|security|ports)\.ubuntu\.com/ubuntu(-ports)?/?#${UBUNTU_MIRROR%/}/#g" \
+        /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    apt_ca=""; \
+    if [ -s /run/secrets/build_ca ]; then apt_ca="-o Acquire::https::CaInfo=/run/secrets/build_ca"; fi; \
+    apt-get ${apt_ca} update; \
+    apt-get ${apt_ca} upgrade -y; \
+    apt-get ${apt_ca} install -y --no-install-recommends \
+      python3.12 libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fontconfig \
+      fonts-dejavu-core ca-certificates tzdata ${RUNTIME_APT_PACKAGES}; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt/* /var/log/dpkg.log; \
+    # The image's default user (uid 1000) is not used; the app runs as 10001.
+    userdel --remove ubuntu 2>/dev/null || true; \
+    groupadd --gid 10001 soundings; \
+    useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \
+            --shell /usr/sbin/nologin soundings
+
+# ---------------------------------------------------------------------------------
+# 3. Backend: a self-contained virtualenv at /app/venv (non-editable, no dev deps),
+#    built with uv on the base's /usr/bin/python3.12 (uv never downloads a Python)
+# ---------------------------------------------------------------------------------
+FROM base AS backend
 ARG UV_VERSION=0.8.17
 ARG PIP_INDEX_URL
 ARG UV_DEFAULT_INDEX
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_ROOT_USER_ACTION=ignore \
     UV_NO_CACHE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PYTHON=python3.12 \
+    UV_PYTHON=/usr/bin/python3.12 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/app/venv
+# python3.12-venv (build stage only) brings ensurepip, used once to install uv into
+# its own venv; uv itself creates /app/venv without it.
+# hadolint ignore=DL3008,DL3009,SC2086
 RUN --mount=type=secret,id=build_ca,required=false \
-    if [ -s /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; \
-    pip install "uv==${UV_VERSION}"
+    set -eu; export DEBIAN_FRONTEND=noninteractive; \
+    apt_ca=""; \
+    if [ -s /run/secrets/build_ca ]; then \
+      apt_ca="-o Acquire::https::CaInfo=/run/secrets/build_ca"; \
+      export PIP_CERT=/run/secrets/build_ca; \
+    fi; \
+    apt-get ${apt_ca} update; \
+    apt-get ${apt_ca} install -y --no-install-recommends python3.12-venv; \
+    rm -rf /var/lib/apt/lists/*; \
+    python3.12 -m venv /opt/uv; \
+    /opt/uv/bin/pip install "uv==${UV_VERSION}"; \
+    ln -s /opt/uv/bin/uv /usr/local/bin/uv
 WORKDIR /src/backend
 
 # Dependencies first (cached until pyproject.toml/uv.lock change). The "otel" extra
@@ -60,54 +116,35 @@ RUN --mount=type=secret,id=build_ca,required=false \
     uv sync --locked --no-dev --no-install-project --extra otel
 
 # Then the project itself, installed as a wheel (not editable). The wheel includes the
-# Alembic migrations (app/migrations) and the demo data (app/seed).
+# Alembic migrations (app/migrations), the demo data (app/seed), the email and PDF
+# templates and the bundled fonts (app/assets/fonts). The last line checks that
+# WeasyPrint finds Pango, HarfBuzz and fontconfig here, i.e. in the runtime's libraries.
 COPY backend/README.md ./
 COPY backend/app ./app
 RUN --mount=type=secret,id=build_ca,required=false \
     if [ -s /run/secrets/build_ca ]; then export SSL_CERT_FILE=/run/secrets/build_ca; fi; \
     uv sync --locked --no-dev --no-editable --extra otel \
-    && /app/venv/bin/soundings --help >/dev/null
+    && /app/venv/bin/soundings --help >/dev/null \
+    && /app/venv/bin/python -c "import weasyprint; weasyprint.HTML(string='<p>ok</p>').write_pdf()"
 
 # ---------------------------------------------------------------------------------
-# 3. Runtime
+# 4. Runtime
 # ---------------------------------------------------------------------------------
-FROM ${PYTHON_IMAGE} AS runtime
-
-# Debian packages needed at runtime: Pango, HarfBuzz (incl. subsetting) and fontconfig
-# for WeasyPrint's PDF export. Set to "" to skip apt (e.g. no Debian mirror reachable;
-# PDF export will then fail at runtime). Point at an internal mirror with DEBIAN_MIRROR.
-# The same RUN drops pip (the app has its own venv) and creates the non-root user.
-ARG PYTHON_IMAGE
-ARG RUNTIME_APT_PACKAGES="libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libharfbuzz-subset0 libfontconfig1"
-ARG DEBIAN_MIRROR
-# Not version-pinned on purpose: rebuilds pick up Debian security fixes (Trivy gate).
-# hadolint ignore=DL3008
-RUN set -eu; export DEBIAN_FRONTEND=noninteractive; \
-    if [ -n "${RUNTIME_APT_PACKAGES}" ]; then \
-      if [ -n "${DEBIAN_MIRROR:-}" ]; then \
-        sed -i "s#http://deb.debian.org#${DEBIAN_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; \
-      fi; \
-      apt-get update; \
-      apt-get upgrade -y; \
-      apt-get install -y --no-install-recommends ${RUNTIME_APT_PACKAGES}; \
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb; \
-    fi; \
-    rm -rf /usr/local/lib/python3.12/site-packages/pip /usr/local/lib/python3.12/site-packages/pip-* \
-           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12; \
-    groupadd --gid 10001 soundings; \
-    useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \
-            --shell /usr/sbin/nologin soundings
+FROM base AS runtime
+ARG UBUNTU_IMAGE
 
 COPY --from=backend /app/venv /app/venv
 COPY --from=frontend /src/frontend/dist /app/static
 
-# Read-only root filesystem: only /tmp (an emptyDir in Kubernetes) is writable, so
-# HOME and caches (e.g. fontconfig) point there and no bytecode is written.
+# Read-only root filesystem: only /tmp (an emptyDir in Kubernetes, a tmpfs with
+# `docker run --read-only --tmpfs /tmp`) is writable, so HOME and caches point there
+# (fontconfig caches the fonts WeasyPrint adds under $XDG_CACHE_HOME/fontconfig) and no
+# bytecode is written.
 ENV PATH="/app/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp \
-    XDG_CACHE_HOME=/tmp/.cache \
+    XDG_CACHE_HOME=/tmp/cache \
     SOUNDINGS_STATIC_DIR=/app/static \
     SOUNDINGS_HOST=0.0.0.0 \
     SOUNDINGS_PORT=8000
@@ -122,7 +159,7 @@ LABEL org.opencontainers.image.title="Soundings" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.source="${SOURCE_URL}" \
-      org.opencontainers.image.base.name="${PYTHON_IMAGE}"
+      org.opencontainers.image.base.name="${UBUNTU_IMAGE}"
 
 WORKDIR /app
 USER 10001:10001

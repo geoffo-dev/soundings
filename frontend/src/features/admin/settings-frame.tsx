@@ -13,6 +13,7 @@ export const SETTINGS_PAGES = [
   { to: '/settings/groups', label: 'Groups', admin: true },
   { to: '/settings/sso', label: 'Sign-in (SSO)', short: 'SSO', admin: true },
   { to: '/settings/email', label: 'Email', admin: true },
+  { to: '/settings/branding', label: 'Branding', admin: true },
   { to: '/settings/audit', label: 'Audit log', admin: true },
 ] as const
 
@@ -20,8 +21,8 @@ export const SETTINGS_PAGES = [
  * /settings and its pages (SPEC §5 screen 7, wireframe 07): one "Settings"
  * page with a row of sections, like project settings. Everyone has Account
  * (profile, appearance, projects they manage) and Notifications (email
- * preferences); platform admins also get Users, Groups, Sign-in (SSO), Email
- * and the Audit log, after a divider. Anyone else never sees the admin
+ * preferences); platform admins also get Users, Groups, Sign-in (SSO), Email,
+ * Branding and the Audit log, after a divider. Anyone else never sees the admin
  * sections (and their URLs are a 404).
  */
 export function SettingsFrame({ children }: { children: ReactNode }) {

@@ -5,13 +5,14 @@ failed condition denies. Evaluation order (role matrix section 2), first failure
 
 1. **401**: no principal (anonymous) for a rule that needs one;
 2. **404**: an API key restricted away from the project, a column that may not know
-   the resource exists (``NMp``, or ``404`` in the matrix), or the implied view rule
-   (``project.view`` / ``idea.view``, incl. c12) failing;
+   the resource exists (``NMp``, or ``404`` in the matrix), an idea held for email
+   confirmation (c12, for everyone), or the implied view rule (``project.view`` /
+   ``idea.view``, incl. c12) failing;
 3. **403**: the key's scopes, then no grant for the column or an overlay, then the
    principal conditions (c1 submitter, c2, c3, c15, c16, c17);
 4. **422**: request-body conditions (c4);
-5. **409**: state conditions (archived project, c1 status, c5, c6, c7, c10, c11, c13,
-   c18).
+5. **409**: state conditions (archived project, then c19 (an idea held for moderation),
+   then c1 status, c5, c6, c7, c10, c11, c13, c18).
 
 When several grants apply (the column and the owner/evaluator overlays), the principal
 is allowed if any grant passes; otherwise the failure that got furthest wins, so the
@@ -38,13 +39,21 @@ from uuid import UUID
 from app.authz.rules import RULE_SCOPES, Rule
 from app.domain.principal import Principal
 from app.errors import NotFoundProblem, ProblemError
-from app.models.enums import EvaluatorState, IdeaStatus, ProjectRole, ProjectVisibility
+from app.models.enums import (
+    EvaluatorState,
+    HoldReason,
+    IdeaStatus,
+    ProjectRole,
+    ProjectVisibility,
+)
 from app.models.idea import Idea
 from app.models.project import Project
+from app.schemas.projects import RESERVED_SLUGS
 
 __all__ = [
     "ASSIGNABLE_ROLES",
     "CONDITIONS",
+    "FROZEN_WHILE_HELD",
     "MANAGE_USER_ACCESS",
     "POLICY",
     "Column",
@@ -70,11 +79,16 @@ ASSIGNABLE_ROLES: Final = frozenset({ProjectRole.ADMIN, ProjectRole.MEMBER})
 # --- Facts about the resource ----------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class ProjectFacts:
+    """A project. ``public_submission_enabled`` is the project's own switch for its
+    public form; ``slug_reserved``: an older project whose slug is one of the app's own
+    paths (``RESERVED_SLUGS``), which can never have a public form (c8)."""
+
     id: UUID
     visibility: ProjectVisibility
     archived: bool = False
     allow_volunteer_owners: bool = True
     public_submission_enabled: bool = False
+    slug_reserved: bool = False
 
     @classmethod
     def of(cls, project: Project) -> ProjectFacts:
@@ -84,6 +98,7 @@ class ProjectFacts:
             archived=project.archived_at is not None,
             allow_volunteer_owners=project.allow_volunteer_owners,
             public_submission_enabled=project.public_submission_enabled,
+            slug_reserved=project.slug in RESERVED_SLUGS,
         )
 
 
@@ -93,6 +108,7 @@ class IdeaFacts:
 
     ``my_evaluation``: ``None`` when the principal is not an assigned evaluator,
     else their state (``invited`` = nothing saved yet, ``draft``, ``submitted``).
+    ``held_for``: a public submission not visible yet (``ideas.held_for``; c12, c19).
     """
 
     id: UUID
@@ -100,8 +116,19 @@ class IdeaFacts:
     owner_id: UUID | None = None
     submitted_by_id: UUID | None = None
     evaluation_closed: bool = False
-    awaiting_moderation: bool = False  # Phase 4 (c12)
+    held_for: HoldReason | None = None
     my_evaluation: EvaluatorState | None = None
+
+    @property
+    def awaiting_moderation(self) -> bool:
+        """Held until a project admin approves it: only PA and PAd see it (c12), and
+        nobody may change it (c19)."""
+        return self.held_for is HoldReason.MODERATION
+
+    @property
+    def awaiting_verification(self) -> bool:
+        """Held until the submitter confirms their address: nobody sees it (c12)."""
+        return self.held_for is HoldReason.EMAIL_VERIFICATION
 
     @property
     def evaluation_open(self) -> bool:
@@ -120,6 +147,7 @@ class IdeaFacts:
             owner_id=idea.owner_id,
             submitted_by_id=idea.submitted_by_id,
             evaluation_closed=idea.evaluation_closed_at is not None,
+            held_for=idea.held_for,
             my_evaluation=my_evaluation,
         )
 
@@ -149,6 +177,8 @@ class Resource:
       (:func:`app.authz.loaders.other_platform_admins`). ``None`` = the change takes
       no platform admin away.
     * ``ai_available``: c10. ``token_valid``: c9 / c14.
+    * ``public_submission_on``: the instance switch
+      (``SOUNDINGS_PUBLIC_SUBMISSION_ENABLED``) for c8 and c9; unset fails.
     * ``token_covers_request``: c14, the unsubscribe token's scope covers what is
       asked (``all=true`` needs a token scoped to ``all``); unset fails.
     """
@@ -165,6 +195,7 @@ class Resource:
     ai_available: bool = False
     token_valid: bool = False
     token_covers_request: bool = False
+    public_submission_on: bool = False
 
     def replace(self, **changes: object) -> Resource:
         return dataclasses.replace(self, **changes)  # type: ignore[arg-type]
@@ -249,8 +280,18 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
             lambda p, r, _: _idea(r).status in (IdeaStatus.SHORTLISTED, IdeaStatus.PROPOSAL),
         ),
     ),
-    "c8": (Check("c8", 404, "not_found", lambda p, r, _: _project(r).public_submission_enabled),),
-    "c9": (Check("c9", 404, "not_found", lambda p, r, _: r.token_valid),),
+    # c8: the public form is available. Every part answers the same 404 as an unknown
+    # project (contract-phase4 section 3.5), so nothing tells them apart.
+    "c8": (
+        Check("c8", 404, "not_found", lambda p, r, _: r.public_submission_on),
+        Check("c8", 404, "not_found", lambda p, r, _: _project(r).public_submission_enabled),
+        Check("c8", 404, "not_found", lambda p, r, _: not _project(r).archived),
+        Check("c8", 404, "not_found", lambda p, r, _: not _project(r).slug_reserved),
+    ),
+    "c9": (
+        Check("c9", 404, "not_found", lambda p, r, _: r.public_submission_on),
+        Check("c9", 404, "not_found", lambda p, r, _: r.token_valid),
+    ),
     "c10": (Check("c10", 409, "ai_unavailable", lambda p, r, _: r.ai_available),),
     "c11": (
         Check(
@@ -260,7 +301,9 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
             lambda p, r, _: r.admins_after_change is None or r.admins_after_change >= 1,
         ),
     ),
-    "c12": (Check("c12", 404, "not_found", lambda p, r, _: not _idea(r).awaiting_moderation),),
+    # c12 in the cells (Mem, Vwr, NMi): not held at all. Held for email confirmation is
+    # 404 for every column, PA and PAd included (:func:`_locate`).
+    "c12": (Check("c12", 404, "not_found", lambda p, r, _: _idea(r).held_for is None),),
     "c13": (Check("c13", 409, "idea_has_owner", lambda p, r, _: _idea(r).owner_id is None),),
     "c14": (
         Check("c14", 404, "not_found", lambda p, r, _: r.token_valid),
@@ -300,6 +343,11 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     # idea-level write returns 409 project_archived".
     "archived": (
         Check("archived", 409, "project_archived", lambda p, r, _: not _project(r).archived),
+    ),
+    # Not in the cells (role matrix section 4): every write on an idea held for
+    # moderation but delete and moderate (:data:`FROZEN_WHILE_HELD`).
+    "c19": (
+        Check("c19", 409, "awaiting_moderation", lambda p, r, _: not _idea(r).awaiting_moderation),
     ),
 }
 
@@ -357,10 +405,20 @@ class RuleSpec:
     source: tuple[str, ...] = field(default=(), compare=False)
     """The row as written in the matrix (for the documentation test)."""
 
+    @property
+    def frozen_while_held(self) -> bool:
+        """c19 applies: refused with 409 ``awaiting_moderation`` on an idea held for
+        moderation (:data:`FROZEN_WHILE_HELD`)."""
+        return self.rule in FROZEN_WHILE_HELD
+
     def conditions_for(self, grant: Grant) -> tuple[Check, ...]:
         """The grant's checks in evaluation order: by phase, then as listed; the
-        archived-project check leads the 409s."""
-        names = (("archived",) if self.idea_write else ()) + grant.conditions
+        archived-project check leads the 409s, then c19."""
+        names = (
+            (("archived",) if self.idea_write else ())
+            + (("c19",) if self.frozen_while_held else ())
+            + grant.conditions
+        )
         checks = [check for name in names for check in CONDITIONS[name]]
         return tuple(sorted(checks, key=lambda check: _PHASE[check.status]))
 
@@ -414,6 +472,37 @@ def _row(
         source=(*cells, owner, evaluator),
     )
 
+
+FROZEN_WHILE_HELD: Final = frozenset(
+    {
+        Rule.IDEA_EDIT_OWN,
+        Rule.IDEA_EDIT_ANY,
+        Rule.COMMENT_CREATE,
+        Rule.COMMENT_EDIT_OWN,
+        Rule.COMMENT_DELETE_ANY,
+        Rule.IDEA_VOTE,
+        Rule.IDEA_WATCH,
+        Rule.IDEA_VOLUNTEER_OWNER,
+        Rule.IDEA_RELEASE_OWNER,
+        Rule.IDEA_ASSIGN_OWNER,
+        Rule.EVALUATOR_MANAGE,
+        Rule.IDEA_SET_DUE_DATE,
+        Rule.EVALUATION_SUBMIT_OWN,
+        Rule.EVALUATION_CLOSE,
+        Rule.EVALUATION_INCLUDE_AI,
+        Rule.IDEA_CHANGE_STATUS,
+        Rule.PROPOSAL_WRITE,
+        Rule.PROPOSAL_COMMENT,
+        Rule.PROPOSAL_SUGGEST_SECTION,
+        Rule.AI_REQUEST_EVALUATION,
+        Rule.AI_RESEARCH,
+        Rule.AI_DRAFT_SECTION,
+    }
+)
+"""c19 (contract-phase4 section 3.6): every idea write on an idea held for moderation
+is 409 ``awaiting_moderation`` (watching included), except ``idea.delete``,
+``idea.moderate`` (approve, reject) and ``public.erase_submitter``, so admins see a
+read-only idea with Approve and Reject until they decide."""
 
 _G, _P, _I, _U = Scope.GLOBAL, Scope.PROJECT, Scope.IDEA, Scope.PUBLIC
 _W = True  # idea_write: 409 project_archived in archived projects
@@ -538,6 +627,7 @@ _DETAILS: Final[Mapping[str, str]] = {
     "last_platform_admin": "Soundings needs at least one other active platform admin.",
     "idea_has_owner": "The idea already has an owner.",
     "project_archived": "The project is archived, so its ideas are read-only.",
+    "awaiting_moderation": "This idea is waiting for review: approve it first.",
 }
 
 
@@ -632,10 +722,11 @@ def _locate(principal: Principal, spec: RuleSpec, resource: Resource) -> Column 
     """
     if spec.scope in (Scope.PROJECT, Scope.IDEA):
         project = _project(resource)
-        if spec.scope is Scope.IDEA:
-            _idea(resource)
         if not principal.may_access_project(project.id):
             return _deny(spec.rule, 404)  # API key restricted to other projects
+        if spec.scope is Scope.IDEA and _idea(resource).awaiting_verification:
+            # c12: not a submission until its address is confirmed; 404 for everyone.
+            return _deny(spec.rule, 404, condition="c12")
     column = _column(principal, spec, resource)
     cell = spec.cells[column]
     if isinstance(cell, Refuse) and cell.status in (401, 404):

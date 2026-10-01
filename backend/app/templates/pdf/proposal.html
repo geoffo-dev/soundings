@@ -1,0 +1,231 @@
+<!doctype html>
+{#- The exported proposal (app/proposals/document.py build_html; contract-phase4 3.4).
+    Autoescaped: every value is text. In <style>, only validated hex colours and the
+    fixed @font-face rules (font_faces) appear; the app name and idea key reach the
+    running header through string-set, never as CSS strings. -#}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ document.title }}</title>
+{%- if document.owner_name %}
+<meta name="author" content="{{ document.owner_name }}">
+{%- endif %}
+<meta name="generator" content="{{ app_name }}">
+<meta name="dcterms.created" content="{{ created }}">
+<style>
+{{ font_faces }}
+
+@page {
+  size: A4;
+  margin: 24mm 20mm 22mm 20mm;
+  @top-left {
+    content: string(app-name);
+    font-family: {{ brand_stack }};
+    font-size: 8pt;
+    color: {{ colors.muted }};
+    vertical-align: bottom;
+    padding-bottom: 4mm;
+  }
+  @top-right {
+    content: string(idea-key);
+    font-family: {{ brand_stack }};
+    font-size: 8pt;
+    color: {{ colors.muted }};
+    vertical-align: bottom;
+    padding-bottom: 4mm;
+  }
+  @bottom-center {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: {{ brand_stack }};
+    font-size: 8pt;
+    color: {{ colors.muted }};
+    vertical-align: top;
+    padding-top: 4mm;
+  }
+}
+@page cover {
+  margin: 0;
+  @top-left { content: none; }
+  @top-right { content: none; }
+  @bottom-center { content: none; }
+}
+
+html {
+  font-family: {{ brand_stack }};
+  font-size: 10.5pt;
+  line-height: 1.5;
+  color: {{ colors.ink }};
+}
+body { margin: 0; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; font-weight: 600; break-after: avoid; }
+p, li, td, th { overflow-wrap: break-word; }
+a { color: {{ colors.accent_text }}; text-decoration: underline; }
+
+/* Cover ------------------------------------------------------------------ */
+.cover {
+  page: cover;
+  height: 297mm;
+  position: relative;
+  break-after: page;
+}
+.cover-band {
+  height: 14mm;
+  padding: 0 20mm;
+  background: {{ colors.primary }};
+  color: {{ colors.on_primary }};
+  font-size: 8.5pt;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 14mm;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cover-brand { padding: 16mm 20mm 0 20mm; height: 22mm; }
+.cover-brand img { max-height: 18mm; max-width: 70mm; }
+.wordmark {
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: {{ colors.brand_text }};
+}
+.cover-main { padding: 48mm 20mm 0 20mm; }
+.eyebrow {
+  margin: 0 0 4mm 0;
+  font-size: 9pt;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: {{ colors.brand_text }};
+}
+.title {
+  margin: 0 0 12mm 0;
+  font-size: 26pt;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  bookmark-level: 1;
+}
+.meta {
+  padding-top: 5mm;
+  border-top: 1.5pt solid {{ colors.primary }};
+}
+.meta table { width: 100%; margin: 0; font-size: 10pt; }
+.meta th, .meta td { padding: 1.4mm 0; border: 0; font-weight: 400; vertical-align: top; }
+.meta th { width: 32mm; color: {{ colors.muted }}; }
+.running { string-set: app-name attr(data-app), idea-key attr(data-key); }
+
+/* Contents --------------------------------------------------------------- */
+.contents { break-after: page; }
+.contents h2 { font-size: 15pt; margin: 0 0 6mm 0; bookmark-level: none; }
+.contents ol { list-style: none; margin: 0; padding: 0; }
+.contents li { padding: 1.6mm 0; border-bottom: 0.5pt solid #d0d7de; }
+.contents a { color: {{ colors.ink }}; text-decoration: none; }
+.contents a::after {
+  content: leader(" ") target-counter(attr(href), page);
+  color: {{ colors.muted }};
+}
+
+/* Sections --------------------------------------------------------------- */
+.section { margin-bottom: 9mm; }
+.section > h2 {
+  font-size: 15pt;
+  margin: 0 0 4mm 0;
+  padding-bottom: 2mm;
+  border-bottom: 1.5pt solid {{ colors.primary }};
+  bookmark-level: 2;
+}
+.section h3 { font-size: 12.5pt; margin: 6mm 0 2mm 0; bookmark-level: 3; }
+.section h4 { font-size: 11pt; margin: 5mm 0 1.5mm 0; bookmark-level: none; }
+.section h5, .section h6 { font-size: 10.5pt; margin: 4mm 0 1mm 0; font-weight: 500; bookmark-level: none; }
+.section p { margin: 0 0 3mm 0; }
+.section ul, .section ol { margin: 0 0 3mm 0; padding-left: 6mm; }
+.section li { margin: 0.8mm 0; }
+.section blockquote {
+  margin: 0 0 3mm 0;
+  padding-left: 4mm;
+  border-left: 1.5pt solid #d0d7de;
+  color: {{ colors.muted }};
+}
+.section hr { border: 0; border-top: 0.5pt solid #d0d7de; margin: 5mm 0; }
+.section strong { font-weight: 600; }
+.empty { color: {{ colors.muted }}; font-style: italic; }
+code, pre { font-family: {{ mono_stack }}; font-size: 8.8pt; }
+code { background: #f3f4f6; padding: 0.2mm 0.8mm; border-radius: 1mm; }
+pre {
+  background: #f6f8fa;
+  border: 0.5pt solid #d0d7de;
+  border-radius: 1.5mm;
+  padding: 3mm;
+  margin: 0 0 3mm 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+}
+pre code { background: none; padding: 0; }
+table { width: 100%; border-collapse: collapse; margin: 0 0 4mm 0; font-size: 9pt; }
+th, td { text-align: left; padding: 1.6mm 2mm; border-bottom: 0.5pt solid #d0d7de; vertical-align: top; }
+th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; }
+.align-center { text-align: center; }
+.align-right { text-align: right; }
+.task {
+  display: inline-block;
+  width: 2.6mm;
+  height: 2.6mm;
+  margin-right: 1.6mm;
+  border: 0.8pt solid #8c959f;
+  border-radius: 0.6mm;
+  vertical-align: -0.3mm;
+}
+.task-done { background: {{ colors.primary }}; border-color: {{ colors.primary }}; }
+.task-item { list-style: none; margin-left: -4.5mm; }
+</style>
+</head>
+<body>
+<section class="cover">
+  <div class="cover-band">{{ document.project_name }}</div>
+  <div class="cover-brand">
+    {%- if logo %}
+    <img src="{{ logo }}" alt="{{ app_name }}">
+    {%- else %}
+    <span class="wordmark">{{ app_name }}</span>
+    {%- endif %}
+  </div>
+  <div class="cover-main">
+    <p class="eyebrow">Proposal</p>
+    <h1 class="title">{{ document.title }}</h1>
+    <div class="meta">
+      <table>
+        <tr><th scope="row">Project</th><td>{{ document.project_name }}</td></tr>
+        <tr><th scope="row">Idea</th><td>{{ document.idea_key }}</td></tr>
+        <tr><th scope="row">Status</th><td>{{ document.status_label }}</td></tr>
+        <tr><th scope="row">Owner</th><td>{{ document.owner_label }}</td></tr>
+        <tr><th scope="row">Exported</th><td>{{ document.exported_on }} by {{ document.exported_by }}</td></tr>
+        {%- if document.score_line %}
+        <tr><th scope="row">Score</th><td>{{ document.score_line }}</td></tr>
+        {%- endif %}
+      </table>
+    </div>
+  </div>
+</section>
+<nav class="contents">
+  <div class="running" data-app="{{ app_name }}" data-key="{{ document.idea_key }}"></div>
+  <h2>Contents</h2>
+  <ol>
+    {%- for section in sections %}
+    <li><a href="#section-{{ section.key }}">{{ section.title }}</a></li>
+    {%- endfor %}
+  </ol>
+</nav>
+{%- for section in sections %}
+<section class="section" id="section-{{ section.key }}">
+  <h2>{{ section.title }}</h2>
+  {%- if section.html %}
+  {{ section.html }}
+  {%- else %}
+  <p class="empty">{{ empty_section }}</p>
+  {%- endif %}
+</section>
+{%- endfor %}
+</body>
+</html>

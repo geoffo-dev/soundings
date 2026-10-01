@@ -46,6 +46,7 @@ import { RelativeTime } from '@/components/ui/relative-time'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TagInput } from '@/components/ui/tag-input'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
@@ -61,6 +62,7 @@ import { ScorePanel } from './score-panel'
  * only when the API's `permissions` allow it.
  */
 export function IdeaProperties({ className }: { className?: string }) {
+  const { idea, ideaKey } = useIdeaPage()
   return (
     <div className={cn('flex flex-col gap-6', className)}>
       <dl className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 text-sm">
@@ -74,6 +76,7 @@ export function IdeaProperties({ className }: { className?: string }) {
       <EvaluatorsSection />
       <ScorePanel />
       <TagsSection />
+      <SubmissionPanel idea={idea} ideaKey={ideaKey} />
     </div>
   )
 }

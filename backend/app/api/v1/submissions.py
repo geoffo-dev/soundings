@@ -8,22 +8,32 @@ docs/api/contract-phase4.md sections 3.4, 3.6 and 3.9.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, load_project
+from app.config import Settings
+from app.db import SessionDep
+from app.models.base import utcnow
 from app.pagination import PageParamsDep
+from app.public import submissions
 from app.schemas.public import (
     IdeaSubmission,
     ModerationPage,
     PublicFormSettings,
     PublicFormSettingsUpdate,
 )
+from app.services import ideas, moderation
 
 router = APIRouter(tags=["submissions"])
+
+
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
 
 
 @router.get(
@@ -34,9 +44,10 @@ router = APIRouter(tags=["submissions"])
     responses=problems(401, 403, 404),
 )
 async def get_public_form_settings(
-    principal: PrincipalDep, slug: ProjectSlug
+    principal: PrincipalDep, session: SessionDep, request: Request, slug: ProjectSlug
 ) -> PublicFormSettings:
-    raise NotImplementedProblem
+    project, _ = await load_project(session, principal, slug, Rule.PROJECT_EDIT_SETTINGS)
+    return await moderation.form_settings(session, _settings(request), project)
 
 
 @router.patch(
@@ -53,9 +64,18 @@ async def get_public_form_settings(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_public_form_settings(
-    principal: PrincipalDep, slug: ProjectSlug, body: PublicFormSettingsUpdate
+    principal: PrincipalDep,
+    session: SessionDep,
+    request: Request,
+    slug: ProjectSlug,
+    body: PublicFormSettingsUpdate,
 ) -> PublicFormSettings:
-    raise NotImplementedProblem
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_SETTINGS, for_update=True
+    )
+    return await moderation.update_form_settings(
+        session, _settings(request), principal, project, body
+    )
 
 
 @router.get(
@@ -69,9 +89,10 @@ async def update_public_form_settings(
     responses=problems(400, 401, 403, 404),
 )
 async def list_moderation_queue(
-    principal: PrincipalDep, slug: ProjectSlug, page: PageParamsDep
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, page: PageParamsDep
 ) -> ModerationPage:
-    raise NotImplementedProblem
+    project, resource = await load_project(session, principal, slug)
+    return await moderation.moderation_queue(session, principal, project, resource, page)
 
 
 @router.get(
@@ -84,8 +105,12 @@ async def list_moderation_queue(
     ),
     responses=problems(401, 404),
 )
-async def get_idea_submission(principal: PrincipalDep, idea: IdeaParam) -> IdeaSubmission:
-    raise NotImplementedProblem
+async def get_idea_submission(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> IdeaSubmission:
+    loaded = await ideas.load_idea(session, principal, idea)
+    found = await submissions.load_submission(session, loaded)
+    return submissions.idea_submission(principal, loaded, found)
 
 
 @router.post(
@@ -98,8 +123,11 @@ async def get_idea_submission(principal: PrincipalDep, idea: IdeaParam) -> IdeaS
     ),
     responses=problems(401, 404, 409),
 )
-async def approve_submission(principal: PrincipalDep, idea: IdeaParam) -> IdeaSubmission:
-    raise NotImplementedProblem
+async def approve_submission(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> IdeaSubmission:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await moderation.approve(session, principal, loaded, now=utcnow())
 
 
 @router.post(
@@ -114,8 +142,9 @@ async def approve_submission(principal: PrincipalDep, idea: IdeaParam) -> IdeaSu
     ),
     responses=problems(401, 404, 409),
 )
-async def reject_submission(principal: PrincipalDep, idea: IdeaParam) -> None:
-    raise NotImplementedProblem
+async def reject_submission(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> None:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await moderation.reject(session, principal, loaded)
 
 
 @router.post(
@@ -130,5 +159,8 @@ async def reject_submission(principal: PrincipalDep, idea: IdeaParam) -> None:
     ),
     responses=problems(401, 403, 404),
 )
-async def erase_submitter(principal: PrincipalDep, idea: IdeaParam) -> IdeaSubmission:
-    raise NotImplementedProblem
+async def erase_submitter(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+) -> IdeaSubmission:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await submissions.erase_submitter(session, principal, loaded, now=utcnow())

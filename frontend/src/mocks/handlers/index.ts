@@ -4,11 +4,15 @@ import { activityHandlers } from './activity'
 import { adminHandlers } from './admin'
 import { adminEmailHandlers } from './admin-email'
 import { authHandlers } from './auth'
+import { brandingHandlers } from './branding'
 import { evaluationHandlers } from './evaluations'
 import { groupHandlers } from './groups'
 import { ideaHandlers } from './ideas'
 import { notificationHandlers } from './notifications'
 import { projectHandlers } from './projects'
+import { proposalHandlers } from './proposals'
+import { publicHandlers } from './public'
+import { submissionHandlers } from './submissions'
 import { userHandlers } from './users'
 import { workHandlers } from './work'
 
@@ -29,4 +33,9 @@ export const handlers: RequestHandler[] = [
   ...adminHandlers,
   ...adminEmailHandlers,
   ...notificationHandlers,
+  // Phase 4 (contract-phase4)
+  ...proposalHandlers,
+  ...publicHandlers,
+  ...submissionHandlers,
+  ...brandingHandlers,
 ]

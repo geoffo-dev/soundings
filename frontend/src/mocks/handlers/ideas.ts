@@ -41,6 +41,7 @@ import {
 
 import {
   addWatcher,
+  deleteIdeaRows,
   emit,
   ensureIdeaWritable,
   ensureNotArchived,
@@ -263,17 +264,9 @@ export const ideaHandlers = [
   route('delete', '/ideas/:idea', (ctx) => {
     const { idea, who } = manageIdea(ctx)
     if (!who.admin) forbidden()
-    ensureIdeaWritable(ctx.db, idea)
+    ensureIdeaWritable(ctx.db, idea, { allowHeld: true })
     const db = ctx.db
-    db.ideas.splice(db.ideas.indexOf(idea), 1)
-    for (const list of [db.assignments, db.evaluations, db.comments, db.events] as {
-      idea_id: string
-    }[][]) {
-      for (let i = list.length - 1; i >= 0; i--) if (list[i]?.idea_id === idea.id) list.splice(i, 1)
-    }
-    for (const set of [db.votes, db.watchers]) {
-      for (const entry of [...set]) if (entry.startsWith(`${idea.id}:`)) set.delete(entry)
-    }
+    deleteIdeaRows(db, idea)
     return noContent()
   }),
 

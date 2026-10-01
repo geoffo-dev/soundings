@@ -52,6 +52,8 @@ function idea(patch: Partial<IdeaDetail> = {}): IdeaDetail {
     status_label: 'Evaluating',
     owner: person(ME),
     submitted_by: null,
+    held_for: null,
+    via_public_form: false,
     tags: [],
     created_at: '2026-09-01T10:00:00Z',
     last_activity_at: '2026-09-21T10:00:00Z',

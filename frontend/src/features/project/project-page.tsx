@@ -31,6 +31,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { KbdShortcut } from '@/components/ui/kbd'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { ModerationNotice } from '@/features/moderation/moderation-notice'
 import { BoardView } from '@/features/project/board/board-view'
 import { BoardSkeleton } from '@/features/project/board/board-skeleton'
 import { ListSkeleton, ListView } from '@/features/project/list/list-view'
@@ -267,6 +268,7 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
       />
 
       {project.archived_at && <ArchivedNotice project={project} />}
+      <ModerationNotice project={project} />
 
       {/* Nothing to filter or sort in an empty project. */}
       {!(matching === 0 && !filtered) && (

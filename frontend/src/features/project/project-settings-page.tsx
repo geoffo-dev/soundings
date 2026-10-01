@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
+import { useEffect, useRef } from 'react'
 import { ArrowLeft } from 'lucide-react'
 
 import { useProject } from '@/api/projects'
@@ -12,13 +13,21 @@ import { MembersSettings } from '@/features/project/settings/members-settings'
 import { RubricEditor, RubricSummary } from '@/features/project/settings/rubric-editor'
 import { UnsavedChangesGuard } from '@/features/project/settings/settings-layout'
 import { StatusLabelsSettings } from '@/features/project/settings/status-labels-settings'
-import { SETTINGS_TABS, type SettingsTab } from '@/features/project/settings/settings-tabs'
+import {
+  ADMIN_SETTINGS_TABS,
+  SETTINGS_TABS,
+  type SettingsTab,
+} from '@/features/project/settings/settings-tabs'
+import { ProjectBrandingSettings } from '@/features/branding/project-branding-settings'
+import { PublicFormSettingsSection } from '@/features/public/public-form-settings'
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
   members: 'Members',
   rubric: 'Rubric',
   statuses: 'Status labels',
+  'public-form': 'Public form',
+  branding: 'Branding',
 }
 
 /**
@@ -41,11 +50,18 @@ export function ProjectSettingsPage({
 function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab }) {
   const navigate = useNavigate()
   const canManage = project.permissions.can_manage
-  // Status labels are an admin-only form; others see them on the board.
+  // Status labels, the public form and branding are admin-only forms.
   const tabs: readonly SettingsTab[] = canManage
     ? SETTINGS_TABS
-    : SETTINGS_TABS.filter((t) => t !== 'statuses')
+    : SETTINGS_TABS.filter((t) => !ADMIN_SETTINGS_TABS.includes(t))
   const current = tabs.includes(tab) ? tab : 'general'
+  // On phones the tab row scrolls sideways: keep the current tab in view.
+  const tabsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    tabsRef.current
+      ?.querySelector<HTMLElement>('[role="tab"][data-state="active"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [current])
 
   return (
     <Page>
@@ -73,7 +89,7 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
           }
           className="flex flex-col gap-6"
         >
-          <TabsList aria-label="Settings">
+          <TabsList ref={tabsRef} aria-label="Settings">
             {tabs.map((value) => (
               <TabsTrigger key={value} value={value}>
                 {TAB_LABELS[value]}
@@ -101,6 +117,20 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
           {canManage && (
             <TabsContent value="statuses" forceMount className="pt-0 data-[state=inactive]:hidden">
               <StatusLabelsSettings project={project} active={current === 'statuses'} />
+            </TabsContent>
+          )}
+          {canManage && (
+            <TabsContent
+              value="public-form"
+              forceMount
+              className="pt-0 data-[state=inactive]:hidden"
+            >
+              <PublicFormSettingsSection project={project} active={current === 'public-form'} />
+            </TabsContent>
+          )}
+          {canManage && (
+            <TabsContent value="branding" forceMount className="pt-0 data-[state=inactive]:hidden">
+              <ProjectBrandingSettings project={project} active={current === 'branding'} />
             </TabsContent>
           )}
         </Tabs>

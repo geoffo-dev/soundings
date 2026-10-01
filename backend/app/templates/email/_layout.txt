@@ -17,4 +17,6 @@
 {% endif %}
 {% if unsubscribe_all_url %}Unsubscribe from all email: {{ unsubscribe_all_url }}
 {% endif %}
-{{ brand.footer_text or "Sent by " ~ brand.product_name ~ "." }}
+{% for line in brand.footer_lines %}
+{{ line }}
+{% endfor %}

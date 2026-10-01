@@ -10,6 +10,9 @@
 # networks with a TLS-intercepting proxy.
 # Where the kernel refuses negative oom_score_adj even to privileged containers (some
 # VM sandboxes), containerd is configured with restrict_oom_score_adj so pods can start.
+# K3S_EVICTION_HARD (default imagefs.available<1Gi,nodefs.available<1Gi): the kubelet's
+# disk eviction thresholds. Its defaults are percentages (5-15 % of the disk), which on a
+# large, shared build disk evict every pod while gigabytes are still free.
 # The kubeconfig is written to $K3S_DIR/kubeconfig (git-ignored):
 #   export KUBECONFIG=$PWD/.k3s/soundings-k3s/kubeconfig
 set -euo pipefail
@@ -18,6 +21,7 @@ source "$(dirname "$0")/lib/k3s-env.sh"
 
 K3S_REGISTRY_MIRROR="${K3S_REGISTRY_MIRROR-https://mirror.gcr.io}"
 K3S_EXTRA_CA="${K3S_EXTRA_CA-${SSL_CERT_FILE:-}}"
+K3S_EVICTION_HARD="${K3S_EVICTION_HARD:-imagefs.available<1Gi,nodefs.available<1Gi}"
 K3S_WAIT_SECONDS="${K3S_WAIT_SECONDS:-300}"
 
 # k3s's generated containerd config (containerd 1.7, config version 2) plus
@@ -106,6 +110,7 @@ docker create --name "$K3S_NAME" --hostname "$K3S_NAME" \
   -p "$K3S_BIND_ADDRESS:$K3S_HTTP_PORT:80" \
   "$K3S_IMAGE" server \
     --disable=metrics-server \
+    --kubelet-arg="eviction-hard=$K3S_EVICTION_HARD" \
     --tls-san=127.0.0.1 \
     --write-kubeconfig-mode=644 >/dev/null
 docker cp "$rootfs/." "$K3S_NAME:/" >/dev/null

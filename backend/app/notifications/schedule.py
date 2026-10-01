@@ -37,6 +37,8 @@ from app.models.project import Project
 from app.models.user import User
 from app.notifications import access, preferences
 from app.notifications.fanout import NotificationWriter, usable_address
+from app.public import retention as public_retention
+from app.services import brand_assets
 from app.services.sql import any_of
 
 __all__ = [
@@ -318,6 +320,12 @@ async def run_schedule(
     digests = await build_digests(sessionmaker, settings, now)
     async with session_scope(sessionmaker) as db:
         await cleanup(db, now)
+    async with session_scope(sessionmaker) as db:
+        # Phase 4: ALTCHA replay rows, unconfirmed submissions, submitter retention.
+        await public_retention.cleanup(db, now)
+    async with session_scope(sessionmaker) as db:
+        # Phase 4: brand images no profile has used for 24 hours.
+        await brand_assets.delete_unreferenced(db, now)
     if reminders or digests:
         logger.info("notification schedule ran", extra={"reminders": reminders, "digests": digests})
     return ScheduleResult(reminders=reminders, digests=digests, cleaned=True)

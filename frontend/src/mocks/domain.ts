@@ -262,9 +262,21 @@ export function canViewProject(db: MockDb, project: MockProject, user: MockUser)
   return effectiveRole(db, project.id, user.id) !== null
 }
 
-/** idea.view (no moderation in Phase 1, so the same as project.view). */
+/**
+ * idea.view: project.view, plus c12 (contract-phase4 §3.6): an idea held for
+ * moderation only for project and platform admins, one held for email
+ * verification for nobody.
+ */
 export function canViewIdea(db: MockDb, idea: MockIdea, user: MockUser): boolean {
-  return canViewProject(db, projectOf(db, idea), user)
+  if (idea.held_for === 'email_verification') return false
+  const project = projectOf(db, idea)
+  if (idea.held_for === 'moderation') return isProjectAdmin(db, project, user)
+  return canViewProject(db, project, user)
+}
+
+/** `listed_ideas` (contract-phase4 §3.6): held ideas are in no list, board, search or count. */
+export function isListed(idea: MockIdea): boolean {
+  return !idea.held_for
 }
 
 export function evaluationOf(
@@ -341,6 +353,8 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
     can_vote: false,
   }
   if (!writable) return none
+  // Held for moderation: read-only but for delete (contract-phase4 §3.6).
+  if (idea.held_for) return { ...none, can_delete: admin }
   return {
     can_assign_owner: admin,
     can_change_status: manager,
@@ -491,7 +505,7 @@ export function projectSummary(db: MockDb, project: MockProject, user: MockUser)
     visibility: project.visibility,
     archived_at: project.archived_at,
     my_role: effectiveRole(db, project.id, user.id),
-    idea_count: db.ideas.filter((idea) => idea.project_id === project.id).length,
+    idea_count: db.ideas.filter((idea) => idea.project_id === project.id && isListed(idea)).length,
     member_count: usersWithAccess(db, project.id).length,
     permissions: projectPermissions(db, project, user),
   }
@@ -611,6 +625,10 @@ export function ideaDetail(db: MockDb, idea: MockIdea, user: MockUser): IdeaDeta
     aggregate,
     watching: db.watchers.has(`${idea.id}:${user.id}`),
     permissions: ideaPermissions(db, idea, user),
+    // Phase 4 (contract-phase4 §3.14): only admins can open a held idea at all.
+    held_for: idea.held_for === 'moderation' ? 'moderation' : null,
+    via_public_form:
+      idea.submitted_by === null && db.publicSubmissions.some((s) => s.idea_id === idea.id),
   }
 }
 
@@ -884,6 +902,7 @@ export function queryProjectIdeas(
   const ideas = db.ideas.filter(
     (idea) =>
       idea.project_id === project.id &&
+      isListed(idea) &&
       canViewIdea(db, idea, user) &&
       matchesFilters(db, idea, user, query),
   )
@@ -951,6 +970,7 @@ export function evaluationsDue(db: MockDb, user: MockUser): WorkEvaluation[] {
     .filter(
       (idea) =>
         projects.has(idea.project_id) &&
+        isListed(idea) &&
         evaluationOpen(idea) &&
         evaluationOf(db, idea.id, user.id)?.status !== 'submitted',
     )
@@ -976,6 +996,7 @@ export function ownedIdeas(db: MockDb, user: MockUser, statuses?: IdeaStatus[] |
     (idea) =>
       idea.owner_id === user.id &&
       projects.has(idea.project_id) &&
+      isListed(idea) &&
       canViewIdea(db, idea, user) &&
       (!statuses?.length || statuses.includes(idea.status)),
   )
@@ -1020,7 +1041,7 @@ export function recentIdeas(db: MockDb, user: MockUser) {
       .map((project) => project.id),
   )
   const ideas = db.ideas
-    .filter((idea) => projects.has(idea.project_id))
+    .filter((idea) => projects.has(idea.project_id) && isListed(idea))
     .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))
     .slice(0, 20)
   return ideas.map((idea) => {
@@ -1046,9 +1067,10 @@ export function search(db: MockDb, user: MockUser, q: string, limit: number) {
     (project) => project.archived_at === null && canViewProject(db, project, user),
   )
   const projectIds = new Set(projects.map((project) => project.id))
-  const exact = findIdea(db, needle)
+  const found = findIdea(db, needle)
+  const exact = found && isListed(found) ? found : undefined
   const scored = db.ideas
-    .filter((idea) => projectIds.has(idea.project_id) && idea !== exact)
+    .filter((idea) => projectIds.has(idea.project_id) && isListed(idea) && idea !== exact)
     .flatMap((idea) => {
       const title = idea.title.toLowerCase()
       let rank = -1

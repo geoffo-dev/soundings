@@ -13,15 +13,19 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, Path, Query, Request, status
 from fastapi.responses import Response
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import binary, binary_body, problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, load_project, require
+from app.config import Settings
+from app.db import SessionDep
+from app.models.base import utcnow
 from app.models.enums import BrandAssetKind
 from app.schemas.branding import BrandAsset, BrandingSettings, BrandingUpdate, EffectiveBranding
+from app.services import brand_assets, branding
 
 router = APIRouter(tags=["branding"])
 
@@ -30,6 +34,12 @@ UPLOAD_TYPES = ("image/png", "image/svg+xml")
 logos and favicons alike (browsers take PNG favicons; no ICO or WebP decoders exposed)."""
 
 AssetKind = Annotated[BrandAssetKind, Query(description="What the image is for.")]
+
+
+def _max_upload_bytes(request: Request) -> int:
+    settings: Settings = request.app.state.settings
+    return settings.branding_max_upload_bytes
+
 
 _UPLOAD = binary_body(
     *UPLOAD_TYPES,
@@ -59,8 +69,8 @@ _UPLOAD_ERRORS = (
         "tracking pages, submitter emails, exported proposals)."
     ),
 )
-async def get_branding() -> EffectiveBranding:
-    raise NotImplementedProblem
+async def get_branding(session: SessionDep) -> EffectiveBranding:
+    return await branding.effective_branding(session, None)
 
 
 @router.get(
@@ -87,9 +97,13 @@ async def get_branding() -> EffectiveBranding:
     },
 )
 async def get_brand_asset(
+    request: Request,
+    session: SessionDep,
     asset_id: Annotated[UUID, Path(description="The image's id.")],
 ) -> Response:
-    raise NotImplementedProblem
+    return await brand_assets.asset_response(
+        session, asset_id, request.headers.get("if-none-match")
+    )
 
 
 @router.get(
@@ -99,8 +113,8 @@ async def get_brand_asset(
     description="platform.edit_branding (session only): the global profile as stored.",
     responses=problems(401, 403),
 )
-async def get_global_branding(principal: PrincipalDep) -> BrandingSettings:
-    raise NotImplementedProblem
+async def get_global_branding(principal: PrincipalDep, session: SessionDep) -> BrandingSettings:
+    return await branding.global_settings(session, principal)
 
 
 @router.put(
@@ -114,8 +128,10 @@ async def get_global_branding(principal: PrincipalDep) -> BrandingSettings:
     ),
     responses=problems(401, 403, 422),
 )
-async def update_global_branding(principal: PrincipalDep, body: BrandingUpdate) -> BrandingSettings:
-    raise NotImplementedProblem
+async def update_global_branding(
+    principal: PrincipalDep, session: SessionDep, body: BrandingUpdate
+) -> BrandingSettings:
+    return await branding.update_global(session, principal, body)
 
 
 @router.post(
@@ -130,8 +146,21 @@ async def update_global_branding(principal: PrincipalDep, body: BrandingUpdate) 
     responses=problems(401, 403, 413, 422, 429),
     openapi_extra=_UPLOAD,
 )
-async def upload_global_brand_asset(principal: PrincipalDep, kind: AssetKind) -> BrandAsset:
-    raise NotImplementedProblem
+async def upload_global_brand_asset(
+    principal: PrincipalDep, session: SessionDep, request: Request, kind: AssetKind
+) -> BrandAsset:
+    require(principal, Rule.PLATFORM_EDIT_BRANDING)
+    # The body is read only now, after the rule (the 1 MiB request limit applies first).
+    asset = await brand_assets.store_upload(
+        session,
+        project_id=None,
+        kind=kind,
+        data=await request.body(),
+        max_bytes=_max_upload_bytes(request),
+        uploaded_by=principal.user_id,
+        now=utcnow(),
+    )
+    return brand_assets.asset_out(asset)
 
 
 @router.get(
@@ -144,8 +173,11 @@ async def upload_global_brand_asset(principal: PrincipalDep, kind: AssetKind) ->
     ),
     responses=problems(401, 403, 404),
 )
-async def get_project_branding(principal: PrincipalDep, slug: ProjectSlug) -> BrandingSettings:
-    raise NotImplementedProblem
+async def get_project_branding(
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
+) -> BrandingSettings:
+    project, _ = await load_project(session, principal, slug, Rule.PROJECT_EDIT_SETTINGS)
+    return await branding.project_settings(session, project)
 
 
 @router.put(
@@ -161,9 +193,12 @@ async def get_project_branding(principal: PrincipalDep, slug: ProjectSlug) -> Br
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_project_branding(
-    principal: PrincipalDep, slug: ProjectSlug, body: BrandingUpdate
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: BrandingUpdate
 ) -> BrandingSettings:
-    raise NotImplementedProblem
+    project, resource = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_SETTINGS, for_update=True
+    )
+    return await branding.update_project(session, principal, project, resource, body)
 
 
 @router.post(
@@ -179,6 +214,21 @@ async def update_project_branding(
     openapi_extra=_UPLOAD,
 )
 async def upload_project_brand_asset(
-    principal: PrincipalDep, slug: ProjectSlug, kind: AssetKind
+    principal: PrincipalDep,
+    session: SessionDep,
+    request: Request,
+    slug: ProjectSlug,
+    kind: AssetKind,
 ) -> BrandAsset:
-    raise NotImplementedProblem
+    project, _ = await load_project(session, principal, slug, Rule.PROJECT_EDIT_SETTINGS)
+    branding.require_writable(project)
+    asset = await brand_assets.store_upload(
+        session,
+        project_id=project.id,
+        kind=kind,
+        data=await request.body(),
+        max_bytes=_max_upload_bytes(request),
+        uploaded_by=principal.user_id,
+        now=utcnow(),
+    )
+    return brand_assets.asset_out(asset)

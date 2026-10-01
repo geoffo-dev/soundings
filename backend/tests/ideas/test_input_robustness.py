@@ -226,6 +226,11 @@ async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
         "identity_id": str(uuid4()),
         "notification_id": str(uuid4()),
         "email_id": str(uuid4()),
+        # Proposals (contract-phase4 section 2).
+        "section_key": "problem",
+        "thread_id": str(uuid4()),
+        # Branding images (contract-phase4 section 3.11).
+        "asset_id": str(uuid4()),
     }
     params = _string_params(app)
     assert {name for _, _, name in params} >= {"q", "tag", "cursor", "slug", "idea", "project"}
@@ -238,7 +243,13 @@ async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
         query = {} if f"{{{name}}}" in path else {name: NUL}
         response = await admin.http.request(method.upper(), url, params=query)
         assert response.status_code < 500, (method, path, name, response.text)
-        assert response.status_code in (400, 404, 405, 422), (method, path, name, response.text)
+        # 415: a public write without a JSON body (contract-phase4 section 1).
+        assert response.status_code in (400, 404, 405, 415, 422), (
+            method,
+            path,
+            name,
+            response.text,
+        )
 
 
 @pytest.mark.parametrize(

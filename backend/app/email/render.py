@@ -41,13 +41,15 @@ TEMPLATES: Final = (
 )
 """Every email template (``<name>.html`` + ``<name>.txt``)."""
 
-_FONT: Final = "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif"
-
 _STYLES: Final = {
-    "font": _FONT,
     "h1": "margin:0 0 14px 0;font-size:20px;line-height:1.3;font-weight:600;",
     "p": "margin:0 0 14px 0;font-size:15px;line-height:1.55;",
 }
+
+
+def _styles(brand: Branding) -> dict[str, str]:
+    """``font``: the branding's font stack (validated: names, commas and quotes only)."""
+    return {**_STYLES, "font": brand.font_stack}
 
 
 def _colours(brand: Branding) -> dict[str, str]:
@@ -60,7 +62,7 @@ def _colours(brand: Branding) -> dict[str, str]:
         "rule": "#c9ccd1",
         "text": "#1a1a1f",
         "muted": "#5c5f66",
-        "link": brand.accent,
+        "link": brand.link_colour,
     }
 
 
@@ -126,7 +128,7 @@ def render(content: EmailContent, branding: Branding = DEFAULT_BRANDING) -> Rend
         "unsubscribe_label": content.unsubscribe_label,
         "unsubscribe_all_url": content.unsubscribe_all_url,
         "brand": branding,
-        "s": _STYLES,
+        "s": _styles(branding),
         "c": _colours(branding),
     }
     html = environment.get_template(f"{content.template}.html").render(context)

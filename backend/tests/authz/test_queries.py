@@ -22,6 +22,7 @@ from app.authz import (
     effective_roles_of,
     evaluator_state,
     idea_resource,
+    listed_ideas,
     score_visible,
     viewable_ideas,
     visible_aggregate_score,
@@ -29,7 +30,13 @@ from app.authz import (
     visible_projects,
 )
 from app.domain.principal import ApiKeyScope, Principal
-from app.models.enums import EvaluatorState, IdeaStatus, ProjectRole, ProjectVisibility
+from app.models.enums import (
+    EvaluatorState,
+    HoldReason,
+    IdeaStatus,
+    ProjectRole,
+    ProjectVisibility,
+)
 from app.models.idea import Idea
 from app.models.project import Project, ProjectMember
 from app.models.user import User
@@ -98,6 +105,14 @@ async def world(db_session: AsyncSession) -> World:
     )
     open_idea = await make_idea(db_session, internal, title="Internal idea")
     old = await make_idea(db_session, archived, title="Archived idea")
+    # Phase 4: public submissions not visible yet (contract-phase4 section 3.6).
+    for title, reason, project in [
+        ("Held for review", HoldReason.MODERATION, private),
+        ("Held for confirmation", HoldReason.EMAIL_VERIFICATION, private),
+        ("Internal held for review", HoldReason.MODERATION, internal),
+    ]:
+        held = await make_idea(db_session, project, title=title, submitted_by=None)
+        await db_session.execute(update(Idea).where(Idea.id == held.id).values(held_for=reason))
     await db_session.commit()
     return World(
         users=users,
@@ -154,6 +169,53 @@ async def test_visible_projects_and_ideas(
 
     assert await visible_project_slugs(db_session, principal) == projects
     assert await viewable_titles(db_session, principal) == ideas
+
+
+HELD_IDEAS = {"Held for review", "Held for confirmation", "Internal held for review"}
+
+
+@pytest.mark.parametrize(
+    "who", ["platform", "admin", "member", "viewer", "outsider", "pending", "admin_pending"]
+)
+async def test_held_ideas_are_listed_nowhere(
+    db_session: AsyncSession, world: World, who: str
+) -> None:
+    """Lists, boards, search, counts, My work and the inbox filter with these: an idea
+    held for moderation or email confirmation is in none of them, for anyone (admins
+    included; they use the moderation queue)."""
+    principal = as_principal(world.users[who])
+
+    titles = await viewable_titles(db_session, principal)
+    listed = set(await db_session.scalars(select(Idea.title).where(listed_ideas(principal))))
+
+    assert not titles & HELD_IDEAS
+    assert listed == titles
+
+
+async def test_admins_may_still_open_an_idea_held_for_moderation(
+    db_session: AsyncSession, world: World
+) -> None:
+    """c12 in the policy: the idea page (by link) and the moderation queue."""
+    private = world.projects["private"]
+    held = {
+        idea.title: idea
+        for idea in await db_session.scalars(select(Idea).where(Idea.held_for.is_not(None)))
+    }
+    expectations = {
+        ("platform", "Held for review"): True,
+        ("admin", "Held for review"): True,
+        ("member", "Held for review"): False,
+        ("viewer", "Held for review"): False,
+        ("platform", "Held for confirmation"): False,
+        ("admin", "Held for confirmation"): False,
+    }
+    for (who, title), allowed in expectations.items():
+        principal = as_principal(world.users[who])
+        resource = await idea_resource(db_session, principal, held[title], private)
+        decision = authorize(principal, Rule.IDEA_VIEW, resource)
+        assert decision.allowed is allowed, (who, title)
+        if not allowed:
+            assert decision.status == 404
 
 
 async def test_anonymous_sees_nothing(db_session: AsyncSession, world: World) -> None:
@@ -247,7 +309,7 @@ async def test_hidden_scores_sort_with_the_unscored(db_session: AsyncSession, wo
         masked = visible_aggregate_score(principal)
         rows = await db_session.scalars(
             select(Idea.title)
-            .where(Idea.project_id == world.projects["private"].id)
+            .where(Idea.project_id == world.projects["private"].id, listed_ideas(principal))
             .order_by(masked.desc().nulls_last(), Idea.title)
         )
         return list(rows)

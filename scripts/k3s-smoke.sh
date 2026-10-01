@@ -2,7 +2,10 @@
 # Smoke-test the Soundings install through the k3s ingress: /healthz, /readyz, the SPA and
 # the OpenAPI document; /metrics only on its own port; 413 for a 2 MiB body; with dev
 # login on, sign in over the ingress (session + CSRF cookies) and read My work; with
-# break-glass available, sign in with the credentials from its Secret; with
+# break-glass available, sign in with the credentials from its Secret; the public form,
+# branding and proposal export (scripts/public-smoke.sh: the public project and its logo,
+# and with the dev login an anonymous idea with a solved ALTCHA, approved, shortlisted,
+# its proposal exported as PDF in the API pod and as Markdown, then deleted); with
 # SSO=1, the single sign-on acceptance through the ingress and the cluster's Keycloak
 # (scripts/sso-smoke.sh: code flow, groups -> project access, removal at the next
 # sign-in, sign-out at the IdP); with SMTP=1, email through the cluster's Mailpit
@@ -188,6 +191,30 @@ if grep -q '"break_glass":true' <<<"$config"; then
     "$BASE_URL/api/v1/auth/logout" || true
 else
   ok "break-glass is not available (/api/v1/auth/config: $config)"
+fi
+
+# Public form, branding and proposal export through the ingress. The ALTCHA is solved
+# with the api pod's Python (it has the altcha package; CI's runner has no Python).
+CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
+  ALTCHA_PYTHON="docker exec -i $K3S_NAME kubectl -n $NAMESPACE exec -i $deployment -c api -- python" \
+  "$(dirname "$0")/public-smoke.sh" "$BASE_URL" || failed=1
+
+# The edge rate limit on the public form's API (the chart's second Ingress with the
+# Traefik middleware from dev/k3s/public-ratelimit.yaml, when k3s-install.sh set it up):
+# a burst gets Traefik's own 429, the rest of the app is unaffected.
+if kubectl -n "$NAMESPACE" get ingress -o name -l "app.kubernetes.io/instance=$RELEASE" | grep -q -- '-public$'; then
+  limited=0
+  for _ in $(seq 1 80); do
+    out="$(curl -sS "${curl_args[@]}" -o /dev/null -w '%{http_code} %{content_type}' \
+      "$BASE_URL/api/v1/public/projects/customer-innovation" 2>/dev/null || true)"
+    if [[ "$out" == 429* ]] && [[ "$out" != *json* ]]; then limited=$((limited + 1)); fi
+  done
+  health="$(curl -sS "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE_URL/api/v1/branding" || true)"
+  if [ "$limited" -gt 0 ] && [ "$health" = "200" ]; then
+    ok "edge rate limit on /api/v1/public: $limited of 80 burst requests got Traefik's 429; /api/v1/branding still 200"
+  else
+    fail "edge rate limit on /api/v1/public: $limited of 80 limited (want some), /api/v1/branding $health"
+  fi
 fi
 
 if [ "${SSO:-0}" = "1" ]; then

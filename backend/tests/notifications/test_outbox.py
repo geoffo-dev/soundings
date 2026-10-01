@@ -535,7 +535,7 @@ def email_ids(rows: list[OutboundEmail]) -> list[UUID]:
     return [row.id for row in rows]
 
 
-async def test_phase_4_submitter_emails_go_to_an_address_with_their_payload(
+async def test_phase_4_submitter_emails_go_to_an_address_from_the_submission(
     app: Any,
     settings: Settings,
     api: AsUser,
@@ -544,33 +544,61 @@ async def test_phase_4_submitter_emails_go_to_an_address_with_their_payload(
     runtime: Runtime,
     transport: RecordingTransport,
 ) -> None:
-    """The plumbing Phase 4 uses: an address recipient, content from the payload, no
-    notification row and no unsubscribe header (Phase 4 adds its own opt-out link).
-    Submitter emails always name their idea (the database requires it)."""
+    """The plumbing Phase 4 uses: an address recipient, no notification row and no
+    unsubscribe header (the tracking page is the opt-out). Submitter emails always name
+    their idea (the database requires it) and are rendered from its public submission
+    (contract-phase4 section 3.8; tests/public/test_emails.py has the rest); an idea
+    without one gets nothing."""
+    from app.auth.submission_tokens import (
+        new_tracking_token,
+        seal_tracking_token,
+        tracking_token_hash,
+    )
     from app.db import session_scope
     from app.models.enums import EmailType
+    from app.models.public import PublicSubmission
 
-    idea = await (await api(team.member)).create_idea(team.slug)
+    public = await (await api(team.member)).create_idea(team.slug)
+    internal = await (await api(team.member)).create_idea(team.slug, title="Internal")
+    token = new_tracking_token()
     async with session_scope(app.state.sessionmaker) as db:
-        [email_id] = await outbox_module.enqueue(
+        db.add(
+            PublicSubmission(
+                idea_id=UUID(public["id"]),
+                project_id=team.project.id,
+                email="jo@example.org",
+                tracking_token_hash=tracking_token_hash(token),
+                tracking_token_sealed=seal_tracking_token(settings, token),
+                submitted_title="Recycle at the till",
+                submitted_summary="Bins by the tills.",
+            )
+        )
+        await db.flush()
+        sent_id, orphan_id = await outbox_module.enqueue(
             db,
             settings,
             [
                 outbox_module.NewEmail(
                     type=EmailType.SUBMISSION_RECEIVED,
                     to_address="jo@example.org",
-                    payload={"title": "Recycle at the till", "project": "Customer Innovation"},
                     idempotency_key="submission:1",
-                    idea_id=UUID(idea["id"]),
-                )
+                    idea_id=UUID(public["id"]),
+                ),
+                outbox_module.NewEmail(
+                    type=EmailType.SUBMISSION_RECEIVED,
+                    to_address="kim@example.org",
+                    idempotency_key="submission:2",
+                    idea_id=UUID(internal["id"]),
+                ),
             ],
         )
 
-    assert await delivery.send_email(runtime, email_id) == "sent"
+    assert await delivery.send_email(runtime, sent_id) == "sent"
+    assert await delivery.send_email(runtime, orphan_id) == "cancelled"
 
     message, _, recipient = only(transport.sent)
     assert recipient == "jo@example.org"
-    assert message["Subject"] == 'We received your idea: "Recycle at the till"'
+    assert message["Subject"] == "Confirm your idea for Customer Innovation"
     assert message["List-Unsubscribe"] is None
     assert await outbox.notifications() == []
 

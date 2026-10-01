@@ -38,6 +38,8 @@ export interface IdeaPageContextValue {
   /** Bumped by `focusComment` so a mounted comment box knows to check. */
   commentFocusRequest: number
   setTab: (tab: IdeaTab) => void
+  /** The tab in view (the proposal editor takes `c` for its own comments). */
+  tab?: IdeaTab
 }
 
 const IdeaPageContext = createContext<IdeaPageContextValue | null>(null)

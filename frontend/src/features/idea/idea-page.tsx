@@ -25,7 +25,9 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/components/ui/toaster'
 import { useCurrentUser } from '@/features/auth/current-user'
+import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
 import { SHORTCUTS } from '@/lib/shortcuts'
+import { cn } from '@/lib/utils'
 
 import { ActivitySection } from './activity-feed'
 import { DeleteIdeaDialog } from './delete-idea-dialog'
@@ -86,6 +88,8 @@ function LoadedIdeaPage({
   const project = useProject(idea.project.slug).data
   const archived = Boolean(project?.archived_at)
   const tab: IdeaTab = search.tab ?? 'overview'
+  // The Proposal tab spans the page; the details fold into the summary line and sheet.
+  const wide = tab === 'proposal'
   const [dialog, setDialog] = useState<IdeaDialog | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const handingOff = useRef(false)
@@ -165,6 +169,7 @@ function LoadedIdeaPage({
     takeCommentFocus,
     commentFocusRequest,
     setTab,
+    tab,
   }
 
   useIdeaCommands(page)
@@ -207,17 +212,29 @@ function LoadedIdeaPage({
 
   return (
     <IdeaPageProvider value={page}>
-      <div className="mx-auto flex w-full max-w-6xl flex-col px-4 pt-5 pb-28 sm:px-6 sm:pb-12 lg:px-10 lg:pt-8">
+      <div
+        className={cn(
+          'mx-auto flex w-full flex-col px-4 pt-5 pb-28 sm:px-6 sm:pb-12 lg:px-10 lg:pt-8',
+          // The proposal editor needs the room: outline, text and margin comments.
+          wide ? 'max-w-7xl' : 'max-w-6xl',
+        )}
+      >
         {archived && (
           <p className="mb-5 flex items-center gap-2 rounded-lg border bg-background px-3.5 py-2.5 text-sm text-secondary">
             <Archive aria-hidden="true" className="size-4 shrink-0 text-muted" />
             This project is archived, so its ideas are read-only.
           </p>
         )}
-        <div className="grid gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_18rem] xl:gap-x-14">
+        <HeldIdeaBanner idea={idea} ideaKey={ideaKey} />
+        <div
+          className={cn(
+            'grid gap-x-10 gap-y-6',
+            !wide && 'lg:grid-cols-[minmax(0,1fr)_18rem] xl:gap-x-14',
+          )}
+        >
           <div className="flex min-w-0 flex-col gap-5">
             <IdeaHeader primary={primaryButton()} />
-            <MobileSummary onOpenDetails={() => setDetailsOpen(true)} />
+            <MobileSummary onOpenDetails={() => setDetailsOpen(true)} always={wide} />
             <Tabs value={tab} onValueChange={(value) => setTab(value as IdeaTab)}>
               <TabsList aria-label="Idea sections">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -248,9 +265,11 @@ function LoadedIdeaPage({
               </TabsContent>
             </Tabs>
           </div>
-          <aside aria-label="Idea details" className="hidden lg:block">
-            <IdeaProperties className="lg:border-l lg:border-subtle lg:pl-6" />
-          </aside>
+          {!wide && (
+            <aside aria-label="Idea details" className="hidden lg:block">
+              <IdeaProperties className="lg:border-l lg:border-subtle lg:pl-6" />
+            </aside>
+          )}
         </div>
       </div>
 
@@ -306,11 +325,20 @@ function LoadedIdeaPage({
  * Below `lg` the sidebar folds into one line (status · owner · evaluators ·
  * due · score) and a Details sheet with every control.
  */
-function MobileSummary({ onOpenDetails }: { onOpenDetails: () => void }) {
+function MobileSummary({
+  onOpenDetails,
+  always = false,
+}: {
+  onOpenDetails: () => void
+  /** Also on wide screens (the Proposal tab hides the sidebar). */
+  always?: boolean
+}) {
   const { idea } = useIdeaPage()
   const { submitted, total } = idea.evaluator_progress
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm lg:hidden">
+    <div
+      className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 text-sm', !always && 'lg:hidden')}
+    >
       <StatusBadge status={idea.status} resolution={idea.resolution} label={idea.status_label} />
       {idea.owner ? (
         <span className="flex min-w-0 items-center gap-1.5 text-secondary">

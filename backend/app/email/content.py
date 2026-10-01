@@ -93,6 +93,8 @@ class OutboxRow:
     to_address: str | None = None
     requested_by_id: UUID | None = None
     payload: Mapping[str, Any] = field(default_factory=dict)
+    idea_id: UUID | None = None
+    """Phase 4: the idea a public submitter's email is about (those two types only)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +175,7 @@ async def prepare(
             assert user is not None  # noqa: S101 - digests are for users
             result = await _digest(context, email, user, branding)
         case EmailType.SUBMISSION_RECEIVED | EmailType.SUBMISSION_STATUS_CHANGED:
-            result = _submission(context, email, branding)
+            result = await _submission(context, email)
         case _:
             if user is None:
                 return Cancelled(NO_LONGER_APPLIES)
@@ -489,26 +491,11 @@ async def _test(context: _Context, email: OutboxRow, branding: Branding) -> Emai
     )
 
 
-def _submission(context: _Context, email: OutboxRow, branding: Branding) -> EmailContent:
-    """Phase 4 plumbing: the idea's details travel in ``payload`` (no notification row,
-    no user preferences); Phase 4 adds the sealed tracking link and an opt-out link."""
-    payload = email.payload
-    title = str(payload.get("title") or "")
-    project = str(payload.get("project") or branding.product_name)
-    key = payload.get("key")
-    if email.type is EmailType.SUBMISSION_RECEIVED:
-        return EmailContent(
-            template="submission_received",
-            subject=f'We received your idea: "{subject_title(title)}"',
-            preheader=f"Thanks for your idea for {project}.",
-            context={"title": title, "project": project, "key": key, "tracking_url": None},
-            reason=f"You submitted an idea to {project}.",
-        )
-    status = str(payload.get("status") or "")
-    return EmailContent(
-        template="submission_status_changed",
-        subject=f'Your idea "{subject_title(title)}" moved to {status}',
-        preheader=f"Your idea is now {status}.",
-        context={"title": title, "project": project, "status": status, "tracking_url": None},
-        reason=f"You asked for updates on an idea you submitted to {project}.",
-    )
+async def _submission(context: _Context, email: OutboxRow) -> EmailContent | Cancelled:
+    """Public submitter emails (contract-phase4 section 3.8): rendered from the idea's
+    ``public_submissions`` row now (no notification row, no user preferences), by
+    :func:`app.public.emails.submitter_email`."""
+    from app.public.emails import submitter_email
+
+    found = await submitter_email(context.db, context.settings, email, now=context.now)
+    return Cancelled(found) if isinstance(found, str) else found

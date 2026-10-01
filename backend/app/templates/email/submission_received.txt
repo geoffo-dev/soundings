@@ -1,10 +1,14 @@
 {% extends "_layout.txt" %}
 {% block content %}
-Thanks, we received your idea
+Confirm your idea for {{ project }}
 
-Your idea "{{ title }}" was submitted to {{ project }}{% if key %} as {{ key }}{% endif %}. The team reviews new ideas regularly.
+Someone sent an idea to {{ project }} and gave this email address.
+
+{% if held_until_confirmed %}Confirm your address and the team gets your idea{% if wants_updates %}, and we'll email you when its status changes{% endif %}.{% elif wants_updates %}Confirm your address and we'll email you when the idea's status changes.{% else %}Confirm your address so the team knows it's really yours.{% endif %} The link works for 3 days.
 {% if tracking_url %}
 
-Keep this email: its link shows where your idea stands.
+Follow the idea with your private link (keep it to yourself): {{ tracking_url }}
 {% endif %}
+
+If this wasn't you, ignore this email: nothing more will be sent unless you confirm.
 {%- endblock %}
