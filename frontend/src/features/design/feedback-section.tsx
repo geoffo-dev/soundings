@@ -1,6 +1,7 @@
 import { Filter, Inbox, Lightbulb, SearchX, WifiOff } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   Skeleton,
@@ -78,6 +79,21 @@ export function FeedbackSection() {
           <SkeletonBoardCard />
         </Specimen>
       </div>
+      <Specimen title="Callout · inline messages (sign-in problems, notes on a setting)">
+        <div className="flex max-w-xl flex-col gap-2">
+          <Callout tone="success" title="You’re signed out." />
+          <Callout tone="info" title="Your session has ended">
+            Sign in again to carry on where you left off.
+          </Callout>
+          <Callout tone="warning" title="You don’t have a Soundings account yet">
+            Ask an administrator to add you, then sign in again.
+          </Callout>
+          <Callout tone="danger" title="We couldn’t verify your sign-in">
+            Try again. If it keeps happening, contact your administrator.
+          </Callout>
+          <Callout title="Platform admins can see and manage every project without a role here." />
+        </div>
+      </Specimen>
       <Specimen title="Skeleton · idea page">
         <SkeletonIdeaPage />
       </Specimen>

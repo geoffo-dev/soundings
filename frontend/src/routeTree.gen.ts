@@ -17,8 +17,16 @@ import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppIdeasIdeaKeyRouteImport } from './routes/_app/ideas.$ideaKey'
 import { Route as AppPSlugRouteImport } from './routes/_app/p.$slug'
+import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings.index'
+import { Route as AppSettingsAdminRouteImport } from './routes/_app/settings._admin'
 import { Route as AppPSlugIndexRouteImport } from './routes/_app/p.$slug.index'
 import { Route as AppPSlugSettingsRouteImport } from './routes/_app/p.$slug.settings'
+import { Route as AppSettingsAdminAuditRouteImport } from './routes/_app/settings._admin.audit'
+import { Route as AppSettingsAdminSsoRouteImport } from './routes/_app/settings._admin.sso'
+import { Route as AppSettingsAdminUsersRouteImport } from './routes/_app/settings._admin.users'
+import { Route as AppSettingsAdminGroupsIndexRouteImport } from './routes/_app/settings._admin.groups.index'
+import { Route as AppSettingsAdminGroupsGroupIdRouteImport } from './routes/_app/settings._admin.groups.$groupId'
+import { Route as AppSettingsAdminUsersUserIdRouteImport } from './routes/_app/settings._admin.users.$userId'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -59,6 +67,15 @@ const AppPSlugRoute = AppPSlugRouteImport.update({
   path: '/p/$slug',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsAdminRoute = AppSettingsAdminRouteImport.update({
+  id: '/_admin',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppPSlugIndexRoute = AppPSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -69,27 +86,73 @@ const AppPSlugSettingsRoute = AppPSlugSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppPSlugRoute,
 } as any)
+const AppSettingsAdminAuditRoute = AppSettingsAdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AppSettingsAdminRoute,
+} as any)
+const AppSettingsAdminSsoRoute = AppSettingsAdminSsoRouteImport.update({
+  id: '/sso',
+  path: '/sso',
+  getParentRoute: () => AppSettingsAdminRoute,
+} as any)
+const AppSettingsAdminUsersRoute = AppSettingsAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AppSettingsAdminRoute,
+} as any)
+const AppSettingsAdminGroupsIndexRoute =
+  AppSettingsAdminGroupsIndexRouteImport.update({
+    id: '/groups/',
+    path: '/groups/',
+    getParentRoute: () => AppSettingsAdminRoute,
+  } as any)
+const AppSettingsAdminGroupsGroupIdRoute =
+  AppSettingsAdminGroupsGroupIdRouteImport.update({
+    id: '/groups/$groupId',
+    path: '/groups/$groupId',
+    getParentRoute: () => AppSettingsAdminRoute,
+  } as any)
+const AppSettingsAdminUsersUserIdRoute =
+  AppSettingsAdminUsersUserIdRouteImport.update({
+    id: '/$userId',
+    path: '/$userId',
+    getParentRoute: () => AppSettingsAdminUsersRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
   '/$': typeof AppSplatRoute
-  '/settings': typeof AppSettingsRoute
+  '/settings': typeof AppSettingsRouteWithChildren
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/p/$slug': typeof AppPSlugRouteWithChildren
+  '/settings/': typeof AppSettingsIndexRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/settings/audit': typeof AppSettingsAdminAuditRoute
+  '/settings/sso': typeof AppSettingsAdminSsoRoute
+  '/settings/users': typeof AppSettingsAdminUsersRouteWithChildren
   '/p/$slug/': typeof AppPSlugIndexRoute
+  '/settings/groups/$groupId': typeof AppSettingsAdminGroupsGroupIdRoute
+  '/settings/users/$userId': typeof AppSettingsAdminUsersUserIdRoute
+  '/settings/groups/': typeof AppSettingsAdminGroupsIndexRoute
 }
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
   '/$': typeof AppSplatRoute
-  '/settings': typeof AppSettingsRoute
   '/': typeof AppIndexRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
+  '/settings': typeof AppSettingsIndexRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/settings/audit': typeof AppSettingsAdminAuditRoute
+  '/settings/sso': typeof AppSettingsAdminSsoRoute
+  '/settings/users': typeof AppSettingsAdminUsersRouteWithChildren
   '/p/$slug': typeof AppPSlugIndexRoute
+  '/settings/groups/$groupId': typeof AppSettingsAdminGroupsGroupIdRoute
+  '/settings/users/$userId': typeof AppSettingsAdminUsersUserIdRoute
+  '/settings/groups': typeof AppSettingsAdminGroupsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -97,12 +160,20 @@ export interface FileRoutesById {
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
   '/_app/$': typeof AppSplatRoute
-  '/_app/settings': typeof AppSettingsRoute
+  '/_app/settings': typeof AppSettingsRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/_app/p/$slug': typeof AppPSlugRouteWithChildren
+  '/_app/settings/_admin': typeof AppSettingsAdminRouteWithChildren
+  '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/_app/settings/_admin/audit': typeof AppSettingsAdminAuditRoute
+  '/_app/settings/_admin/sso': typeof AppSettingsAdminSsoRoute
+  '/_app/settings/_admin/users': typeof AppSettingsAdminUsersRouteWithChildren
   '/_app/p/$slug/': typeof AppPSlugIndexRoute
+  '/_app/settings/_admin/groups/$groupId': typeof AppSettingsAdminGroupsGroupIdRoute
+  '/_app/settings/_admin/users/$userId': typeof AppSettingsAdminUsersUserIdRoute
+  '/_app/settings/_admin/groups/': typeof AppSettingsAdminGroupsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -114,18 +185,31 @@ export interface FileRouteTypes {
     | '/settings'
     | '/ideas/$ideaKey'
     | '/p/$slug'
+    | '/settings/'
     | '/p/$slug/settings'
+    | '/settings/audit'
+    | '/settings/sso'
+    | '/settings/users'
     | '/p/$slug/'
+    | '/settings/groups/$groupId'
+    | '/settings/users/$userId'
+    | '/settings/groups/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/design'
     | '/login'
     | '/$'
-    | '/settings'
     | '/'
     | '/ideas/$ideaKey'
+    | '/settings'
     | '/p/$slug/settings'
+    | '/settings/audit'
+    | '/settings/sso'
+    | '/settings/users'
     | '/p/$slug'
+    | '/settings/groups/$groupId'
+    | '/settings/users/$userId'
+    | '/settings/groups'
   id:
     | '__root__'
     | '/_app'
@@ -136,8 +220,16 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/ideas/$ideaKey'
     | '/_app/p/$slug'
+    | '/_app/settings/_admin'
+    | '/_app/settings/'
     | '/_app/p/$slug/settings'
+    | '/_app/settings/_admin/audit'
+    | '/_app/settings/_admin/sso'
+    | '/_app/settings/_admin/users'
     | '/_app/p/$slug/'
+    | '/_app/settings/_admin/groups/$groupId'
+    | '/_app/settings/_admin/users/$userId'
+    | '/_app/settings/_admin/groups/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -204,6 +296,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPSlugRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/settings/': {
+      id: '/_app/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AppSettingsIndexRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/_admin': {
+      id: '/_app/settings/_admin'
+      path: ''
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsAdminRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/p/$slug/': {
       id: '/_app/p/$slug/'
       path: '/'
@@ -218,8 +324,96 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPSlugSettingsRouteImport
       parentRoute: typeof AppPSlugRoute
     }
+    '/_app/settings/_admin/audit': {
+      id: '/_app/settings/_admin/audit'
+      path: '/audit'
+      fullPath: '/settings/audit'
+      preLoaderRoute: typeof AppSettingsAdminAuditRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/sso': {
+      id: '/_app/settings/_admin/sso'
+      path: '/sso'
+      fullPath: '/settings/sso'
+      preLoaderRoute: typeof AppSettingsAdminSsoRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/users': {
+      id: '/_app/settings/_admin/users'
+      path: '/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof AppSettingsAdminUsersRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/groups/': {
+      id: '/_app/settings/_admin/groups/'
+      path: '/groups'
+      fullPath: '/settings/groups/'
+      preLoaderRoute: typeof AppSettingsAdminGroupsIndexRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/groups/$groupId': {
+      id: '/_app/settings/_admin/groups/$groupId'
+      path: '/groups/$groupId'
+      fullPath: '/settings/groups/$groupId'
+      preLoaderRoute: typeof AppSettingsAdminGroupsGroupIdRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/users/$userId': {
+      id: '/_app/settings/_admin/users/$userId'
+      path: '/$userId'
+      fullPath: '/settings/users/$userId'
+      preLoaderRoute: typeof AppSettingsAdminUsersUserIdRouteImport
+      parentRoute: typeof AppSettingsAdminUsersRoute
+    }
   }
 }
+
+interface AppSettingsAdminUsersRouteChildren {
+  AppSettingsAdminUsersUserIdRoute: typeof AppSettingsAdminUsersUserIdRoute
+}
+
+const AppSettingsAdminUsersRouteChildren: AppSettingsAdminUsersRouteChildren = {
+  AppSettingsAdminUsersUserIdRoute: AppSettingsAdminUsersUserIdRoute,
+}
+
+const AppSettingsAdminUsersRouteWithChildren =
+  AppSettingsAdminUsersRoute._addFileChildren(
+    AppSettingsAdminUsersRouteChildren,
+  )
+
+interface AppSettingsAdminRouteChildren {
+  AppSettingsAdminAuditRoute: typeof AppSettingsAdminAuditRoute
+  AppSettingsAdminSsoRoute: typeof AppSettingsAdminSsoRoute
+  AppSettingsAdminUsersRoute: typeof AppSettingsAdminUsersRouteWithChildren
+  AppSettingsAdminGroupsGroupIdRoute: typeof AppSettingsAdminGroupsGroupIdRoute
+  AppSettingsAdminGroupsIndexRoute: typeof AppSettingsAdminGroupsIndexRoute
+}
+
+const AppSettingsAdminRouteChildren: AppSettingsAdminRouteChildren = {
+  AppSettingsAdminAuditRoute: AppSettingsAdminAuditRoute,
+  AppSettingsAdminSsoRoute: AppSettingsAdminSsoRoute,
+  AppSettingsAdminUsersRoute: AppSettingsAdminUsersRouteWithChildren,
+  AppSettingsAdminGroupsGroupIdRoute: AppSettingsAdminGroupsGroupIdRoute,
+  AppSettingsAdminGroupsIndexRoute: AppSettingsAdminGroupsIndexRoute,
+}
+
+const AppSettingsAdminRouteWithChildren =
+  AppSettingsAdminRoute._addFileChildren(AppSettingsAdminRouteChildren)
+
+interface AppSettingsRouteChildren {
+  AppSettingsAdminRoute: typeof AppSettingsAdminRouteWithChildren
+  AppSettingsIndexRoute: typeof AppSettingsIndexRoute
+}
+
+const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsAdminRoute: AppSettingsAdminRouteWithChildren,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
+}
+
+const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
+  AppSettingsRouteChildren,
+)
 
 interface AppPSlugRouteChildren {
   AppPSlugSettingsRoute: typeof AppPSlugSettingsRoute
@@ -237,7 +431,7 @@ const AppPSlugRouteWithChildren = AppPSlugRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppSplatRoute: typeof AppSplatRoute
-  AppSettingsRoute: typeof AppSettingsRoute
+  AppSettingsRoute: typeof AppSettingsRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
   AppIdeasIdeaKeyRoute: typeof AppIdeasIdeaKeyRoute
   AppPSlugRoute: typeof AppPSlugRouteWithChildren
@@ -245,7 +439,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppSplatRoute: AppSplatRoute,
-  AppSettingsRoute: AppSettingsRoute,
+  AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppIdeasIdeaKeyRoute: AppIdeasIdeaKeyRoute,
   AppPSlugRoute: AppPSlugRouteWithChildren,

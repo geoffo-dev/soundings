@@ -10,6 +10,7 @@
 #   DEMO_NAME       name prefix of the containers and network (default soundings-demo)
 #   DEMO_RESET=1    replace the data with fresh demo data (soundings seed --reset)
 #   DEMO_BIND_ADDRESS  address the port binds to (default 127.0.0.1)
+#   DEMO_BREAK_GLASS_PASSWORD  set: the break-glass admin "admin" with this password
 #   POSTGRES_IMAGE  (default postgres:16-alpine)
 # Development mode only: fixed database password, no TLS, anyone can sign in as anyone.
 set -euo pipefail
@@ -34,6 +35,10 @@ app_env=(
   -e SOUNDINGS_DEV_LOGIN_ENABLED=true
   -e "SOUNDINGS_BASE_URLS=$url,http://127.0.0.1:$DEMO_PORT"
 )
+if [ -n "${DEMO_BREAK_GLASS_PASSWORD:-}" ]; then
+  app_env+=(-e SOUNDINGS_BREAK_GLASS_ENABLED=true -e SOUNDINGS_BREAK_GLASS_USERNAME=admin
+    -e "SOUNDINGS_BREAK_GLASS_PASSWORD=$DEMO_BREAK_GLASS_PASSWORD")
+fi
 
 soundings() {
   docker run --rm --network "$network" "${app_env[@]}" "$IMAGE" "$@"

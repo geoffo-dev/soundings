@@ -9,7 +9,8 @@
 #
 # Areas: backend (make -C backend check), frontend (npm --prefix frontend run check),
 # helm (deploy/: helm lint + template, via the alpine/helm container),
-# e2e (npm run check: tsc + prettier), scripts (bash -n, shellcheck when installed or its image is pulled).
+# e2e (npm run check: tsc + prettier), scripts (bash -n, shellcheck when installed or its
+# image is pulled; scripts/ and e2e/scripts/).
 # Areas whose directory or toolchain is missing are skipped with a note.
 set -uo pipefail
 
@@ -118,14 +119,17 @@ check_e2e() {
 # shellcheck disable=SC2329  # invoked through run()
 scripts_checks() {
   local f
-  for f in scripts/*.sh scripts/lib/*.sh; do
+  local files=(scripts/*.sh scripts/lib/*.sh)
+  # The e2e stack scripts (platform-owned, under e2e/) too, when present.
+  for f in e2e/scripts/*.sh; do [ -e "$f" ] && files+=("$f"); done
+  for f in "${files[@]}"; do
     [ -e "$f" ] || continue
     bash -n "$f" || return 1
   done
   if have shellcheck; then
-    shellcheck -x scripts/*.sh scripts/lib/*.sh
+    shellcheck -x "${files[@]}"
   elif docker_ok && docker image inspect "$SHELLCHECK_IMAGE" >/dev/null 2>&1; then
-    docker run --rm -v "$REPO_ROOT:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" -x scripts/*.sh scripts/lib/*.sh
+    docker run --rm -v "$REPO_ROOT:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" -x "${files[@]}"
   else
     echo "shellcheck not available (install it, or docker pull $SHELLCHECK_IMAGE)"
   fi

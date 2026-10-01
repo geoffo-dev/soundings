@@ -15,12 +15,13 @@ dependencies = [
     # The procrastinate schema is vendored per version (app/migrations/procrastinate/);
     # bumping this needs a migration, see app/migrations/procrastinate/README.md.
     "procrastinate>=3.10,<4",
-    "authlib>=1.3",
     "httpx>=0.27",
     "jinja2>=3.1",
     "aiosmtplib>=3.0",
     "prometheus-client>=0.20",
     "python-json-logger>=3.1",
+    # OIDC ID-token signature and JWKS handling (app/auth/oidc.py); was pulled in by Authlib.
+    "joserfc>=1.6",
 ]
 
 [project.optional-dependencies]

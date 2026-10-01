@@ -49,7 +49,12 @@ function testBaseURL(): string {
 export async function switchUserInUi(page: Page, person: Person) {
   const name = PEOPLE[person]
   const menu = page.getByRole('button', { name: /^Account menu for / })
-  if (await menu.isVisible()) {
+  // On an app page, wait for the shell: `isVisible()` alone raced a page still loading
+  // (then /login bounced the signed-in user back to My work).
+  const url = page.url()
+  const onApp = url.startsWith('http') && !new URL(url).pathname.startsWith('/login')
+  if (onApp) {
+    await expect(menu).toBeVisible()
     await menu.click()
     await page.getByRole('menuitem', { name: 'Sign out' }).click()
     await expect(page).toHaveURL(/\/login/)

@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "playwright test",
-    "screenshots": "SCREENSHOTS=1 playwright test --project=screenshots",
+    "screenshots": "SCREENSHOTS=phase-1 playwright test --project=screenshots",
+    "screenshots:phase2": "SCREENSHOTS=phase-2 E2E_SSO=1 playwright test --project=screenshots && SCREENSHOTS=phase-2 E2E_SSO=0 playwright test --project=screenshots --grep @break-glass",
     "stack:start": "scripts/start-stack.sh",
     "stack:stop": "scripts/stop-stack.sh",
     "stack:reseed": "scripts/reseed.sh",

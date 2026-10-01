@@ -38,7 +38,7 @@ spec:
           envFrom:
             {{- include "soundings.envFrom" . | nindent 12 }}
           env:
-            {{- include "soundings.secretEnv" . | nindent 12 }}
+            {{- include "soundings.secretEnv" (dict "ctx" . "signIn" false) | nindent 12 }}
           {{- with .Values.worker.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

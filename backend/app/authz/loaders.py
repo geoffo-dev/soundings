@@ -1,7 +1,8 @@
 """Build :class:`~app.authz.policy.Resource` facts from the database.
 
-Roles come only from the ``project_effective_roles`` view (Phase 2 adds group
-grants there). Typical router use::
+Roles come only from the ``project_effective_roles`` view: the highest of the direct
+role and every group grant (manual or synced membership), so group roles count
+everywhere with no further change. Typical router use::
 
     project, resource = await load_project(db, principal, slug)  # 404 unless viewable
     require(principal, Rule.PROJECT_EDIT_SETTINGS, resource)    # 403
@@ -25,6 +26,7 @@ from app.models.enums import EvaluationStatus, EvaluatorState, ProjectRole
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project, project_effective_roles
+from app.models.user import User
 
 __all__ = [
     "admin_count",
@@ -33,6 +35,7 @@ __all__ = [
     "evaluator_state",
     "idea_resource",
     "load_project",
+    "other_platform_admins",
     "project_resource",
 ]
 
@@ -63,13 +66,35 @@ async def effective_roles_of(
 
 
 async def admin_count(db: AsyncSession, project_id: UUID) -> int:
-    """Users with effective role admin (c11: count it after applying a change)."""
+    """c11: the project's admins (effective role, direct or through a group) who are
+    active and not service accounts. Count it after applying a change."""
     count = await db.scalar(
         select(func.count())
         .select_from(_roles)
-        .where(_roles.c.project_id == project_id, _roles.c.role == ProjectRole.ADMIN)
+        .join(User, User.id == _roles.c.user_id)
+        .where(
+            _roles.c.project_id == project_id,
+            _roles.c.role == ProjectRole.ADMIN,
+            User.is_active,
+            User.is_service_account.is_(False),
+        )
     )
     return int(count or 0)
+
+
+async def other_platform_admins(db: AsyncSession, user_id: UUID) -> int:
+    """c18: active platform admins other than ``user_id`` and the break-glass account.
+
+    Locks every active platform admin's row first (``FOR NO KEY UPDATE``, in id order),
+    then counts, so two admins demoting each other at the same moment can't both
+    succeed: the second waits and then counts the first change."""
+    locked = await db.execute(
+        select(User.id, User.is_break_glass)
+        .where(User.is_platform_admin, User.is_active)
+        .order_by(User.id)
+        .with_for_update(key_share=True)
+    )
+    return sum(1 for found, break_glass in locked.all() if found != user_id and not break_glass)
 
 
 async def evaluator_state(db: AsyncSession, idea_id: UUID, user_id: UUID) -> EvaluatorState | None:

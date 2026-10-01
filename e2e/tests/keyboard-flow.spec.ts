@@ -133,7 +133,8 @@ test('KB-11: ⌘K highlights the top row, and commands sit above ideas', async (
 
   for (const [query, top] of [
     ['new', /New idea/],
-    ['sign', /Sign out/],
+    // "sign out", not "sign": platform admins also have "Sign-in (SSO)" (Phase 2).
+    ['sign out', /Sign out/],
     ['whatsapp', /WhatsApp order updates/],
   ] as const) {
     const palette = await openPalette(page)

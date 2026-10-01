@@ -16,6 +16,8 @@ export class ApiError extends Error {
   readonly title: string
   readonly detail: string | undefined
   readonly problem: ProblemDetails | undefined
+  /** From a 429's `Retry-After` header: seconds until trying again makes sense. */
+  readonly retryAfterSeconds: number | undefined
 
   constructor(init: {
     status: number
@@ -23,6 +25,7 @@ export class ApiError extends Error {
     title: string
     detail?: string
     problem?: ProblemDetails
+    retryAfterSeconds?: number
   }) {
     super(init.detail ?? init.title)
     this.name = 'ApiError'
@@ -31,6 +34,7 @@ export class ApiError extends Error {
     this.title = init.title
     this.detail = init.detail
     this.problem = init.problem
+    this.retryAfterSeconds = init.retryAfterSeconds
   }
 
   get isClientError(): boolean {
@@ -91,7 +95,20 @@ export async function toApiError(response: Response): Promise<ApiError> {
     title,
     detail: str(problem?.detail),
     problem,
+    retryAfterSeconds: parseRetryAfter(response.headers.get('retry-after')),
   })
+}
+
+/** `Retry-After` is either seconds or an HTTP date (RFC 9110 §10.2.3). */
+export function parseRetryAfter(
+  value: string | null,
+  now: number = Date.now(),
+): number | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  if (/^\d+$/.test(trimmed)) return Number(trimmed)
+  const at = Date.parse(trimmed)
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - now) / 1000))
 }
 
 export function networkError(cause: unknown): ApiError {
@@ -163,11 +180,50 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
   already_member: { title: 'Already a member' },
   last_admin: {
     title: 'A project needs at least one admin',
-    description: 'Make someone else an admin first.',
+    description: 'Make someone else an admin first, directly or through a group.',
   },
   evaluation_incomplete: {
     title: 'Some scores are missing',
     description: 'Score every criterion and choose a recommendation to submit.',
+  },
+  // Phase 2: sign-in and access (contract-phase2 §4.1)
+  invalid_credentials: {
+    title: 'That username and password don’t match',
+    description: 'Check both and try again.',
+  },
+  account_disabled: {
+    title: 'This account is deactivated',
+    description: 'Another platform admin can reactivate it.',
+  },
+  too_many_attempts: {
+    title: 'Too many attempts',
+    description: 'Wait a few minutes, then try again.',
+  },
+  cannot_change_self: {
+    title: 'You can’t change that for yourself',
+    description: 'Ask another platform admin to deactivate you or remove your admin rights.',
+  },
+  email_taken: { title: 'Someone already has that email address' },
+  external_id_taken: {
+    title: 'Another person already has that external ID',
+    description: 'Each external ID belongs to one person.',
+  },
+  group_name_taken: { title: 'A group with that name already exists' },
+  already_granted: {
+    title: 'That group already has a role here',
+    description: 'Change its role in the list instead.',
+  },
+  group_not_found: {
+    title: 'We couldn’t find that group',
+    description: 'It may have been deleted.',
+  },
+  last_platform_admin: {
+    title: 'Soundings needs a platform admin',
+    description: 'Make someone else a platform admin first.',
+  },
+  system_account: {
+    title: 'System accounts can’t be changed like this',
+    description: 'Only their name and whether they are active can change.',
   },
   network_error: { title: 'Can’t reach the server', description: 'Check your connection.' },
 }

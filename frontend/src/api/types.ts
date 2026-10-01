@@ -65,6 +65,66 @@ export type WorkEvaluation = Schemas['WorkEvaluation']
 export type WorkOwnedGroup = Schemas['WorkOwnedGroup']
 export type WorkRecentIdea = Schemas['WorkRecentIdea']
 
+/* Phase 2: sign-in and access (docs/api/contract-phase2.md) */
+export type AdminUser = Schemas['AdminUser']
+export type AdminUserCreate = Schemas['AdminUserCreate']
+export type AdminUserPage = Schemas['AdminUserPage']
+export type AdminUserSummary = Schemas['AdminUserSummary']
+export type AdminUserUpdate = Schemas['AdminUserUpdate']
+export type AuditAction = Schemas['AuditAction']
+export type AuditEntry = Schemas['AuditEntry']
+export type AuditPage = Schemas['AuditPage']
+export type AuditTargetType = NonNullable<AuditEntry['target_type']>
+export type AuthConfig = Schemas['AuthConfig']
+export type BreakGlassLogin = Schemas['BreakGlassLogin']
+export type BreakGlassStatus = Schemas['BreakGlassStatus']
+export type ExternalId = Schemas['ExternalId']
+export type ExternalIdIn = Schemas['ExternalIdIn']
+export type ExternalIdsReplace = Schemas['ExternalIdsReplace']
+export type Group = Schemas['Group']
+export type GroupCreate = Schemas['GroupCreate']
+export type GroupMappingUpdate = Schemas['GroupMappingUpdate']
+export type GroupMember = Schemas['GroupMember']
+export type GroupMemberPage = Schemas['GroupMemberPage']
+export type GroupPage = Schemas['GroupPage']
+export type GroupProjectGrant = Schemas['GroupProjectGrant']
+export type GroupRef = Schemas['GroupRef']
+export type GroupSearchResult = Schemas['GroupSearchResult']
+export type GroupSummary = Schemas['GroupSummary']
+export type GroupSyncMode = Schemas['GroupSyncMode']
+export type GroupUpdate = Schemas['GroupUpdate']
+export type LinkedIdentity = Schemas['LinkedIdentity']
+export type MappingEffect = Schemas['MappingTestGroup']['effect']
+export type MappingTestGroup = Schemas['MappingTestGroup']
+export type MappingTestRequest = Schemas['MappingTestRequest']
+export type MappingTestResult = Schemas['MappingTestResult']
+export type ProjectAccessEntry = Schemas['ProjectAccessEntry']
+export type ProjectAccessPage = Schemas['ProjectAccessPage']
+export type ProjectGroupGrant = Schemas['ProjectGroupGrant']
+export type ProjectGroupGrantAdd = Schemas['ProjectGroupGrantAdd']
+export type RoleSource = Schemas['RoleSource']
+export type SsoConfig = Schemas['SsoConfig']
+export type SsoDiscovery = Schemas['SsoDiscovery']
+export type SsoRedirect = Schemas['SsoRedirect']
+export type UserGroup = Schemas['UserGroup']
+export type UserProjectRole = Schemas['UserProjectRole']
+/** How a session signed in (contract-phase2 §1): `CurrentUser.auth_method`. */
+export type AuthMethod = Schemas['AuthMethod']
+/** `GET /auth/login` and `/auth/callback` redirect to `/login?error=<code>` (contract-phase2 §4.2). */
+export type LoginErrorCode =
+  | 'sso_unavailable'
+  | 'too_many_attempts'
+  | 'login_expired'
+  | 'login_cancelled'
+  | 'sso_failed'
+  | 'no_account'
+  | 'account_disabled'
+  | 'identity_conflict'
+/** Query parameters of `list_audit_entries` (filters, cursor, limit). */
+export type AuditQuery = NonNullable<operations['list_audit_entries']['parameters']['query']>
+/** Query parameters of `list_admin_users`. */
+export type AdminUserQuery = NonNullable<operations['list_admin_users']['parameters']['query']>
+
 /** Query parameters of `list_ideas` (filters, sort, cursor, limit). */
 export type IdeaListQuery = NonNullable<operations['list_ideas']['parameters']['query']>
 /** Query parameters of `get_board` (filters without status/resolution, sort, limit per column). */

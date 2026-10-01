@@ -16,13 +16,17 @@ OPENAPI_JSON := frontend/src/api/generated/openapi.json
 DEMO_PORT ?= 8000
 # `make e2e` runs against this URL (by default the one `make demo` serves).
 E2E_BASE_URL ?= http://localhost:$(DEMO_PORT)
+# `make k3s-install SSO=1` / `make k3s-smoke SSO=1`: single sign-on with Keycloak in k3s.
+SSO ?=
+# `make sso-smoke` runs against this app (configured for the dev Keycloak realm).
+SSO_BASE_URL ?= http://localhost:8000
 
 comma := ,
 build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(BUILD_CA))
 
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
-        check-scripts e2e image demo demo-down k3s-up k3s-load k3s-install k3s-smoke k3s-down \
-        openapi gen-api seed
+        check-scripts e2e image demo demo-down k3s-up k3s-load k3s-keycloak k3s-install k3s-smoke \
+        k3s-down openapi gen-api seed sso-smoke
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
@@ -37,16 +41,18 @@ dev-down: ## Stop dev services (keeps data; add -v by hand to wipe it)
 dev-logs: ## Follow dev service logs
 	$(COMPOSE) logs -f --tail=100
 
-dev: ## How to run the backend and frontend dev servers
+dev: ## How to run the backend and frontend dev servers (with Keycloak SSO)
 	@echo "1. make dev-up                                   # Postgres, Keycloak, Mailpit (dev/README.md)"
-	@echo "2. export SOUNDINGS_DATABASE_URL=postgresql+psycopg://soundings:soundings@localhost:5432/soundings"
-	@echo "   export SOUNDINGS_DEV_LOGIN_ENABLED=true"
+	@echo "2. cp dev/.env.example dev/.env                  # once: database, dev login and Keycloak SSO settings"
+	@echo "   set -a; . dev/.env; set +a                    # in every shell that runs the backend"
 	@echo "   make -C backend install migrate               # once, and after pulling migrations"
 	@echo "   make seed                                     # demo data (alice is the platform admin)"
 	@echo "3. make -C backend dev                           # API on http://localhost:8000"
 	@echo "   make -C backend worker                        # background jobs (other terminal)"
 	@echo "4. npm --prefix frontend ci && npm --prefix frontend run dev   # SPA on http://localhost:5173"
 	@echo "   (npm --prefix frontend run dev:mock runs the SPA against MSW mocks, no backend needed)"
+	@echo "5. http://localhost:5173 -> Sign in with SSO -> alice / password (Keycloak users: dev/README.md)"
+	@echo "   make sso-smoke                                # the same flow scripted with curl, plus groups -> access"
 
 # --- Checks ------------------------------------------------------------------------------
 check: check-backend check-frontend check-helm check-scripts ## Run every check
@@ -85,15 +91,21 @@ k3s-up: ## Start a local k3s cluster in Docker (K3S_NAME, ports 16443/18081)
 k3s-load: ## Import the image (IMAGE) into the k3s node
 	scripts/k3s-load-image.sh $(IMAGE)
 
-k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it with dev/k3s-values.yaml
-	image='$(IMAGE)'; scripts/k3s-install.sh \
+k3s-keycloak: ## Keycloak with the dev realm in the k3s cluster (for SSO=1 below)
+	scripts/k3s-keycloak.sh up
+
+k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak)
+	image='$(IMAGE)'; SSO='$(SSO)' scripts/k3s-install.sh \
 	  --set image.repository="$${image%:*}" --set image.tag="$${image##*:}"
 
-k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, then helm test
-	scripts/k3s-smoke.sh
+k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, then helm test (SSO=1: + SSO flow)
+	SSO='$(SSO)' scripts/k3s-smoke.sh
 
 k3s-down: ## Delete the local k3s cluster
 	scripts/k3s-down.sh
+
+sso-smoke: ## Scripted SSO sign-in + groups -> access against SSO_BASE_URL (default the make dev API)
+	scripts/sso-smoke.sh $(SSO_BASE_URL)
 
 # --- API contract ------------------------------------------------------------------------
 openapi: ## Export the backend's OpenAPI document to $(OPENAPI_JSON)

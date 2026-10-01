@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
+from app.models.enums import AuthMethod
 from app.models.user import User
 
 __all__ = ["ApiKeyScope", "AuthKind", "Principal"]
@@ -32,6 +33,9 @@ class Principal:
     ``scopes`` and ``project_ids`` are ``None`` when not narrowed (every session);
     an API key sets both (``project_ids`` stays ``None`` for an unrestricted key).
     ``session_id`` / ``api_key_id`` identify the credential (audit, sign-out).
+    ``auth_method``: how the session was started (``sso``, ``break_glass``,
+    ``dev_login``); audit entries record it as ``details.auth_method`` (contract-phase2
+    section 3.11). ``None`` only for principals built without a session (tests).
     """
 
     user: User
@@ -40,6 +44,7 @@ class Principal:
     project_ids: frozenset[UUID] | None = None
     api_key_id: UUID | None = None
     session_id: UUID | None = None
+    auth_method: AuthMethod | None = None
 
     @property
     def user_id(self) -> UUID:

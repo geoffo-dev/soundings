@@ -14,3 +14,8 @@ export function useCurrentUser(): CurrentUser {
   const { data } = useQuery(meQueryOptions())
   return data ?? user
 }
+
+/** A break-glass session (contract-phase2 §3.8): the shell shows a banner throughout. */
+export function isBreakGlassSession(user: CurrentUser): boolean {
+  return user.auth_method === 'break_glass'
+}

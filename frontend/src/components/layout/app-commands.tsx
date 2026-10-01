@@ -43,6 +43,14 @@ interface AppCommands {
   canCreateIdeas: boolean
 }
 
+/** Admin settings pages in the palette (features/admin). */
+const ADMIN_PAGES = [
+  { id: 'users', label: 'Users', to: '/settings/users', keywords: ['people', 'accounts'] },
+  { id: 'groups', label: 'Groups', to: '/settings/groups', keywords: ['mapping', 'sync'] },
+  { id: 'sso', label: 'Sign-in (SSO)', to: '/settings/sso', keywords: ['oidc', 'login'] },
+  { id: 'audit', label: 'Audit log', to: '/settings/audit', keywords: ['history', 'log'] },
+] as const
+
 const AppCommandsContext = createContext<AppCommands | null>(null)
 
 /**
@@ -83,6 +91,13 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
     }),
     [canCreateIdeas, params.slug, params.ideaKey, queryClient],
   )
+
+  // The session ended with the palette open: don't leave it over /login.
+  const [wasSignedIn, setWasSignedIn] = useState(signedIn)
+  if (wasSignedIn !== signedIn) {
+    setWasSignedIn(signedIn)
+    if (!signedIn) setPaletteOpen(false)
+  }
 
   useShortcut('commandPalette', () => setPaletteOpen((open) => !open))
   useShortcut('shortcutSheet', () => setShortcutsOpen(true))
@@ -147,6 +162,17 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
                 icon: <Settings />,
                 onSelect: () => void navigate({ to: '/settings' }),
               },
+              // Admin settings (platform admins only; the pages are a 404 for anyone else).
+              ...(me.data?.is_platform_admin
+                ? ADMIN_PAGES.map((page) => ({
+                    id: `settings-${page.id}`,
+                    label: page.label,
+                    hint: 'Admin',
+                    icon: <Settings />,
+                    keywords: ['admin', 'settings', ...page.keywords],
+                    onSelect: () => void navigate({ to: page.to }),
+                  }))
+                : []),
             ]
           : []),
         ...(designPageEnabled

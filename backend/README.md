@@ -101,6 +101,15 @@ scores), `audit.record(db, action, actor=principal, ...)` (ids only, no PII), an
 changes (raw SQL: refresh loaded `Idea`s afterwards). `refs.idea_ref()` /
 `project_ref()` build the shared reference shapes.
 
+Admin settings and access (contract-phase2 sections 3.4, 3.7, 3.10, 3.11):
+`admin_users` (pre-create, external IDs, c17/c18, deactivate = end sessions),
+`admin_groups` (groups, mapping, manual members under sign-in sync's user-row lock;
+counts are active users only), `project_groups` (group grants with c11, everyone with
+access and why) and `audit_viewer` (keyset newest first, references resolved per
+page). Every admin write is audited with `rule` and the session's `auth_method`; the
+closed set of actions is `app.schemas.audit.AuditAction`. The mapping test reuses
+`app.auth.group_mapping.preview_group_mapping` (identity), so it runs the sign-in code.
+
 ## Test
 
 ```sh

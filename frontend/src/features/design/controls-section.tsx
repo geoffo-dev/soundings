@@ -1,11 +1,22 @@
-import { ArrowRight, Columns3, List, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import {
+  ArrowRight,
+  CircleDashed,
+  Columns3,
+  List,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox } from '@/components/ui/combobox'
+import { Command, CommandGroup, CommandList } from '@/components/ui/command'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Field } from '@/components/ui/field'
+import { FilterMenu, FilterMenuOption } from '@/components/ui/filter-menu'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { SegmentedControl, scoreOptions } from '@/components/ui/segmented-control'
@@ -144,6 +155,7 @@ export function FormsSection() {
   const [digest, setDigest] = useState('immediate')
   const [checked, setChecked] = useState<boolean | 'indeterminate'>(true)
   const [tags, setTags] = useState(['returns', 'b2b'])
+  const [userStatus, setUserStatus] = useState<'active' | 'deactivated' | undefined>('active')
 
   return (
     <DesignSection
@@ -295,6 +307,47 @@ export function FormsSection() {
               ))}
             </RadioGroup>
           </Field>
+        </Specimen>
+        <Specimen
+          title="Filter menu"
+          description="A filter chip with a menu (admin lists). The × clears it."
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          <FilterMenu
+            label="Status"
+            icon={<CircleDashed aria-hidden="true" />}
+            value={
+              userStatus === 'active'
+                ? 'Active'
+                : userStatus === 'deactivated'
+                  ? 'Deactivated'
+                  : undefined
+            }
+            onClear={() => setUserStatus(undefined)}
+            menuClassName="w-48"
+          >
+            {(close) => (
+              <Command>
+                <CommandList aria-label="Statuses">
+                  <CommandGroup>
+                    {(['active', 'deactivated'] as const).map((value) => (
+                      <FilterMenuOption
+                        key={value}
+                        value={value}
+                        checked={userStatus === value}
+                        onSelect={() => {
+                          setUserStatus(userStatus === value ? undefined : value)
+                          close()
+                        }}
+                      >
+                        {value === 'active' ? 'Active' : 'Deactivated'}
+                      </FilterMenuOption>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            )}
+          </FilterMenu>
         </Specimen>
       </div>
     </DesignSection>

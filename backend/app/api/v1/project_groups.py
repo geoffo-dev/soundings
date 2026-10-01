@@ -14,7 +14,8 @@ from fastapi import APIRouter, Query, status
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, load_project
+from app.db import SessionDep
 from app.models.enums import ProjectRole
 from app.pagination import PageParamsDep
 from app.schemas.base import NoNul
@@ -24,6 +25,7 @@ from app.schemas.groups import (
     ProjectGroupGrantAdd,
     ProjectGroupGrantUpdate,
 )
+from app.services import project_groups
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -39,9 +41,10 @@ router = APIRouter(prefix="/projects", tags=["projects"])
     responses=problems(401, 404),
 )
 async def list_project_group_grants(
-    principal: PrincipalDep, slug: ProjectSlug
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
 ) -> list[ProjectGroupGrant]:
-    raise NotImplementedProblem
+    project, _ = await load_project(session, principal, slug)
+    return await project_groups.list_grants(session, project)
 
 
 @router.post(
@@ -57,9 +60,12 @@ async def list_project_group_grants(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def add_project_group_grant(
-    principal: PrincipalDep, slug: ProjectSlug, body: ProjectGroupGrantAdd
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: ProjectGroupGrantAdd
 ) -> ProjectGroupGrant:
-    raise NotImplementedProblem
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_MANAGE_MEMBERS, for_update=True
+    )
+    return await project_groups.add_grant(session, principal, project, body)
 
 
 @router.patch(
@@ -70,9 +76,18 @@ async def add_project_group_grant(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_project_group_grant(
-    principal: PrincipalDep, slug: ProjectSlug, group_id: UUID, body: ProjectGroupGrantUpdate
+    principal: PrincipalDep,
+    session: SessionDep,
+    slug: ProjectSlug,
+    group_id: UUID,
+    body: ProjectGroupGrantUpdate,
 ) -> ProjectGroupGrant:
-    raise NotImplementedProblem
+    # The project row lock serialises role changes, so two admins demoting each
+    # other's groups at once can't both pass the last-admin check (c11).
+    project, resource = await load_project(
+        session, principal, slug, Rule.PROJECT_MANAGE_MEMBERS, for_update=True
+    )
+    return await project_groups.update_grant(session, principal, project, resource, group_id, body)
 
 
 @router.delete(
@@ -87,9 +102,12 @@ async def update_project_group_grant(
     responses=problems(401, 403, 404, 409),
 )
 async def remove_project_group_grant(
-    principal: PrincipalDep, slug: ProjectSlug, group_id: UUID
+    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, group_id: UUID
 ) -> None:
-    raise NotImplementedProblem
+    project, resource = await load_project(
+        session, principal, slug, Rule.PROJECT_MANAGE_MEMBERS, for_update=True
+    )
+    await project_groups.remove_grant(session, principal, project, resource, group_id)
 
 
 @router.get(
@@ -107,6 +125,7 @@ async def remove_project_group_grant(
 )
 async def list_project_access(
     principal: PrincipalDep,
+    session: SessionDep,
     slug: ProjectSlug,
     page: PageParamsDep,
     q: Annotated[
@@ -114,4 +133,5 @@ async def list_project_access(
     ] = None,
     role: Annotated[ProjectRole | None, Query(description="Only this effective role.")] = None,
 ) -> ProjectAccessPage:
-    raise NotImplementedProblem
+    project, _ = await load_project(session, principal, slug)
+    return await project_groups.list_access(session, project, q=q, role=role, page=page)

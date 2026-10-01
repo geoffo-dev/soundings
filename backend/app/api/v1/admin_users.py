@@ -10,11 +10,13 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, require
+from app.config import Settings
+from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.admin_users import (
     AdminUser,
@@ -24,10 +26,17 @@ from app.schemas.admin_users import (
     ExternalIdsReplace,
 )
 from app.schemas.base import NoNul
+from app.services import admin_users
 
 router = APIRouter(prefix="/admin/users", tags=["admin"])
 
 _ADMIN = "Platform admins (platform.manage_users). "
+_RULE = Rule.PLATFORM_MANAGE_USERS
+
+
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
 
 
 @router.get(
@@ -42,6 +51,7 @@ _ADMIN = "Platform admins (platform.manage_users). "
 )
 async def list_admin_users(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     q: Annotated[
         str | None, Query(max_length=100, description="Part of a name or email."), NoNul
@@ -55,7 +65,15 @@ async def list_admin_users(
         Query(description="false: users never linked to SSO (e.g. pre-created, not signed in)."),
     ] = None,
 ) -> AdminUserPage:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    return await admin_users.list_users(
+        session,
+        q=q,
+        active=active,
+        platform_admin=platform_admin,
+        has_identity=has_identity,
+        page=page,
+    )
 
 
 @router.post(
@@ -69,8 +87,12 @@ async def list_admin_users(
     ),
     responses=problems(401, 403, 409, 422),
 )
-async def create_admin_user(principal: PrincipalDep, body: AdminUserCreate) -> AdminUser:
-    raise NotImplementedProblem
+async def create_admin_user(
+    request: Request, principal: PrincipalDep, session: SessionDep, body: AdminUserCreate
+) -> AdminUser:
+    require(principal, _RULE)
+    user = await admin_users.create_user(session, principal, body)
+    return await admin_users.user_detail(session, user, _settings(request))
 
 
 @router.get(
@@ -83,8 +105,12 @@ async def create_admin_user(principal: PrincipalDep, body: AdminUserCreate) -> A
     ),
     responses=problems(401, 403, 404),
 )
-async def get_admin_user(principal: PrincipalDep, user_id: UUID) -> AdminUser:
-    raise NotImplementedProblem
+async def get_admin_user(
+    request: Request, principal: PrincipalDep, session: SessionDep, user_id: UUID
+) -> AdminUser:
+    require(principal, _RULE)
+    user = await admin_users.get_user(session, user_id)
+    return await admin_users.user_detail(session, user, _settings(request))
 
 
 @router.patch(
@@ -101,9 +127,16 @@ async def get_admin_user(principal: PrincipalDep, user_id: UUID) -> AdminUser:
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_admin_user(
-    principal: PrincipalDep, user_id: UUID, body: AdminUserUpdate
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    user_id: UUID,
+    body: AdminUserUpdate,
 ) -> AdminUser:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    user = await admin_users.get_user(session, user_id)
+    await admin_users.update_user(session, principal, user, body)
+    return await admin_users.user_detail(session, user, _settings(request))
 
 
 @router.put(
@@ -117,9 +150,16 @@ async def update_admin_user(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def replace_user_external_ids(
-    principal: PrincipalDep, user_id: UUID, body: ExternalIdsReplace
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    user_id: UUID,
+    body: ExternalIdsReplace,
 ) -> AdminUser:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    user = await admin_users.get_user(session, user_id)
+    await admin_users.replace_external_ids(session, principal, user, body)
+    return await admin_users.user_detail(session, user, _settings(request))
 
 
 @router.delete(
@@ -134,8 +174,12 @@ async def replace_user_external_ids(
     ),
     responses=problems(401, 403, 404),
 )
-async def unlink_user_identity(principal: PrincipalDep, user_id: UUID, identity_id: UUID) -> None:
-    raise NotImplementedProblem
+async def unlink_user_identity(
+    principal: PrincipalDep, session: SessionDep, user_id: UUID, identity_id: UUID
+) -> None:
+    require(principal, _RULE)
+    user = await admin_users.get_user(session, user_id)
+    await admin_users.unlink_identity(session, principal, user, identity_id)
 
 
 @router.delete(
@@ -149,5 +193,7 @@ async def unlink_user_identity(principal: PrincipalDep, user_id: UUID, identity_
     ),
     responses=problems(401, 403, 404),
 )
-async def end_user_sessions(principal: PrincipalDep, user_id: UUID) -> None:
-    raise NotImplementedProblem
+async def end_user_sessions(principal: PrincipalDep, session: SessionDep, user_id: UUID) -> None:
+    require(principal, _RULE)
+    user = await admin_users.get_user(session, user_id)
+    await admin_users.end_sessions(session, principal, user)

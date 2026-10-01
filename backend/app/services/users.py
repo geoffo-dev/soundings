@@ -28,10 +28,12 @@ def escape_like(text: str) -> str:
 async def active_user(
     db: AsyncSession, user_id: UUID, *, allow_service_accounts: bool = False
 ) -> User | None:
-    """An active user by id (``None`` for unknown, deactivated, or, unless allowed,
-    service accounts): the ``user_not_found`` check."""
+    """An active user by id (``None`` for unknown, deactivated, the break-glass admin
+    or, unless allowed, service accounts): the ``user_not_found`` check. The
+    break-glass admin never holds project roles, ownerships or evaluations
+    (contract-phase2 section 3.4)."""
     user = await db.get(User, user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.is_break_glass:
         return None
     if user.is_service_account and not allow_service_accounts:
         return None
@@ -39,10 +41,11 @@ async def active_user(
 
 
 async def list_dev_users(db: AsyncSession) -> list[CurrentUser]:
-    """People who can sign in: platform admins first, then by name."""
+    """People who can sign in: platform admins first, then by name (not service
+    accounts or the break-glass admin)."""
     users = await db.scalars(
         select(User)
-        .where(User.is_active, User.is_service_account.is_(False))
+        .where(User.is_active, User.is_service_account.is_(False), User.is_break_glass.is_(False))
         .order_by(User.is_platform_admin.desc(), func.lower(User.display_name), User.id)
     )
     return [CurrentUser.model_validate(user) for user in users]
@@ -51,13 +54,14 @@ async def list_dev_users(db: AsyncSession) -> list[CurrentUser]:
 async def search_users(
     db: AsyncSession, *, q: str | None, project: Project | None, page: PageParams
 ) -> UserPage:
-    """Active people whose name or email contains ``q``, by display name.
+    """Active people whose name or email contains ``q``, by display name (never
+    service accounts or the break-glass admin).
 
     With ``project``: only users with an effective role there, ``project_role`` set.
     """
     sort_key = func.lower(User.display_name)
     statement: Select[Any] = select(User, sort_key.label("sort_key")).where(
-        User.is_active, User.is_service_account.is_(False)
+        User.is_active, User.is_service_account.is_(False), User.is_break_glass.is_(False)
     )
     if project is not None:
         statement = statement.join(

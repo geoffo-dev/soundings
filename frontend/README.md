@@ -62,16 +62,25 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
 
 ### Routes
 
-| URL                                                              | Route file                                                                              | Renders                                  | Owner            |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------- |
-| `/login?next=`                                                   | `routes/login.tsx`                                                                      | `features/auth/login-page`               | foundation       |
-| `/`                                                              | `routes/_app/index.tsx`                                                                 | `features/work/my-work-page`             | foundation       |
-| `/p/$slug?view=board\|list&status=…`                             | `routes/_app/p.$slug.tsx` (layout: loads the project, 404, crumb) + `p.$slug.index.tsx` | `features/project/project-page`          | frontend-project |
-| `/p/$slug/settings`                                              | `routes/_app/p.$slug.settings.tsx`                                                      | `features/project/project-settings-page` | frontend-project |
-| `/ideas/$ideaKey?tab=overview\|evaluations\|proposal&evaluate=1` | `routes/_app/ideas.$ideaKey.tsx`                                                        | `features/idea/idea-page`                | frontend-idea    |
-| `/settings`                                                      | `routes/_app/settings.tsx`                                                              | `features/settings/settings-page`        | foundation       |
-| `/design`                                                        | `routes/design.tsx`                                                                     | `features/design` (dev only)             | —                |
+| URL                                                                   | Route file                                                                              | Renders                                  | Owner            |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------- |
+| `/login?next=&error=&signed_out=1&expired=1`                          | `routes/login.tsx`                                                                      | `features/auth/login-page`               | frontend-access  |
+| `/`                                                                   | `routes/_app/index.tsx`                                                                 | `features/work/my-work-page`             | foundation       |
+| `/p/$slug?view=board\|list&status=…`                                  | `routes/_app/p.$slug.tsx` (layout: loads the project, 404, crumb) + `p.$slug.index.tsx` | `features/project/project-page`          | frontend-project |
+| `/p/$slug/settings`                                                   | `routes/_app/p.$slug.settings.tsx`                                                      | `features/project/project-settings-page` | frontend-project |
+| `/ideas/$ideaKey?tab=overview\|evaluations\|proposal&evaluate=1`      | `routes/_app/ideas.$ideaKey.tsx`                                                        | `features/idea/idea-page`                | frontend-idea    |
+| `/settings`                                                           | `routes/_app/settings.tsx` (layout, crumb) + `settings.index.tsx`                       | `features/settings/settings-page`        | foundation       |
+| `/settings/users?q=&status=&admins=1&unlinked=1` (+ `/$userId` sheet) | `routes/_app/settings._admin.users.tsx`, `settings._admin.users.$userId.tsx`            | `features/admin/users/*`                 | frontend-admin   |
+| `/settings/groups`, `/settings/groups/$groupId`                       | `routes/_app/settings._admin.groups.index.tsx`, `settings._admin.groups.$groupId.tsx`   | `features/admin/groups/*`                | frontend-admin   |
+| `/settings/sso`                                                       | `routes/_app/settings._admin.sso.tsx`                                                   | `features/admin/sso/sso-page`            | frontend-admin   |
+| `/settings/audit?actor=&action=&project=&from=&to=&target=`           | `routes/_app/settings._admin.audit.tsx`                                                 | `features/admin/audit/*`                 | frontend-admin   |
+| `/design`                                                             | `routes/design.tsx`                                                                     | `features/design` (dev only)             | —                |
 
+- **Admin settings** (`settings._admin.tsx`, platform admins): its `beforeLoad` throws `notFound()`
+  for anyone else (the ordinary 404, no admin request sent); admin crumbs come from loaders so
+  they never show on that 404. Every settings page renders `SettingsFrame`
+  (`features/admin/settings-frame.tsx`): the "Settings" heading and, for platform admins only,
+  the section row Account · Users · Groups · Sign-in (SSO) · Audit log.
 - `_app.tsx` is the signed-in layout: its `beforeLoad` is the **auth guard** (no session →
   `/login?next=<here>`), it renders the shell and mounts the app-wide dialogs. Children read the
   user with `useCurrentUser()` (`features/auth/current-user.ts`).
@@ -166,16 +175,18 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
 
 One module per area, each exporting `…QueryOptions` (for loaders and prefetching) and hooks:
 
-| Module           | Queries                                                                                                         | Mutations                                                                                                                                                                                                                                                                                                           |
-| ---------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth.ts`        | `useMe`, `useDevUsers`                                                                                          | `useDevLogin`, `useLogout`                                                                                                                                                                                                                                                                                          |
-| `users.ts`       | `useUserSearch({ q, project })` (people pickers)                                                                |                                                                                                                                                                                                                                                                                                                     |
-| `projects.ts`    | `useProjects`, `useProject(slug)`, `useProjectMembers`, `useProjectTags`                                        | `useCreateProject`, `useUpdateProject` (archive → Undo), `useAddProjectMember`, `useUpdateProjectMember` (Undo), `useRemoveProjectMember` (Undo), `useReplaceRubric`                                                                                                                                                |
-| `ideas.ts`       | `useIdeaList(slug, filters)` (infinite), `useBoard(slug, filters)`, `useIdea(key)`, `useCachedIdeaSummary(key)` | `useCreateIdea`, `useUpdateIdea` (inline edits), `useDeleteIdea`, `useChangeIdeaStatus` (board move + Undo), `useSetIdeaOwner` (Undo), `useVolunteerAsOwner` (Undo), `useAddEvaluators`, `useRemoveEvaluator` (deferred), `useSetEvaluationDueDate`, `useSetEvaluationClosed` (Undo), `useVoteIdea`, `useWatchIdea` |
-| `evaluations.ts` | `useEvaluations(key)`, `useMyEvaluation(key)`                                                                   | `useSaveMyEvaluation(key)`                                                                                                                                                                                                                                                                                          |
-| `activity.ts`    | `useIdeaActivity(key)` (infinite; `data.items` oldest → newest)                                                 | `useCreateComment`, `useUpdateComment`, `useDeleteComment` (deferred)                                                                                                                                                                                                                                               |
-| `work.ts`        | `useMyWork`, `useWorkCounts`, `useOwnedIdeas(status, cursor)` ("load more")                                     |                                                                                                                                                                                                                                                                                                                     |
-| `search.ts`      | `useGlobalSearch(q)` (debounced 150 ms), `useDebouncedValue`                                                    |                                                                                                                                                                                                                                                                                                                     |
+| Module           | Queries                                                                                                                                                                                                                                         | Mutations                                                                                                                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.ts`        | `useMe`, `useAuthConfig`, `useDevUsers`                                                                                                                                                                                                         | `useDevLogin`, `useBreakGlassLogin`, `useLogout` (API clients; the SPA signs out with `features/auth/sso.ts`)                                                                                                                                                                                                       |
+| `groups.ts`      | `useGroupSearch(q)` (group picker)                                                                                                                                                                                                              |                                                                                                                                                                                                                                                                                                                     |
+| `users.ts`       | `useUserSearch({ q, project })` (people pickers)                                                                                                                                                                                                |                                                                                                                                                                                                                                                                                                                     |
+| `projects.ts`    | `useProjects`, `useProject(slug)`, `useProjectMembers`, `useProjectGroupGrants`, `useProjectAccess` (infinite), `useProjectTags`                                                                                                                | `useCreateProject`, `useUpdateProject` (archive → Undo), `useAddProjectMember`, `useUpdateProjectMember` (Undo), `useRemoveProjectMember` (Undo), `useAddProjectGroupGrant`, `useUpdateProjectGroupGrant` (Undo), `useRemoveProjectGroupGrant` (Undo), `useReplaceRubric`                                           |
+| `ideas.ts`       | `useIdeaList(slug, filters)` (infinite), `useBoard(slug, filters)`, `useIdea(key)`, `useCachedIdeaSummary(key)`                                                                                                                                 | `useCreateIdea`, `useUpdateIdea` (inline edits), `useDeleteIdea`, `useChangeIdeaStatus` (board move + Undo), `useSetIdeaOwner` (Undo), `useVolunteerAsOwner` (Undo), `useAddEvaluators`, `useRemoveEvaluator` (deferred), `useSetEvaluationDueDate`, `useSetEvaluationClosed` (Undo), `useVoteIdea`, `useWatchIdea` |
+| `evaluations.ts` | `useEvaluations(key)`, `useMyEvaluation(key)`                                                                                                                                                                                                   | `useSaveMyEvaluation(key)`                                                                                                                                                                                                                                                                                          |
+| `activity.ts`    | `useIdeaActivity(key)` (infinite; `data.items` oldest → newest)                                                                                                                                                                                 | `useCreateComment`, `useUpdateComment`, `useDeleteComment` (deferred)                                                                                                                                                                                                                                               |
+| `work.ts`        | `useMyWork`, `useWorkCounts`, `useOwnedIdeas(status, cursor)` ("load more")                                                                                                                                                                     |                                                                                                                                                                                                                                                                                                                     |
+| `search.ts`      | `useGlobalSearch(q)` (debounced 150 ms), `useDebouncedValue`                                                                                                                                                                                    |                                                                                                                                                                                                                                                                                                                     |
+| `admin.ts`       | `useAdminUsers(filters)` (infinite), `useAdminUser`, `useAdminGroups(q)` (infinite), `useAdminGroup`, `useGroupMembers` (infinite), `useAuditEntries(filters)` (infinite), `useSsoConfig`, `useAdminUserName` / `useAdminGroupName` (audit ids) | `useCreateAdminUser`, `useUpdateAdminUser`, `useReplaceExternalIds`, `useUnlinkIdentity`, `useEndUserSessions`, `useCreateGroup`, `useUpdateGroup`, `useDeleteGroup`, `useReplaceGroupMapping`, `useAddGroupMember`, `useRemoveGroupMember` (Undo for manual members), `useTestGroupMapping`                        |
 
 Conventions:
 
@@ -195,7 +206,15 @@ Conventions:
   error inline (forms: `useCreateIdea`, `useUpdateIdea`, `useSaveMyEvaluation`,
   `useCreateProject`, `useReplaceRubric` are already silent — read `mutation.error`;
   `ApiError.fieldErrors` / `error.problem.errors` have the 422 details).
-- **401** from any request (session ended) → toast + `/login?next=<here>` (`features/auth/session.ts`).
+- **401** from any request (session ended) → `/login?next=<here>&expired=1`, which says so on the
+  page (`features/auth/session.ts`); unsent drafts go with the session.
+- **Sign-in and sign-out are navigations, never fetches** (contract-phase2 §1): "Sign in with SSO"
+  is a link to `GET /api/v1/auth/login?next=…`; "Sign out" posts a plain form to
+  `/api/v1/auth/logout/redirect` (`features/auth/sso.ts`), which ends the IdP session too. With
+  `dev:mock` (MSW never sees navigations) both run a stand-in IdP from `mocks/sso.ts`.
+- **CSRF** is read from `__Host-soundings_csrf` (HTTPS) or `soundings_csrf` (plain HTTP).
+- **Break-glass sessions** (`CurrentUser.auth_method === 'break_glass'`) show a banner in the
+  shell (`features/auth/break-glass-banner.tsx`).
 - **Undo** (contract §3.14, `undo.ts`): hooks with an inverse call show the Undo toast
   themselves (`useChangeIdeaStatus(key)`; pass `{ undo: false }` to opt out). The two deferred
   ones — `useRemoveEvaluator(key)(user)` and `useDeleteComment(key)(commentId)` — hide the item
@@ -225,7 +244,27 @@ backend and its tests are.
 - **Rules** live in `domain.ts` (unit-tested in `domain.test.ts`); **handlers** in
   `handlers/<area>.ts` use `route(method, path, ({ db, user, url, params, request }) => data)`
   from `http.ts` and throw `fail(status, code)` / `failValidation([...])` for problems.
-- **Session:** dev login sets a readable `soundings_mock_session` cookie plus `soundings_csrf`.
+- **Phase 2 fixtures** (`access-fixtures.ts`, rules in `access.ts`): SSO identities (issuer
+  `http://localhost:8080/realms/soundings`), external IDs (`employee_no` E1000–E1012, `gitlab`),
+  groups mirroring the Keycloak realm — **Innovation admins** (`innovation/admins` → CUST admin),
+  **Innovation members** (`innovation/members` → CUST member), **Tools members**
+  (`tools/members` → TOOL member), **Viewers** (`viewers`, additive → GREEN viewer), plus
+  **Sustainability champions** (not mapped, manual) and **Contractors** (two values, no members)
+  — and ~200 audit entries. Group grants change no Phase 1 user's role; **Kofi Boateng** (CUST and
+  TOOL only through groups), **Lena Novak** (pre-created, never signed in, TOOL through a manual
+  membership) and the **Break-glass admin** (`break-glass@soundings.invalid`) are new. Ids:
+  `GROUPS` in `access-fixtures.ts`, `USERS` in `db.ts`.
+- **Session:** every sign-in sets a readable `soundings_mock_session` cookie, its method in
+  `soundings_mock_auth_method` (`sso`, `break_glass`, `dev_login`) and `soundings_csrf`. A session
+  whose method is switched off answers 401 (§3.9); one without a method cookie (Playwright's
+  fixture) always works.
+- **Sign-in knobs** (localStorage, then reload): `soundings-mock-auth` = comma list of `sso`,
+  `dev_login`, `break_glass` (default `sso,dev_login`; `none` for nothing; break-glass only counts
+  without `sso`); `soundings-mock-sso-user` = the fixture user the mock IdP signs in as (default
+  `alice`); `soundings-mock-sso-error` = a `/login?error=` code the IdP round trip ends with;
+  `soundings-mock-sso-discovery` = `unreachable`, `invalid` or `issuer_mismatch` for Admin → SSO.
+  Break-glass credentials: `break-glass` / `correct horse battery staple` (5 failures → 429 with
+  `Retry-After`).
 - **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
   Customer Innovation (also in the user menu → Switch user → Mock data);
   `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);

@@ -521,3 +521,61 @@ def test_volunteer_flag(role: ProjectRole, volunteering: bool, owner: UUID | Non
     flag = idea_permissions(principal(), facts).can_volunteer
 
     assert flag == (role is ProjectRole.MEMBER and volunteering and owner is None)
+
+
+# --- Platform admins changing users' access: c17 and c18 (contract-phase2 section 3.4) ------
+@pytest.mark.parametrize(
+    ("facts", "expected"),
+    [
+        ({}, "allow"),  # not an access change: c17 and c18 don't apply
+        ({"user_to_change": OTHER}, "allow"),
+        ({"user_to_change": OTHER, "platform_admins_after_change": 1}, "allow"),
+        ({"user_to_change": OTHER, "platform_admins_after_change": 0}, "409 last_platform_admin"),
+        ({"user_to_change": ME}, "403 cannot_change_self"),
+        # c17 (403) before c18 (409).
+        ({"user_to_change": ME, "platform_admins_after_change": 0}, "403 cannot_change_self"),
+    ],
+)
+def test_changing_a_users_access(facts: dict[str, Any], expected: str) -> None:
+    decision = authorize(
+        principal(platform_admin=True), Rule.PLATFORM_MANAGE_USERS, Resource().replace(**facts)
+    )
+
+    assert ("allow" if decision.allowed else f"{decision.status} {decision.code}") == expected
+    if not decision.allowed:
+        assert decision.condition == ("c17" if decision.status == 403 else "c18")
+
+
+@pytest.mark.parametrize("column", ["PAd", "Mem", "Vwr", "NMi", "NMp"])
+def test_only_platform_admins_change_access(column: Column) -> None:
+    who, _ = as_column(column)
+
+    decision = authorize(who, Rule.PLATFORM_MANAGE_USERS, Resource(user_to_change=OTHER))
+
+    assert (decision.status, decision.code) == (403, "forbidden")
+
+
+def test_access_change_problems() -> None:
+    admin = principal(platform_admin=True)
+
+    with pytest.raises(ProblemError) as self_change:
+        require(admin, Rule.PLATFORM_MANAGE_USERS, Resource(user_to_change=ME))
+    with pytest.raises(ProblemError) as last:
+        require(
+            admin,
+            Rule.PLATFORM_MANAGE_USERS,
+            Resource(user_to_change=OTHER, platform_admins_after_change=0),
+        )
+
+    assert (self_change.value.status, self_change.value.code) == (403, "cannot_change_self")
+    assert (last.value.status, last.value.code) == (409, "last_platform_admin")
+    assert self_change.value.detail
+    assert last.value.detail
+
+
+def test_access_change_is_session_only() -> None:
+    key = principal(platform_admin=True, auth="api_key", scopes={"read", "write"})
+
+    decision = authorize(key, Rule.PLATFORM_MANAGE_USERS, Resource(user_to_change=OTHER))
+
+    assert (decision.status, decision.code) == (403, "insufficient_scope")

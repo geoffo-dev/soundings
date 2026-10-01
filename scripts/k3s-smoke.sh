@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Smoke-test the Soundings install through the k3s ingress: /healthz, /readyz, the SPA and
 # the OpenAPI document; /metrics only on its own port; 413 for a 2 MiB body; with dev
-# login on, sign in over the ingress (session + CSRF cookies) and read My work. Then
-# `helm test`.
+# login on, sign in over the ingress (session + CSRF cookies) and read My work; with
+# break-glass available, sign in with the credentials from its Secret; with
+# SSO=1, the single sign-on acceptance through the ingress and the cluster's Keycloak
+# (scripts/sso-smoke.sh: code flow, groups -> project access, removal at the next
+# sign-in, sign-out at the IdP). Then `helm test`.
 #
 #   RELEASE / NAMESPACE as for k3s-install.sh
+#   SSO=1             also the SSO checks (after `make k3s-keycloak k3s-install SSO=1`)
 #   K3S_CONNECT_HOST  where the ingress port is reachable when not on localhost (CI with
 #                     docker:dind: "docker"); requests still carry Host: localhost:<port>.
 set -euo pipefail
@@ -123,6 +127,47 @@ if [ "$status" = "200" ]; then
   fi
 else
   ok "dev login is off (/api/v1/auth/dev/users $status)"
+fi
+
+# Break-glass (when the release makes it available: enabled and no oidc.issuer): sign in
+# with the credentials from the Secret the api pods read, as NOTES.txt tells operators.
+config="$(curl -sS "${curl_args[@]}" "$BASE_URL/api/v1/auth/config" || true)"
+if grep -q '"break_glass":true' <<<"$config"; then
+  secret_of() { # env var -> "secret-name key" from the api Deployment
+    kubectl -n "$NAMESPACE" get "$deployment" -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].valueFrom.secretKeyRef['name','key']}"
+  }
+  read_secret() { # NAME KEY (never printed)
+    kubectl -n "$NAMESPACE" get secret "$1" -o jsonpath="{.data.$2}" | base64 -d
+  }
+  # shellcheck disable=SC2046 # "name key" split on purpose
+  bg_user="$(read_secret $(secret_of SOUNDINGS_BREAK_GLASS_USERNAME))"
+  # shellcheck disable=SC2046
+  bg_password="$(read_secret $(secret_of SOUNDINGS_BREAK_GLASS_PASSWORD))"
+  bg_body="$workdir/break-glass.json"
+  jq -n --arg u "$bg_user" --arg p "$bg_password" '{username: $u, password: $p}' >"$bg_body"
+  wrong="$(curl -sS "${curl_args[@]}" -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+    -d '{"username": "nobody", "password": "not-the-password"}' "$BASE_URL/api/v1/auth/break-glass" || true)"
+  bg_jar="$workdir/break-glass-cookies"
+  me="$workdir/break-glass-me.json"
+  status="$(curl -sS "${curl_args[@]}" -c "$bg_jar" -o "$me" -w '%{http_code}' \
+    -H 'Content-Type: application/json' --data-binary "@$bg_body" "$BASE_URL/api/v1/auth/break-glass" || true)"
+  rm -f "$bg_body"
+  if [ "$wrong" = "401" ] && [ "$status" = "200" ] &&
+    grep -q '"auth_method":"break_glass"' "$me" && grep -q '"is_platform_admin":true' "$me" &&
+    [ ${#bg_password} -ge 16 ]; then
+    ok "break-glass: wrong credentials 401; the Secret's ${#bg_password}-character password signs in as platform admin"
+  else
+    fail "break-glass: wrong credentials $wrong (want 401), Secret's credentials $status (want 200 break_glass admin)"
+  fi
+  csrf="$(awk '$6 ~ /soundings_csrf$/ { print $7 }' "$bg_jar" 2>/dev/null || true)"
+  curl -sS "${curl_args[@]}" -b "$bg_jar" -o /dev/null -X POST -H "X-CSRF-Token: $csrf" \
+    "$BASE_URL/api/v1/auth/logout" || true
+else
+  ok "break-glass is not available (/api/v1/auth/config: $config)"
+fi
+
+if [ "${SSO:-0}" = "1" ]; then
+  CONNECT_HOST="${K3S_CONNECT_HOST:-}" "$(dirname "$0")/sso-smoke.sh" "$BASE_URL" || failed=1
 fi
 
 log "helm test $RELEASE"

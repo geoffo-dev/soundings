@@ -9,11 +9,14 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.auth.group_mapping import preview_group_mapping
+from app.authz import Rule, require
+from app.config import Settings
+from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.base import NoNul
 from app.schemas.groups import (
@@ -28,10 +31,12 @@ from app.schemas.groups import (
     MappingTestRequest,
     MappingTestResult,
 )
+from app.services import admin_groups
 
 router = APIRouter(prefix="/admin/groups", tags=["admin"])
 
 _ADMIN = "Platform admins (platform.manage_groups). "
+_RULE = Rule.PLATFORM_MANAGE_GROUPS
 
 
 @router.get(
@@ -46,10 +51,12 @@ _ADMIN = "Platform admins (platform.manage_groups). "
 )
 async def list_admin_groups(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     q: Annotated[str | None, Query(max_length=80, description="Part of a name."), NoNul] = None,
 ) -> GroupPage:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    return await admin_groups.list_groups(session, q=q, page=page)
 
 
 @router.post(
@@ -60,8 +67,9 @@ async def list_admin_groups(
     description=_ADMIN + "Optionally mapped to IdP values right away. 409 group_name_taken.",
     responses=problems(401, 403, 409, 422),
 )
-async def create_group(principal: PrincipalDep, body: GroupCreate) -> Group:
-    raise NotImplementedProblem
+async def create_group(principal: PrincipalDep, session: SessionDep, body: GroupCreate) -> Group:
+    require(principal, _RULE)
+    return await admin_groups.create_group(session, principal, body)
 
 
 @router.post(
@@ -77,9 +85,13 @@ async def create_group(principal: PrincipalDep, body: GroupCreate) -> Group:
     responses=problems(401, 403, 422),
 )
 async def test_group_mapping(
-    principal: PrincipalDep, body: MappingTestRequest
+    request: Request, principal: PrincipalDep, session: SessionDep, body: MappingTestRequest
 ) -> MappingTestResult:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    settings: Settings = request.app.state.settings
+    # The same extraction and sync rules as sign-in; reads only, nothing is stored,
+    # audited or logged (the claims are personal data).
+    return await preview_group_mapping(session, settings, body.claims, body.user_id)
 
 
 @router.get(
@@ -89,8 +101,10 @@ async def test_group_mapping(
     description=_ADMIN + "Mapping, counts by provenance and project grants (members: paged).",
     responses=problems(401, 403, 404),
 )
-async def get_group(principal: PrincipalDep, group_id: UUID) -> Group:
-    raise NotImplementedProblem
+async def get_group(principal: PrincipalDep, session: SessionDep, group_id: UUID) -> Group:
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id)
+    return await admin_groups.group_detail(session, group)
 
 
 @router.patch(
@@ -100,8 +114,12 @@ async def get_group(principal: PrincipalDep, group_id: UUID) -> Group:
     description=_ADMIN + "Omitted or null fields are unchanged. 409 group_name_taken.",
     responses=problems(401, 403, 404, 409, 422),
 )
-async def update_group(principal: PrincipalDep, group_id: UUID, body: GroupUpdate) -> Group:
-    raise NotImplementedProblem
+async def update_group(
+    principal: PrincipalDep, session: SessionDep, group_id: UUID, body: GroupUpdate
+) -> Group:
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id, for_update=True)
+    return await admin_groups.update_group(session, principal, group, body)
 
 
 @router.delete(
@@ -115,8 +133,10 @@ async def update_group(principal: PrincipalDep, group_id: UUID, body: GroupUpdat
     ),
     responses=problems(401, 403, 404),
 )
-async def delete_group(principal: PrincipalDep, group_id: UUID) -> None:
-    raise NotImplementedProblem
+async def delete_group(principal: PrincipalDep, session: SessionDep, group_id: UUID) -> None:
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id, for_update=True)
+    await admin_groups.delete_group(session, principal, group)
 
 
 @router.put(
@@ -130,9 +150,11 @@ async def delete_group(principal: PrincipalDep, group_id: UUID) -> None:
     responses=problems(401, 403, 404, 422),
 )
 async def replace_group_mapping(
-    principal: PrincipalDep, group_id: UUID, body: GroupMappingUpdate
+    principal: PrincipalDep, session: SessionDep, group_id: UUID, body: GroupMappingUpdate
 ) -> Group:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id, for_update=True)
+    return await admin_groups.replace_mapping(session, principal, group, body)
 
 
 @router.get(
@@ -147,13 +169,16 @@ async def replace_group_mapping(
 )
 async def list_group_members(
     principal: PrincipalDep,
+    session: SessionDep,
     group_id: UUID,
     page: PageParamsDep,
     q: Annotated[
         str | None, Query(max_length=100, description="Part of a name or email."), NoNul
     ] = None,
 ) -> GroupMemberPage:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id)
+    return await admin_groups.list_members(session, group, q=q, page=page)
 
 
 @router.post(
@@ -169,9 +194,11 @@ async def list_group_members(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def add_group_member(
-    principal: PrincipalDep, group_id: UUID, body: GroupMemberAdd
+    principal: PrincipalDep, session: SessionDep, group_id: UUID, body: GroupMemberAdd
 ) -> GroupMember:
-    raise NotImplementedProblem
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id, key_share=True)
+    return await admin_groups.add_member(session, principal, group, body)
 
 
 @router.delete(
@@ -186,5 +213,9 @@ async def add_group_member(
     ),
     responses=problems(401, 403, 404),
 )
-async def remove_group_member(principal: PrincipalDep, group_id: UUID, user_id: UUID) -> None:
-    raise NotImplementedProblem
+async def remove_group_member(
+    principal: PrincipalDep, session: SessionDep, group_id: UUID, user_id: UUID
+) -> None:
+    require(principal, _RULE)
+    group = await admin_groups.get_group(session, group_id, key_share=True)
+    await admin_groups.remove_member(session, principal, group, user_id)

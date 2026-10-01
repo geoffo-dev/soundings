@@ -29,9 +29,14 @@ from app.models import (
     Resolution,
     User,
 )
+from app.models.activity import AuditLog
 from app.models.base import utcnow
+from app.models.enums import GroupSyncMode
+from app.models.group import Group, GroupIdpValue, GroupMembership, ProjectGroupGrant
+from app.models.project import project_effective_roles
+from app.models.user import UserExternalId
 from app.seed import SeedRefused, SeedReport, check_allowed, check_reset_allowed, run_seed
-from app.seed.content import IDEAS, PEOPLE, PROJECTS
+from app.seed.content import GROUPS, IDEAS, PEOPLE, PROJECTS
 from app.seed.runner import DEMO_ID_NAMESPACE
 from app.services.scoring import recompute_aggregates
 from tests.conftest import Login, make_settings
@@ -202,6 +207,64 @@ async def test_seed_tells_the_demo_story(
     roles = Counter(await db_session.scalars(select(ProjectMember.role)))
     assert roles[ProjectRole.ADMIN] == 4
     assert roles[ProjectRole.VIEWER] == 5
+
+    # Phase 2: alice, bob and carol carry the dev realm's employee numbers; five groups
+    # are mapped to its groups and granted roles. Their manual members already hold the
+    # granted role directly, so with the dev login nobody sees more than before.
+    external_ids = dict(
+        (
+            await db_session.execute(
+                select(User.email, UserExternalId.value)
+                .join(UserExternalId, UserExternalId.user_id == User.id)
+                .where(UserExternalId.kind == "employee_no")
+            )
+        ).all()
+    )
+    assert external_ids == {
+        "alice@example.com": "E1001",
+        "bob@example.com": "E1002",
+        "Carol@Example.com": "E1003",
+    }
+    assert report.groups == len(GROUPS) == 5
+    groups = {group.name: group for group in await db_session.scalars(select(Group))}
+    mapped = dict(
+        (await db_session.execute(select(GroupIdpValue.group_id, GroupIdpValue.value))).all()
+    )
+    assert {name: mapped.get(group.id) for name, group in groups.items()} == {
+        "Innovation admins": "innovation/admins",
+        "Innovation members": "innovation/members",
+        "Tools team": "tools/members",
+        "Viewers": "viewers",
+        "Sustainability champions": None,
+    }
+    assert groups["Viewers"].sync_mode is GroupSyncMode.ADDITIVE
+    grants = {
+        (group_id, project_id): role
+        for group_id, project_id, role in await db_session.execute(
+            select(ProjectGroupGrant.group_id, ProjectGroupGrant.project_id, ProjectGroupGrant.role)
+        )
+    }
+    assert len(grants) == 5
+    assert grants[groups["Innovation admins"].id, projects["CUST"].id] == ProjectRole.ADMIN
+    memberships = list(await db_session.scalars(select(GroupMembership)))
+    assert len(memberships) == 8
+    assert all(m.manual and not m.synced for m in memberships)
+    effective = set((await db_session.execute(select(project_effective_roles))).all())
+    direct = set(
+        (
+            await db_session.execute(
+                select(ProjectMember.project_id, ProjectMember.user_id, ProjectMember.role)
+            )
+        ).all()
+    )
+    assert {(p, u, ProjectRole(r)) for p, u, r in effective} == {
+        (p, u, ProjectRole(r)) for p, u, r in direct
+    }
+    audited = Counter(await db_session.scalars(select(AuditLog.action)))
+    assert audited["user.external_ids_replace"] == 3
+    assert audited["group.create"] == 5
+    assert audited["group.member_add"] == 8
+    assert audited["project.group_grant_add"] == 5
 
     # Ideas: every status and resolution, a few disagreements, some without an owner.
     ideas = list(await db_session.scalars(select(Idea)))

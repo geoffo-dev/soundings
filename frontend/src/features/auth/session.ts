@@ -6,13 +6,13 @@ import { isApiError } from '@/api/errors'
 import { queryKeys } from '@/api/keys'
 import { retryIfCancelled, setUnauthorizedHandler } from '@/api/query'
 import type { CurrentUser } from '@/api/types'
-import { toast } from '@/components/ui/toaster'
 import { clearDrafts } from '@/lib/drafts'
 
 /**
  * Only same-site paths are allowed as `?next=` targets (no open redirects).
  * Returns "/" for anything else: other origins (`//host`, `/\host`, which browsers
- * read as `//host`), control characters, and the login page itself.
+ * read as `//host`), control characters, the login page itself, and API paths
+ * (the server refuses those as `next` too: contract-phase2 §3.2).
  */
 export function safeNextPath(next: unknown): string {
   if (typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//')) return '/'
@@ -24,7 +24,14 @@ export function safeNextPath(next: unknown): string {
   } catch {
     return '/'
   }
-  if (url.origin !== window.location.origin || url.pathname.startsWith('/login')) return '/'
+  if (url.origin !== window.location.origin) return '/'
+  let path: string
+  try {
+    path = decodeURIComponent(url.pathname)
+  } catch {
+    return '/'
+  }
+  if (path.startsWith('/login') || /^\/api(\/|$)/.test(path)) return '/'
   return next
 }
 
@@ -60,8 +67,9 @@ export async function optionalUser(queryClient: QueryClient): Promise<CurrentUse
 
 /**
  * A 401 from any request after sign-in means the session ended (expired,
- * revoked, signed out in another tab): go to /login?next=<here> once, then
- * drop everything cached for the old session.
+ * revoked, signed out in another tab, its sign-in method switched off): go to
+ * /login?next=<here>&expired=1 once (the page says so, calmly), then drop
+ * everything cached for the old session.
  */
 export function installUnauthorizedHandler(router: AnyRouter, queryClient: QueryClient): void {
   let redirecting = false
@@ -71,23 +79,28 @@ export function installUnauthorizedHandler(router: AnyRouter, queryClient: Query
     redirecting = true
     // Forget the user first, so /login doesn't bounce straight back.
     queryClient.removeQueries({ queryKey: queryKeys.auth.me() })
-    toast.info('Your session has ended', {
-      id: 'session-ended',
-      description: 'Sign in again to carry on where you left off.',
-    })
     // Unsent drafts belong to the session that ended (ASVS 8.2.3).
     clearDrafts()
     void router
       .navigate({
         to: '/login',
-        search: { next: location.href },
+        search: { next: location.href, expired: true },
         replace: true,
         // Nothing can be saved any more, so unsaved-changes guards don't ask.
         ignoreBlocker: true,
       })
       .finally(() => {
-        queryClient.clear()
+        // Everything but the sign-in page's own (public) queries, which are
+        // already loading there: removing those would leave it pending forever.
+        queryClient.removeQueries({ predicate: (query) => !isSignInQuery(query.queryKey) })
         redirecting = false
       })
   })
+}
+
+/** The login page's queries: public, and the same for every session. */
+function isSignInQuery(key: readonly unknown[]): boolean {
+  const config = queryKeys.auth.config()
+  const devUsers = queryKeys.auth.devUsers()
+  return key[0] === config[0] && (key[1] === config[1] || key[1] === devUsers[1])
 }

@@ -32,9 +32,11 @@ session_cookie = APIKeyCookie(
     name=SESSION_COOKIE,
     scheme_name="session",
     description=(
-        "Server-side session cookie set by sign-in (Phase 1: POST /api/v1/auth/dev/login). "
-        f"Unsafe methods must also send the {CSRF_HEADER} header equal to the "
-        f"{CSRF_COOKIE} cookie."
+        "Server-side session cookie set by every sign-in (SSO via GET /api/v1/auth/login, "
+        "the break-glass admin, the development login). Named __Host-soundings_session "
+        "(and __Host-soundings_csrf) whenever cookies are Secure, i.e. over HTTPS and in "
+        f"production. Unsafe methods must also send the {CSRF_HEADER} header equal to the "
+        f"CSRF cookie ({CSRF_COOKIE} or __Host-{CSRF_COOKIE})."
     ),
     auto_error=False,
 )

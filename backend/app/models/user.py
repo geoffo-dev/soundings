@@ -132,11 +132,8 @@ class UserSession(UUIDPrimaryKeyMixin, Base):
     )
     # Double-submit CSRF token, mirrored in the non-HttpOnly ``soundings_csrf`` cookie.
     csrf_token: Mapped[str] = mapped_column(String(64))
-    # How the session started. Sign-in code passes it explicitly; the Python default
-    # only keeps Phase 1 callers of start_session working (no server default).
-    auth_method: Mapped[AuthMethod] = mapped_column(
-        str_enum(AuthMethod, "auth_method"), default=AuthMethod.DEV_LOGIN
-    )
+    # How the session started; every sign-in passes it (no default of any kind).
+    auth_method: Mapped[AuthMethod] = mapped_column(str_enum(AuthMethod, "auth_method"))
     # SSO sessions only: the ID token, kept server-side solely as ``id_token_hint`` for
     # RP-initiated logout. Never logged, never returned by the API.
     id_token: Mapped[str | None] = mapped_column(Text)

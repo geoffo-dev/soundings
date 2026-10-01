@@ -214,8 +214,13 @@ SOUNDINGS_OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
 SOUNDINGS_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
 SOUNDINGS_OIDC_GROUPS_CLAIM: {{ .Values.oidc.groupsClaim | quote }}
 SOUNDINGS_OIDC_SCOPES: {{ join "," .Values.oidc.scopes | quote }}
+SOUNDINGS_OIDC_MATCH_VERIFIED_EMAIL: {{ .Values.oidc.matchVerifiedEmail | quote }}
+SOUNDINGS_OIDC_AUTO_CREATE_USERS: {{ .Values.oidc.autoCreateUsers | quote }}
 {{- with .Values.oidc.externalIdClaim }}
 SOUNDINGS_OIDC_EXTERNAL_ID_CLAIM: {{ . | quote }}
+{{- with $.Values.oidc.externalIdKind }}
+SOUNDINGS_OIDC_EXTERNAL_ID_KIND: {{ . | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if .Values.smtp.host }}
@@ -258,6 +263,8 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
 {{- end }}
 
 {{- define "soundings.secretEnv" -}}
+{{- $signIn := .signIn -}}
+{{- with .ctx -}}
 {{- $fullname := include "soundings.fullname" . -}}
 - name: SOUNDINGS_SECRET_KEY
   valueFrom:
@@ -265,12 +272,8 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
       name: {{ include "soundings.secretKey.secretName" . }}
       key: {{ include "soundings.secretKey.key" . }}
 {{- include "soundings.databasePasswordEnv" . }}
-{{- if and .Values.oidc.issuer (or .Values.oidc.existingSecret .Values.oidc.clientSecret) }}
-- name: SOUNDINGS_OIDC_CLIENT_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.oidc.existingSecret | default $fullname }}
-      key: {{ ternary .Values.oidc.existingSecretKey "oidc-client-secret" (not (empty .Values.oidc.existingSecret)) }}
+{{- if $signIn }}
+{{- include "soundings.signInSecretEnv" . }}
 {{- end }}
 {{- if .Values.smtp.host }}
 {{- if .Values.smtp.existingSecret }}
@@ -303,6 +306,27 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
 {{- end }}
 {{- end }}
 {{- end }}
+{{- with .Values.extraEnv }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Sign-in secrets, for the api pods only (the worker never signs anyone in): the OIDC
+client secret, and the break-glass credentials. The app ignores the latter while
+oidc.issuer is set; they stay wired so that unsetting the issuer in an SSO outage
+brings back the same account.
+*/}}
+{{- define "soundings.signInSecretEnv" -}}
+{{- $fullname := include "soundings.fullname" . -}}
+{{- if and .Values.oidc.issuer (or .Values.oidc.existingSecret .Values.oidc.clientSecret) }}
+- name: SOUNDINGS_OIDC_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.oidc.existingSecret | default $fullname }}
+      key: {{ ternary .Values.oidc.existingSecretKey "oidc-client-secret" (not (empty .Values.oidc.existingSecret)) }}
+{{- end }}
 {{- if .Values.breakGlass.enabled }}
 - name: SOUNDINGS_BREAK_GLASS_USERNAME
   valueFrom:
@@ -314,9 +338,6 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
     secretKeyRef:
       name: {{ .Values.breakGlass.existingSecret | default $fullname }}
       key: {{ ternary "password" "break-glass-password" (not (empty .Values.breakGlass.existingSecret)) }}
-{{- end }}
-{{- with .Values.extraEnv }}
-{{ toYaml . }}
 {{- end }}
 {{- end }}
 
@@ -474,6 +495,25 @@ Validation (errors a JSON schema cannot express)
 {{- end }}
 {{- if and .Values.oidc.issuer (not (or .Values.oidc.clientSecret .Values.oidc.existingSecret)) }}
 {{- fail "oidc.clientSecret or oidc.existingSecret is required when oidc.issuer is set" }}
+{{- end }}
+{{- /* Production mode (devLogin off) refuses these at startup; say so before installing. */}}
+{{- if and .Values.oidc.issuer (not .Values.devLogin) }}
+{{- if not (hasPrefix "https://" .Values.oidc.issuer) }}
+{{- fail "oidc.issuer must be an https URL (only devLogin installs may use http)" }}
+{{- end }}
+{{- range .Values.baseUrls }}
+{{- if not (hasPrefix "https://" .) }}
+{{- fail (printf "baseUrls must all be https when SSO is configured (sign-in redirects carry the authorization code): %s" .) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and .Values.oidc.externalIdKind (not .Values.oidc.externalIdClaim) }}
+{{- fail "oidc.externalIdKind needs oidc.externalIdClaim" }}
+{{- end }}
+{{- if and .Values.oidc.externalIdClaim (not .Values.oidc.externalIdKind) }}
+{{- if not (regexMatch "^[a-z][a-z0-9_]{0,39}$" (.Values.oidc.externalIdClaim | splitList "." | last)) }}
+{{- fail "oidc.externalIdKind is required when the last segment of oidc.externalIdClaim is not a kind (lower-case letters, digits, underscores)" }}
+{{- end }}
 {{- end }}
 {{- if and .Values.httpRoute.enabled (not .Values.httpRoute.parentRefs) }}
 {{- fail "httpRoute.parentRefs is required when httpRoute.enabled=true" }}

@@ -58,6 +58,7 @@
   ],
   "users": [
     {
+      "id": "07228d11-b614-546e-a697-da0f6c55d2b0",
       "username": "alice",
       "enabled": true,
       "email": "alice@example.com",
@@ -83,6 +84,7 @@
       }
     },
     {
+      "id": "dda3704e-e1c3-5f12-8edb-addd0e8da1fc",
       "username": "bob",
       "enabled": true,
       "email": "bob@example.com",
@@ -107,6 +109,7 @@
       }
     },
     {
+      "id": "bdbbe3f4-2a24-53e3-81e8-73efc286ca81",
       "username": "carol",
       "enabled": true,
       "email": "carol@example.com",
@@ -132,6 +135,7 @@
       }
     },
     {
+      "id": "09fac9c0-46ec-58c7-80a9-7f9ee0323519",
       "username": "dave",
       "enabled": true,
       "email": "dave@example.com",
@@ -151,6 +155,7 @@
       "requiredActions": []
     },
     {
+      "id": "011498ce-0169-512e-b408-b9cc459cbc83",
       "username": "erin",
       "enabled": true,
       "email": "erin@example.com",
@@ -167,6 +172,87 @@
       "groups": [
         "/viewers"
       ],
+      "requiredActions": []
+    },
+    {
+      "id": "6fde936c-361d-5010-83c7-6152b1dad36a",
+      "username": "grace",
+      "enabled": true,
+      "email": "grace@corp.example",
+      "emailVerified": true,
+      "firstName": "Grace",
+      "lastName": "Gale",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/tools/members"
+      ],
+      "requiredActions": [],
+      "attributes": {
+        "employee_no": [
+          "E2001"
+        ]
+      }
+    },
+    {
+      "id": "8847d443-3967-5057-8f9c-4fe8af520a7a",
+      "username": "mallory",
+      "enabled": true,
+      "email": "farah@example.com",
+      "emailVerified": false,
+      "firstName": "Mallory",
+      "lastName": "Mills",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/innovation/admins"
+      ],
+      "requiredActions": []
+    },
+    {
+      "id": "4a6f9890-df1c-5c26-a28a-1394d9b44e49",
+      "username": "kenji",
+      "enabled": true,
+      "email": "kenji@example.com",
+      "emailVerified": true,
+      "firstName": "Kenji",
+      "lastName": "Watanabe",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [],
+      "requiredActions": []
+    },
+    {
+      "id": "8024892d-cd1c-542c-b51e-dea828d7c07a",
+      "username": "nia",
+      "enabled": true,
+      "email": "nia@example.org",
+      "emailVerified": true,
+      "firstName": "Nia",
+      "lastName": "Lee",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": [],
       "requiredActions": []
     }
   ],
@@ -191,6 +277,8 @@
         "http://localhost:8000/*",
         "http://localhost:5173/*",
         "http://127.0.0.1:8000/*",
+        "http://localhost:8100/*",
+        "http://127.0.0.1:8100/*",
         "http://localhost:18081/*"
       ],
       "webOrigins": [
@@ -198,7 +286,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:5173/*##http://127.0.0.1:8000/*##http://localhost:18081/*",
+        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:5173/*##http://127.0.0.1:8000/*##http://localhost:8100/*##http://127.0.0.1:8100/*##http://localhost:18081/*",
         "backchannel.logout.session.required": "true"
       },
       "fullScopeAllowed": false,

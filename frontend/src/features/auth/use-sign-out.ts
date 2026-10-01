@@ -1,17 +1,13 @@
-import { useNavigate } from '@tanstack/react-router'
 import { useCallback } from 'react'
 
-import { useLogout } from '@/api/auth'
+import { signOutWithRedirect } from './sso'
 
-/** Signs out and returns to the login page (from the user menu or the palette). */
+/**
+ * Signs out from the user menu or the palette: a full-page form post that ends
+ * the session (and the IdP session, for SSO) and lands on /login?signed_out=1.
+ */
 export function useSignOut(): () => void {
-  const navigate = useNavigate()
-  const logout = useLogout()
   return useCallback(() => {
-    logout.mutate(undefined, {
-      // Signed out already: unsaved-changes guards can't help any more.
-      onSettled: () =>
-        void navigate({ to: '/login', search: {}, replace: true, ignoreBlocker: true }),
-    })
-  }, [logout, navigate])
+    void signOutWithRedirect()
+  }, [])
 }

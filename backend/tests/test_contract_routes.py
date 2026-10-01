@@ -125,18 +125,9 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/admin/sso", "get_sso_config"),
 ]
 
-# operation_id -> a valid request (url with query string, JSON body or None). Every
-# Phase 1 operation is implemented and tested (tests/api, tests/ideas); these are the
-# Phase 2 stubs. Delete a row when you implement its endpoint.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
-    "get_auth_config": ("/api/v1/auth/config", None),
-    "sso_login": ("/api/v1/auth/login?next=/ideas/CUST-12", None),
-    "sso_callback": (
-        "/api/v1/auth/callback?code=abc&state=xyz&iss=http://idp&error_description=" + "x" * 5000,
-        None,
-    ),
-    "break_glass_login": ("/api/v1/auth/break-glass", {"username": "admin", "password": " p "}),
-    "logout_redirect": ("/api/v1/auth/logout/redirect", None),
+# operation_id -> a valid request (url with query string, JSON body or None) for the
+# Phase 2 admin, group and access operations (implemented; tests/admin covers them).
+PHASE2_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "list_admin_users": (
         "/api/v1/admin/users?q=ada&active=true&platform_admin=false&has_identity=false",
         None,
@@ -193,6 +184,11 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
     ),
     "get_sso_config": ("/api/v1/admin/sso", None),
 }
+
+# operation_id -> a valid request for every operation still answered with 501. Every
+# Phase 1 and Phase 2 operation is implemented and tested (tests/api, tests/ideas,
+# tests/identity, tests/admin). Add a row per stub; delete it when you implement it.
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
 
 PUBLIC_OPERATIONS = frozenset(
     {
@@ -270,6 +266,7 @@ def test_operation_ids_are_explicit_and_match_function_names() -> None:
 
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
+    assert set(PHASE2_REQUESTS) <= set(_METHODS)
 
 
 async def test_openapi_lists_every_operation(client: httpx.AsyncClient) -> None:
@@ -357,9 +354,10 @@ async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
         assert response.status_code == 501, (operation_id, response.text)
 
 
-async def test_admin_stubs_need_a_session(client: httpx.AsyncClient) -> None:
-    for operation_id in sorted(set(STUBS) - PUBLIC_OPERATIONS):
-        url, body = STUBS[operation_id]
+async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
+    requests = PHASE2_REQUESTS | STUBS
+    for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
+        url, body = requests[operation_id]
         response = await client.request(_METHODS[operation_id], url, json=body)
         assert response.status_code == 401, (operation_id, response.text)
 
@@ -393,13 +391,12 @@ def test_redirect_routes_document_their_location() -> None:
         ("replace_user_external_ids", {"external_ids": [{"kind": "Employee No", "value": "1"}]}),
         ("test_group_mapping", {"claims": ["not", "an", "object"]}),
         ("add_project_group_grant", {"group_id": GROUP, "role": "owner"}),
-        ("break_glass_login", {"username": "admin"}),
     ],
 )
-async def test_invalid_phase2_bodies_are_rejected_before_the_stub(
+async def test_invalid_phase2_bodies_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, body: dict[str, Any]
 ) -> None:
-    url, _ = STUBS[operation_id]
+    url, _ = PHASE2_REQUESTS[operation_id]
 
     response = await client.request(_METHODS[operation_id], url, json=body)
 

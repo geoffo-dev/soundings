@@ -687,14 +687,19 @@ is already set up for this:
 
 - Client `soundings`: confidential (secret `soundings-dev-secret`), standard flow only,
   PKCE S256 required; valid redirect and post-logout redirect URIs `<origin>/*` for
-  `http://localhost:8000`, `:5173`, `http://127.0.0.1:8000` and the k3s ingress
+  `http://localhost:8000`, `:5173`, `http://127.0.0.1:8000`, the e2e stack
+  `http://localhost:8100` and `http://127.0.0.1:8100`, and the k3s ingress
   `http://localhost:18081`. Production clients should list the exact URIs from
   `GET /admin/sso` instead of wildcards.
 - Mapper "groups": Group Membership, claim `groups`, **full group path on**, in the ID
   token. Mapper "employee_no": user attribute → claim `employee_no`, in the ID token.
 - Users alice, bob, carol (with `employee_no` E1001–E1003), dave, erin; password
   `password`; all `email_verified`. Groups `/innovation/admins`, `/innovation/members`,
-  `/tools/members`, `/viewers`.
+  `/tools/members`, `/viewers`. Every user has a fixed id, so `sub` survives a
+  re-import. Added for the e2e error cases (platform build): `grace` (`employee_no`
+  E2001, matches only a user pre-created with it), `mallory` (unverified email naming
+  the seeded Farah: `no_account`), `kenji` (in no group: the token has no groups
+  claim) and `nia` (verified email, no account).
 - Issuer must be the same for the browser and the backend: run the API on the host
   against `http://localhost:8080/realms/soundings`, or set `KC_HOSTNAME` when the API
   runs in a container. Agents on other ports register their callback through
@@ -707,7 +712,8 @@ App settings: `SOUNDINGS_OIDC_ISSUER=http://localhost:8080/realms/soundings`,
 `SOUNDINGS_BASE_URLS` including the origin you browse.
 
 Acceptance scenario. The demo seed's first five people share the Keycloak users'
-emails, but the seed gives nobody an external ID, and every Keycloak member of
+emails (since the backend build the seed also gives alice, bob and carol `employee_no`
+E1001–E1003, so step 0.1 changes nothing on a fresh seed), and every Keycloak member of
 `/tools/members` (alice, carol, dave) is already a **direct** member of TOOLS, so
 removing the group could never take TOOLS away. The scenario therefore sets up its own
 state (dev login stays on next to SSO, so Alice can do this through the API):
@@ -871,3 +877,29 @@ regenerated `openapi.json` / `schema.d.ts` carry the schema changes):
   `frontend/src/mocks/domain.ts` builds `CurrentUser` literals), so the lead lands it
   with identity's session work (`start_session(auth_method=…)`) and frontend's mocks.
   Until then the break-glass banner keys on the reserved account email (§3.8).
+
+**2026-10-01, identity build:**
+
+- **`CurrentUser.auth_method` landed** as agreed above: `AuthMethod | null`, required in
+  the schema, `sso` / `break_glass` / `dev_login` for `get_me`, `dev_login` and
+  `break_glass_login`, null only in `list_dev_users`. The break-glass banner can key on
+  it instead of the reserved email. Also new in the schema: the `AuthMethod` enum.
+- Descriptions only: `get_me`, `dev_login`, `logout`, `get_auth_config` and the
+  `session` security scheme (SSO and the `__Host-` cookie names).
+- No other schema change. Behaviour as specified, with two readings made explicit:
+  a callback whose `state` matches no attempt (missing, mismatched, unknown, used) is
+  `login_expired` **without** an audit entry (nothing to speak of, and anonymous
+  requests can't fill the log), while a found-but-expired attempt is audited as
+  `login_expired`; a callback that can't fetch the provider metadata redirects with
+  `sso_unavailable` and audits reason `sso_failed`.
+
+**2026-10-01, integration:**
+
+- No schema change (`make gen-api` leaves no diff). §3.13 now lists the realm users
+  and e2e redirect URIs added by the platform build, and the seed's external IDs.
+- Audit view wording only: `user.groups_sync` reads "now a synced member of …" /
+  "no longer a synced member of …", since *added* includes a manual member whose
+  membership only became synced (§3.6).
+- Implementation note on §3.2: the OIDC client is httpx + `joserfc`
+  (`app/auth/oidc.py`); the unused Authlib dependency was removed and `joserfc` is now
+  a direct dependency.

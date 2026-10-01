@@ -8,9 +8,11 @@ from fastapi import APIRouter, Query
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, require
+from app.db import SessionDep
 from app.schemas.base import NoNul
 from app.schemas.groups import GroupSearchResult
+from app.services import admin_groups
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -27,7 +29,9 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 )
 async def search_groups(
     principal: PrincipalDep,
+    session: SessionDep,
     q: Annotated[str | None, Query(max_length=80, description="Part of a name."), NoNul] = None,
     limit: Annotated[int, Query(ge=1, le=50, description="Most results to return.")] = 20,
 ) -> list[GroupSearchResult]:
-    raise NotImplementedProblem
+    require(principal, Rule.USER_SEARCH)
+    return await admin_groups.search_groups(session, q=q, limit=limit)

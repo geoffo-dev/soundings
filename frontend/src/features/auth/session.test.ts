@@ -22,6 +22,8 @@ describe('safeNextPath', () => {
     ['newline', '/ideas/CUST-12\nx'],
     ['NUL', '/ideas/\u0000'],
     ['the login page', '/login?next=/'],
+    ['an API path', '/api/v1/auth/logout/redirect'],
+    ['an encoded API path', '/%61pi/v1/auth/me'],
   ])('sends %s to /', (_name, next) => {
     expect(safeNextPath(next)).toBe('/')
   })

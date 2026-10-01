@@ -15,8 +15,9 @@ docs/role-matrix.md and ADRs 0005 and 0010 before starting.
   looks wrong, message the lead; don't diverge silently.
 - Blind evaluation, API-key scoping and login matching / group sync are test-first.
 - Test OIDC against the Keycloak in `dev/` (realm `soundings`): PKCE, state/nonce,
-  managed vs additive group sync, multi-domain redirect URIs, logout. Use the verified
-  Authlib patterns in docs/research/backend-libraries.md.
+  managed vs additive group sync, multi-domain redirect URIs, logout. The OIDC client
+  is `app/auth/oidc.py` (httpx + joserfc; Authlib is no longer a dependency); real-IdP
+  tests live in `tests/identity/test_keycloak.py`.
 - Never log tokens, secrets, cookies or PII. Store only hashes of session ids and API
   keys. Compare secrets in constant time.
 - ORM models and migrations belong to backend: request the change (table, columns,

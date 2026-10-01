@@ -10,6 +10,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
+from app.models.enums import AuthMethod
 from app.schemas.base import RequestModel, ResponseModel
 from app.schemas.users import UserRef
 
@@ -24,15 +25,17 @@ __all__ = [
 
 class CurrentUser(UserRef):
     """The signed-in user (``GET /auth/me``, sign-in responses), also used for the dev
-    login picker.
-
-    Pending (contract-phase2 section 7): ``auth_method: AuthMethod | None`` lands with
-    the identity and frontend builds, which update the tests and mocks that build a
-    ``CurrentUser`` in the same change.
-    """
+    login picker."""
 
     email: str
     is_platform_admin: bool
+    auth_method: AuthMethod | None = Field(
+        default=None,
+        description=(
+            "How this session was started: sso, break_glass (show the break-glass "
+            "banner) or dev_login. Null only in the dev login picker (no session)."
+        ),
+    )
 
 
 class DevLoginRequest(RequestModel):

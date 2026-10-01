@@ -1,4 +1,6 @@
 {{- $fullname := include "soundings.fullname" . -}}
+{{- $breakGlass := printf "user admin, password: kubectl -n %s get secret %s -o jsonpath='{.data.break-glass-password}' | base64 -d" .Release.Namespace $fullname -}}
+{{- with .Values.breakGlass.existingSecret }}{{ $breakGlass = printf "keys \"username\" and \"password\" of Secret %s" . }}{{ end -}}
 Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
 
 1. Open Soundings
@@ -10,7 +12,7 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    then open http://localhost:8000 (it must be listed in baseUrls, currently: {{ join ", " .Values.baseUrls }}).
 {{- end }}
 
-2. Sign in for the first time
+2. Sign in
 {{- if .Values.devLogin }}
    Dev login is ON (development mode): pick a user on the sign-in page.
    Never use devLogin on a shared or internet-facing install.
@@ -19,22 +21,39 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    ideas; a no-op once the database has projects). Sign in as Alice Anders, the platform
    admin, or anyone else on the list.
 {{- end }}
-{{- else if .Values.breakGlass.enabled }}
-   Use the break-glass admin:
-{{- if .Values.breakGlass.existingSecret }}
-     username and password: keys "username" / "password" of Secret {{ .Values.breakGlass.existingSecret }}
-{{- else }}
-     username: admin
-     password: kubectl -n {{ .Release.Namespace }} get secret {{ $fullname }} -o jsonpath='{.data.break-glass-password}' | base64 -d; echo
 {{- end }}
-   Then, as platform admin:
-     a. connect SSO{{ if .Values.oidc.issuer }} (configured: {{ .Values.oidc.issuer }}){{ else }} (set oidc.issuer, oidc.clientId and oidc.existingSecret, then helm upgrade){{ end }},
-     b. map your IdP admin group to Soundings' platform admins (Admin > Groups),
-     c. sign in with SSO once. Break-glass sign-in is then switched off automatically;
-        every break-glass sign-in is audited.
-{{- else if .Values.oidc.issuer }}
-   Sign in with SSO ({{ .Values.oidc.issuer }}).
-{{- else }}
+{{- if .Values.oidc.issuer }}
+   Single sign-on with {{ .Values.oidc.issuer }} (client "{{ .Values.oidc.clientId }}").
+   Register these on the IdP client (Settings > Sign-in (SSO) shows them too):
+{{- range .Values.baseUrls }}
+     redirect URI:             {{ . }}/api/v1/auth/callback
+     post-logout redirect URI: {{ . }}/login?signed_out=1
+{{- end }}
+   People sign in only if they match a user (pre-created by an admin, linked by
+{{- if .Values.oidc.externalIdClaim }} the
+   "{{ .Values.oidc.externalIdClaim }}" claim{{ if .Values.oidc.matchVerifiedEmail }} or a verified email{{ end }}){{ else }}{{ if .Values.oidc.matchVerifiedEmail }} a verified
+   email){{ else }} identity only){{ end }}{{ end }}{{ if .Values.oidc.autoCreateUsers }}, or get an account at first sign-in (autoCreateUsers){{ end }}.
+{{- if .Values.oidc.externalIdClaim }}
+   "{{ .Values.oidc.externalIdClaim }}" MUST be an attribute only IdP admins can set.
+{{- end }}
+{{- if .Values.breakGlass.enabled }}
+   The break-glass admin is OFF while oidc.issuer is set. In an SSO outage, run
+     helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values --set oidc.issuer=
+   and sign in with it ({{ $breakGlass }});
+   set the issuer again afterwards. Every use is audited.
+{{- end }}
+{{- else if .Values.breakGlass.enabled }}
+   Break-glass admin (works while oidc.issuer is empty; every use is audited):
+     {{ $breakGlass }}
+   Then connect single sign-on, in this order:
+     a. Sign in as break-glass. In Settings > Users, pre-create the real platform admins
+        (with the external ID from an attribute only IdP admins can set, and/or their
+        email) as platform admins. Optionally create groups and IdP mappings.
+     b. Register the redirect URIs from Settings > Sign-in (SSO) on your IdP client.
+     c. helm upgrade with oidc.issuer, oidc.clientId and oidc.existingSecret.
+        Break-glass then switches off; the pre-created admins are linked at their
+        first SSO sign-in. SSO users are never platform admins by default.
+{{- else if not .Values.devLogin }}
    WARNING: no way to sign in is enabled (oidc.issuer is empty, breakGlass.enabled and
    devLogin are false). Enable breakGlass or configure oidc.*.
 {{- end }}

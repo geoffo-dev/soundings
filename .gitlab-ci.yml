@@ -10,6 +10,8 @@
 #   TRIVY_DB_REPOSITORY / TRIVY_JAVA_DB_REPOSITORY   mirrors of the Trivy databases
 # docker:dind (backend tests, deploy-test) pulls postgres/k3s/busybox images itself: give
 # the runner's dind a registry mirror (--registry-mirror) or keep them in REGISTRY_MIRROR.
+# Keycloak (KEYCLOAK_IMAGE) runs as a service for the backend identity tests and the
+# e2e:sso job; the k3s job's node pulls it through K3S_REGISTRY_MIRROR.
 # kaniko is archived upstream (Google, 2025); KANIKO_IMAGE can point at a maintained fork.
 
 stages:
@@ -39,6 +41,7 @@ variables:
   TRIVY_IMAGE: ${REGISTRY_MIRROR}/aquasec/trivy:0.67.2
   KANIKO_IMAGE: gcr.io/kaniko-project/executor:v1.23.2-debug
   K3S_IMAGE: ${REGISTRY_MIRROR}/rancher/k3s:v1.31.4-k3s1
+  KEYCLOAK_IMAGE: ${REGISTRY_MIRROR}/keycloak/keycloak:26.0
   UV_VERSION: "0.8.17"
   # Where the built image is pushed (defaults to this project's container registry).
   IMAGE_REPOSITORY: ${CI_REGISTRY_IMAGE}
@@ -160,7 +163,12 @@ helm:lint:
     # The schema must reject invalid values.
     - |
       for bad in "smtp.security=ssl" "logLevel=verbose" "unknownKey=1" "baseUrls[0]=ftp://x" \
-                 "metrics.port=8000" "sessions.idleTimeout=12h" "demo.seed=true"; do
+                 "metrics.port=8000" "sessions.idleTimeout=12h" "demo.seed=true" \
+                 "oidc.issuer=https://idp/realms/a?x=1" "oidc.externalIdKind=Bad-Kind" \
+                 "oidc.issuer=https://idp/realms/a" \
+                 "oidc.issuer=http://idp/realms/a,oidc.clientSecret=s,baseUrls[0]=https://a.example" \
+                 "oidc.issuer=https://idp/realms/a,oidc.clientSecret=s" \
+                 "oidc.issuer=https://idp/r,oidc.clientSecret=s,baseUrls[0]=https://a.example,oidc.externalIdClaim=https://x/emp-no"; do
         if helm template ci deploy/helm --set "$bad" > /dev/null 2>&1; then
           echo "chart accepted invalid value: $bad"; exit 1
         fi
@@ -171,6 +179,23 @@ helm:lint:
 backend:test:
   extends: [.backend, .dind]
   stage: test
+  # dind for testcontainers (Postgres), and Keycloak 26 for the identity integration
+  # tests (tests/identity/test_keycloak.py: the real code flow, group sync and the SPEC
+  # acceptance). The service can't read the repository, so the dev realm is loaded
+  # through the admin API before the tests (dev/keycloak/import_realm.py).
+  services:
+    - name: ${DIND_IMAGE}
+      alias: docker
+      command: ["--tls=false"]
+    - name: ${KEYCLOAK_IMAGE}
+      alias: keycloak
+      command: ["start-dev"]
+      variables:
+        KC_BOOTSTRAP_ADMIN_USERNAME: admin
+        KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+        # The issuer follows the URL used: http://keycloak:8080 for tests and app alike.
+        KC_HOSTNAME_STRICT: "false"
+        KC_LOG_LEVEL: warn
   variables:
     # testcontainers talks to the dind service; published ports live on that host.
     DOCKER_HOST: tcp://docker:2375
@@ -178,7 +203,11 @@ backend:test:
     TESTCONTAINERS_HOST_OVERRIDE: docker
     # The dind daemon is thrown away with the job, so the reaper container is not needed.
     TESTCONTAINERS_RYUK_DISABLED: "true"
+    # Use the service instead of a testcontainers Keycloak; the tests fail (not skip)
+    # when it doesn't answer.
+    SOUNDINGS_TEST_KEYCLOAK_URL: http://keycloak:8080
   script:
+    - python3 ../dev/keycloak/import_realm.py http://keycloak:8080 --origin http://testserver
     - uv run pytest -p no:cacheprovider --junitxml=report.xml
   artifacts:
     when: always
@@ -295,6 +324,10 @@ e2e:
     SOUNDINGS_ENVIRONMENT: development
     SOUNDINGS_DEV_LOGIN_ENABLED: "true"
     SOUNDINGS_BASE_URLS: http://app:8000
+    # The break-glass admin, as in the local e2e stack (e2e/scripts/stack-env.sh).
+    SOUNDINGS_BREAK_GLASS_ENABLED: "true"
+    SOUNDINGS_BREAK_GLASS_USERNAME: admin
+    SOUNDINGS_BREAK_GLASS_PASSWORD: e2e-break-glass-password
     E2E_BASE_URL: http://app:8000
   cache:
     key:
@@ -324,9 +357,73 @@ e2e:
     paths: [e2e/playwright-report, e2e/test-results]
 
 
+# The same against single sign-on: Keycloak 26 as a service with the dev realm (loaded
+# through the admin API: services can't read the repository), the app configured for
+# it, and the specs tagged @sso (QA). Issuer http://keycloak:8080/realms/soundings for
+# the browser (this job) and the app alike. Keycloak sets its cookies without Secure on
+# a plain-http non-localhost origin, so Chromium needs no flags.
+e2e:sso:
+  stage: deploy-test
+  image: ${PLAYWRIGHT_IMAGE}
+  needs: [image:build]
+  rules:
+    - exists: [e2e/package.json]
+  services:
+    - name: ${POSTGRES_IMAGE}
+      alias: postgres
+    - name: ${KEYCLOAK_IMAGE}
+      alias: keycloak
+      command: ["start-dev"]
+      variables:
+        KC_BOOTSTRAP_ADMIN_USERNAME: admin
+        KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+        KC_HOSTNAME_STRICT: "false"
+        KC_LOG_LEVEL: warn
+    - name: ${IMAGE_REPOSITORY}:${IMAGE_TAG}
+      alias: app
+      entrypoint: ["sh", "-c"]
+      command:
+        - soundings wait-for-db --timeout 120 && soundings migrate && soundings seed && exec soundings api
+  variables:
+    FF_NETWORK_PER_BUILD: "true"
+    POSTGRES_DB: soundings
+    POSTGRES_USER: soundings
+    POSTGRES_PASSWORD: soundings
+    SOUNDINGS_DATABASE_URL: postgresql+psycopg://soundings:soundings@postgres:5432/soundings
+    SOUNDINGS_ENVIRONMENT: development
+    SOUNDINGS_DEV_LOGIN_ENABLED: "true"
+    SOUNDINGS_BASE_URLS: http://app:8000
+    SOUNDINGS_OIDC_ISSUER: http://keycloak:8080/realms/soundings
+    SOUNDINGS_OIDC_CLIENT_ID: soundings
+    SOUNDINGS_OIDC_CLIENT_SECRET: soundings-dev-secret
+    SOUNDINGS_OIDC_GROUPS_CLAIM: groups
+    SOUNDINGS_OIDC_EXTERNAL_ID_CLAIM: employee_no
+    E2E_BASE_URL: http://app:8000
+    E2E_SSO: "1"
+    E2E_KC_URL: http://keycloak:8080
+    # Which specs need SSO: Playwright --grep (QA tags them @sso).
+    E2E_SSO_GREP: "@sso"
+  cache:
+    key:
+      files: [e2e/package-lock.json]
+      prefix: e2e
+    paths: [.cache/npm]
+  before_script:
+    - *ca-bundle
+    - npm --prefix e2e ci --no-audit --no-fund
+    - node --experimental-strip-types e2e/scripts/keycloak.ts wait 180 master
+    - node --experimental-strip-types e2e/scripts/keycloak.ts reset-realm "$E2E_BASE_URL"
+  script:
+    - npm --prefix e2e run test -- --grep "$E2E_SSO_GREP"
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [e2e/playwright-report, e2e/test-results]
+
 # Install, upgrade and smoke-test the chart on k3s running in docker:dind, with the same
 # scripts as local development (scripts/k3s-*.sh), in a namespace that enforces the
-# Restricted Pod Security Standard. Also exercises the external-database path.
+# Restricted Pod Security Standard. Also exercises the external-database path, and
+# single sign-on through the ingress against Keycloak in the cluster.
 k3s:install-upgrade:
   extends: .dind
   stage: deploy-test
@@ -342,7 +439,8 @@ k3s:install-upgrade:
     - *ca-bundle
     - export K3S_EXTRA_CA="${CI_BUILD_CA:-}"
     # docker:cli is Alpine without bash/curl; use an image that has them when offline.
-    - command -v bash >/dev/null && command -v curl >/dev/null || apk add --no-cache bash curl tar
+    - command -v bash >/dev/null && command -v curl >/dev/null && command -v jq >/dev/null ||
+      apk add --no-cache bash curl tar jq
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     - docker pull "$IMAGE_REPOSITORY:$IMAGE_TAG"
     - docker tag "$IMAGE_REPOSITORY:$IMAGE_TAG" soundings:ci
@@ -355,6 +453,11 @@ k3s:install-upgrade:
     # Upgrade: a config change (rolls every pod) and a second API replica.
     - scripts/k3s-install.sh --set image.tag=ci --set logLevel=DEBUG --set api.replicas=2
     - scripts/k3s-smoke.sh
+    # Single sign-on: Keycloak with the dev realm in the cluster, the release pointed at
+    # it, and the acceptance through the ingress (sso-smoke.sh via k3s-smoke.sh).
+    - scripts/k3s-keycloak.sh
+    - SSO=1 scripts/k3s-install.sh --set image.tag=ci
+    - SSO=1 scripts/k3s-smoke.sh
     - IMAGE_TAG=ci scripts/k3s-test-external-db.sh
   after_script:
     - scripts/k3s-down.sh || true

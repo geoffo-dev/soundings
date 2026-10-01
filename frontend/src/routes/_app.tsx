@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 import { AppShell } from '@/components/layout/app-shell'
 import { AppShellPending } from '@/components/layout/app-shell-pending'
+import { BreakGlassBanner } from '@/features/auth/break-glass-banner'
 import { requireUser } from '@/features/auth/session'
 import { NewIdeaDialog } from '@/features/new-idea/new-idea-dialog'
 import { CreateProjectDialog } from '@/features/project/create-project-dialog'
@@ -21,7 +22,7 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   return (
-    <AppShell>
+    <AppShell banner={<BreakGlassBanner />}>
       <Outlet />
       <NewIdeaDialog />
       <CreateProjectDialog />

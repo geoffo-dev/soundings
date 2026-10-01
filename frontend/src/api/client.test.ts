@@ -1,8 +1,8 @@
 import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import { createApiClient, CSRF_HEADER, readCookie } from '@/api/client'
-import { ApiError } from '@/api/errors'
+import { createApiClient, CSRF_HEADER, readCookie, readCsrfToken } from '@/api/client'
+import { ApiError, parseRetryAfter } from '@/api/errors'
 import { shouldRetry } from '@/api/query'
 import { server } from '@/mocks/server'
 
@@ -51,6 +51,20 @@ describe('api client', () => {
     expect(data).toEqual({ ok: true })
     expect(seen.get).toBeNull()
     expect(seen.post).toBe('tok=123')
+  })
+
+  it('reads the __Host- CSRF cookie first (HTTPS), then the plain one', () => {
+    expect(readCsrfToken('soundings_csrf=plain; __Host-soundings_csrf=secure')).toBe('secure')
+    expect(readCsrfToken('soundings_csrf=plain')).toBe('plain')
+    expect(readCsrfToken('')).toBeUndefined()
+  })
+
+  it('reads Retry-After as seconds or an HTTP date', () => {
+    const now = Date.parse('2026-10-01T10:00:00Z')
+    expect(parseRetryAfter('120', now)).toBe(120)
+    expect(parseRetryAfter('Thu, 01 Oct 2026 10:01:30 GMT', now)).toBe(90)
+    expect(parseRetryAfter('soon', now)).toBeUndefined()
+    expect(parseRetryAfter(null, now)).toBeUndefined()
   })
 
   it('turns problem+json responses into a typed ApiError', async () => {

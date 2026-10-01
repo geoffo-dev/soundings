@@ -72,11 +72,14 @@ secretKey:
   existingSecret: ""
   existingSecretKey: secret-key
 
-# -- Sign-in with OpenID Connect (code flow + PKCE; the browser never sees tokens).
-# Leave issuer empty to configure SSO later (the break-glass admin can sign in meanwhile).
+# -- Sign-in with OpenID Connect (server-side code flow + PKCE; the browser never sees
+# IdP tokens). One provider per instance. Leave issuer empty to configure SSO later: the
+# break-glass admin signs in meanwhile and is switched off once issuer is set (README
+# "Single sign-on" has the bootstrap order and the IdP client settings).
 oidc:
   # -- e.g. https://keycloak.example.com/realms/soundings or
-  # https://login.microsoftonline.com/<tenant>/v2.0
+  # https://login.microsoftonline.com/<tenant>/v2.0 (exactly the provider's `issuer`).
+  # Must be https unless devLogin is on.
   issuer: ""
   clientId: soundings
   # -- Client secret in plain values (stored in the chart's Secret). Prefer existingSecret.
@@ -84,10 +87,24 @@ oidc:
   # -- Existing Secret with the client secret under existingSecretKey.
   existingSecret: ""
   existingSecretKey: client-secret
-  # -- Claim with the user's IdP groups (Keycloak "/path" values are normalised).
+  # -- Claim with the user's IdP groups: a name or a dotted path (realm_access.roles).
+  # Keycloak "/path" values are normalised. Empty: no group sync.
   groupsClaim: groups
-  # -- Optional claim used to link pre-created users, e.g. employee_no.
+  # -- Optional claim (name or dotted path) that links pre-created users by their
+  # external ID, e.g. employee_no (Keycloak) or oid (Entra ID). It MUST come from an
+  # attribute only IdP admins can set: whoever can choose its value can sign in as the
+  # pre-created user who has it, platform admins included.
   externalIdClaim: ""
+  # -- External-ID kind the claim is matched against (Settings > Users). Empty: the
+  # claim path's last segment (attributes.employee_no -> employee_no).
+  externalIdKind: ""
+  # -- Link an existing user by email when the IdP says email_verified=true. Turn off
+  # for IdPs that don't verify addresses.
+  matchVerifiedEmail: true
+  # -- Create an account at first sign-in for anyone the IdP lets in with a verified
+  # email who matches nobody (access then comes only from groups). Off: admins
+  # pre-create people.
+  autoCreateUsers: false
   scopes:
     - openid
     - profile
@@ -116,13 +133,14 @@ smtp:
   # -- Connection timeout in seconds.
   timeout: 10
 
-# Break-glass admin: a local account for first sign-in and for when SSO is broken.
-# The app switches it off once SSO is configured, and audits every use.
+# Break-glass admin: a local platform admin for the first sign-in and for SSO outages.
+# It works only while oidc.issuer is empty: the app switches it off once SSO is
+# configured (unset oidc.issuer to bring it back in an outage). Every use is audited.
 breakGlass:
   enabled: true
-  # -- Existing Secret with keys `username` and `password`. When empty, the chart
-  # creates user "admin" with a random password (kept across upgrades); NOTES.txt shows
-  # how to read it.
+  # -- Existing Secret with keys `username` and `password` (16+ characters). When
+  # empty, the chart creates user "admin" with a random 24-character password (kept
+  # across upgrades); NOTES.txt shows how to read it.
   existingSecret: ""
 
 features:

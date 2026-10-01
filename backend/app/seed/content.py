@@ -18,6 +18,7 @@ from types import MappingProxyType
 from typing import Final
 
 from app.models.enums import (
+    GroupSyncMode,
     IdeaStatus,
     ProjectRole,
     ProjectVisibility,
@@ -26,10 +27,12 @@ from app.models.enums import (
 )
 
 __all__ = [
+    "GROUPS",
     "IDEAS",
     "PEOPLE",
     "PROJECTS",
     "CriterionSeed",
+    "GroupSeed",
     "IdeaSeed",
     "Person",
     "ProjectSeed",
@@ -61,6 +64,9 @@ class Person:
     name: str
     platform_admin: bool = False
     joined_days_ago: float = 90
+    # External ID of kind ``employee_no`` (the dev Keycloak realm's claim), so SSO
+    # sign-ins link these accounts by external ID (contract-phase2 section 3.3).
+    employee_no: str | None = None
 
     @property
     def email(self) -> str:
@@ -70,9 +76,9 @@ class Person:
 PEOPLE: Final[tuple[Person, ...]] = (
     # The first five match the dev Keycloak realm (dev/README.md), so SSO sign-ins in
     # Phase 2 land on the same accounts.
-    Person("alice", "Alice Anders", platform_admin=True, joined_days_ago=120),
-    Person("bob", "Bob Brown", joined_days_ago=110),
-    Person("carol", "Carol Chen", joined_days_ago=105),
+    Person("alice", "Alice Anders", platform_admin=True, joined_days_ago=120, employee_no="E1001"),
+    Person("bob", "Bob Brown", joined_days_ago=110, employee_no="E1002"),
+    Person("carol", "Carol Chen", joined_days_ago=105, employee_no="E1003"),
     Person("dave", "Dave Davies", joined_days_ago=100),
     Person("erin", "Erin Evans", joined_days_ago=95),
     Person("farah", "Farah Haddad"),
@@ -222,6 +228,69 @@ PROJECTS: Final[tuple[ProjectSeed, ...]] = (
             ),
         ),
         default_evaluation_days=14,
+    ),
+)
+
+
+# --- Groups ------------------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class GroupSeed:
+    """A group, its IdP mapping, the project roles granted to it and its manual members.
+
+    Created by the platform admin (alice); each grant is made by that project's admin.
+    The mappings are the dev Keycloak realm's groups (dev/README.md), so SSO sign-ins
+    sync memberships. Manual members already hold at least the granted role directly,
+    so the groups explain access without changing who can see what with the dev login.
+    """
+
+    name: str
+    description: str
+    created_days_ago: float
+    idp_values: tuple[str, ...] = ()
+    sync_mode: GroupSyncMode = GroupSyncMode.MANAGED
+    grants: tuple[tuple[str, ProjectRole], ...] = ()
+    members: tuple[str, ...] = ()
+
+
+GROUPS: Final[tuple[GroupSeed, ...]] = (
+    GroupSeed(
+        "Innovation admins",
+        "Run the Customer Innovation board.",
+        created_days_ago=46,
+        idp_values=("/innovation/admins",),
+        grants=(("CUST", ADMIN),),
+        members=("alice", "priya"),
+    ),
+    GroupSeed(
+        "Innovation members",
+        "Submit and evaluate customer ideas. Filled from the IdP at sign-in.",
+        created_days_ago=46,
+        idp_values=("/innovation/members",),
+        grants=(("CUST", MEMBER),),
+    ),
+    GroupSeed(
+        "Tools team",
+        "Everyone who builds and runs our internal tools.",
+        created_days_ago=45,
+        idp_values=("/tools/members",),
+        grants=(("TOOLS", MEMBER),),
+        members=("kenji", "mateo"),
+    ),
+    GroupSeed(
+        "Viewers",
+        "Read-only access to the sustainability work. Additive: sign-in only adds.",
+        created_days_ago=44,
+        idp_values=("/viewers",),
+        sync_mode=GroupSyncMode.ADDITIVE,
+        grants=(("GREEN", VIEWER),),
+        members=("erin",),
+    ),
+    GroupSeed(
+        "Sustainability champions",
+        "Not mapped to the IdP: an admin adds members by hand.",
+        created_days_ago=43,
+        grants=(("GREEN", MEMBER),),
+        members=("farah", "sven", "zanele"),
     ),
 )
 

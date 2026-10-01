@@ -163,3 +163,39 @@ otherwise.
 | No new rule names: the existing `platform.*`, `project.manage_members` and `user.search` (now also the group picker) cover Phase 2. New conditions: c17 `cannot_change_self` (own active / platform-admin flags); c16 (Phase 1) now listed in the role matrix. | Decided | The matrix already had the platform rows; tests and policy keep their shape. |
 | c11 (last admin) applies to project-level membership and grant changes only; deleting a group, removing a group member and sync are not blocked by it. It counts active, non-service admins only. c18 keeps one active platform admin besides break-glass (409 `last_platform_admin`). | Proposed | Sync must follow the IdP; platform admins can always repair a project; deactivated admins can't administer; two admins demoting each other can't leave none. |
 | The audit log keeps everything indefinitely in Phase 2; entries may include the IdP issuer/subject and group mapping values, never emails, names, tokens or claims. | Proposed | Enough to debug a denied sign-in without personal data; retention can come later if needed. |
+
+## 2026-10-01 · Phase 2 build and integration
+
+Calls made while building and integrating sign-in and access. The contract changed
+only additively (`CurrentUser.auth_method`, [contract-phase2.md §7](api/contract-phase2.md#7-changes-after-the-contract)).
+
+### Sign-in
+
+| Decision | Status | Why |
+|---|---|---|
+| The OIDC client is httpx + `joserfc` (`app/auth/oidc.py`); the unused Authlib dependency is gone and `joserfc` is a direct one ([ADR 0005 amendment](adr/0005-server-side-sessions-oidc-csrf.md#amendment-phase-2-as-built-2026-10-01)). | Decided | `authlib.jose` is deprecated, and its Starlette client wants a signed-cookie session the design doesn't use. |
+| A callback whose `state` matches no attempt is `login_expired` without an audit entry; a found but expired attempt is audited. A callback that can't fetch the provider metadata redirects with `sso_unavailable` and audits reason `sso_failed`. | Decided | Anonymous requests can't fill the log; the operator still sees outages. |
+| The sign-in page treats any `next` under `/api/` (also encoded) as unsafe and goes to My work, as the server does. "Your session has ended" is a notice on the sign-in page, not a toast. | Decided | One rule on both sides; the notice survives the redirect. |
+| The break-glass banner keys on `CurrentUser.auth_method`; the dev-login list, people pickers and member assignment never offer the break-glass account. | Decided | The reserved email was a stopgap. |
+| The chart keeps break-glass credentials in the api pods while SSO is on (the app ignores them), and still requires a client secret (no public clients through the chart). The worker gets neither. | Proposed | Unsetting the issuer in an outage brings back the same account without a second Secret. |
+
+### Admin screens and access
+
+| Decision | Status | Why |
+|---|---|---|
+| The admin pages live under **Settings** (Account · Users · Groups · Sign-in (SSO) · Audit log), shown to platform admins only; other people get the plain 404 at those URLs. On phones the SSO tab reads "SSO" (same accessible name) so the row fits at 390 px. | Decided | One settings place, like project settings; no admin crumb leaks. |
+| Project Members is three lists (People, Groups, Everyone with access) instead of wireframe 07's single mixed list. | Proposed | Clearer once groups have hundreds of members; the access list explains every role's source. |
+| Synced group members are read-only, with "Remove until next sign-in" in their menu. | Decided | Otherwise people synced into an additive group could never be removed (§3.6). |
+| Revoking platform admin confirms instead of offering Undo. | Decided | A toast's Undo can't be clicked while the user sheet (modal) is open. |
+| The audit log says "now a synced member of …" / "no longer a synced member of …" for sign-in sync, not "joined"/"left". | Decided | *Added* includes a manual member whose membership only became synced; "joined" was wrong for them (QA). |
+| The SSO page says the client secret is "Set (never shown)", without naming where it came from. | Decided | It may come from an environment variable, not a Kubernetes Secret (QA). |
+| Audit details where the contract left a choice: `user.update.sessions_ended` is a count; `user.sessions_end` is recorded even when 0 sessions ended; `group.delete.member_count` counts every membership, deactivated users included; update actions are recorded only when something changed; Phase 1's `details.auth` is still written next to `auth_method`. | Proposed | Each entry says what the admin did, even when it changed nothing visible. |
+| The demo seed gives alice, bob and carol `employee_no` E1001–E1003 and adds five groups mapped to the dev realm (dev/README.md); every manual member already holds the granted role directly. | Decided | SSO sign-ins link and sync out of the box, while dev-login access stays as in Phase 1. |
+
+### Testing and operations
+
+| Decision | Status | Why |
+|---|---|---|
+| The local e2e stack runs Keycloak only with `E2E_SSO=1` (a fresh realm on every start); `@sso` specs skip without it. Break-glass is on without SSO (`admin` / `e2e-break-glass-password`). Reseeding uses `seed --reset --force` and stops the run if it fails. | Decided | Each run gets the data an identity links to once; a swallowed reseed failure had run specs on stale data (QA K-1). |
+| `make check-backend` runs the real-Keycloak identity tests in a testcontainer (+45 s); CI provides Keycloak as a service and sets `SOUNDINGS_TEST_KEYCLOAK_URL` so they fail instead of skipping. | Decided | The acceptance is about a real IdP's tokens. |
+| The operator guide documents Keycloak, Entra ID (`oid` external ID, groups as object ids, no email matching, overage refused) and Google (no groups, keep auto-create off unless the consent screen is Internal). An IdP behind a private CA is trusted through `SSL_CERT_FILE`. | Decided | The three providers SPEC names, with the settings that matter for each. |

@@ -1,0 +1,135 @@
+# Keycloak 26 for the local k3s cluster (dev only): the dev realm, admin/admin, an
+# in-memory H2 database (recreating the pod resets everything), plain HTTP.
+# Applied by scripts/k3s-keycloak.sh, which fills in __PORT__ (K3S_HTTP_PORT), __IMAGE__
+# and __REALM_SHA__ (a changed realm file restarts Keycloak, which then imports it) and
+# creates the ConfigMap `keycloak-realm` from dev/keycloak/realm-soundings.json.
+#
+# One issuer for the browser and the app: http://keycloak.localhost:__PORT__.
+#   - On the host, *.localhost is loopback (browsers and curl resolve it themselves);
+#     port __PORT__ is the k3s ingress, which routes the host keycloak.localhost here.
+#   - In the cluster, CoreDNS rewrites keycloak.localhost to this Service (see the
+#     coredns-custom ConfigMap the script writes), which also listens on __PORT__.
+# KC_HOSTNAME pins every URL Keycloak issues (issuer, endpoints) to that one origin.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+      annotations:
+        checksum/realm: "__REALM_SHA__"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: admin
+            - name: KC_HOSTNAME
+              value: http://keycloak.localhost:__PORT__
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_LOG_LEVEL
+              value: warn,org.keycloak.exportimport:info
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 3
+            failureThreshold: 100
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak
+  ports:
+    # The same port as the ingress on the host, so http://keycloak.localhost:__PORT__
+    # works unchanged from inside the cluster.
+    - name: http
+      port: __PORT__
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: keycloak.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  name: http

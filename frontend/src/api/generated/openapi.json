@@ -702,6 +702,16 @@
         "title": "AuthConfig",
         "type": "object"
       },
+      "AuthMethod": {
+        "description": "How a session was started (``user_sessions.auth_method``).",
+        "enum": [
+          "dev_login",
+          "sso",
+          "break_glass"
+        ],
+        "title": "AuthMethod",
+        "type": "string"
+      },
       "Board": {
         "description": "One column per status, always all five, in lifecycle order.",
         "properties": {
@@ -1016,8 +1026,19 @@
         "type": "object"
       },
       "CurrentUser": {
-        "description": "The signed-in user (``GET /auth/me``, sign-in responses), also used for the dev\nlogin picker.\n\nPending (contract-phase2 section 7): ``auth_method: AuthMethod | None`` lands with\nthe identity and frontend builds, which update the tests and mocks that build a\n``CurrentUser`` in the same change.",
+        "description": "The signed-in user (``GET /auth/me``, sign-in responses), also used for the dev\nlogin picker.",
         "properties": {
+          "auth_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthMethod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How this session was started: sso, break_glass (show the break-glass banner) or dev_login. Null only in the dev login picker (no session)."
+          },
           "avatar_url": {
             "anyOf": [
               {
@@ -1059,6 +1080,7 @@
           "avatar_url",
           "email",
           "is_platform_admin",
+          "auth_method",
           "initials"
         ],
         "title": "CurrentUser",
@@ -5388,7 +5410,7 @@
     },
     "securitySchemes": {
       "session": {
-        "description": "Server-side session cookie set by sign-in (Phase 1: POST /api/v1/auth/dev/login). Unsafe methods must also send the X-CSRF-Token header equal to the soundings_csrf cookie.",
+        "description": "Server-side session cookie set by every sign-in (SSO via GET /api/v1/auth/login, the break-glass admin, the development login). Named __Host-soundings_session (and __Host-soundings_csrf) whenever cookies are Secure, i.e. over HTTPS and in production. Unsafe methods must also send the X-CSRF-Token header equal to the CSRF cookie (soundings_csrf or __Host-soundings_csrf).",
         "in": "cookie",
         "name": "soundings_session",
         "type": "apiKey"
@@ -7702,7 +7724,7 @@
     },
     "/api/v1/auth/config": {
       "get": {
-        "description": "Public. Which sign-in methods the sign-in page shows: the SSO button (and its label), the development login, the break-glass admin form. No secrets.",
+        "description": "Public. Which sign-in methods the sign-in page shows: the SSO button, the development login, the break-glass admin form. No secrets.",
         "operationId": "get_auth_config",
         "responses": {
           "200": {
@@ -7734,7 +7756,7 @@
     },
     "/api/v1/auth/dev/login": {
       "post": {
-        "description": "Starts a session for the user: sets the soundings_session (HttpOnly) and soundings_csrf cookies. Development only: 404 unless SOUNDINGS_DEV_LOGIN_ENABLED=true (always refused in production).",
+        "description": "Starts a session for the user: sets the session (HttpOnly) and CSRF cookies (soundings_session and soundings_csrf; __Host- prefixed when Secure). Development only: 404 unless SOUNDINGS_DEV_LOGIN_ENABLED=true (always refused in production).",
         "operationId": "dev_login",
         "requestBody": {
           "content": {
@@ -7905,7 +7927,7 @@
     },
     "/api/v1/auth/logout": {
       "post": {
-        "description": "Ends the session (if any) and clears the session cookies. Always 204.",
+        "description": "Ends the session (if any) and clears the session cookies. Always 204. Signs out of Soundings only; the SPA's Sign out uses POST /auth/logout/redirect.",
         "operationId": "logout",
         "responses": {
           "204": {
@@ -7963,7 +7985,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The signed-in user. 401 when not signed in: show the sign-in page.",
+        "description": "The signed-in user and how the session was started (auth_method). 401 when not signed in: show the sign-in page.",
         "operationId": "get_me",
         "responses": {
           "200": {

@@ -64,6 +64,7 @@ async def test_dev_login_sets_session_and_csrf_cookies(
         "initials": "AL",
         "email": ada.email,
         "is_platform_admin": True,
+        "auth_method": "dev_login",
     }
     cookies = set_cookies(response)
     session_cookie = cookies["soundings_session"]["soundings_session"]
@@ -82,6 +83,8 @@ async def test_dev_login_sets_session_and_csrf_cookies(
     assert row.csrf_token == csrf_cookie.value
     assert row.user_agent == "Firefox on Linux"
     assert row.expires_at - row.created_at == timedelta(days=7)
+    assert row.auth_method == "dev_login"
+    assert row.id_token is None
 
 
 @pytest.mark.settings(cookie_secure=True)
@@ -92,9 +95,18 @@ async def test_cookies_can_be_forced_secure(
 
     response = await client.post(LOGIN, json={"user_id": str(ada.id)})
 
+    # Secure cookies get the __Host- prefix (contract-phase2 section 1): no Domain,
+    # Path=/, so a sibling subdomain can't plant or overwrite them.
     cookies = set_cookies(response)
-    assert cookies["soundings_session"]["soundings_session"]["secure"] is True
-    assert cookies["soundings_csrf"]["soundings_csrf"]["secure"] is True
+    assert "soundings_session" not in cookies
+    session = cookies["__Host-soundings_session"]["__Host-soundings_session"]
+    csrf = cookies["__Host-soundings_csrf"]["__Host-soundings_csrf"]
+    for cookie in (session, csrf):
+        assert cookie["secure"] is True
+        assert cookie["path"] == "/"
+        assert not cookie["domain"]
+    assert session["httponly"] is True
+    assert not csrf["httponly"]
 
 
 async def test_cookies_are_secure_over_https(app: FastAPI, db_session: AsyncSession) -> None:
@@ -103,7 +115,8 @@ async def test_cookies_are_secure_over_https(app: FastAPI, db_session: AsyncSess
     async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as https:
         response = await https.post(LOGIN, json={"user_id": str(ada.id)})
 
-    assert set_cookies(response)["soundings_session"]["soundings_session"]["secure"] is True
+    cookies = set_cookies(response)
+    assert cookies["__Host-soundings_session"]["__Host-soundings_session"]["secure"] is True
 
 
 async def test_get_me(login: Login, client: httpx.AsyncClient, db_session: AsyncSession) -> None:

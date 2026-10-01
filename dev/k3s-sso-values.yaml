@@ -1,0 +1,19 @@
+# Single sign-on on the local k3s cluster, layered on dev/k3s-values.yaml by
+# `make k3s-install SSO=1` (scripts/k3s-install.sh), against the Keycloak that
+# `make k3s-keycloak` (scripts/k3s-keycloak.sh) runs in the cluster with the dev realm.
+#
+# The issuer is http://keycloak.localhost:<K3S_HTTP_PORT>/realms/soundings for the
+# browser (*.localhost is loopback; the ingress routes that host to Keycloak) and for
+# the app (CoreDNS rewrites the name to Keycloak's Service, which listens on the same
+# port). k3s-install.sh sets the port. Plain http is fine here only because devLogin
+# keeps the app in development mode; production needs https everywhere.
+oidc:
+  issuer: http://keycloak.localhost:18081/realms/soundings
+  clientId: soundings
+  # Created by scripts/k3s-keycloak.sh (client-secret: soundings-dev-secret).
+  existingSecret: soundings-oidc
+  existingSecretKey: client-secret
+  groupsClaim: groups
+  # The dev realm's employee_no is an admin-only user-profile attribute (as it must be);
+  # the demo data gives alice, bob and carol E1001-E1003.
+  externalIdClaim: employee_no

@@ -11,9 +11,11 @@ from pydantic import AwareDatetime
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, require
+from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.audit import AuditAction, AuditPage, AuditTargetType
+from app.services import audit_viewer
 
 router = APIRouter(prefix="/admin/audit", tags=["admin"])
 
@@ -30,6 +32,7 @@ router = APIRouter(prefix="/admin/audit", tags=["admin"])
 )
 async def list_audit_entries(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     actor_id: Annotated[UUID | None, Query(description="Entries by this user.")] = None,
     action: Annotated[
@@ -47,4 +50,14 @@ async def list_audit_entries(
         AwareDatetime | None, Query(description="Before this time (with a UTC offset).")
     ] = None,
 ) -> AuditPage:
-    raise NotImplementedProblem
+    require(principal, Rule.PLATFORM_VIEW_AUDIT_LOG)
+    filters = audit_viewer.AuditFilters(
+        actor_id=actor_id,
+        actions=action,
+        target_type=target_type,
+        target_id=target_id,
+        project_id=project_id,
+        since=since,
+        until=until,
+    )
+    return await audit_viewer.list_entries(session, filters, page)

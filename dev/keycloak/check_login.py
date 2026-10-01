@@ -29,7 +29,7 @@ REALM = "soundings"
 CLIENT_ID = "soundings"
 CLIENT_SECRET = "soundings-dev-secret"  # noqa: S105 - dev realm only
 REDIRECT_URI = "http://localhost:8000/auth/callback"
-USERS = ("alice", "bob", "carol", "dave", "erin")
+USERS = ("alice", "bob", "carol", "dave", "erin", "grace", "mallory", "kenji", "nia")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

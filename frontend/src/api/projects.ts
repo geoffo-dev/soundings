@@ -1,4 +1,12 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  infiniteQueryOptions,
+  keepPreviousData,
+  queryOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 
 import { snapshot } from '@/api/cache'
 import { api, unwrap } from '@/api/client'
@@ -7,6 +15,7 @@ import type {
   Member,
   Project,
   ProjectCreate,
+  ProjectGroupGrant,
   ProjectRole,
   ProjectUpdate,
   RubricUpdate,
@@ -57,6 +66,55 @@ export const projectMembersQueryOptions = (slug: string) =>
 
 export function useProjectMembers(slug: string) {
   return useQuery(projectMembersQueryOptions(slug))
+}
+
+/** Groups granted a role in the project (contract-phase2 §3.7), admins first, then by name. */
+export const projectGroupGrantsQueryOptions = (slug: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.groupGrants(slug),
+    queryFn: ({ signal }) =>
+      unwrap(api.GET('/api/v1/projects/{slug}/groups', { params: { path: { slug } }, signal })),
+  })
+
+export function useProjectGroupGrants(slug: string) {
+  return useQuery(projectGroupGrantsQueryOptions(slug))
+}
+
+export interface ProjectAccessParams {
+  /** Part of a name or email. */
+  q?: string
+  /** Only this effective role. */
+  role?: ProjectRole
+  limit?: number
+}
+
+/**
+ * Everyone with an effective role and why (`list_project_access`): direct and
+ * group sources, by name, paged ("Show more").
+ */
+export const projectAccessInfiniteOptions = (
+  slug: string,
+  { q = '', role, limit = 50 }: ProjectAccessParams = {},
+) =>
+  infiniteQueryOptions({
+    queryKey: [...queryKeys.projects.access(slug, { q, role }), { limit }] as const,
+    queryFn: ({ pageParam, signal }) =>
+      unwrap(
+        api.GET('/api/v1/projects/{slug}/access', {
+          params: {
+            path: { slug },
+            query: { q: q.trim() || undefined, role, cursor: pageParam ?? undefined, limit },
+          },
+          signal,
+        }),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    placeholderData: keepPreviousData,
+  })
+
+export function useProjectAccess(slug: string, params: ProjectAccessParams = {}) {
+  return useInfiniteQuery(projectAccessInfiniteOptions(slug, params))
 }
 
 /** Tags in use (filter chips, tag autocomplete). */
@@ -236,6 +294,103 @@ export function useRemoveProjectMember(slug: string, { undo = true }: { undo?: b
   })
 }
 
+/** Give a group a role in the project. Errors: 409 already_granted, 422 group_not_found. */
+export function useAddProjectGroupGrant(slug: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { group_id: string; role?: ProjectRole }) =>
+      unwrap(
+        api.POST('/api/v1/projects/{slug}/groups', {
+          params: { path: { slug } },
+          body: { group_id: body.group_id, role: body.role ?? 'member' },
+        }),
+      ),
+    onSuccess: (grant) => {
+      queryClient.setQueryData<ProjectGroupGrant[]>(
+        queryKeys.projects.groupGrants(slug),
+        (grants) =>
+          grants
+            ? sortGrants([...grants.filter((g) => g.group.id !== grant.group.id), grant])
+            : grants,
+      )
+    },
+    onSettled: () => invalidateMembership(queryClient, slug),
+    meta: { errorTitle: 'Couldn’t add that group' },
+  })
+}
+
+/** Change a group's role, optimistically, with Undo (the previous role). 409 last_admin. */
+export function useUpdateProjectGroupGrant(slug: string, { undo = true }: { undo?: boolean } = {}) {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole; isUndo?: boolean }) =>
+      unwrap(
+        api.PATCH('/api/v1/projects/{slug}/groups/{group_id}', {
+          params: { path: { slug, group_id: groupId } },
+          body: { role },
+        }),
+      ),
+    onMutate: async ({ groupId, role }) => {
+      const rollback = await snapshot(queryClient, [queryKeys.projects.groupGrants(slug)])
+      const previous = queryClient
+        .getQueryData<ProjectGroupGrant[]>(queryKeys.projects.groupGrants(slug))
+        ?.find((g) => g.group.id === groupId)
+      queryClient.setQueryData<ProjectGroupGrant[]>(
+        queryKeys.projects.groupGrants(slug),
+        (grants) =>
+          grants && sortGrants(grants.map((g) => (g.group.id === groupId ? { ...g, role } : g))),
+      )
+      return { rollback, previous }
+    },
+    onError: (_error, _vars, context) => context?.rollback(),
+    onSuccess: (grant, vars, context) => {
+      const previous = context.previous
+      if (undo && !vars.isUndo && previous && previous.role !== vars.role) {
+        offerUndo(`Everyone in ${grant.group.name} is now ${roleLabel(vars.role)}`, () =>
+          mutation.mutate({ groupId: vars.groupId, role: previous.role, isUndo: true }),
+        )
+      }
+    },
+    onSettled: () => invalidateMembership(queryClient, slug),
+    meta: { errorTitle: 'Couldn’t change the group’s role' },
+  })
+  return mutation
+}
+
+/** Take a group's role away, optimistically, with Undo (grant it again). 409 last_admin. */
+export function useRemoveProjectGroupGrant(slug: string, { undo = true }: { undo?: boolean } = {}) {
+  const queryClient = useQueryClient()
+  const add = useAddProjectGroupGrant(slug)
+  return useMutation({
+    mutationFn: ({ groupId }: { groupId: string }) =>
+      api.DELETE('/api/v1/projects/{slug}/groups/{group_id}', {
+        params: { path: { slug, group_id: groupId } },
+      }),
+    onMutate: async ({ groupId }) => {
+      const rollback = await snapshot(queryClient, [queryKeys.projects.groupGrants(slug)])
+      const previous = queryClient
+        .getQueryData<ProjectGroupGrant[]>(queryKeys.projects.groupGrants(slug))
+        ?.find((g) => g.group.id === groupId)
+      queryClient.setQueryData<ProjectGroupGrant[]>(
+        queryKeys.projects.groupGrants(slug),
+        (grants) => grants?.filter((g) => g.group.id !== groupId),
+      )
+      return { rollback, previous }
+    },
+    onError: (_error, _vars, context) => context?.rollback(),
+    onSuccess: (_data, { groupId }, context) => {
+      const previous = context.previous
+      if (undo && previous) {
+        offerUndo(`${previous.group.name} removed`, () =>
+          add.mutate({ group_id: groupId, role: previous.role }),
+        )
+      }
+    },
+    onSettled: () => invalidateMembership(queryClient, slug),
+    meta: { errorTitle: 'Couldn’t remove that group' },
+  })
+}
+
 /** Replace the rubric (3–6 criteria). Recomputes every aggregate, so ideas refetch. */
 export function useReplaceRubric(slug: string) {
   const queryClient = useQueryClient()
@@ -264,8 +419,19 @@ function sortMembers(members: Member[]): Member[] {
   )
 }
 
+function sortGrants(grants: ProjectGroupGrant[]): ProjectGroupGrant[] {
+  return [...grants].sort(
+    (a, b) =>
+      Number(b.role === 'admin') - Number(a.role === 'admin') ||
+      a.group.name.localeCompare(b.group.name),
+  )
+}
+
+/** Direct members, group grants and the access list all change together. */
 function invalidateMembership(queryClient: ReturnType<typeof useQueryClient>, slug: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.projects.members(slug) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.projects.groupGrants(slug) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.projects.accessAll(slug) })
   void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(slug), exact: true })
   void queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() })
   void queryClient.invalidateQueries({ queryKey: queryKeys.users.all })

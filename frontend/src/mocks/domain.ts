@@ -49,6 +49,7 @@ import type {
   MockProject,
   MockUser,
 } from './db'
+import type { MockAuthMethod } from './session'
 
 export const STATUSES: IdeaStatus[] = ['new', 'evaluating', 'shortlisted', 'proposal', 'closed']
 export const RESOLUTIONS: Resolution[] = ['accepted', 'rejected', 'parked']
@@ -168,17 +169,84 @@ export function countVotes(db: MockDb, ideaId: string): number {
 /* Roles and visibility                                                */
 /* ------------------------------------------------------------------ */
 
-/** Effective project role (Phase 1: direct membership only). */
+const ROLE_RANK: Record<ProjectRole, number> = { viewer: 1, member: 2, admin: 3 }
+
+/** The higher of two roles (`admin > member > viewer`); null counts as nothing. */
+export function higherRole(a: ProjectRole | null, b: ProjectRole | null): ProjectRole | null {
+  if (!a) return b
+  if (!b) return a
+  return ROLE_RANK[b] > ROLE_RANK[a] ? b : a
+}
+
+/** The user's direct role in a project (Phase 1 membership), if any. */
+export function directRole(db: MockDb, projectId: string, userId: string): ProjectRole | null {
+  return (
+    db.members.find((member) => member.project_id === projectId && member.user_id === userId)
+      ?.role ?? null
+  )
+}
+
+/** Roles granted to the user through groups they belong to (manual or synced). */
+export function groupRoles(
+  db: MockDb,
+  projectId: string,
+  userId: string,
+): { group_id: string; role: ProjectRole }[] {
+  const grants = db.groupGrants.filter((grant) => grant.project_id === projectId)
+  if (grants.length === 0) return []
+  return grants
+    .filter((grant) =>
+      db.groupMembers.some((m) => m.group_id === grant.group_id && m.user_id === userId),
+    )
+    .map((grant) => ({ group_id: grant.group_id, role: grant.role }))
+}
+
+/**
+ * Effective project role (contract-phase2 §3.7, the `project_effective_roles`
+ * view): the highest of the direct role and every group grant of a group the
+ * user is in.
+ */
 export function effectiveRole(
   db: MockDb,
   projectId: string,
   userId: string | undefined,
 ): ProjectRole | null {
   if (!userId) return null
-  return (
-    db.members.find((member) => member.project_id === projectId && member.user_id === userId)
-      ?.role ?? null
-  )
+  let role = directRole(db, projectId, userId)
+  for (const grant of groupRoles(db, projectId, userId)) role = higherRole(role, grant.role)
+  return role
+}
+
+/** Active users with an effective role: `member_count`, the access list and c11 count only these. */
+export function usersWithAccess(
+  db: MockDb,
+  projectId: string,
+): { user: MockUser; role: ProjectRole }[] {
+  const ids = new Set<string>()
+  for (const m of db.members) if (m.project_id === projectId) ids.add(m.user_id)
+  for (const grant of db.groupGrants) {
+    if (grant.project_id !== projectId) continue
+    for (const m of db.groupMembers) if (m.group_id === grant.group_id) ids.add(m.user_id)
+  }
+  const out: { user: MockUser; role: ProjectRole }[] = []
+  for (const id of ids) {
+    const user = findUser(db, id)
+    const role = effectiveRole(db, projectId, id)
+    if (user?.is_active && !user.is_break_glass && role) out.push({ user, role })
+  }
+  return out
+}
+
+/** c11: active, non-service users whose effective role is admin. */
+export function activeAdminCount(db: MockDb, projectId: string): number {
+  return usersWithAccess(db, projectId).filter(
+    ({ user, role }) => role === 'admin' && !user.is_service_account,
+  ).length
+}
+
+/** People who can be picked, added or matched: not the break-glass admin or service accounts. */
+export function isPickable(user: MockUser | undefined): user is MockUser {
+  return Boolean(user?.is_active && !user.is_service_account && !user.is_break_glass)
 }
 
 const isMemberish = (role: ProjectRole | null) => role === 'member' || role === 'admin'
@@ -386,8 +454,14 @@ export function userRefById(db: MockDb, id: string | null | undefined): UserRef 
   return user ? userRef(user) : null
 }
 
-export function currentUser(user: MockUser): CurrentUser {
-  return { ...userRef(user), email: user.email, is_platform_admin: user.is_platform_admin }
+/** `CurrentUser`; `authMethod` is the session's method (null for `list_dev_users`). */
+export function currentUser(user: MockUser, authMethod: MockAuthMethod | null = null): CurrentUser {
+  return {
+    ...userRef(user),
+    email: user.email,
+    is_platform_admin: user.is_platform_admin,
+    auth_method: authMethod,
+  }
 }
 
 export function userSearchResult(user: MockUser, role: ProjectRole | null): UserSearchResult {
@@ -418,7 +492,7 @@ export function projectSummary(db: MockDb, project: MockProject, user: MockUser)
     archived_at: project.archived_at,
     my_role: effectiveRole(db, project.id, user.id),
     idea_count: db.ideas.filter((idea) => idea.project_id === project.id).length,
-    member_count: db.members.filter((member) => member.project_id === project.id).length,
+    member_count: usersWithAccess(db, project.id).length,
     permissions: projectPermissions(db, project, user),
   }
 }

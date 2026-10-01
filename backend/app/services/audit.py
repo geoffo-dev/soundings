@@ -18,33 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.principal import Principal
 from app.models.activity import AuditLog
 from app.models.base import utcnow
+from app.schemas.audit import AuditAction
 
 __all__ = ["AUDIT_ACTIONS", "record"]
 
-AUDIT_ACTIONS: Final = frozenset(
-    {
-        # Sign-in and sign-out.
-        "session.sign_in",
-        "session.sign_out",
-        # Project administration.
-        "project.create",
-        "project.update",
-        "project.member_add",
-        "project.member_update",
-        "project.member_remove",
-        "project.rubric_replace",
-        # Idea-level actions the role matrix and SPEC section 7 want audited
-        # (deletions, assignments, status changes, evaluations).
-        "idea.delete",
-        "idea.owner_change",
-        "idea.status_change",
-        "evaluator.add",
-        "evaluator.remove",
-        "evaluation.submit",
-    }
-)
-"""The closed set of actions; the name says what happened, ``details.rule`` which rule
-allowed it. Add a name here when a new kind of change needs auditing."""
+AUDIT_ACTIONS: Final = frozenset(action.value for action in AuditAction)
+"""The closed set of actions: exactly :class:`app.schemas.audit.AuditAction`
+(contract-phase2 section 3.11). The name says what happened, ``details.rule`` which rule
+allowed it. Add a member to the enum (lead-owned contract) when a new kind of change
+needs auditing."""
 
 JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
@@ -76,7 +58,13 @@ async def record(
     project_id: UUID | None = None,
     details: Mapping[str, Any] | None = None,
 ) -> AuditLog:
-    """Append an entry. ``actor`` is the principal (its session/API key id is kept)."""
+    """Append an entry. ``actor`` is the principal (its session/API key id is kept),
+    a user id (sign-in, sync) or ``None`` (denied sign-ins).
+
+    Entries for a principal also record how its session started as
+    ``details.auth_method`` (``sso``, ``break_glass``, ``dev_login``), so everything
+    done in a break-glass session is visible as such (contract-phase2 section 3.8).
+    """
     if action not in AUDIT_ACTIONS:
         raise ValueError(f"unknown audit action {action!r}")
     payload: dict[str, Any] = dict(details or {})
@@ -84,6 +72,8 @@ async def record(
     if isinstance(actor, Principal):
         actor_id = actor.user_id
         payload.setdefault("auth", actor.auth)
+        if actor.auth_method is not None:
+            payload.setdefault("auth_method", actor.auth_method)
         if actor.api_key_id is not None:
             payload.setdefault("api_key_id", actor.api_key_id)
     entry = AuditLog(

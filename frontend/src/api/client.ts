@@ -4,6 +4,8 @@ import { networkError, toApiError } from '@/api/errors'
 import type { paths } from '@/api/generated/schema'
 
 export const CSRF_COOKIE = 'soundings_csrf'
+/** The name over HTTPS (contract-phase2 §1: `__Host-` cookies whenever they are Secure). */
+export const SECURE_CSRF_COOKIE = `__Host-${CSRF_COOKIE}`
 export const CSRF_HEADER = 'X-CSRF-Token'
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -15,11 +17,16 @@ export function readCookie(name: string, cookies: string = document.cookie): str
   return undefined
 }
 
+/** The CSRF token: `__Host-soundings_csrf` first (HTTPS), then `soundings_csrf` (plain HTTP). */
+export function readCsrfToken(cookies: string = document.cookie): string | undefined {
+  return readCookie(SECURE_CSRF_COOKIE, cookies) ?? readCookie(CSRF_COOKIE, cookies)
+}
+
 /** Double-submit CSRF: echo the (non-HttpOnly) CSRF cookie in a header on unsafe methods. */
 export const csrfMiddleware: Middleware = {
   onRequest({ request }) {
     if (SAFE_METHODS.has(request.method.toUpperCase())) return request
-    const token = readCookie(CSRF_COOKIE)
+    const token = readCsrfToken()
     if (token) request.headers.set(CSRF_HEADER, token)
     return request
   },

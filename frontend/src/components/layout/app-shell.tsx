@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils'
 export interface AppShellProps {
   children: ReactNode
   topBar?: TopBarProps
+  /** A persistent strip above the top bar (the break-glass session banner). */
+  banner?: ReactNode
   /** Override the viewport height (the /design page embeds a small preview). */
   className?: string
 }
@@ -26,7 +28,7 @@ export function AppShell(props: AppShellProps) {
   )
 }
 
-function ShellLayout({ children, topBar, className }: AppShellProps) {
+function ShellLayout({ children, topBar, banner, className }: AppShellProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar()
 
   return (
@@ -76,6 +78,7 @@ function ShellLayout({ children, topBar, className }: AppShellProps) {
 
       <div className={cn('flex min-w-0 flex-1 flex-col md:py-2 md:pr-2', collapsed && 'md:pl-2')}>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface md:rounded-lg md:border">
+          {banner}
           <TopBar {...topBar} />
           <main
             id="main"

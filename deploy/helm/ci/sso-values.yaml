@@ -1,0 +1,35 @@
+# Single sign-on, Entra ID-shaped: the client secret from an existing Secret, users
+# pre-created with their immutable object id (`oid`) as the external ID, no email
+# matching (Entra ID sends no email_verified), no auto-create, groups as object ids, and
+# the chart-generated break-glass admin kept for outages (off while the issuer is set).
+# Two public hostnames: each signs in on itself.
+baseUrls:
+  - https://ideas.example.com
+  - https://ideas.example.net
+
+oidc:
+  issuer: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0
+  clientId: 11111111-1111-1111-1111-111111111111
+  existingSecret: soundings-oidc
+  existingSecretKey: client-secret
+  groupsClaim: groups
+  externalIdClaim: oid
+  externalIdKind: entra_oid
+  matchVerifiedEmail: false
+  autoCreateUsers: false
+  scopes:
+    - openid
+    - profile
+    - email
+
+breakGlass:
+  enabled: true
+
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    - secretName: soundings-tls
+      hosts:
+        - ideas.example.com
+        - ideas.example.net

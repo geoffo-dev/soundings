@@ -34,7 +34,13 @@ from app.models.base import utcnow
 from app.models.enums import ProjectRole
 from app.models.evaluation import EvaluationScore
 from app.models.idea import Idea, IdeaTag
-from app.models.project import Project, ProjectMember, RubricCriterion, Tag
+from app.models.project import (
+    Project,
+    ProjectMember,
+    RubricCriterion,
+    Tag,
+    project_effective_roles,
+)
 from app.models.user import User
 from app.schemas.projects import (
     Member,
@@ -66,6 +72,11 @@ __all__ = [
     "update_member",
     "update_project",
 ]
+
+
+_roles = project_effective_roles
+"""``member_count`` counts *active* users with an effective role (direct or through a
+group): the people ``list_project_access`` lists (contract-phase2 section 3.7)."""
 
 
 class UserNotFoundProblem(ProblemError):
@@ -108,8 +119,10 @@ async def list_projects(
         .subquery()
     )
     members = (
-        select(ProjectMember.project_id, func.count().label("n"))
-        .group_by(ProjectMember.project_id)
+        select(_roles.c.project_id, func.count().label("n"))
+        .join(User, User.id == _roles.c.user_id)
+        .where(User.is_active)
+        .group_by(_roles.c.project_id)
         .subquery()
     )
     statement = (
@@ -157,8 +170,9 @@ async def project_detail(
     )
     member_count = await db.scalar(
         select(func.count())
-        .select_from(ProjectMember)
-        .where(ProjectMember.project_id == project.id)
+        .select_from(_roles)
+        .join(User, User.id == _roles.c.user_id)
+        .where(_roles.c.project_id == project.id, User.is_active)
     )
     summary = _summary(
         principal, project, resource.role, int(idea_count or 0), int(member_count or 0)

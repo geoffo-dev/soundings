@@ -5,15 +5,19 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  * invalidation can target a whole area (`queryKeys.ideas.all`) or one entry.
  * Keys are hierarchical arrays: a prefix matches everything below it.
  *
- *   auth       ['auth', 'me'] · ['auth', 'dev-users']
+ *   auth       ['auth', 'me'] · ['auth', 'dev-users'] · ['auth', 'config']
+ *   groups     ['groups', 'search', q]
  *   users      ['users', 'search', {q, project}]
  *   projects   ['projects', 'list', {includeArchived}] · ['projects', 'detail', slug, …]
+ *              (… 'members' · 'groups' · 'access', {q, role})
  *   ideas      ['ideas', 'list', slug, filters] · ['ideas', 'board', slug, filters] ·
  *              ['ideas', 'detail', KEY]
  *   evaluations ['evaluations', KEY, 'all' | 'mine']
  *   activity   ['activity', KEY]
  *   work       ['work', 'summary'] · ['work', 'owned', status]
  *   search     ['search', q]
+ *   admin      ['admin', 'users' | 'groups', 'list' | 'detail', …] · ['admin', 'audit', filters] ·
+ *              ['admin', 'sso']
  *
  * Ideas are cached by their upper-case key ("CUST-12"): the SPA's URLs use keys
  * and every `/ideas/{idea}` route accepts one. Use `ideaCacheId()` to normalise.
@@ -45,6 +49,11 @@ export const queryKeys = {
     all: ['auth'] as const,
     me: () => ['auth', 'me'] as const,
     devUsers: () => ['auth', 'dev-users'] as const,
+    config: () => ['auth', 'config'] as const,
+  },
+  groups: {
+    all: ['groups'] as const,
+    search: (q: string) => ['groups', 'search', q.trim().toLowerCase()] as const,
   },
   users: {
     all: ['users'] as const,
@@ -57,6 +66,16 @@ export const queryKeys = {
     list: (includeArchived = false) => ['projects', 'list', { includeArchived }] as const,
     detail: (slug: string) => ['projects', 'detail', slug] as const,
     members: (slug: string) => ['projects', 'detail', slug, 'members'] as const,
+    groupGrants: (slug: string) => ['projects', 'detail', slug, 'groups'] as const,
+    access: (slug: string, params: { q?: string; role?: string } = {}) =>
+      [
+        'projects',
+        'detail',
+        slug,
+        'access',
+        { q: params.q?.trim().toLowerCase() ?? '', role: params.role ?? null },
+      ] as const,
+    accessAll: (slug: string) => ['projects', 'detail', slug, 'access'] as const,
     tags: (slug: string) => ['projects', 'detail', slug, 'tags'] as const,
   },
   ideas: {
@@ -90,5 +109,19 @@ export const queryKeys = {
   search: {
     all: ['search'] as const,
     query: (q: string, limit?: number) => ['search', q.trim().toLowerCase(), limit ?? 8] as const,
+  },
+  /** Admin settings (`api/admin.ts`): users, groups, the audit log and the SSO view. */
+  admin: {
+    all: ['admin'] as const,
+    users: () => ['admin', 'users'] as const,
+    userList: (filters: Record<string, unknown>) => ['admin', 'users', 'list', filters] as const,
+    user: (id: string) => ['admin', 'users', 'detail', id.toLowerCase()] as const,
+    groups: () => ['admin', 'groups'] as const,
+    groupList: (q: string) => ['admin', 'groups', 'list', q.trim().toLowerCase()] as const,
+    group: (id: string) => ['admin', 'groups', 'detail', id.toLowerCase()] as const,
+    groupMembers: (id: string, q: string) =>
+      ['admin', 'groups', 'detail', id.toLowerCase(), 'members', q.trim().toLowerCase()] as const,
+    audit: (filters: Record<string, unknown>) => ['admin', 'audit', filters] as const,
+    sso: () => ['admin', 'sso'] as const,
   },
 }

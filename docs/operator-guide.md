@@ -23,7 +23,8 @@ choices.
 
 Kubernetes 1.27 or later, an ingress controller (or a Gateway API implementation for
 `httpRoute`), and a default StorageClass for the bundled Postgres. PostgreSQL 16 is the
-only stateful dependency; an SMTP server and an OIDC provider come with Phases 3 and 2.
+only stateful dependency; an OIDC provider (Phase 2) is needed for single sign-on and an
+SMTP server (Phase 3) for email.
 Every pod meets the **Restricted** Pod Security Standard.
 
 ### Air-gapped installs: image registry override, no runtime downloads
@@ -52,9 +53,9 @@ then has no system libraries).
 
 ### The dev login
 
-Until single sign-on arrives in Phase 2, `devLogin=true` (`SOUNDINGS_DEV_LOGIN_ENABLED`)
-shows a "who are you?" list instead of a password and switches the app to development
-mode. Anyone who can reach the app can then act as anyone, so use it only on your own
+`devLogin=true` (`SOUNDINGS_DEV_LOGIN_ENABLED`) shows a "who are you?" list on the
+sign-in page (next to single sign-on when that is configured) and switches the app to
+development mode. Anyone who can reach the app can then act as anyone, so use it only on your own
 machine or a throwaway cluster. Production mode refuses it.
 
 ## Installing with Helm [Phase 0–1]
@@ -126,19 +127,197 @@ database password) survive upgrades through Helm's `lookup`; with Argo CD, Flux 
 
 Signing in creates a server-side session: an HttpOnly, `SameSite=Lax` cookie holding a
 random token, of which the database stores only a SHA-256 hash, plus a readable CSRF
-cookie that the SPA echoes in a header on every write. A session ends after
+cookie that the SPA echoes in a header on every write. Both are named
+`__Host-soundings_*` whenever they are `Secure`. A session ends after
 `sessions.idleTimeout` without a request (default `PT12H`) or `sessions.maxAge` after
-sign-in (default `P7D`), whichever comes first; signing in again always issues a new
-token. The cookies are `Secure` in production; `SOUNDINGS_COOKIE_SECURE` (in
+sign-in (default `P7D`), whichever comes first (break-glass: 1 hour and 8 hours), and
+as soon as its sign-in method stops being available; signing in again always issues a
+new token. The cookies are `Secure` in production; `SOUNDINGS_COOKIE_SECURE` (in
 `extraEnv`) overrides that for unusual setups, but `false` is refused in production.
 
 ## Sign-in and access [Phase 2]
 
+One OpenID Connect provider per instance, configured only by Helm values (`oidc.*`, or
+`SOUNDINGS_OIDC_*` for the bare image). **Settings → Sign-in (SSO)** shows the effective
+configuration read-only, with secrets masked, the URIs to register for every base URL
+and whether the provider's discovery document can be fetched. The values reference and
+the IdP client checklist are in the chart README's
+[Single sign-on](../deploy/helm/README.md#single-sign-on) section; this section is the
+how-to.
+
+The flow is the server-side authorization code flow with PKCE (S256), `state` and
+`nonce`. The login attempt lives in the database for 10 minutes, the ID token is
+validated (signature with the provider's keys, `iss`, `aud`/`azp`, `exp`, `nonce`) and
+the browser only ever holds the HttpOnly session cookie. Sign-out ends the session and
+then the provider's session (RP-initiated logout with `id_token_hint`) when the
+provider has an end-session endpoint.
+
 ### Configuring OIDC: Keycloak, Entra ID, Google
+
+Every provider needs a **confidential web client** using the authorization code flow
+(no implicit or password grants), and for **each** entry of `baseUrls`:
+
+| Register | Value |
+|---|---|
+| Redirect URI | `<base URL>/api/v1/auth/callback` |
+| Post-logout redirect URI | `<base URL>/login?signed_out=1` |
+
+The ID token must carry `sub`, `email`, `email_verified` and `name` (scopes
+`openid profile email`), plus the groups claim and, if you use one, the external-ID
+claim. Put the client secret in a Secret and point `oidc.existingSecret` at it.
+
+**Keycloak** (the dev realm `dev/keycloak/realm-soundings.json` is a working example):
+
+```yaml
+oidc:
+  issuer: https://keycloak.example.com/realms/soundings   # exactly the realm's issuer
+  clientId: soundings
+  existingSecret: soundings-oidc        # key client-secret
+  groupsClaim: groups                   # "Group Membership" mapper, full group path on
+  externalIdClaim: employee_no          # "User Attribute" mapper, added to the ID token
+  matchVerifiedEmail: true              # Keycloak verifies addresses
+```
+
+Client: *Client authentication* on, *Standard flow* only, *PKCE method* S256, *Valid
+redirect URIs* and *Valid post logout redirect URIs* as above. Group values arrive as
+full paths (`/innovation/members`); mappings may be typed with or without the slashes.
+Declare the external-ID attribute in the realm's **User profile** with edit permission
+`admin` only and keep *Unmanaged attributes* disabled, or users could set it themselves.
+Realm roles instead of groups: `groupsClaim: realm_access.roles`.
+
+**Microsoft Entra ID** (`deploy/helm/ci/sso-values.yaml` is this shape):
+
+```yaml
+oidc:
+  issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
+  clientId: <application (client) id>
+  existingSecret: soundings-oidc
+  groupsClaim: groups                   # group object ids
+  externalIdClaim: oid                  # the user's immutable object id
+  externalIdKind: entra_oid
+  matchVerifiedEmail: false             # Entra ID sends no email_verified
+```
+
+App registration: platform *Web* with both URIs above as redirect URIs, a client secret
+(*Certificates & secrets*). *Token configuration*: add the **groups** claim with "Groups
+assigned to the application" (so the token lists object ids of assigned groups only,
+and nobody exceeds the 200-group limit) and the optional `email` claim. A token in
+which the groups claim was replaced by the overage marker (`_claim_names`) is refused
+rather than read as "no groups", which would remove every managed membership. Since
+email matching is off, pre-create users with the `entra_oid` external ID (their *Object
+ID* in the Entra admin center); never use `upn`, `preferred_username` or `email` as the
+external-ID claim. Group mappings take the group's *Object ID*.
+
+**Google** (Workspace):
+
+```yaml
+oidc:
+  issuer: https://accounts.google.com
+  clientId: <id>.apps.googleusercontent.com
+  existingSecret: soundings-oidc
+  groupsClaim: ""                       # Google sends no groups: no sync
+  externalIdClaim: ""
+  matchVerifiedEmail: true
+  autoCreateUsers: false
+```
+
+OAuth client of type *Web application* with the redirect URIs above (Google has no
+end-session endpoint, so sign-out ends only the Soundings session). Without a groups
+claim, access comes from manual group memberships and direct project roles. **Any
+Google account can authenticate**: keep `autoCreateUsers` off (pre-create people, who
+then link by verified email), or set the OAuth consent screen to *Internal* first.
+
+**A private CA.** The app fetches the discovery document, keys and tokens with the
+system trust store replaced by `SSL_CERT_FILE` when that is set. For an IdP behind an
+internal CA, mount a bundle holding that CA (plus any public roots you still need) with
+`extraVolumes` / `extraVolumeMounts` and set `SSL_CERT_FILE` in `extraEnv`. Outbound
+proxies are read from `HTTPS_PROXY` / `NO_PROXY`.
+
+**Checking it.** After `helm upgrade`, Settings → Sign-in (SSO) should say the provider
+answers. If not, it says which of the three failures it is (unreachable, not a
+discovery document, issuer mismatch). Production refuses an http issuer and, once SSO
+is configured, http base URLs.
+
 ### Redirect URIs for each hostname
+
+Each base URL signs in on itself: someone who opened `https://ideas.example.net` comes
+back to that host, so register both URIs above for **every** entry of `baseUrls`
+(`NOTES.txt` and the SSO page list them). A sign-in started on a host the app doesn't
+know is sent to the first base URL first. The cookies are named `__Host-soundings_*`
+whenever they are `Secure`, so a sibling subdomain can't plant one.
+
 ### Login matching and external IDs
+
+At every sign-in the app looks for the user linked to the token's issuer and `sub`. At
+the first sign-in it tries, in order, and stops at the first user found:
+
+1. the **external ID**: `oidc.externalIdClaim` against users' external IDs of kind
+   `oidc.externalIdKind` (Settings → Users → Add user, or a user's External IDs);
+2. the **verified email** (`oidc.matchVerifiedEmail`, only when `email_verified` is
+   true; a user who has an external ID of the configured kind links only by it);
+3. **auto-create** (`oidc.autoCreateUsers`, verified email only, an account with no
+   roles: access then comes only through groups);
+4. otherwise the sign-in is refused (`no_account`, "ask an administrator to add you").
+
+A match that is deactivated, a service account, the break-glass account or already
+linked to another identity refuses rather than falling through. Every refusal is in the
+audit log with its reason and the issuer/subject, never the email or claims. Admins
+unlink an identity (Settings → Users) to let an account match again.
+
+**The external-ID claim must come from an attribute only IdP admins can set**: whoever
+can choose its value signs in as the pre-created user who has it, platform admins
+included. Names and emails are not synced from claims after the first sign-in.
+
 ### Groups and IdP group mappings (managed vs additive)
+
+Internal groups (Settings → Groups) are what projects grant roles to. A group can be
+mapped to one or more IdP group values, matched after trimming, stripping `/` at both
+ends and lower-casing (inner path segments count: `admins` does not match
+`/innovation/admins`). At each sign-in the user's **synced** memberships are updated
+from `oidc.groupsClaim`:
+
+- **managed**: synced memberships become exactly the matched groups (joins and leaves);
+- **additive**: sign-in only adds;
+- **manual** memberships (added by an admin) are never touched by sync;
+- a token **without** the groups claim means "no groups": managed memberships go.
+
+A strategy that works:
+
+- Map **access-granting** groups (project admins, members) as *managed*, so removing
+  someone in the IdP removes their access at their next sign-in.
+- Use *additive* only for broad, low-risk groups (viewers, a whole department) where a
+  flaky IdP group must not lock people out; admins prune them by hand.
+- Grant project roles to groups, not people, and keep direct roles for exceptions.
+  Projects show "Everyone with access" with the source of each role.
+- Before changing a mapping, paste a real ID token into **Test mapping** to see who
+  joins, leaves and stays, and the resulting project roles.
+- Sync only runs at sign-in. **Offboard by deactivating** the user (their sessions end
+  at once); removing them in the IdP alone leaves a running session for up to
+  `sessions.maxAge` and their memberships until they come back.
+
 ### Break-glass admin
+
+A local platform admin whose credentials come from a Secret (`breakGlass.existingSecret`
+with keys `username` and `password` of 16+ characters, or generated by the chart: user
+`admin`, 24 random characters; `NOTES.txt` shows how to read it). It **works only while
+`oidc.issuer` is empty**, is throttled (5 failures per address per 15 minutes, then 429
+with `Retry-After`), its sessions last at most 8 hours (1 hour idle) and end as soon as
+SSO is configured, and every sign-in and every action is audited as
+`auth_method: break_glass`. A banner stays on screen while it is used.
+
+Bootstrap order:
+
+1. Install without `oidc.issuer` and sign in as the break-glass admin.
+2. Settings → Users: pre-create the real platform admins (external ID from an
+   admin-only attribute, and/or email). Optionally create groups, their mappings and
+   project grants.
+3. Register the redirect URIs from Settings → Sign-in (SSO) on the IdP client.
+4. `helm upgrade` with `oidc.issuer`, `oidc.clientId` and `oidc.existingSecret`.
+   Break-glass switches off; the admins from step 2 link at their first SSO sign-in.
+
+**SSO outage:** `helm upgrade <release> <chart> --reuse-values --set oidc.issuer=`
+brings break-glass back with the same password; setting the issuer again switches it
+off. That needs cluster access, the right bar for an emergency account.
 
 ## Email [Phase 3]
 

@@ -8,11 +8,40 @@
 
 ### Signing in
 
-Phase 1 has a development sign-in only: pick who you are from the list (type to filter)
-and you're in. Single sign-on (Keycloak or Microsoft Entra ID) replaces it in Phase 2.
-A session lasts up to 7 days and ends after 12 hours without activity; after that the
-app takes you back to the sign-in page and then to where you were. Signing out (account
-menu, or "Sign out" in the palette) also clears the drafts this browser kept for you.
+Choose **Sign in with SSO**. You sign in on your organisation's page (Keycloak,
+Microsoft Entra ID, Google…) and come straight back to the page you were opening.
+Soundings never sees your password; your browser only holds a session cookie.
+
+The first time, Soundings finds your account in this order and links it to your
+organisation sign-in for good: an employee number (or similar ID) an administrator
+entered for you, then your email address if your organisation has verified it, then,
+only where the instance allows it, a new account with no access of its own. If none of
+that works you see "You don't have a Soundings account yet": ask an administrator to
+add you, then sign in again.
+
+What you can see comes from your project roles: the ones given to you directly and the
+ones your **groups** grant. Groups that come from your organisation's directory are
+refreshed **each time you sign in**, so after a change there (a new team, say), sign
+out and in again to pick it up.
+
+| The sign-in page says | What to do |
+|---|---|
+| "That sign-in took too long or was already used" | Start again; the link from the sign-in page is single-use and lasts 10 minutes. |
+| "Sign-in was cancelled" | You declined at your organisation's page; sign in again when ready. |
+| "Single sign-on isn't available right now" / "We couldn't verify your sign-in" | Try again in a few minutes; if it persists, tell an administrator (the details are in the audit log). |
+| "Your account is deactivated" / "…needs an administrator to finish linking it" | Contact an administrator. |
+| "Too many sign-in attempts from your network" | Wait a minute. |
+
+A session lasts up to 7 days and ends after 12 hours without activity; then the app
+says "Your session has ended" and takes you back to where you were after you sign in.
+**Signing out** (account menu, or "Sign out" in the palette) also signs you out of your
+organisation's sign-in page, so the next sign-in asks for your password again, and it
+clears the drafts this browser kept for you.
+
+Two other ways in exist for administrators: the **break-glass** account (an emergency
+platform admin, available only while single sign-on is not configured; a banner stays
+on screen while you use it and everything it does is in the audit log), and on
+development installs a **development login** that lists everyone ("who are you?").
 
 ### Finding your way: My work, projects, the command palette (⌘K)
 
@@ -60,7 +89,8 @@ Light or Dark), the account menu (your name at the bottom of the sidebar) or typ
 ### Your settings page
 
 **Settings** in the sidebar shows your account (name and email, from sign-in), the
-theme, and links to the settings of every project you manage.
+theme, and links to the settings of every project you manage. Platform admins also see
+the sections described in [Platform administration](#platform-administration-phase-2).
 
 ## Ideas [Phase 1]
 
@@ -198,11 +228,23 @@ try to leave with unsaved changes, the app asks first.
 
 ### Members and groups
 
-Add people by name or email and give them a role: **viewer** (reads and votes),
-**member** (also submits, comments, owns and evaluates) or **admin** (also manages the
-project). Every project keeps at least one admin. Removing someone keeps their owner
-and evaluator assignments, but they grant nothing without a member role. Groups from
-single sign-on come in Phase 2. Only platform admins create projects; the creator
+Members settings has three lists.
+
+- **People**: add someone by name or email and give them a role: **viewer** (reads and
+  votes), **member** (also submits, comments, owns and evaluates) or **admin** (also
+  manages the project).
+- **Groups**: switch the add form to *Group* to give a whole group a role. Everyone in
+  the group has it for as long as they are in the group; when single sign-on maps the
+  group to your organisation's directory, that follows the directory (see
+  [Groups](#groups-and-identity-provider-mappings)).
+- **Everyone with access**: each person's effective role and why, for example
+  "via Tools members" or "Direct (viewer) · via Innovation admins". When someone has a
+  role directly and through groups, the highest one counts.
+
+Role changes and removals offer "Undo" for a few seconds. Every project keeps at least
+one admin, counting admins through groups; the app explains when a change would leave
+none. Removing someone keeps their owner and evaluator assignments, but they grant
+nothing without a member role. Only platform admins create projects; the creator
 becomes its first admin.
 
 ### Editing the rubric
@@ -228,6 +270,86 @@ lists, search and My work; restore it from the archived notice or the settings. 
 comes in Phase 4.
 
 ### Moderating public submissions and erasing submitter details
+
+## Platform administration [Phase 2]
+
+Platform admins get four more sections in **Settings** (also in the palette: "Users",
+"Groups", "Sign-in (SSO)", "Audit log"). Everyone else sees a plain "Page not found" at
+those addresses.
+
+### Users
+
+Search by name or email and filter by status, platform admins or "Not signed in yet".
+**Add user** pre-creates someone before their first sign-in: email, name, and ideally an
+**external ID** (for example their `employee_no`), which links their organisation
+sign-in more safely than email. Give platform admin rights sparingly.
+
+Opening a user shows their profile, their project access and where it comes from
+(direct or via a group), their groups (Manual or Synced), their linked sign-in accounts
+and external IDs, and a link to the audit log about them. From there you can:
+
+- **Unlink** a sign-in account, so the next sign-in matches the account again (it also
+  ends their single sign-on sessions);
+- **Sign out everywhere**;
+- **Deactivate** (or reactivate): they can't sign in, their sessions end at once, and
+  they count nowhere. **This is how you offboard someone**: removing them from your
+  organisation's directory alone leaves a running session and their memberships until
+  they next sign in.
+
+You can't deactivate yourself or remove your own platform admin rights, and the
+instance always keeps one active platform admin besides break-glass.
+
+### Groups and identity provider mappings
+
+A group is a set of people that projects can give a role to. People join a group in
+two ways, and the member list badges each one:
+
+- **Manual**: an admin added them (Add member on the group's page). Sign-in never
+  touches a manual membership.
+- **Synced**: the group is mapped to one or more **identity provider groups** (such as
+  `/innovation/members` from Keycloak, or a group's object id from Entra ID), and the
+  person's sign-in said they are in one. Values are matched without leading or trailing
+  slashes and ignoring case; the editor shows how each value is saved.
+
+Each mapping has a **sync** mode:
+
+- **Managed** (the default): the synced membership follows the identity provider at
+  every sign-in, joining and leaving. Use it for groups that grant access.
+- **Additive**: sign-in only adds. People stay until an admin removes them ("Remove
+  until next sign-in" on a synced member). Use it for broad groups where losing access
+  by surprise would hurt more than lingering in the group.
+
+Changes to a mapping apply to each person at their **next sign-in**. To cut someone's
+access now, remove them from the group (roles are checked on every request) or
+deactivate them.
+
+**Test mapping** (on the Groups list and each group's page) shows what a sign-in would
+do: paste a decoded ID token as JSON ("Insert an example" shows the shape) and,
+optionally, pick a person to compare with their current groups. The result reads like
+a diff: **+ Joins**, **− Leaves** and **= Stays**, each with the reason, followed by the
+project roles they would end up with. Nothing is saved or logged.
+
+Deleting a group removes its members, mapping and project roles; people keep what they
+have directly or through other groups.
+
+### Sign-in (SSO)
+
+A read-only view of how people sign in, as set by the deployment (the Helm values; see
+the [operator guide](operator-guide.md#sign-in-and-access-phase-2)): whether the
+identity provider answers, the client, the redirect and sign-out URIs to register for
+each address the app is served on (with copy buttons), the order sign-in uses to find
+an account, group sync, and whether break-glass and the development login are on.
+Secrets are never shown.
+
+### Audit log
+
+Every sign-in (and refused sign-in, with the reason), admin change, project membership
+and group grant change, owner and evaluator assignment, submitted evaluation, status
+change and idea deletion, newest first, one sentence each, for example "Priya Natarajan
+added Lena Novak to group Tools members". Filter by who did it, what kind of action,
+project, dates, or "About" a user or group; "Details" shows the raw fields. Entries
+name ids, never emails, tokens or claims, and each records how the person had signed in
+(single sign-on, break-glass or the development login). The log is kept indefinitely.
 
 ## Who can do what
 

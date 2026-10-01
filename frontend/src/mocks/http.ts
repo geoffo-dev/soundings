@@ -9,9 +9,10 @@
  */
 import { delay, http, HttpResponse, type PathParams } from 'msw'
 
+import { methodAvailable } from './auth-config'
 import { getDb, type MockDb, type MockUser } from './db'
 import { findUser, InvalidCursorError, invalidateIndexes } from './domain'
-import { csrfToken, sessionUserId } from './session'
+import { csrfToken, sessionUserId, storedAuthMethod } from './session'
 
 /** Matches the API on any origin (the dev server, jsdom, Playwright). */
 export const API = '*/api/v1'
@@ -23,6 +24,7 @@ const TITLES: Record<number, string> = {
   404: 'Not Found',
   409: 'Conflict',
   422: 'Unprocessable Content',
+  429: 'Too Many Requests',
   500: 'Internal Server Error',
 }
 
@@ -162,6 +164,39 @@ export function queryBool(url: URL, name: string): boolean {
   ])
 }
 
+/** A boolean filter that is off when absent (`active=`, `platform_admin=`…): null, true or false. */
+export function queryOptionalBool(url: URL, name: string): boolean | null {
+  return url.searchParams.has(name) ? queryBool(url, name) : null
+}
+
+/** A UUID query parameter (null when absent; 422 when malformed). */
+export function queryUuid(url: URL, name: string): string | null {
+  const value = url.searchParams.get(name)
+  if (value === null || value === '') return null
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    failValidation([
+      { loc: ['query', name], msg: 'Input should be a valid UUID', type: 'uuid_parsing' },
+    ])
+  }
+  return value.toLowerCase()
+}
+
+/** A text query parameter, trimmed (null when absent or empty; 422 over `max`). */
+export function queryText(url: URL, name: string, max: number): string | null {
+  const value = url.searchParams.get(name)
+  if (value === null) return null
+  if (value.length > max) {
+    failValidation([
+      {
+        loc: ['query', name],
+        msg: `String should have at most ${max} characters`,
+        type: 'string_too_long',
+      },
+    ])
+  }
+  return value.trim() || null
+}
+
 export function queryLimit(url: URL, fallback = 50, max = 200): number {
   const raw = url.searchParams.get('limit')
   if (raw === null) return fallback
@@ -242,28 +277,39 @@ export interface Reply {
 
 type Resolver<C> = (context: C) => unknown
 
+/**
+ * The signed-in user, or null: the session must name an active user, and its
+ * sign-in method must still be available (contract-phase2 §3.9).
+ */
+function sessionUser(db: MockDb): MockUser | null {
+  const user = findUser(db, sessionUserId())
+  if (!user?.is_active) return null
+  const method = storedAuthMethod()
+  if (method && !methodAvailable(method)) return null
+  return user
+}
+
 /** A signed-in route (401 without a session; CSRF on unsafe methods). */
 export function route(method: Method, path: string, resolver: Resolver<RouteContext>) {
   return http[method](`${API}${path}`, async ({ request, params }) => {
     const url = new URL(request.url)
     return run(method, url, () => {
       const db = getDb()
-      const user = findUser(db, sessionUserId())
-      if (!user?.is_active) fail(401, 'unauthorized', 'Sign in to continue.')
+      const user = sessionUser(db)
+      if (!user) fail(401, 'unauthorized', 'Sign in to continue.')
       checkCsrf(method, request)
       return resolver({ request, params, url, db, user })
     })
   })
 }
 
-/** A route that works without a session (dev login, logout, list dev users). */
+/** A route that works without a session (sign-in, logout, list dev users). */
 export function publicRoute(method: Method, path: string, resolver: Resolver<PublicRouteContext>) {
   return http[method](`${API}${path}`, async ({ request, params }) => {
     const url = new URL(request.url)
     return run(method, url, () => {
       const db = getDb()
-      const found = findUser(db, sessionUserId())
-      return resolver({ request, params, url, db, user: found?.is_active ? found : null })
+      return resolver({ request, params, url, db, user: sessionUser(db) })
     })
   })
 }

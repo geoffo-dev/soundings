@@ -22,6 +22,17 @@ export type SearchResults = Schemas['SearchResults']
 export type ProjectRole = Schemas['ProjectRole']
 export type IdeaStatus = Schemas['IdeaStatus']
 export type Recommendation = Schemas['Recommendation']
+export type AuthConfig = Schemas['AuthConfig']
+export type AdminUser = Schemas['AdminUser']
+export type AdminUserSummary = Schemas['AdminUserSummary']
+export type Group = Schemas['Group']
+export type GroupMember = Schemas['GroupMember']
+export type GroupSyncMode = Schemas['GroupSyncMode']
+export type MappingTestResult = Schemas['MappingTestResult']
+export type AuditEntry = Schemas['AuditEntry']
+export type ProjectAccessEntry = Schemas['ProjectAccessEntry']
+export type ProjectGroupGrant = Schemas['ProjectGroupGrant']
+export type SsoConfig = Schemas['SsoConfig']
 
 /** The seeded people (backend/app/seed/content.py), by username. */
 export const PEOPLE = {
@@ -69,6 +80,25 @@ export async function userOf(baseURL: string, person: Person): Promise<CurrentUs
   return user
 }
 
+const authConfigs = new Map<string, Promise<AuthConfig>>()
+
+/** The app's sign-in methods (`GET /auth/config`), cached per base URL. */
+export function authConfig(baseURL: string): Promise<AuthConfig> {
+  let config = authConfigs.get(baseURL)
+  if (!config) {
+    config = (async () => {
+      const context = await request.newContext({ baseURL })
+      try {
+        return (await ok<AuthConfig>(await context.get(`${API}/auth/config`))) as AuthConfig
+      } finally {
+        await context.dispose()
+      }
+    })()
+    authConfigs.set(baseURL, config)
+  }
+  return config
+}
+
 /** A short random suffix, so tests can run twice against the same database. */
 export function uniqueSuffix(): string {
   return `${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 5)}`
@@ -96,6 +126,8 @@ async function ok<T>(response: APIResponse, status = 200): Promise<T> {
 export class Api {
   /** Slugs of projects this client created (archived by the fixture afterwards). */
   readonly created: string[] = []
+  /** Ids of groups this client created (deleted by the fixture afterwards). */
+  readonly createdGroups: string[] = []
 
   private constructor(
     readonly baseURL: string,
@@ -110,7 +142,7 @@ export class Api {
     const context = await request.newContext({ baseURL })
     await ok(await context.post(`${API}/auth/dev/login`, { data: { user_id: user.id } }))
     const { cookies } = await context.storageState()
-    const csrf = cookies.find((cookie) => cookie.name === 'soundings_csrf')?.value
+    const csrf = cookies.find((cookie) => /^(__Host-)?soundings_csrf$/.test(cookie.name))?.value
     if (!csrf) throw new Error('dev login set no soundings_csrf cookie')
     return new Api(baseURL, context, user, csrf)
   }
@@ -122,6 +154,9 @@ export class Api {
   async archiveCreated() {
     for (const slug of this.created.splice(0)) {
       await this.raw('PATCH', `/projects/${slug}`, { archived: true })
+    }
+    for (const id of this.createdGroups.splice(0)) {
+      await this.raw('DELETE', `/admin/groups/${id}`)
     }
   }
 
@@ -230,6 +265,127 @@ export class Api {
 
   listIdeas(slug: string, query = ''): Promise<IdeaPage> {
     return this.get(`/projects/${slug}/ideas${query ? `?${query}` : ''}`)
+  }
+  // --- Admin: users, groups, audit (platform admins; contract-phase2) ----------------
+  /** Users whose name or email contains `q` (the admin list's search). */
+  async adminUsers(q: string): Promise<AdminUserSummary[]> {
+    const page = await this.get<{ items: AdminUserSummary[] }>(
+      `/admin/users?q=${encodeURIComponent(q)}&limit=100`,
+    )
+    return page.items
+  }
+
+  /** The account with exactly this email (case-insensitive), if there is one. */
+  async adminUserByEmail(email: string): Promise<AdminUserSummary | undefined> {
+    const wanted = email.toLowerCase()
+    return (await this.adminUsers(email)).find((user) => user.email.toLowerCase() === wanted)
+  }
+
+  adminUser(id: string): Promise<AdminUser> {
+    return this.get(`/admin/users/${id}`)
+  }
+
+  createUser(body: {
+    email: string
+    display_name: string
+    is_platform_admin?: boolean
+    external_ids?: { kind: string; value: string }[]
+  }): Promise<AdminUser> {
+    return this.send('POST', '/admin/users', body, 201)
+  }
+
+  updateUser(
+    id: string,
+    body: {
+      display_name?: string
+      email?: string
+      is_active?: boolean
+      is_platform_admin?: boolean
+    },
+  ): Promise<AdminUser> {
+    return this.send('PATCH', `/admin/users/${id}`, body)
+  }
+
+  setExternalIds(id: string, externalIds: { kind: string; value: string }[]): Promise<AdminUser> {
+    return this.send('PUT', `/admin/users/${id}/external-ids`, { external_ids: externalIds })
+  }
+
+  async createGroup(body: {
+    name: string
+    description?: string
+    sync_mode?: GroupSyncMode
+    idp_values?: string[]
+  }): Promise<Group> {
+    const group = await this.send<Group>('POST', '/admin/groups', body, 201)
+    this.createdGroups.push(group.id)
+    return group
+  }
+
+  group(id: string): Promise<Group> {
+    return this.get(`/admin/groups/${id}`)
+  }
+
+  async groupByName(name: string): Promise<Group> {
+    const page = await this.get<{ items: { id: string; name: string }[] }>(
+      `/admin/groups?q=${encodeURIComponent(name)}&limit=100`,
+    )
+    const found = page.items.find((group) => group.name === name)
+    if (!found) throw new Error(`No group named "${name}"`)
+    return this.group(found.id)
+  }
+
+  replaceMapping(id: string, syncMode: GroupSyncMode, idpValues: string[]): Promise<Group> {
+    return this.send('PUT', `/admin/groups/${id}/mapping`, {
+      sync_mode: syncMode,
+      idp_values: idpValues,
+    })
+  }
+
+  async groupMembers(id: string): Promise<GroupMember[]> {
+    const page = await this.get<{ items: GroupMember[] }>(`/admin/groups/${id}/members?limit=100`)
+    return page.items
+  }
+
+  addGroupMember(groupId: string, userId: string): Promise<GroupMember> {
+    return this.send('POST', `/admin/groups/${groupId}/members`, { user_id: userId }, 201)
+  }
+
+  /** The group's role in a project (`add_project_group_grant`). */
+  grantGroup(slug: string, groupId: string, role: ProjectRole): Promise<ProjectGroupGrant> {
+    return this.send('POST', `/projects/${slug}/groups`, { group_id: groupId, role }, 201)
+  }
+
+  /** Everyone with access to the project, with their effective role and its sources. */
+  async projectAccess(slug: string): Promise<ProjectAccessEntry[]> {
+    const page = await this.get<{ items: ProjectAccessEntry[] }>(
+      `/projects/${slug}/access?limit=100`,
+    )
+    return page.items
+  }
+
+  testMapping(claims: Record<string, unknown>, userId?: string): Promise<MappingTestResult> {
+    return this.send('POST', '/admin/groups/test-mapping', { claims, user_id: userId ?? null })
+  }
+
+  /** Audit entries, newest first, filtered like the viewer (`action` may repeat). */
+  async audit(
+    filters: {
+      action?: string | string[]
+      actor_id?: string
+      target_type?: string
+      target_id?: string
+      project_id?: string
+      since?: string
+    } = {},
+  ): Promise<AuditEntry[]> {
+    const query = new URLSearchParams({ limit: '100' })
+    for (const [key, value] of Object.entries(filters)) {
+      for (const item of Array.isArray(value) ? value : [value]) {
+        if (item !== undefined) query.append(key, item)
+      }
+    }
+    const page = await this.get<{ items: AuditEntry[] }>(`/admin/audit?${query.toString()}`)
+    return page.items
   }
 }
 

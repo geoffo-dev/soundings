@@ -1,12 +1,15 @@
 import type { ProjectRole, ProjectVisibility, StatusLabels } from '@/api/types'
 
+import { recordAudit } from '@/mocks/access'
 import { defaultRubric, ID_KIND, newId, type MockCriterion } from '@/mocks/db'
 import {
+  activeAdminCount,
   activeCriteria,
   canViewIdea,
   canViewProject,
   DEFAULT_STATUS_LABELS,
   findUser,
+  isPickable,
   member,
   projectDetail,
   projectSummary,
@@ -33,13 +36,13 @@ const ROLES: ProjectRole[] = ['admin', 'member', 'viewer']
 const VISIBILITIES: ProjectVisibility[] = ['private', 'internal']
 const LABEL_KEYS = Object.keys(DEFAULT_STATUS_LABELS) as (keyof StatusLabels)[]
 
-function requireManage(ctx: RouteContext) {
+export function requireManage(ctx: RouteContext) {
   const project = viewProject(ctx)
   if (!standing(ctx.db, project, ctx.user).admin) forbidden()
   return project
 }
 
-function parseRole(value: unknown, field = 'role'): ProjectRole {
+export function parseRole(value: unknown, field = 'role'): ProjectRole {
   if (!ROLES.includes(value as ProjectRole)) {
     failValidation([
       { loc: ['body', field], msg: "Input should be 'admin', 'member' or 'viewer'", type: 'enum' },
@@ -48,8 +51,22 @@ function parseRole(value: unknown, field = 'role'): ProjectRole {
   return value as ProjectRole
 }
 
-function adminCount(ctx: RouteContext, projectId: string): number {
-  return ctx.db.members.filter((m) => m.project_id === projectId && m.role === 'admin').length
+/**
+ * c11 (contract-phase2 §3.7): applies `change`, and undoes it with `revert` when
+ * the project would be left without an active admin (direct or via a group).
+ */
+export function keepAnAdmin(
+  ctx: RouteContext,
+  projectId: string,
+  change: () => void,
+  revert: () => void,
+): void {
+  const before = activeAdminCount(ctx.db, projectId)
+  change()
+  if (before > 0 && activeAdminCount(ctx.db, projectId) === 0) {
+    revert()
+    conflict('last_admin', 'A project needs at least one admin.')
+  }
 }
 
 export const projectHandlers = [
@@ -110,7 +127,8 @@ export const projectHandlers = [
     }
     if (!user.is_platform_admin) forbidden('forbidden', 'Only platform admins can create projects.')
     const admin = adminId === null ? user : findUser(db, adminId.toLowerCase())
-    if (!admin?.is_active) {
+    // The break-glass admin can't hold project roles (contract-phase2 §3.4).
+    if (!isPickable(admin)) {
       failValidation(
         [
           {
@@ -263,7 +281,7 @@ export const projectHandlers = [
     const role = parseRole(body.role ?? 'member')
     const project = requireManage(ctx)
     const target = findUser(ctx.db, body.user_id.toLowerCase())
-    if (!target?.is_active) {
+    if (!isPickable(target)) {
       failValidation(
         [{ loc: ['body', 'user_id'], msg: 'Unknown or inactive user', type: 'user_not_found' }],
         'user_not_found',
@@ -278,6 +296,14 @@ export const projectHandlers = [
       role,
       joined_at: new Date().toISOString(),
     })
+    recordAudit(
+      ctx.db,
+      ctx.user,
+      'project.member_add',
+      { type: 'user', id: target.id },
+      { rule: 'project.manage_members', role },
+      project.id,
+    )
     return created(member(ctx.db, project.id, target.id))
   }),
 
@@ -289,10 +315,23 @@ export const projectHandlers = [
     const project = requireManage(ctx)
     const row = ctx.db.members.find((m) => m.project_id === project.id && m.user_id === userId)
     if (!row) return notFound('Not a member.')
-    if (row.role === 'admin' && role !== 'admin' && adminCount(ctx, project.id) <= 1) {
-      conflict('last_admin', 'A project needs at least one admin.')
+    const from = row.role
+    keepAnAdmin(
+      ctx,
+      project.id,
+      () => (row.role = role),
+      () => (row.role = from),
+    )
+    if (from !== role) {
+      recordAudit(
+        ctx.db,
+        ctx.user,
+        'project.member_update',
+        { type: 'user', id: userId },
+        { rule: 'project.manage_members', from_role: from, role },
+        project.id,
+      )
     }
-    row.role = role
     return member(ctx.db, project.id, userId)
   }),
 
@@ -304,10 +343,20 @@ export const projectHandlers = [
     )
     const row = ctx.db.members[index]
     if (!row) return notFound('Not a member.')
-    if (row.role === 'admin' && adminCount(ctx, project.id) <= 1) {
-      conflict('last_admin', 'A project needs at least one admin.')
-    }
-    ctx.db.members.splice(index, 1)
+    keepAnAdmin(
+      ctx,
+      project.id,
+      () => ctx.db.members.splice(ctx.db.members.indexOf(row), 1),
+      () => ctx.db.members.push(row),
+    )
+    recordAudit(
+      ctx.db,
+      ctx.user,
+      'project.member_remove',
+      { type: 'user', id: userId },
+      { rule: 'project.manage_members', from_role: row.role },
+      project.id,
+    )
     return noContent()
   }),
 

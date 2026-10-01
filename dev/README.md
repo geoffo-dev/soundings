@@ -21,18 +21,52 @@ make dev          # how to run the backend and frontend dev servers against it
 | Mailpit inbox + API | http://localhost:8025 (`/api/v1/messages`) | |
 | Mailpit SMTP | `localhost:1025`, no TLS; any username/password is accepted | |
 
-Ports clash with something else? `cp dev/.env.example dev/.env` and change them there.
+Ports clash with something else? Change them in `dev/.env` (below), and the URLs that
+use them.
 
-Backend settings for this stack:
+## Signing in with Keycloak (the dev flow end to end)
+
+`dev/.env.example` has every setting for this stack: the compose ports, and the
+backend's database, dev login, single sign-on against the dev realm and break-glass
+admin. The backend reads `SOUNDINGS_*` from its environment, so export the file in
+each shell that runs it:
 
 ```sh
-export SOUNDINGS_DATABASE_URL=postgresql+psycopg://soundings:soundings@localhost:5432/soundings
-export SOUNDINGS_DEV_LOGIN_ENABLED=true          # Phase 1 login stub
-make seed                                        # migrate + demo data (below)
+make dev-up                          # Postgres, Keycloak (realm imported), Mailpit
+cp dev/.env.example dev/.env         # once
+set -a; . dev/.env; set +a           # every shell that runs the backend
+make -C backend install migrate      # once, and after pulling migrations
+make seed                            # demo data (below)
+make -C backend dev                  # API on http://localhost:8000
+npm --prefix frontend run dev        # SPA on http://localhost:5173 (proxies /api to :8000)
 ```
 
-OIDC and SMTP settings (`SOUNDINGS_OIDC_*`, `SOUNDINGS_SMTP_*`) are listed in
-`dev/.env.example`; the backend reads them from Phase 2 / Phase 3 on.
+Open http://localhost:5173, choose **Sign in with SSO**, and sign in at Keycloak as
+`alice` / `password`. Back in Soundings you are Alice Anders, platform admin: her
+first SSO sign-in linked the seeded account by her external ID (`employee_no`
+`E1001`), and group sync made her a synced member of "Innovation admins" and "Tools
+team" (the seed's groups are mapped to the realm's groups). Settings → Sign-in (SSO)
+shows the effective configuration; Settings → Audit log shows the sign-in (linked by
+external ID). The dev login stays available below the SSO
+button. Sign out signs you out of Keycloak too (`/login?signed_out=1`).
+
+What makes it work:
+
+- **One issuer for the browser and the API.** Both run on your machine and use
+  `http://localhost:8080/realms/soundings`. Keycloak runs with `KC_HOSTNAME_STRICT=false`,
+  so its issuer follows the URL used; an API in a container would need the same URL
+  (e.g. `KC_HOSTNAME`), which is why the e2e stack and k3s set things up differently.
+- **Each origin signs in on itself.** `SOUNDINGS_BASE_URLS` lists `:8000` and `:5173`;
+  the redirect URI is `<origin>/api/v1/auth/callback` for the origin you browse, and
+  the realm allows both.
+- **The same flow without a browser:** `make sso-smoke` (`scripts/sso-smoke.sh
+  http://localhost:8000`) signs alice in through Keycloak with curl, then checks the
+  acceptance: a managed group mapped to `/tools/members` gives carol a private project;
+  removed from that group in Keycloak, she loses it at her next sign-in. It cleans up
+  after itself (needs `jq`).
+- **Break-glass:** comment out `SOUNDINGS_OIDC_ISSUER` (break-glass works only while SSO
+  is not configured), restart the API, and sign in on `/login` with `admin` /
+  `dev-break-glass-password`.
 
 ## Demo data
 
@@ -53,8 +87,9 @@ database by accident.
 | Internal Tools | `TOOLS` | private | 13 ideas, "Shortlisted" renamed "Next up" |
 | Sustainability | `GREEN` | internal | 12 ideas, own rubric (carbon impact counts double), 14-day evaluation window |
 
-Sign in with the dev login as any of them (emails are `<user>@example.com`; the first
-five match the Keycloak users below):
+Sign in with the dev login as any of them (emails are `<user>@example.com`; alice,
+bob, carol, dave, erin and kenji match Keycloak users below, and alice, bob and carol
+have the external IDs `employee_no` E1001–E1003):
 
 | User | Name | Roles |
 |---|---|---|
@@ -70,6 +105,19 @@ five match the Keycloak users below):
 | `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN |
 | `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST |
 | `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS |
+
+Groups (Settings → Groups), mapped to the Keycloak realm's groups. Manual members
+already hold the granted role directly, so the dev login shows the same access as
+before; with SSO, sign-in syncs the Keycloak memberships. dave and erin link by
+verified email.
+
+| Group | IdP group (sync) | Grants | Manual members |
+|---|---|---|---|
+| Innovation admins | `/innovation/admins` (managed) | CUST admin | alice, priya |
+| Innovation members | `/innovation/members` (managed) | CUST member | none |
+| Tools team | `/tools/members` (managed) | TOOLS member | kenji, mateo |
+| Viewers | `/viewers` (additive) | GREEN viewer | erin |
+| Sustainability champions | not mapped | GREEN member | farah, sven, zanele |
 
 Worth a look: blind evaluation on `CUST-11` (alice still owes her evaluation and sees no
 scores; bob, the owner, sees the aggregate and its high-disagreement flag), the
@@ -93,34 +141,54 @@ the data (`DEMO_RESET=1` reseeds). No Debian mirror reachable (e.g. this sandbox
 ## Keycloak realm `soundings`
 
 Confidential client **`soundings`** (secret `soundings-dev-secret`): standard code flow
-only, **PKCE S256 required**, no direct grants. Redirect and post-logout redirect URIs:
-`http://localhost:8000/*`, `http://localhost:5173/*`, `http://127.0.0.1:8000/*`,
-`http://localhost:18081/*` (the local k3s ingress).
+only, **PKCE S256 required**, no direct grants. Redirect and post-logout redirect URIs
+(`<origin>/*`): `http://localhost:8000`, `http://localhost:5173`,
+`http://127.0.0.1:8000`, `http://localhost:8100` and `http://127.0.0.1:8100` (the e2e
+stack), `http://localhost:18081` (the local k3s ingress). Another origin? Register it in
+*your* Keycloak (the scripts do): `E2E_KC_URL=http://localhost:<kc port> node
+e2e/scripts/keycloak.ts add-redirect-origin http://localhost:<app port>`.
 
 Tokens (ID token, access token, userinfo) carry:
 
-- `groups`: full group paths, e.g. `["/innovation/admins", "/tools/members"]`
-- `employee_no`: a managed user-profile attribute (editable by admins only), when set
-- the usual `sub`, `email`, `email_verified` (all test users are verified), `name`, ...
+- `groups`: full group paths, e.g. `["/innovation/admins", "/tools/members"]`; no
+  `groups` claim at all for a user in no groups
+- `employee_no`: a user-profile attribute **only admins can edit** (and unmanaged
+  attributes are off), as Soundings requires of an external-ID claim; when set
+- the usual `sub` (fixed per user: the realm file sets the ids, so linked identities
+  survive recreating Keycloak), `email`, `email_verified`, `name`, ...
 
-Groups: `/innovation/admins`, `/innovation/members`, `/tools/members`, `/viewers`.
+Groups: `/innovation/admins`, `/innovation/members`, `/tools/members`, `/viewers`. Every
+password is `password`.
 
-| User | Password | Groups | `employee_no` |
-|---|---|---|---|
-| `alice` (Alice Anders) | `password` | `/innovation/admins`, `/tools/members` | `E1001` |
-| `bob` (Bob Brown) | `password` | `/innovation/members` | `E1002` |
-| `carol` (Carol Chen) | `password` | `/innovation/members`, `/tools/members` | `E1003` |
-| `dave` (Dave Davies) | `password` | `/tools/members` | none |
-| `erin` (Erin Evans) | `password` | `/viewers` | none |
+| User | Email | Groups | `employee_no` | Tests |
+|---|---|---|---|---|
+| `alice` (Alice Anders) | alice@example.com | `/innovation/admins`, `/tools/members` | `E1001` | external ID (seeded), platform admin |
+| `bob` (Bob Brown) | bob@example.com | `/innovation/members` | `E1002` | external ID |
+| `carol` (Carol Chen) | carol@example.com | `/innovation/members`, `/tools/members` | `E1003` | the SPEC acceptance (remove her from `/tools/members`) |
+| `dave` (Dave Davies) | dave@example.com | `/tools/members` | none | verified email |
+| `erin` (Erin Evans) | erin@example.com | `/viewers` | none | verified email, additive group |
+| `grace` (Grace Gale) | grace@corp.example | `/tools/members` | `E2001` | **only the external ID** can match: her email is nobody's; pre-create a user with `employee_no` E2001 |
+| `mallory` (Mallory Mills) | farah@example.com, **not verified** | `/innovation/admins` | none | an unverified address naming seeded Farah: must be refused (`no_account`, reason `email_not_verified`) |
+| `kenji` (Kenji Watanabe) | kenji@example.com | **none** (no claim) | none | in no groups: sync removes his managed synced memberships (`claim_found: false`) |
+| `nia` (Nia Lee) | nia@example.org | none | none | verified, but no account: `no_account`, or created with `SOUNDINGS_OIDC_AUTO_CREATE_USERS=true` |
 
-Emails are `<user>@example.com`. Keycloak's own mail (password reset, if you enable it)
-goes to Mailpit.
+Keycloak's own mail (password reset, if you enable it) goes to Mailpit.
 
 Check the realm end to end (real code + PKCE flow, prints each user's claims):
 
 ```sh
 python3 dev/keycloak/check_login.py                 # or: ... http://localhost:<port> alice
 ```
+
+Load the realm into a Keycloak that can't read this directory (a CI service), replacing
+it, with extra redirect origins: `python3 dev/keycloak/import_realm.py
+http://keycloak:8080 --origin http://testserver`. Change memberships and attributes
+from tests or a shell with `e2e/scripts/keycloak.ts` (`group-add`, `group-remove`,
+`set-attribute`, `logout`, `reset-realm`; see its header).
+
+**End-to-end tests with SSO:** `E2E_SSO=1 npm --prefix e2e test` starts its own Keycloak
+next to the e2e stack (`<E2E_PREFIX>kc` on `E2E_KC_PORT`, default 8180, a fresh realm on
+every start) and runs the API with SSO and the dev login (`e2e/scripts/start-stack.sh`).
 
 **Changing the realm:** edit `dev/keycloak/realm-soundings.json`, then
 `make dev-down && make dev-up` (Keycloak re-imports only when the realm does not exist
@@ -149,9 +217,28 @@ make k3s-up             # k3s in a container: API 127.0.0.1:16443, ingress http:
 make k3s-install        # import the image, helm upgrade --install with dev/k3s-values.yaml
                         # (dev login on; a post-install hook Job loads the demo data)
 make k3s-smoke          # /healthz, /readyz, /, /metrics kept off the ingress, dev login with
-                        # CSRF and My work through the ingress, then helm test
+                        # CSRF and My work, break-glass with the generated Secret, helm test
 make k3s-down
 ```
+
+**Single sign-on on k3s.** Keycloak runs in the cluster (`dev/k3s/keycloak.yaml`,
+namespace `keycloak`, the dev realm) at `http://keycloak.localhost:18081`: browsers and
+curl resolve `*.localhost` to your machine, the ingress routes that host to Keycloak,
+and inside the cluster CoreDNS rewrites the name to Keycloak's Service, which listens on
+the same port. So the issuer is the same for your browser and the app's pods.
+
+```sh
+make k3s-keycloak       # Keycloak + realm, the DNS rewrite, Secret soundings-oidc (~30 s)
+make k3s-install SSO=1  # + dev/k3s-sso-values.yaml: issuer, client secret via existingSecret,
+                        # groups and employee_no claims (dev login stays on)
+make k3s-smoke SSO=1    # + scripts/sso-smoke.sh through the ingress: alice's code flow,
+                        # carol's project access from her Keycloak group and its removal
+                        # at the next sign-in, sign-out at Keycloak, an unverified email refused
+scripts/k3s-keycloak.sh down
+```
+
+Then sign in at http://localhost:18081 with **Sign in with SSO** (alice / password);
+Keycloak's admin console is http://keycloak.localhost:18081/admin/ (admin / admin).
 
 `export KUBECONFIG=$PWD/.k3s/soundings-k3s/kubeconfig` for your own kubectl, or use
 `docker exec soundings-k3s kubectl ...`. Scripts and their settings: `scripts/k3s-*.sh`.

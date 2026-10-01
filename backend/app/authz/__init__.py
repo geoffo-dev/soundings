@@ -22,6 +22,7 @@ from app.authz.loaders import (
     evaluator_state,
     idea_resource,
     load_project,
+    other_platform_admins,
     project_resource,
 )
 from app.authz.permissions import idea_permissions, idea_summary_permissions, project_permissions
@@ -74,6 +75,7 @@ __all__ = [
     "idea_summary_permissions",
     "load_project",
     "not_found",
+    "other_platform_admins",
     "pending_evaluator",
     "project_permissions",
     "project_resource",

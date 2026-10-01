@@ -1,4 +1,7 @@
-"""Sign-in state and the development login stub. Phase 2 adds OIDC routes here."""
+"""Who is signed in, the development login stub and sign-out (204).
+
+SSO, break-glass and sign-out with the IdP are in :mod:`app.api.v1.auth_sso`.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +9,13 @@ from fastapi import APIRouter, Request, Response, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.auth.cookies import SESSION_COOKIE, clear_session_cookies, set_session_cookies
+from app.auth.sign_in import current_user, end_current_session, sign_in
 from app.config import Settings
 from app.db import SessionDep
 from app.errors import NotFoundProblem, ProblemError
+from app.models.enums import AuthMethod
 from app.schemas.auth import CurrentUser, DevLoginRequest
-from app.services import audit, sessions, users
+from app.services import users
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -34,11 +38,14 @@ def _require_dev_login(settings: Settings) -> None:
     "/me",
     operation_id="get_me",
     summary="Who am I",
-    description="The signed-in user. 401 when not signed in: show the sign-in page.",
+    description=(
+        "The signed-in user and how the session was started (auth_method). 401 when "
+        "not signed in: show the sign-in page."
+    ),
     responses=problems(401),
 )
 async def get_me(principal: PrincipalDep) -> CurrentUser:
-    return CurrentUser.model_validate(principal.user)
+    return current_user(principal.user, principal.auth_method)
 
 
 @router.get(
@@ -58,38 +65,20 @@ async def list_dev_users(request: Request, session: SessionDep) -> list[CurrentU
     operation_id="dev_login",
     summary="Sign in as a user without a password",
     description=(
-        "Starts a session for the user: sets the soundings_session (HttpOnly) and "
-        "soundings_csrf cookies." + _DEV_ONLY
+        "Starts a session for the user: sets the session (HttpOnly) and CSRF cookies "
+        "(soundings_session and soundings_csrf; __Host- prefixed when Secure)." + _DEV_ONLY
     ),
     responses=problems(404, 422),
 )
 async def dev_login(
     body: DevLoginRequest, request: Request, response: Response, session: SessionDep
 ) -> CurrentUser:
-    settings = _settings(request)
-    _require_dev_login(settings)
+    _require_dev_login(_settings(request))
     user = await users.active_user(session, body.user_id)
-    if user is None:
+    if user is None or user.is_break_glass:
         raise ProblemError(422, "user_not_found", detail="No active user with that id.")
-    started = await sessions.start_session(
-        session,
-        user,
-        settings=settings,
-        user_agent=request.headers.get("user-agent"),
-        replacing_token=request.cookies.get(SESSION_COOKIE),
-    )
-    await audit.record(
-        session,
-        "session.sign_in",
-        actor=user.id,
-        target_type="user",
-        target_id=user.id,
-        details={"method": "dev_login", "session_id": started.row.id},
-    )
-    set_session_cookies(
-        response, request, settings, token=started.token, csrf_token=started.csrf_token
-    )
-    return CurrentUser.model_validate(user)
+    await sign_in(session, request, response, user, method=AuthMethod.DEV_LOGIN)
+    return current_user(user, AuthMethod.DEV_LOGIN)
 
 
 @router.post(
@@ -97,20 +86,12 @@ async def dev_login(
     operation_id="logout",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Sign out",
-    description="Ends the session (if any) and clears the session cookies. Always 204.",
+    description=(
+        "Ends the session (if any) and clears the session cookies. Always 204. Signs "
+        "out of Soundings only; the SPA's Sign out uses POST /auth/logout/redirect."
+    ),
 )
 async def logout(request: Request, response: Response, session: SessionDep) -> None:
     # No CSRF check: the worst a forged request can do is sign you out, and the
     # SameSite=Lax cookie is not sent on cross-site POSTs anyway.
-    token = request.cookies.get(SESSION_COOKIE)
-    ended = await sessions.end_session(session, token) if token else None
-    if ended is not None:
-        await audit.record(
-            session,
-            "session.sign_out",
-            actor=ended.user_id,
-            target_type="user",
-            target_id=ended.user_id,
-            details={"session_id": ended.id},
-        )
-    clear_session_cookies(response, request, _settings(request))
+    await end_current_session(session, request, response)

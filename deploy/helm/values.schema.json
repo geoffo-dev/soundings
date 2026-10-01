@@ -172,7 +172,9 @@
       "properties": {
         "issuer": {
           "type": "string",
-          "pattern": "^(https?://\\S+)?$"
+          "maxLength": 512,
+          "pattern": "^(https?://[^\\s?#]+)?$",
+          "description": "The provider's issuer URL (no query or fragment); empty: SSO off"
         },
         "clientId": {
           "type": "string",
@@ -192,16 +194,29 @@
         },
         "groupsClaim": {
           "type": "string",
-          "minLength": 1
+          "maxLength": 200,
+          "description": "Claim name or dotted path; empty: no group sync"
         },
         "externalIdClaim": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 200
+        },
+        "externalIdKind": {
+          "type": "string",
+          "pattern": "^([a-z][a-z0-9_]{0,39})?$",
+          "description": "Lower-case letters, digits and underscores; empty: the claim path's last segment"
+        },
+        "matchVerifiedEmail": {
+          "type": "boolean"
+        },
+        "autoCreateUsers": {
+          "type": "boolean"
         },
         "scopes": {
           "type": "array",
           "items": {
             "type": "string",
-            "minLength": 1
+            "pattern": "^[\\x21\\x23-\\x5b\\x5d-\\x7e]+$"
           },
           "contains": {
             "const": "openid"

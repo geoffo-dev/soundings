@@ -2,6 +2,7 @@ import {
   canViewProject,
   effectiveRole,
   findProjectBySlug,
+  isPickable,
   paginate,
   userSearchResult,
 } from '@/mocks/domain'
@@ -28,7 +29,7 @@ export const userHandlers = [
       projectId = project.id
     }
     const matches = db.users
-      .filter((candidate) => candidate.is_active && !candidate.is_service_account)
+      .filter(isPickable)
       .filter(
         (candidate) =>
           !q ||

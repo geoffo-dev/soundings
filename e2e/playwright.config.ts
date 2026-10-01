@@ -14,12 +14,21 @@ import { defineConfig, devices } from '@playwright/test'
  * suite can run in parallel and more than once against the same database. Read-only
  * tests rely on the seeded story (backend/app/seed/content.py).
  *
- * `npm run screenshots` (SCREENSHOTS=1) runs only the screenshots project, which
- * writes docs/screenshots/phase-1/.
+ * `npm run screenshots` (SCREENSHOTS=1 or phase-1) runs only the screenshots project
+ * with screenshots/phase-1.spec.ts (docs/screenshots/phase-1/); `npm run
+ * screenshots:phase2` (SCREENSHOTS=phase-2) runs screenshots/phase-2.spec.ts
+ * (docs/screenshots/phase-2/).
+ *
+ * Phase 2: specs that need single sign-on are tagged @sso and skip unless the app has it
+ * (`E2E_SSO=1` starts Keycloak next to the local stack; see e2e/README.md).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
 const screenshots = Boolean(process.env.SCREENSHOTS)
+const screenshotSpec =
+  process.env.SCREENSHOTS === 'phase-2'
+    ? /screenshots\/phase-2\.spec\.ts$/
+    : /screenshots\/phase-1\.spec\.ts$/
 
 export default defineConfig({
   testDir: '.',
@@ -47,7 +56,7 @@ export default defineConfig({
     ? [
         {
           name: 'screenshots',
-          testMatch: /screenshots\/.*\.spec\.ts$/,
+          testMatch: screenshotSpec,
           use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
         },
       ]

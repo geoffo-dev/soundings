@@ -11,6 +11,9 @@
  * domain.ts turns them into API responses for a given viewer.
  */
 import type {
+  AuditAction,
+  AuditTargetType,
+  GroupSyncMode,
   IdeaStatus,
   ProjectRole,
   ProjectVisibility,
@@ -18,6 +21,8 @@ import type {
   Resolution,
   StatusLabels,
 } from '@/api/types'
+
+import { seedAccess } from './access-fixtures'
 
 export interface MockUser {
   id: string
@@ -27,6 +32,64 @@ export interface MockUser {
   is_platform_admin: boolean
   is_active: boolean
   is_service_account: boolean
+  /** The break-glass admin (contract-phase2 §3.8): never in pickers, roles or groups. */
+  is_break_glass: boolean
+  created_at: string
+  last_seen_at: string | null
+}
+
+/* Phase 2: sign-in and access (docs/api/contract-phase2.md, docs/erd.md) */
+
+export interface MockIdentity {
+  id: string
+  user_id: string
+  issuer: string
+  subject: string
+  linked_at: string
+  last_login_at: string | null
+}
+
+export interface MockExternalId {
+  user_id: string
+  kind: string
+  value: string
+}
+
+export interface MockGroup {
+  id: string
+  name: string
+  description: string
+  sync_mode: GroupSyncMode
+  /** Normalised, de-duplicated, sorted (contract §3.5). */
+  idp_values: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface MockGroupMember {
+  group_id: string
+  user_id: string
+  manual: boolean
+  synced: boolean
+  joined_at: string
+}
+
+export interface MockGroupGrant {
+  project_id: string
+  group_id: string
+  role: ProjectRole
+  granted_at: string
+}
+
+export interface MockAuditEntry {
+  id: string
+  created_at: string
+  actor_id: string | null
+  action: AuditAction
+  target_type: AuditTargetType | null
+  target_id: string | null
+  project_id: string | null
+  details: Record<string, unknown>
 }
 
 export interface MockProject {
@@ -164,6 +227,17 @@ export interface MockDb {
   votes: Set<string>
   /** `${ideaId}:${userId}` */
   watchers: Set<string>
+  identities: MockIdentity[]
+  externalIds: MockExternalId[]
+  groups: MockGroup[]
+  groupMembers: MockGroupMember[]
+  groupGrants: MockGroupGrant[]
+  /** Oldest first (the viewer sorts newest first). */
+  audit: MockAuditEntry[]
+  /** Active sessions per user id (Admin → Users shows the count). */
+  sessions: Record<string, number>
+  /** Failed break-glass attempts (ms timestamps) for the mock throttle. */
+  breakGlassFailures: number[]
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -179,8 +253,8 @@ export interface DbOptions {
 /* Ids, time and randomness                                            */
 /* ------------------------------------------------------------------ */
 
-/** Deterministic UUIDs: the first digit names the kind (1 user, 2 project, 3 idea, …). */
-export function mockId(kind: number, n: number): string {
+/** Deterministic UUIDs: the first hex digit names the kind (1 user, 2 project, 3 idea, …). */
+export function mockId(kind: number | string, n: number): string {
   return `${kind}0000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
 }
 
@@ -193,6 +267,9 @@ export const ID_KIND = {
   comment: 6,
   event: 7,
   tag: 8,
+  group: 9,
+  identity: 'a',
+  audit: 'b',
 } as const
 
 const HOUR = 3_600_000
@@ -233,9 +310,18 @@ export const USERS = {
   hannah: mockId(ID_KIND.user, 9),
   ivan: mockId(ID_KIND.user, 10),
   jonas: mockId(ID_KIND.user, 11),
+  /** Phase 2: in CUST and TOOL only through groups. */
+  kofi: mockId(ID_KIND.user, 12),
+  /** Phase 2: pre-created by an admin, never signed in; TOOL through a manual group membership. */
+  lena: mockId(ID_KIND.user, 13),
+  /** Phase 2: the break-glass admin (`break-glass@soundings.invalid`). */
+  breakGlass: mockId(ID_KIND.user, 14),
 } as const
 
 export type FixtureUser = keyof typeof USERS
+
+/** The reserved address of the break-glass account (contract-phase2 §3.8). */
+export const BREAK_GLASS_EMAIL = 'break-glass@soundings.invalid'
 
 const USER_ROWS: [FixtureUser, string, string, boolean, boolean][] = [
   // key, display name, email, platform admin, active
@@ -250,7 +336,28 @@ const USER_ROWS: [FixtureUser, string, string, boolean, boolean][] = [
   ['hannah', 'Hannah Weber', 'hannah.weber@example.com', false, true],
   ['ivan', 'Ivan Petrov', 'ivan.petrov@example.com', false, true],
   ['jonas', 'Jonas Berg', 'jonas.berg@example.com', false, false],
+  ['kofi', 'Kofi Boateng', 'kofi.boateng@example.com', false, true],
+  ['lena', 'Lena Novak', 'lena.novak@example.com', false, true],
+  ['breakGlass', 'Break-glass admin', BREAK_GLASS_EMAIL, true, true],
 ]
+
+/** Days since the account was created, and hours since it was last seen (null: never). */
+const USER_TIMES: Record<FixtureUser, [number, number | null]> = {
+  priya: [420, 1],
+  alice: [410, 0.2],
+  bob: [405, 2],
+  carol: [400, 26],
+  dave: [395, 75],
+  emma: [390, 120],
+  farid: [380, 6],
+  grace: [370, 50],
+  hannah: [360, 290],
+  ivan: [30, 22],
+  jonas: [500, 4900],
+  kofi: [21, 3],
+  lena: [5, null],
+  breakGlass: [430, 10_300],
+}
 
 export const PROJECTS = {
   cust: mockId(ID_KIND.project, 1),
@@ -968,8 +1075,8 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
     date.setDate(date.getDate() + days)
     return date.setHours(17, 0, 0, 0)
   }
-  const counters: Record<number, number> = {}
-  const nextId = (kind: number) => {
+  const counters: Record<string, number> = {}
+  const nextId = (kind: number | string) => {
     counters[kind] = (counters[kind] ?? 0) + 1
     return mockId(kind, counters[kind])
   }
@@ -988,10 +1095,19 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
     events: [],
     votes: new Set(),
     watchers: new Set(),
+    identities: [],
+    externalIds: [],
+    groups: [],
+    groupMembers: [],
+    groupGrants: [],
+    audit: [],
+    sessions: {},
+    breakGlassFailures: [],
     seq: 1_000_000,
   }
 
   for (const [key, name, email, admin, active] of USER_ROWS) {
+    const [createdDays, seenHours] = USER_TIMES[key]
     db.users.push({
       id: USERS[key],
       display_name: name,
@@ -1000,6 +1116,9 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
       is_platform_admin: admin,
       is_active: active,
       is_service_account: false,
+      is_break_glass: key === 'breakGlass',
+      created_at: iso(now - createdDays * DAY),
+      last_seen_at: seenHours === null ? null : iso(now - seenHours * HOUR),
     })
   }
 
@@ -1267,6 +1386,7 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
 
   // Events are stored newest-last per insertion; keep them sorted by time.
   db.events.sort((a, b) => a.created_at.localeCompare(b.created_at))
+  seedAccess(db, { users: USERS, projects: PROJECTS, nextId })
   return db
 }
 
@@ -1300,7 +1420,7 @@ function readDatasetPreference(): 'default' | 'large' {
 }
 
 /** A fresh id of the given kind for rows created by handlers. */
-export function newId(db: MockDb, kind: number): string {
+export function newId(db: MockDb, kind: number | string): string {
   db.seq += 1
   return mockId(kind, db.seq)
 }

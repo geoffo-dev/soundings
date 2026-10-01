@@ -1,8 +1,10 @@
 import type { RequestHandler } from 'msw'
 
 import { activityHandlers } from './activity'
+import { adminHandlers } from './admin'
 import { authHandlers } from './auth'
 import { evaluationHandlers } from './evaluations'
+import { groupHandlers } from './groups'
 import { ideaHandlers } from './ideas'
 import { projectHandlers } from './projects'
 import { userHandlers } from './users'
@@ -21,4 +23,6 @@ export const handlers: RequestHandler[] = [
   ...evaluationHandlers,
   ...activityHandlers,
   ...workHandlers,
+  ...groupHandlers,
+  ...adminHandlers,
 ]

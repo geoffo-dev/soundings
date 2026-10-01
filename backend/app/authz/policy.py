@@ -8,9 +8,10 @@ failed condition denies. Evaluation order (role matrix section 2), first failure
    the resource exists (``NMp``, or ``404`` in the matrix), or the implied view rule
    (``project.view`` / ``idea.view``, incl. c12) failing;
 3. **403**: the key's scopes, then no grant for the column or an overlay, then the
-   principal conditions (c1 submitter, c2, c3, c15, c16);
+   principal conditions (c1 submitter, c2, c3, c15, c16, c17);
 4. **422**: request-body conditions (c4);
-5. **409**: state conditions (archived project, c1 status, c5, c6, c7, c10, c11, c13).
+5. **409**: state conditions (archived project, c1 status, c5, c6, c7, c10, c11, c13,
+   c18).
 
 When several grants apply (the column and the owner/evaluator overlays), the principal
 is allowed if any grant passes; otherwise the failure that got furthest wins, so the
@@ -44,6 +45,7 @@ from app.models.project import Project
 __all__ = [
     "ASSIGNABLE_ROLES",
     "CONDITIONS",
+    "MANAGE_USER_ACCESS",
     "POLICY",
     "Column",
     "Decision",
@@ -137,7 +139,15 @@ class Resource:
     * ``evaluator_to_remove``: selects the *remove* variant of ``evaluator.manage``
       (c16 instead of c4 and c6; contract section 3.5).
     * ``admins_after_change``: c11, admins the project would have after a membership
-      change (count it from the view). ``None`` = not a membership change.
+      change (count it from the view: :func:`app.authz.loaders.admin_count`). ``None``
+      = not a membership change.
+    * ``user_to_change``: selects the *access change* variant of
+      ``platform.manage_users`` (changing a user's ``is_active`` or
+      ``is_platform_admin``; contract-phase2 section 3.4): c17 and c18 apply.
+    * ``platform_admins_after_change``: c18, the active platform admins (not the
+      break-glass account) who would remain after demoting or deactivating one
+      (:func:`app.authz.loaders.other_platform_admins`). ``None`` = the change takes
+      no platform admin away.
     * ``ai_available``: c10. ``token_valid``: c9 / c14.
     """
 
@@ -148,6 +158,8 @@ class Resource:
     assignee_roles: tuple[ProjectRole | None, ...] | None = None
     evaluator_to_remove: UUID | None = None
     admins_after_change: int | None = None
+    user_to_change: UUID | None = None
+    platform_admins_after_change: int | None = None
     ai_available: bool = False
     token_valid: bool = False
 
@@ -258,6 +270,24 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
             403,
             "cannot_remove_self",
             lambda p, r, _: p is not None and r.evaluator_to_remove != p.user_id,
+        ),
+    ),
+    "c17": (
+        Check(
+            "c17",
+            403,
+            "cannot_change_self",
+            lambda p, r, _: p is not None and r.user_to_change != p.user_id,
+        ),
+    ),
+    "c18": (
+        Check(
+            "c18",
+            409,
+            "last_platform_admin",
+            lambda p, r, _: (
+                r.platform_admins_after_change is None or r.platform_admins_after_change >= 1
+            ),
         ),
     ),
     # Not in the role matrix: contract section 2, "in an archived project every
@@ -467,6 +497,19 @@ EVALUATOR_REMOVE: Final = dataclasses.replace(
 of c4 and c6, so a pending evaluator can be released from blindness even after
 evaluation closed, but never by removing themselves."""
 
+MANAGE_USER_ACCESS: Final = dataclasses.replace(
+    POLICY[Rule.PLATFORM_MANAGE_USERS],
+    cells={
+        column: Grant(("c17", "c18")) if isinstance(cell, Grant) else cell
+        for column, cell in POLICY[Rule.PLATFORM_MANAGE_USERS].cells.items()
+    },
+    source=(),
+)
+"""``platform.manage_users`` when changing a user's ``is_active`` or
+``is_platform_admin`` (contract-phase2 section 3.4, role matrix table H notes): c17,
+not yourself (403 ``cannot_change_self``), then c18, another active platform admin
+remains (409 ``last_platform_admin``)."""
+
 
 # --- Decisions -------------------------------------------------------------------------
 _DETAILS: Final[Mapping[str, str]] = {
@@ -485,6 +528,8 @@ _DETAILS: Final[Mapping[str, str]] = {
     "proposal_not_available": "The idea needs to be shortlisted or in proposal first.",
     "ai_unavailable": "AI assistance isn't available.",
     "last_admin": "A project needs at least one admin.",
+    "cannot_change_self": "You can't deactivate yourself or change your own platform-admin role.",
+    "last_platform_admin": "Soundings needs at least one other active platform admin.",
     "idea_has_owner": "The idea already has an owner.",
     "project_archived": "The project is archived, so its ideas are read-only.",
 }
@@ -609,6 +654,8 @@ def authorize(
         return _deny(rule, 403)  # deny by default
     if rule is Rule.EVALUATOR_MANAGE and resource.evaluator_to_remove is not None:
         spec = EVALUATOR_REMOVE
+    elif rule is Rule.PLATFORM_MANAGE_USERS and resource.user_to_change is not None:
+        spec = MANAGE_USER_ACCESS
 
     if spec.scope is Scope.PUBLIC:
         # Decided by a token or project setting; identical for every column.

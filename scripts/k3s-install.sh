@@ -4,8 +4,12 @@
 #   scripts/k3s-install.sh                          # values: dev/k3s-values.yaml
 #   VALUES=deploy/helm/ci/gateway-values.yaml scripts/k3s-install.sh --set foo=bar
 #
+#   SSO=1 scripts/k3s-install.sh                    # + dev/k3s-sso-values.yaml (Keycloak)
+#
 #   RELEASE    release name (default soundings)     NAMESPACE  (default soundings)
 #   VALUES     values file under deploy/helm/ or dev/ TIMEOUT   helm --timeout (default 10m)
+#   SSO        1: single sign-on against the cluster's Keycloak (scripts/k3s-keycloak.sh
+#              first): adds dev/k3s-sso-values.yaml and the issuer for K3S_HTTP_PORT
 # Extra arguments are passed to helm.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/k3s-env.sh
@@ -15,6 +19,7 @@ RELEASE="${RELEASE:-soundings}"
 NAMESPACE="${NAMESPACE:-soundings}"
 VALUES="${VALUES:-dev/k3s-values.yaml}"
 TIMEOUT="${TIMEOUT:-10m}"
+SSO="${SSO:-0}"
 
 require_k3s
 case "$VALUES" in
@@ -30,10 +35,21 @@ kubectl label namespace "$NAMESPACE" --overwrite \
   pod-security.kubernetes.io/enforce=restricted \
   pod-security.kubernetes.io/warn=restricted >/dev/null
 
-log "helm upgrade --install $RELEASE (namespace $NAMESPACE, values $VALUES)"
+sso_args=()
+values_label="$VALUES"
+if [ "$SSO" = "1" ]; then
+  kubectl -n keycloak get deploy/keycloak >/dev/null 2>&1 ||
+    die "SSO=1 needs Keycloak in the cluster first: scripts/k3s-keycloak.sh (make k3s-keycloak)"
+  sso_args=(--values dev/k3s-sso-values.yaml
+    --set "oidc.issuer=http://keycloak.localhost:$K3S_HTTP_PORT/realms/soundings")
+  values_label="$VALUES + dev/k3s-sso-values.yaml"
+fi
+
+log "helm upgrade --install $RELEASE (namespace $NAMESPACE, values $values_label)"
 helm upgrade --install "$RELEASE" deploy/helm \
   --namespace "$NAMESPACE" \
   --values "$VALUES" \
+  ${sso_args[@]+"${sso_args[@]}"} \
   --set "baseUrls[0]=http://localhost:$K3S_HTTP_PORT" \
   --wait --timeout "$TIMEOUT" \
   "$@"

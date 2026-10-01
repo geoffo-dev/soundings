@@ -2,7 +2,7 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/r
 
 import { api, unwrap } from '@/api/client'
 import { queryKeys } from '@/api/keys'
-import type { CurrentUser } from '@/api/types'
+import type { BreakGlassLogin, CurrentUser } from '@/api/types'
 import { flushPendingCommits } from '@/api/undo'
 import { clearDrafts } from '@/lib/drafts'
 
@@ -19,6 +19,21 @@ export const meQueryOptions = () =>
 
 export function useMe() {
   return useQuery(meQueryOptions())
+}
+
+/**
+ * Which sign-in methods the login page offers (contract-phase2 §3.1): the SSO
+ * button, the dev login picker, the break-glass form. Public; no secrets.
+ */
+export const authConfigQueryOptions = () =>
+  queryOptions({
+    queryKey: queryKeys.auth.config(),
+    queryFn: ({ signal }) => unwrap(api.GET('/api/v1/auth/config', { signal })),
+    staleTime: 5 * 60_000,
+  })
+
+export function useAuthConfig() {
+  return useQuery(authConfigQueryOptions())
 }
 
 /** Users for the dev login picker (404 when dev login is disabled). */
@@ -53,8 +68,28 @@ export function useDevLogin() {
 }
 
 /**
- * Signs out: sends pending deferred deletes first, then clears every cached query
- * and every unsent draft (lib/drafts).
+ * Break-glass admin sign-in (contract-phase2 §3.8). Errors are shown by the form
+ * (silent): 401 `invalid_credentials`, 403 `account_disabled`, 404 when it is
+ * off, 429 `too_many_attempts` with `ApiError.retryAfterSeconds`.
+ */
+export function useBreakGlassLogin() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: BreakGlassLogin) => unwrap(api.POST('/api/v1/auth/break-glass', { body })),
+    onSuccess: (user: CurrentUser) => {
+      queryClient.clear()
+      clearDrafts()
+      queryClient.setQueryData(queryKeys.auth.me(), user)
+    },
+    meta: { silent: true },
+  })
+}
+
+/**
+ * Signs out with `POST /auth/logout` (204, no IdP round trip): API clients and
+ * tests. The SPA's "Sign out" uses `signOutEverywhere()` in features/auth/sso.ts,
+ * a form post that also ends the IdP session. Sends pending deferred deletes
+ * first, then clears every cached query and every unsent draft (lib/drafts).
  */
 export function useLogout() {
   const queryClient = useQueryClient()

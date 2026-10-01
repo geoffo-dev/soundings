@@ -337,7 +337,7 @@ export interface paths {
         };
         /**
          * Sign-in methods
-         * @description Public. Which sign-in methods the sign-in page shows: the SSO button (and its label), the development login, the break-glass admin form. No secrets.
+         * @description Public. Which sign-in methods the sign-in page shows: the SSO button, the development login, the break-glass admin form. No secrets.
          */
         get: operations["get_auth_config"];
         put?: never;
@@ -359,7 +359,7 @@ export interface paths {
         put?: never;
         /**
          * Sign in as a user without a password
-         * @description Starts a session for the user: sets the soundings_session (HttpOnly) and soundings_csrf cookies. Development only: 404 unless SOUNDINGS_DEV_LOGIN_ENABLED=true (always refused in production).
+         * @description Starts a session for the user: sets the session (HttpOnly) and CSRF cookies (soundings_session and soundings_csrf; __Host- prefixed when Secure). Development only: 404 unless SOUNDINGS_DEV_LOGIN_ENABLED=true (always refused in production).
          */
         post: operations["dev_login"];
         delete?: never;
@@ -419,7 +419,7 @@ export interface paths {
         put?: never;
         /**
          * Sign out
-         * @description Ends the session (if any) and clears the session cookies. Always 204.
+         * @description Ends the session (if any) and clears the session cookies. Always 204. Signs out of Soundings only; the SPA's Sign out uses POST /auth/logout/redirect.
          */
         post: operations["logout"];
         delete?: never;
@@ -457,7 +457,7 @@ export interface paths {
         };
         /**
          * Who am I
-         * @description The signed-in user. 401 when not signed in: show the sign-in page.
+         * @description The signed-in user and how the session was started (auth_method). 401 when not signed in: show the sign-in page.
          */
         get: operations["get_me"];
         put?: never;
@@ -1461,6 +1461,12 @@ export interface components {
             sso: boolean;
         };
         /**
+         * AuthMethod
+         * @description How a session was started (``user_sessions.auth_method``).
+         * @enum {string}
+         */
+        AuthMethod: "dev_login" | "sso" | "break_glass";
+        /**
          * Board
          * @description One column per status, always all five, in lifecycle order.
          */
@@ -1626,12 +1632,10 @@ export interface components {
          * CurrentUser
          * @description The signed-in user (``GET /auth/me``, sign-in responses), also used for the dev
          *     login picker.
-         *
-         *     Pending (contract-phase2 section 7): ``auth_method: AuthMethod | None`` lands with
-         *     the identity and frontend builds, which update the tests and mocks that build a
-         *     ``CurrentUser`` in the same change.
          */
         CurrentUser: {
+            /** @description How this session was started: sso, break_glass (show the break-glass banner) or dev_login. Null only in the dev login picker (no session). */
+            auth_method: components["schemas"]["AuthMethod"] | null;
             /** Avatar Url */
             avatar_url: string | null;
             /** Display Name */

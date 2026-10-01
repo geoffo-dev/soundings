@@ -29,8 +29,18 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check . && uv run ruff format --check .
       - run: uv run mypy
-      # testcontainers uses the runner's Docker daemon.
+      # Keycloak 26 with the dev realm for the identity integration tests (the real
+      # code flow, group sync, the SPEC acceptance); they fail rather than skip when it
+      # doesn't answer. Postgres comes from testcontainers on the runner's Docker.
+      - name: Keycloak with the dev realm
+        run: |
+          docker run -d --name keycloak -p 127.0.0.1:8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -e KC_HOSTNAME_STRICT=false -e KC_LOG_LEVEL=warn keycloak/keycloak:26.0 start-dev
+          python3 ../dev/keycloak/import_realm.py http://localhost:8080 --origin http://testserver
       - run: uv run pytest
+        env:
+          SOUNDINGS_TEST_KEYCLOAK_URL: http://localhost:8080
 
   frontend:
     runs-on: ubuntu-24.04
@@ -83,9 +93,12 @@ jobs:
         run: |
           if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
           else echo "No e2e/ yet: nothing to run."; fi
-      # Builds the image and runs Postgres + the app (dev login, demo data) on :8000.
+      # Builds the image and runs Postgres + the app (dev login, demo data, the
+      # break-glass admin as in the local e2e stack) on :8000.
       - if: steps.e2e.outputs.present == 'true'
         run: make demo
+        env:
+          DEMO_BREAK_GLASS_PASSWORD: e2e-break-glass-password
       - if: steps.e2e.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
@@ -112,3 +125,45 @@ jobs:
           if-no-files-found: ignore
       - if: always()
         run: make demo-down
+
+  # The SSO specs (tagged @sso) against the working tree: e2e/scripts/start-stack.sh with
+  # E2E_SSO=1 runs Postgres and Keycloak (dev realm) in Docker and the API with SSO on
+  # http://localhost:8100, all on localhost like a developer's machine.
+  e2e-sso:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - id: e2e
+        run: |
+          if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "No e2e/ yet: nothing to run."; fi
+      - if: steps.e2e.outputs.present == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: steps.e2e.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: steps.e2e.outputs.present == 'true'
+        run: |
+          pip install "uv==0.8.17"
+          uv sync --locked --project backend
+          npm --prefix frontend ci
+          npm --prefix e2e ci
+          npx --prefix e2e playwright install --with-deps chromium
+      - if: steps.e2e.outputs.present == 'true'
+        run: npm --prefix e2e run test -- --grep @sso
+        env:
+          E2E_SSO: "1"
+          E2E_PREFIX: ci-
+      - if: failure() && steps.e2e.outputs.present == 'true'
+        run: tail -n 100 e2e/.stack/api.log
+      - if: always() && steps.e2e.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-sso
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
