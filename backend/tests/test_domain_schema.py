@@ -20,11 +20,15 @@ import app.models
 from app.migrate import alembic_config
 from app.models import ProjectRole, project_effective_roles
 from app.models.base import Base
+from app.models.notification import SUBMITTER_ADDRESS_KEY_SQL
 from tests.conftest import make_settings
 
 DOMAIN_TABLES = {
     "activity_events",
+    "altcha_used_challenges",
     "audit_log",
+    "brand_assets",
+    "branding_profiles",
     "comments",
     "evaluation_scores",
     "evaluations",
@@ -42,6 +46,11 @@ DOMAIN_TABLES = {
     "project_group_grants",
     "project_members",
     "projects",
+    "proposal_comments",
+    "proposal_sections",
+    "proposal_threads",
+    "proposals",
+    "public_submissions",
     "rubric_criteria",
     "tags",
     "user_external_ids",
@@ -745,3 +754,344 @@ async def test_notification_preferences_are_one_per_user_and_type(
             async with db_session.begin_nested():
                 await db_session.execute(insert, {"u": user_id} | values)
     await db_session.rollback()
+
+
+# --- Phase 4: proposals, public submission and branding ---------------------------------
+async def test_proposals_are_one_per_idea_with_fixed_versioned_sections(
+    db_session: AsyncSession,
+) -> None:
+    idea_id, user_id = await _idea_and_user(db_session)
+    proposal_id = uuid.uuid4()
+    insert_proposal = text("INSERT INTO proposals (id, idea_id) VALUES (:id, :idea)")
+    await db_session.execute(insert_proposal, {"id": proposal_id, "idea": idea_id})
+    insert_section = text(
+        "INSERT INTO proposal_sections (proposal_id, key, version) VALUES (:p, :k, :v)"
+    )
+    await db_session.execute(insert_section, {"p": proposal_id, "k": "summary", "v": 1})
+
+    cases: list[tuple[object, dict[str, object], str]] = [
+        (insert_proposal, {"id": uuid.uuid4(), "idea": idea_id}, "uq_proposals_idea_id"),
+        (insert_section, {"p": proposal_id, "k": "summary", "v": 1}, "pk_proposal_sections"),
+        (insert_section, {"p": proposal_id, "k": "appendix", "v": 1}, "ck_proposal_sections_key"),
+        (
+            insert_section,
+            {"p": proposal_id, "k": "risks", "v": 0},
+            "ck_proposal_sections_version_positive",
+        ),
+    ]
+    for statement, values, constraint in cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(statement, values)  # type: ignore[call-overload]
+
+    thread_id = uuid.uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO proposal_threads (id, proposal_id, section_key, created_by_id)"
+            " VALUES (:t, :p, 'problem', :u)"
+        ),
+        {"t": thread_id, "p": proposal_id, "u": user_id},
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO proposal_comments (id, thread_id, author_id, body_md)"
+            " VALUES (:c, :t, :u, 'Source for 8%?')"
+        ),
+        {"c": uuid.uuid4(), "t": thread_id, "u": user_id},
+    )
+    with pytest.raises(IntegrityError, match="ck_proposal_threads_section_key"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text(
+                    "INSERT INTO proposal_threads (id, proposal_id, section_key)"
+                    " VALUES (:t, :p, 'appendix')"
+                ),
+                {"t": uuid.uuid4(), "p": proposal_id},
+            )
+
+    # Deleting the idea removes the proposal, its sections, threads and comments.
+    await db_session.execute(text("DELETE FROM ideas WHERE id = :i"), {"i": idea_id})
+    for table in ("proposals", "proposal_sections", "proposal_threads", "proposal_comments"):
+        assert await db_session.scalar(text(f"SELECT count(*) FROM {table}")) == 0  # noqa: S608
+    await db_session.rollback()
+
+
+INSERT_SUBMISSION = text(
+    "INSERT INTO public_submissions (id, idea_id, project_id, name, email, email_verified_at,"
+    " wants_updates, tracking_token_hash, tracking_token_sealed, submitted_title,"
+    " submitted_summary, erased_at)"
+    " VALUES (:id, :idea, :project, :name, :email, :verified, :updates, :hash, :sealed,"
+    " :title, :summary, :erased)"
+)
+
+
+async def test_public_submissions_keep_minimal_consistent_contact_data(
+    db_session: AsyncSession,
+) -> None:
+    idea_id, _ = await _idea_and_user(db_session)
+    project_id = await db_session.scalar(
+        text("SELECT project_id FROM ideas WHERE id = :i"), {"i": idea_id}
+    )
+    other_idea = uuid.uuid4()
+    await db_session.execute(
+        text("INSERT INTO ideas (id, project_id, number, title) VALUES (:i, :p, 2, 'Two')"),
+        {"i": other_idea, "p": project_id},
+    )
+
+    def row(**values: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "id": uuid.uuid4(), "idea": idea_id, "project": project_id, "name": "Jo",
+            "email": "jo@example.org", "verified": None, "updates": True, "hash": "a" * 64,
+            "sealed": "sealed-token", "title": "Print-free returns",
+            "summary": "Show a QR code.", "erased": None,
+        }  # fmt: skip
+        return base | values
+
+    await db_session.execute(INSERT_SUBMISSION, row())
+    now = datetime.now(UTC)
+    cases: list[tuple[dict[str, object], str]] = [
+        ({"hash": "b" * 64}, "uq_public_submissions_idea_id"),
+        ({"idea": other_idea}, "uq_public_submissions_tracking_token_hash"),
+        (
+            {"idea": other_idea, "hash": None, "sealed": None, "email": None, "updates": False,
+             "verified": now},
+            "ck_public_submissions_verified_needs_email",
+        ),
+        (
+            {"idea": other_idea, "hash": None, "sealed": None, "email": None},
+            "ck_public_submissions_updates_need_email",
+        ),
+        ({"idea": other_idea, "hash": None}, "ck_public_submissions_tracking_token_pair"),
+        (
+            {"idea": other_idea, "hash": None, "sealed": None, "erased": now},
+            "ck_public_submissions_erased_is_empty",
+        ),
+        (
+            {"idea": other_idea, "name": None, "email": None, "updates": False, "hash": None,
+             "sealed": None, "title": None, "erased": now},
+            "ck_public_submissions_erased_is_empty",
+        ),
+        (
+            {"idea": other_idea, "hash": None, "sealed": None, "title": None},
+            "ck_public_submissions_submitted_copy_until_erased",
+        ),
+        (
+            {"idea": other_idea, "hash": None, "sealed": None, "summary": None},
+            "ck_public_submissions_submitted_copy_until_erased",
+        ),
+    ]  # fmt: skip
+    for values, constraint in cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(INSERT_SUBMISSION, row(**values))
+
+    # Erased: nothing personal, no copy of what they sent and no tracking link left.
+    await db_session.execute(
+        INSERT_SUBMISSION,
+        row(idea=other_idea, name=None, email=None, updates=False, hash=None, sealed=None,
+            title=None, summary=None, erased=datetime.now(UTC)),
+    )  # fmt: skip
+    await db_session.rollback()
+
+
+async def test_ideas_are_held_for_a_known_reason_and_submitter_emails_name_their_idea(
+    db_session: AsyncSession,
+) -> None:
+    idea_id, user_id = await _idea_and_user(db_session)
+    await db_session.execute(
+        text("UPDATE ideas SET held_for = 'moderation' WHERE id = :i"), {"i": idea_id}
+    )
+    with pytest.raises(IntegrityError, match="ck_ideas_held_for"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text("UPDATE ideas SET held_for = 'spam' WHERE id = :i"), {"i": idea_id}
+            )
+
+    insert = text(
+        "INSERT INTO outbound_email (id, type, recipient_user_id, to_address, idea_id,"
+        " message_id) VALUES (:id, :type, :user, :address, :idea, :mid)"
+    )
+
+    def email(**values: object) -> dict[str, object]:
+        email_id = uuid.uuid4()
+        base: dict[str, object] = {
+            "id": email_id, "type": "submission_received", "user": None,
+            "address": "jo@example.org", "idea": idea_id, "mid": f"<{email_id}@x>",
+        }  # fmt: skip
+        return base | values
+
+    await db_session.execute(insert, email())
+    await db_session.execute(insert, email(type="submission_status_changed"))
+    email_cases: list[tuple[dict[str, object], str]] = [
+        ({"type": "comment"}, "ck_outbound_email_idea_iff_submission_type"),
+        ({"type": "test"}, "ck_outbound_email_idea_iff_submission_type"),
+        # Erasure finds a submitter's emails by idea: none may lack one.
+        ({"idea": None}, "ck_outbound_email_idea_iff_submission_type"),
+        ({"idea": None, "type": "submission_status_changed"},
+         "ck_outbound_email_idea_iff_submission_type"),
+        ({"user": user_id, "address": None}, "ck_outbound_email_submission_to_address"),
+    ]  # fmt: skip
+    for values, constraint in email_cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(insert, email(**values))
+
+    # Deleting the idea deletes its submitter emails.
+    await db_session.execute(text("DELETE FROM ideas WHERE id = :i"), {"i": idea_id})
+    assert await db_session.scalar(text("SELECT count(*) FROM outbound_email")) == 0
+    await db_session.rollback()
+
+
+async def test_the_per_address_limit_folds_case_and_sub_addresses(
+    db_session: AsyncSession,
+) -> None:
+    """Confirmation emails count against the address without its +tag, whatever the
+    case (contract-phase4 section 3.5): victim+1@ and Victim+2@ share victim@'s 3."""
+    idea_id, _ = await _idea_and_user(db_session)
+    addresses = ["victim@example.org", "Victim+1@Example.org", "victim+2@EXAMPLE.ORG"]
+    for address in [*addresses, "other@example.org", "victim@example.com"]:
+        email_id = uuid.uuid4()
+        await db_session.execute(
+            text(
+                "INSERT INTO outbound_email (id, type, to_address, idea_id, message_id)"
+                " VALUES (:id, 'submission_received', :address, :idea, :mid)"
+            ),
+            {"id": email_id, "address": address, "idea": idea_id, "mid": f"<{email_id}@x>"},
+        )
+    key = SUBMITTER_ADDRESS_KEY_SQL
+    count = text(
+        f"SELECT count(*) FROM outbound_email WHERE type = 'submission_received'"  # noqa: S608
+        f" AND {key} = {key.replace('to_address', 'CAST(:address AS text)')}"
+        " AND created_at > now() - interval '24 hours'"
+    )
+
+    for address in [*addresses, "VICTIM+new@example.org"]:
+        assert await db_session.scalar(count, {"address": address}) == 3
+    assert await db_session.scalar(count, {"address": "victim@example.net"}) == 0
+    await db_session.rollback()
+
+
+async def test_altcha_signatures_are_accepted_once(db_session: AsyncSession) -> None:
+    insert = text("INSERT INTO altcha_used_challenges (signature, expires_at) VALUES (:s, :e)")
+    await db_session.execute(insert, {"s": "f" * 64, "e": datetime.now(UTC)})
+
+    with pytest.raises(IntegrityError, match="pk_altcha_used_challenges"):
+        await db_session.execute(insert, {"s": "f" * 64, "e": datetime.now(UTC)})
+    await db_session.rollback()
+
+
+INSERT_PROFILE = text(
+    "INSERT INTO branding_profiles (id, project_id, app_name, primary_color, accent_color, font)"
+    " VALUES (:id, :project, :name, :primary, :accent, :font)"
+)
+
+
+async def test_branding_has_one_global_profile_and_only_safe_values(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await _insert_project(db_session)
+
+    def profile(**values: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "id": uuid.uuid4(), "project": None, "name": "Acme Ideas", "primary": "#1d5fa8",
+            "accent": None, "font": "inter",
+        }  # fmt: skip
+        return base | values
+
+    await db_session.execute(INSERT_PROFILE, profile())
+    await db_session.execute(INSERT_PROFILE, profile(project=project_id, name=None, font=None))
+
+    cases: list[tuple[dict[str, object], str]] = [
+        ({}, "uq_branding_profiles_project_id"),  # a second global profile
+        ({"project": project_id}, "uq_branding_profiles_project_id"),
+    ]
+    other = uuid.uuid4()
+    await db_session.execute(
+        text("INSERT INTO projects (id, slug, key, name) VALUES (:id, 'other', 'OTH', 'Other')"),
+        {"id": other},
+    )
+    for value in ["red", "#1D5FA8", "#1d5f;}", "#12345", "1d5fa8", "#ggg000"]:
+        cases.append(({"project": other, "primary": value}, "ck_branding_profiles_primary_color"))
+        cases.append(({"project": other, "accent": value}, "ck_branding_profiles_accent_color"))
+    cases += [
+        ({"project": other, "font": "Comic Sans"}, "ck_branding_profiles_font"),
+        ({"project": other, "name": ""}, "ck_branding_profiles_app_name_length"),
+    ]
+    for values, constraint in cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(INSERT_PROFILE, profile(**values))
+    await db_session.rollback()
+
+
+async def test_brand_assets_are_png_or_svg_with_a_matching_size(db_session: AsyncSession) -> None:
+    insert = text(
+        "INSERT INTO brand_assets (id, kind, content_type, data, byte_size, sha256, width,"
+        " height) VALUES (:id, :kind, :type, :data, :size, :sha, :w, :h)"
+    )
+
+    def asset(**values: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "id": uuid.uuid4(), "kind": "logo", "type": "image/png", "data": b"\x89PNG..",
+            "size": 6, "sha": "0" * 64, "w": 120, "h": 40,
+        }  # fmt: skip
+        return base | values
+
+    asset_id = uuid.uuid4()
+    await db_session.execute(insert, asset(id=asset_id))
+    await db_session.execute(insert, asset(type="image/svg+xml", kind="favicon", w=None, h=None))
+    asset_cases: list[tuple[dict[str, object], str]] = [
+        ({"type": "text/html"}, "ck_brand_assets_content_type"),
+        ({"type": "image/svg"}, "ck_brand_assets_content_type"),
+        ({"kind": "banner"}, "ck_brand_assets_kind"),
+        ({"size": 7}, "ck_brand_assets_byte_size_matches"),
+        ({"data": b"", "size": 0}, "ck_brand_assets_byte_size_range"),
+        ({"w": 5000}, "ck_brand_assets_dimensions_range"),
+    ]
+    for values, constraint in asset_cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(insert, asset(**values))
+
+    # Deleting an asset in use clears the reference instead of failing.
+    await db_session.execute(
+        text("INSERT INTO branding_profiles (id, logo_asset_id) VALUES (:id, :a)"),
+        {"id": uuid.uuid4(), "a": asset_id},
+    )
+    await db_session.execute(text("DELETE FROM brand_assets WHERE id = :a"), {"a": asset_id})
+    assert await db_session.scalar(text("SELECT logo_asset_id FROM branding_profiles")) is None
+    await db_session.rollback()
+
+
+def test_0007_downgrade_removes_held_ideas_and_submitter_emails(
+    scratch_database_url: str,
+) -> None:
+    """An older app can't hide held ideas: going back below 0007 deletes them."""
+    config = alembic_config(make_settings(database_url=scratch_database_url).sqlalchemy_url)
+    command.upgrade(config, "head")
+    project_id, visible, held = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    with psycopg.connect(_dsn(scratch_database_url)) as connection:
+        connection.execute(
+            "INSERT INTO projects (id, slug, key, name) VALUES (%s, 'demo', 'DEMO', 'Demo')",
+            (project_id,),
+        )
+        for number, (idea_id, held_for) in enumerate([(visible, None), (held, "moderation")], 1):
+            connection.execute(
+                "INSERT INTO ideas (id, project_id, number, title, held_for)"
+                " VALUES (%s, %s, %s, 'Idea', %s)",
+                (idea_id, project_id, number, held_for),
+            )
+        connection.execute(
+            "INSERT INTO outbound_email (id, type, to_address, idea_id, message_id)"
+            " VALUES (%s, 'submission_received', 'jo@example.org', %s, '<m@x>')",
+            (uuid.uuid4(), visible),
+        )
+
+    command.downgrade(config, "0006")
+    with psycopg.connect(_dsn(scratch_database_url)) as connection:
+        ideas = connection.execute("SELECT id FROM ideas").fetchall()
+        emails = connection.execute("SELECT count(*) FROM outbound_email").fetchone()
+    assert ideas == [(visible,)]
+    assert emails == (0,)
+    command.upgrade(config, "head")
+    command.check(config)

@@ -149,3 +149,57 @@ class EmailStatus(StrEnum):
     """Not sent and never will be: at send time it no longer applied (no access, not an
     evaluator any more, nothing left in a digest), was out of date, the recipient had
     turned the type off, or the address was unusable."""
+
+
+# --- Phase 4: proposals, public submission, branding (contract-phase4) ------------------
+class ProposalSectionKey(StrEnum):
+    """The fixed proposal template (SPEC section 2), in document order. Titles and
+    prompts are in ``app.schemas.proposals.PROPOSAL_TEMPLATE``."""
+
+    SUMMARY = "summary"
+    PROBLEM = "problem"
+    SOLUTION = "solution"
+    MARKET = "market"
+    """Market & users."""
+    COST = "cost"
+    """Cost & effort."""
+    BENEFITS = "benefits"
+    """Benefits / revenue."""
+    RISKS = "risks"
+    NEXT_STEPS = "next_steps"
+    """Next steps / the ask."""
+
+
+class HoldReason(StrEnum):
+    """Why a public submission is not visible yet (``ideas.held_for``; null = visible).
+
+    Held ideas are in no list, board, search, count, My work or notification for anyone
+    (contract-phase4 section 3.6)."""
+
+    EMAIL_VERIFICATION = "email_verification"
+    """The project requires a confirmed address and the submitter hasn't confirmed it
+    yet. Invisible to everyone, admins included; deleted after 3 days."""
+    MODERATION = "moderation"
+    """Waiting for a project admin to approve it (c12): only project and platform
+    admins can see it, in the moderation queue and on its own page."""
+
+
+class BrandFont(StrEnum):
+    """Bundled fonts (open licences) a branding profile may choose. Nothing is fetched:
+    the SPA bundles them (@fontsource) and the image ships the files for PDFs."""
+
+    INTER = "inter"
+    """Inter: neutral sans-serif (the default)."""
+    IBM_PLEX_SANS = "ibm_plex_sans"
+    """IBM Plex Sans: technical, corporate sans-serif."""
+    SOURCE_SERIF_4 = "source_serif_4"
+    """Source Serif 4: editorial serif."""
+    ATKINSON_HYPERLEGIBLE = "atkinson_hyperlegible"
+    """Atkinson Hyperlegible: designed for low-vision readability."""
+
+
+class BrandAssetKind(StrEnum):
+    """What an uploaded branding image is for."""
+
+    LOGO = "logo"
+    FAVICON = "favicon"

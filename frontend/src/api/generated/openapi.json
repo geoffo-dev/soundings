@@ -491,6 +491,80 @@
         "title": "AggregateScoreSummary",
         "type": "object"
       },
+      "AltchaChallenge": {
+        "description": "A proof-of-work challenge for the ALTCHA widget (Python ``altcha`` 2.x with the\n``altcha@3`` widget, research R1 section 7). Pass the endpoint's URL (or this JSON)\nto the widget unchanged; it solves it in the browser and puts the result in the\nform's ``altcha`` field. The one place the API isn't snake_case: the format is the\nwidget's.",
+        "properties": {
+          "parameters": {
+            "$ref": "#/components/schemas/AltchaParameters"
+          },
+          "signature": {
+            "description": "HMAC of the parameters (they can't be changed).",
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameters",
+          "signature"
+        ],
+        "title": "AltchaChallenge",
+        "type": "object"
+      },
+      "AltchaParameters": {
+        "description": "ALTCHA v2 challenge parameters, in the widget's own (camelCase) format. The\nsignature covers all of them, ``data`` included.",
+        "properties": {
+          "algorithm": {
+            "description": "\"PBKDF2/SHA-256\".",
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "integer"
+          },
+          "data": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "{\"project\": \"<slug>\"}: binds the challenge to this form (a solution for another project's form is refused). Pass it back unchanged.",
+            "title": "Data",
+            "type": "object"
+          },
+          "expiresAt": {
+            "description": "Unix time (seconds).",
+            "title": "Expiresat",
+            "type": "integer"
+          },
+          "keyLength": {
+            "title": "Keylength",
+            "type": "integer"
+          },
+          "keyPrefix": {
+            "title": "Keyprefix",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          },
+          "salt": {
+            "title": "Salt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "cost",
+          "keyLength",
+          "keyPrefix",
+          "nonce",
+          "salt",
+          "expiresAt",
+          "data"
+        ],
+        "title": "AltchaParameters",
+        "type": "object"
+      },
       "AuditAction": {
         "description": "Every action the audit log records (``audit_log.action``).\n\n``app.services.audit.AUDIT_ACTIONS`` must be exactly this set. Names are\n``<area>.<what happened>``; ``details.rule`` names the role-matrix rule that\nallowed an admin action.",
         "enum": [
@@ -787,6 +861,325 @@
           "next_cursor"
         ],
         "title": "BoardColumn",
+        "type": "object"
+      },
+      "BrandAsset": {
+        "description": "An uploaded logo or favicon. Immutable: a new image is a new asset (new URL).",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "enum": [
+              "image/png",
+              "image/svg+xml"
+            ],
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BrandAssetKind"
+          },
+          "url": {
+            "description": "Where the image is served, relative to the app: /api/v1/branding/assets/{id} (public, cached for a year: the content of an id never changes).",
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pixels; null for an SVG without a size.",
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "content_type",
+          "byte_size",
+          "width",
+          "height",
+          "url",
+          "created_at"
+        ],
+        "title": "BrandAsset",
+        "type": "object"
+      },
+      "BrandAssetKind": {
+        "description": "What an uploaded branding image is for.",
+        "enum": [
+          "logo",
+          "favicon"
+        ],
+        "title": "BrandAssetKind",
+        "type": "string"
+      },
+      "BrandFont": {
+        "description": "Bundled fonts (open licences) a branding profile may choose. Nothing is fetched:\nthe SPA bundles them (@fontsource) and the image ships the files for PDFs.",
+        "enum": [
+          "inter",
+          "ibm_plex_sans",
+          "source_serif_4",
+          "atkinson_hyperlegible"
+        ],
+        "title": "BrandFont",
+        "type": "string"
+      },
+      "BrandingSettings": {
+        "description": "A branding profile as stored (null = inherit), for its settings form.",
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "app_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Name"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/EffectiveBranding",
+            "description": "The result: what people see."
+          },
+          "email_footer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Footer"
+          },
+          "favicon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandFont"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inherited": {
+            "$ref": "#/components/schemas/InheritedBranding",
+            "description": "What each null field falls back to."
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "primary_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "#rrggbb, or null to inherit.",
+            "title": "Primary Color"
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: never saved (all inherited).",
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "scope",
+          "app_name",
+          "primary_color",
+          "accent_color",
+          "font",
+          "email_footer",
+          "logo",
+          "favicon",
+          "inherited",
+          "effective",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "BrandingSettings",
+        "type": "object"
+      },
+      "BrandingUpdate": {
+        "additionalProperties": false,
+        "description": "``PUT``: the complete profile. Omitted or null fields inherit (so an empty body\nresets the profile). ``logo_asset_id`` / ``favicon_asset_id`` must be images uploaded\nfor this profile (same scope) and of that kind (else 422 ``invalid_asset``).",
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "maxLength": 7,
+                "minLength": 7,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "app_name": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Name"
+          },
+          "email_footer": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Footer"
+          },
+          "favicon_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Favicon Asset Id"
+          },
+          "font": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandFont"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logo_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Asset Id"
+          },
+          "primary_color": {
+            "anyOf": [
+              {
+                "maxLength": 7,
+                "minLength": 7,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Color"
+          }
+        },
+        "title": "BrandingUpdate",
         "type": "object"
       },
       "BreakGlassLogin": {
@@ -1263,6 +1656,62 @@
         "title": "DueDateChangedActivity",
         "type": "object"
       },
+      "EffectiveBranding": {
+        "description": "What to show: every field resolved (override -> global -> default).\n\nApply ``primary_color``, ``accent_color`` and ``font`` through the CSS variables\n(``--brand-primary``, ``--brand-accent``, ``--brand-font``; the SPA derives\ncontrast-safe tokens from them, lib/branding.ts).",
+        "properties": {
+          "accent_color": {
+            "description": "#rrggbb",
+            "title": "Accent Color",
+            "type": "string"
+          },
+          "app_name": {
+            "title": "App Name",
+            "type": "string"
+          },
+          "favicon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: the bundled favicon.",
+            "title": "Favicon Url"
+          },
+          "font": {
+            "$ref": "#/components/schemas/BrandFont"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: show app_name as the wordmark.",
+            "title": "Logo Url"
+          },
+          "primary_color": {
+            "description": "#rrggbb",
+            "title": "Primary Color",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_name",
+          "primary_color",
+          "accent_color",
+          "font",
+          "logo_url",
+          "favicon_url"
+        ],
+        "title": "EffectiveBranding",
+        "type": "object"
+      },
       "EmailConfig": {
         "description": "The email settings in effect. Credentials are never returned, only whether set.",
         "properties": {
@@ -1446,6 +1895,41 @@
         ],
         "title": "EmailType",
         "type": "string"
+      },
+      "EmailVerified": {
+        "description": "The confirmation page after the person clicked \"Confirm\" (the page posts the\ntoken only on that click, never on load: link scanners must not confirm).\nIdempotent.",
+        "properties": {
+          "branding": {
+            "$ref": "#/components/schemas/EffectiveBranding"
+          },
+          "held_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "moderation: confirmed, now waiting for review; null: with the team."
+          },
+          "project": {
+            "$ref": "#/components/schemas/PublicProjectRef"
+          },
+          "title": {
+            "description": "The idea's title as submitted.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "title",
+          "held_for",
+          "branding"
+        ],
+        "title": "EmailVerified",
+        "type": "object"
       },
       "Evaluation": {
         "description": "A submitted evaluation as others see it (drafts are never shown to anyone else).",
@@ -2648,6 +3132,15 @@
         "title": "GroupUpdate",
         "type": "object"
       },
+      "HoldReason": {
+        "description": "Why a public submission is not visible yet (``ideas.held_for``; null = visible).\n\nHeld ideas are in no list, board, search, count, My work or notification for anyone\n(contract-phase4 section 3.6).",
+        "enum": [
+          "email_verification",
+          "moderation"
+        ],
+        "title": "HoldReason",
+        "type": "string"
+      },
       "IdeaCreate": {
         "additionalProperties": false,
         "properties": {
@@ -3240,6 +3733,102 @@
         "title": "IdeaStatus",
         "type": "string"
       },
+      "IdeaSubmission": {
+        "description": "How an idea came in through the public form (``GET /ideas/{idea}/submission``).",
+        "properties": {
+          "contact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubmitterContact"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null unless you may erase the submitter's details (project admins)."
+          },
+          "erased_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Their details were erased: no name, address or tracking link left.",
+            "title": "Erased At"
+          },
+          "held_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "moderation: show Approve / Reject; never email_verification here."
+          },
+          "idea_id": {
+            "format": "uuid",
+            "title": "Idea Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name they gave (anyone who can view the idea sees it); null if none.",
+            "title": "Name"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/IdeaSubmissionPermissions"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idea_id",
+          "submitted_at",
+          "held_for",
+          "name",
+          "contact",
+          "erased_at",
+          "permissions"
+        ],
+        "title": "IdeaSubmission",
+        "type": "object"
+      },
+      "IdeaSubmissionPermissions": {
+        "properties": {
+          "can_erase": {
+            "description": "public.erase_submitter and not erased yet.",
+            "title": "Can Erase",
+            "type": "boolean"
+          },
+          "can_moderate": {
+            "description": "idea.moderate and the idea is held for moderation.",
+            "title": "Can Moderate",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_moderate",
+          "can_erase"
+        ],
+        "title": "IdeaSubmissionPermissions",
+        "type": "object"
+      },
       "IdeaSummary": {
         "description": "A row in the list, a card on the board, an entry in My work.",
         "properties": {
@@ -3460,6 +4049,68 @@
           }
         },
         "title": "IdeaUpdate",
+        "type": "object"
+      },
+      "InheritedBranding": {
+        "description": "What an empty field of this profile falls back to: for the global profile the\nbuilt-in defaults, for a project the global profile's effective values.",
+        "properties": {
+          "accent_color": {
+            "title": "Accent Color",
+            "type": "string"
+          },
+          "app_name": {
+            "title": "App Name",
+            "type": "string"
+          },
+          "email_footer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Footer"
+          },
+          "favicon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font": {
+            "$ref": "#/components/schemas/BrandFont"
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrandAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "primary_color": {
+            "title": "Primary Color",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_name",
+          "primary_color",
+          "accent_color",
+          "font",
+          "email_footer",
+          "logo",
+          "favicon"
+        ],
+        "title": "InheritedBranding",
         "type": "object"
       },
       "LinkedIdentity": {
@@ -3769,6 +4420,112 @@
           "comment"
         ],
         "title": "MentionNotification",
+        "type": "object"
+      },
+      "ModerationItem": {
+        "description": "A public idea waiting for approval: everything needed to decide.",
+        "properties": {
+          "description_md": {
+            "title": "Description Md",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "\"<project key>-<number>\", e.g. \"CUST-12\".",
+            "title": "Key",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectRef"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Resolution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set if and only if status is closed."
+          },
+          "status": {
+            "$ref": "#/components/schemas/IdeaStatus"
+          },
+          "status_label": {
+            "description": "Project label for the status; for closed ideas, the resolution's label.",
+            "title": "Status Label",
+            "type": "string"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/IdeaSubmission"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "number",
+          "project",
+          "title",
+          "status",
+          "resolution",
+          "status_label",
+          "summary",
+          "description_md",
+          "submission"
+        ],
+        "title": "ModerationItem",
+        "type": "object"
+      },
+      "ModerationPage": {
+        "description": "Oldest first (a queue).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ModerationItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "description": "Ideas waiting, all pages (the board's badge).",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "total"
+        ],
+        "title": "ModerationPage",
         "type": "object"
       },
       "MyEvaluation": {
@@ -4901,7 +5658,7 @@
             "type": "string"
           },
           "slug": {
-            "description": "URL name, e.g. customer-innovation. Cannot be changed later.",
+            "description": "URL name, e.g. customer-innovation. Cannot be changed later. Not one of the app's own paths (RESERVED_SLUGS: settings, track, ...).",
             "maxLength": 48,
             "minLength": 2,
             "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
@@ -5214,6 +5971,766 @@
         ],
         "title": "ProjectVisibility",
         "type": "string"
+      },
+      "Proposal": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef"
+          },
+          "sections": {
+            "description": "All eight, in template order.",
+            "items": {
+              "$ref": "#/components/schemas/ProposalSection"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "updated_at": {
+            "description": "The latest section save.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "idea",
+          "sections",
+          "created_at",
+          "created_by",
+          "updated_at"
+        ],
+        "title": "Proposal",
+        "type": "object"
+      },
+      "ProposalComment": {
+        "description": "A comment in a margin thread (plain Markdown; no @mentions in Phase 4).",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if the user no longer exists."
+          },
+          "body_md": {
+            "description": "Empty when deleted.",
+            "title": "Body Md",
+            "type": "string"
+          },
+          "can_delete": {
+            "description": "You wrote it, or you are a project admin.",
+            "title": "Can Delete",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deleted": {
+            "description": "Show a \"comment deleted\" placeholder.",
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "body_md",
+          "created_at",
+          "deleted",
+          "can_delete"
+        ],
+        "title": "ProposalComment",
+        "type": "object"
+      },
+      "ProposalCommentCreate": {
+        "additionalProperties": false,
+        "description": "Reply in a thread (replies are flat).",
+        "properties": {
+          "body_md": {
+            "description": "Markdown.",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Body Md",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body_md"
+        ],
+        "title": "ProposalCommentCreate",
+        "type": "object"
+      },
+      "ProposalConflictProblem": {
+        "description": "409 from ``update_proposal_section``. With ``code`` ``proposal_conflict`` it\ncarries the section as it is now, so \"Reload\" shows it and \"Keep mine\" saves again\nwith ``current.version`` without a second request that could race another save.\nOther 409 codes (``proposal_not_available``, ``project_archived``,\n``awaiting_moderation``) have no ``current``.",
+        "examples": [
+          {
+            "code": "not_found",
+            "detail": "Idea not found.",
+            "instance": "/api/v1/ideas/0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11",
+            "request_id": "7f9c2b4e1d6a4c0f8e3b5a2d9c1e0f7a",
+            "status": 404,
+            "title": "Not Found",
+            "type": "urn:soundings:problem:not_found"
+          }
+        ],
+        "properties": {
+          "code": {
+            "description": "Stable machine-readable error code (snake_case).",
+            "title": "Code",
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalSection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "proposal_conflict only: the section as saved now."
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explanation of this occurrence.",
+            "title": "Detail"
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request path that failed.",
+            "title": "Instance"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Correlates with server logs (X-Request-ID).",
+            "title": "Request Id"
+          },
+          "status": {
+            "description": "HTTP status code.",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Short, human-readable summary of the problem type.",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "URI identifying the problem type.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "title": "ProposalConflictProblem",
+        "type": "object"
+      },
+      "ProposalPermissions": {
+        "description": "What the current user may do on the Proposal tab (the API enforces the same).",
+        "properties": {
+          "can_comment": {
+            "description": "proposal.comment: open threads, reply, resolve and reopen.",
+            "title": "Can Comment",
+            "type": "boolean"
+          },
+          "can_create": {
+            "description": "proposal.write and no proposal yet: show \"Start proposal\" (the idea is Shortlisted or in Proposal, c7).",
+            "title": "Can Create",
+            "type": "boolean"
+          },
+          "can_edit": {
+            "description": "proposal.write: edit sections (owner and admins, while c7 holds).",
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_export": {
+            "description": "proposal.export: PDF and Markdown.",
+            "title": "Can Export",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_create",
+          "can_edit",
+          "can_comment",
+          "can_export"
+        ],
+        "title": "ProposalPermissions",
+        "type": "object"
+      },
+      "ProposalSection": {
+        "description": "One template section. Always all eight, in template order.",
+        "properties": {
+          "body_md": {
+            "description": "Markdown; empty until someone writes it.",
+            "title": "Body Md",
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/ProposalSectionKey"
+          },
+          "prompt": {
+            "description": "Placeholder while the section is empty.",
+            "title": "Prompt",
+            "type": "string"
+          },
+          "title": {
+            "description": "From the template, e.g. \"Market & users\".",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who saved it last; null if nobody has."
+          },
+          "version": {
+            "description": "Send it back as base_version when you save this section.",
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "prompt",
+          "body_md",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "ProposalSection",
+        "type": "object"
+      },
+      "ProposalSectionKey": {
+        "description": "The fixed proposal template (SPEC section 2), in document order. Titles and\nprompts are in ``app.schemas.proposals.PROPOSAL_TEMPLATE``.",
+        "enum": [
+          "summary",
+          "problem",
+          "solution",
+          "market",
+          "cost",
+          "benefits",
+          "risks",
+          "next_steps"
+        ],
+        "title": "ProposalSectionKey",
+        "type": "string"
+      },
+      "ProposalSectionUpdate": {
+        "additionalProperties": false,
+        "description": "Save one section. ``base_version`` is the ``version`` your text started from:\n409 ``proposal_conflict`` if the section has changed since (the problem's\n``current`` is the section now: reload it, or keep yours by saving again with\n``current.version``). Saving identical text changes nothing. The text is stored\nexactly as sent (no whitespace trimming).",
+        "properties": {
+          "base_version": {
+            "minimum": 1.0,
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "body_md": {
+            "description": "Markdown, kept verbatim.",
+            "maxLength": 20000,
+            "title": "Body Md",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body_md",
+          "base_version"
+        ],
+        "title": "ProposalSectionUpdate",
+        "type": "object"
+      },
+      "ProposalThread": {
+        "description": "A margin thread on one section; resolved threads collapse.",
+        "properties": {
+          "comments": {
+            "description": "Oldest first; the first one opened the thread.",
+            "items": {
+              "$ref": "#/components/schemas/ProposalComment"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "section_key": {
+            "$ref": "#/components/schemas/ProposalSectionKey"
+          }
+        },
+        "required": [
+          "id",
+          "section_key",
+          "created_at",
+          "resolved_at",
+          "resolved_by",
+          "comments"
+        ],
+        "title": "ProposalThread",
+        "type": "object"
+      },
+      "ProposalThreadCreate": {
+        "additionalProperties": false,
+        "description": "Open a thread on a section with its first comment.",
+        "properties": {
+          "body_md": {
+            "description": "Markdown.",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "section_key": {
+            "$ref": "#/components/schemas/ProposalSectionKey"
+          }
+        },
+        "required": [
+          "section_key",
+          "body_md"
+        ],
+        "title": "ProposalThreadCreate",
+        "type": "object"
+      },
+      "ProposalThreadList": {
+        "description": "Every thread of the proposal with at least one comment that isn't deleted, in\ntemplate-section order, then oldest first (at most 500 threads: no paging).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalThread"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProposalThreadList",
+        "type": "object"
+      },
+      "ProposalView": {
+        "description": "The Proposal tab: the proposal, if one has been started, and what you may do.",
+        "properties": {
+          "permissions": {
+            "$ref": "#/components/schemas/ProposalPermissions"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Proposal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the owner starts one (\"The owner will write a proposal once this idea is shortlisted.\")"
+          }
+        },
+        "required": [
+          "proposal",
+          "permissions"
+        ],
+        "title": "ProposalView",
+        "type": "object"
+      },
+      "PublicFormSettings": {
+        "description": "Project settings -> Public form (``project.edit_settings``).",
+        "properties": {
+          "available": {
+            "description": "Public forms are allowed on this instance (SOUNDINGS_PUBLIC_SUBMISSION_ENABLED, the chart's features.publicSubmission), the project isn't archived and its slug isn't one of the app's own paths (RESERVED_SLUGS, older projects only). False: explain why and disable the switch.",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "awaiting_moderation": {
+            "description": "Ideas in the moderation queue now.",
+            "title": "Awaiting Moderation",
+            "type": "integer"
+          },
+          "email_available": {
+            "description": "Email is set up (SMTP): without it the form can't ask for an address, so require_email_verification can't be turned on.",
+            "title": "Email Available",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "form_url": {
+            "description": "<base URL>/<slug>/submit, to copy and share.",
+            "title": "Form Url",
+            "type": "string"
+          },
+          "intro_md": {
+            "title": "Intro Md",
+            "type": "string"
+          },
+          "moderation_required": {
+            "description": "New ideas wait until a project admin approves them (default on).",
+            "title": "Moderation Required",
+            "type": "boolean"
+          },
+          "require_email_verification": {
+            "description": "New ideas wait until the submitter confirms their address.",
+            "title": "Require Email Verification",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "email_available",
+          "enabled",
+          "require_email_verification",
+          "moderation_required",
+          "intro_md",
+          "form_url",
+          "awaiting_moderation"
+        ],
+        "title": "PublicFormSettings",
+        "type": "object"
+      },
+      "PublicFormSettingsUpdate": {
+        "additionalProperties": false,
+        "description": "Partial update; omitted or null fields are unchanged.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "intro_md": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intro Md"
+          },
+          "moderation_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moderation Required"
+          },
+          "require_email_verification": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Require Email Verification"
+          }
+        },
+        "title": "PublicFormSettingsUpdate",
+        "type": "object"
+      },
+      "PublicProject": {
+        "description": "What the public form at ``/{slug}/submit`` shows and asks for.",
+        "properties": {
+          "asks_for_email": {
+            "description": "Email is set up for this instance: show the optional email field and the \"Email me when the status changes\" box. False: ask for neither.",
+            "title": "Asks For Email",
+            "type": "boolean"
+          },
+          "branding": {
+            "$ref": "#/components/schemas/EffectiveBranding",
+            "description": "The project's effective branding."
+          },
+          "email_required": {
+            "description": "The project requires a confirmed address: the email field is required, and the idea waits until the submitter opens the link we email them.",
+            "title": "Email Required",
+            "type": "boolean"
+          },
+          "intro_md": {
+            "description": "Markdown above the form (render without raw HTML).",
+            "title": "Intro Md",
+            "type": "string"
+          },
+          "moderated": {
+            "description": "New ideas wait for the team's review before anyone else sees them.",
+            "title": "Moderated",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "intro_md",
+          "asks_for_email",
+          "email_required",
+          "moderated",
+          "branding"
+        ],
+        "title": "PublicProject",
+        "type": "object"
+      },
+      "PublicProjectRef": {
+        "description": "The project as the public sees it: its name, nothing else.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "PublicProjectRef",
+        "type": "object"
+      },
+      "PublicSubmissionCreate": {
+        "additionalProperties": false,
+        "description": "The public form. Only ``title`` and ``summary`` are required. Send it as\n``Content-Type: application/json`` (anything else is 415).",
+        "properties": {
+          "altcha": {
+            "description": "The ALTCHA widget's payload (base64).",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/=_-]+$",
+            "title": "Altcha",
+            "type": "string"
+          },
+          "description_md": {
+            "default": "",
+            "description": "Markdown, optional.",
+            "maxLength": 10000,
+            "title": "Description Md",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "minLength": 3,
+                "pattern": "^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional (required when PublicProject.email_required). One plain address. When PublicProject.asks_for_email is false it is ignored and not stored, and so is wants_updates.",
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional; a blank value means none.",
+            "title": "Name"
+          },
+          "summary": {
+            "description": "One or two sentences.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "wants_updates": {
+            "default": false,
+            "description": "Email me when the status changes (needs email).",
+            "title": "Wants Updates",
+            "type": "boolean"
+          },
+          "website": {
+            "default": "",
+            "description": "Leave empty.",
+            "title": "Website",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "summary",
+          "altcha"
+        ],
+        "title": "PublicSubmissionCreate",
+        "type": "object"
+      },
+      "PublicSubmissionReceipt": {
+        "description": "The confirmation page. The tracking link is shown once here (and emailed when\nthere is an address): only its hash is kept to look it up.",
+        "properties": {
+          "email_sent": {
+            "description": "An address was given and email is set up: say \"We'll also email you the link.\" True even when the per-address limit held that email back (the limit is silent, so this can't reveal how often an address was used).",
+            "title": "Email Sent",
+            "type": "boolean"
+          },
+          "held_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "email_verification: ask them to open the link we emailed; moderation: the team reviews new ideas first; null: the team can see it now."
+          },
+          "tracking_token": {
+            "description": "43 characters; keep it private.",
+            "title": "Tracking Token",
+            "type": "string"
+          },
+          "tracking_url": {
+            "description": "<base URL>/track#<token>: the private link to show and copy.",
+            "title": "Tracking Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tracking_token",
+          "tracking_url",
+          "held_for",
+          "email_sent"
+        ],
+        "title": "PublicSubmissionReceipt",
+        "type": "object"
       },
       "Recommendation": {
         "enum": [
@@ -6047,6 +7564,38 @@
         "title": "StatusLabelsUpdate",
         "type": "object"
       },
+      "SubmitterContact": {
+        "description": "Only for project and platform admins (``public.erase_submitter``).",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when none was given or it was erased.",
+            "title": "Email"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "wants_updates": {
+            "title": "Wants Updates",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email",
+          "email_verified",
+          "wants_updates"
+        ],
+        "title": "SubmitterContact",
+        "type": "object"
+      },
       "TagInfo": {
         "description": "A tag in use in the project (filter chips, tag autocomplete).\n\nTags no idea uses any more are not listed (they stay stored, so re-adding one\nkeeps its first spelling).",
         "properties": {
@@ -6072,6 +7621,183 @@
           "idea_count"
         ],
         "title": "TagInfo",
+        "type": "object"
+      },
+      "TrackedStatusChange": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Resolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/IdeaStatus"
+          },
+          "status_label": {
+            "description": "The project's label (closed: the resolution's).",
+            "title": "Status Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "resolution",
+          "status_label",
+          "at"
+        ],
+        "title": "TrackedStatusChange",
+        "type": "object"
+      },
+      "TrackedSubmission": {
+        "description": "The private tracking page: what the submitter sent and its status, nothing\nelse (no people, comments, evaluations, scores, or anything the team wrote: the\ntitle and summary are the submitter's own, as sent, even if the team edited the\nidea since).",
+        "properties": {
+          "branding": {
+            "$ref": "#/components/schemas/EffectiveBranding"
+          },
+          "can_resend_verification": {
+            "description": "An unconfirmed address is on file and another confirmation email may be sent now (at most 3 a day).",
+            "title": "Can Resend Verification",
+            "type": "boolean"
+          },
+          "email_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The address on file, masked (\"j•••@example.org\"); null if none.",
+            "title": "Email Hint"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "held_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "email_verification: \"Confirm your address to send it\"; moderation: \"Waiting for review\"; null: with the team."
+          },
+          "history": {
+            "description": "Status changes since it reached the team, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/TrackedStatusChange"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/PublicProjectRef"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Resolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/IdeaStatus"
+          },
+          "status_label": {
+            "title": "Status Label",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "summary": {
+            "description": "As submitted.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "As submitted.",
+            "title": "Title",
+            "type": "string"
+          },
+          "wants_updates": {
+            "title": "Wants Updates",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "title",
+          "summary",
+          "submitted_at",
+          "held_for",
+          "status",
+          "resolution",
+          "status_label",
+          "history",
+          "email_hint",
+          "email_verified",
+          "wants_updates",
+          "can_resend_verification",
+          "branding"
+        ],
+        "title": "TrackedSubmission",
+        "type": "object"
+      },
+      "TrackingRequest": {
+        "additionalProperties": false,
+        "description": "The tracking page posts the token from its URL's fragment (``/track#<token>``).",
+        "properties": {
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TrackingRequest",
+        "type": "object"
+      },
+      "TrackingUpdatesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Token",
+            "type": "string"
+          },
+          "wants_updates": {
+            "description": "Email me when the status changes.",
+            "title": "Wants Updates",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "token",
+          "wants_updates"
+        ],
+        "title": "TrackingUpdatesRequest",
         "type": "object"
       },
       "UnsubscribeInfo": {
@@ -6387,6 +8113,22 @@
           "code"
         ],
         "title": "ValidationProblem",
+        "type": "object"
+      },
+      "VerificationRequest": {
+        "additionalProperties": false,
+        "description": "The confirmation page posts the token from its URL's fragment (``/verify#<token>``).",
+        "properties": {
+          "token": {
+            "pattern": "^[A-Za-z0-9_.-]{16,512}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerificationRequest",
         "type": "object"
       },
       "VoteState": {
@@ -6926,6 +8668,255 @@
         "summary": "Read the audit log",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/branding": {
+      "get": {
+        "description": "platform.edit_branding (session only): the global profile as stored.",
+        "operationId": "get_global_branding",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Admin settings: branding",
+        "tags": [
+          "branding"
+        ]
+      },
+      "put": {
+        "description": "platform.edit_branding (session only). The complete profile: omitted or null fields use the built-in defaults. Image ids must be global uploads of the right kind (422 invalid_asset). Audited (branding.update, field names only).",
+        "operationId": "update_global_branding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change the global branding",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/admin/branding/assets": {
+      "post": {
+        "description": "platform.edit_branding (session only). 201 with the stored image. 413 content_too_large; 422 invalid_image (not PNG or SVG, damaged, too many pixels, or an SVG with anything outside the allow-list: a DOCTYPE, scripts, event handlers, styles, external references, foreign objects, too many elements...); 429 too_many_attempts (20 uploads per profile per day). Use it with update_global_branding; images no profile uses are deleted after 24 hours.",
+        "operationId": "upload_global_brand_asset",
+        "parameters": [
+          {
+            "description": "What the image is for.",
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/BrandAssetKind",
+              "description": "What the image is for."
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "image/png": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/svg+xml": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "The image file itself as the body (no multipart, no JSON): PNG or SVG. At most SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES (512 KiB by default); PNGs at most 2048 x 2048 pixels (favicons 512 x 512); SVGs at most 2,000 elements, nested at most 32 deep.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandAsset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Request body too large (content_too_large)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Upload a global logo or favicon",
+        "tags": [
+          "branding"
         ]
       }
     },
@@ -9863,6 +11854,128 @@
         ]
       }
     },
+    "/api/v1/branding": {
+      "get": {
+        "description": "Public: the global effective branding (app name, colours, font, logo and favicon URLs) for the SPA shell, the sign-in page and every signed-in page. Project overrides are applied only where a project faces outward (public form and tracking pages, submitter emails, exported proposals).",
+        "operationId": "get_branding",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectiveBranding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "The app's branding",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/assets/{asset_id}": {
+      "get": {
+        "description": "Public. The stored bytes with their stored type (image/png or image/svg+xml), X-Content-Type-Options: nosniff, Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox, and Cache-Control: public, max-age=31536000, immutable (ids never change content). ETag \"<sha256>\"; If-None-Match -> 304.",
+        "operationId": "get_brand_asset",
+        "parameters": [
+          {
+            "description": "The image's id.",
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "description": "The image's id.",
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The image.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Cached for a year.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "The image's SHA-256, quoted.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched)."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "A logo or favicon",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
     "/api/v1/comments/{comment_id}": {
       "delete": {
         "description": "The author (403 not_author) or a project admin. Leaves a 'comment deleted' placeholder in the feed.",
@@ -11613,6 +13726,1183 @@
         ]
       }
     },
+    "/api/v1/ideas/{idea}/proposal": {
+      "get": {
+        "description": "proposal.view. The proposal (null until the owner starts one) and what you may do. Carries no score data.",
+        "operationId": "get_proposal",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The Proposal tab",
+        "tags": [
+          "proposals"
+        ]
+      },
+      "post": {
+        "description": "proposal.write (owner, project and platform admins) while the idea is Shortlisted or in Proposal (c7, else 409 proposal_not_available). Creates all eight sections (Summary starts as the idea's summary) and moves a Shortlisted idea to Proposal (a status change like any other: feed, notifications, audit). 409 proposal_exists when there already is one.",
+        "operationId": "create_proposal",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Start the proposal",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/markdown": {
+      "get": {
+        "description": "proposal.export: a text/markdown download (title, metadata, the eight sections; the aggregate score only if you may see it). Shares the export limit with PDF (429 too_many_attempts with Retry-After). 404 when there is no proposal.",
+        "operationId": "export_proposal_markdown",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The proposal as Markdown (UTF-8).",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename=\"<KEY>-proposal.<ext>\" (e.g. CUST-12).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Export as Markdown",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/pdf": {
+      "get": {
+        "description": "proposal.export: an application/pdf download in the project's effective branding (cover with logo or app name, colours and font; page numbers), rendered in a separate process without any remote resource. 429 too_many_attempts (with Retry-After) beyond the export limit; 503 export_busy (with Retry-After) when the renderer stayed busy for 30 s or a render hit its 20 s limit. 404 when there is no proposal.",
+        "operationId": "export_proposal_pdf",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The proposal as a PDF.",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename=\"<KEY>-proposal.<ext>\" (e.g. CUST-12).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Busy (see code): retry shortly"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Export as PDF",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/sections/{section_key}": {
+      "put": {
+        "description": "proposal.write (c7). Optimistic concurrency per section: base_version must be the section's current version, else 409 proposal_conflict whose current is the section as saved now (someone saved it since). Identical text changes nothing (same version). The text is kept verbatim (no trimming). 404 when there is no proposal.",
+        "operationId": "update_proposal_section",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A template section's key.",
+            "in": "path",
+            "name": "section_key",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProposalSectionKey",
+              "description": "A template section's key."
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalSectionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalSection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalConflictProblem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state: proposal_conflict (with current: the section as saved now), proposal_not_available, project_archived, awaiting_moderation"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Save a section",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/threads": {
+      "get": {
+        "description": "proposal.view: every thread with at least one comment that isn't deleted, by section in template order, then oldest first. 404 when there is no proposal.",
+        "operationId": "list_proposal_threads",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalThreadList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Margin comment threads",
+        "tags": [
+          "proposals"
+        ]
+      },
+      "post": {
+        "description": "proposal.comment (members and admins): opens a thread on a section with its first comment. 409 too_many_comments beyond 500 threads. 404 when there is no proposal.",
+        "operationId": "create_proposal_thread",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalThreadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Comment on a section",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/comments": {
+      "post": {
+        "description": "proposal.comment. Replies are flat; replying to a resolved thread reopens it. 409 too_many_comments beyond 200 comments in a thread.",
+        "operationId": "reply_to_proposal_thread",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A margin thread's id.",
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "description": "A margin thread's id.",
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalCommentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Reply in a thread",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/comments/{comment_id}": {
+      "delete": {
+        "description": "Your own (comment.edit_own: 403 not_author otherwise) or anyone's as a project admin (comment.delete_any). Leaves a stub; a thread with only deleted comments disappears. Idempotent.",
+        "operationId": "delete_proposal_comment",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A margin thread's id.",
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "description": "A margin thread's id.",
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A comment's id (in that thread).",
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "description": "A comment's id (in that thread).",
+              "format": "uuid",
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete a margin comment",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/resolved": {
+      "delete": {
+        "description": "proposal.comment. Idempotent.",
+        "operationId": "reopen_proposal_thread",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A margin thread's id.",
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "description": "A margin thread's id.",
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Reopen a thread",
+        "tags": [
+          "proposals"
+        ]
+      },
+      "put": {
+        "description": "proposal.comment. Idempotent; the thread collapses.",
+        "operationId": "resolve_proposal_thread",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A margin thread's id.",
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "description": "A margin thread's id.",
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Resolve a thread",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
     "/api/v1/ideas/{idea}/status": {
       "post": {
         "description": "Owner or project admin; any status to any status. Closing requires a resolution; leaving closed clears it. Same status and resolution is a no-op. No side effects (moving to evaluating does not set a due date), so the inverse call undoes a move.",
@@ -11722,6 +15012,357 @@
         "summary": "Move an idea to a status",
         "tags": [
           "ideas"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/submission": {
+      "get": {
+        "description": "idea.view: the submitter's name; contact details only with public.erase_submitter. 404 when the idea didn't come through the public form.",
+        "operationId": "get_idea_submission",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdeaSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "How a public idea came in",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/submission/approve": {
+      "post": {
+        "description": "idea.moderate. The idea appears in New for everyone with access. 409 not_awaiting_moderation when it isn't held for moderation. Audited.",
+        "operationId": "approve_submission",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdeaSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Approve a public idea",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/submission/erase": {
+      "post": {
+        "description": "public.erase_submitter (project and platform admins, session only). Removes the name, address, confirmation and update preference, ends the tracking link and deletes the idea's submitter emails; the idea stays. Idempotent. Audited without personal data. 404 when the idea didn't come through the public form.",
+        "operationId": "erase_submitter",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdeaSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Erase the submitter's details",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/submission/reject": {
+      "post": {
+        "description": "idea.moderate. Deletes the idea with its submitter's details and emails (spam, abuse, off-topic); its tracking link stops working. No email is sent. 409 not_awaiting_moderation when it isn't held for moderation. Audited (ids only).",
+        "operationId": "reject_submission",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Reject a public idea",
+        "tags": [
+          "submissions"
         ]
       }
     },
@@ -13534,6 +17175,358 @@
         ]
       }
     },
+    "/api/v1/projects/{slug}/branding": {
+      "get": {
+        "description": "project.edit_settings (session only): the project's override as stored; inherited values come from the global profile.",
+        "operationId": "get_project_branding",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Project settings: branding",
+        "tags": [
+          "branding"
+        ]
+      },
+      "put": {
+        "description": "project.edit_settings (session only). The complete override: omitted or null fields inherit the global branding (an empty body removes the override). Image ids must be this project's uploads of the right kind (422 invalid_asset). 409 project_archived. Audited as project.update.",
+        "operationId": "update_project_branding",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change the project's branding",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/projects/{slug}/branding/assets": {
+      "post": {
+        "description": "project.edit_settings (session only). 201 with the stored image. 413 content_too_large; 422 invalid_image (not PNG or SVG, damaged, too many pixels, or an SVG with anything outside the allow-list: a DOCTYPE, scripts, event handlers, styles, external references, foreign objects, too many elements...); 429 too_many_attempts (20 uploads per profile per day). Use it with update_project_branding; 409 project_archived.",
+        "operationId": "upload_project_brand_asset",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "What the image is for.",
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/BrandAssetKind",
+              "description": "What the image is for."
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "image/png": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/svg+xml": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "The image file itself as the body (no multipart, no JSON): PNG or SVG. At most SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES (512 KiB by default); PNGs at most 2048 x 2048 pixels (favicons 512 x 512); SVGs at most 2,000 elements, nested at most 32 deep.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandAsset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Request body too large (content_too_large)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Upload a project logo or favicon",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
     "/api/v1/projects/{slug}/groups": {
       "get": {
         "description": "Anyone who can view the project (like members). Groups granted a role here, admins first, then by group name.",
@@ -14772,6 +18765,343 @@
         ]
       }
     },
+    "/api/v1/projects/{slug}/moderation": {
+      "get": {
+        "description": "idea.moderate (project and platform admins; others 403 after project.view): public ideas held for moderation, oldest first, with total.",
+        "operationId": "list_moderation_queue",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Ideas waiting for moderation",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/projects/{slug}/public-form": {
+      "get": {
+        "description": "project.edit_settings (session only).",
+        "operationId": "get_public_form_settings",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicFormSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Project settings: public form",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "patch": {
+        "description": "project.edit_settings (session only); audited as project.update. Changes apply to new submissions only (held ideas stay held). 409 public_submission_unavailable (turning the form on while the instance switch is off, or for an older project whose slug is one of the app's own paths), smtp_not_configured (requiring email verification without email), project_archived.",
+        "operationId": "update_public_form_settings",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicFormSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicFormSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change the public form",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
     "/api/v1/projects/{slug}/rubric": {
       "put": {
         "description": "Project admins. 3-6 criteria in display order; see RubricUpdate for removals. Recomputes every idea's aggregate. 422 unknown_criterion for a foreign id.",
@@ -14957,6 +19287,670 @@
         "summary": "List tags",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/public/projects/{slug}": {
+      "get": {
+        "description": "Public (public.submit, c8). The project's name, intro, what the form asks for and its effective branding. 404 when the form is off, the project is archived or unknown, or public submission is off for the instance (no hint which).",
+        "operationId": "get_public_project",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProject"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "The public form's project",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/projects/{slug}/altcha": {
+      "get": {
+        "description": "Public (c8). A fresh proof-of-work challenge for the ALTCHA widget (expires after SOUNDINGS_ALTCHA_EXPIRY; a solution is accepted once). Throttled per client IP (429 too_many_attempts with Retry-After).",
+        "operationId": "get_altcha_challenge",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltchaChallenge"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "An ALTCHA challenge",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/projects/{slug}/submissions": {
+      "post": {
+        "description": "Public (c8). Checks in order: content type (415) -> body (422) -> form available (404) -> per-IP limit (429) -> email required (422 email_required) -> ALTCHA (422 challenge_failed: invalid, expired, for another form or already used) -> per-project limit (429). Creates the idea in New (held while it waits for email confirmation or moderation), the private tracking link (shown once, here) and, with an address, an email asking to confirm it.",
+        "operationId": "submit_public_idea",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicSubmissionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSubmissionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Send an idea through the public form",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/track": {
+      "post": {
+        "description": "Public (public.track, c9): the submitter's own idea, its status and status history; nothing else. 404 for an unknown or erased token (no hint which). Throttled per client IP (429).",
+        "operationId": "track_submission",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackedSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Open a tracking link",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/track/erase": {
+      "post": {
+        "description": "Public (c9): the submitter erases their own name, address and private link, exactly like an admin's erase_submitter (UK GDPR); the idea stays with the team. The link stops working at once (a second call is 404). Audited without an actor (submission.erase, reason submitter). Throttled per client IP (429).",
+        "operationId": "erase_tracked_submission",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Delete my details",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/track/updates": {
+      "put": {
+        "description": "Public (c9). wants_updates=true needs an address on file (409 no_email); emails go out only once the address is confirmed. Idempotent.",
+        "operationId": "set_submission_updates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingUpdatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackedSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Turn status emails on or off",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/track/verification-email": {
+      "post": {
+        "description": "Public (c9). For an unconfirmed address on file (409 no_email, already_verified); at most 3 confirmation emails per submission per 24 hours (429 too_many_attempts with Retry-After); 409 smtp_not_configured when email is off.",
+        "operationId": "resend_verification_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackedSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Send the confirmation email again",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/verify-email": {
+      "post": {
+        "description": "Public (public.track, c9): the token from the confirmation email (/verify#<token>, valid 3 days), posted when the person clicks Confirm (never on page load). Confirms the address (idempotent); an idea held for confirmation moves on to moderation or to the team. Works while public submission is on for the instance, even if the project's form was turned off since. 404 for an invalid, expired or used-up token (the submission was erased, deleted or its address changed). Throttled per client IP (429).",
+        "operationId": "verify_submission_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailVerified"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Confirm a submitter's address",
+        "tags": [
+          "public"
         ]
       }
     },

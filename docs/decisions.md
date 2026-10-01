@@ -358,3 +358,54 @@ has every finding and its tests). Contract changes are additive and listed in
 | Dates in emails stay in the instance's format, not the viewer's browser language. | Rejected (UX p4) | Emails can't know the reader's locale; the app's format follows the browser. |
 | Undo on the "You're unsubscribed" page. | Deferred | Needs a public re-subscribe endpoint; people can sign in to their preferences. |
 
+## 2026-10-01 · Phase 4 contract
+
+Calls made while writing the proposals, public submission and branding contract
+([contract-phase4.md](api/contract-phase4.md), section 5 has the full list with
+reasons). Status **Proposed** = the lead's default; build it this way unless told
+otherwise.
+
+### Proposals
+
+| Decision | Status | Why |
+|---|---|---|
+| One Markdown text per fixed template section, each with its own `version`; a save sends `base_version` and gets 409 `proposal_conflict` if that section changed since; identical text is a no-op. | Proposed | Autosave per section; different sections never collide; wireframe 05's Reload / Keep mine without silent overwrites. |
+| No proposal status. Starting a proposal (owner or admins, c7) moves a Shortlisted idea to Proposal as an ordinary status change; outside Shortlisted and Proposal it is read-only but readable, commentable and exportable. Summary starts as the idea's summary. | Proposed | One lifecycle; the board shows where the work is. |
+| Margin threads per section with flat replies, resolve and reopen (anyone who may comment; a reply reopens), delete only (no edit); deleting is `comment.edit_own` / `comment.delete_any`. No notifications or @mentions for them in Phase 4. | Proposed | Wireframe 05; no new `NotificationType` (it breaks the SPA's exhaustive maps and mocks); a later phase can add one. |
+| Exports: two `GET`s (Markdown, PDF), 10 per user per minute, one PDF render per process at a time in a child process killed after 20 s (503 `export_busy`, also after 30 s waiting); at most 2,000 table cells render as tables (the rest as source); the aggregate line only for people who may see scores; never comments; PDFs in the project's effective branding with a local-only fetcher (`data:` and named bundled fonts only); Markdown rendered as the SPA renders it (raw HTML dropped, images as links, headings demoted through the parser). | Proposed | Role matrix E; no SSRF or local-file reads by construction; a hostile proposal can't stall exports or the event loop (measured in the contract review); the editor preview is the PDF; downloads work as plain links. |
+
+### Public submission
+
+| Decision | Status | Why |
+|---|---|---|
+| A public idea is an ordinary idea (`submitted_by_id` null) plus a `public_submissions` row (optional name and email, confirmation, opt-in, tracking token hashed and sealed). No IP address or user agent is stored; rate limits are in memory per IP (10 an hour) and in the database per project (100 an hour). No tags on the public form. | Proposed | One idea model; minimal personal data (UK GDPR); the per-project limit holds across replicas. |
+| `ideas.held_for` (`email_verification`, `moderation`): held ideas are listed and counted nowhere, for anyone; admins work through a moderation queue (oldest first, a count on the board). Ideas held for verification are invisible even to admins and deleted after 3 days. Idea writes on a moderation-held idea are 409 `awaiting_moderation` (new c19) until approved. Moderation is on by default for a new form; verification off. | Proposed | Linear-style triage: no unreviewed posts on boards or in search, no notifications about ideas people can't see. Safe defaults for an open form. |
+| Reject deletes the idea (spam, abuse, off-topic); a genuine but unwanted idea is approved and later closed as Rejected. Approve and reject send no email. | Proposed | Nothing personal kept from spam; the submitter of a real idea sees an honest status. |
+| Email confirmation exists for every project with email: only confirmed addresses get status emails; the project setting also holds the idea until confirmed. The confirmation email is fixed text (no title or name: "Confirm your idea for <project>"). Confirmation tokens are signed (no table), valid 3 days, confirmed on a click (never on page load), and work while the instance switch is on even if the project's form was turned off. At most 3 confirmation emails a day per address (lower-cased, `+tag` folded, counted in the outbox, silent) and per submission. Without SMTP the form asks for no address (and drops `wants_updates`). | Proposed | The form can't be used to mail strangers anything but a short fixed note; mail scanners can't confirm; one less table. |
+| Tokens never travel in URLs the server sees: links carry them after `#` (`/track#…`, `/verify#…`) and the SPA posts them in the body; tracking tokens are stored hashed (lookup) and sealed (for links in later emails), shown once. | Proposed | Ingress logs, traces (which carry URL paths) and `Referer` can't leak them; a database leak alone reveals none. |
+| The honeypot is checked after every other check (ALTCHA and its replay row included), accepts any value, is described neutrally and uses a DOM name autofill won't fill; it answers 201 with a lookalike receipt and keeps nothing else. ALTCHA's HMAC key is derived from the secret key, challenges are bound to their form (`data.project`), solved challenges are remembered until they expire (replays fail). Public writes must be `application/json` (415 otherwise). | Proposed | Bots learn nothing from status, timing or proof of work; real ideas aren't lost to autofill; nothing extra to configure; other sites can't post through visitors' browsers. |
+| Erasing a submitter clears name, address, confirmation, opt-in, the copy of what they sent and the tracking link and deletes the idea's submitter emails (which must name their idea); the idea stays. Admins erase from the idea page; the submitter erases from their tracking page ("Delete my details"). The form shows a fixed privacy notice. Retention: unconfirmed addresses go after 3 days, contact details of closed ideas idle for 180 days are erased automatically. | Proposed | UK GDPR erasure (without having to contact anyone), transparency and storage limitation without a settings screen. |
+| The tracking page and status emails show the title and summary as submitted (a copy in `public_submissions`), never the idea's current text. | Proposed | Nothing the team writes or edits reaches the public. |
+| Public form settings and moderation have their own endpoints (`/projects/{slug}/public-form`, `/moderation`, `/ideas/{idea}/submission…`) rather than new `Project` / `IdeaSummary` fields; contract-phase1's "`ProjectUpdate` gains those settings" is superseded. | Proposed | Additive contract: Phase 1–3 mocks and tests keep compiling. |
+| New projects can't take the app's own top-level paths as slugs (`RESERVED_SLUGS`: `settings`, `track`, `verify`, `ideas`, `api`, …); an older project with one can't turn its form on. | Proposed | SPEC puts the public form at `/{slug}/submit`, in the app's URL space. |
+| An instance switch `SOUNDINGS_PUBLIC_SUBMISSION_ENABLED` (chart `features.publicSubmission`, default on) turns every public form and link off. | Proposed | SPEC section 11's feature toggle; one place to stop intake in an incident. |
+
+### Branding
+
+| Decision | Status | Why |
+|---|---|---|
+| Global profile plus optional project overrides, every field "inherit" when empty. The signed-in app always uses the global branding; project overrides apply to the project's public pages, submitter emails and exported proposals. | Proposed | One consistent product for staff; projects still face the public in their own colours. |
+| Colours hex only (`#rrggbb`), fonts from a bundled set of four (Inter, IBM Plex Sans, Source Serif 4, Atkinson Hyperlegible; OFL), app name one line (≤ 40), email footer plain text (≤ 500, ≤ 5 lines); checked in the API and the database. | Proposed | CSS injection impossible by type; air-gapped fonts for the SPA (`@fontsource`) and PDFs (bundled `woff2`). |
+| Logos and favicons are PNG or SVG raw-body uploads stored in the database (no ICO or WebP): PNGs re-encoded with Pillow, SVGs parsed with expat (no DTD), allow-listed (no `use`, no reference chains, 2,000 elements, depth 32, a 10,000-element reference budget) and re-serialised, served with `nosniff`, a sandboxing CSP and immutable caching by id, shown only through `<img>`; no delete endpoint (unreferenced images expire after 24 hours) ([ADR 0012](adr/0012-branding-and-uploaded-images.md)). | Proposed | No object storage or multipart dependency; metadata and polyglots stripped; no rendering bombs (measured at 18–73 s in the review); SVG XSS blocked twice; cache busting for free. |
+| Live preview is client-side only; `GET /branding` is public (the sign-in page needs it). | Proposed | No preview endpoint; branding isn't secret. |
+
+### Platform and contract mechanics
+
+| Decision | Status | Why |
+|---|---|---|
+| The runtime image moves to `ubuntu:24.04` with Ubuntu's Python 3.12, Pango/HarfBuzz, `tzdata` and DejaVu as a glyph fallback ([ADR 0011](adr/0011-ubuntu-runtime-image-and-weasyprint.md)). | Proposed | WeasyPrint's libraries install from Ubuntu's archive, which is reachable; Debian's isn't. |
+| New `AuditAction` values `submission.approve`, `submission.reject`, `submission.erase`, `branding.update` are agreed but land at integration with the SPA's phrases; project branding and form changes use `project.update`. | Proposed | Adding enum values breaks the frontend typecheck until the phrases exist (Phase 3 precedent). |
+| `outbound_email.idea_id` is set exactly for the two submitter types (`ck_outbound_email_idea_iff_submission_type`; `NewEmail.idea_id`); Phase 3's plumbing test now passes an idea. | Proposed | Erasure deletes submitter emails by idea and must not miss one. |
+| Section text is the one request string that isn't whitespace-trimmed; a section save locks the idea `FOR SHARE`; 409 `proposal_conflict` carries the current section. | Proposed | Markdown indentation and autosave keep what was typed; saves to different sections don't block each other but can't race a status change; "Keep mine" can't race a refetch. |
+| While an idea is held for moderation every permission flag but `can_delete` is false; `IdeaDetail.held_for` / `via_public_form` land at integration with the audit actions. | Proposed | The SPA shows a read-only page with Approve / Reject; no new required response fields before the SPA's mocks have them. |
+| Declined from the contract review: idea numbers assigned on approval, the submitter's name for members only, a branding `updated_at` precondition, cutting the upload quota or the resend endpoint, bulk reject (later). | Proposed | Reasons in [contract-phase4 §7](api/contract-phase4.md#7-changes-after-the-contract). |

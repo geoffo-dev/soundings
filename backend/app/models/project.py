@@ -61,10 +61,21 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allow_volunteer_owners: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true")
     )
-    # Phase 4 (public submission form at /{slug}/submit); not exposed by the Phase 1 API.
+    # Phase 4: the public submission form at /{slug}/submit (contract-phase4 section
+    # 3.4), set in project settings -> Public form (GET/PATCH /projects/{slug}/public-form).
     public_submission_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    # New public ideas wait (hidden) until the submitter confirms their address.
+    public_require_email_verification: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    # New public ideas wait (hidden) until a project admin approves them.
+    public_moderation_required: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true")
+    )
+    # Markdown shown above the public form (at most 2,000 characters through the API).
+    public_intro_md: Mapped[str] = mapped_column(Text, default="", server_default="")
     # Label overrides only, e.g. {"shortlisted": "Short list"}; keys are IdeaStatus and
     # Resolution values. Missing keys use the default labels.
     status_labels: Mapped[dict[str, str]] = mapped_column(

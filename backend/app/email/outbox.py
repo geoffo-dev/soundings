@@ -123,7 +123,10 @@ async def defer_send(
 
 @dataclass(frozen=True, slots=True)
 class NewEmail:
-    """One email to queue: for a user (address looked up when sent) or an address."""
+    """One email to queue: for a user (address looked up when sent) or an address.
+
+    ``idea_id``: the idea a public submitter's email is about; required for the two
+    submission types and refused for every other type (the database checks it)."""
 
     type: EmailType
     recipient_user_id: UUID | None = None
@@ -132,6 +135,7 @@ class NewEmail:
     payload: Mapping[str, Any] = field(default_factory=dict)
     idempotency_key: str | None = None
     max_attempts: int = MAX_EMAIL_ATTEMPTS
+    idea_id: UUID | None = None
 
 
 _INSERT_EMAILS: Final = text(
@@ -139,15 +143,15 @@ _INSERT_EMAILS: Final = text(
     INSERT INTO outbound_email
         (id, type, status, recipient_user_id, to_address, requested_by_id, payload,
          message_id, idempotency_key, attempts, max_attempts, next_attempt_at,
-         created_at, updated_at)
+         created_at, updated_at, idea_id)
     SELECT row.id, row.type, 'queued', row.recipient_user_id, row.to_address,
            row.requested_by_id, row.payload, row.message_id, row.idempotency_key, 0,
-           row.max_attempts, :now, :now, :now
+           row.max_attempts, :now, :now, :now, row.idea_id
       FROM unnest(
                :ids, :types, :recipient_user_ids, :to_addresses, :requested_by_ids,
-               :payloads, :message_ids, :idempotency_keys, :max_attempts
+               :payloads, :message_ids, :idempotency_keys, :max_attempts, :idea_ids
            ) AS row(id, type, recipient_user_id, to_address, requested_by_id, payload,
-                    message_id, idempotency_key, max_attempts)
+                    message_id, idempotency_key, max_attempts, idea_id)
     ON CONFLICT (idempotency_key) DO NOTHING
     RETURNING id
     """
@@ -161,6 +165,7 @@ _INSERT_EMAILS: Final = text(
     bindparam("message_ids", type_=ARRAY(String())),
     bindparam("idempotency_keys", type_=ARRAY(String())),
     bindparam("max_attempts", type_=ARRAY(SmallInteger())),
+    bindparam("idea_ids", type_=ARRAY(Uuid())),
     bindparam("now", type_=DateTime(timezone=True)),
 )
 """Queued rows: one statement with an array per column, however many emails."""
@@ -192,6 +197,7 @@ async def enqueue(
             "message_ids": [new_message_id(settings) for _ in wanted],
             "idempotency_keys": [email.idempotency_key for email in wanted],
             "max_attempts": [email.max_attempts for email in wanted],
+            "idea_ids": [email.idea_id for email in wanted],
             "now": now,
         },
     )

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
 from app.models.enums import IdeaStatus, ProjectRole, ProjectVisibility, Resolution
 from app.schemas.base import PROJECT_KEY_PATTERN, SLUG_PATTERN, RequestModel, ResponseModel
@@ -15,6 +15,7 @@ from app.schemas.users import UserRef
 
 __all__ = [
     "DEFAULT_STATUS_LABELS",
+    "RESERVED_SLUGS",
     "Member",
     "MemberAdd",
     "MemberUpdate",
@@ -42,6 +43,23 @@ DEFAULT_STATUS_LABELS: dict[IdeaStatus | Resolution, str] = {
 """Labels used when a project has no override (keys match ``projects.status_labels``)."""
 
 Label = Annotated[str, Field(min_length=1, max_length=24)]
+
+RESERVED_SLUGS: frozenset[str] = frozenset(
+    {
+        "admin", "api", "assets", "branding", "design", "docs", "favicon", "healthz", "ideas",
+        "login", "logout", "mcp", "me", "metrics", "notifications", "projects", "public",
+        "readyz", "search", "settings", "static", "submit", "track", "unsubscribe", "verify",
+    }
+)  # fmt: skip
+"""Slugs a new project can't take: the public form lives at ``/{slug}/submit``
+(contract-phase4 section 3.4), so a slug must not be one of the app's own top-level
+paths (SPA routes, backend prefixes). 422 ``validation_error``."""
+
+
+def _not_reserved(slug: str) -> str:
+    if slug in RESERVED_SLUGS:
+        raise ValueError("this name is reserved for the app's own pages: choose another")
+    return slug
 
 
 class ProjectRef(ResponseModel):
@@ -134,11 +152,14 @@ class ProjectCreate(RequestModel):
     """Create a project with the default rubric and one admin (``admin_user_id``)."""
 
     name: str = Field(min_length=1, max_length=80)
-    slug: str = Field(
+    slug: Annotated[str, AfterValidator(_not_reserved)] = Field(
         min_length=2,
         max_length=48,
         pattern=SLUG_PATTERN,
-        description="URL name, e.g. customer-innovation. Cannot be changed later.",
+        description=(
+            "URL name, e.g. customer-innovation. Cannot be changed later. Not one of the "
+            "app's own paths (RESERVED_SLUGS: settings, track, ...)."
+        ),
     )
     key: str = Field(
         pattern=PROJECT_KEY_PATTERN,

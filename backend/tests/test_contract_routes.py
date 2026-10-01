@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 3): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 4): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -29,13 +29,17 @@ from app.api.v1 import (
     admin_users,
     auth,
     auth_sso,
+    branding,
     evaluations,
     groups,
     ideas,
     notifications,
     project_groups,
     projects,
+    proposals,
+    public,
     search,
+    submissions,
     unsubscribe,
     users,
     work,
@@ -141,6 +145,57 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("POST", "/api/v1/admin/email/outbox/retry-failed", "retry_failed_outbox_emails"),
     ("GET", "/api/v1/admin/email/outbox/{email_id}", "get_outbox_email"),
     ("POST", "/api/v1/admin/email/outbox/{email_id}/retry", "retry_outbox_email"),
+    # --- Phase 4: proposals, public submission, branding (docs/api/contract-phase4.md) --
+    ("GET", "/api/v1/ideas/{idea}/proposal", "get_proposal"),
+    ("POST", "/api/v1/ideas/{idea}/proposal", "create_proposal"),
+    ("PUT", "/api/v1/ideas/{idea}/proposal/sections/{section_key}", "update_proposal_section"),
+    ("GET", "/api/v1/ideas/{idea}/proposal/markdown", "export_proposal_markdown"),
+    ("GET", "/api/v1/ideas/{idea}/proposal/pdf", "export_proposal_pdf"),
+    ("GET", "/api/v1/ideas/{idea}/proposal/threads", "list_proposal_threads"),
+    ("POST", "/api/v1/ideas/{idea}/proposal/threads", "create_proposal_thread"),
+    (
+        "POST",
+        "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/comments",
+        "reply_to_proposal_thread",
+    ),
+    (
+        "PUT",
+        "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/resolved",
+        "resolve_proposal_thread",
+    ),
+    (
+        "DELETE",
+        "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/resolved",
+        "reopen_proposal_thread",
+    ),
+    (
+        "DELETE",
+        "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/comments/{comment_id}",
+        "delete_proposal_comment",
+    ),
+    ("GET", "/api/v1/public/projects/{slug}", "get_public_project"),
+    ("GET", "/api/v1/public/projects/{slug}/altcha", "get_altcha_challenge"),
+    ("POST", "/api/v1/public/projects/{slug}/submissions", "submit_public_idea"),
+    ("POST", "/api/v1/public/track", "track_submission"),
+    ("PUT", "/api/v1/public/track/updates", "set_submission_updates"),
+    ("POST", "/api/v1/public/track/verification-email", "resend_verification_email"),
+    ("POST", "/api/v1/public/track/erase", "erase_tracked_submission"),
+    ("POST", "/api/v1/public/verify-email", "verify_submission_email"),
+    ("GET", "/api/v1/projects/{slug}/public-form", "get_public_form_settings"),
+    ("PATCH", "/api/v1/projects/{slug}/public-form", "update_public_form_settings"),
+    ("GET", "/api/v1/projects/{slug}/moderation", "list_moderation_queue"),
+    ("GET", "/api/v1/ideas/{idea}/submission", "get_idea_submission"),
+    ("POST", "/api/v1/ideas/{idea}/submission/approve", "approve_submission"),
+    ("POST", "/api/v1/ideas/{idea}/submission/reject", "reject_submission"),
+    ("POST", "/api/v1/ideas/{idea}/submission/erase", "erase_submitter"),
+    ("GET", "/api/v1/branding", "get_branding"),
+    ("GET", "/api/v1/branding/assets/{asset_id}", "get_brand_asset"),
+    ("GET", "/api/v1/admin/branding", "get_global_branding"),
+    ("PUT", "/api/v1/admin/branding", "update_global_branding"),
+    ("POST", "/api/v1/admin/branding/assets", "upload_global_brand_asset"),
+    ("GET", "/api/v1/projects/{slug}/branding", "get_project_branding"),
+    ("PUT", "/api/v1/projects/{slug}/branding", "update_project_branding"),
+    ("POST", "/api/v1/projects/{slug}/branding/assets", "upload_project_brand_asset"),
 ]
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the
@@ -232,11 +287,98 @@ PHASE3_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "retry_outbox_email": (f"/api/v1/admin/email/outbox/{EMAIL}/retry", None),
 }
 
+THREAD = "2b6f0c3e-8d1a-4e5f-9a7b-1c2d3e4f5a6b"
+PROPOSAL_COMMENT = "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+ASSET = "4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a"
+TRACKING_TOKEN = "Zq3v9Xb2Lk7Wm4Np8Rt6Yc1Hd5Gf0Js_Ua-Ee2Oo4Ii"  # 43 characters
+VERIFICATION_TOKEN = "eyJ2IjoxLCJzIjoiNWYwZThhNTIifQ.c2lnbmF0dXJlLXNpZ25hdHVyZQ"
+_PROPOSAL = "/api/v1/ideas/CUST-12/proposal"
+
 # operation_id -> a valid request for every operation still answered with 501. Every
 # Phase 1, 2 and 3 operation is implemented and tested (tests/api, tests/ideas,
 # tests/identity, tests/admin, tests/notifications). Add a row per stub; delete it when
 # you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Phase 4: proposals ---------------------------------------------------------
+    "get_proposal": (_PROPOSAL, None),
+    "create_proposal": (_PROPOSAL, None),
+    "update_proposal_section": (
+        f"{_PROPOSAL}/sections/problem",
+        {"body_md": "Repeat purchases fell **8%** last year.", "base_version": 3},
+    ),
+    "export_proposal_markdown": (f"{_PROPOSAL}/markdown", None),
+    "export_proposal_pdf": (f"{_PROPOSAL}/pdf", None),
+    "list_proposal_threads": (f"{_PROPOSAL}/threads", None),
+    "create_proposal_thread": (
+        f"{_PROPOSAL}/threads",
+        {"section_key": "problem", "body_md": "Source for the 8%?"},
+    ),
+    "reply_to_proposal_thread": (
+        f"{_PROPOSAL}/threads/{THREAD}/comments",
+        {"body_md": "The Q3 retention report, page 4."},
+    ),
+    "resolve_proposal_thread": (f"{_PROPOSAL}/threads/{THREAD}/resolved", None),
+    "reopen_proposal_thread": (f"{_PROPOSAL}/threads/{THREAD}/resolved", None),
+    "delete_proposal_comment": (
+        f"{_PROPOSAL}/threads/{THREAD}/comments/{PROPOSAL_COMMENT}",
+        None,
+    ),
+    # --- Phase 4: public submission ---------------------------------------------------
+    "get_public_project": ("/api/v1/public/projects/cust", None),
+    "get_altcha_challenge": ("/api/v1/public/projects/cust/altcha", None),
+    "submit_public_idea": (
+        "/api/v1/public/projects/cust/submissions",
+        {
+            "title": "Print-free returns with a QR code",
+            "summary": "Customers show a code instead of printing a label.",
+            "description_md": "",
+            "name": "Jo",
+            "email": "jo@example.org",
+            "wants_updates": True,
+            "altcha": "eyJwYXJhbWV0ZXJzIjp7fX0=",
+            "website": "",
+        },
+    ),
+    "track_submission": ("/api/v1/public/track", {"token": TRACKING_TOKEN}),
+    "set_submission_updates": (
+        "/api/v1/public/track/updates",
+        {"token": TRACKING_TOKEN, "wants_updates": False},
+    ),
+    "resend_verification_email": (
+        "/api/v1/public/track/verification-email",
+        {"token": TRACKING_TOKEN},
+    ),
+    "erase_tracked_submission": ("/api/v1/public/track/erase", {"token": TRACKING_TOKEN}),
+    "verify_submission_email": ("/api/v1/public/verify-email", {"token": VERIFICATION_TOKEN}),
+    "get_public_form_settings": ("/api/v1/projects/cust/public-form", None),
+    "update_public_form_settings": (
+        "/api/v1/projects/cust/public-form",
+        {"enabled": True, "moderation_required": True, "intro_md": "We read every idea."},
+    ),
+    "list_moderation_queue": ("/api/v1/projects/cust/moderation?limit=20", None),
+    "get_idea_submission": ("/api/v1/ideas/CUST-12/submission", None),
+    "approve_submission": ("/api/v1/ideas/CUST-12/submission/approve", None),
+    "reject_submission": ("/api/v1/ideas/CUST-12/submission/reject", None),
+    "erase_submitter": ("/api/v1/ideas/CUST-12/submission/erase", None),
+    # --- Phase 4: branding ------------------------------------------------------------
+    "get_branding": ("/api/v1/branding", None),
+    "get_brand_asset": (f"/api/v1/branding/assets/{ASSET}", None),
+    "get_global_branding": ("/api/v1/admin/branding", None),
+    "update_global_branding": (
+        "/api/v1/admin/branding",
+        {
+            "app_name": "Acme Ideas",
+            "primary_color": "#0B6E4F",
+            "font": "ibm_plex_sans",
+            "email_footer": "Acme Ltd\n1 High Street, London",
+            "logo_asset_id": ASSET,
+        },
+    ),
+    "upload_global_brand_asset": ("/api/v1/admin/branding/assets?kind=logo", None),
+    "get_project_branding": ("/api/v1/projects/cust/branding", None),
+    "update_project_branding": ("/api/v1/projects/cust/branding", {"accent_color": "#f59e0b"}),
+    "upload_project_brand_asset": ("/api/v1/projects/cust/branding/assets?kind=favicon", None),
+}
 
 PUBLIC_OPERATIONS = frozenset(
     {
@@ -250,9 +392,22 @@ PUBLIC_OPERATIONS = frozenset(
         "logout_redirect",
         "get_unsubscribe",
         "confirm_unsubscribe",
+        # Phase 4: the public form, tracking and confirmation links, branding for
+        # everyone (the sign-in page and the public pages need it).
+        "get_public_project",
+        "get_altcha_challenge",
+        "submit_public_idea",
+        "track_submission",
+        "set_submission_updates",
+        "resend_verification_email",
+        "erase_tracked_submission",
+        "verify_submission_email",
+        "get_branding",
+        "get_brand_asset",
     }
 )
-"""Operations that need no session (sign-in and sign-out, unsubscribe links)."""
+"""Operations that need no session (sign-in and sign-out, unsubscribe links, the public
+form and its links, branding)."""
 
 _METHODS = {operation_id: method for method, _, operation_id in CONTRACT}
 
@@ -269,13 +424,17 @@ def _feature_routes() -> list[APIRoute]:
             admin_users,
             auth,
             auth_sso,
+            branding,
             evaluations,
             groups,
             ideas,
             notifications,
             project_groups,
             projects,
+            proposals,
+            public,
             search,
+            submissions,
             unsubscribe,
             users,
             work,
@@ -538,3 +697,173 @@ async def test_one_click_unsubscribe_accepts_the_rfc8058_form_post(
 
     assert response.status_code == 404, response.text
     assert response.json()["code"] == "not_found"
+
+
+# --- Phase 4 ---------------------------------------------------------------------------
+_LONG = "x" * 20_001
+_SUBMISSION = STUBS["submit_public_idea"][1] or {}
+_BRANDING = STUBS["update_global_branding"][1] or {}
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        # Proposal sections: fixed keys, a version to compare, a length limit.
+        ("update_proposal_section", f"{_PROPOSAL}/sections/appendix", None),
+        ("update_proposal_section", None, {"body_md": "x", "base_version": 0}),
+        ("update_proposal_section", None, {"body_md": "x"}),
+        ("update_proposal_section", None, {"body_md": _LONG, "base_version": 1}),
+        ("update_proposal_section", None, {"body_md": "x", "base_version": 1, "title": "Y"}),
+        ("update_proposal_section", None, {"body_md": "a\u0000b", "base_version": 1}),
+        ("create_proposal_thread", None, {"section_key": "appendix", "body_md": "Hi"}),
+        ("create_proposal_thread", None, {"section_key": "problem", "body_md": "  "}),
+        ("create_proposal_thread", None, {"section_key": "problem", "body_md": "x" * 5_001}),
+        ("reply_to_proposal_thread", f"{_PROPOSAL}/threads/not-a-uuid/comments", None),
+        ("export_proposal_pdf", "/api/v1/ideas/CUST12/proposal/pdf", None),
+        # Public form settings and the moderation queue.
+        ("update_public_form_settings", None, {"intro_md": "x" * 2_001}),
+        ("update_public_form_settings", None, {"enabled": "maybe"}),
+        ("update_public_form_settings", None, {"slug": "elsewhere"}),
+        ("list_moderation_queue", "/api/v1/projects/cust/moderation?limit=0", None),
+        # Branding: only hex colours, bundled fonts, one-line names, plain short footers.
+        ("update_global_branding", None, _BRANDING | {"primary_color": "red"}),
+        ("update_global_branding", None, _BRANDING | {"primary_color": "#abc"}),
+        ("update_global_branding", None, _BRANDING | {"primary_color": "#1d5fa8;}"}),
+        ("update_global_branding", None, _BRANDING | {"accent_color": "#1d5fa8ff"}),
+        ("update_global_branding", None, _BRANDING | {"accent_color": "rgb(0,0,0)"}),
+        ("update_global_branding", None, _BRANDING | {"font": "Comic Sans MS"}),
+        ("update_global_branding", None, _BRANDING | {"font": "inter;color:red"}),
+        ("update_global_branding", None, _BRANDING | {"app_name": "Acme\nIdeas"}),
+        ("update_global_branding", None, _BRANDING | {"app_name": "A" * 41}),
+        ("update_global_branding", None, _BRANDING | {"email_footer": "a\nb\nc\nd\ne\nf"}),
+        ("update_global_branding", None, _BRANDING | {"email_footer": "Acme\tLtd"}),
+        ("update_global_branding", None, _BRANDING | {"email_footer": "x" * 501}),
+        ("update_global_branding", None, _BRANDING | {"logo_asset_id": "logo.png"}),
+        ("update_global_branding", None, _BRANDING | {"css": "body{}"}),
+        ("update_project_branding", None, {"primary_color": "#12345"}),
+        ("upload_global_brand_asset", "/api/v1/admin/branding/assets?kind=banner", None),
+        ("upload_global_brand_asset", "/api/v1/admin/branding/assets", None),
+        ("upload_project_brand_asset", "/api/v1/projects/cust/branding/assets", None),
+        # A project can't take a slug the app uses for its own pages (/{slug}/submit).
+        ("create_project", "/api/v1/projects", {"name": "T", "slug": "track", "key": "TRK"}),
+        ("create_project", "/api/v1/projects", {"name": "S", "slug": "settings", "key": "SET"}),
+    ],
+)
+async def test_invalid_phase4_requests_are_rejected_before_the_endpoint(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS.get(operation_id, ("", None))
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        ("submit_public_idea", None, _SUBMISSION | {"title": "Two\nlines"}),
+        ("submit_public_idea", None, _SUBMISSION | {"title": ""}),
+        ("submit_public_idea", None, _SUBMISSION | {"summary": "x" * 501}),
+        ("submit_public_idea", None, _SUBMISSION | {"description_md": "x" * 10_001}),
+        ("submit_public_idea", None, _SUBMISSION | {"name": "x" * 81}),
+        ("submit_public_idea", None, _SUBMISSION | {"email": "jo@example.org, x@example.org"}),
+        ("submit_public_idea", None, _SUBMISSION | {"email": "Jo <jo@example.org>"}),
+        ("submit_public_idea", None, _SUBMISSION | {"email": "jo@soundings.invalid"}),
+        ("submit_public_idea", None, _SUBMISSION | {"email": None, "wants_updates": True}),
+        ("submit_public_idea", None, {k: v for k, v in _SUBMISSION.items() if k != "altcha"}),
+        ("submit_public_idea", None, _SUBMISSION | {"altcha": "not base64!"}),
+        ("submit_public_idea", None, _SUBMISSION | {"altcha": "a" * 4_097}),
+        ("submit_public_idea", None, _SUBMISSION | {"status": "shortlisted"}),
+        ("submit_public_idea", None, _SUBMISSION | {"tags": ["returns"]}),
+        ("submit_public_idea", "/api/v1/public/projects/Not_A_Slug/submissions", None),
+        ("track_submission", None, {"token": "short"}),
+        ("track_submission", None, {"token": TRACKING_TOKEN + "x"}),
+        ("track_submission", None, {"token": TRACKING_TOKEN[:-1] + "/"}),
+        ("track_submission", None, {}),
+        ("set_submission_updates", None, {"token": TRACKING_TOKEN}),
+        ("erase_tracked_submission", None, {"token": TRACKING_TOKEN, "reason": "spam"}),
+        ("verify_submission_email", None, {"token": "a<script>" * 3}),
+        ("get_brand_asset", "/api/v1/branding/assets/logo.png", None),
+    ],
+)
+async def test_invalid_public_requests_are_rejected_without_a_session(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS[operation_id]
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+async def test_tokens_never_appear_in_public_urls(client: httpx.AsyncClient) -> None:
+    """Tracking and confirmation tokens travel in request bodies only (contract-phase4
+    section 3.5): no public path or query parameter may carry one."""
+    document = (await client.get("/api/v1/openapi.json")).json()
+    for path, item in document["paths"].items():
+        if not path.startswith("/api/v1/public/"):
+            continue
+        for operation in item.values():
+            names = {parameter["name"] for parameter in operation.get("parameters", [])}
+            assert names <= {"slug"}, (path, names)
+
+
+def test_binary_routes_document_their_content_types(app: FastAPI) -> None:
+    document = app.openapi()
+    expected = {
+        ("/api/v1/ideas/{idea}/proposal/pdf", "get"): {"application/pdf"},
+        ("/api/v1/ideas/{idea}/proposal/markdown", "get"): {"text/markdown"},
+        ("/api/v1/branding/assets/{asset_id}", "get"): {"image/png", "image/svg+xml"},
+    }
+    for (path, method), types in expected.items():
+        assert set(document["paths"][path][method]["responses"]["200"]["content"]) == types
+    for path in ("/api/v1/admin/branding/assets", "/api/v1/projects/{slug}/branding/assets"):
+        body = document["paths"][path]["post"]["requestBody"]
+        assert set(body["content"]) == {"image/png", "image/svg+xml"}
+
+
+def test_a_section_conflict_carries_the_current_section(app: FastAPI) -> None:
+    """409 proposal_conflict returns the section as saved now (contract-phase4 section
+    3.2), so "Keep mine" saves on top of it without a racing refetch."""
+    document = app.openapi()
+    conflict = document["paths"]["/api/v1/ideas/{idea}/proposal/sections/{section_key}"]["put"][
+        "responses"
+    ]["409"]["content"]
+    schema = document["components"]["schemas"]["ProposalConflictProblem"]
+
+    assert conflict == {
+        "application/problem+json": {
+            "schema": {"$ref": "#/components/schemas/ProposalConflictProblem"}
+        }
+    }
+    assert {"code", "current"} <= set(schema["properties"])
+    assert "#/components/schemas/ProposalSection" in str(schema["properties"]["current"])
+
+
+async def test_a_long_honeypot_value_is_still_a_valid_body(client: httpx.AsyncClient) -> None:
+    """A filled honeypot must look like any submission: never a 422 of its own."""
+    url, body = STUBS["submit_public_idea"]
+
+    response = await client.post(url, json=(body or {}) | {"website": "x" * 5_000})
+
+    assert response.status_code == 501, response.text
+
+
+@pytest.mark.usefixtures("signed_in")
+async def test_whitespace_only_section_text_is_a_valid_body(client: httpx.AsyncClient) -> None:
+    """Section text isn't trimmed (contract-phase4 section 3.2): indentation and blank
+    lines are valid bodies, as is a section someone emptied."""
+    url, _ = STUBS["update_proposal_section"]
+
+    for text in ("    code\n\n", "\n\n", ""):
+        response = await client.put(url, json={"body_md": text, "base_version": 1})
+
+        assert response.status_code == 501, response.text

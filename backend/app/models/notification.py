@@ -49,6 +49,13 @@ MAX_EMAIL_ATTEMPTS = 12
 """Attempts before a notification email fails for good (contract-phase3 section 3.9).
 A test email gets one attempt."""
 
+SUBMITTER_ADDRESS_KEY_SQL = r"lower(regexp_replace(to_address, '\+[^@]*@', '@'))"
+"""The address a confirmation email counts against (contract-phase4 section 3.5):
+lower-cased with any ``+tag`` sub-address removed, so ``Jo+1@x`` and ``jo+2@x`` share
+``jo@x``'s limit. Indexed (``ix_outbound_email_submission_address``); compare it with
+the same expression applied to the new address (``to_address`` replaced by the bound
+parameter)."""
+
 
 class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """The transactional outbox: one row per email, written in the same transaction
@@ -66,8 +73,13 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     The recipient is a user (address looked up at send time, so a changed address is
     used and a deactivated user gets nothing) or, for a test email to another address
-    and Phase 4's public submitters, ``to_address``. Phase 4 adds the idea reference
-    its submitter emails need.
+    and Phase 4's public submitters, ``to_address``. Submitter emails
+    (``submission_received``, ``submission_status_changed``) and only they name their
+    idea (``idea_id``, required for them, so erasure finds every one): they are rendered
+    from the idea and its ``public_submissions`` row at send time, deleted with the
+    idea, and deleted when the submitter's details are erased (contract-phase4 section
+    3.8). The per-address limit on confirmation emails counts ``submission_received``
+    rows by :data:`SUBMITTER_ADDRESS_KEY_SQL`.
     """
 
     __tablename__ = "outbound_email"
@@ -82,6 +94,13 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="next_attempt_iff_pending",
         ),
         CheckConstraint("(status = 'sent') = (sent_at IS NOT NULL)", name="sent_at_iff_sent"),
+        # Phase 4: submitter emails, and only they, name an idea; they go to an address.
+        CheckConstraint(
+            "(idea_id IS NOT NULL)"
+            " = (type IN ('submission_received', 'submission_status_changed'))",
+            name="idea_iff_submission_type",
+        ),
+        CheckConstraint("idea_id IS NULL OR to_address IS NOT NULL", name="submission_to_address"),
         UniqueConstraint("message_id"),
         UniqueConstraint("idempotency_key"),
         # The worker's claim and the sweep: due rows only (a small partial index).
@@ -95,6 +114,21 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_outbound_email_status_created_at_id", "status", "created_at", "id"),
         # The hourly cleanup's deletes and the admins' "an email failed lately" banner.
         Index("ix_outbound_email_status_updated_at", "status", "updated_at"),
+        # Phase 4: an idea's submitter emails (resend limit, erasure).
+        Index(
+            "ix_outbound_email_idea_id",
+            "idea_id",
+            "created_at",
+            postgresql_where=text("idea_id IS NOT NULL"),
+        ),
+        # Phase 4: at most 3 confirmation emails per address (sub-addresses folded) per
+        # 24 hours, first sends and resends together (contract-phase4 section 3.5).
+        Index(
+            "ix_outbound_email_submission_address",
+            text(SUBMITTER_ADDRESS_KEY_SQL),
+            "created_at",
+            postgresql_where=text("type = 'submission_received'"),
+        ),
     )
 
     type: Mapped[EmailType] = mapped_column(str_enum(EmailType, "type"))
@@ -112,12 +146,15 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Phase 4: the idea a public submitter's email is about (submitter types only).
+    idea_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ideas.id", ondelete="CASCADE"))
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )
     # "<uuid@host-of-the-first-base-url>", fixed at insert (the Message-ID header).
     message_id: Mapped[str] = mapped_column(String(255))
-    # One email per key: "digest:<user id>:<local date>"; Phase 4 per submission.
+    # One email per key: "digest:<user id>:<local date>"; Phase 4:
+    # "submission_received:<submission id>:<n>", "submission_status:<event id>".
     idempotency_key: Mapped[str | None] = mapped_column(String(200))
     attempts: Mapped[int] = mapped_column(SmallInteger, default=0, server_default=text("0"))
     max_attempts: Mapped[int] = mapped_column(
@@ -240,6 +277,7 @@ class NotificationPreference(Base):
 
 __all__ = [
     "MAX_EMAIL_ATTEMPTS",
+    "SUBMITTER_ADDRESS_KEY_SQL",
     "Notification",
     "NotificationPreference",
     "OutboundEmail",

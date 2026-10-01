@@ -536,13 +536,21 @@ def email_ids(rows: list[OutboundEmail]) -> list[UUID]:
 
 
 async def test_phase_4_submitter_emails_go_to_an_address_with_their_payload(
-    app: Any, settings: Settings, outbox: Outbox, runtime: Runtime, transport: RecordingTransport
+    app: Any,
+    settings: Settings,
+    api: AsUser,
+    team: Team,
+    outbox: Outbox,
+    runtime: Runtime,
+    transport: RecordingTransport,
 ) -> None:
     """The plumbing Phase 4 uses: an address recipient, content from the payload, no
-    notification row and no unsubscribe header (Phase 4 adds its own opt-out link)."""
+    notification row and no unsubscribe header (Phase 4 adds its own opt-out link).
+    Submitter emails always name their idea (the database requires it)."""
     from app.db import session_scope
     from app.models.enums import EmailType
 
+    idea = await (await api(team.member)).create_idea(team.slug)
     async with session_scope(app.state.sessionmaker) as db:
         [email_id] = await outbox_module.enqueue(
             db,
@@ -553,6 +561,7 @@ async def test_phase_4_submitter_emails_go_to_an_address_with_their_payload(
                     to_address="jo@example.org",
                     payload={"title": "Recycle at the till", "project": "Customer Innovation"},
                     idempotency_key="submission:1",
+                    idea_id=UUID(idea["id"]),
                 )
             ],
         )

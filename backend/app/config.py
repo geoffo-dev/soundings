@@ -106,6 +106,10 @@ SMTP_DEFAULT_PORTS: dict[str, int] = {"none": 587, "starttls": 587, "tls": 465}
 REMINDER_DAYS_MAX = 30
 """Evaluation reminders go out at most this many days before the due date."""
 
+BRANDING_UPLOAD_MAX_BYTES = 900 * 1024
+"""Ceiling for ``SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES``: an image must fit in a request
+body under the 1 MiB limit (``app.middleware.MAX_REQUEST_BODY_BYTES``)."""
+
 
 def _has_control_characters(value: str) -> bool:
     return any(ord(character) < 32 or ord(character) == 127 for character in value)
@@ -387,6 +391,63 @@ class Settings(DatabaseSettings):
         ),
     )
 
+    # --- Public submission and branding (contract-phase4 sections 3.4-3.12) ---------
+    # Names match the chart (deploy/helm/README.md). The ALTCHA HMAC key, the
+    # verification-link key and the tracking-token sealing key are derived from
+    # secret_key (HKDF, one purpose each): nothing more to configure or rotate.
+    public_submission_enabled: bool = Field(
+        default=True,
+        description=(
+            "Instance switch for public submission (the chart's features.publicSubmission). "
+            "false: every project's public form, tracking link and verification link "
+            "answers 404, and project settings can't turn a form on."
+        ),
+    )
+    public_submissions_per_ip: int = Field(
+        default=10,
+        ge=1,
+        le=1000,
+        description=(
+            "Public submissions one client IP address (IPv6: per /64) may send per hour, "
+            "across all projects. Counted per API process, like the sign-in throttles."
+        ),
+    )
+    public_submissions_per_project: int = Field(
+        default=100,
+        ge=1,
+        le=10_000,
+        description=(
+            "Public submissions one project accepts per hour, from everyone (counted in the "
+            "database, so across API replicas)."
+        ),
+    )
+    altcha_cost: int = Field(
+        default=5_000,
+        ge=1_000,
+        le=1_000_000,
+        description=(
+            "ALTCHA proof-of-work cost (PBKDF2/SHA-256 iterations per attempt, random "
+            "mode). Higher is slower for bots and for people on old phones."
+        ),
+    )
+    altcha_expiry: timedelta = Field(
+        default=timedelta(minutes=30),
+        description=(
+            "How long an ALTCHA challenge can be solved and sent (an ISO 8601 duration such "
+            "as PT30M; 1 minute to 1 day). Solved challenges are remembered this long, so a "
+            "solution is accepted once."
+        ),
+    )
+    branding_max_upload_bytes: int = Field(
+        default=512 * 1024,
+        ge=16 * 1024,
+        le=BRANDING_UPLOAD_MAX_BYTES,
+        description=(
+            "Largest logo or favicon upload in bytes (default 512 KiB, at most 900 KiB so "
+            "it fits the 1 MiB request limit)."
+        ),
+    )
+
     # --- Observability / worker -----------------------------------------------------
     otel_endpoint: str | None = Field(
         default=None,
@@ -504,6 +565,13 @@ class Settings(DatabaseSettings):
         if len(set(value)) > 5:
             raise ValueError("at most 5 reminder days")
         return sorted(set(value), reverse=True)
+
+    @field_validator("altcha_expiry")
+    @classmethod
+    def _validate_altcha_expiry(cls, value: timedelta) -> timedelta:
+        if not timedelta(minutes=1) <= value <= timedelta(days=1):
+            raise ValueError("altcha_expiry must be between 1 minute and 1 day")
+        return value
 
     @field_validator("trusted_proxies")
     @classmethod

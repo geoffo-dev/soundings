@@ -1,6 +1,6 @@
 # Data model (ERD)
 
-Schema after Phase 3: `backend/app/models/` (SQLAlchemy 2, typed), created by the
+Schema after Phase 4: `backend/app/models/` (SQLAlchemy 2, typed), created by the
 Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
 (Phase 1), `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external IDs,
 groups, group grants, the group-aware effective-roles view, audit indexes),
@@ -8,11 +8,15 @@ groups, group grants, the group-aware effective-roles view, audit indexes),
 table, since sign-in attempts now travel sealed in the `soundings_oidc` cookie, and
 clears plain-text ID tokens, which are now stored sealed) and
 `20261001_0005_notifications_and_email.py` (Phase 3: the email outbox, in-app
-notifications and email preferences) and `20261001_0006_email_cleanup_indexes.py`
-(Phase 3 review: indexes for the hourly cleanup). The procrastinate job-queue tables (revision
-`0001`) are not shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md),
-[api/contract-phase2.md](api/contract-phase2.md) and
-[api/contract-phase3.md](api/contract-phase3.md).
+notifications and email preferences), `20261001_0006_email_cleanup_indexes.py`
+(Phase 3 review: indexes for the hourly cleanup) and
+`20261001_0007_proposals_public_branding.py` (Phase 4: proposals and margin comments,
+public submitters, held ideas, ALTCHA replay protection, submitter emails, branding
+profiles and images). The procrastinate job-queue tables (revision `0001`) are not
+shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md),
+[api/contract-phase2.md](api/contract-phase2.md),
+[api/contract-phase3.md](api/contract-phase3.md) and
+[api/contract-phase4.md](api/contract-phase4.md).
 
 **Operators:** the migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. `pg_trgm`
 is a trusted extension, so the application's database user needs `CREATE` on the
@@ -57,6 +61,17 @@ erDiagram
     outbound_email |o--o{ notifications : "carries (immediate or digest)"
     users |o--o{ outbound_email : "is sent (recipient_user_id)"
     users ||--o{ notification_preferences : chooses
+    ideas ||--o| proposals : "has (Phase 4)"
+    proposals ||--|{ proposal_sections : "is written in"
+    proposals ||--o{ proposal_threads : "is discussed in"
+    proposal_threads ||--|{ proposal_comments : contains
+    users |o--o{ proposal_comments : wrote
+    ideas ||--o| public_submissions : "came in as"
+    projects ||--o{ public_submissions : "received"
+    ideas |o--o{ outbound_email : "submitter emails (idea_id)"
+    projects |o--o| branding_profiles : "overrides (null: global)"
+    projects |o--o{ brand_assets : "owns (null: global)"
+    brand_assets |o--o{ branding_profiles : "logo or favicon of"
 
     users {
         uuid id PK
@@ -124,7 +139,10 @@ erDiagram
         text description
         varchar visibility "private or internal"
         bool allow_volunteer_owners "default true"
-        bool public_submission_enabled "Phase 4"
+        bool public_submission_enabled "public form on"
+        bool public_require_email_verification "hold until confirmed"
+        bool public_moderation_required "hold until approved, default true"
+        text public_intro_md "above the form"
         jsonb status_labels "overrides only"
         int default_evaluation_days "default 7"
         int next_idea_number
@@ -169,6 +187,7 @@ erDiagram
         numeric aggregate_score "cache, raw"
         int aggregate_count "cache"
         bool high_disagreement "cache"
+        varchar held_for "email_verification, moderation; null = visible"
     }
     idea_tags {
         uuid idea_id PK, FK
@@ -268,6 +287,79 @@ erDiagram
         timestamptz next_attempt_at "queued: due; sending: lease"
         varchar last_error "sanitised"
         timestamptz sent_at
+        uuid idea_id FK "submitter emails only"
+    }
+    proposals {
+        uuid id PK
+        uuid idea_id FK, UK
+        uuid created_by_id FK
+        timestamptz updated_at "latest section save"
+    }
+    proposal_sections {
+        uuid proposal_id PK, FK
+        varchar key PK "summary ... next_steps"
+        text body_md
+        int version "optimistic concurrency"
+        uuid updated_by_id FK
+        timestamptz updated_at
+    }
+    proposal_threads {
+        uuid id PK
+        uuid proposal_id FK
+        varchar section_key
+        uuid created_by_id FK
+        timestamptz resolved_at
+        uuid resolved_by_id FK
+    }
+    proposal_comments {
+        uuid id PK
+        uuid thread_id FK
+        uuid author_id FK "nullable"
+        text body_md
+        timestamptz deleted_at
+    }
+    public_submissions {
+        uuid id PK
+        uuid idea_id FK, UK
+        uuid project_id FK "rate limit"
+        varchar name "optional, erasable"
+        varchar email "optional, erasable"
+        timestamptz email_verified_at
+        bool wants_updates
+        varchar tracking_token_hash UK "sha256"
+        varchar tracking_token_sealed "AES-GCM"
+        varchar submitted_title "as sent, erasable"
+        varchar submitted_summary "as sent, erasable"
+        timestamptz erased_at
+        uuid erased_by_id FK
+    }
+    altcha_used_challenges {
+        varchar signature PK
+        timestamptz expires_at
+    }
+    branding_profiles {
+        uuid id PK
+        uuid project_id FK, UK "null = global, nulls not distinct"
+        varchar app_name
+        varchar primary_color "#rrggbb"
+        varchar accent_color "#rrggbb"
+        varchar font "bundled font key"
+        varchar email_footer "plain text"
+        uuid logo_asset_id FK
+        uuid favicon_asset_id FK
+        uuid updated_by_id FK
+    }
+    brand_assets {
+        uuid id PK
+        uuid project_id FK "null = global"
+        varchar kind "logo, favicon"
+        varchar content_type "image/png, image/svg+xml"
+        bytea data
+        int byte_size
+        varchar sha256
+        int width
+        int height
+        uuid created_by_id FK
     }
 ```
 
@@ -321,11 +413,11 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `group_idp_values` | IdP group values mapped to a group, stored normalised (trim, strip `/` at both ends, lower-case); primary key `(group_id, value)`, indexed by `value` for the sign-in lookup. A value may map to several groups. |
 | `group_memberships` | One row per (group, user) with provenance flags `manual` (admin) and `synced` (sign-in sync); `ck_group_memberships_has_source` keeps at least one true. Sync sets and clears only `synced` (deleting the row when neither is left); admins set `manual`, and "remove member" deletes the row. Sync and the admin add/remove both lock the user's `users` row first, so they serialise. Indexed by `user_id`. Deactivated users' rows stay (they can't sign in) and don't count for c11 or member counts. |
 | `project_group_grants` | A project role for every member of a group; primary key `(project_id, group_id)`, indexed by `group_id`. Feeds the effective-roles view. |
-| `projects` | `slug` (URLs) and `key` (idea keys) are immutable. `key` matches `^[A-Z][A-Z0-9]{1,5}$`. `status_labels` stores overrides only, keyed by status and resolution values. `next_idea_number` is allocated with `UPDATE ... SET next_idea_number = next_idea_number + 1 RETURNING next_idea_number - 1` (race-free, numbers never reused). `archived_at` makes the project read-only and hides it by default. `public_submission_enabled` is Phase 4. |
+| `projects` | `slug` (URLs) and `key` (idea keys) are immutable. `key` matches `^[A-Z][A-Z0-9]{1,5}$`; new slugs can't be one of the app's own paths (`RESERVED_SLUGS`, API validation: the public form is `/{slug}/submit`). `status_labels` stores overrides only, keyed by status and resolution values. `next_idea_number` is allocated with `UPDATE ... SET next_idea_number = next_idea_number + 1 RETURNING next_idea_number - 1` (race-free, numbers never reused). `archived_at` makes the project read-only and hides it by default. Public form (Phase 4, `GET/PATCH /projects/{slug}/public-form`): `public_submission_enabled` (default off), `public_require_email_verification` (default off), `public_moderation_required` (default **on**), `public_intro_md` (≤ 2,000 characters through the API). |
 | `project_members` | Direct membership only. Group grants are in `project_group_grants`; the `project_effective_roles` view (above) combines both, and queries read the view. |
 | `rubric_criteria` | 3–6 active (`archived_at IS NULL`) per project, ordered by `position`. Active names are unique per project, case-insensitively (`uq_rubric_criteria_project_id_name_lower`, partial on `archived_at IS NULL`; unique indexes aren't deferrable, so `replace_rubric` applies renames and archives before inserts). `weight` is `numeric(4,2)`, `> 0`; the API accepts 0.01–10 in steps of 0.01 so nothing rounds to 0. Criteria with scores are archived when removed from the rubric; unscored ones are deleted. Scores reference criteria with a `NO ACTION` FK that is `DEFERRABLE INITIALLY DEFERRED`: deleting a scored criterion fails **at commit**, while deleting the whole project (which cascades to scores too) succeeds. New projects get `app/domain/rubric_defaults.py`. |
 | `tags` | Per project, created on first use; unique on `(project_id, lower(name))`, first spelling wins. Rows are never deleted; `list_project_tags` lists only tags on at least one idea, so typos drop out of the chips once no idea uses them. |
-| `ideas` | `(project_id, number)` unique; key = `project.key || '-' || number`. `resolution` set iff `status = 'closed'` (`ck_ideas_resolution_iff_closed`). Cached, **unmasked** aggregate: `aggregate_score` (1 decimal), `aggregate_count`, `high_disagreement`, recomputed in the same transaction as any evaluation, evaluator or rubric change; blind masking is applied per viewer when reading ([ADR 0006](adr/0006-blind-evaluation-and-aggregate-scoring.md)). `vote_count` caches `idea_votes`. `last_activity_at` is bumped by every activity event. Search: `ILIKE '%q%'` on `title`/`summary` served by `pg_trgm` GIN indexes. Indexes for board/list keyset pages in the default order: `(project_id, last_activity_at, id)` and `(project_id, status, last_activity_at, id)` (also the per-status counts); plus `(project_id, aggregate_score)`, `owner_id`, `last_activity_at` (cross-project My work). Phase 3 reminder scan: partial index `ix_ideas_evaluation_due_at_open` on `evaluation_due_at` where it is set and evaluation is open. Phase 4 adds public-submitter fields (hashed tracking token, contact email, moderation flag). |
+| `ideas` | `(project_id, number)` unique; key = `project.key || '-' || number`. `resolution` set iff `status = 'closed'` (`ck_ideas_resolution_iff_closed`). Cached, **unmasked** aggregate: `aggregate_score` (1 decimal), `aggregate_count`, `high_disagreement`, recomputed in the same transaction as any evaluation, evaluator or rubric change; blind masking is applied per viewer when reading ([ADR 0006](adr/0006-blind-evaluation-and-aggregate-scoring.md)). `vote_count` caches `idea_votes`. `last_activity_at` is bumped by every activity event. Search: `ILIKE '%q%'` on `title`/`summary` served by `pg_trgm` GIN indexes. Indexes for board/list keyset pages in the default order: `(project_id, last_activity_at, id)` and `(project_id, status, last_activity_at, id)` (also the per-status counts); plus `(project_id, aggregate_score)`, `owner_id`, `last_activity_at` (cross-project My work). Phase 3 reminder scan: partial index `ix_ideas_evaluation_due_at_open` on `evaluation_due_at` where it is set and evaluation is open. **Phase 4:** a public idea has `submitted_by_id` null and a `public_submissions` row; `held_for` (`email_verification` \| `moderation`, null = visible, `ck_ideas_held_for`) hides it from every list and count for everyone ([contract-phase4 §3.6](api/contract-phase4.md#36-holds-moderation-and-visibility)); partial indexes `ix_ideas_project_id_created_at_moderation (project_id, created_at, id) WHERE held_for = 'moderation'` (the moderation queue) and `ix_ideas_created_at_email_verification (created_at) WHERE held_for = 'email_verification'` (the 3-day cleanup). |
 | `idea_evaluators` | The assignment. AI evaluators (Phase 6) are service-account users, so no extra column: `is_ai` in the API is `users.is_service_account`. Indexed by `user_id` for My work. |
 | `evaluations` | One per assignment: composite FK `(idea_id, evaluator_id)` → `idea_evaluators` with `ON DELETE CASCADE`, so removing the assignment removes the evaluation. Created on first save. `submitted` requires `recommendation` and `submitted_at` (`ck_evaluations_submitted_complete`). `submitted_at` is the first submission; `edited_at` is the last save after it (null if none; the UI shows "edited after submission"). Whether an evaluation is AI is `users.is_service_account` of the evaluator (no column here); `include_in_aggregate` is for Phase 6 (AI excluded by default). |
 | `evaluation_scores` | `score` 1–5 (`ck_evaluation_scores_score_range`), null only in drafts. `criterion_id` FK is deferred (see `rubric_criteria`). |
@@ -334,7 +426,15 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `activity_events` | The idea feed and, from Phase 3, the source of notifications. `type` is validated in the application (the set grows per phase); `payload` holds ids and from/to values and **never scores**. `idea_id` is nullable for future project-level events. Feed index `(idea_id, created_at, id)`. |
 | `notifications` | The in-app inbox and the record of who was told what ([contract-phase3 §3.2–3.3](api/contract-phase3.md#33-fan-out-which-events-notify-whom)). One row per recipient and event, written by the fan-out in the event's transaction; `uq_notifications_user_id_dedupe_key` (`<type>:<event id>`, `mention:<comment id>`, `evaluation_reminder:<idea id>:<local due date>:<days before>`) makes the fan-out, the reminder scan and retries idempotent, and **is** the reminder bookkeeping. `idea_id` is required (every type is about one idea); `comment_id` is set exactly for `comment` and `mention` (`ck_notifications_comment_iff_comment_type`). `payload` holds the type's data (from/to status, due date, days before, submitted count), never scores. `email_mode` is the recipient's preference when it was created (`off` also when email isn't configured or the address is unusable); `email_id` is the outbox row that carried it: its own immediate email, or the digest that collected it. **Digest bookkeeping:** pending = `email_mode = 'digest' AND email_id IS NULL` (`ix_notifications_digest_pending`), and only items from the last 7 days are collected; the hourly cleanup sets `email_mode = 'off'` on older pending items, including those whose digest row was pruned (`email_id` back to null), so nothing is mailed twice; `ck_notifications_no_email_when_off`. Indexes: inbox `(user_id, created_at, id)`, unread (partial on `read_at IS NULL`), `email_id`, `comment_id` (partial), `idea_id`, `ix_notifications_mention_actor (actor_id, created_at)` partial on `type = 'mention'` (the per-author cap on mention emails), and `ix_notifications_created_at` (revision 0006: the 90-day cleanup). Deleted after 90 days. |
 | `notification_preferences` | A user's email mode per notification type, only where it differs from the defaults in code (`app.schemas.notifications.DEFAULT_MODES`); primary key `(user_id, type)`. |
-| `outbound_email` | The transactional outbox ([ADR 0003](adr/0003-background-jobs-procrastinate-and-email-outbox.md), [contract-phase3 §3.9](api/contract-phase3.md#39-the-outbox-and-the-worker)). One row per email, inserted with its `send_email` job in the event's transaction; the row is the truth. Exactly one recipient: `recipient_user_id` (address looked up at send time, and checked to be one plain address) or `to_address` (a test email to an address; Phase 4 public submitters), `ck_outbound_email_one_recipient`. Content is rendered at send time from the notifications pointing at it, so no subject or body is stored. `status`: `queued` (waiting for `next_attempt_at`), `sending` (claimed; `next_attempt_at` is the 5-minute lease), `sent` (`sent_at` set, `ck_outbound_email_sent_at_iff_sent`), `failed` (admins may retry it for 3 days, digests 2), `cancelled` (by the send-time checks); `next_attempt_at` is set exactly while queued or sending (`ck_outbound_email_next_attempt_iff_pending`). `message_id` is unique and fixed at insert (a resend after a crash has the same Message-ID); `idempotency_key` unique when set (`digest:<user id>:<local date>`; Phase 4 per submission). `attempts`/`max_attempts` (12, test emails 1) drive the capped exponential backoff; `last_error` is a phrase built by our code, never the server's text. `payload` is for what can't be looked up at send time (Phase 4: the sealed tracking link). Indexes: the due partial index on `next_attempt_at` (status queued or sending) for claims and the sweep, `(created_at, id)` and `(status, created_at, id)` for the admin outbox, counts and the admins' "email failing" flag, `recipient_user_id`, and `ix_outbound_email_status_updated_at (status, updated_at)` (revision 0006: the cleanup and the 24-hour failure check). Sent and cancelled rows are deleted after 30 days, failed after 90 (hourly cleanup). Phase 4 adds an `idea_id` for public-submitter mail. |
+| `outbound_email` | The transactional outbox ([ADR 0003](adr/0003-background-jobs-procrastinate-and-email-outbox.md), [contract-phase3 §3.9](api/contract-phase3.md#39-the-outbox-and-the-worker)). One row per email, inserted with its `send_email` job in the event's transaction; the row is the truth. Exactly one recipient: `recipient_user_id` (address looked up at send time, and checked to be one plain address) or `to_address` (a test email to an address; Phase 4 public submitters), `ck_outbound_email_one_recipient`. Content is rendered at send time from the notifications pointing at it, so no subject or body is stored. `status`: `queued` (waiting for `next_attempt_at`), `sending` (claimed; `next_attempt_at` is the 5-minute lease), `sent` (`sent_at` set, `ck_outbound_email_sent_at_iff_sent`), `failed` (admins may retry it for 3 days, digests 2), `cancelled` (by the send-time checks); `next_attempt_at` is set exactly while queued or sending (`ck_outbound_email_next_attempt_iff_pending`). `message_id` is unique and fixed at insert (a resend after a crash has the same Message-ID); `idempotency_key` unique when set (`digest:<user id>:<local date>`; Phase 4 below). `attempts`/`max_attempts` (12, test emails 1) drive the capped exponential backoff; `last_error` is a phrase built by our code, never the server's text. `payload` is for what can't be looked up at send time (a status change's from/to; never tokens or personal data: submitter emails are rendered from the idea and its `public_submissions` row, whose sealed token gives the link). Indexes: the due partial index on `next_attempt_at` (status queued or sending) for claims and the sweep, `(created_at, id)` and `(status, created_at, id)` for the admin outbox, counts and the admins' "email failing" flag, `recipient_user_id`, and `ix_outbound_email_status_updated_at (status, updated_at)` (revision 0006: the cleanup and the 24-hour failure check). Sent and cancelled rows are deleted after 30 days, failed after 90 (hourly cleanup). **Phase 4:** `idea_id` (FK `ideas`, `ON DELETE CASCADE`) names the idea of a public-submitter email: set exactly for the types `submission_received` and `submission_status_changed` (`ck_outbound_email_idea_iff_submission_type`: `(idea_id IS NOT NULL) = (type IN (…))`, so erasure, which deletes them by idea, finds every one; `NewEmail.idea_id`), and with it the recipient is `to_address` (`ck_outbound_email_submission_to_address`); partial indexes `ix_outbound_email_idea_id (idea_id, created_at) WHERE idea_id IS NOT NULL` (resend limit, erasure) and `ix_outbound_email_submission_address (lower(regexp_replace(to_address, '\+[^@]*@', '@')), created_at) WHERE type = 'submission_received'` (the per-address limit of 3 confirmation emails a day, first sends and resends, `+tag` sub-addresses folded: `SUBMITTER_ADDRESS_KEY_SQL`). Their idempotency keys: `submission_received:<submission id>:<n>`, `submission_status:<event id>`. Migration 0007 deletes submitter-type rows queued before it (they name no idea). |
+| `proposals` | One per idea (`uq_proposals_idea_id`), created by the owner or an admin once the idea is Shortlisted or in Proposal; `updated_at` follows section saves ([contract-phase4 §3.1](api/contract-phase4.md#31-proposal-lifecycle-and-permissions)). No status of its own: the idea's status decides whether it is editable (c7). |
+| `proposal_sections` | All eight template sections are created with the proposal; primary key `(proposal_id, key)`, `key` one of `ProposalSectionKey` (`ck_proposal_sections_key`). `version` (≥ 1, `ck_proposal_sections_version_positive`) goes up by one per save that changes the text: `UPDATE … WHERE version = :base_version` is the optimistic-concurrency check (409 `proposal_conflict`). `updated_by_id` null for a section nobody has written. |
+| `proposal_threads` | A margin thread on one section (`section_key`, `ck_proposal_threads_section_key`); `resolved_at`/`resolved_by_id` set while resolved (no pairing check: deleting a user sets `resolved_by_id` null). Index `(proposal_id, created_at)`. |
+| `proposal_comments` | Flat comments in a thread, oldest first (`ix_proposal_comments_thread_id_created_at`), indexed by `author_id`. Deleting sets `deleted_at` and clears `body_md`; a thread whose comments are all deleted isn't listed. No edits. |
+| `public_submissions` | The public submitter of one idea (`uq_public_submissions_idea_id`); `project_id` repeats the idea's project for the per-project rate limit (`ix_public_submissions_project_id_created_at`). Minimal personal data: optional `name` and `email`, `email_verified_at`, `wants_updates`; no IP address, user agent or account. The tracking token is stored only as `tracking_token_hash` (SHA-256 hex, unique: the lookup) and `tracking_token_sealed` (AES-256-GCM, purpose `submission-tracking-token`: for links in later emails); both set or both null (`ck_public_submissions_tracking_token_pair`). `submitted_title` / `submitted_summary`: the title and summary as sent, for the tracking page and status emails (never the idea's current, team-edited text), set until erased (`ck_public_submissions_submitted_copy_until_erased`). Checks: a confirmation or `wants_updates` needs an address (`ck_public_submissions_verified_needs_email`, `ck_public_submissions_updates_need_email`); once `erased_at` is set (an admin, the submitter from the tracking page, or the retention cleanup), name, email, token and the copy are null (`ck_public_submissions_erased_is_empty`). The 3-day cleanup of unconfirmed addresses uses `ix_public_submissions_created_at_unconfirmed (created_at) WHERE email IS NOT NULL AND email_verified_at IS NULL`; the per-address email limit counts `outbound_email`. Retention: unconfirmed addresses after 3 days, contact details of closed ideas idle for 180 days ([contract-phase4 §3.9](api/contract-phase4.md#39-personal-data-what-is-kept-erasure-retention)). |
+| `altcha_used_challenges` | ALTCHA replay protection: the signature of every solved challenge, kept until `expires_at` (indexed; the hourly cleanup deletes expired rows). Inserting a signature twice fails: a solution is accepted once. |
+| `branding_profiles` | The global branding (`project_id` null) and per-project overrides; `uq_branding_profiles_project_id` is `UNIQUE NULLS NOT DISTINCT`, so there is at most one global row (created on its first save) and one per project. Every field nullable = inherit (project → global → built-in default). `primary_color`, `accent_color` match `^#[0-9a-f]{6}$` (`ck_branding_profiles_*_color_hex`), `font` is a `BrandFont` key (`ck_branding_profiles_font`), `app_name` 1–40 characters, `email_footer` ≤ 500 (plain text, ≤ 5 lines: API validation). `logo_asset_id`, `favicon_asset_id` reference `brand_assets` (`ON DELETE SET NULL`). |
+| `brand_assets` | Uploaded logos and favicons ([ADR 0012](adr/0012-branding-and-uploaded-images.md)): the bytes in the database (`bytea`, `byte_size` = `octet_length(data)`, 1 byte to 1 MiB), `content_type` only `image/png` (re-encoded PNG uploads) or `image/svg+xml` (allow-listed, re-serialised SVG), `sha256` (the ETag), pixel `width`/`height` (≤ 4096; null for an SVG without a size). `project_id` null = a global image. Immutable: a new image is a new row, so URLs cache for ever. Unreferenced rows are deleted by the hourly cleanup 24 hours after upload. Index `(project_id, created_at)` (upload quota, cleanup). |
 | `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. |
 
 ## Delete behaviour
@@ -351,6 +451,12 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | an idea (Phase 3) | Also cascades to its notifications; immediate emails about it lose their notification and are cancelled at send time ("no longer applies"). |
 | a user (Phase 3) | Also cascades to their notifications, preferences and outbox rows addressed to them; `actor_id` and `requested_by_id` become null. |
 | an outbox row (cleanup) | Its notifications stay, with `email_id` null; the same cleanup then turns pending digest items older than 7 days `off`, so a pruned digest's items never look pending again. |
+| an idea (Phase 4) | Also cascades to its proposal (sections, threads, comments), its public submission and its submitter emails (`outbound_email.idea_id`). Rejecting a held public idea is deleting it. |
+| a proposal thread | Cascades to its comments. |
+| a project (Phase 4) | Also cascades to its public submissions, branding override and uploaded images. |
+| a brand asset (cleanup, unreferenced) | A profile still naming it (it can't: the cleanup only deletes unreferenced rows) would get `null`. |
+| a user (Phase 4) | Proposal authorship, section editors, thread creators and resolvers, comment authors, erasers, uploaders and branding editors become null. |
+| downgrading 0007 | Deletes ideas still held and every submitter email, then drops the Phase 4 tables and columns: proposals, submitter details, branding and images are lost; public ideas stay as anonymous ideas. |
 
 ## Invariants the application enforces
 
@@ -372,3 +478,14 @@ same transaction and tests them:
 - A notification's `comment_id` belongs to its idea; an outbox row's notifications all
   have the row's recipient.
 - No notification `payload` or outbox `payload` holds score data.
+- (Phase 4) A proposal has exactly the eight template sections, created together.
+- (Phase 4) `public_submissions.project_id` is its idea's project; an outbox row has
+  `idea_id` exactly when it has a submitter type, and its `to_address` was the
+  submission's address when queued (re-checked at send time).
+- (Phase 4) No idea held for moderation or email confirmation appears in a list, count,
+  search, My work or notification; nothing but delete, approve, reject and erase writes
+  to an idea held for moderation.
+- (Phase 4) A branding profile's images are of its own scope (global or that project)
+  and of the right kind (logo / favicon).
+- (Phase 4) No column stores a tracking token in clear, and no log or audit entry holds
+  a submitter's name, address or token.

@@ -24,6 +24,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin settings: branding
+         * @description platform.edit_branding (session only): the global profile as stored.
+         */
+        get: operations["get_global_branding"];
+        /**
+         * Change the global branding
+         * @description platform.edit_branding (session only). The complete profile: omitted or null fields use the built-in defaults. Image ids must be global uploads of the right kind (422 invalid_asset). Audited (branding.update, field names only).
+         */
+        put: operations["update_global_branding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/branding/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a global logo or favicon
+         * @description platform.edit_branding (session only). 201 with the stored image. 413 content_too_large; 422 invalid_image (not PNG or SVG, damaged, too many pixels, or an SVG with anything outside the allow-list: a DOCTYPE, scripts, event handlers, styles, external references, foreign objects, too many elements...); 429 too_many_attempts (20 uploads per profile per day). Use it with update_global_branding; images no profile uses are deleted after 24 hours.
+         */
+        post: operations["upload_global_brand_asset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/email": {
         parameters: {
             query?: never;
@@ -588,6 +632,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The app's branding
+         * @description Public: the global effective branding (app name, colours, font, logo and favicon URLs) for the SPA shell, the sign-in page and every signed-in page. Project overrides are applied only where a project faces outward (public form and tracking pages, submitter emails, exported proposals).
+         */
+        get: operations["get_branding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/branding/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A logo or favicon
+         * @description Public. The stored bytes with their stored type (image/png or image/svg+xml), X-Content-Type-Options: nosniff, Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox, and Cache-Control: public, max-age=31536000, immutable (ids never change content). ETag "<sha256>"; If-None-Match -> 304.
+         */
+        get: operations["get_brand_asset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/comments/{comment_id}": {
         parameters: {
             query?: never;
@@ -861,6 +945,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Proposal tab
+         * @description proposal.view. The proposal (null until the owner starts one) and what you may do. Carries no score data.
+         */
+        get: operations["get_proposal"];
+        put?: never;
+        /**
+         * Start the proposal
+         * @description proposal.write (owner, project and platform admins) while the idea is Shortlisted or in Proposal (c7, else 409 proposal_not_available). Creates all eight sections (Summary starts as the idea's summary) and moves a Shortlisted idea to Proposal (a status change like any other: feed, notifications, audit). 409 proposal_exists when there already is one.
+         */
+        post: operations["create_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/markdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export as Markdown
+         * @description proposal.export: a text/markdown download (title, metadata, the eight sections; the aggregate score only if you may see it). Shares the export limit with PDF (429 too_many_attempts with Retry-After). 404 when there is no proposal.
+         */
+        get: operations["export_proposal_markdown"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export as PDF
+         * @description proposal.export: an application/pdf download in the project's effective branding (cover with logo or app name, colours and font; page numbers), rendered in a separate process without any remote resource. 429 too_many_attempts (with Retry-After) beyond the export limit; 503 export_busy (with Retry-After) when the renderer stayed busy for 30 s or a render hit its 20 s limit. 404 when there is no proposal.
+         */
+        get: operations["export_proposal_pdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/sections/{section_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save a section
+         * @description proposal.write (c7). Optimistic concurrency per section: base_version must be the section's current version, else 409 proposal_conflict whose current is the section as saved now (someone saved it since). Identical text changes nothing (same version). The text is kept verbatim (no trimming). 404 when there is no proposal.
+         */
+        put: operations["update_proposal_section"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Margin comment threads
+         * @description proposal.view: every thread with at least one comment that isn't deleted, by section in template order, then oldest first. 404 when there is no proposal.
+         */
+        get: operations["list_proposal_threads"];
+        put?: never;
+        /**
+         * Comment on a section
+         * @description proposal.comment (members and admins): opens a thread on a section with its first comment. 409 too_many_comments beyond 500 threads. 404 when there is no proposal.
+         */
+        post: operations["create_proposal_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply in a thread
+         * @description proposal.comment. Replies are flat; replying to a resolved thread reopens it. 409 too_many_comments beyond 200 comments in a thread.
+         */
+        post: operations["reply_to_proposal_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a margin comment
+         * @description Your own (comment.edit_own: 403 not_author otherwise) or anyone's as a project admin (comment.delete_any). Leaves a stub; a thread with only deleted comments disappears. Idempotent.
+         */
+        delete: operations["delete_proposal_comment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/threads/{thread_id}/resolved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Resolve a thread
+         * @description proposal.comment. Idempotent; the thread collapses.
+         */
+        put: operations["resolve_proposal_thread"];
+        post?: never;
+        /**
+         * Reopen a thread
+         * @description proposal.comment. Idempotent.
+         */
+        delete: operations["reopen_proposal_thread"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/status": {
         parameters: {
             query?: never;
@@ -875,6 +1131,86 @@ export interface paths {
          * @description Owner or project admin; any status to any status. Closing requires a resolution; leaving closed clears it. Same status and resolution is a no-op. No side effects (moving to evaluating does not set a due date), so the inverse call undoes a move.
          */
         post: operations["change_idea_status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/submission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How a public idea came in
+         * @description idea.view: the submitter's name; contact details only with public.erase_submitter. 404 when the idea didn't come through the public form.
+         */
+        get: operations["get_idea_submission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/submission/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a public idea
+         * @description idea.moderate. The idea appears in New for everyone with access. 409 not_awaiting_moderation when it isn't held for moderation. Audited.
+         */
+        post: operations["approve_submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/submission/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Erase the submitter's details
+         * @description public.erase_submitter (project and platform admins, session only). Removes the name, address, confirmation and update preference, ends the tracking link and deletes the idea's submitter emails; the idea stays. Idempotent. Audited without personal data. 404 when the idea didn't come through the public form.
+         */
+        post: operations["erase_submitter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/submission/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a public idea
+         * @description idea.moderate. Deletes the idea with its submitter's details and emails (spam, abuse, off-topic); its tracking link stops working. No email is sent. 409 not_awaiting_moderation when it isn't held for moderation. Audited (ids only).
+         */
+        post: operations["reject_submission"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1181,6 +1517,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{slug}/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project settings: branding
+         * @description project.edit_settings (session only): the project's override as stored; inherited values come from the global profile.
+         */
+        get: operations["get_project_branding"];
+        /**
+         * Change the project's branding
+         * @description project.edit_settings (session only). The complete override: omitted or null fields inherit the global branding (an empty body removes the override). Image ids must be this project's uploads of the right kind (422 invalid_asset). 409 project_archived. Audited as project.update.
+         */
+        put: operations["update_project_branding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{slug}/branding/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a project logo or favicon
+         * @description project.edit_settings (session only). 201 with the stored image. 413 content_too_large; 422 invalid_image (not PNG or SVG, damaged, too many pixels, or an SVG with anything outside the allow-list: a DOCTYPE, scripts, event handlers, styles, external references, foreign objects, too many elements...); 429 too_many_attempts (20 uploads per profile per day). Use it with update_project_branding; 409 project_archived.
+         */
+        post: operations["upload_project_brand_asset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{slug}/groups": {
         parameters: {
             query?: never;
@@ -1301,6 +1681,50 @@ export interface paths {
         patch: operations["update_project_member"];
         trace?: never;
     };
+    "/api/v1/projects/{slug}/moderation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ideas waiting for moderation
+         * @description idea.moderate (project and platform admins; others 403 after project.view): public ideas held for moderation, oldest first, with total.
+         */
+        get: operations["list_moderation_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{slug}/public-form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project settings: public form
+         * @description project.edit_settings (session only).
+         */
+        get: operations["get_public_form_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the public form
+         * @description project.edit_settings (session only); audited as project.update. Changes apply to new submissions only (held ideas stay held). 409 public_submission_unavailable (turning the form on while the instance switch is off, or for an older project whose slug is one of the app's own paths), smtp_not_configured (requiring email verification without email), project_archived.
+         */
+        patch: operations["update_public_form_settings"];
+        trace?: never;
+    };
     "/api/v1/projects/{slug}/rubric": {
         parameters: {
             query?: never;
@@ -1335,6 +1759,166 @@ export interface paths {
         get: operations["list_project_tags"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/projects/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The public form's project
+         * @description Public (public.submit, c8). The project's name, intro, what the form asks for and its effective branding. 404 when the form is off, the project is archived or unknown, or public submission is off for the instance (no hint which).
+         */
+        get: operations["get_public_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/projects/{slug}/altcha": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An ALTCHA challenge
+         * @description Public (c8). A fresh proof-of-work challenge for the ALTCHA widget (expires after SOUNDINGS_ALTCHA_EXPIRY; a solution is accepted once). Throttled per client IP (429 too_many_attempts with Retry-After).
+         */
+        get: operations["get_altcha_challenge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/projects/{slug}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an idea through the public form
+         * @description Public (c8). Checks in order: content type (415) -> body (422) -> form available (404) -> per-IP limit (429) -> email required (422 email_required) -> ALTCHA (422 challenge_failed: invalid, expired, for another form or already used) -> per-project limit (429). Creates the idea in New (held while it waits for email confirmation or moderation), the private tracking link (shown once, here) and, with an address, an email asking to confirm it.
+         */
+        post: operations["submit_public_idea"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/track": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a tracking link
+         * @description Public (public.track, c9): the submitter's own idea, its status and status history; nothing else. 404 for an unknown or erased token (no hint which). Throttled per client IP (429).
+         */
+        post: operations["track_submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/track/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete my details
+         * @description Public (c9): the submitter erases their own name, address and private link, exactly like an admin's erase_submitter (UK GDPR); the idea stays with the team. The link stops working at once (a second call is 404). Audited without an actor (submission.erase, reason submitter). Throttled per client IP (429).
+         */
+        post: operations["erase_tracked_submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/track/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn status emails on or off
+         * @description Public (c9). wants_updates=true needs an address on file (409 no_email); emails go out only once the address is confirmed. Idempotent.
+         */
+        put: operations["set_submission_updates"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/track/verification-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the confirmation email again
+         * @description Public (c9). For an unconfirmed address on file (409 no_email, already_verified); at most 3 confirmation emails per submission per 24 hours (429 too_many_attempts with Retry-After); 409 smtp_not_configured when email is off.
+         */
+        post: operations["resend_verification_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a submitter's address
+         * @description Public (public.track, c9): the token from the confirmation email (/verify#<token>, valid 3 days), posted when the person clicks Confirm (never on page load). Confirms the address (idempotent); an idea held for confirmation moves on to moderation or to the team. Works while public submission is on for the instance, even if the project's form was turned off since. 404 for an invalid, expired or used-up token (the submission was erased, deleted or its address changed). Throttled per client IP (429).
+         */
+        post: operations["verify_submission_email"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1619,6 +2203,56 @@ export interface components {
             overall: number;
         };
         /**
+         * AltchaChallenge
+         * @description A proof-of-work challenge for the ALTCHA widget (Python ``altcha`` 2.x with the
+         *     ``altcha@3`` widget, research R1 section 7). Pass the endpoint's URL (or this JSON)
+         *     to the widget unchanged; it solves it in the browser and puts the result in the
+         *     form's ``altcha`` field. The one place the API isn't snake_case: the format is the
+         *     widget's.
+         */
+        AltchaChallenge: {
+            parameters: components["schemas"]["AltchaParameters"];
+            /**
+             * Signature
+             * @description HMAC of the parameters (they can't be changed).
+             */
+            signature: string;
+        };
+        /**
+         * AltchaParameters
+         * @description ALTCHA v2 challenge parameters, in the widget's own (camelCase) format. The
+         *     signature covers all of them, ``data`` included.
+         */
+        AltchaParameters: {
+            /**
+             * Algorithm
+             * @description "PBKDF2/SHA-256".
+             */
+            algorithm: string;
+            /** Cost */
+            cost: number;
+            /**
+             * Data
+             * @description {"project": "<slug>"}: binds the challenge to this form (a solution for another project's form is refused). Pass it back unchanged.
+             */
+            data: {
+                [key: string]: string;
+            };
+            /**
+             * Expiresat
+             * @description Unix time (seconds).
+             */
+            expiresAt: number;
+            /** Keylength */
+            keyLength: number;
+            /** Keyprefix */
+            keyPrefix: string;
+            /** Nonce */
+            nonce: string;
+            /** Salt */
+            salt: string;
+        };
+        /**
          * AuditAction
          * @description Every action the audit log records (``audit_log.action``).
          *
@@ -1741,6 +2375,111 @@ export interface components {
             /** @description Closed column only (null elsewhere): count split by resolution. Expand it with GET /projects/{slug}/ideas?status=closed&resolution=<resolution>. */
             resolution_counts: components["schemas"]["ResolutionCounts"] | null;
             status: components["schemas"]["IdeaStatus"];
+        };
+        /**
+         * BrandAsset
+         * @description An uploaded logo or favicon. Immutable: a new image is a new asset (new URL).
+         */
+        BrandAsset: {
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Content Type
+             * @enum {string}
+             */
+            content_type: "image/png" | "image/svg+xml";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["BrandAssetKind"];
+            /**
+             * Url
+             * @description Where the image is served, relative to the app: /api/v1/branding/assets/{id} (public, cached for a year: the content of an id never changes).
+             */
+            url: string;
+            /**
+             * Width
+             * @description Pixels; null for an SVG without a size.
+             */
+            width: number | null;
+        };
+        /**
+         * BrandAssetKind
+         * @description What an uploaded branding image is for.
+         * @enum {string}
+         */
+        BrandAssetKind: "logo" | "favicon";
+        /**
+         * BrandFont
+         * @description Bundled fonts (open licences) a branding profile may choose. Nothing is fetched:
+         *     the SPA bundles them (@fontsource) and the image ships the files for PDFs.
+         * @enum {string}
+         */
+        BrandFont: "inter" | "ibm_plex_sans" | "source_serif_4" | "atkinson_hyperlegible";
+        /**
+         * BrandingSettings
+         * @description A branding profile as stored (null = inherit), for its settings form.
+         */
+        BrandingSettings: {
+            /** Accent Color */
+            accent_color: string | null;
+            /** App Name */
+            app_name: string | null;
+            /** @description The result: what people see. */
+            effective: components["schemas"]["EffectiveBranding"];
+            /** Email Footer */
+            email_footer: string | null;
+            favicon: components["schemas"]["BrandAsset"] | null;
+            font: components["schemas"]["BrandFont"] | null;
+            /** @description What each null field falls back to. */
+            inherited: components["schemas"]["InheritedBranding"];
+            logo: components["schemas"]["BrandAsset"] | null;
+            /**
+             * Primary Color
+             * @description #rrggbb, or null to inherit.
+             */
+            primary_color: string | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "global" | "project";
+            /**
+             * Updated At
+             * @description Null: never saved (all inherited).
+             */
+            updated_at: string | null;
+            updated_by: components["schemas"]["UserRef"] | null;
+        };
+        /**
+         * BrandingUpdate
+         * @description ``PUT``: the complete profile. Omitted or null fields inherit (so an empty body
+         *     resets the profile). ``logo_asset_id`` / ``favicon_asset_id`` must be images uploaded
+         *     for this profile (same scope) and of that kind (else 422 ``invalid_asset``).
+         */
+        BrandingUpdate: {
+            /** Accent Color */
+            accent_color?: string | null;
+            /** App Name */
+            app_name?: string | null;
+            /** Email Footer */
+            email_footer?: string | null;
+            /** Favicon Asset Id */
+            favicon_asset_id?: string | null;
+            font?: components["schemas"]["BrandFont"] | null;
+            /** Logo Asset Id */
+            logo_asset_id?: string | null;
+            /** Primary Color */
+            primary_color?: string | null;
         };
         /**
          * BreakGlassLogin
@@ -1990,6 +2729,39 @@ export interface components {
             type: "due_date_changed";
         };
         /**
+         * EffectiveBranding
+         * @description What to show: every field resolved (override -> global -> default).
+         *
+         *     Apply ``primary_color``, ``accent_color`` and ``font`` through the CSS variables
+         *     (``--brand-primary``, ``--brand-accent``, ``--brand-font``; the SPA derives
+         *     contrast-safe tokens from them, lib/branding.ts).
+         */
+        EffectiveBranding: {
+            /**
+             * Accent Color
+             * @description #rrggbb
+             */
+            accent_color: string;
+            /** App Name */
+            app_name: string;
+            /**
+             * Favicon Url
+             * @description Null: the bundled favicon.
+             */
+            favicon_url: string | null;
+            font: components["schemas"]["BrandFont"];
+            /**
+             * Logo Url
+             * @description Null: show app_name as the wordmark.
+             */
+            logo_url: string | null;
+            /**
+             * Primary Color
+             * @description #rrggbb
+             */
+            primary_color: string;
+        };
+        /**
          * EmailConfig
          * @description The email settings in effect. Credentials are never returned, only whether set.
          */
@@ -2065,6 +2837,23 @@ export interface components {
          * @enum {string}
          */
         EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "digest" | "test" | "submission_received" | "submission_status_changed";
+        /**
+         * EmailVerified
+         * @description The confirmation page after the person clicked "Confirm" (the page posts the
+         *     token only on that click, never on load: link scanners must not confirm).
+         *     Idempotent.
+         */
+        EmailVerified: {
+            branding: components["schemas"]["EffectiveBranding"];
+            /** @description moderation: confirmed, now waiting for review; null: with the team. */
+            held_for: components["schemas"]["HoldReason"] | null;
+            project: components["schemas"]["PublicProjectRef"];
+            /**
+             * Title
+             * @description The idea's title as submitted.
+             */
+            title: string;
+        };
         /**
          * Evaluation
          * @description A submitted evaluation as others see it (drafts are never shown to anyone else).
@@ -2706,6 +3495,15 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /**
+         * HoldReason
+         * @description Why a public submission is not visible yet (``ideas.held_for``; null = visible).
+         *
+         *     Held ideas are in no list, board, search, count, My work or notification for anyone
+         *     (contract-phase4 section 3.6).
+         * @enum {string}
+         */
+        HoldReason: "email_verification" | "moderation";
         /** IdeaCreate */
         IdeaCreate: {
             /**
@@ -3016,6 +3814,50 @@ export interface components {
          */
         IdeaStatus: "new" | "evaluating" | "shortlisted" | "proposal" | "closed";
         /**
+         * IdeaSubmission
+         * @description How an idea came in through the public form (``GET /ideas/{idea}/submission``).
+         */
+        IdeaSubmission: {
+            /** @description Null unless you may erase the submitter's details (project admins). */
+            contact: components["schemas"]["SubmitterContact"] | null;
+            /**
+             * Erased At
+             * @description Their details were erased: no name, address or tracking link left.
+             */
+            erased_at: string | null;
+            /** @description moderation: show Approve / Reject; never email_verification here. */
+            held_for: components["schemas"]["HoldReason"] | null;
+            /**
+             * Idea Id
+             * Format: uuid
+             */
+            idea_id: string;
+            /**
+             * Name
+             * @description The name they gave (anyone who can view the idea sees it); null if none.
+             */
+            name: string | null;
+            permissions: components["schemas"]["IdeaSubmissionPermissions"];
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /** IdeaSubmissionPermissions */
+        IdeaSubmissionPermissions: {
+            /**
+             * Can Erase
+             * @description public.erase_submitter and not erased yet.
+             */
+            can_erase: boolean;
+            /**
+             * Can Moderate
+             * @description idea.moderate and the idea is held for moderation.
+             */
+            can_moderate: boolean;
+        };
+        /**
          * IdeaSummary
          * @description A row in the list, a card on the board, an entry in My work.
          */
@@ -3110,6 +3952,24 @@ export interface components {
             tags?: string[] | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * InheritedBranding
+         * @description What an empty field of this profile falls back to: for the global profile the
+         *     built-in defaults, for a project the global profile's effective values.
+         */
+        InheritedBranding: {
+            /** Accent Color */
+            accent_color: string;
+            /** App Name */
+            app_name: string;
+            /** Email Footer */
+            email_footer: string | null;
+            favicon: components["schemas"]["BrandAsset"] | null;
+            font: components["schemas"]["BrandFont"];
+            logo: components["schemas"]["BrandAsset"] | null;
+            /** Primary Color */
+            primary_color: string;
         };
         /**
          * LinkedIdentity
@@ -3280,6 +4140,55 @@ export interface components {
              * @enum {string}
              */
             type: "mention";
+        };
+        /**
+         * ModerationItem
+         * @description A public idea waiting for approval: everything needed to decide.
+         */
+        ModerationItem: {
+            /** Description Md */
+            description_md: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Key
+             * @description "<project key>-<number>", e.g. "CUST-12".
+             */
+            key: string;
+            /** Number */
+            number: number;
+            project: components["schemas"]["ProjectRef"];
+            /** @description Set if and only if status is closed. */
+            resolution: components["schemas"]["Resolution"] | null;
+            status: components["schemas"]["IdeaStatus"];
+            /**
+             * Status Label
+             * @description Project label for the status; for closed ideas, the resolution's label.
+             */
+            status_label: string;
+            submission: components["schemas"]["IdeaSubmission"];
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ModerationPage
+         * @description Oldest first (a queue).
+         */
+        ModerationPage: {
+            /** Items */
+            items: components["schemas"]["ModerationItem"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Total
+             * @description Ideas waiting, all pages (the board's badge).
+             */
+            total: number;
         };
         /**
          * MyEvaluation
@@ -3790,7 +4699,7 @@ export interface components {
             name: string;
             /**
              * Slug
-             * @description URL name, e.g. customer-innovation. Cannot be changed later.
+             * @description URL name, e.g. customer-innovation. Cannot be changed later. Not one of the app's own paths (RESERVED_SLUGS: settings, track, ...).
              */
             slug: string;
             /** @default private */
@@ -3926,6 +4835,444 @@ export interface components {
          * @enum {string}
          */
         ProjectVisibility: "private" | "internal";
+        /** Proposal */
+        Proposal: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Sections
+             * @description All eight, in template order.
+             */
+            sections: components["schemas"]["ProposalSection"][];
+            /**
+             * Updated At
+             * Format: date-time
+             * @description The latest section save.
+             */
+            updated_at: string;
+        };
+        /**
+         * ProposalComment
+         * @description A comment in a margin thread (plain Markdown; no @mentions in Phase 4).
+         */
+        ProposalComment: {
+            /** @description Null if the user no longer exists. */
+            author: components["schemas"]["UserRef"] | null;
+            /**
+             * Body Md
+             * @description Empty when deleted.
+             */
+            body_md: string;
+            /**
+             * Can Delete
+             * @description You wrote it, or you are a project admin.
+             */
+            can_delete: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Deleted
+             * @description Show a "comment deleted" placeholder.
+             */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * ProposalCommentCreate
+         * @description Reply in a thread (replies are flat).
+         */
+        ProposalCommentCreate: {
+            /**
+             * Body Md
+             * @description Markdown.
+             */
+            body_md: string;
+        };
+        /**
+         * ProposalConflictProblem
+         * @description 409 from ``update_proposal_section``. With ``code`` ``proposal_conflict`` it
+         *     carries the section as it is now, so "Reload" shows it and "Keep mine" saves again
+         *     with ``current.version`` without a second request that could race another save.
+         *     Other 409 codes (``proposal_not_available``, ``project_archived``,
+         *     ``awaiting_moderation``) have no ``current``.
+         * @example {
+         *       "code": "not_found",
+         *       "detail": "Idea not found.",
+         *       "instance": "/api/v1/ideas/0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11",
+         *       "request_id": "7f9c2b4e1d6a4c0f8e3b5a2d9c1e0f7a",
+         *       "status": 404,
+         *       "title": "Not Found",
+         *       "type": "urn:soundings:problem:not_found"
+         *     }
+         */
+        ProposalConflictProblem: {
+            /**
+             * Code
+             * @description Stable machine-readable error code (snake_case).
+             */
+            code: string;
+            /**
+             * @description proposal_conflict only: the section as saved now.
+             * @default null
+             */
+            current: components["schemas"]["ProposalSection"] | null;
+            /**
+             * Detail
+             * @description Explanation of this occurrence.
+             * @default null
+             */
+            detail: string | null;
+            /**
+             * Instance
+             * @description Request path that failed.
+             * @default null
+             */
+            instance: string | null;
+            /**
+             * Request Id
+             * @description Correlates with server logs (X-Request-ID).
+             * @default null
+             */
+            request_id: string | null;
+            /**
+             * Status
+             * @description HTTP status code.
+             */
+            status: number;
+            /**
+             * Title
+             * @description Short, human-readable summary of the problem type.
+             */
+            title: string;
+            /**
+             * Type
+             * @description URI identifying the problem type.
+             */
+            type: string;
+        };
+        /**
+         * ProposalPermissions
+         * @description What the current user may do on the Proposal tab (the API enforces the same).
+         */
+        ProposalPermissions: {
+            /**
+             * Can Comment
+             * @description proposal.comment: open threads, reply, resolve and reopen.
+             */
+            can_comment: boolean;
+            /**
+             * Can Create
+             * @description proposal.write and no proposal yet: show "Start proposal" (the idea is Shortlisted or in Proposal, c7).
+             */
+            can_create: boolean;
+            /**
+             * Can Edit
+             * @description proposal.write: edit sections (owner and admins, while c7 holds).
+             */
+            can_edit: boolean;
+            /**
+             * Can Export
+             * @description proposal.export: PDF and Markdown.
+             */
+            can_export: boolean;
+        };
+        /**
+         * ProposalSection
+         * @description One template section. Always all eight, in template order.
+         */
+        ProposalSection: {
+            /**
+             * Body Md
+             * @description Markdown; empty until someone writes it.
+             */
+            body_md: string;
+            key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Prompt
+             * @description Placeholder while the section is empty.
+             */
+            prompt: string;
+            /**
+             * Title
+             * @description From the template, e.g. "Market & users".
+             */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @description Who saved it last; null if nobody has. */
+            updated_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Version
+             * @description Send it back as base_version when you save this section.
+             */
+            version: number;
+        };
+        /**
+         * ProposalSectionKey
+         * @description The fixed proposal template (SPEC section 2), in document order. Titles and
+         *     prompts are in ``app.schemas.proposals.PROPOSAL_TEMPLATE``.
+         * @enum {string}
+         */
+        ProposalSectionKey: "summary" | "problem" | "solution" | "market" | "cost" | "benefits" | "risks" | "next_steps";
+        /**
+         * ProposalSectionUpdate
+         * @description Save one section. ``base_version`` is the ``version`` your text started from:
+         *     409 ``proposal_conflict`` if the section has changed since (the problem's
+         *     ``current`` is the section now: reload it, or keep yours by saving again with
+         *     ``current.version``). Saving identical text changes nothing. The text is stored
+         *     exactly as sent (no whitespace trimming).
+         */
+        ProposalSectionUpdate: {
+            /** Base Version */
+            base_version: number;
+            /**
+             * Body Md
+             * @description Markdown, kept verbatim.
+             */
+            body_md: string;
+        };
+        /**
+         * ProposalThread
+         * @description A margin thread on one section; resolved threads collapse.
+         */
+        ProposalThread: {
+            /**
+             * Comments
+             * @description Oldest first; the first one opened the thread.
+             */
+            comments: components["schemas"]["ProposalComment"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Resolved At */
+            resolved_at: string | null;
+            resolved_by: components["schemas"]["UserRef"] | null;
+            section_key: components["schemas"]["ProposalSectionKey"];
+        };
+        /**
+         * ProposalThreadCreate
+         * @description Open a thread on a section with its first comment.
+         */
+        ProposalThreadCreate: {
+            /**
+             * Body Md
+             * @description Markdown.
+             */
+            body_md: string;
+            section_key: components["schemas"]["ProposalSectionKey"];
+        };
+        /**
+         * ProposalThreadList
+         * @description Every thread of the proposal with at least one comment that isn't deleted, in
+         *     template-section order, then oldest first (at most 500 threads: no paging).
+         */
+        ProposalThreadList: {
+            /** Items */
+            items: components["schemas"]["ProposalThread"][];
+        };
+        /**
+         * ProposalView
+         * @description The Proposal tab: the proposal, if one has been started, and what you may do.
+         */
+        ProposalView: {
+            permissions: components["schemas"]["ProposalPermissions"];
+            /** @description Null until the owner starts one ("The owner will write a proposal once this idea is shortlisted.") */
+            proposal: components["schemas"]["Proposal"] | null;
+        };
+        /**
+         * PublicFormSettings
+         * @description Project settings -> Public form (``project.edit_settings``).
+         */
+        PublicFormSettings: {
+            /**
+             * Available
+             * @description Public forms are allowed on this instance (SOUNDINGS_PUBLIC_SUBMISSION_ENABLED, the chart's features.publicSubmission), the project isn't archived and its slug isn't one of the app's own paths (RESERVED_SLUGS, older projects only). False: explain why and disable the switch.
+             */
+            available: boolean;
+            /**
+             * Awaiting Moderation
+             * @description Ideas in the moderation queue now.
+             */
+            awaiting_moderation: number;
+            /**
+             * Email Available
+             * @description Email is set up (SMTP): without it the form can't ask for an address, so require_email_verification can't be turned on.
+             */
+            email_available: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Form Url
+             * @description <base URL>/<slug>/submit, to copy and share.
+             */
+            form_url: string;
+            /** Intro Md */
+            intro_md: string;
+            /**
+             * Moderation Required
+             * @description New ideas wait until a project admin approves them (default on).
+             */
+            moderation_required: boolean;
+            /**
+             * Require Email Verification
+             * @description New ideas wait until the submitter confirms their address.
+             */
+            require_email_verification: boolean;
+        };
+        /**
+         * PublicFormSettingsUpdate
+         * @description Partial update; omitted or null fields are unchanged.
+         */
+        PublicFormSettingsUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Intro Md */
+            intro_md?: string | null;
+            /** Moderation Required */
+            moderation_required?: boolean | null;
+            /** Require Email Verification */
+            require_email_verification?: boolean | null;
+        };
+        /**
+         * PublicProject
+         * @description What the public form at ``/{slug}/submit`` shows and asks for.
+         */
+        PublicProject: {
+            /**
+             * Asks For Email
+             * @description Email is set up for this instance: show the optional email field and the "Email me when the status changes" box. False: ask for neither.
+             */
+            asks_for_email: boolean;
+            /** @description The project's effective branding. */
+            branding: components["schemas"]["EffectiveBranding"];
+            /**
+             * Email Required
+             * @description The project requires a confirmed address: the email field is required, and the idea waits until the submitter opens the link we email them.
+             */
+            email_required: boolean;
+            /**
+             * Intro Md
+             * @description Markdown above the form (render without raw HTML).
+             */
+            intro_md: string;
+            /**
+             * Moderated
+             * @description New ideas wait for the team's review before anyone else sees them.
+             */
+            moderated: boolean;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * PublicProjectRef
+         * @description The project as the public sees it: its name, nothing else.
+         */
+        PublicProjectRef: {
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * PublicSubmissionCreate
+         * @description The public form. Only ``title`` and ``summary`` are required. Send it as
+         *     ``Content-Type: application/json`` (anything else is 415).
+         */
+        PublicSubmissionCreate: {
+            /**
+             * Altcha
+             * @description The ALTCHA widget's payload (base64).
+             */
+            altcha: string;
+            /**
+             * Description Md
+             * @description Markdown, optional.
+             * @default
+             */
+            description_md: string;
+            /**
+             * Email
+             * @description Optional (required when PublicProject.email_required). One plain address. When PublicProject.asks_for_email is false it is ignored and not stored, and so is wants_updates.
+             */
+            email?: string | null;
+            /**
+             * Name
+             * @description Optional; a blank value means none.
+             */
+            name?: string | null;
+            /**
+             * Summary
+             * @description One or two sentences.
+             */
+            summary: string;
+            /** Title */
+            title: string;
+            /**
+             * Wants Updates
+             * @description Email me when the status changes (needs email).
+             * @default false
+             */
+            wants_updates: boolean;
+            /**
+             * Website
+             * @description Leave empty.
+             * @default
+             */
+            website: string;
+        };
+        /**
+         * PublicSubmissionReceipt
+         * @description The confirmation page. The tracking link is shown once here (and emailed when
+         *     there is an address): only its hash is kept to look it up.
+         */
+        PublicSubmissionReceipt: {
+            /**
+             * Email Sent
+             * @description An address was given and email is set up: say "We'll also email you the link." True even when the per-address limit held that email back (the limit is silent, so this can't reveal how often an address was used).
+             */
+            email_sent: boolean;
+            /** @description email_verification: ask them to open the link we emailed; moderation: the team reviews new ideas first; null: the team can see it now. */
+            held_for: components["schemas"]["HoldReason"] | null;
+            /**
+             * Tracking Token
+             * @description 43 characters; keep it private.
+             */
+            tracking_token: string;
+            /**
+             * Tracking Url
+             * @description <base URL>/track#<token>: the private link to show and copy.
+             */
+            tracking_url: string;
+        };
         /**
          * Recommendation
          * @enum {string}
@@ -4284,6 +5631,21 @@ export interface components {
             shortlisted?: string | null;
         };
         /**
+         * SubmitterContact
+         * @description Only for project and platform admins (``public.erase_submitter``).
+         */
+        SubmitterContact: {
+            /**
+             * Email
+             * @description Null when none was given or it was erased.
+             */
+            email: string | null;
+            /** Email Verified */
+            email_verified: boolean;
+            /** Wants Updates */
+            wants_updates: boolean;
+        };
+        /**
          * TagInfo
          * @description A tag in use in the project (filter chips, tag autocomplete).
          *
@@ -4303,6 +5665,90 @@ export interface components {
             idea_count: number;
             /** Name */
             name: string;
+        };
+        /** TrackedStatusChange */
+        TrackedStatusChange: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            resolution: components["schemas"]["Resolution"] | null;
+            status: components["schemas"]["IdeaStatus"];
+            /**
+             * Status Label
+             * @description The project's label (closed: the resolution's).
+             */
+            status_label: string;
+        };
+        /**
+         * TrackedSubmission
+         * @description The private tracking page: what the submitter sent and its status, nothing
+         *     else (no people, comments, evaluations, scores, or anything the team wrote: the
+         *     title and summary are the submitter's own, as sent, even if the team edited the
+         *     idea since).
+         */
+        TrackedSubmission: {
+            branding: components["schemas"]["EffectiveBranding"];
+            /**
+             * Can Resend Verification
+             * @description An unconfirmed address is on file and another confirmation email may be sent now (at most 3 a day).
+             */
+            can_resend_verification: boolean;
+            /**
+             * Email Hint
+             * @description The address on file, masked ("j•••@example.org"); null if none.
+             */
+            email_hint: string | null;
+            /** Email Verified */
+            email_verified: boolean;
+            /** @description email_verification: "Confirm your address to send it"; moderation: "Waiting for review"; null: with the team. */
+            held_for: components["schemas"]["HoldReason"] | null;
+            /**
+             * History
+             * @description Status changes since it reached the team, oldest first.
+             */
+            history: components["schemas"]["TrackedStatusChange"][];
+            project: components["schemas"]["PublicProjectRef"];
+            resolution: components["schemas"]["Resolution"] | null;
+            status: components["schemas"]["IdeaStatus"];
+            /** Status Label */
+            status_label: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /**
+             * Summary
+             * @description As submitted.
+             */
+            summary: string;
+            /**
+             * Title
+             * @description As submitted.
+             */
+            title: string;
+            /** Wants Updates */
+            wants_updates: boolean;
+        };
+        /**
+         * TrackingRequest
+         * @description The tracking page posts the token from its URL's fragment (``/track#<token>``).
+         */
+        TrackingRequest: {
+            /** Token */
+            token: string;
+        };
+        /** TrackingUpdatesRequest */
+        TrackingUpdatesRequest: {
+            /** Token */
+            token: string;
+            /**
+             * Wants Updates
+             * @description Email me when the status changes.
+             */
+            wants_updates: boolean;
         };
         /**
          * UnsubscribeInfo
@@ -4470,6 +5916,14 @@ export interface components {
              * @description URI identifying the problem type.
              */
             type: string;
+        };
+        /**
+         * VerificationRequest
+         * @description The confirmation page posts the token from its URL's fragment (``/verify#<token>``).
+         */
+        VerificationRequest: {
+            /** Token */
+            token: string;
         };
         /** VoteState */
         VoteState: {
@@ -4654,6 +6108,196 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_global_branding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_global_branding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    upload_global_brand_asset: {
+        parameters: {
+            query: {
+                /** @description What the image is for. */
+                kind: components["schemas"]["BrandAssetKind"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The image file itself as the body (no multipart, no JSON): PNG or SVG. At most SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES (512 KiB by default); PNGs at most 2048 x 2048 pixels (favicons 512 x 512); SVGs at most 2,000 elements, nested at most 32 deep. */
+        requestBody: {
+            content: {
+                "image/png": string;
+                "image/svg+xml": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAsset"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Request body too large (content_too_large) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Problem */
@@ -6709,6 +8353,97 @@ export interface operations {
             };
         };
     };
+    get_branding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveBranding"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_brand_asset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The image's id. */
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image. */
+            200: {
+                headers: {
+                    /** @description Cached for a year. */
+                    "Cache-Control"?: string;
+                    /** @description The image's SHA-256, quoted. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/svg+xml": string;
+                };
+            };
+            /** @description Not modified (If-None-Match matched). */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     delete_comment: {
         parameters: {
             query?: never;
@@ -7958,6 +9693,834 @@ export interface operations {
             };
         };
     };
+    get_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    export_proposal_markdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The proposal as Markdown (UTF-8). */
+            200: {
+                headers: {
+                    /** @description attachment; filename="<KEY>-proposal.<ext>" (e.g. CUST-12). */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": string;
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    export_proposal_pdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The proposal as a PDF. */
+            200: {
+                headers: {
+                    /** @description attachment; filename="<KEY>-proposal.<ext>" (e.g. CUST-12). */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Busy (see code): retry shortly */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_proposal_section: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A template section's key. */
+                section_key: components["schemas"]["ProposalSectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalSectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalSection"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state: proposal_conflict (with current: the section as saved now), proposal_not_available, project_archived, awaiting_moderation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProposalConflictProblem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_proposal_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalThreadList"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_proposal_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalThreadCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalThread"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reply_to_proposal_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A margin thread's id. */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalCommentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalThread"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_proposal_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A margin thread's id. */
+                thread_id: string;
+                /** @description A comment's id (in that thread). */
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resolve_proposal_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A margin thread's id. */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalThread"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reopen_proposal_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A margin thread's id. */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalThread"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     change_idea_status: {
         parameters: {
             query?: never;
@@ -7994,6 +10557,267 @@ export interface operations {
             };
             /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_idea_submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaSubmission"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    approve_submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaSubmission"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    erase_submitter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaSubmission"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reject_submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9213,6 +12037,259 @@ export interface operations {
             };
         };
     };
+    get_project_branding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_project_branding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    upload_project_brand_asset: {
+        parameters: {
+            query: {
+                /** @description What the image is for. */
+                kind: components["schemas"]["BrandAssetKind"];
+            };
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        /** @description The image file itself as the body (no multipart, no JSON): PNG or SVG. At most SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES (512 KiB by default); PNGs at most 2048 x 2048 pixels (favicons 512 x 512); SVGs at most 2,000 elements, nested at most 32 deep. */
+        requestBody: {
+            content: {
+                "image/png": string;
+                "image/svg+xml": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAsset"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Request body too large (content_too_large) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_project_group_grants: {
         parameters: {
             query?: never;
@@ -9979,6 +13056,237 @@ export interface operations {
             };
         };
     };
+    list_moderation_queue: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_public_form_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicFormSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_public_form_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicFormSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicFormSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     replace_rubric: {
         parameters: {
             query?: never;
@@ -10097,6 +13405,548 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_public_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProject"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_altcha_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AltchaChallenge"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    submit_public_idea: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicSubmissionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicSubmissionReceipt"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    track_submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackedSubmission"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    erase_tracked_submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    set_submission_updates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackingUpdatesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackedSubmission"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resend_verification_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackedSubmission"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verify_submission_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailVerified"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Problem */

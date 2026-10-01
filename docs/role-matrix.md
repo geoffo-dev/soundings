@@ -45,8 +45,15 @@ it immediately.
 **Other principals**
 
 - **API key:** acts as its owner, narrowed by scopes and project restriction (section 5).
-- **Tracking token:** the private link given to a public submitter. It grants
-  `public.track` for one idea and nothing else, whoever holds it.
+- **Tracking token:** the private link given to a public submitter
+  (`<base>/track#<token>`). It grants `public.track` for one idea (see its public status
+  and what was submitted, turn status emails on or off, resend the confirmation email,
+  erase the submitter's details) and nothing else, whoever holds it; it stops working
+  when the submitter's details are erased.
+- **Confirmation-link token:** emailed to a public submitter (`<base>/verify#<token>`);
+  grants `public.track` only to confirm that submission's address (and release an idea
+  held for it), nothing else. Signed, valid 3 days
+  ([contract-phase4 §3.7](api/contract-phase4.md#37-tracking-and-confirmation-links)).
 - **Service account:** a user of kind `service` used by kagent agents via an API key.
   It needs a real project role like any user and follows every rule here, including
   blind evaluation.
@@ -76,8 +83,8 @@ it immediately.
 Evaluation order, first failure wins: **401** (no identity) → **404** (cannot view the
 project or idea, key's project restriction, c8, c9, c12) → **403** (rule or key scope,
 then principal conditions) → **422** (request body conditions) → **409** (state
-conditions). Every idea-scoped rule implies `idea.view` first, so an idea hidden by
-moderation (c12) returns 404, not 403. Platform rules (table H) are not about a
+conditions). Every idea-scoped rule implies `idea.view` first, so an idea held for
+moderation or email confirmation (c12) returns 404, not 403. Platform rules (table H) are not about a
 resource the caller may not know, so a non-admin gets 403 before any 404.
 
 ## 2a. Signing in (not rules)
@@ -118,6 +125,22 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
 - **Admin settings → Email** is `platform.configure_email`.
 - Section 3 rule 8 applies to every notification, email and digest.
 
+## 2c. Branding, public pages and held ideas (not rules)
+
+- **Branding is public data:** `GET /branding` (the global effective branding) and the
+  uploaded logos and favicons (`GET /branding/assets/{id}`) need no sign-in: the sign-in
+  page and the public form show them. Editing is `platform.edit_branding` (global) and
+  `project.edit_settings` (a project's override and its images), session only.
+- **Public pages** (`/{slug}/submit`, `/track`, `/verify`) are governed by
+  `public.submit` (c8) and `public.track` (c9) and show nothing but the project's name,
+  intro and branding, and the submitter's own idea and status
+  ([contract-phase4 §3.5–3.7](api/contract-phase4.md#35-the-public-form)).
+- **Held ideas are listed nowhere:** an idea held for email confirmation or moderation
+  is in no list, board, search, count, tag list, My work, inbox or notification, for any
+  role. That is a property of lists, not a rule: `idea.view` (c12) still lets project and
+  platform admins open an idea held for moderation by its link and in the moderation
+  queue (`idea.moderate`).
+
 ### A. Projects and ideas
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
@@ -135,8 +158,8 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `comment.create` | Comment on an idea, including @mentions | Y | Y | Y | 403 | 403 | 404 | 401 | · | · |
-| `comment.edit_own` | Edit or delete your own comment | Y (c2) | Y (c2) | Y (c2) | 403 | 403 | 404 | 401 | · | · |
-| `comment.delete_any` | Delete anyone's comment (moderation) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+| `comment.edit_own` | Edit or delete your own comment (idea comments; delete only for proposal margin comments) | Y (c2) | Y (c2) | Y (c2) | 403 | 403 | 404 | 401 | · | · |
+| `comment.delete_any` | Delete anyone's comment, on the idea or in its proposal's margin (moderation) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 | `idea.vote` | Vote for an idea (toggle; one vote per user) | Y | Y | Y | 403 | 403 | 404 | 401 | · | · |
 | `idea.watch` | Watch or unwatch an idea (notifications only) | Y | Y | Y | Y | Y | 404 | 401 | · | · |
 
@@ -153,9 +176,12 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
 | `evaluation.close` | Close or reopen evaluation on an idea | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · |
 | `evaluation.include_ai` | Include or exclude an AI evaluation in the aggregate | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
 | `idea.change_status` | Change status: board drag, close with a resolution, reopen | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
-| `idea.moderate` | Approve or reject a public submission awaiting moderation | Y | Y | 404 | 404 | 404 | 404 | 401 | · | · |
+| `idea.moderate` | See the moderation queue; approve or reject (delete) a public submission held for moderation | Y | Y | 404 | 404 | 404 | 404 | 401 | · | · |
 
-Notes: `evaluation.submit_own` is `403` in the PA and PAd columns because only the
+Notes: `idea.moderate` at project level (the moderation queue) is 403 for members,
+viewers and internal non-members, who can see the project; approving or rejecting
+needs the idea held for moderation (409 `not_awaiting_moderation`, a domain rule).
+`evaluation.submit_own` is `403` in the PA and PAd columns because only the
 evaluator overlay grants it; an admin who is also an assigned evaluator gets it through
 +Evl. Admins bypass c3 because they could assign themselves anyway; a platform admin
 still needs a real project role to become owner (c4). Which status transitions are
@@ -182,8 +208,21 @@ including platform admins and the owner, can see another person's **draft**.
 | `proposal.suggest_section` | Suggest text for a section; the owner accepts or discards it | Y (c7) | Y (c7) | Y (c7) | 403 | 403 | 404 | 401 | · | · |
 | `proposal.export` | Export the proposal as PDF or Markdown (rate-limited) | Y | Y | Y | Y | Y | 404 | 401 | · | · |
 
-Exports include the aggregate score only when the exporting user passes
-`score.view_aggregate`.
+Notes ([contract-phase4 §3.1–3.4](api/contract-phase4.md#31-proposal-lifecycle-and-permissions)):
+
+- One proposal per idea over the fixed template. `proposal.write` covers starting it
+  (which moves a Shortlisted idea to Proposal: the owner and admins also hold
+  `idea.change_status`) and saving sections; c7 makes it read-only outside Shortlisted
+  and Proposal, where it stays viewable, commentable and exportable.
+- `proposal.comment` covers opening margin threads, replying, resolving and reopening
+  them. Deleting a margin comment is `comment.edit_own` (your own, c2) or
+  `comment.delete_any` (admins). No edits, notifications or @mentions in Phase 4.
+- Exports include the aggregate score only when the exporting user passes
+  `score.view_aggregate` (so never for a pending evaluator, section 3); they never
+  include margin comments. Export is rate-limited (10 per user per minute).
+- Proposals hold no score data; every proposal surface is safe for pending evaluators.
+- In an archived project every proposal write is 409 `project_archived`; on an idea held
+  for moderation there is no proposal (c7 needs Shortlisted).
 
 ### F. Project administration
 
@@ -192,8 +231,8 @@ Exports include the aggregate score only when the exporting user passes
 | `project.manage_members` | Add or remove users and groups (group grants), change their roles | Y (c11) | Y (c11) | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.edit_rubric` | Edit rubric criteria (3–6: name, description, weight, inverted, guidance) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.rename_status_labels` | Rename status labels (the stages themselves are fixed) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
-| `project.edit_settings` | Name, description, visibility, volunteer owners, evaluation window, public submission (moderation, email verification), project branding, archive | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
-| `public.erase_submitter` | Erase a public submitter's personal data but keep the idea | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+| `project.edit_settings` | Name, description, visibility, volunteer owners, evaluation window, public form (on/off, moderation, email verification, intro), project branding override and its images, archive | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+| `public.erase_submitter` | See a public submitter's contact details (email, confirmed, wants updates); erase their name, address and tracking link but keep the idea | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 
 ### G. Public submission
 
@@ -202,9 +241,31 @@ Exports include the aggregate score only when the exporting user passes
 | `public.submit` | Submit via `/{project}/submit` (honeypot, rate limit, ALTCHA) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | · | · |
 | `public.track` | Open the private tracking link: own submission and its status only | Y (c9) | Y (c9) | Y (c9) | Y (c9) | Y (c9) | Y (c9) | Y (c9) | · | · |
 
-The public form of a private project shows only the project's name and branding. The
-tracking page shows the submitted title, summary and description, the current status
-label and status history; never people, comments, evaluations or scores.
+The public form of a private project shows only the project's name, intro and
+branding. The tracking page shows the title and summary **as submitted** (a copy kept
+with the submission), the current status label and the status history (dates and
+labels); never people, comments, evaluations, scores, tags, the idea key, anything the
+team wrote or edited, or other submissions.
+
+Notes ([contract-phase4 §3.5–3.9](api/contract-phase4.md#35-the-public-form)):
+
+- `public.submit` covers the form's project info, its ALTCHA challenge (bound to that
+  form) and sending an idea (JSON only, per-IP limit, ALTCHA with replay protection,
+  per-project limit, then the honeypot). Signed-in users may use it too; the idea is
+  still anonymous (`submitted_by` null).
+- `public.track` covers the tracking page, turning status emails on or off, resending
+  the confirmation email, the submitter erasing their own details, and confirming the
+  address with the emailed link (on a Confirm click). It depends on the token and the
+  instance switch only, so turning a project's form off doesn't break links already
+  sent.
+- A public idea may be **held**: for email confirmation (when the project requires it;
+  nobody can see it, and it is deleted after 3 days unless confirmed) or for moderation
+  (only PA and PAd can see it, c12). While held for moderation, idea writes other than
+  delete, approve, reject and erase are refused (c19), and every permission flag the
+  API returns for it is false except `can_delete`.
+- The submitter's name is visible to everyone who can view the idea; their email,
+  confirmation and update preference only with `public.erase_submitter`. Status emails go
+  only to an opted-in, confirmed address.
 
 ### H. Platform administration
 
@@ -217,7 +278,7 @@ platform admin".
 | `platform.manage_groups` | Groups, IdP group mappings (managed/additive), manual members, "test mapping" | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.configure_sso` | View the effective SSO configuration (read-only: set by Helm values), the redirect URIs to register, break-glass status | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.configure_email` | View the effective SMTP configuration (read-only: set by Helm values, credentials masked), send a test email (rate-limited, one address), list the email outbox, retry failed sends; see the "email failing" banner | Y | 403 | 403 | 403 | 403 | 403 | 401 |
-| `platform.edit_branding` | Global branding and email footer | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `platform.edit_branding` | Global branding: app name, logo, favicon, primary and accent colours, font, email footer; upload its images | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.manage_agents` | Register kagent agents and their service accounts | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.view_audit_log` | Read the audit log (filters, newest first) | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `api_key.manage_any` | List and revoke any user's API keys, including service accounts' | Y | 403 | 403 | 403 | 403 | 403 | 401 |
@@ -318,17 +379,18 @@ evaluations and one AI evaluation present.
 | c5 | The idea's status is not `closed` | 409 `idea_closed` |
 | c6 | Evaluation is open: idea not `closed` and evaluation not closed | 409 `evaluation_closed` |
 | c7 | The idea's status is `shortlisted` or `proposal` | 409 `proposal_not_available` |
-| c8 | The project has public submission enabled | 404 |
-| c9 | The request carries a valid tracking token for this idea | 404 |
+| c8 | Public submission is on for the instance (`SOUNDINGS_PUBLIC_SUBMISSION_ENABLED`) and for the project, the project isn't archived and its slug isn't reserved (`RESERVED_SLUGS`, older projects only) | 404 (the same for an unknown project) |
+| c9 | The request carries a valid token for this submission, and public submission is on for the instance: a tracking token whose hash matches a submission that isn't erased, or (confirming only) a confirmation-link token with a valid signature and expiry for a submission that isn't erased and still has that address | 404 (unknown, erased, expired and invalid alike) |
 | c10 | AI is enabled (Helm feature toggle) and a suitable agent is registered | 409 `ai_unavailable` |
 | c11 | After the change, the project still has at least one admin (effective role, direct or via a group) who is active and not a service account | 409 `last_admin` |
-| c12 | The idea is not awaiting moderation (always true for PA and PAd) | 404 |
+| c12 | The idea is not held (`ideas.held_for` null). Held for moderation: always true for PA and PAd. Held for email confirmation: false for everyone, PA and PAd included (the idea doesn't exist yet) | 404 |
 | c13 | The idea has no owner | 409 `idea_has_owner` |
 | c14 | The request carries a valid unsubscribe token (signed with a key derived from the instance secret key) whose user exists and is active, and the token's scope covers the request: `all=true` needs a token scoped to `all` (contract-phase3 §3.5) | invalid token or user → 404; `all=true` with a type or digest token → 403 `insufficient_scope` |
 | c15 | The request authenticates with an API key that has the `mcp` scope | no key → 401; no scope → 403 `insufficient_scope` |
 | c16 | Removing an evaluator: the evaluator is not the principal (contract-phase1 §3.5) | 403 `cannot_remove_self` |
 | c17 | Changing a user's `is_active` or `is_platform_admin`: the user is not the principal (contract-phase2 §3.4) | 403 `cannot_change_self` |
 | c18 | Demoting or deactivating a platform admin: another active platform admin (not the break-glass account) remains, counted under a lock (contract-phase2 §3.4) | 409 `last_platform_admin` |
+| c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
 
 ## 5. API keys
 
@@ -350,6 +412,8 @@ demoted owner's key loses access immediately), then narrowed:
   `project.rename_status_labels`, `project.edit_settings`, `public.erase_submitter`,
   `platform.*`, `api_key.*`, `self.manage_profile`.
 - Expired or revoked keys → 401. Requests with a key are exempt from CSRF checks.
+- Public routes (`public.submit`, `public.track`, `self.unsubscribe`, branding reads)
+  ignore keys and sessions alike: the setting or token decides.
 
 ## 6. MCP tools
 
@@ -389,3 +453,11 @@ with the rule name, decision, user and key id.
   revoked key, and a key whose owner was demoted after it was created.
 - A meta-test fails if any route or MCP tool has no rule, or if a rule name used in
   code is missing from this file.
+- Phase 4: table E for every column and overlay (a demoted owner can't write; c7 on
+  start and save; archived → 409); c8 for each of its parts (instance switch, project
+  setting, archived, reserved slug, unknown slug: identical 404s); c9 with unknown,
+  erased and instance-switched-off tokens, and a confirmation token after the project's
+  form was turned off (still works); c12 and c19 with ideas held for moderation and for
+  confirmation, for every column; the moderation queue's 403 for members and viewers;
+  `public.erase_submitter` contact visibility; `platform.edit_branding` and
+  `project.edit_settings` on the branding routes (session only, keys refused).

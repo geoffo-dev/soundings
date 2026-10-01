@@ -71,8 +71,9 @@ def test_every_route_of_the_area_is_covered() -> None:
             path.startswith(("/api/v1/admin/", "/api/v1/groups"))
             or path.endswith(("/groups", "/groups/{group_id}", "/access"))
         )
-        # Phase 3 Admin -> Email (/admin/email...) gets its own guard tests.
-        and not path.startswith("/api/v1/admin/email")
+        # Phase 3 Admin -> Email (/admin/email...) and Phase 4 Admin -> Branding
+        # (/admin/branding...) get their own guard tests.
+        and not path.startswith(("/api/v1/admin/email", "/api/v1/admin/branding"))
     }
     assert mine == set(ROUTES)
 

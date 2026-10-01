@@ -1,6 +1,6 @@
 # ADR 0004: One image serves the API and SPA; the worker is a second entrypoint
 
-- Status: Accepted · Date: 2026-09-30
+- Status: Accepted · Date: 2026-09-30 · Runtime base (`python:3.12-slim`) superseded by [ADR 0011](0011-ubuntu-runtime-image-and-weasyprint.md)
 
 ## Context
 

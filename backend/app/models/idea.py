@@ -23,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
-from app.models.enums import IdeaStatus, Resolution
+from app.models.enums import HoldReason, IdeaStatus, Resolution
 from app.models.types import str_enum
 
 
@@ -36,9 +36,12 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     whenever an evaluation, an evaluator or the rubric changes. They are *raw*
     values: blind-visibility filtering happens when responses are built.
 
-    Phase 4 (public submission) adds submitter fields here (hashed tracking token,
-    optional contact email, moderation flag); ``submitted_by_id`` stays null for
-    anonymous submissions.
+    Public submissions (Phase 4) keep ``submitted_by_id`` null; the submitter's
+    contact details and tracking link live in ``public_submissions``. ``held_for`` is
+    set while a public submission waits for its submitter's email confirmation or for
+    moderation: held ideas are in no list, board, search, count, My work or
+    notification, and only project and platform admins can open one held for
+    moderation (c12; contract-phase4 section 3.6).
     """
 
     __tablename__ = "ideas"
@@ -71,6 +74,20 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
                 "evaluation_due_at IS NOT NULL AND evaluation_closed_at IS NULL"
                 " AND status <> 'closed'"
             ),
+        ),
+        # Phase 4: the moderation queue (oldest first) and the cleanup of submissions
+        # nobody confirmed (contract-phase4 section 3.6).
+        Index(
+            "ix_ideas_project_id_created_at_moderation",
+            "project_id",
+            "created_at",
+            "id",
+            postgresql_where=text("held_for = 'moderation'"),
+        ),
+        Index(
+            "ix_ideas_created_at_email_verification",
+            "created_at",
+            postgresql_where=text("held_for = 'email_verification'"),
         ),
         # "Search ideas": ILIKE '%q%' on title/summary served by trigram indexes.
         Index(
@@ -115,6 +132,8 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     high_disagreement: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    # Phase 4: a public submission not visible yet (null = visible; HoldReason).
+    held_for: Mapped[HoldReason | None] = mapped_column(str_enum(HoldReason, "held_for"))
 
 
 class IdeaTag(Base):
