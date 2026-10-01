@@ -14,6 +14,7 @@ import {
   UserPlus,
   UserRound,
 } from 'lucide-react'
+import { useLocation } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import {
@@ -55,6 +56,7 @@ export function ActivitySection() {
   const { ideaKey, idea, archived } = useIdeaPage()
   const activity = useIdeaActivity(ideaKey)
   const items = activity.data?.items
+  const highlighted = useLinkedComment(items)
 
   return (
     <section aria-labelledby="idea-activity-heading" className="flex flex-col gap-3">
@@ -101,7 +103,11 @@ export function ActivitySection() {
             >
               {groupActivity(items).map((entry) =>
                 entry.item.type === 'comment' && !entry.item.comment.deleted ? (
-                  <CommentItem key={entry.item.id} item={entry.item} />
+                  <CommentItem
+                    key={entry.item.id}
+                    item={entry.item}
+                    highlighted={entry.item.comment.id === highlighted}
+                  />
                 ) : (
                   <EventItem key={entry.item.id} entry={entry} />
                 ),
@@ -121,6 +127,35 @@ export function ActivitySection() {
       ) : null}
     </section>
   )
+}
+
+/**
+ * `#comment-<id>` (links from notifications and emails): once the comment has
+ * loaded, scroll to it, focus it and highlight it for a few seconds.
+ */
+function useLinkedComment(items: ActivityItem[] | undefined): string | null {
+  const hash = useLocation({ select: (location) => location.hash })
+  const commentId = hash.startsWith('comment-') ? hash.slice('comment-'.length) : null
+  const [highlighted, setHighlighted] = useState<string | null>(null)
+  const handled = useRef<string | null>(null)
+  const loaded = Boolean(
+    commentId && items?.some((item) => item.type === 'comment' && item.comment.id === commentId),
+  )
+  useEffect(() => {
+    if (!commentId || !loaded || handled.current === commentId) return
+    handled.current = commentId
+    setHighlighted(commentId)
+    const timer = window.setTimeout(() => setHighlighted(null), 4000)
+    requestAnimationFrame(() => {
+      const article = document.querySelector<HTMLElement>(
+        `[data-comment-id="${CSS.escape(commentId)}"]`,
+      )
+      article?.scrollIntoView({ block: 'center' })
+      article?.focus({ preventScroll: true })
+    })
+    return () => window.clearTimeout(timer)
+  }, [commentId, loaded])
+  return highlighted
 }
 
 function ActivitySkeleton() {
@@ -182,8 +217,8 @@ function EventItem({ entry }: { entry: ActivityEntry }) {
   )
 }
 
-function CommentItem({ item }: { item: CommentActivity }) {
-  const { ideaKey } = useIdeaPage()
+function CommentItem({ item, highlighted }: { item: CommentActivity; highlighted: boolean }) {
+  const { ideaKey, idea, me } = useIdeaPage()
   const update = useUpdateComment(ideaKey)
   const remove = useDeleteComment(ideaKey)
   const [editing, setEditing] = useState(false)
@@ -218,7 +253,13 @@ function CommentItem({ item }: { item: CommentActivity }) {
       <article
         aria-labelledby={headingId}
         aria-busy={pending || undefined}
-        className={cn('rounded-lg border bg-surface', pending && 'opacity-70')}
+        data-comment-id={comment.id}
+        tabIndex={highlighted ? -1 : undefined}
+        className={cn(
+          'scroll-mt-20 rounded-lg border bg-surface transition-[border-color,box-shadow] duration-500 focus:outline-none',
+          pending && 'opacity-70',
+          highlighted && 'border-accent ring-3 ring-focus/20',
+        )}
       >
         <header className="flex min-h-10 items-center gap-2 pt-1.5 pr-1.5 pl-3 text-sm">
           <Avatar name={author} src={item.actor?.avatar_url} size="sm" decorative />
@@ -269,6 +310,8 @@ function CommentItem({ item }: { item: CommentActivity }) {
               maxLength={COMMENT_LIMIT}
               minRows={2}
               focusOnMount
+              mentions={{ project: idea.project.slug, excludeUserId: me.id }}
+              mentionSelfId={me.id}
               actions={
                 <>
                   <Button size="sm" variant="ghost" onClick={stopEdit}>
@@ -287,7 +330,7 @@ function CommentItem({ item }: { item: CommentActivity }) {
               }
             />
           ) : (
-            <Markdown>{comment.body_md}</Markdown>
+            <Markdown mentionSelfId={me.id}>{comment.body_md}</Markdown>
           )}
         </div>
       </article>
@@ -314,7 +357,7 @@ function writeDraft(key: string, value: string) {
 
 /** Markdown comment box at the end of the feed. `c` focuses it; ⌘/Ctrl+Enter posts. */
 function CommentComposer() {
-  const { ideaKey, me, takeCommentFocus, commentFocusRequest } = useIdeaPage()
+  const { ideaKey, idea, me, takeCommentFocus, commentFocusRequest } = useIdeaPage()
   const create = useCreateComment(ideaKey)
   // Per user, and cleared when the session ends (lib/drafts).
   const storageKey = draftKey(me.id, `comment:${ideaKey}`)
@@ -355,9 +398,11 @@ function CommentComposer() {
         maxLength={COMMENT_LIMIT}
         minRows={2}
         className="min-w-0 flex-1"
+        mentions={{ project: idea.project.slug, excludeUserId: me.id }}
+        mentionSelfId={me.id}
         hint={
           <span className="inline-flex items-center gap-1">
-            Markdown supported · <KbdShortcut keys={SHORTCUTS.submitForm.keys} /> to post
+            Markdown · @ to mention · <KbdShortcut keys={SHORTCUTS.submitForm.keys} /> to post
           </span>
         }
         actions={

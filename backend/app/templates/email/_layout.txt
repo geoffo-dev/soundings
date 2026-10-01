@@ -1,0 +1,17 @@
+{{ brand.product_name }}
+{{ "=" * (brand.product_name | length) }}
+
+{% block content %}{% endblock %}
+{% if button %}
+
+{{ button.label }}: {{ button.url }}
+{% endif %}
+
+--
+{% if reason %}{{ reason }}
+{% endif %}
+{% if preferences_url %}Email preferences: {{ preferences_url }}
+{% endif %}
+{% if unsubscribe_url %}Unsubscribe from {{ unsubscribe_label }}: {{ unsubscribe_url }}
+{% endif %}
+{{ brand.footer_text or "Sent by " ~ brand.product_name ~ "." }}

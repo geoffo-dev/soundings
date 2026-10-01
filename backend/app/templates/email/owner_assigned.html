@@ -1,0 +1,8 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">You're now the owner</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{{ actor }} made you the owner of this idea:</p>
+{{ m.idea_card(idea, c, s) }}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">As its owner you move it forward: invite evaluators, set a due date and decide what happens next.</p>
+{% endblock %}

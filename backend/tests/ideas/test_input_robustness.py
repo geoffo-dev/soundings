@@ -159,6 +159,8 @@ async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
         "comment_id": str(uuid4()),
         "group_id": str(uuid4()),
         "identity_id": str(uuid4()),
+        "notification_id": str(uuid4()),
+        "email_id": str(uuid4()),
     }
     params = _string_params(app)
     assert {name for _, _, name in params} >= {"q", "tag", "cursor", "slug", "idea", "project"}

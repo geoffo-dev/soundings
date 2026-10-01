@@ -1,0 +1,8 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">{% if count == 1 %}The evaluation is in{% else %}All {{ count }} evaluations are in{% endif %}</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Every evaluator of this idea you own has submitted:</p>
+{{ m.idea_card(idea, c, s) }}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Open it to see the results and decide what happens next.</p>
+{% endblock %}

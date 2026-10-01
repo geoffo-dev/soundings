@@ -16,6 +16,7 @@ export const SHORTCUTS = {
   shortcutSheet: { keys: '?', label: 'Show keyboard shortcuts', group: 'General' },
   toggleSidebar: { keys: '[', label: 'Collapse or expand sidebar', group: 'General' },
   goToMyWork: { keys: 'g m', label: 'Go to My work', group: 'Navigation' },
+  goToNotifications: { keys: 'g i', label: 'Go to notifications (inbox)', group: 'Navigation' },
   nextItem: { keys: 'j', label: 'Next item (or ↓)', group: 'Lists' },
   previousItem: { keys: 'k', label: 'Previous item (or ↑)', group: 'Lists' },
   // ←/→ are handled by useListNavigation while a board card has focus.

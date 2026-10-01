@@ -1,0 +1,30 @@
+{#- Building blocks for the HTML emails. Every value is escaped text. -#}
+{% macro button(button, brand, s) -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 4px 0;">
+<tr>
+<td align="center" bgcolor="{{ brand.accent }}" style="border-radius:6px;background-color:{{ brand.accent }};">
+<a href="{{ button.url }}" target="_blank" style="display:inline-block;padding:11px 22px;font-family:{{ s.font }};font-size:15px;line-height:20px;font-weight:600;color:{{ brand.accent_text }};text-decoration:none;border-radius:6px;">{{ button.label }}</a>
+</td>
+</tr>
+</table>
+{%- endmacro %}
+
+{% macro idea_card(idea, c, s) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 18px 0;">
+<tr>
+<td class="sx-panel" style="background-color:{{ c.panel }};border:1px solid {{ c.border }};border-radius:8px;padding:12px 14px;font-family:{{ s.font }};">
+<p class="sx-muted" style="margin:0 0 2px 0;font-size:12px;line-height:1.5;color:{{ c.muted }};">{{ idea.key }} &nbsp;·&nbsp; {{ idea.project }}</p>
+<p style="margin:0;font-size:16px;line-height:1.4;font-weight:600;"><a class="sx-text" href="{{ idea.url }}" style="color:{{ c.text }};text-decoration:none;">{{ idea.title }}</a></p>
+{% if idea.status %}<p class="sx-muted" style="margin:4px 0 0 0;font-size:13px;line-height:1.5;color:{{ c.muted }};">Status: {{ idea.status }}</p>{% endif %}
+</td>
+</tr>
+</table>
+{%- endmacro %}
+
+{% macro quote(text, c, s) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">
+<tr>
+<td class="sx-panel sx-text" style="border-left:3px solid {{ c.rule }};background-color:{{ c.panel }};padding:10px 14px;font-family:{{ s.font }};font-size:15px;line-height:1.55;color:{{ c.text }};">{{ text }}</td>
+</tr>
+</table>
+{%- endmacro %}

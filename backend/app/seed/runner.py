@@ -10,6 +10,12 @@ of every timestamp the step wrote (``>=`` the moment the step started) back to t
 step's time, keeping their order within the step. Evaluation due dates are the one
 future-facing value a step writes; they are set explicitly instead. Everything runs in
 one transaction: a failure leaves the database as it was.
+
+**Notifications.** Each step is one unit of work: its activity events fan out to the
+in-app inbox right after it (so the notifications are backdated with it), in-app only
+(``email_mode = off``, no outbox rows: seeding never sends mail). Older notifications
+are marked read and a few people get non-default email preferences, so the demo inbox
+and Settings -> Notifications look lived in.
 """
 
 from __future__ import annotations
@@ -55,8 +61,12 @@ from app.models import (
     User,
 )
 from app.models.base import utcnow
+from app.models.enums import NotificationMode, NotificationType
 from app.models.group import Group, GroupMembership
+from app.models.notification import Notification
 from app.models.user import UserExternalId
+from app.notifications import fanout
+from app.notifications import preferences as notification_preferences
 from app.schemas.admin_users import ExternalIdIn, ExternalIdsReplace
 from app.schemas.comments import CommentCreate
 from app.schemas.evaluations import MyEvaluationIn, MyScoreIn
@@ -109,6 +119,18 @@ _MARGIN: Final = timedelta(minutes=5)
 
 _FUTURE_COLUMNS: Final = frozenset({"ideas.evaluation_due_at"})
 """Timestamps a step sets to a future value on purpose: never shifted."""
+
+_READ_AFTER: Final = timedelta(days=3)
+"""Demo notifications older than this are read (an hour or two after they arrived)."""
+
+DEMO_PREFERENCES: Final = {
+    "bob": {NotificationType.COMMENT: NotificationMode.OFF},
+    "carol": {
+        NotificationType.STATUS_CHANGED: NotificationMode.IMMEDIATE,
+        NotificationType.MENTION: NotificationMode.DIGEST,
+    },
+}
+"""A few people who changed their email preferences (Settings -> Notifications)."""
 
 
 class SeedRefused(Exception):
@@ -322,6 +344,7 @@ class _Player:
     # -- playing --------------------------------------------------------------------------
     async def play(self) -> None:
         await self._users()
+        self._preferences()
         for project in PROJECTS:
             self._project(project)
         for person in PEOPLE:
@@ -336,13 +359,25 @@ class _Player:
             try:
                 await step.action()
                 await self.db.flush()
+                # The step's notifications, in-app only (no settings: no email).
+                await fanout.fan_out(self.db, settings=None)
             except Exception as exc:
                 exc.add_note(f"seed step: {step.label}")
                 raise
             await self.db.execute(retime, {"mark": mark, "delta": step.at - mark})
             # Drop every loaded object: the next step reads the backdated values.
             self.db.expunge_all()
+        await self._inbox()
         logger.info("demo data loaded", extra={"steps": len(self.steps)})
+
+    async def _inbox(self) -> None:
+        """Read what is older than a few days; set the demo email preferences."""
+        await self.db.execute(
+            update(Notification)
+            .where(Notification.created_at < self.now - _READ_AFTER)
+            .values(read_at=Notification.created_at + timedelta(minutes=90))
+            .execution_options(synchronize_session=False)
+        )
 
     async def _users(self) -> None:
         """People are not created through the API (sign-in creates them from Phase 2);
@@ -443,6 +478,17 @@ class _Player:
 
             at = created + timedelta(hours=1 + 6 * position)
             self.add(at, f"add {username} to {seed.key}", add_member)
+
+    def _preferences(self) -> None:
+        for position, (username, changes) in enumerate(DEMO_PREFERENCES.items()):
+
+            async def choose(
+                username: str = username,
+                changes: dict[NotificationType, NotificationMode] = changes,
+            ) -> None:
+                await notification_preferences.update(self.db, self.user_ids[username], changes)
+
+            self.add(self.days_ago(20 - position), f"email preferences of {username}", choose)
 
     def _platform_admin(self) -> str:
         return next(person.username for person in PEOPLE if person.platform_admin)

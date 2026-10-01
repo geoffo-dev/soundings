@@ -8,31 +8,30 @@ import { cn } from '@/lib/utils'
 /** The settings pages, in nav order. Admin pages are for platform admins only. */
 export const SETTINGS_PAGES = [
   { to: '/settings', label: 'Account', admin: false },
+  { to: '/settings/notifications', label: 'Notifications', admin: false },
   { to: '/settings/users', label: 'Users', admin: true },
   { to: '/settings/groups', label: 'Groups', admin: true },
   { to: '/settings/sso', label: 'Sign-in (SSO)', short: 'SSO', admin: true },
+  { to: '/settings/email', label: 'Email', admin: true },
   { to: '/settings/audit', label: 'Audit log', admin: true },
 ] as const
 
 /**
- * /settings and its admin pages (SPEC §5 screen 7, wireframe 07): one "Settings"
+ * /settings and its pages (SPEC §5 screen 7, wireframe 07): one "Settings"
  * page with a row of sections, like project settings. Everyone has Account
- * (profile, appearance, projects they manage); platform admins also get Users,
- * Groups, Sign-in (SSO) and the Audit log. People who aren't platform admins
- * see no section row at all (and the admin URLs are a 404).
+ * (profile, appearance, projects they manage) and Notifications (email
+ * preferences); platform admins also get Users, Groups, Sign-in (SSO), Email
+ * and the Audit log, after a divider. Anyone else never sees the admin
+ * sections (and their URLs are a 404).
  */
 export function SettingsFrame({ children }: { children: ReactNode }) {
   const me = useCurrentUser()
   return (
     <Page>
-      <PageHeader
-        title="Settings"
-        // Platform admins get the section row instead: it already says what's here,
-        // and each page has its own heading and one-line purpose.
-        description={me.is_platform_admin ? undefined : 'Your account, appearance and projects.'}
-      />
+      {/* The section row says what's here; each page has its own heading and purpose. */}
+      <PageHeader title="Settings" />
       <div className="flex flex-col gap-6">
-        {me.is_platform_admin && <SettingsNav />}
+        <SettingsNav admin={me.is_platform_admin} />
         {children}
       </div>
     </Page>
@@ -45,13 +44,16 @@ const navLink = cn(
   'data-[status=active]:border-accent data-[status=active]:text-primary',
 )
 
-function SettingsNav() {
+function SettingsNav({ admin }: { admin: boolean }) {
+  const pages = SETTINGS_PAGES.filter((page) => admin || !page.admin)
   return (
     <nav aria-label="Settings sections" className="-mx-4 px-4 sm:mx-0 sm:px-0">
       <ul className="scrollbar-none flex items-center gap-4 overflow-x-auto border-b">
-        {SETTINGS_PAGES.map((page, index) => (
+        {pages.map((page, index) => (
           <li key={page.to} className="flex shrink-0 items-center gap-4">
-            {index === 1 && <span aria-hidden="true" className="h-4 w-px bg-border" />}
+            {page.admin && !pages[index - 1]?.admin && (
+              <span aria-hidden="true" className="h-4 w-px bg-border" />
+            )}
             <Link
               to={page.to}
               activeOptions={{ exact: page.to === '/settings' }}

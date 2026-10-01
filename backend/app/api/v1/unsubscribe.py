@@ -12,11 +12,15 @@ docs/api/contract-phase3.md section 3.5.
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import RedirectResponse
 
 from app.api.v1.responses import problems, redirect
-from app.errors import NotImplementedProblem
+from app.config import Settings
+from app.db import SessionDep
+from app.notifications import unsubscribe
 from app.schemas.notifications import UnsubscribeInfo
 
 router = APIRouter(prefix="/unsubscribe", tags=["notifications"])
@@ -35,6 +39,7 @@ UnsubscribeToken = Annotated[
 @router.get(
     "",
     operation_id="get_unsubscribe",
+    response_model=UnsubscribeInfo,
     summary="What an unsubscribe link turns off",
     description=(
         "Public (self.unsubscribe, c14): the page's data. Changes nothing. 404 for an "
@@ -47,8 +52,21 @@ UnsubscribeToken = Annotated[
         **redirect(303, "Opened in a browser (Accept lists text/html): to /unsubscribe?token=..."),
     },
 )
-async def get_unsubscribe(token: UnsubscribeToken) -> UnsubscribeInfo:
-    raise NotImplementedProblem
+async def get_unsubscribe(
+    request: Request, session: SessionDep, token: UnsubscribeToken
+) -> UnsubscribeInfo | Response:
+    settings: Settings = request.app.state.settings
+    if _wants_html(request):
+        # A mail client without one-click support opened List-Unsubscribe's URL: show
+        # the page (which checks the token through this route's JSON).
+        page = f"{settings.public_base_url.rstrip('/')}/unsubscribe?{urlencode({'token': token})}"
+        return RedirectResponse(page, status_code=303)
+    return await unsubscribe.unsubscribe_info(session, settings, token)
+
+
+def _wants_html(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    return any(part.split(";", 1)[0].strip().lower() == "text/html" for part in accept.split(","))
 
 
 @router.post(
@@ -65,9 +83,12 @@ async def get_unsubscribe(token: UnsubscribeToken) -> UnsubscribeInfo:
     responses=problems(404),
 )
 async def confirm_unsubscribe(
+    request: Request,
+    session: SessionDep,
     token: UnsubscribeToken,
     all_types: Annotated[
         bool, Query(alias="all", description="Turn off every email notification type.")
     ] = False,
 ) -> UnsubscribeInfo:
-    raise NotImplementedProblem
+    settings: Settings = request.app.state.settings
+    return await unsubscribe.confirm(session, settings, token, all_types=all_types)

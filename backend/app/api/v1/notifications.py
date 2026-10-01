@@ -10,11 +10,15 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
+from app.api.deps import not_activity
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, require
+from app.config import Settings
+from app.db import SessionDep
+from app.notifications import inbox, preferences
 from app.pagination import PageParamsDep
 from app.schemas.notifications import (
     NotificationPage,
@@ -22,8 +26,15 @@ from app.schemas.notifications import (
     NotificationPreferencesUpdate,
     NotificationSummary,
 )
+from app.services.ideas import load_idea
 
 router = APIRouter(prefix="/me", tags=["notifications"])
+
+
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
+
 
 IdeaQuery = Annotated[
     str | None,
@@ -48,10 +59,13 @@ IdeaQuery = Annotated[
 )
 async def list_notifications(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     unread: Annotated[bool, Query(description="Only unread notifications.")] = False,
 ) -> NotificationPage:
-    raise NotImplementedProblem
+    return await inbox.list_notifications(
+        session, principal, unread=unread, cursor=page.cursor, limit=page.limit
+    )
 
 
 @router.get(
@@ -65,11 +79,14 @@ async def list_notifications(
         "keep the session alive (idle timeouts still apply)."
     ),
     responses=problems(401),
+    # Polling isn't activity: resolve the session without sliding its idle timer
+    # (contract-phase3 section 3.2). Runs before the principal is resolved.
+    dependencies=[Depends(not_activity)],
 )
-async def get_notification_summary(principal: PrincipalDep) -> NotificationSummary:
-    # Contract-phase3 section 3.2: resolve the session without sliding its idle timer
-    # (a non-touching principal dependency; requested from identity and backend).
-    raise NotImplementedProblem
+async def get_notification_summary(
+    request: Request, principal: PrincipalDep, session: SessionDep
+) -> NotificationSummary:
+    return await inbox.summary(session, _settings(request), principal)
 
 
 @router.post(
@@ -80,8 +97,10 @@ async def get_notification_summary(principal: PrincipalDep) -> NotificationSumma
     description="Idempotent. 404 unless it is your notification about an idea you can view.",
     responses=problems(401, 404),
 )
-async def mark_notification_read(principal: PrincipalDep, notification_id: UUID) -> None:
-    raise NotImplementedProblem
+async def mark_notification_read(
+    principal: PrincipalDep, session: SessionDep, notification_id: UUID
+) -> None:
+    await inbox.mark_read(session, principal, notification_id)
 
 
 @router.post(
@@ -95,9 +114,10 @@ async def mark_notification_read(principal: PrincipalDep, notification_id: UUID)
     responses=problems(401, 404),
 )
 async def mark_all_notifications_read(
-    principal: PrincipalDep, idea: IdeaQuery = None
+    request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaQuery = None
 ) -> NotificationSummary:
-    raise NotImplementedProblem
+    idea_id = (await load_idea(session, principal, idea)).idea.id if idea else None
+    return await inbox.mark_all_read(session, _settings(request), principal, idea_id)
 
 
 @router.get(
@@ -110,8 +130,11 @@ async def mark_all_notifications_read(
     ),
     responses=problems(401, 403),
 )
-async def get_notification_preferences(principal: PrincipalDep) -> NotificationPreferences:
-    raise NotImplementedProblem
+async def get_notification_preferences(
+    request: Request, principal: PrincipalDep, session: SessionDep
+) -> NotificationPreferences:
+    require(principal, Rule.SELF_MANAGE_PROFILE)
+    return await preferences.view(session, _settings(request), principal.user_id)
 
 
 @router.patch(
@@ -125,6 +148,11 @@ async def get_notification_preferences(principal: PrincipalDep) -> NotificationP
     responses=problems(401, 403),
 )
 async def update_notification_preferences(
-    principal: PrincipalDep, body: NotificationPreferencesUpdate
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    body: NotificationPreferencesUpdate,
 ) -> NotificationPreferences:
-    raise NotImplementedProblem
+    require(principal, Rule.SELF_MANAGE_PROFILE)
+    await preferences.update_from_request(session, principal.user_id, body)
+    return await preferences.view(session, _settings(request), principal.user_id)

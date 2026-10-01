@@ -6,8 +6,12 @@
 #      backend/)
 #   3. the SPA built with Vite into $E2E_STATE_DIR/dist (frontend/dist is left alone)
 #   4. `soundings api` on http://localhost:$E2E_PORT serving the API and that build,
-#      with the dev login and the break-glass admin on, in the background (pid and log
-#      in $E2E_STATE_DIR)
+#      with the dev login and the break-glass admin on, and `soundings worker` (email,
+#      reminders, digests), both in the background (pids and logs in $E2E_STATE_DIR)
+#   5. Mailpit ($E2E_PREFIX-mailpit) as their SMTP server: SMTP on
+#      127.0.0.1:$E2E_MAILPIT_SMTP_PORT, inbox and API on http://localhost:$E2E_MAILPIT_PORT,
+#      emptied on every start. `scripts/mailpit.sh stop|start` simulates an SMTP outage;
+#      specs use scripts/mailpit.ts. E2E_SMTP=0: no SMTP (in-app notifications only).
 #
 # E2E_SSO=1 adds Keycloak 26 ($E2E_PREFIX-kc on http://localhost:$E2E_KC_PORT) with a
 # fresh copy of the dev realm on every start (users and groups as committed, this
@@ -22,15 +26,18 @@
 # rebuild; the code paths are the same (one process serves API + SPA).
 #
 # Idempotent: if the app already answers on $E2E_PORT in the same mode it only reseeds
-# (fresh data per run); in another mode (E2E_SSO, E2E_KC_PORT, E2E_BREAK_GLASS) it
-# restarts the API. E2E_SKIP_BUILD=1 reuses the last SPA build. Stop everything:
-# stop-stack.sh.
+# (fresh data per run), empties Mailpit and starts the worker if it isn't running; in
+# another mode (E2E_SSO, E2E_KC_PORT, E2E_BREAK_GLASS, E2E_SMTP, E2E_MAILPIT_SMTP_PORT,
+# E2E_TIMEZONE) it restarts the API and the worker. E2E_SKIP_BUILD=1 reuses the last SPA
+# build. Stop everything: stop-stack.sh.
 #
 #   E2E_PORT      app port (default 8100)         E2E_PG_PORT   Postgres port (55433)
 #   E2E_PREFIX    Docker name prefix (p1-qa-)     E2E_STATE_DIR (e2e/.stack)
 #   E2E_SSO       1: Keycloak + SSO               E2E_KC_PORT   Keycloak port (8180)
 #   E2E_BREAK_GLASS  0: no break-glass admin      E2E_BREAK_GLASS_USERNAME / _PASSWORD
 #                 (default 1: admin / e2e-break-glass-password)
+#   E2E_SMTP      0: no SMTP, no Mailpit          E2E_MAILPIT_PORT  inbox + API (8125)
+#   E2E_MAILPIT_SMTP_PORT  SMTP (1125)            E2E_TIMEZONE  instance zone (Europe/London)
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,6 +46,7 @@ source "$here/stack-env.sh"
 
 log "stack: $E2E_URL (Postgres ${pg_container} on 127.0.0.1:${E2E_PG_PORT})"
 [ "$E2E_SSO" != "1" ] || log "single sign-on: Keycloak ${kc_container} on $E2E_KC_URL"
+[ "$E2E_SMTP" != "1" ] || log "email: Mailpit ${mailpit_container} on $E2E_MAILPIT_URL"
 mkdir -p "$E2E_STATE_DIR"
 
 # --- 1. Postgres ---------------------------------------------------------------------
@@ -66,6 +74,12 @@ if [ "$E2E_SSO" = "1" ] &&
     "$KEYCLOAK_IMAGE" start-dev >/dev/null
 fi
 
+# --- 1c. Mailpit (E2E_SMTP=1), emptied: a fresh inbox with the fresh data -------------
+if [ "$E2E_SMTP" = "1" ]; then
+  start_mailpit
+  clear_mailpit
+fi
+
 # --- 2. Schema and demo data -----------------------------------------------------------
 (
   cd "$repo/backend"
@@ -84,14 +98,20 @@ fi
 
 if app_ready; then
   if [ "$(cat "$E2E_STATE_DIR/mode" 2>/dev/null)" = "$stack_mode" ]; then
+    if ! process_running worker; then
+      log "starting soundings worker (log: $E2E_STATE_DIR/worker.log)"
+      start_process worker uv run --quiet soundings worker
+    fi
     log "the app already answers on $E2E_URL: reseeded, not restarted"
     exit 0
   fi
   [ -f "$E2E_STATE_DIR/api.pid" ] ||
     die "the app on $E2E_URL was not started by this script; stop it or use another E2E_PORT"
-  log "restarting the app for: $stack_mode"
-  stop_api
+  log "restarting the app and the worker for: $stack_mode"
+  stop_app
 fi
+# A worker left over from a run whose API was stopped some other way.
+stop_process worker
 
 # --- 3. The SPA ------------------------------------------------------------------------
 if [ "${E2E_SKIP_BUILD:-}" = "1" ] && [ -f "$E2E_STATE_DIR/dist/index.html" ]; then
@@ -104,23 +124,20 @@ else
     --outDir "$E2E_STATE_DIR/dist" --emptyOutDir --logLevel warn >/dev/null)
 fi
 
-# --- 4. The app ------------------------------------------------------------------------
+# --- 4. The app and the worker ---------------------------------------------------------
 log "starting soundings api on $E2E_URL (log: $E2E_STATE_DIR/api.log)"
-(
-  cd "$repo/backend"
-  api_env
-  SOUNDINGS_STATIC_DIR="$E2E_STATE_DIR/dist" \
-    SOUNDINGS_BASE_URLS="$E2E_URL,http://127.0.0.1:$E2E_PORT" \
-    SOUNDINGS_METRICS_PORT=0 \
-    SOUNDINGS_LOG_LEVEL=WARNING \
-    setsid nohup uv run --quiet soundings api --host 127.0.0.1 --port "$E2E_PORT" \
-    >"$E2E_STATE_DIR/api.log" 2>&1 &
-  echo $! >"$E2E_STATE_DIR/api.pid"
-)
+SOUNDINGS_STATIC_DIR="$E2E_STATE_DIR/dist" SOUNDINGS_METRICS_PORT=0 SOUNDINGS_LOG_LEVEL=WARNING \
+  start_process api uv run --quiet soundings api --host 127.0.0.1 --port "$E2E_PORT"
+log "starting soundings worker (log: $E2E_STATE_DIR/worker.log)"
+SOUNDINGS_LOG_LEVEL=INFO start_process worker uv run --quiet soundings worker
 printf '%s\n' "$stack_mode" >"$E2E_STATE_DIR/mode"
 
 for _ in $(seq 1 60); do
   if app_ready; then
+    process_running worker || {
+      tail -n 40 "$E2E_STATE_DIR/worker.log" >&2 || true
+      die "the worker stopped (log: $E2E_STATE_DIR/worker.log)"
+    }
     log "ready: $E2E_URL"
     exit 0
   fi

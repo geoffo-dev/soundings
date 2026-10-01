@@ -18,6 +18,8 @@ DEMO_PORT ?= 8000
 E2E_BASE_URL ?= http://localhost:$(DEMO_PORT)
 # `make k3s-install SSO=1` / `make k3s-smoke SSO=1`: single sign-on with Keycloak in k3s.
 SSO ?=
+# `make k3s-install SMTP=1` / `make k3s-smoke SMTP=1`: email to Mailpit in k3s.
+SMTP ?=
 # `make sso-smoke` runs against this app (configured for the dev Keycloak realm).
 SSO_BASE_URL ?= http://localhost:8000
 
@@ -25,7 +27,7 @@ comma := ,
 build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(BUILD_CA))
 
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
-        check-scripts e2e image demo demo-down k3s-up k3s-load k3s-keycloak k3s-install k3s-smoke \
+        check-scripts e2e image demo demo-down k3s-up k3s-load k3s-keycloak k3s-mailpit k3s-install k3s-smoke \
         k3s-down openapi gen-api seed sso-smoke
 
 help: ## List targets
@@ -94,12 +96,15 @@ k3s-load: ## Import the image (IMAGE) into the k3s node
 k3s-keycloak: ## Keycloak with the dev realm in the k3s cluster (for SSO=1 below)
 	scripts/k3s-keycloak.sh up
 
-k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak)
-	image='$(IMAGE)'; SSO='$(SSO)' scripts/k3s-install.sh \
+k3s-mailpit: ## Mailpit in the k3s cluster (for SMTP=1 below; inbox http://mailpit.localhost:18081)
+	scripts/k3s-mailpit.sh up
+
+k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak; SMTP=1: + Mailpit)
+	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' scripts/k3s-install.sh \
 	  --set image.repository="$${image%:*}" --set image.tag="$${image##*:}"
 
-k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, then helm test (SSO=1: + SSO flow)
-	SSO='$(SSO)' scripts/k3s-smoke.sh
+k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, then helm test (SSO=1: + SSO flow; SMTP=1: + email)
+	SSO='$(SSO)' SMTP='$(SMTP)' scripts/k3s-smoke.sh
 
 k3s-down: ## Delete the local k3s cluster
 	scripts/k3s-down.sh

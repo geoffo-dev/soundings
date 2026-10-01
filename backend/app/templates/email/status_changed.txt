@@ -1,0 +1,8 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Moved to {{ to_label }}
+
+{{ actor }} moved this idea from {{ from_label }} to {{ to_label }}:
+
+{% include "_idea.txt" %}
+{%- endblock %}

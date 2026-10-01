@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { defaultFilter } from 'cmdk'
 import {
+  Bell,
   FolderPlus,
   Inbox,
   Keyboard,
@@ -48,6 +49,7 @@ const ADMIN_PAGES = [
   { id: 'users', label: 'Users', to: '/settings/users', keywords: ['people', 'accounts'] },
   { id: 'groups', label: 'Groups', to: '/settings/groups', keywords: ['mapping', 'sync'] },
   { id: 'sso', label: 'Sign-in (SSO)', to: '/settings/sso', keywords: ['oidc', 'login'] },
+  { id: 'email', label: 'Email', to: '/settings/email', keywords: ['smtp', 'outbox', 'mail'] },
   { id: 'audit', label: 'Audit log', to: '/settings/audit', keywords: ['history', 'log'] },
 ] as const
 
@@ -55,7 +57,7 @@ const AppCommandsContext = createContext<AppCommands | null>(null)
 
 /**
  * Global keyboard layer and ⌘K palette: "n" new idea, "?" shortcuts, "g m" My
- * work. Pages add context actions with `useCommands()` (lib/command-registry).
+ * work, "g i" notifications. Pages add context actions with `useCommands()` (lib/command-registry).
  * Signed-out pages (login, /design) get the static commands only.
  */
 export function AppCommandsProvider({ children }: { children: ReactNode }) {
@@ -103,6 +105,9 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
   useShortcut('shortcutSheet', () => setShortcutsOpen(true))
   useShortcut('newIdea', commands.newIdea, { enabled: canCreateIdeas })
   useShortcut('goToMyWork', () => void navigate({ to: '/' }), { enabled: signedIn })
+  useShortcut('goToNotifications', () => void navigate({ to: '/notifications' }), {
+    enabled: signedIn,
+  })
 
   const staticGroups: CommandGroupData[] = [
     {
@@ -148,6 +153,14 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
                 keywords: ['home', 'inbox', 'evaluations'],
                 onSelect: () => void navigate({ to: '/' }),
               },
+              {
+                id: 'notifications',
+                label: 'Notifications',
+                icon: <Bell />,
+                shortcut: SHORTCUTS.goToNotifications.keys,
+                keywords: ['inbox', 'bell', 'unread', 'mentions'],
+                onSelect: () => void navigate({ to: '/notifications' }),
+              },
               ...(projects.data ?? []).map((project) => ({
                 id: `project-${project.slug}`,
                 label: project.name,
@@ -161,6 +174,14 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
                 label: 'Settings',
                 icon: <Settings />,
                 onSelect: () => void navigate({ to: '/settings' }),
+              },
+              {
+                id: 'email-preferences',
+                label: 'Email preferences',
+                hint: 'Settings',
+                icon: <Settings />,
+                keywords: ['notifications', 'digest', 'unsubscribe', 'email'],
+                onSelect: () => void navigate({ to: '/settings/notifications' }),
               },
               // Admin settings (platform admins only; the pages are a 404 for anyone else).
               ...(me.data?.is_platform_admin

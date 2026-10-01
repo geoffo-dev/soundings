@@ -834,3 +834,11 @@ migration `0005` and client regenerated):
   day phrased as dates (§3.7), mention recipients and email cap, length after rewriting
   (§3.8), the unsubscribe URL's 303 for browsers (§3.5), no server details in the test
   email (§3.10).
+
+**2026-10-01, backend build:**
+
+- **Landed** `AuditAction.email.test_send` and `email.retry` (§3.10), with `make gen-api`;
+  the frontend adds their phrases (the exhaustive `Record<AuditAction, true>`).
+- **`last_error` phrase added:** "connection failed" for network errors that are neither
+  a refusal nor a timeout (DNS failures, unreachable networks); transient like them.
+- No schema, route or migration changes otherwise.

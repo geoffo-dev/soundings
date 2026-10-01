@@ -1,0 +1,19 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Your daily digest
+
+{{ summary }}
+{% for group in groups %}
+
+{{ group.idea.key }} · {{ group.idea.project }}
+{{ group.idea.title }}
+{% for line in group.lines %}
+  - {{ line }}
+{% endfor %}
+  {{ group.idea.url }}
+{% endfor %}
+{% if more %}
+
+...and {{ more }} more in {{ brand.product_name }}: {{ inbox_url }}
+{% endif %}
+{%- endblock %}

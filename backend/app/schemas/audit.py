@@ -66,6 +66,9 @@ class AuditAction(StrEnum):
     EVALUATION_SUBMIT = "evaluation.submit"
     EVALUATION_CLOSE = "evaluation.close"
     EVALUATION_REOPEN = "evaluation.reopen"
+    # Email (Admin settings -> Email; contract-phase3 section 3.10)
+    EMAIL_TEST_SEND = "email.test_send"
+    EMAIL_RETRY = "email.retry"
 
 
 class AuditEntry(ResponseModel):

@@ -7,6 +7,7 @@ import { useSidebar } from '@/components/layout/sidebar-context'
 import { Button } from '@/components/ui/button'
 import { KbdShortcut } from '@/components/ui/kbd'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { NotificationBell } from '@/features/notifications/notification-bell'
 import { SHORTCUTS } from '@/lib/shortcuts'
 
 export interface Crumb {
@@ -35,9 +36,11 @@ export interface TopBarProps {
   crumbs?: Crumb[]
   /** Page-level actions on the right (keep to one primary). */
   actions?: ReactNode
+  /** The notification bell (signed-in shell); off in previews such as /design. */
+  showBell?: boolean
 }
 
-export function TopBar({ crumbs, actions }: TopBarProps) {
+export function TopBar({ crumbs, actions, showBell = true }: TopBarProps) {
   const routeCrumbs = useRouteCrumbs()
   const items = crumbs ?? routeCrumbs
   const { collapsed, toggleCollapsed, setMobileOpen } = useSidebar()
@@ -97,6 +100,7 @@ export function TopBar({ crumbs, actions }: TopBarProps) {
 
       <div className="flex items-center gap-2">
         {actions}
+        {showBell && <NotificationBell />}
         <Button
           variant="outline"
           size="sm"

@@ -1,0 +1,6 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Your idea moved to {{ status }}
+
+Your idea "{{ title }}" in {{ project }} is now {{ status }}.
+{%- endblock %}

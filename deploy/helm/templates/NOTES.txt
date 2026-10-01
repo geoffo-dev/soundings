@@ -60,12 +60,23 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
 
 3. Email
 {{- if .Values.smtp.host }}
-   Sending through {{ .Values.smtp.host }}:{{ .Values.smtp.port }} ({{ .Values.smtp.security }}) as {{ .Values.smtp.from }}.
-   Check it with Admin > Email > "Send test email".
-{{- else }}
-   SMTP is not configured: notifications are in-app only. Set smtp.host, smtp.from and
-   smtp.existingSecret to send email.
+   SMTP is configured: {{ .Values.smtp.host }}:{{ include "soundings.smtpPort" . }}, security {{ .Values.smtp.security }}, from {{ .Values.smtp.from }}.
+   Credentials: {{ if .Values.smtp.existingSecret }}Secret {{ .Values.smtp.existingSecret }}{{ else if or .Values.smtp.username .Values.smtp.password }}the chart's Secret (from values){{ else }}none (no SMTP AUTH){{ end }}. CA: {{ if .Values.smtp.caBundle.configMap }}ConfigMap {{ .Values.smtp.caBundle.configMap }}{{ else }}system trust store{{ end }}.
+   The worker sends email from an outbox and retries while the server is unreachable.
+   Try it: Settings > Email > "Send test email" (as a platform admin).
+{{- if not .Values.worker.enabled }}
+   WARNING: worker.enabled is false, so nothing sends the queued email.
 {{- end }}
+{{- if and (eq .Values.smtp.security "none") .Values.smtp.existingSecret (not .Values.devLogin) }}
+   WARNING: smtp.security is none: the app refuses to start if the Secret has a password.
+{{- end }}
+{{- else }}
+   SMTP is not configured: notifications are in-app only, and platform admins see a
+   banner. To send email, set smtp.host and smtp.from (and smtp.existingSecret for
+   credentials).
+{{- end }}
+   Daily digests and reminders go out at {{ printf "%02d:00" (int .Values.notifications.digestHour) }} {{ .Values.timezone }}; evaluation reminders:
+   {{ if .Values.notifications.reminderDays }}{{ join ", " .Values.notifications.reminderDays }} days before the due date (0 = on the day){{ else }}off{{ end }}.
 
 4. Database
 {{- if .Values.postgresql.enabled }}

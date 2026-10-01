@@ -1,0 +1,10 @@
+{% extends "_layout.txt" %}
+{% block content %}
+You're now the owner
+
+{{ actor }} made you the owner of this idea:
+
+{% include "_idea.txt" %}
+
+As its owner you move it forward: invite evaluators, set a due date and decide what happens next.
+{%- endblock %}

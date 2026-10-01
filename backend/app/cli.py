@@ -1,5 +1,5 @@
 """The ``soundings`` command: ``api``, ``worker``, ``migrate``, ``wait-for-db``, ``seed``,
-``openapi``."""
+``email-preview``, ``openapi``."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ logger = logging.getLogger("soundings.cli")
 # Commands that only talk to the database: they read DatabaseSettings, so they run
 # without the API's secrets (e.g. a Helm pre-upgrade migration Job).
 _DATABASE_COMMANDS = frozenset({"migrate", "wait-for-db", "seed"})
+# Commands that need no settings at all.
+_STANDALONE_COMMANDS = frozenset({"email-preview"})
 
 
 def start_metrics_server(settings: Settings) -> None:
@@ -118,6 +120,14 @@ def _openapi(args: argparse.Namespace) -> int:
     return 0
 
 
+def _email_preview(args: argparse.Namespace) -> int:
+    from app.email.preview import write_previews
+
+    written = write_previews(Path(args.output), base_url=args.base_url)
+    sys.stdout.write(f"Wrote {len(written)} files to {args.output} (open index.html)\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="soundings", description="Soundings backend.")
     commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
@@ -171,6 +181,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     seed.set_defaults(func=_seed)
 
+    preview = commands.add_parser(
+        "email-preview",
+        help="render every email template with sample data to HTML and text files",
+    )
+    preview.add_argument(
+        "--output", "-o", default="email-previews", help="directory (default: email-previews)"
+    )
+    preview.add_argument(
+        "--base-url", default="http://localhost:8000", help="links in the samples start with this"
+    )
+    preview.set_defaults(func=_email_preview)
+
     openapi = commands.add_parser("openapi", help="export the OpenAPI document as sorted JSON")
     openapi.add_argument("--output", "-o", help="file to write (default: stdout)")
     openapi.set_defaults(func=_openapi)
@@ -179,6 +201,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command in _STANDALONE_COMMANDS:
+        configure_logging("WARNING", stream="stderr")
+        standalone: int = args.func(args)
+        return standalone
     settings: DatabaseSettings = (
         get_database_settings() if args.command in _DATABASE_COMMANDS else get_settings()
     )

@@ -17,3 +17,10 @@ oidc:
   # The dev realm's employee_no is an admin-only user-profile attribute (as it must be);
   # the demo data gives alice, bob and carol E1001-E1003.
   externalIdClaim: employee_no
+
+# With the egress policies on (SMTP=1): Keycloak's Service maps the ingress port to the
+# pod's 8080, and policies see the pod's port.
+networkPolicy:
+  egress:
+    oidc:
+      port: 8080

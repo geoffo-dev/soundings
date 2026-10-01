@@ -89,7 +89,10 @@ export function isEligibleAssignee(db: MockDb, projectId: string, userId: string
   return role === 'member' || role === 'admin'
 }
 
-/** Inserts an activity event and bumps last_activity_at (contract §3 "emit"). */
+/**
+ * Inserts an activity event and bumps last_activity_at (contract §3 "emit"); the
+ * notification fan-out runs after the handler returns (contract-phase3 §3.3).
+ */
 export function emit(
   db: MockDb,
   idea: MockIdea,
@@ -99,7 +102,7 @@ export function emit(
   commentId: string | null = null,
 ): void {
   const at = new Date().toISOString()
-  db.events.push({
+  const event = {
     id: newId(db, ID_KIND.event),
     idea_id: idea.id,
     actor_id: actorId,
@@ -107,7 +110,10 @@ export function emit(
     payload,
     comment_id: commentId,
     created_at: at,
-  })
+  }
+  db.events.push(event)
+  // Notified once the request's last write is done (contract-phase3 §3.3; http.ts).
+  db.pendingEvents.push(event)
   idea.last_activity_at = at
 }
 

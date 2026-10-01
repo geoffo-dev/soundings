@@ -1,9 +1,11 @@
-import { useId, useState, type ReactNode, type Ref } from 'react'
+import { useId, useRef, useState, type ReactNode, type Ref } from 'react'
 
 import { Markdown } from '@/components/ui/markdown'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
+import { cn, mergeRefs } from '@/lib/utils'
+
+import { useMentionPicker, type MentionOptions } from './mention-picker'
 
 export interface MarkdownEditorProps {
   value: string
@@ -31,6 +33,10 @@ export interface MarkdownEditorProps {
   hint?: ReactNode
   className?: string
   id?: string
+  /** @mentions: "@" opens a picker of the project's people (comments). */
+  mentions?: MentionOptions
+  /** Highlights mentions of this user in the preview. */
+  mentionSelfId?: string
 }
 
 /**
@@ -57,16 +63,25 @@ export function MarkdownEditor({
   hint,
   className,
   id,
+  mentions,
+  mentionSelfId,
 }: MarkdownEditorProps) {
   const autoId = useId()
   const fieldId = id ?? `md-${autoId}`
   const [mode, setMode] = useState<'write' | 'preview'>('write')
+  const innerRef = useRef<HTMLTextAreaElement>(null)
+  const picker = useMentionPicker({
+    value,
+    onValueChange,
+    textareaRef: innerRef,
+    options: mode === 'write' ? mentions : undefined,
+  })
 
   return (
     <div
       data-slot="markdown-editor"
       className={cn(
-        'flex flex-col rounded-lg border border-input bg-surface transition-[border-color,box-shadow] duration-150',
+        'relative flex flex-col rounded-lg border border-input bg-surface transition-[border-color,box-shadow] duration-150',
         'has-[textarea:focus-visible]:border-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-focus/20',
         invalid && 'border-danger',
         className,
@@ -75,8 +90,9 @@ export function MarkdownEditor({
       {mode === 'write' ? (
         <Textarea
           id={fieldId}
-          ref={textareaRef}
+          ref={mergeRefs(innerRef, textareaRef)}
           value={value}
+          {...picker.fieldProps}
           aria-label={label}
           aria-describedby={describedBy}
           aria-invalid={invalid ? true : undefined}
@@ -88,8 +104,14 @@ export function MarkdownEditor({
           // Focus moves here when editing starts: the user asked for the editor.
           // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus={focusOnMount}
-          onChange={(event) => onValueChange(event.target.value)}
+          onChange={(event) => {
+            onValueChange(event.target.value)
+            picker.sync(event.target.value)
+          }}
+          onSelect={() => picker.sync()}
+          onBlur={() => picker.sync('')}
           onKeyDown={(event) => {
+            if (picker.onKeyDown(event)) return
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()
               onSubmit()
@@ -109,11 +131,17 @@ export function MarkdownEditor({
           className="min-h-24 px-3 py-2.5"
         >
           {value.trim() ? (
-            <Markdown>{value}</Markdown>
+            <Markdown mentionSelfId={mentionSelfId}>{value}</Markdown>
           ) : (
             <p className="text-sm text-muted">Nothing to preview yet.</p>
           )}
         </div>
+      )}
+      {picker.picker}
+      {mentions && (
+        <p aria-live="polite" className="sr-only">
+          {picker.announcement}
+        </p>
       )}
       <div className="flex flex-wrap items-center gap-2 border-t border-subtle px-2 py-1.5">
         <SegmentedControl

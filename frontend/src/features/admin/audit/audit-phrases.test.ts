@@ -343,6 +343,21 @@ describe('audit sentences', () => {
     ).toBe('Alice Anders deleted CUST-3')
   })
 
+  it('describes the admin email actions without any address', () => {
+    expect(
+      say(entry('email.test_send', { details: { outbound_email_id: 'x', to_self: true } })),
+    ).toBe('Alice Anders sent a test email to themselves')
+    expect(
+      say(entry('email.test_send', { details: { outbound_email_id: 'x', to_self: false } })),
+    ).toBe('Alice Anders sent a test email to another address')
+    expect(say(entry('email.retry', { details: { outbound_email_id: 'x' } }))).toBe(
+      'Alice Anders retried a failed email',
+    )
+    expect(say(entry('email.retry', { details: { count: 3 } }))).toBe(
+      'Alice Anders retried 3 failed emails (Retry all failed)',
+    )
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -384,6 +399,8 @@ describe('audit categories', () => {
       'evaluation.submit': true,
       'evaluation.close': true,
       'evaluation.reopen': true,
+      'email.test_send': true,
+      'email.retry': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

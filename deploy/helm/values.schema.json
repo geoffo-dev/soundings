@@ -237,12 +237,23 @@
       "additionalProperties": false,
       "properties": {
         "host": {
-          "type": "string"
+          "type": "string",
+          "description": "Host name or IP address, no scheme or port. Empty: email off (in-app notifications only).",
+          "pattern": "^([A-Za-z0-9._-]{1,253}|[0-9A-Fa-f:.]{2,45})?$"
         },
         "port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "description": "SMTP port. Empty: 465 with security tls, else 587.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            {
+              "type": "string",
+              "pattern": "^([1-9][0-9]{0,4})?$"
+            }
+          ]
         },
         "security": {
           "type": "string",
@@ -265,14 +276,20 @@
         },
         "from": {
           "type": "string",
-          "pattern": "^([^@\\s]+@[^@\\s]+)?$"
+          "maxLength": 254,
+          "pattern": "^([A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)?$",
+          "description": "Sender address: one plain address such as soundings@example.com."
         },
         "fromName": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
         },
         "replyTo": {
           "type": "string",
-          "pattern": "^([^@\\s]+@[^@\\s]+)?$"
+          "maxLength": 254,
+          "pattern": "^([A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)?$",
+          "description": "Optional Reply-To address (one plain address)."
         },
         "caBundle": {
           "type": "object",
@@ -290,9 +307,39 @@
           }
         },
         "timeout": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "description": "Seconds for the connection and each SMTP command."
+        }
+      }
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA time zone for digests, reminders and dates in emails, e.g. Europe/London.",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$"
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "digestHour": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 300
+          "minimum": 0,
+          "maximum": 23,
+          "description": "Hour (0-23, in timezone) of daily digests and evaluation reminders."
+        },
+        "reminderDays": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30
+          },
+          "description": "Days before the due date for evaluation reminders (0 = on the day). Empty: none."
         }
       }
     },
@@ -991,6 +1038,85 @@
           "type": "array",
           "items": {
             "type": "object"
+          }
+        },
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "smtp": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "to": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "port": {
+                  "description": "Destination port of the SMTP server's pods. Empty: the SMTP port.",
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^([1-9][0-9]{0,4})?$"
+                    }
+                  ]
+                }
+              }
+            },
+            "database": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "to": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            },
+            "oidc": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "to": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "port": {
+                  "description": "Destination port of the IdP. Empty: the issuer URL's port.",
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^([1-9][0-9]{0,4})?$"
+                    }
+                  ]
+                }
+              }
+            },
+            "extra": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
           }
         }
       }

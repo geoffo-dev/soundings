@@ -1,0 +1,10 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Thanks, we received your idea
+
+Your idea "{{ title }}" was submitted to {{ project }}{% if key %} as {{ key }}{% endif %}. The team reviews new ideas regularly.
+{% if tracking_url %}
+
+Keep this email: its link shows where your idea stands.
+{% endif %}
+{%- endblock %}

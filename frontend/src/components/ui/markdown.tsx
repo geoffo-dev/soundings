@@ -1,7 +1,9 @@
 import { Check, ExternalLink } from 'lucide-react'
+import { useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { MENTION_HREF } from '@/lib/mentions'
 import { cn } from '@/lib/utils'
 
 const isExternal = (href: string | undefined) => !!href && /^https?:\/\//i.test(href)
@@ -120,18 +122,88 @@ const components: Components = {
     ),
 }
 
+/* ------------------------------------------------------------------ */
+/* @mentions (contract-phase3 §3.8)                                    */
+/* ------------------------------------------------------------------ */
+
+/** The few Markdown (mdast) node fields the mention plugin reads. */
+interface MdNode {
+  type: string
+  value?: string
+  url?: string
+  children?: MdNode[]
+  data?: Record<string, unknown>
+}
+
+function plainText(node: MdNode): string {
+  return node.value ?? (node.children ?? []).map(plainText).join('')
+}
+
+function replaceMentions(node: MdNode): void {
+  const children = node.children
+  if (!children) return
+  children.forEach((child, index) => {
+    const match = child.type === 'link' && child.url ? MENTION_HREF.exec(child.url) : null
+    const before = children[index - 1]
+    if (match && before?.type === 'text' && before.value?.endsWith('@')) {
+      before.value = before.value.slice(0, -1)
+      children[index] = {
+        type: 'text',
+        value: `@${plainText(child)}`,
+        data: { hName: 'span', hProperties: { dataMention: (match[1] ?? '').toLowerCase() } },
+      }
+      return
+    }
+    replaceMentions(child)
+  })
+}
+
+/**
+ * `@[Name](user:<id>)` becomes a name chip (a span, never a link: `user:` isn't
+ * a URL anyone should follow). Anything else stays as written.
+ */
+function remarkMentions() {
+  return (tree: MdNode) => replaceMentions(tree)
+}
+
+const mentionChip = 'rounded-sm px-1 py-px font-medium whitespace-nowrap [overflow-wrap:normal]'
+
 export interface MarkdownProps {
   children: string
   className?: string
+  /** Mentions of this user (you) are highlighted. */
+  mentionSelfId?: string
 }
 
-export function Markdown({ children, className }: MarkdownProps) {
+export function Markdown({ children, className, mentionSelfId }: MarkdownProps) {
+  const withMentions = useMemo<Components>(
+    () => ({
+      ...components,
+      span: ({ node: _node, children: content, ...props }) => {
+        const userId = (props as Record<string, unknown>)['data-mention']
+        if (typeof userId !== 'string') return <span {...props}>{content}</span>
+        const self = userId === mentionSelfId?.toLowerCase()
+        return (
+          <span
+            data-mention={userId}
+            className={cn(
+              mentionChip,
+              self ? 'bg-accent-subtle text-accent' : 'bg-subtle text-primary',
+            )}
+          >
+            {content}
+          </span>
+        )
+      },
+    }),
+    [mentionSelfId],
+  )
   return (
     <div
       data-slot="markdown"
       className={cn('text-base [overflow-wrap:anywhere] text-primary', className)}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMentions]} skipHtml components={withMentions}>
         {children}
       </ReactMarkdown>
     </div>

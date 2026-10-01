@@ -122,28 +122,50 @@ oidc:
     - profile
     - email
 
-# Outgoing email through any SMTP server. Leave host empty and Soundings works with
-# in-app notifications only (admins see a banner).
+# Outgoing email through any SMTP server, sent by the worker from a transactional outbox
+# (retried with backoff while the server is down). Leave host empty and Soundings works
+# with in-app notifications only (platform admins see a banner). Settings > Email shows
+# the effective configuration (credentials masked) and sends a test email.
 smtp:
+  # -- Host name or IP address (no scheme, no port), e.g. smtp.example.com or an
+  # in-cluster relay such as postfix.mail.svc.cluster.local. Empty: email off.
   host: ""
-  port: 587
-  # -- none | starttls | tls (implicit TLS, usually port 465)
+  # -- Empty: 465 with security tls, else 587.
+  port: ""
+  # -- none (plain SMTP: an in-cluster relay or Mailpit), starttls (upgrade, usually port
+  # 587) or tls (implicit TLS, usually 465). TLS verifies the certificate and host name.
   security: starttls
-  # -- Optional credentials in plain values. Prefer existingSecret.
+  # -- Optional credentials in plain values (stored in the chart's Secret). Prefer
+  # existingSecret. Production refuses a password with security none.
   username: ""
   password: ""
   # -- Existing Secret with keys `username` and `password` (both optional).
   existingSecret: ""
-  # -- Sender address; required when host is set.
+  # -- Sender address of every email (one plain address); required when host is set.
   from: ""
+  # -- Sender display name.
   fromName: Soundings
+  # -- Optional Reply-To address. Empty: no Reply-To header.
   replyTo: ""
-  # -- Custom CA bundle for the SMTP server's certificate, from an existing ConfigMap.
+  # -- Custom CA bundle for the SMTP server's certificate, from an existing ConfigMap,
+  # mounted read-only into the api and worker pods. Empty: the system trust store.
   caBundle:
     configMap: ""
     key: ca.crt
-  # -- Connection timeout in seconds.
+  # -- Seconds to wait for the connection and for each SMTP command (max 120).
   timeout: 10
+
+# -- IANA time zone of the organisation, e.g. Europe/London. Daily digests and evaluation
+# reminders go out at notifications.digestHour in it, and emails show dates in it.
+timezone: UTC
+
+notifications:
+  # -- Hour of the day (0-23, in `timezone`) when daily digests and evaluation reminders
+  # go out.
+  digestHour: 8
+  # -- Evaluation reminders: days before the due date (0 = on the due date). At most 5
+  # values from 0 to 30; [] sends none. People can turn reminders off in their settings.
+  reminderDays: [2, 0]
 
 # Break-glass admin: a local platform admin for the first sign-in and for SSO outages.
 # It works only while oidc.issuer is empty: the app switches it off once SSO is
@@ -385,6 +407,32 @@ networkPolicy:
   # -- Who may scrape the metrics port (e.g. the Prometheus namespace), as peers.
   # Empty: any source. Pods of this release are always allowed.
   metricsFrom: []
+  # Egress: off by default (the app may connect anywhere). On, the api and worker pods
+  # may only reach DNS (port 53), the database, and: the worker the SMTP server (when
+  # smtp.host is set), the api the IdP (when oidc.issuer is set), both the OTLP
+  # endpoint (when otel.endpoint is set) and the rules in `extra`. Each destination is a
+  # list of NetworkPolicy peers (`to`); empty means any address, on that port only.
+  # Policies see the destination pod's port: for an in-cluster server whose Service maps
+  # ports (e.g. 25 -> 2525), set `port` to the pod's port.
+  egress:
+    enabled: false
+    smtp:
+      # -- e.g. [{ipBlock: {cidr: 192.0.2.25/32}}] or [{namespaceSelector: {matchLabels:
+      # {kubernetes.io/metadata.name: mail}}}]. Empty: any address.
+      to: []
+      # -- Empty: the SMTP port (smtp.port, or 465/587 by security).
+      port: ""
+    database:
+      # -- Peers of an external database (on externalDatabase.port). Empty: any address.
+      # The bundled Postgres is always allowed (by pod selector).
+      to: []
+    oidc:
+      # -- Peers of the IdP (api pods only). Empty: any address.
+      to: []
+      # -- Empty: the issuer URL's port (443 for https).
+      port: ""
+    # -- Extra NetworkPolicyEgressRule objects for the api and worker pods, e.g. kagent.
+    extra: []
 
 # Prometheus Operator ServiceMonitor scraping the Service's "metrics" port.
 serviceMonitor:

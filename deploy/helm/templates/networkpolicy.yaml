@@ -1,11 +1,14 @@
 {{- /*
-Ingress-only policies: the API accepts traffic on its HTTP port from ingressFrom peers
-and on its metrics port from metricsFrom peers (each: anyone when empty; this release's
-pods always), the worker accepts nothing, and the bundled Postgres only accepts this
-release's app pods and Jobs. Egress stays open (IdP, SMTP, kagent and the database
-live in different places in every cluster).
+Ingress: the API accepts traffic on its HTTP port from ingressFrom peers and on its
+metrics port from metricsFrom peers (each: anyone when empty; this release's pods
+always), the worker accepts nothing, and the bundled Postgres only accepts this
+release's app pods and Jobs.
+Egress (networkPolicy.egress.enabled, off by default: IdP, SMTP, kagent and the
+database live in different places in every cluster): the api and worker pods reach
+only DNS, the database and their own destinations ("soundings.egressRules").
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
+{{- $egress := .Values.networkPolicy.egress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -18,6 +21,11 @@ spec:
       {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "api") | nindent 6 }}
   policyTypes:
     - Ingress
+    {{- if $egress }}
+    - Egress
+  egress:
+    {{- include "soundings.egressRules" (dict "ctx" . "component" "api") | nindent 4 }}
+    {{- end }}
   ingress:
     {{- range $port, $peers := dict "http" .Values.networkPolicy.ingressFrom "metrics" .Values.networkPolicy.metricsFrom }}
     - ports:
@@ -44,6 +52,11 @@ spec:
       {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
   policyTypes:
     - Ingress
+    {{- if $egress }}
+    - Egress
+  egress:
+    {{- include "soundings.egressRules" (dict "ctx" . "component" "worker") | nindent 4 }}
+    {{- end }}
   ingress: []
 {{- if .Values.postgresql.enabled }}
 ---

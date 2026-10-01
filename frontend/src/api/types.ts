@@ -138,3 +138,27 @@ export type IdeaSort = NonNullable<IdeaListQuery['sort']>
  * `resolution` only apply to the list; the board always has five columns.
  */
 export type IdeaFilters = Omit<IdeaListQuery, 'cursor' | 'limit'>
+
+/* Phase 3: email and notifications (docs/api/contract-phase3.md) */
+export type CommentExcerpt = Schemas['CommentExcerpt']
+export type NotificationItem = Schemas['NotificationPage']['items'][number]
+export type NotificationPage = Schemas['NotificationPage']
+export type NotificationType = Schemas['NotificationType']
+export type NotificationMode = Schemas['NotificationMode']
+export type NotificationSummary = Schemas['NotificationSummary']
+export type NotificationPreference = Schemas['NotificationPreference']
+export type NotificationPreferences = Schemas['NotificationPreferences']
+export type NotificationPreferencesUpdate = Schemas['NotificationPreferencesUpdate']
+export type UnsubscribeInfo = Schemas['UnsubscribeInfo']
+export type UnsubscribeScope = Schemas['UnsubscribeScope']
+export type EmailConfig = Schemas['EmailConfig']
+export type EmailStatus = Schemas['EmailStatus']
+export type EmailType = Schemas['EmailType']
+export type EmailTestRequest = Schemas['EmailTestRequest']
+export type OutboxEmail = Schemas['OutboxEmail']
+export type OutboxEmailPage = Schemas['OutboxEmailPage']
+export type OutboxRetryResult = Schemas['OutboxRetryResult']
+export type OutboxStats = Schemas['OutboxStats']
+export type SmtpSecurity = EmailConfig['security']
+/** Query parameters of `list_outbox_emails` (filters, cursor, limit). */
+export type OutboxQuery = NonNullable<operations['list_outbox_emails']['parameters']['query']>

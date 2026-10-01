@@ -23,8 +23,22 @@ KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-keycloak/keycloak:26.0}"
 E2E_BREAK_GLASS="${E2E_BREAK_GLASS:-1}"
 E2E_BREAK_GLASS_USERNAME="${E2E_BREAK_GLASS_USERNAME:-admin}"
 E2E_BREAK_GLASS_PASSWORD="${E2E_BREAK_GLASS_PASSWORD:-e2e-break-glass-password}"
-# What the running API was started with (start-stack.sh restarts it when this changes).
-stack_mode="sso=$E2E_SSO kc=$E2E_KC_PORT break_glass=$E2E_BREAK_GLASS"
+# Email (Phase 3): Mailpit ($E2E_PREFIX-mailpit) catches everything the worker sends:
+# SMTP on 127.0.0.1:$E2E_MAILPIT_SMTP_PORT, inbox and API on $E2E_MAILPIT_URL. Its
+# messages survive `docker stop`/`start` (mailpit.sh stop|start: "the SMTP server is
+# down"). E2E_SMTP=0: no SMTP at all (in-app notifications only; admins see a banner).
+E2E_SMTP="${E2E_SMTP:-1}"
+E2E_MAILPIT_PORT="${E2E_MAILPIT_PORT:-8125}"
+E2E_MAILPIT_SMTP_PORT="${E2E_MAILPIT_SMTP_PORT:-1125}"
+E2E_MAILPIT_URL="http://localhost:${E2E_MAILPIT_PORT}"
+mailpit_container="${E2E_PREFIX}mailpit"
+MAILPIT_IMAGE="${MAILPIT_IMAGE:-axllent/mailpit:latest}"
+# The instance time zone (digests, reminders, dates in emails): the browser's, as set
+# in playwright.config.ts.
+E2E_TIMEZONE="${E2E_TIMEZONE:-Europe/London}"
+# What the running API and worker were started with (start-stack.sh restarts them when
+# this changes).
+stack_mode="sso=$E2E_SSO kc=$E2E_KC_PORT break_glass=$E2E_BREAK_GLASS smtp=$E2E_SMTP mailpit=$E2E_MAILPIT_SMTP_PORT tz=$E2E_TIMEZONE"
 
 # Every `soundings` command below talks to this database. Development mode: the dev
 # login works and `seed` is allowed.
@@ -57,8 +71,10 @@ seed_demo_data() {
   printf '%s\n' "$out" | grep -v '^{' >&2 || true
 }
 
-# Settings of the `soundings api` process for the chosen mode.
-api_env() {
+# Settings of the `soundings api` and `soundings worker` processes for the chosen mode.
+app_env() {
+  export SOUNDINGS_BASE_URLS="$E2E_URL,http://127.0.0.1:$E2E_PORT"
+  export SOUNDINGS_TIMEZONE="$E2E_TIMEZONE"
   export SOUNDINGS_BREAK_GLASS_ENABLED=false
   if [ "$E2E_BREAK_GLASS" = "1" ]; then
     export SOUNDINGS_BREAK_GLASS_ENABLED=true
@@ -74,6 +90,18 @@ api_env() {
     export SOUNDINGS_OIDC_GROUPS_CLAIM=groups
     export SOUNDINGS_OIDC_EXTERNAL_ID_CLAIM=employee_no
   fi
+  unset SOUNDINGS_SMTP_HOST SOUNDINGS_SMTP_PORT SOUNDINGS_SMTP_SECURITY SOUNDINGS_SMTP_FROM \
+    SOUNDINGS_SMTP_FROM_NAME SOUNDINGS_SMTP_REPLY_TO SOUNDINGS_SMTP_USERNAME \
+    SOUNDINGS_SMTP_PASSWORD SOUNDINGS_SMTP_CA_BUNDLE
+  if [ "$E2E_SMTP" = "1" ]; then
+    export SOUNDINGS_SMTP_HOST=127.0.0.1
+    export SOUNDINGS_SMTP_PORT="$E2E_MAILPIT_SMTP_PORT"
+    export SOUNDINGS_SMTP_SECURITY=none
+    export SOUNDINGS_SMTP_FROM=soundings@example.com
+    export SOUNDINGS_SMTP_FROM_NAME="Soundings (e2e)"
+    # Fail fast when Mailpit is stopped (a refused connection is immediate anyway).
+    export SOUNDINGS_SMTP_TIMEOUT=5
+  fi
 }
 
 # The Keycloak helper (e2e/scripts/keycloak.ts) from the shell. The flag lets Node
@@ -87,20 +115,90 @@ app_ready() {
   curl -fsS --noproxy '*' --max-time 2 -o /dev/null "$E2E_URL/readyz" 2>/dev/null
 }
 
-# Stop the `soundings api` process start-stack.sh started (by its pid file only, never
-# by pattern). setsid made it its own process group: stop uv, uvicorn and any children.
-stop_api() {
-  local pid_file="$E2E_STATE_DIR/api.pid" pid
+container_running() {
+  [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "true" ]
+}
+
+# Mailpit's HTTP API (curl args follow the path), e.g. mailpit_api /api/v1/messages -X DELETE.
+mailpit_api() {
+  local path="$1"
+  shift
+  curl -fsS --noproxy '*' --max-time 5 "$@" "$E2E_MAILPIT_URL$path"
+}
+
+mailpit_ready() {
+  mailpit_api /readyz -o /dev/null 2>/dev/null
+}
+
+# Start (or create) the Mailpit container and wait until it answers.
+start_mailpit() {
+  if ! container_running "$mailpit_container"; then
+    if docker inspect "$mailpit_container" >/dev/null 2>&1; then
+      log "starting $mailpit_container"
+      docker start "$mailpit_container" >/dev/null
+    else
+      log "starting $mailpit_container ($MAILPIT_IMAGE: SMTP 127.0.0.1:$E2E_MAILPIT_SMTP_PORT, $E2E_MAILPIT_URL)"
+      # The database is a file in the container (not a temp file Mailpit deletes on
+      # exit), so messages survive a stop and start.
+      docker run -d --name "$mailpit_container" \
+        -p "127.0.0.1:${E2E_MAILPIT_SMTP_PORT}:1025" -p "127.0.0.1:${E2E_MAILPIT_PORT}:8025" \
+        -e MP_DATABASE=/tmp/mailpit.db -e MP_MAX_MESSAGES=5000 \
+        -e MP_SMTP_AUTH_ACCEPT_ANY=true -e MP_SMTP_AUTH_ALLOW_INSECURE=true \
+        -e MP_DISABLE_VERSION_CHECK=true \
+        "$MAILPIT_IMAGE" >/dev/null
+    fi
+  fi
+  for _ in $(seq 1 30); do
+    if mailpit_ready; then return 0; fi
+    sleep 0.5
+  done
+  die "Mailpit does not answer on $E2E_MAILPIT_URL"
+}
+
+# Delete every message in Mailpit (a fresh inbox with the fresh demo data).
+clear_mailpit() {
+  mailpit_api /api/v1/messages -X DELETE -o /dev/null || die "could not clear Mailpit"
+}
+
+# Start a background process of the stack: start_process NAME COMMAND... (from backend/,
+# own process group; pid in $E2E_STATE_DIR/NAME.pid, output in NAME.log).
+start_process() {
+  local name="$1"
+  shift
+  (
+    cd "$repo/backend"
+    app_env
+    setsid nohup "$@" >"$E2E_STATE_DIR/$name.log" 2>&1 &
+    echo $! >"$E2E_STATE_DIR/$name.pid"
+  )
+}
+
+process_running() {
+  local pid_file="$E2E_STATE_DIR/$1.pid"
+  [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null
+}
+
+# Stop a process start-stack.sh started (by its pid file only, never by pattern).
+# setsid made it its own process group: stop uv, the app and any children.
+stop_process() {
+  local name="$1" pid_file="$E2E_STATE_DIR/$1.pid" pid
   [ -f "$pid_file" ] || return 0
   pid="$(cat "$pid_file")"
   if kill -0 "$pid" 2>/dev/null; then
-    log "stopping soundings api (process group $pid)"
+    log "stopping soundings $name (process group $pid)"
     kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-    for _ in $(seq 1 25); do
+    for _ in $(seq 1 50); do
       kill -0 "$pid" 2>/dev/null || break
       sleep 0.2
     done
     kill -KILL -- "-$pid" 2>/dev/null || true
   fi
-  rm -f "$pid_file" "$E2E_STATE_DIR/mode"
+  rm -f "$pid_file"
+}
+
+# The API and the worker.
+stop_app() {
+  stop_process api
+  stop_process worker
+  rm -f "$E2E_STATE_DIR/mode"
 }

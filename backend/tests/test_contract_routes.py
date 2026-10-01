@@ -49,9 +49,6 @@ IDEA = "0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11"
 USER = "5f0e8a52-3c1d-4b8e-9a6f-2d7c4e1b9a03"
 GROUP = "8c2d6f14-9e3b-4a7d-b1c5-6e0f2a8d4b17"
 IDENTITY = "1a4b7c0d-2e5f-4a8b-9c3d-6e9f0a1b2c3d"
-NOTIFICATION = "3e9d2c71-6b4a-4f1e-8d0c-5a7b9e2f1c46"
-EMAIL = "6d1f8a3b-2c4e-4b7a-9f0d-8e3c1b5a7d92"
-TOKEN = "eyJ1IjoiNWYwZThhNTIiLCJzIjoiY29tbWVudCJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ"
 
 # (method, path template, operation_id)
 CONTRACT: list[tuple[str, str, str]] = [
@@ -206,11 +203,13 @@ PHASE2_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "get_sso_config": ("/api/v1/admin/sso", None),
 }
 
-# operation_id -> a valid request for every operation still answered with 501. Every
-# Phase 1 and Phase 2 operation is implemented and tested (tests/api, tests/ideas,
-# tests/identity, tests/admin). Add a row per stub; delete it when you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
-    # Phase 3 (docs/api/contract-phase3.md)
+NOTIFICATION = "3e9d2c71-6b4a-4f1e-8d0c-5a7b9e2f1c46"
+EMAIL = "6d1f8a3b-2c4e-4b7a-9f0d-8e3c1b5a7d92"
+TOKEN = "eyJ1IjoiNWYwZThhNTIiLCJzIjoiY29tbWVudCJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ"
+
+# operation_id -> a valid request for the Phase 3 operations (implemented;
+# tests/notifications covers them).
+PHASE3_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "list_notifications": ("/api/v1/me/notifications?unread=true&limit=20", None),
     "get_notification_summary": ("/api/v1/me/notifications/summary", None),
     "mark_notification_read": (f"/api/v1/me/notifications/{NOTIFICATION}/read", None),
@@ -232,6 +231,12 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "get_outbox_email": (f"/api/v1/admin/email/outbox/{EMAIL}", None),
     "retry_outbox_email": (f"/api/v1/admin/email/outbox/{EMAIL}/retry", None),
 }
+
+# operation_id -> a valid request for every operation still answered with 501. Every
+# Phase 1, 2 and 3 operation is implemented and tested (tests/api, tests/ideas,
+# tests/identity, tests/admin, tests/notifications). Add a row per stub; delete it when
+# you implement it.
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
 
 PUBLIC_OPERATIONS = frozenset(
     {
@@ -315,6 +320,7 @@ def test_operation_ids_are_explicit_and_match_function_names() -> None:
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
     assert set(PHASE2_REQUESTS) <= set(_METHODS)
+    assert set(PHASE3_REQUESTS) <= set(_METHODS)
 
 
 async def test_openapi_lists_every_operation(client: httpx.AsyncClient) -> None:
@@ -490,9 +496,9 @@ async def test_malformed_idea_reference_is_rejected(client: httpx.AsyncClient, r
 async def test_invalid_phase3_requests_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    stub_url, _ = STUBS[operation_id]
+    valid_url, _ = PHASE3_REQUESTS[operation_id]
 
-    response = await client.request(_METHODS[operation_id], url or stub_url, json=body)
+    response = await client.request(_METHODS[operation_id], url or valid_url, json=body)
 
     assert response.status_code == 422, response.text
     assert response.json()["code"] == "validation_error"
@@ -519,8 +525,10 @@ async def test_one_click_unsubscribe_accepts_the_rfc8058_form_post(
     client: httpx.AsyncClient,
 ) -> None:
     """Mail clients POST List-Unsubscribe=One-Click as a form, with no session and no
-    CSRF token: the body is ignored (here: the stub answers, not a 401/403/422)."""
-    url, _ = STUBS["confirm_unsubscribe"]
+    CSRF token: the body is ignored (here: the endpoint itself answers, 404 for this
+    made-up token, not a 401/403/422; tests/notifications/test_unsubscribe.py has a
+    real token)."""
+    url, _ = PHASE3_REQUESTS["confirm_unsubscribe"]
 
     response = await client.post(
         url,
@@ -528,4 +536,5 @@ async def test_one_click_unsubscribe_accepts_the_rfc8058_form_post(
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    assert response.status_code == 501, response.text
+    assert response.status_code == 404, response.text
+    assert response.json()["code"] == "not_found"

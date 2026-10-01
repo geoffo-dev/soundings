@@ -1,0 +1,66 @@
+{#- The shared layout of every HTML email: table-based, max 600 px, inline styles,
+    system fonts, no images or external resources. Light colours are set inline on
+    every block (readable everywhere, contrast >= 4.5:1); clients that honour
+    prefers-color-scheme get the dark overrides in <style>. -#}
+{% import "_macros.html" as m %}
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no, url=no">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{ subject }}</title>
+<style>
+  :root { color-scheme: light dark; supported-color-schemes: light dark; }
+  @media (prefers-color-scheme: dark) {
+    .sx-bg { background-color: #141418 !important; }
+    .sx-card { background-color: #1e1e24 !important; border-color: #34343c !important; }
+    .sx-panel { background-color: #26262d !important; border-color: #3a3a43 !important; }
+    .sx-text { color: #ededf0 !important; }
+    .sx-muted { color: #b4b4bd !important; }
+    .sx-link { color: #9cc3ef !important; }
+  }
+  @media only screen and (max-width: 620px) {
+    .sx-pad { padding: 20px 18px !important; }
+  }
+</style>
+</head>
+<body class="sx-bg" style="margin:0;padding:0;width:100%;background-color:{{ c.bg }};color:{{ c.text }};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:{{ c.bg }};">{{ preheader }}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+<table role="presentation" class="sx-bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:{{ c.bg }};">
+<tr>
+<td align="center" style="padding:24px 12px 32px 12px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
+<tr>
+<td style="padding:0 4px 14px 4px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="26" height="26" align="center" valign="middle" bgcolor="{{ brand.accent }}" style="width:26px;height:26px;border-radius:6px;background-color:{{ brand.accent }};font-family:{{ s.font }};font-size:14px;line-height:26px;font-weight:700;color:{{ brand.accent_text }};">{{ brand.initial }}</td>
+<td class="sx-text" style="padding-left:9px;font-family:{{ s.font }};font-size:16px;line-height:26px;font-weight:600;color:{{ c.text }};">{{ brand.product_name }}</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td class="sx-card sx-pad" style="background-color:{{ c.card }};border:1px solid {{ c.border }};border-radius:10px;padding:28px 28px 24px 28px;font-family:{{ s.font }};font-size:15px;line-height:1.55;color:{{ c.text }};">
+{% block content %}{% endblock %}
+{% if button %}{{ m.button(button, brand, s) }}{% endif %}
+</td>
+</tr>
+<tr>
+<td class="sx-muted" style="padding:18px 4px 0 4px;font-family:{{ s.font }};font-size:12px;line-height:1.6;color:{{ c.muted }};">
+{% if reason %}<p style="margin:0 0 6px 0;">{{ reason }}</p>{% endif %}
+<p style="margin:0;">{% if preferences_url %}<a class="sx-muted" href="{{ preferences_url }}" style="color:{{ c.muted }};text-decoration:underline;">Email preferences</a>{% endif %}{% if preferences_url and unsubscribe_url %} &nbsp;·&nbsp; {% endif %}{% if unsubscribe_url %}<a class="sx-muted" href="{{ unsubscribe_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from {{ unsubscribe_label }}</a>{% endif %}</p>
+<p style="margin:10px 0 0 0;">{{ brand.footer_text or "Sent by " ~ brand.product_name ~ "." }}</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>

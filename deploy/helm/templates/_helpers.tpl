@@ -188,6 +188,19 @@ Configuration
 {{- printf "/etc/soundings/smtp-ca/%s" .Values.smtp.caBundle.key }}
 {{- end }}
 
+{{/* The SMTP port the app uses: smtp.port, or 465 for security tls and 587 otherwise. */}}
+{{- define "soundings.smtpPort" -}}
+{{- $port := toString .Values.smtp.port }}
+{{- if $port }}{{ $port }}{{ else if eq .Values.smtp.security "tls" }}465{{ else }}587{{ end }}
+{{- end }}
+
+{{/* Port of an http(s) URL: the explicit one, else 443 for https and 80 for http. */}}
+{{- define "soundings.urlPort" -}}
+{{- $url := urlParse . }}
+{{- $hostPort := splitList ":" $url.host }}
+{{- if gt (len $hostPort) 1 }}{{ last $hostPort }}{{ else if eq $url.scheme "http" }}80{{ else }}443{{ end }}
+{{- end }}
+
 {{/*
 Non-secret SOUNDINGS_* settings as a YAML map (the ConfigMap's data, and inline env
 for the pre-install migration Job, which runs before the ConfigMap exists).
@@ -224,9 +237,12 @@ SOUNDINGS_OIDC_EXTERNAL_ID_KIND: {{ . | quote }}
 {{- end }}
 {{- end }}
 {{- end }}
+SOUNDINGS_TIMEZONE: {{ .Values.timezone | quote }}
+SOUNDINGS_DIGEST_HOUR: {{ .Values.notifications.digestHour | quote }}
+SOUNDINGS_REMINDER_DAYS: {{ join "," .Values.notifications.reminderDays | quote }}
 {{- if .Values.smtp.host }}
 SOUNDINGS_SMTP_HOST: {{ .Values.smtp.host | quote }}
-SOUNDINGS_SMTP_PORT: {{ .Values.smtp.port | quote }}
+SOUNDINGS_SMTP_PORT: {{ include "soundings.smtpPort" . | quote }}
 SOUNDINGS_SMTP_SECURITY: {{ .Values.smtp.security | quote }}
 SOUNDINGS_SMTP_FROM: {{ .Values.smtp.from | quote }}
 SOUNDINGS_SMTP_FROM_NAME: {{ .Values.smtp.fromName | quote }}
@@ -485,6 +501,69 @@ Secret exist. Migrations need no other secret.
 {{- end }}
 
 {{/* ---------------------------------------------------------------------------
+Egress (networkPolicy.egress.enabled)
+--------------------------------------------------------------------------- */}}
+
+{{/*
+Egress rules of the api or worker pods: DNS, the database, the worker's SMTP server,
+the api's IdP, the OTLP endpoint, then networkPolicy.egress.extra. A destination's `to`
+peers, when empty, mean any address (on that port only).
+Usage: include "soundings.egressRules" (dict "ctx" $ "component" "worker")
+*/}}
+{{- define "soundings.egressRules" -}}
+{{- $ctx := .ctx -}}
+{{- $egress := $ctx.Values.networkPolicy.egress -}}
+- ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+{{- if $ctx.Values.postgresql.enabled }}
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "soundings.componentSelectorLabels" (dict "ctx" $ctx "component" "postgresql") | nindent 10 }}
+  ports:
+    - port: 5432
+      protocol: TCP
+{{- else }}
+- ports:
+    - port: {{ int $ctx.Values.externalDatabase.port }}
+      protocol: TCP
+  {{- with $egress.database.to }}
+  to:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if and (eq .component "worker") $ctx.Values.smtp.host }}
+- ports:
+    - port: {{ int (toString $egress.smtp.port | default (include "soundings.smtpPort" $ctx)) }}
+      protocol: TCP
+  {{- with $egress.smtp.to }}
+  to:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if and (eq .component "api") $ctx.Values.oidc.issuer }}
+- ports:
+    - port: {{ int (toString $egress.oidc.port | default (include "soundings.urlPort" $ctx.Values.oidc.issuer)) }}
+      protocol: TCP
+  {{- with $egress.oidc.to }}
+  to:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- with $ctx.Values.otel.endpoint }}
+- ports:
+    - port: {{ int (include "soundings.urlPort" .) }}
+      protocol: TCP
+{{- end }}
+{{- with $egress.extra }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/* ---------------------------------------------------------------------------
 Validation (errors a JSON schema cannot express)
 --------------------------------------------------------------------------- */}}
 {{- define "soundings.validate" -}}
@@ -493,6 +572,17 @@ Validation (errors a JSON schema cannot express)
 {{- end }}
 {{- if and .Values.smtp.host (not .Values.smtp.from) }}
 {{- fail "smtp.from is required when smtp.host is set" }}
+{{- end }}
+{{- if and .Values.smtp.existingSecret (or .Values.smtp.username .Values.smtp.password) }}
+{{- fail "set the SMTP credentials either in smtp.existingSecret or in smtp.username / smtp.password, not both" }}
+{{- end }}
+{{- if and .Values.smtp.host .Values.smtp.password (eq .Values.smtp.security "none") (not .Values.devLogin) }}
+{{- fail "smtp.security none sends the SMTP password in clear text: use starttls or tls (production refuses it)" }}
+{{- end }}
+{{- with toString .Values.smtp.port }}
+{{- if gt (int .) 65535 }}
+{{- fail "smtp.port must be between 1 and 65535" }}
+{{- end }}
 {{- end }}
 {{- if and .Values.oidc.issuer (not (or .Values.oidc.clientSecret .Values.oidc.existingSecret)) }}
 {{- fail "oidc.clientSecret or oidc.existingSecret is required when oidc.issuer is set" }}

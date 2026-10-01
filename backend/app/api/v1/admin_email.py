@@ -11,11 +11,14 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.authz import Rule, require
+from app.config import Settings
+from app.db import SessionDep
+from app.email import admin
 from app.models.enums import EmailStatus, EmailType
 from app.pagination import PageParamsDep
 from app.schemas.email import (
@@ -29,6 +32,11 @@ from app.schemas.email import (
 router = APIRouter(prefix="/admin/email", tags=["admin"])
 
 
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
+
+
 @router.get(
     "",
     operation_id="get_email_config",
@@ -39,8 +47,11 @@ router = APIRouter(prefix="/admin/email", tags=["admin"])
     ),
     responses=problems(401, 403),
 )
-async def get_email_config(principal: PrincipalDep) -> EmailConfig:
-    raise NotImplementedProblem
+async def get_email_config(
+    request: Request, principal: PrincipalDep, session: SessionDep
+) -> EmailConfig:
+    require(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+    return await admin.email_config(session, _settings(request))
 
 
 @router.post(
@@ -56,8 +67,11 @@ async def get_email_config(principal: PrincipalDep) -> EmailConfig:
     ),
     responses=problems(401, 403, 409, 422, 429),
 )
-async def send_test_email(principal: PrincipalDep, body: EmailTestRequest) -> OutboxEmail:
-    raise NotImplementedProblem
+async def send_test_email(
+    request: Request, principal: PrincipalDep, session: SessionDep, body: EmailTestRequest
+) -> OutboxEmail:
+    require(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+    return await admin.send_test_email(session, _settings(request), principal, body.to)
 
 
 @router.get(
@@ -73,6 +87,7 @@ async def send_test_email(principal: PrincipalDep, body: EmailTestRequest) -> Ou
 )
 async def list_outbox_emails(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     status_filter: Annotated[
         list[EmailStatus] | None, Query(alias="status", description="Only these statuses.")
@@ -81,7 +96,10 @@ async def list_outbox_emails(
         list[EmailType] | None, Query(alias="type", description="Only these types.")
     ] = None,
 ) -> OutboxEmailPage:
-    raise NotImplementedProblem
+    require(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+    return await admin.list_outbox(
+        session, statuses=status_filter, types=type_filter, cursor=page.cursor, limit=page.limit
+    )
 
 
 @router.post(
@@ -96,8 +114,13 @@ async def list_outbox_emails(
     ),
     responses=problems(401, 403, 409),
 )
-async def retry_failed_outbox_emails(principal: PrincipalDep) -> OutboxRetryResult:
-    raise NotImplementedProblem
+async def retry_failed_outbox_emails(
+    request: Request, principal: PrincipalDep, session: SessionDep
+) -> OutboxRetryResult:
+    require(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+    return OutboxRetryResult(
+        retried=await admin.retry_all_failed(session, _settings(request), principal)
+    )
 
 
 @router.get(
@@ -107,8 +130,11 @@ async def retry_failed_outbox_emails(principal: PrincipalDep) -> OutboxRetryResu
     description="Platform admins. Its status, attempts and last error (no content).",
     responses=problems(401, 403, 404),
 )
-async def get_outbox_email(principal: PrincipalDep, email_id: UUID) -> OutboxEmail:
-    raise NotImplementedProblem
+async def get_outbox_email(
+    principal: PrincipalDep, session: SessionDep, email_id: UUID
+) -> OutboxEmail:
+    require(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+    return await admin.get_outbox_email(session, email_id)
 
 
 @router.post(
@@ -122,5 +148,8 @@ async def get_outbox_email(principal: PrincipalDep, email_id: UUID) -> OutboxEma
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def retry_outbox_email(principal: PrincipalDep, email_id: UUID) -> OutboxEmail:
-    raise NotImplementedProblem
+async def retry_outbox_email(
+    request: Request, principal: PrincipalDep, session: SessionDep, email_id: UUID
+) -> OutboxEmail:
+    require(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+    return await admin.retry_email(session, _settings(request), principal, email_id)

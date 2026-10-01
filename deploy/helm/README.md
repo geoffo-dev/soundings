@@ -52,11 +52,13 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `oidc.externalIdClaim` / `.externalIdKind` | `""` / `""` | Claim that links pre-created users by external ID (e.g. `employee_no`, Entra ID `oid`) and the external-ID kind it is compared with (default: the claim path's last segment). **Must be an attribute only IdP admins can set.** |
 | `oidc.matchVerifiedEmail` | `true` | Link an existing user by email when the token says `email_verified: true`. |
 | `oidc.autoCreateUsers` | `false` | Create an account (no roles; access only through groups) for an unmatched person with a verified email. |
-| `smtp.host` / `.port` / `.security` | `""` / `587` / `starttls` | SMTP server; `security`: `none`, `starttls` or `tls`. Empty host: in-app notifications only. |
-| `smtp.existingSecret` | `""` | Secret with optional keys `username`, `password` (or `smtp.username` / `smtp.password` in values). |
-| `smtp.from` / `.fromName` / `.replyTo` | `""` / `Soundings` / `""` | Sender; `from` is required when `host` is set. |
-| `smtp.caBundle.configMap` / `.key` | `""` / `ca.crt` | Existing ConfigMap with a CA bundle for the SMTP server. |
-| `smtp.timeout` | `10` | Connection timeout (seconds). |
+| `smtp.host` / `.port` / `.security` | `""` / `""` / `starttls` | SMTP server (host name or IP, no scheme or port); `security`: `none`, `starttls` or `tls` (implicit). Empty port: 465 for `tls`, else 587. Empty host: in-app notifications only. See [Email](#email). |
+| `smtp.existingSecret` | `""` | Secret with optional keys `username`, `password`. Or `smtp.username` / `smtp.password` in values (not both). |
+| `smtp.from` / `.fromName` / `.replyTo` | `""` / `Soundings` / `""` | Sender address (one plain address, required with `host`), display name, optional Reply-To. |
+| `smtp.caBundle.configMap` / `.key` | `""` / `ca.crt` | Existing ConfigMap with a PEM CA bundle for the SMTP server's certificate, mounted read-only. Empty: system trust store. |
+| `smtp.timeout` | `10` | Seconds for the connection and each SMTP command (max 120). |
+| `timezone` | `UTC` | IANA time zone of the organisation: digests and reminders follow it, emails show dates in it. |
+| `notifications.digestHour` / `.reminderDays` | `8` / `[2, 0]` | Hour (0-23, in `timezone`) of daily digests and reminders; evaluation reminders N days before the due date (0 = on the day, at most 5 values, `[]` = none). |
 | `breakGlass.enabled` / `.existingSecret` | `true` / `""` | Local platform admin for the first sign-in and SSO outages, available only while `oidc.issuer` is empty (keys `username`, `password`, 16+ characters). Empty secret: user `admin`, random 24-character password. |
 | `features.publicSubmission` / `.ai` | `true` / `false` | Allow public submission per project; AI assistance via kagent. |
 | `kagent.enabled` / `.namespace` / `.examples` | `false` / `kagent` / `false` | Placeholders for Phase 6 (`deploy/kagent/README.md`). |
@@ -88,7 +90,11 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `externalDatabase.host` / `.port` / `.database` / `.user` | `""` / `5432` / `soundings` / `soundings` | Used when `postgresql.enabled=false` (host required). |
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
 | `externalDatabase.sslmode` | `require` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. |
-| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress-only policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace. |
+| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace. |
+| `networkPolicy.egress.enabled` | `false` | Also restrict the api and worker pods' egress to DNS, the database, SMTP (worker), the IdP (api), OTLP and `extra` (see [Security](#security)). |
+| `networkPolicy.egress.smtp.to` / `.port` | `[]` / `""` | Peers of the SMTP server (empty: any address) and its pods' port (empty: the SMTP port). |
+| `networkPolicy.egress.database.to` / `.oidc.to` / `.oidc.port` | `[]` / `[]` / `""` | Peers of an external database and of the IdP (empty: any address); the IdP's port (empty: the issuer's). |
+| `networkPolicy.egress.extra` | `[]` | More egress rules (NetworkPolicyEgressRule objects) for the api and worker pods, e.g. kagent. |
 | `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` / `.labels` | `false` / `30s` / `10s` / `{}` | Prometheus Operator scrape of the Service's `metrics` port. |
 
 ## Migrations: why two paths
@@ -161,8 +167,12 @@ variables: `ENVIRONMENT` (`production`, or `development` with `devLogin`),
 `OTEL_ENDPOINT`, `FEATURE_PUBLIC_SUBMISSION`, `FEATURE_AI`, `BREAK_GLASS_ENABLED`,
 `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_GROUPS_CLAIM`, `OIDC_EXTERNAL_ID_CLAIM`,
 `OIDC_EXTERNAL_ID_KIND`, `OIDC_MATCH_VERIFIED_EMAIL`, `OIDC_AUTO_CREATE_USERS`,
-`OIDC_SCOPES` (comma-separated; all `OIDC_*` only when `oidc.issuer` is set), `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_FROM`,
-`SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_TIMEOUT`, `SMTP_CA_BUNDLE` (a file path).
+`OIDC_SCOPES` (comma-separated; all `OIDC_*` only when `oidc.issuer` is set), `TIMEZONE`,
+`DIGEST_HOUR`, `REMINDER_DAYS` (comma-separated), and when `smtp.host` is set
+`SMTP_HOST`, `SMTP_PORT` (the effective port), `SMTP_SECURITY`, `SMTP_FROM`,
+`SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_TIMEOUT`, `SMTP_CA_BUNDLE` (the mounted file's
+path, `/etc/soundings/smtp-ca/<key>`). The api and worker pods get the same settings:
+the worker sends the email, the api queues it and shows the configuration.
 Secrets arrive as env vars from Secrets: `SOUNDINGS_SECRET_KEY`,
 `SOUNDINGS_DATABASE_PASSWORD`, `SOUNDINGS_SMTP_USERNAME`, `SOUNDINGS_SMTP_PASSWORD`, and
 in the **api pods only** (the worker signs nobody in) `SOUNDINGS_OIDC_CLIENT_SECRET`,
@@ -170,6 +180,44 @@ in the **api pods only** (the worker signs nobody in) `SOUNDINGS_OIDC_CLIENT_SEC
 named `soundings` would otherwise inject `SOUNDINGS_PORT=tcp://...`). The session
 cookies' `Secure` flag is automatic (always set in production); `SOUNDINGS_COOKIE_SECURE`
 in `extraEnv` overrides it (`false` is refused in production).
+
+## Email
+
+Soundings sends notification email (made owner, asked to evaluate, reminders, all
+evaluations in, status changes, comments and @mentions, daily digests) through any SMTP
+server. The **worker** sends it: each email is an outbox row written in the same
+transaction as the event, retried with exponential backoff (30 s doubling to an hour,
+12 attempts, about 5 hours) while the server is unreachable, so nothing is lost when SMTP
+is briefly down; emails that still fail show up in Settings > Email with a Retry button.
+Keep `worker.enabled` on. Without `smtp.host` the app works with in-app notifications
+only and platform admins see a banner.
+
+```yaml
+smtp:
+  host: smtp.example.com
+  security: starttls            # port 587 by default; tls → 465; none → plain (relays)
+  existingSecret: soundings-smtp  # optional keys username, password
+  from: ideas@example.com
+  fromName: Example Ideas
+  replyTo: innovation@example.com
+timezone: Europe/London         # digests and reminders at notifications.digestHour there
+```
+
+```sh
+kubectl -n soundings create secret generic soundings-smtp \
+  --from-literal=username=soundings --from-literal=password='...'
+# A private CA for the server's certificate (smtp.caBundle.configMap: smtp-ca):
+kubectl -n soundings create configmap smtp-ca --from-file=ca.crt=./corporate-ca.pem
+```
+
+`NOTES.txt` says whether SMTP is configured; Settings > Email shows the effective
+configuration (password masked), the outbox and a **Send test email** button. Links in
+emails use the first of `baseUrls`. With `security: none` the connection is plain (an
+in-cluster relay or Mailpit); production refuses a password over it, and the chart
+refuses `smtp.password` with it. TLS (`starttls`, `tls`) always verifies the server's
+certificate and host name. Changing a setting rolls the api and worker pods (config
+checksum). To try it out, point `smtp.host` at Mailpit:
+`dev/k3s/mailpit.yaml` and `make k3s-install SMTP=1` do that on the local k3s cluster.
 
 ## Single sign-on
 
@@ -268,8 +316,15 @@ app ignores them until the issuer is unset.
   `ingressFrom` peers and on its metrics port from `metricsFrom` peers, plus this
   release's pods (each port: any source when its list is empty); the worker accepts
   nothing; the bundled Postgres accepts only this release's api, worker, migration and
-  seed pods. Egress is not restricted (IdP, SMTP, kagent and the database differ per
-  cluster); add your own egress policy if you need one.
+  seed pods. Egress is not restricted by default (IdP, SMTP, kagent and the database
+  differ per cluster). `networkPolicy.egress.enabled` restricts the api and worker pods
+  to DNS (port 53), the database (the bundled Postgres by pod selector, an external one
+  on `externalDatabase.port`), the SMTP server (worker only, on the SMTP port), the IdP
+  (api only, on the issuer's port), the OTLP endpoint's port and `egress.extra`. Narrow
+  each with its `to` peers (empty: any address on that port), e.g. the SMTP relay's
+  CIDR. NetworkPolicies match the **destination pod's** port: for an in-cluster server
+  whose Service maps ports (25 → 2525), set `egress.smtp.port` (or `egress.oidc.port`)
+  to the pod's port. The migration and seed Jobs are not restricted.
 - **Client addresses behind the ingress.** The sign-in throttles (60 SSO starts a
   minute, 5 failed break-glass sign-ins per 15 minutes) count per client address. The
   app believes `X-Forwarded-For` only from `trustedProxies`, and only the
@@ -314,7 +369,9 @@ make k3s-down
 ```
 
 `ci/default-values.yaml`, `ci/production-values.yaml` (external DB, ingress + TLS, SSO,
-SMTP via existingSecret, HPA, NetworkPolicy, ServiceMonitor), `ci/sso-values.yaml`
+SMTP via existingSecret, HPA, NetworkPolicy, ServiceMonitor), `ci/smtp-values.yaml`
+(implicit TLS on the default port, a CA bundle ConfigMap, credentials in values, time
+zone and reminders, egress NetworkPolicies), `ci/sso-values.yaml`
 (Entra ID-shaped SSO: `oid` external ID, no email matching, two hostnames, generated
 break-glass), `ci/gateway-values.yaml` (Gateway API) and `ci/demo-values.yaml` (dev
 login + demo seed Job with NetworkPolicies) are linted and rendered in CI.

@@ -228,7 +228,7 @@ export const SAMPLE_MARKDOWN = `Business customers currently **phone support** t
 
 > “We'd use this every week.” — Ops lead at a pilot customer
 
-See the [support dashboard](https://example.com/dashboard) and the \`returns_v2\` flag.
+See the [support dashboard](https://example.com/dashboard) and the \`returns_v2\` flag. @[Alice Anders](user:10000000-0000-4000-8000-000000000002) and @[Bob Chen](user:10000000-0000-4000-8000-000000000003) can help (@mentions are name chips, never links).
 
 | Metric | Today | Target |
 | --- | --- | --- |

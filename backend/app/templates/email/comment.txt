@@ -1,0 +1,10 @@
+{% extends "_layout.txt" %}
+{% block content %}
+New comment
+
+{{ actor }} commented on {{ idea.key }} {{ idea.title }}:
+
+> {{ excerpt }}
+
+{{ idea.project }} · {{ idea.status }}
+{%- endblock %}

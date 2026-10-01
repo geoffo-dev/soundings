@@ -5,10 +5,14 @@
 # break-glass available, sign in with the credentials from its Secret; with
 # SSO=1, the single sign-on acceptance through the ingress and the cluster's Keycloak
 # (scripts/sso-smoke.sh: code flow, groups -> project access, removal at the next
-# sign-in, sign-out at the IdP). Then `helm test`.
+# sign-in, sign-out at the IdP); with SMTP=1, email through the cluster's Mailpit
+# (scripts/email-smoke.sh: an invited evaluator gets the branded email with the evaluate
+# link; with Mailpit scaled to 0 the next one waits in the outbox and arrives, once, when
+# it is back). Then `helm test`.
 #
 #   RELEASE / NAMESPACE as for k3s-install.sh
 #   SSO=1             also the SSO checks (after `make k3s-keycloak k3s-install SSO=1`)
+#   SMTP=1            also the email checks (after `make k3s-mailpit k3s-install SMTP=1`)
 #   K3S_CONNECT_HOST  where the ingress port is reachable when not on localhost (CI with
 #                     docker:dind: "docker"); requests still carry Host: localhost:<port>.
 set -euo pipefail
@@ -188,6 +192,13 @@ fi
 
 if [ "${SSO:-0}" = "1" ]; then
   CONNECT_HOST="${K3S_CONNECT_HOST:-}" "$(dirname "$0")/sso-smoke.sh" "$BASE_URL" || failed=1
+fi
+
+if [ "${SMTP:-0}" = "1" ]; then
+  mailpit_script="$(cd "$(dirname "$0")" && pwd)/k3s-mailpit.sh"
+  CONNECT_HOST="${K3S_CONNECT_HOST:-}" MAILPIT_URL="http://mailpit.localhost:$K3S_HTTP_PORT" \
+    MAILPIT_STOP="$mailpit_script scale 0" MAILPIT_START="$mailpit_script scale 1" \
+    "$(dirname "$0")/email-smoke.sh" "$BASE_URL" || failed=1
 fi
 
 log "helm test $RELEASE"

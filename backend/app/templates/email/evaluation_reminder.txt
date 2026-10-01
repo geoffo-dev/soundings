@@ -1,0 +1,11 @@
+{% extends "_layout.txt" %}
+{% block content %}
+{% if due_today %}Your evaluation is due today{% else %}Your evaluation is due {{ due_day }}{% endif %}
+
+
+A reminder that you haven't submitted your evaluation of:
+
+{% include "_idea.txt" %}
+
+Due {% if due_today %}today, {% endif %}{{ due }}
+{%- endblock %}

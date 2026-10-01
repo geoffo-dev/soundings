@@ -225,6 +225,19 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'System accounts can’t be changed like this',
     description: 'Only their name and whether they are active can change.',
   },
+  // Phase 3: email and notifications (contract-phase3 §4)
+  too_many_mentions: {
+    title: 'Too many people mentioned',
+    description: 'Mention at most 20 people in one comment.',
+  },
+  smtp_not_configured: {
+    title: 'Email isn’t set up',
+    description: 'Set smtp.host and smtp.from in the Helm values first.',
+  },
+  email_not_retryable: {
+    title: 'This email can’t be retried',
+    description: 'Only failed emails from the last few days can be sent again.',
+  },
   network_error: { title: 'Can’t reach the server', description: 'Check your connection.' },
 }
 

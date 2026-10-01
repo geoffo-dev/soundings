@@ -25,8 +25,20 @@ __all__ = [
     "SESSION_COOKIE",
     "CurrentUserDep",
     "get_current_user",
+    "not_activity",
     "session_cookie",
 ]
+
+_KEEP_ALIVE = "keep_session_alive"
+
+
+def not_activity(request: Request) -> None:
+    """Route-level dependency (``dependencies=[Depends(not_activity)]``): this request
+    doesn't keep the session alive (the bell's poll, contract-phase3 section 3.2).
+    Route-level dependencies run before the route's parameters, so the principal is
+    resolved after this."""
+    setattr(request.state, _KEEP_ALIVE, False)
+
 
 session_cookie = APIKeyCookie(
     name=SESSION_COOKIE,
@@ -53,12 +65,14 @@ async def get_current_user(
       ``unauthorized``;
     * a cookie-authenticated ``POST``/``PUT``/``PATCH``/``DELETE`` without the
       session's ``X-CSRF-Token`` -> 403 ``csrf_failed``;
-    * refreshes ``last_seen_at`` (at most once a minute).
+    * refreshes ``last_seen_at`` (at most once a minute), unless the route declares
+      :func:`not_activity`.
 
     ``token`` declares the OpenAPI security scheme; the session source reads the
     cookie itself, next to the other principal sources.
     """
-    principal = await authenticate(request, session)
+    touch = getattr(request.state, _KEEP_ALIVE, True) is not False
+    principal = await authenticate(request, session, touch=touch)
     if principal is None:
         raise UnauthorizedProblem
     request.state.principal = principal

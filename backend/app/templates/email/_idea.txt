@@ -1,0 +1,5 @@
+{{ idea.key }} · {{ idea.project }}
+{{ idea.title }}
+{% if idea.status %}Status: {{ idea.status }}
+{% endif %}
+{{ idea.url }}

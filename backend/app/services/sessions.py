@@ -163,12 +163,19 @@ def _expired(row: UserSession, settings: Settings, now: datetime) -> bool:
 
 
 async def resolve_session(
-    db: AsyncSession, token: str, *, settings: Settings, now: datetime | None = None
+    db: AsyncSession,
+    token: str,
+    *,
+    settings: Settings,
+    now: datetime | None = None,
+    touch: bool = True,
 ) -> tuple[UserSession, User] | None:
     """The live session for a cookie token and its (active) user, or ``None``.
 
     ``None`` too when the session's sign-in method is no longer available. A live
-    session is kept alive: ``last_seen_at`` moves forward (throttled).
+    session is kept alive: ``last_seen_at`` moves forward (throttled), unless
+    ``touch=False`` (the bell's poll: polling isn't activity, contract-phase3
+    section 3.2).
     """
     now = now or utcnow()
     found = (
@@ -188,7 +195,7 @@ async def resolve_session(
         or user.is_service_account
     ):
         return None
-    if now - row.last_seen_at >= LAST_SEEN_THROTTLE:
+    if touch and now - row.last_seen_at >= LAST_SEEN_THROTTLE:
         row.last_seen_at = now
         user.last_seen_at = now
     return row, user

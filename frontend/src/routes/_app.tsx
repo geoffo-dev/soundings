@@ -5,6 +5,7 @@ import { AppShellPending } from '@/components/layout/app-shell-pending'
 import { BreakGlassBanner } from '@/features/auth/break-glass-banner'
 import { requireUser } from '@/features/auth/session'
 import { NewIdeaDialog } from '@/features/new-idea/new-idea-dialog'
+import { EmailBanner } from '@/features/notifications/email-banner'
 import { CreateProjectDialog } from '@/features/project/create-project-dialog'
 
 /**
@@ -22,7 +23,14 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   return (
-    <AppShell banner={<BreakGlassBanner />}>
+    <AppShell
+      banner={
+        <>
+          <BreakGlassBanner />
+          <EmailBanner />
+        </>
+      }
+    >
       <Outlet />
       <NewIdeaDialog />
       <CreateProjectDialog />

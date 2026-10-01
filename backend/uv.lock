@@ -1528,7 +1528,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiosmtplib", specifier = ">=3.0" },
+    { name = "aiosmtplib", specifier = ">=5.1" },
     { name = "alembic", specifier = ">=1.16" },
     { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.142" },

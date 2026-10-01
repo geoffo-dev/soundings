@@ -56,7 +56,9 @@ class CsrfFailedProblem(ProblemError):
 
 
 class PrincipalSource(Protocol):
-    async def authenticate(self, request: Request, db: AsyncSession) -> Principal | None: ...
+    async def authenticate(
+        self, request: Request, db: AsyncSession, *, touch: bool = True
+    ) -> Principal | None: ...
 
 
 class SessionCookieSource:
@@ -66,14 +68,17 @@ class SessionCookieSource:
 
     Unsafe methods must echo the session's CSRF token in ``X-CSRF-Token``
     (constant-time compare against the server-side value, not just the cookie).
+    ``touch=False`` resolves the session without keeping it alive (the bell's poll).
     """
 
-    async def authenticate(self, request: Request, db: AsyncSession) -> Principal | None:
+    async def authenticate(
+        self, request: Request, db: AsyncSession, *, touch: bool = True
+    ) -> Principal | None:
         settings: Settings = request.app.state.settings
         token = read_cookie(request, settings, SESSION_COOKIE)
         if not token:
             return None
-        found = await sessions.resolve_session(db, token, settings=settings)
+        found = await sessions.resolve_session(db, token, settings=settings, touch=touch)
         if found is None:
             raise UnauthorizedProblem
         row, user = found
@@ -89,10 +94,13 @@ class SessionCookieSource:
 PRINCIPAL_SOURCES: Final[tuple[PrincipalSource, ...]] = (SessionCookieSource(),)
 
 
-async def authenticate(request: Request, db: AsyncSession) -> Principal | None:
-    """The request's principal, or ``None`` when it carries no credential at all."""
+async def authenticate(
+    request: Request, db: AsyncSession, *, touch: bool = True
+) -> Principal | None:
+    """The request's principal, or ``None`` when it carries no credential at all.
+    ``touch=False``: don't keep the session alive (requests that aren't activity)."""
     for source in PRINCIPAL_SOURCES:
-        principal = await source.authenticate(request, db)
+        principal = await source.authenticate(request, db, touch=touch)
         if principal is not None:
             return principal
     return None

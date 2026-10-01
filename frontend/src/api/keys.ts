@@ -17,7 +17,9 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *   work       ['work', 'summary'] · ['work', 'owned', status]
  *   search     ['search', q]
  *   admin      ['admin', 'users' | 'groups', 'list' | 'detail', …] · ['admin', 'audit', filters] ·
- *              ['admin', 'sso']
+ *              ['admin', 'sso'] · ['admin', 'email'] · ['admin', 'email', 'outbox', …]
+ *   notifications ['notifications', 'summary'] · ['notifications', 'list', {unread}] ·
+ *              ['notifications', 'preferences'] · ['notifications', 'unsubscribe', token]
  *
  * Ideas are cached by their upper-case key ("CUST-12"): the SPA's URLs use keys
  * and every `/ideas/{idea}` route accepts one. Use `ideaCacheId()` to normalise.
@@ -123,5 +125,23 @@ export const queryKeys = {
       ['admin', 'groups', 'detail', id.toLowerCase(), 'members', q.trim().toLowerCase()] as const,
     audit: (filters: Record<string, unknown>) => ['admin', 'audit', filters] as const,
     sso: () => ['admin', 'sso'] as const,
+    /** Admin settings → Email (contract-phase3 §3.10): the config and the outbox. */
+    email: () => ['admin', 'email'] as const,
+    emailConfig: () => ['admin', 'email', 'config'] as const,
+    outboxes: () => ['admin', 'email', 'outbox'] as const,
+    outbox: (filters: Record<string, unknown>) =>
+      ['admin', 'email', 'outbox', 'list', filters] as const,
+    outboxEmail: (id: string) => ['admin', 'email', 'outbox', 'detail', id.toLowerCase()] as const,
+  },
+  /** The inbox, the bell's summary and email preferences (`api/notifications.ts`). */
+  notifications: {
+    all: ['notifications'] as const,
+    summary: () => ['notifications', 'summary'] as const,
+    lists: () => ['notifications', 'list'] as const,
+    list: (params: { unread?: boolean } = {}) =>
+      ['notifications', 'list', { unread: params.unread ?? false }] as const,
+    preferences: () => ['notifications', 'preferences'] as const,
+    /** Public (no session): what an unsubscribe link turns off. */
+    unsubscribe: (token: string) => ['notifications', 'unsubscribe', token] as const,
   },
 }

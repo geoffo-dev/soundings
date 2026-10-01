@@ -1,0 +1,20 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Your daily digest</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{{ summary }}</p>
+{% for group in groups %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;">
+<tr>
+<td class="sx-panel" style="background-color:{{ c.panel }};border:1px solid {{ c.border }};border-radius:8px;padding:12px 14px;font-family:{{ s.font }};">
+<p class="sx-muted" style="margin:0 0 2px 0;font-size:12px;line-height:1.5;color:{{ c.muted }};">{{ group.idea.key }} &nbsp;·&nbsp; {{ group.idea.project }}</p>
+<p style="margin:0 0 6px 0;font-size:15px;line-height:1.4;font-weight:600;"><a class="sx-text" href="{{ group.idea.url }}" style="color:{{ c.text }};text-decoration:none;">{{ group.idea.title }}</a></p>
+{% for line in group.lines %}
+<p class="sx-text" style="margin:0 0 3px 0;font-size:14px;line-height:1.5;color:{{ c.text }};">&bull;&nbsp; {{ line }}</p>
+{% endfor %}
+</td>
+</tr>
+</table>
+{% endfor %}
+{% if more %}<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">…and {{ more }} more in <a class="sx-link" href="{{ inbox_url }}" style="color:{{ c.link }};">{{ brand.product_name }}</a>.</p>{% endif %}
+{% endblock %}

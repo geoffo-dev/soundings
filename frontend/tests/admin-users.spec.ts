@@ -180,7 +180,9 @@ test('you can’t deactivate yourself or change your own admin rights', async ({
 test.describe('without platform admin rights', () => {
   test.use({ signedInAs: USERS.alice })
 
-  test('the admin pages are a plain 404 and the section row is hidden', async ({ page }) => {
+  test('the admin pages are a plain 404 and the section row has no admin pages', async ({
+    page,
+  }) => {
     await page.goto('/settings/users')
     await expect(page.getByRole('heading', { name: 'We couldn’t find that page' })).toBeVisible()
     await expect(page).toHaveTitle('Page not found · Soundings')
@@ -188,7 +190,9 @@ test.describe('without platform admin rights', () => {
 
     await page.goto('/settings')
     await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
-    await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
+    // Account and Notifications only: no admin sections, not even as disabled links.
+    const nav = page.getByRole('navigation', { name: 'Settings sections' })
+    await expect(nav.getByRole('link')).toHaveText(['Account', 'Notifications'])
   })
 })
 

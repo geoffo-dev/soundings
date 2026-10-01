@@ -1,0 +1,14 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Please evaluate this idea
+
+{{ actor }} asked you to evaluate:
+
+{% include "_idea.txt" %}
+{% if due %}
+
+Due {{ due }}
+{% endif %}
+
+Your evaluation is blind: nobody's answers are shown to you until you submit yours.
+{%- endblock %}

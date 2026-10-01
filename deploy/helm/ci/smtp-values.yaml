@@ -1,0 +1,62 @@
+# Email in production mode: implicit TLS with the port left to its default (465), a
+# private CA from a ConfigMap, credentials in values (the chart's Secret), Reply-To, the
+# organisation's time zone and reminder schedule, and egress NetworkPolicies that allow
+# only DNS, the bundled Postgres, the SMTP relay's CIDR, the IdP and one extra rule.
+baseUrls:
+  - https://ideas.example.com
+
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    - secretName: soundings-tls
+      hosts: [ideas.example.com]
+
+oidc:
+  issuer: https://login.example.com/realms/corp
+  existingSecret: soundings-oidc
+
+smtp:
+  host: relay.mail.example.com
+  port: ""
+  security: tls
+  username: soundings
+  password: not-a-real-password
+  from: ideas@example.com
+  fromName: Example Ideas
+  replyTo: innovation-team@example.com
+  caBundle:
+    configMap: corporate-ca
+    key: ca-bundle.pem
+  timeout: 20
+
+timezone: Europe/London
+notifications:
+  digestHour: 7
+  reminderDays: [3, 1, 0]
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  egress:
+    enabled: true
+    smtp:
+      to:
+        - ipBlock:
+            cidr: 192.0.2.0/28
+    oidc:
+      to:
+        - ipBlock:
+            cidr: 198.51.100.10/32
+    extra:
+      # e.g. kagent's A2A endpoint (Phase 6)
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kagent
+        ports:
+          - port: 8083
+            protocol: TCP

@@ -526,7 +526,9 @@
           "evaluator.remove",
           "evaluation.submit",
           "evaluation.close",
-          "evaluation.reopen"
+          "evaluation.reopen",
+          "email.test_send",
+          "email.retry"
         ],
         "title": "AuditAction",
         "type": "string"

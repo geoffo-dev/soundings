@@ -1,0 +1,11 @@
+{% extends "_layout.txt" %}
+{% block content %}
+{% if count == 1 %}The evaluation is in{% else %}All {{ count }} evaluations are in{% endif %}
+
+
+Every evaluator of this idea you own has submitted:
+
+{% include "_idea.txt" %}
+
+Open it to see the results and decide what happens next.
+{%- endblock %}

@@ -23,6 +23,7 @@ from prometheus_client import (
     REGISTRY,
     CollectorRegistry,
     Counter,
+    Gauge,
     Histogram,
     generate_latest,
 )
@@ -142,6 +143,8 @@ def logging_config(
             "httpcore": {"level": "WARNING"},
             "alembic.runtime.plugins": {"level": "WARNING"},
             "procrastinate.blueprints": {"level": "WARNING"},
+            # One line per periodic defer (the outbox sweep runs every minute).
+            "procrastinate.periodic": {"level": "WARNING"},
         },
     }
 
@@ -198,3 +201,22 @@ def render_metrics() -> tuple[bytes, str]:
         registry = CollectorRegistry()
         MultiProcessCollector(registry)  # type: ignore[no-untyped-call]
     return generate_latest(registry), CONTENT_TYPE_LATEST
+
+
+# --- Email (the worker; contract-phase3 section 3.12) ---------------------------------
+EMAILS_SENT = Counter(
+    "soundings_emails_sent_total", "Emails the SMTP server accepted, by type.", ["type"]
+)
+EMAILS_FAILED = Counter(
+    "soundings_email_attempts_failed_total",
+    "Failed email attempts, by type and kind (transient: retried; permanent; internal).",
+    ["type", "kind"],
+)
+EMAILS_CANCELLED = Counter(
+    "soundings_emails_cancelled_total",
+    "Emails not sent because they no longer applied, were out of date or turned off.",
+    ["type"],
+)
+EMAILS_QUEUED = Gauge(
+    "soundings_emails_queued", "Emails waiting to be sent (set by the worker's sweep)."
+)

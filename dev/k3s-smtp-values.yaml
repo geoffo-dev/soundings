@@ -1,0 +1,24 @@
+# Email on the local k3s cluster, layered on dev/k3s-values.yaml by
+# `make k3s-install SMTP=1` (scripts/k3s-install.sh), to the Mailpit that
+# `make k3s-mailpit` (scripts/k3s-mailpit.sh) runs in the cluster. Mail shows up at
+# http://mailpit.localhost:18081/ (the k3s ingress).
+smtp:
+  host: mailpit.mailpit.svc.cluster.local
+  port: 1025
+  # Plain SMTP is fine for an in-cluster catch-all; real servers use starttls or tls.
+  security: none
+  from: soundings@example.com
+  fromName: Soundings (k3s)
+
+timezone: Europe/London
+
+# Also exercises the egress policies: the worker may reach only DNS, the bundled
+# Postgres and Mailpit's namespace on 1025; the api DNS, Postgres and (SSO=1) Keycloak.
+networkPolicy:
+  egress:
+    enabled: true
+    smtp:
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mailpit

@@ -10,6 +10,7 @@ import {
 import {
   allowOnly,
   created,
+  failValidation,
   forbidden,
   noContent,
   notFound,
@@ -28,6 +29,26 @@ import {
   uuidParam,
   viewIdea,
 } from '@/mocks/handlers/common'
+import { notifyMentions, rewriteMentions } from '@/mocks/notifications'
+
+/** Mentions rewritten as the API stores them (contract-phase3 §3.8), or the 422. */
+function storedBody(ctx: RouteContext, text: string): string {
+  const result = rewriteMentions(ctx.db, text)
+  if (result.ok) return result.body
+  if (result.code === 'too_many_mentions') {
+    failValidation(
+      [{ loc: ['body', 'body_md'], msg: 'Mention at most 20 people', type: 'too_many_mentions' }],
+      'too_many_mentions',
+    )
+  }
+  failValidation([
+    {
+      loc: ['body', 'body_md'],
+      msg: 'String should have at most 10000 characters (after mentions are written out)',
+      type: 'string_too_long',
+    },
+  ])
+}
 
 function findComment(ctx: RouteContext): MockComment {
   const id = uuidParam(ctx, 'commentId')
@@ -70,7 +91,7 @@ export const activityHandlers = [
       id: newId(ctx.db, ID_KIND.comment),
       idea_id: idea.id,
       author_id: ctx.user.id,
-      body_md: text,
+      body_md: storedBody(ctx, text),
       created_at: new Date().toISOString(),
       edited_at: null,
       deleted_at: null,
@@ -94,9 +115,13 @@ export const activityHandlers = [
       forbidden('not_author', 'You can only edit your own comments.')
     if (!who.admin && !who.memberish) forbidden()
     ensureIdeaWritable(ctx.db, idea)
-    if (text !== comment.body_md) {
-      comment.body_md = text
+    const stored = storedBody(ctx, text)
+    if (stored !== comment.body_md) {
+      const previous = comment.body_md
+      comment.body_md = stored
       comment.edited_at = new Date().toISOString()
+      // Only people the edit newly mentions hear about it (contract-phase3 §3.8).
+      notifyMentions(ctx.db, idea, comment, ctx.user.id, previous)
     }
     const event = ctx.db.events.find((e) => e.comment_id === comment.id)
     return event ? activityItem(ctx.db, event, ctx.user) : notFound()

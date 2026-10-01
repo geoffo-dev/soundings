@@ -13,8 +13,12 @@
 import type {
   AuditAction,
   AuditTargetType,
+  EmailStatus,
+  EmailType,
   GroupSyncMode,
   IdeaStatus,
+  NotificationMode,
+  NotificationType,
   ProjectRole,
   ProjectVisibility,
   Recommendation,
@@ -23,6 +27,7 @@ import type {
 } from '@/api/types'
 
 import { seedAccess } from './access-fixtures'
+import { seedNotifications } from './notification-fixtures'
 
 export interface MockUser {
   id: string
@@ -211,6 +216,47 @@ export interface MockEvent {
   created_at: string
 }
 
+/* Phase 3: email and notifications (docs/api/contract-phase3.md, docs/erd.md) */
+
+export interface MockNotification {
+  id: string
+  user_id: string
+  type: NotificationType
+  idea_id: string
+  actor_id: string | null
+  comment_id: string | null
+  /** Per type: `due_at`, `days_before`, `evaluator_count`, `from_status`… (never scores). */
+  payload: Record<string, unknown>
+  dedupe_key: string
+  email_mode: NotificationMode
+  email_id: string | null
+  created_at: string
+  read_at: string | null
+}
+
+export interface MockOutboxEmail {
+  id: string
+  type: EmailType
+  status: EmailStatus
+  recipient_user_id: string | null
+  to_address: string | null
+  requested_by_id: string | null
+  attempts: number
+  max_attempts: number
+  next_attempt_at: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+  sent_at: string | null
+}
+
+/** The mock instance's email settings (knob `soundings-mock-email`: unset, `off`, `failing`). */
+export interface MockEmailSettings {
+  configured: boolean
+  /** Every send attempt fails with "connection refused" (SMTP down). */
+  failing: boolean
+}
+
 export interface MockDb {
   now: number
   users: MockUser[]
@@ -238,6 +284,15 @@ export interface MockDb {
   sessions: Record<string, number>
   /** Failed break-glass attempts (ms timestamps) for the mock throttle. */
   breakGlassFailures: number[]
+  /** Phase 3: every user's inbox, newest last. */
+  notifications: MockNotification[]
+  /** Phase 3: email preferences that differ from the defaults, per user id. */
+  notificationPrefs: Record<string, Partial<Record<NotificationType, NotificationMode>>>
+  /** Phase 3: the transactional outbox (content isn't stored, as in the API). */
+  outbox: MockOutboxEmail[]
+  email: MockEmailSettings
+  /** Events emitted by the request being handled: fanned out after its last write (http.ts). */
+  pendingEvents: MockEvent[]
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -247,6 +302,8 @@ export interface DbOptions {
   now?: number
   /** `large` adds 10,000 ideas to Customer Innovation for performance checks. */
   dataset?: 'default' | 'large'
+  /** Email settings: `off` = SMTP not configured, `failing` = the server is down. */
+  email?: 'default' | 'off' | 'failing'
 }
 
 /* ------------------------------------------------------------------ */
@@ -270,6 +327,8 @@ export const ID_KIND = {
   group: 9,
   identity: 'a',
   audit: 'b',
+  notification: 'c',
+  outbox: 'd',
 } as const
 
 const HOUR = 3_600_000
@@ -1065,7 +1124,11 @@ const LARGE_WORDS = {
 /* Builder                                                             */
 /* ------------------------------------------------------------------ */
 
-export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = {}): MockDb {
+export function createDb({
+  now = Date.now(),
+  dataset = 'default',
+  email = 'default',
+}: DbOptions = {}): MockDb {
   const rand = prng(20260930)
   const iso = (ms: number) => new Date(ms).toISOString()
   // 17:00 local, `days` calendar days from today: a date due in 1 day reads "Due
@@ -1103,6 +1166,11 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
     audit: [],
     sessions: {},
     breakGlassFailures: [],
+    notifications: [],
+    notificationPrefs: {},
+    outbox: [],
+    email: { configured: email !== 'off', failing: email === 'failing' },
+    pendingEvents: [],
     seq: 1_000_000,
   }
 
@@ -1387,6 +1455,7 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
   // Events are stored newest-last per insertion; keep them sorted by time.
   db.events.sort((a, b) => a.created_at.localeCompare(b.created_at))
   seedAccess(db, { users: USERS, projects: PROJECTS, nextId })
+  seedNotifications(db, { users: USERS, nextId })
   return db
 }
 
@@ -1397,7 +1466,7 @@ export function createDb({ now = Date.now(), dataset = 'default' }: DbOptions = 
 let current: MockDb | null = null
 
 export function getDb(): MockDb {
-  current ??= createDb({ dataset: readDatasetPreference() })
+  current ??= createDb({ dataset: readDatasetPreference(), email: readEmailPreference() })
   return current
 }
 
@@ -1414,6 +1483,19 @@ function readDatasetPreference(): 'default' | 'large' {
       localStorage.getItem(MOCK_DATASET_STORAGE_KEY) === 'large'
       ? 'large'
       : 'default'
+  } catch {
+    return 'default'
+  }
+}
+
+/** `localStorage['soundings-mock-email']`: `off` (SMTP not configured) or `failing` (SMTP down). */
+export const MOCK_EMAIL_STORAGE_KEY = 'soundings-mock-email'
+
+function readEmailPreference(): 'default' | 'off' | 'failing' {
+  try {
+    const value =
+      typeof localStorage === 'undefined' ? null : localStorage.getItem(MOCK_EMAIL_STORAGE_KEY)
+    return value === 'off' || value === 'failing' ? value : 'default'
   } catch {
     return 'default'
   }

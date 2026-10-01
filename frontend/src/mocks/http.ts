@@ -12,6 +12,7 @@ import { delay, http, HttpResponse, type PathParams } from 'msw'
 import { methodAvailable } from './auth-config'
 import { getDb, type MockDb, type MockUser } from './db'
 import { findUser, InvalidCursorError, invalidateIndexes } from './domain'
+import { flushFanOut } from './notifications'
 import { csrfToken, sessionUserId, storedAuthMethod } from './session'
 
 /** Matches the API on any origin (the dev server, jsdom, Playwright). */
@@ -326,6 +327,8 @@ async function run(method: Method, url: URL, body: () => unknown): Promise<Respo
   try {
     await simulateNetwork(url)
     const result = await body()
+    // One fan-out per request, after its last write (contract-phase3 §3.3).
+    if (method !== 'get') flushFanOut(getDb())
     if (method !== 'get') invalidateIndexes()
     if (result instanceof Response) return result
     if (result === undefined) return new HttpResponse(null, { status: 204 })
@@ -337,6 +340,8 @@ async function run(method: Method, url: URL, body: () => unknown): Promise<Respo
     }
     return HttpResponse.json(result as never)
   } catch (error) {
+    // A failed request notifies nobody (its transaction would roll back).
+    getDb().pendingEvents.length = 0
     if (method !== 'get') invalidateIndexes()
     if (error instanceof Response) return error
     if (error instanceof InvalidCursorError) {
@@ -348,9 +353,14 @@ async function run(method: Method, url: URL, body: () => unknown): Promise<Respo
 
 const REPLY = Symbol('reply')
 
-/** Return `created(body)` for 201s and `noContent()` for 204s. */
+/** Return `created(body)` for 201s, `accepted(body)` for 202s and `noContent()` for 204s. */
 export function created(body: unknown): Reply {
   return { status: 201, body, [REPLY]: true } as Reply
+}
+
+/** 202: queued for the worker (the test email). */
+export function accepted(body: unknown): Reply {
+  return { status: 202, body, [REPLY]: true } as Reply
 }
 
 export function noContent(): Reply {

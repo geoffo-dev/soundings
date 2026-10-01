@@ -4,6 +4,10 @@ Creating one inserts the ``comments`` row and its ``comment`` activity event; th
 author watches the idea. Editing sets ``edited_at`` and deleting sets ``deleted_at``
 and clears the body (the feed keeps a placeholder); neither is an event. Deleted
 comments answer 404 to further edits and deletes.
+
+@mentions (contract-phase3 section 3.8): on create and edit the body's mention tokens
+are checked and rewritten (:func:`app.notifications.mentions.rewrite_mentions`), and
+the people newly mentioned are queued for ``mention`` notifications.
 """
 
 from __future__ import annotations
@@ -19,8 +23,10 @@ from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.models.activity import ActivityEvent, Comment
 from app.models.base import utcnow
+from app.notifications import fanout
+from app.notifications.mentions import rewrite_mentions
 from app.schemas.activity import CommentActivity
-from app.schemas.comments import CommentCreate, CommentUpdate
+from app.schemas.comments import CommentCreate, CommentUpdate, mentioned_user_ids
 from app.services import activity
 from app.services.feed import activity_items
 from app.services.ideas import LoadedIdea, load_idea, watch
@@ -43,12 +49,12 @@ async def create_comment(
 ) -> CommentActivity:
     require(principal, Rule.COMMENT_CREATE, loaded.resource)
     idea = loaded.idea
-    comment = Comment(
-        id=uuid4(), idea_id=idea.id, author_id=principal.user_id, body_md=body.body_md
-    )
+    body_md, mentioned = await rewrite_mentions(db, body.body_md)
+    comment = Comment(id=uuid4(), idea_id=idea.id, author_id=principal.user_id, body_md=body_md)
     db.add(comment)
     await db.flush()
     await activity.emit(db, idea, "comment", actor=principal, comment_id=comment.id)
+    fanout.queue_mentions(db, comment, principal.user_id, mentioned)
     await watch(db, idea, principal.user_id)
     await db.flush()
     return await _as_item(db, principal, loaded, comment)
@@ -89,10 +95,15 @@ async def update_comment(
     body: CommentUpdate,
 ) -> CommentActivity:
     _require_author(principal, comment, loaded, [Rule.COMMENT_EDIT_OWN])
-    if body.body_md != comment.body_md:
-        comment.body_md = body.body_md
+    body_md, mentioned = await rewrite_mentions(db, body.body_md)
+    if body_md != comment.body_md:
+        before = set(mentioned_user_ids(comment.body_md))
+        comment.body_md = body_md
         comment.edited_at = utcnow()
         await db.flush()
+        fanout.queue_mentions(
+            db, comment, principal.user_id, [user for user in mentioned if user not in before]
+        )
     return await _as_item(db, principal, loaded, comment)
 
 

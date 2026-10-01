@@ -434,6 +434,24 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       return [actor, text(' closed evaluation of '), idea()]
     case 'evaluation.reopen':
       return [actor, text(' reopened evaluation of '), idea()]
+
+    /* Email (contract-phase3 §3.10): never an address -------------- */
+    case 'email.test_send':
+      return [
+        actor,
+        text(
+          details.to_self === false
+            ? ' sent a test email to another address'
+            : ' sent a test email to themselves',
+        ),
+      ]
+    case 'email.retry': {
+      const count = num(details, 'count')
+      if (count !== undefined) {
+        return [actor, text(` retried ${plural(count, 'failed email')} (Retry all failed)`)]
+      }
+      return [actor, text(' retried a failed email')]
+    }
   }
   // An action this screen doesn't know yet: say what is certain.
   return [

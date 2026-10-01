@@ -1,0 +1,8 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">{{ actor }} mentioned you</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">In a comment on {{ idea.key }} <strong>{{ idea.title }}</strong>:</p>
+{{ m.quote(excerpt, c, s) }}
+<p class="sx-muted" style="{{ s.p }}color:{{ c.muted }};font-size:13px;">{{ idea.project }} &nbsp;·&nbsp; {{ idea.status }}</p>
+{% endblock %}

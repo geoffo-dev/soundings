@@ -1,7 +1,9 @@
 """The idea activity feed: emit events (contract section 3.13).
 
 "Emit" = insert an ``activity_events`` row (actor = the current user) and set
-``ideas.last_activity_at = now()``, in the same transaction as the change::
+``ideas.last_activity_at = now()``, in the same transaction as the change, and queue
+the event for the notification fan-out, which runs once before that transaction
+commits (contract-phase3 section 3.3, :mod:`app.notifications.fanout`)::
 
     await activity.emit(db, idea, "status_changed", actor=principal, payload={
         "from_status": old, "from_resolution": None, "to_status": new, "to_resolution": None,
@@ -25,6 +27,7 @@ from app.domain.principal import Principal
 from app.models.activity import ActivityEvent
 from app.models.base import utcnow
 from app.models.idea import Idea
+from app.notifications import fanout
 from app.schemas.activity import ACTIVITY_TYPES
 
 __all__ = ["PAYLOAD_KEYS", "emit"]
@@ -94,4 +97,5 @@ async def emit(
     )
     db.add(event)
     idea.last_activity_at = now
+    fanout.queue_event(db, event)
     return event

@@ -12,16 +12,20 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
+import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppIdeasIdeaKeyRouteImport } from './routes/_app/ideas.$ideaKey'
 import { Route as AppPSlugRouteImport } from './routes/_app/p.$slug'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings.index'
 import { Route as AppSettingsAdminRouteImport } from './routes/_app/settings._admin'
+import { Route as AppSettingsNotificationsRouteImport } from './routes/_app/settings.notifications'
 import { Route as AppPSlugIndexRouteImport } from './routes/_app/p.$slug.index'
 import { Route as AppPSlugSettingsRouteImport } from './routes/_app/p.$slug.settings'
 import { Route as AppSettingsAdminAuditRouteImport } from './routes/_app/settings._admin.audit'
+import { Route as AppSettingsAdminEmailRouteImport } from './routes/_app/settings._admin.email'
 import { Route as AppSettingsAdminSsoRouteImport } from './routes/_app/settings._admin.sso'
 import { Route as AppSettingsAdminUsersRouteImport } from './routes/_app/settings._admin.users'
 import { Route as AppSettingsAdminGroupsIndexRouteImport } from './routes/_app/settings._admin.groups.index'
@@ -42,6 +46,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -50,6 +59,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppSplatRoute = AppSplatRouteImport.update({
   id: '/$',
   path: '/$',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -76,6 +90,12 @@ const AppSettingsAdminRoute = AppSettingsAdminRouteImport.update({
   id: '/_admin',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsNotificationsRoute =
+  AppSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AppSettingsRoute,
+  } as any)
 const AppPSlugIndexRoute = AppPSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -89,6 +109,11 @@ const AppPSlugSettingsRoute = AppPSlugSettingsRouteImport.update({
 const AppSettingsAdminAuditRoute = AppSettingsAdminAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppSettingsAdminRoute,
+} as any)
+const AppSettingsAdminEmailRoute = AppSettingsAdminEmailRouteImport.update({
+  id: '/email',
+  path: '/email',
   getParentRoute: () => AppSettingsAdminRoute,
 } as any)
 const AppSettingsAdminSsoRoute = AppSettingsAdminSsoRouteImport.update({
@@ -124,13 +149,17 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/$': typeof AppSplatRoute
+  '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRouteWithChildren
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/p/$slug': typeof AppPSlugRouteWithChildren
+  '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/': typeof AppSettingsIndexRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
+  '/settings/email': typeof AppSettingsAdminEmailRoute
   '/settings/sso': typeof AppSettingsAdminSsoRoute
   '/settings/users': typeof AppSettingsAdminUsersRouteWithChildren
   '/p/$slug/': typeof AppPSlugIndexRoute
@@ -141,12 +170,16 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/$': typeof AppSplatRoute
+  '/notifications': typeof AppNotificationsRoute
   '/': typeof AppIndexRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
+  '/settings/email': typeof AppSettingsAdminEmailRoute
   '/settings/sso': typeof AppSettingsAdminSsoRoute
   '/settings/users': typeof AppSettingsAdminUsersRouteWithChildren
   '/p/$slug': typeof AppPSlugIndexRoute
@@ -159,15 +192,19 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/design': typeof DesignRoute
   '/login': typeof LoginRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/_app/$': typeof AppSplatRoute
+  '/_app/notifications': typeof AppNotificationsRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/_app/p/$slug': typeof AppPSlugRouteWithChildren
   '/_app/settings/_admin': typeof AppSettingsAdminRouteWithChildren
+  '/_app/settings/notifications': typeof AppSettingsNotificationsRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/p/$slug/settings': typeof AppPSlugSettingsRoute
   '/_app/settings/_admin/audit': typeof AppSettingsAdminAuditRoute
+  '/_app/settings/_admin/email': typeof AppSettingsAdminEmailRoute
   '/_app/settings/_admin/sso': typeof AppSettingsAdminSsoRoute
   '/_app/settings/_admin/users': typeof AppSettingsAdminUsersRouteWithChildren
   '/_app/p/$slug/': typeof AppPSlugIndexRoute
@@ -181,13 +218,17 @@ export interface FileRouteTypes {
     | '/'
     | '/design'
     | '/login'
+    | '/unsubscribe'
     | '/$'
+    | '/notifications'
     | '/settings'
     | '/ideas/$ideaKey'
     | '/p/$slug'
+    | '/settings/notifications'
     | '/settings/'
     | '/p/$slug/settings'
     | '/settings/audit'
+    | '/settings/email'
     | '/settings/sso'
     | '/settings/users'
     | '/p/$slug/'
@@ -198,12 +239,16 @@ export interface FileRouteTypes {
   to:
     | '/design'
     | '/login'
+    | '/unsubscribe'
     | '/$'
+    | '/notifications'
     | '/'
     | '/ideas/$ideaKey'
     | '/settings'
+    | '/settings/notifications'
     | '/p/$slug/settings'
     | '/settings/audit'
+    | '/settings/email'
     | '/settings/sso'
     | '/settings/users'
     | '/p/$slug'
@@ -215,15 +260,19 @@ export interface FileRouteTypes {
     | '/_app'
     | '/design'
     | '/login'
+    | '/unsubscribe'
     | '/_app/$'
+    | '/_app/notifications'
     | '/_app/settings'
     | '/_app/'
     | '/_app/ideas/$ideaKey'
     | '/_app/p/$slug'
     | '/_app/settings/_admin'
+    | '/_app/settings/notifications'
     | '/_app/settings/'
     | '/_app/p/$slug/settings'
     | '/_app/settings/_admin/audit'
+    | '/_app/settings/_admin/email'
     | '/_app/settings/_admin/sso'
     | '/_app/settings/_admin/users'
     | '/_app/p/$slug/'
@@ -236,6 +285,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   DesignRoute: typeof DesignRoute
   LoginRoute: typeof LoginRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -261,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/': {
       id: '/_app/'
       path: '/'
@@ -273,6 +330,13 @@ declare module '@tanstack/react-router' {
       path: '/$'
       fullPath: '/$'
       preLoaderRoute: typeof AppSplatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notifications': {
+      id: '/_app/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -310,6 +374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsAdminRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/notifications': {
+      id: '/_app/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AppSettingsNotificationsRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/p/$slug/': {
       id: '/_app/p/$slug/'
       path: '/'
@@ -329,6 +400,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/settings/audit'
       preLoaderRoute: typeof AppSettingsAdminAuditRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
+    '/_app/settings/_admin/email': {
+      id: '/_app/settings/_admin/email'
+      path: '/email'
+      fullPath: '/settings/email'
+      preLoaderRoute: typeof AppSettingsAdminEmailRouteImport
       parentRoute: typeof AppSettingsAdminRoute
     }
     '/_app/settings/_admin/sso': {
@@ -384,6 +462,7 @@ const AppSettingsAdminUsersRouteWithChildren =
 
 interface AppSettingsAdminRouteChildren {
   AppSettingsAdminAuditRoute: typeof AppSettingsAdminAuditRoute
+  AppSettingsAdminEmailRoute: typeof AppSettingsAdminEmailRoute
   AppSettingsAdminSsoRoute: typeof AppSettingsAdminSsoRoute
   AppSettingsAdminUsersRoute: typeof AppSettingsAdminUsersRouteWithChildren
   AppSettingsAdminGroupsGroupIdRoute: typeof AppSettingsAdminGroupsGroupIdRoute
@@ -392,6 +471,7 @@ interface AppSettingsAdminRouteChildren {
 
 const AppSettingsAdminRouteChildren: AppSettingsAdminRouteChildren = {
   AppSettingsAdminAuditRoute: AppSettingsAdminAuditRoute,
+  AppSettingsAdminEmailRoute: AppSettingsAdminEmailRoute,
   AppSettingsAdminSsoRoute: AppSettingsAdminSsoRoute,
   AppSettingsAdminUsersRoute: AppSettingsAdminUsersRouteWithChildren,
   AppSettingsAdminGroupsGroupIdRoute: AppSettingsAdminGroupsGroupIdRoute,
@@ -403,11 +483,13 @@ const AppSettingsAdminRouteWithChildren =
 
 interface AppSettingsRouteChildren {
   AppSettingsAdminRoute: typeof AppSettingsAdminRouteWithChildren
+  AppSettingsNotificationsRoute: typeof AppSettingsNotificationsRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsAdminRoute: AppSettingsAdminRouteWithChildren,
+  AppSettingsNotificationsRoute: AppSettingsNotificationsRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
 }
 
@@ -431,6 +513,7 @@ const AppPSlugRouteWithChildren = AppPSlugRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppSplatRoute: typeof AppSplatRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppSettingsRoute: typeof AppSettingsRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
   AppIdeasIdeaKeyRoute: typeof AppIdeasIdeaKeyRoute
@@ -439,6 +522,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppSplatRoute: AppSplatRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppIdeasIdeaKeyRoute: AppIdeasIdeaKeyRoute,
@@ -451,6 +535,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   DesignRoute: DesignRoute,
   LoginRoute: LoginRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

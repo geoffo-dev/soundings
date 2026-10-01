@@ -9,6 +9,7 @@ import {
   useSetEvaluationClosed,
   useVolunteerAsOwner,
 } from '@/api/ideas'
+import { useMarkIdeaNotificationsRead } from '@/api/notifications'
 import { useProject } from '@/api/projects'
 import type { IdeaDetail, IdeaSummary } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
@@ -79,6 +80,8 @@ function LoadedIdeaPage({
 }) {
   const me = useCurrentUser()
   const navigate = useNavigate()
+  // Visiting an idea reads its notifications (contract-phase3 §3.2).
+  useMarkIdeaNotificationsRead(ideaKey, idea.id)
   const project = useProject(idea.project.slug).data
   const archived = Boolean(project?.archived_at)
   const tab: IdeaTab = search.tab ?? 'overview'
