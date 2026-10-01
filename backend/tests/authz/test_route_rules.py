@@ -86,6 +86,21 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "list_project_access": ("project.view",),
     "list_audit_entries": ("platform.view_audit_log",),
     "get_sso_config": ("platform.configure_sso",),
+    # Phase 3 (docs/api/contract-phase3.md section 2)
+    "list_notifications": (SIGNED_IN, "idea.view"),
+    "get_notification_summary": (SIGNED_IN, "idea.view"),
+    "mark_notification_read": (SIGNED_IN, "idea.view"),
+    "mark_all_notifications_read": (SIGNED_IN, "idea.view"),
+    "get_notification_preferences": ("self.manage_profile",),
+    "update_notification_preferences": ("self.manage_profile",),
+    "get_unsubscribe": ("self.unsubscribe",),
+    "confirm_unsubscribe": ("self.unsubscribe",),
+    "get_email_config": ("platform.configure_email",),
+    "send_test_email": ("platform.configure_email",),
+    "list_outbox_emails": ("platform.configure_email",),
+    "retry_failed_outbox_emails": ("platform.configure_email",),
+    "get_outbox_email": ("platform.configure_email",),
+    "retry_outbox_email": ("platform.configure_email",),
 }
 
 

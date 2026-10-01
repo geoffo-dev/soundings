@@ -8,10 +8,14 @@ from app.models.activity import ActivityEvent, AuditLog, Comment
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import (
     AuthMethod,
+    EmailStatus,
+    EmailType,
     EvaluationStatus,
     EvaluatorState,
     GroupSyncMode,
     IdeaStatus,
+    NotificationMode,
+    NotificationType,
     ProjectRole,
     ProjectVisibility,
     Recommendation,
@@ -20,6 +24,7 @@ from app.models.enums import (
 from app.models.evaluation import Evaluation, EvaluationScore
 from app.models.group import Group, GroupIdpValue, GroupMembership, ProjectGroupGrant
 from app.models.idea import Idea, IdeaEvaluator, IdeaTag, IdeaVote, IdeaWatcher
+from app.models.notification import Notification, NotificationPreference, OutboundEmail
 from app.models.project import (
     Project,
     ProjectMember,
@@ -35,6 +40,8 @@ __all__ = [
     "AuthMethod",
     "Base",
     "Comment",
+    "EmailStatus",
+    "EmailType",
     "Evaluation",
     "EvaluationScore",
     "EvaluationStatus",
@@ -49,6 +56,11 @@ __all__ = [
     "IdeaTag",
     "IdeaVote",
     "IdeaWatcher",
+    "Notification",
+    "NotificationMode",
+    "NotificationPreference",
+    "NotificationType",
+    "OutboundEmail",
     "Project",
     "ProjectGroupGrant",
     "ProjectMember",

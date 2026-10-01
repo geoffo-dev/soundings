@@ -96,6 +96,28 @@ Every session works only while the method that started it is available (an SSO
 session needs SSO configured, and so on); otherwise the request is unauthenticated
 (401). Deactivating a user ends their sessions.
 
+## 2b. Notifications and email (not rules)
+
+Notifications are about one idea each, so they follow the idea's rules rather than
+having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-business-rules)):
+
+- **Who is notified:** a recipient must pass `idea.view` (and the notification type's
+  condition) when the notification is created, and again when its email is sent;
+  otherwise nothing is sent. The actor, deactivated users, service accounts and the
+  break-glass account are never notified.
+- **Type conditions are rules, not role checks:** evaluation invitations and reminders
+  need `evaluation.submit_own` on the idea (an assigned evaluator holding member or
+  admin, c6) plus "hasn't submitted"; owner notifications need the recipient to be the
+  idea's owner; @mentions notify only people with a role in the idea's project (whom
+  the mention picker offers), not every viewer of an internal project.
+- **The inbox** (signed in, like My work) lists only notifications about ideas the
+  user can view now; marking read needs nothing more. Polling the unread count doesn't
+  keep a session alive (section 2a's idle timeouts still apply).
+- **Email preferences** are `self.manage_profile` (sessions only); unsubscribe links
+  are `self.unsubscribe` (c14), usable without signing in.
+- **Admin settings → Email** is `platform.configure_email`.
+- Section 3 rule 8 applies to every notification, email and digest.
+
 ### A. Projects and ideas
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
@@ -194,7 +216,7 @@ platform admin".
 | `platform.manage_users` | Users: list, pre-create, edit, deactivate (c17, c18), external IDs, unlink an SSO identity, sign out everywhere | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.manage_groups` | Groups, IdP group mappings (managed/additive), manual members, "test mapping" | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.configure_sso` | View the effective SSO configuration (read-only: set by Helm values), the redirect URIs to register, break-glass status | Y | 403 | 403 | 403 | 403 | 403 | 401 |
-| `platform.configure_email` | Effective SMTP config, send test email, failed sends and retry | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `platform.configure_email` | View the effective SMTP configuration (read-only: set by Helm values, credentials masked), send a test email (rate-limited, one address), list the email outbox, retry failed sends; see the "email failing" banner | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.edit_branding` | Global branding and email footer | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.manage_agents` | Register kagent agents and their service accounts | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.view_audit_log` | Read the audit log (filters, newest first) | Y | 403 | 403 | 403 | 403 | 403 | 401 |
@@ -210,8 +232,8 @@ IDs (409 `system_account`; contract-phase2 §3.4).
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub |
 |---|---|---|---|---|---|---|---|---|
-| `self.manage_profile` | Own profile and notification preferences (immediate / digest / off) | Y | Y | Y | Y | Y | Y | 401 |
-| `self.unsubscribe` | One-click unsubscribe from an email link, no sign-in needed | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) |
+| `self.manage_profile` | Own profile and email notification preferences (immediate / daily digest / off, per notification type) | Y | Y | Y | Y | Y | Y | 401 |
+| `self.unsubscribe` | One-click unsubscribe from an email link (turns email off for that type, the digest's types, or every type), no sign-in needed | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) |
 | `user.search` | Find users by name or email, and groups by name (member, group-grant, owner and evaluator pickers, @mentions) | Y | Y | Y | Y | Y | Y | 401 |
 | `api_key.manage_own` | Create, list and revoke your own API keys | Y | Y | Y | Y | Y | Y | 401 |
 | `mcp.connect` | Call `/mcp`; each tool then checks its own rule (section 6) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | 401 |
@@ -269,8 +291,10 @@ Rules:
 7. **Closing evaluation doesn't lift the rule.** An evaluator who never submitted stays
    pending (and blind) after close. Removing their assignment ends it; the owner does
    this knowingly (it is audited).
-8. **Emails never contain score data**, for any recipient. They link to the app, which
-   applies the rules above.
+8. **Emails and in-app notifications never contain score data**, for any recipient:
+   no scores, aggregate, `n`, per-criterion data, disagreement flag, recommendations or
+   evaluation comments ("all evaluations are in" carries a count only). They link to the
+   app, which applies the rules above (contract-phase3 §3.11).
 9. **Service accounts** (AI evaluators) are pending until they submit, so the agent
    evaluates blind too.
 10. **The aggregate's included set** is submitted evaluations with
@@ -300,7 +324,7 @@ evaluations and one AI evaluation present.
 | c11 | After the change, the project still has at least one admin (effective role, direct or via a group) who is active and not a service account | 409 `last_admin` |
 | c12 | The idea is not awaiting moderation (always true for PA and PAd) | 404 |
 | c13 | The idea has no owner | 409 `idea_has_owner` |
-| c14 | The request carries a valid unsubscribe token | 404 |
+| c14 | The request carries a valid unsubscribe token (signed with a key derived from the instance secret key) whose user exists and is active (contract-phase3 §3.5) | 404 |
 | c15 | The request authenticates with an API key that has the `mcp` scope | no key → 401; no scope → 403 `insufficient_scope` |
 | c16 | Removing an evaluator: the evaluator is not the principal (contract-phase1 §3.5) | 403 `cannot_remove_self` |
 | c17 | Changing a user's `is_active` or `is_platform_admin`: the user is not the principal (contract-phase2 §3.4) | 403 `cannot_change_self` |

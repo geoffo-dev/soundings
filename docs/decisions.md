@@ -231,3 +231,53 @@ has every finding and its tests). Contract changes are additive and listed in
 | The audit log's When filter offers Today, Last 7 days and Last 30 days (whole local days); refused break-glass attempts read "Break-glass attempt". | Decided | Reviews m8 ("24 h" became "Today", since the filter works in days) and m3. |
 | Design-system additions: `PasswordInput` (show/hide), `ButtonShortcut` and `ariaKeys` in `kbd.tsx` (hint only from `sm` with a fine pointer), `Table cardFields="inline"` (phone cards as one muted line), `lib/return-to-row.ts`. | Decided | Reviews p2, p3, p5 and M1, solved once in the design system. |
 
+
+## 2026-10-01 · Phase 3 contract
+
+Calls made while writing the email and notifications contract
+([contract-phase3.md](api/contract-phase3.md), section 5 has the full list with
+reasons). Status **Proposed** = the lead's default; build it this way unless told
+otherwise.
+
+### Email and the outbox
+
+| Decision | Status | Why |
+|---|---|---|
+| SMTP is configured only by Helm values / `SOUNDINGS_SMTP_*` (the chart's names); Admin settings → Email is read-only (credentials as "set" flags, not even the username) plus a test email and the outbox with retry (no cancel, after review). | Decided | SPEC section 6; simple beats configurable, like SSO. |
+| When SMTP isn't configured, nothing is written to the outbox: notifications are in-app only, platform admins see a banner, test email and retry answer 409 `smtp_not_configured`. | Proposed | Nothing piles up to go out by surprise months later. |
+| Emails are rendered at send time from the notification rows; the outbox stores no subject or body. Authorisation (`idea.view` plus the type's condition) is re-checked at send time; failing it cancels the email without contacting SMTP. | Proposed | The content follows what the recipient may see when it is sent; template fixes reach queued mail; no message bodies at rest. |
+| The outbox row is the truth; each attempt is a `send_email` job; a worker claims a row (`sending`, 5-minute lease, the attempt must finish within 4 minutes) in a short transaction and records the result in another; a minute-by-minute sweep re-queues expired leases and lost jobs (once per row, only while SMTP is configured); finished jobs are deleted. At-least-once delivery with a fixed Message-ID. | Proposed | Amends ADR 0003's "lock the row while sending": no transaction held across SMTP, in-flight mail is visible, crashes recover by themselves, the job table stays bounded. |
+| 12 attempts, backoff 30 s doubling to an hourly cap with jitter (about 5 hours), then `failed`; 4xx, connection and authentication errors retry, other 5xx fail at once, internal errors fail at once; `last_error` is our own phrase plus the SMTP code, never the server's text. Mail older than 3 days (digests 2) is cancelled, not sent late. | Proposed | "Briefly down" and a password rotation are covered; long outages become one admin action ("Retry all failed") while mail is still current; server replies can echo addresses. |
+| Test emails go through the outbox with one attempt (5 per admin per 10 minutes); the page polls the row for the result. | Proposed | Tests the real path, worker included, with a quick answer. |
+| Outbox rows are kept 30 days after sending or cancelling (failed: 90); notifications 90 days. | Proposed | Support questions are answerable; little personal data at rest. |
+| Email HTML is table-based with inline styles, system fonts, no images or remote resources, dark-mode safe, with a plain-text part; `List-Unsubscribe` + `List-Unsubscribe-Post` (RFC 8058) and `Auto-Submitted` on notification mail. | Decided | Renders in common clients, air-gapped, and meets the one-click unsubscribe rules of large mailbox providers. |
+| Emails carry the idea key and title, project, names, statuses, due dates and comment excerpts (200 characters); never scores, evaluation content, summaries or descriptions. | Decided | Blind evaluation (role matrix §3 rule 8); mail leaves the system, so it says enough to decide to click. |
+
+### Notifications
+
+| Decision | Status | Why |
+|---|---|---|
+| One fan-out, in the event's transaction, writes the in-app notification for every recipient and the outbox row for those who want email now. Preferences (immediate / daily digest / off per type) govern email only; the inbox always shows everything. | Proposed | One source of truth; SPEC's preferences are about email; unwatching stops follow-type notifications. |
+| Seven types: owner assigned, evaluator invited, evaluation reminder, all evaluations in, status changed, new comment, mention (SPEC's "new comment / @mention" split in two). Defaults: status changes and comments in the digest, everything else immediate. | Proposed | Act-on items arrive now; followed items once a day. |
+| Never notified: the actor, deactivated users, service accounts, the break-glass account, anyone without `idea.view`. One notification per person per event. | Decided | Respect authorisation; no noise about your own actions. |
+| One instance time zone (`SOUNDINGS_TIMEZONE`, default UTC) and hour (`SOUNDINGS_DIGEST_HOUR`, default 8) for digests and reminders; reminder offsets `SOUNDINGS_REMINDER_DAYS` (default 2,0) are an operator setting. Amends the Phase 0 entry "reminders … fixed" and "no configurable reminder schedules or digest times": still no UI or per-user setting. | Proposed | SPEC asks for configurable reminders; an env value with the decided default is the least configuration that does it. |
+| Reminders go out only on their own local day, phrased as a date; never for overdue evaluations, never before the invitation; a new due date reschedules. The digest skips notifications already read in the app and anything older than a week. | Proposed | No bursts or wrong countdowns after an outage or a moved date; overdue items are on My work; no email about what you've seen, never twice. |
+| Digest and reminder bookkeeping use `notifications` (dedupe key, `email_mode`, `email_id`) and the outbox's idempotency key; no extra tables. | Proposed | Fewer tables; the same uniqueness makes the jobs idempotent. |
+| Unsubscribe tokens are HMAC-signed (key derived from the secret key), not stored, no expiry; GET changes nothing; POST is RFC 8058 one-click; scopes: the email's type, the digest's types, or all. | Proposed | No table; old mail keeps working; link scanners can't unsubscribe anyone. |
+| @mentions are `@[Name](user:<id>)` tokens from a picker that reuses `search_users?project=`; labels are rewritten to current names; at most 20 per comment; only people with a role in the project who can view the idea are notified, and at most 50 mention emails per author per hour; no mentions table. | Proposed | Unambiguous, can't impersonate, no new endpoint, can't flood mailboxes. |
+| The bell's count is polled (`get_notification_summary`, capped at 100) and the poll doesn't keep the session alive; the SMTP banner flag (and, for admins, "email failing") rides on the same call instead of a new `CurrentUser` field; opening an idea marks its notifications read. | Proposed | No push channel in Phase 3; idle timeouts must still work with a tab open; `CurrentUser` changes break Phase 1–2 tests and mocks. |
+| Admin email actions (test, retry) are audited without addresses. The two `AuditAction` values land at integration with frontend's audit phrases (contract-phase3 §7). | Proposed | Audit entries never hold emails; adding enum values breaks the frontend typecheck until the phrases exist. |
+
+### Contract review (2026-10-01)
+
+The Phase 3 contract review (4 must-fix, 10 should-fix, 9 to consider) was applied
+before builders started; contract-phase3 §7 lists the schema changes.
+
+| Decision | Status | Why |
+|---|---|---|
+| Digests collect at most 7 days of items; the daily cleanup turns older pending items off (after pruning outbox rows). | Proposed | Review must-fix 1: a pruned digest row set `email_id` back to null, and its items would have been mailed again 30 days later. |
+| Bounded job table: `delete_jobs="successful"`, a daily `remove_old_jobs`, the sweep idle without SMTP and re-deferring each row at most once (`queueing_lock`). | Proposed | Review must-fix 2: procrastinate keeps every job by default. |
+| One recipient per email: `MAIL_ADDRESS_PATTERN` for every address, `Address(addr_spec=…)` for `To`, `recipients=[address]` passed to SMTP. | Proposed | Review must-fix 3: `victim@corp.com,postmaster` reached two mailboxes. |
+| The summary poll doesn't slide the session's idle timer. | Proposed | Review must-fix 4: an open tab kept sessions (break-glass included) alive for ever. |
+| 4-minute attempt deadline under the 5-minute lease; send-time checks for out-of-date mail (3 days, digests 2), past-due reminders and types turned off; the fan-out runs after the request's last write; type conditions through the policy (`evaluation.submit_own`); reminders only on their own day; mentions only to project members, 50 emails per author per hour; `email_trouble` for admins; authentication errors transient, internal errors failed at once; the unsubscribe URL redirects browsers (303). | Proposed | Review should-fix 5-14. |
+| No admin cancel; `outbound_email.idea_id` moves to Phase 4; no server details in the test email; SMTP port defaults to 465 for `tls`; unwatching stops only watcher-only notifications; mention length checked after rewriting. | Proposed | Review "consider" items taken. Not taken: a preferences flag for `.invalid` addresses (only system accounts have them, and they are never notified) and a `created_at` index for the 90-day notification cleanup (a daily scan is fine at this scale). |

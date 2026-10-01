@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 and 2): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 3): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -23,6 +23,7 @@ from app.api.deps import get_current_user
 from app.api.v1 import (
     activity,
     admin_audit,
+    admin_email,
     admin_groups,
     admin_sso,
     admin_users,
@@ -31,9 +32,11 @@ from app.api.v1 import (
     evaluations,
     groups,
     ideas,
+    notifications,
     project_groups,
     projects,
     search,
+    unsubscribe,
     users,
     work,
 )
@@ -46,6 +49,9 @@ IDEA = "0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11"
 USER = "5f0e8a52-3c1d-4b8e-9a6f-2d7c4e1b9a03"
 GROUP = "8c2d6f14-9e3b-4a7d-b1c5-6e0f2a8d4b17"
 IDENTITY = "1a4b7c0d-2e5f-4a8b-9c3d-6e9f0a1b2c3d"
+NOTIFICATION = "3e9d2c71-6b4a-4f1e-8d0c-5a7b9e2f1c46"
+EMAIL = "6d1f8a3b-2c4e-4b7a-9f0d-8e3c1b5a7d92"
+TOKEN = "eyJ1IjoiNWYwZThhNTIiLCJzIjoiY29tbWVudCJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ"
 
 # (method, path template, operation_id)
 CONTRACT: list[tuple[str, str, str]] = [
@@ -123,6 +129,21 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/projects/{slug}/access", "list_project_access"),
     ("GET", "/api/v1/admin/audit", "list_audit_entries"),
     ("GET", "/api/v1/admin/sso", "get_sso_config"),
+    # --- Phase 3: email and notifications (docs/api/contract-phase3.md) --------------
+    ("GET", "/api/v1/me/notifications", "list_notifications"),
+    ("GET", "/api/v1/me/notifications/summary", "get_notification_summary"),
+    ("POST", "/api/v1/me/notifications/{notification_id}/read", "mark_notification_read"),
+    ("POST", "/api/v1/me/notifications/read-all", "mark_all_notifications_read"),
+    ("GET", "/api/v1/me/notification-preferences", "get_notification_preferences"),
+    ("PATCH", "/api/v1/me/notification-preferences", "update_notification_preferences"),
+    ("GET", "/api/v1/unsubscribe", "get_unsubscribe"),
+    ("POST", "/api/v1/unsubscribe", "confirm_unsubscribe"),
+    ("GET", "/api/v1/admin/email", "get_email_config"),
+    ("POST", "/api/v1/admin/email/test", "send_test_email"),
+    ("GET", "/api/v1/admin/email/outbox", "list_outbox_emails"),
+    ("POST", "/api/v1/admin/email/outbox/retry-failed", "retry_failed_outbox_emails"),
+    ("GET", "/api/v1/admin/email/outbox/{email_id}", "get_outbox_email"),
+    ("POST", "/api/v1/admin/email/outbox/{email_id}/retry", "retry_outbox_email"),
 ]
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the
@@ -188,7 +209,29 @@ PHASE2_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
 # operation_id -> a valid request for every operation still answered with 501. Every
 # Phase 1 and Phase 2 operation is implemented and tested (tests/api, tests/ideas,
 # tests/identity, tests/admin). Add a row per stub; delete it when you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # Phase 3 (docs/api/contract-phase3.md)
+    "list_notifications": ("/api/v1/me/notifications?unread=true&limit=20", None),
+    "get_notification_summary": ("/api/v1/me/notifications/summary", None),
+    "mark_notification_read": (f"/api/v1/me/notifications/{NOTIFICATION}/read", None),
+    "mark_all_notifications_read": ("/api/v1/me/notifications/read-all?idea=cust-12", None),
+    "get_notification_preferences": ("/api/v1/me/notification-preferences", None),
+    "update_notification_preferences": (
+        "/api/v1/me/notification-preferences",
+        {"comment": "off", "status_changed": "immediate", "mention": None},
+    ),
+    "get_unsubscribe": (f"/api/v1/unsubscribe?token={TOKEN}", None),
+    "confirm_unsubscribe": (f"/api/v1/unsubscribe?token={TOKEN}&all=true", None),
+    "get_email_config": ("/api/v1/admin/email", None),
+    "send_test_email": ("/api/v1/admin/email/test", {"to": "ops@example.com"}),
+    "list_outbox_emails": (
+        "/api/v1/admin/email/outbox?status=failed&status=queued&type=digest&limit=20",
+        None,
+    ),
+    "retry_failed_outbox_emails": ("/api/v1/admin/email/outbox/retry-failed", None),
+    "get_outbox_email": (f"/api/v1/admin/email/outbox/{EMAIL}", None),
+    "retry_outbox_email": (f"/api/v1/admin/email/outbox/{EMAIL}/retry", None),
+}
 
 PUBLIC_OPERATIONS = frozenset(
     {
@@ -200,9 +243,11 @@ PUBLIC_OPERATIONS = frozenset(
         "sso_callback",
         "break_glass_login",
         "logout_redirect",
+        "get_unsubscribe",
+        "confirm_unsubscribe",
     }
 )
-"""Operations that need no session (sign-in and sign-out)."""
+"""Operations that need no session (sign-in and sign-out, unsubscribe links)."""
 
 _METHODS = {operation_id: method for method, _, operation_id in CONTRACT}
 
@@ -213,6 +258,7 @@ def _feature_routes() -> list[APIRoute]:
         for module in (
             activity,
             admin_audit,
+            admin_email,
             admin_groups,
             admin_sso,
             admin_users,
@@ -221,9 +267,11 @@ def _feature_routes() -> list[APIRoute]:
             evaluations,
             groups,
             ideas,
+            notifications,
             project_groups,
             projects,
             search,
+            unsubscribe,
             users,
             work,
         )
@@ -411,3 +459,73 @@ async def test_malformed_idea_reference_is_rejected(client: httpx.AsyncClient, r
 
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
+
+
+# --- Phase 3 ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        ("update_notification_preferences", None, {"comment": "weekly"}),
+        ("update_notification_preferences", None, {"comments": "off"}),
+        ("send_test_email", None, {"to": "not-an-address"}),
+        ("send_test_email", None, {"to": "ops@soundings.invalid"}),
+        ("send_test_email", None, {"to": "ops@example.com", "cc": "x@example.com"}),
+        # One request, one recipient: lists, names and non-ASCII are refused.
+        ("send_test_email", None, {"to": "victim@corp.com,postmaster"}),
+        ("send_test_email", None, {"to": "victim@corp.com postmaster@corp.com"}),
+        ("send_test_email", None, {"to": "Ops <ops@example.com>"}),
+        ("send_test_email", None, {"to": '"a b"@example.com'}),
+        ("send_test_email", None, {"to": "ops@[10.0.0.1]"}),
+        ("send_test_email", None, {"to": "\u00fcser@example.com"}),
+        ("send_test_email", None, {"to": "ops@example.com\r\nBcc: x@example.com"}),
+        ("list_notifications", "/api/v1/me/notifications?unread=maybe", None),
+        ("list_outbox_emails", "/api/v1/admin/email/outbox?status=bounced", None),
+        ("list_outbox_emails", "/api/v1/admin/email/outbox?type=newsletter", None),
+        ("mark_all_notifications_read", "/api/v1/me/notifications/read-all?idea=CUST12", None),
+        ("mark_notification_read", "/api/v1/me/notifications/not-a-uuid/read", None),
+        ("get_outbox_email", "/api/v1/admin/email/outbox/not-a-uuid", None),
+    ],
+)
+async def test_invalid_phase3_requests_are_rejected_before_the_endpoint(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    stub_url, _ = STUBS[operation_id]
+
+    response = await client.request(_METHODS[operation_id], url or stub_url, json=body)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/v1/unsubscribe",  # no token
+        "/api/v1/unsubscribe?token=short",
+        "/api/v1/unsubscribe?token=" + "a" * 513,
+        "/api/v1/unsubscribe?token=abc%2Fdef%3Cscript%3E0123456789",
+    ],
+)
+async def test_malformed_unsubscribe_tokens_are_rejected(
+    client: httpx.AsyncClient, url: str
+) -> None:
+    for method in ("GET", "POST"):
+        response = await client.request(method, url)
+        assert response.status_code == 422, (method, response.text)
+
+
+async def test_one_click_unsubscribe_accepts_the_rfc8058_form_post(
+    client: httpx.AsyncClient,
+) -> None:
+    """Mail clients POST List-Unsubscribe=One-Click as a form, with no session and no
+    CSRF token: the body is ignored (here: the stub answers, not a 401/403/422)."""
+    url, _ = STUBS["confirm_unsubscribe"]
+
+    response = await client.post(
+        url,
+        content="List-Unsubscribe=One-Click",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 501, response.text

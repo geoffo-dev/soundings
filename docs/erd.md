@@ -1,14 +1,17 @@
 # Data model (ERD)
 
-Schema after Phase 2: `backend/app/models/` (SQLAlchemy 2, typed), created by the
+Schema after Phase 3: `backend/app/models/` (SQLAlchemy 2, typed), created by the
 Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
 (Phase 1), `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external IDs,
-groups, group grants, the group-aware effective-roles view, audit indexes) and
+groups, group grants, the group-aware effective-roles view, audit indexes),
 `20261001_0004_stateless_sso_sign_in.py` (Phase 2 review: drops the login-attempts
 table, since sign-in attempts now travel sealed in the `soundings_oidc` cookie, and
-clears plain-text ID tokens, which are now stored sealed). The procrastinate job-queue tables (revision `0001`) are not shown. API
-shapes are in [api/contract-phase1.md](api/contract-phase1.md) and
-[api/contract-phase2.md](api/contract-phase2.md).
+clears plain-text ID tokens, which are now stored sealed) and
+`20261001_0005_notifications_and_email.py` (Phase 3: the email outbox, in-app
+notifications and email preferences). The procrastinate job-queue tables (revision
+`0001`) are not shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md),
+[api/contract-phase2.md](api/contract-phase2.md) and
+[api/contract-phase3.md](api/contract-phase3.md).
 
 **Operators:** the migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. `pg_trgm`
 is a trusted extension, so the application's database user needs `CREATE` on the
@@ -47,6 +50,12 @@ erDiagram
     ideas |o--o{ activity_events : "feed of"
     comments |o--o| activity_events : "placed by"
     users |o--o{ activity_events : "actor of"
+    users ||--o{ notifications : receives
+    ideas ||--o{ notifications : "is the subject of"
+    comments |o--o{ notifications : "comment or mention"
+    outbound_email |o--o{ notifications : "carries (immediate or digest)"
+    users |o--o{ outbound_email : "is sent (recipient_user_id)"
+    users ||--o{ notification_preferences : chooses
 
     users {
         uuid id PK
@@ -223,6 +232,42 @@ erDiagram
         jsonb details
         timestamptz created_at
     }
+    notifications {
+        uuid id PK
+        uuid user_id FK "recipient; unique with dedupe_key"
+        varchar type "owner_assigned ... mention"
+        uuid idea_id FK
+        uuid actor_id FK "nullable: reminders"
+        uuid comment_id FK "iff comment or mention"
+        jsonb payload "never scores"
+        varchar dedupe_key
+        varchar email_mode "immediate, digest, off"
+        uuid email_id FK "the email that carried it"
+        timestamptz read_at
+        timestamptz created_at
+    }
+    notification_preferences {
+        uuid user_id PK, FK
+        varchar type PK
+        varchar mode "immediate, digest, off"
+        timestamptz updated_at
+    }
+    outbound_email {
+        uuid id PK
+        varchar type "notification type, digest, test, Phase 4"
+        varchar status "queued, sending, sent, failed, cancelled"
+        uuid recipient_user_id FK "or to_address"
+        varchar to_address "non-user recipients only"
+        uuid requested_by_id FK "test email"
+        jsonb payload "never scores"
+        varchar message_id UK "fixed at insert"
+        varchar idempotency_key UK "digest per day"
+        smallint attempts
+        smallint max_attempts "12; test 1"
+        timestamptz next_attempt_at "queued: due; sending: lease"
+        varchar last_error "sanitised"
+        timestamptz sent_at
+    }
 ```
 
 Every table with a `uuid id` also has `created_at`, and most have `updated_at`
@@ -286,6 +331,9 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `idea_votes`, `idea_watchers` | One row per user per idea. Watchers are added automatically for the submitter, owner, evaluators and commenters (Phase 3 notifications). |
 | `comments` | Flat. Every comment also has an `activity_events` row (`type = 'comment'`, `comment_id`) that places it in the feed. Deleting sets `deleted_at` and clears `body_md`. |
 | `activity_events` | The idea feed and, from Phase 3, the source of notifications. `type` is validated in the application (the set grows per phase); `payload` holds ids and from/to values and **never scores**. `idea_id` is nullable for future project-level events. Feed index `(idea_id, created_at, id)`. |
+| `notifications` | The in-app inbox and the record of who was told what ([contract-phase3 §3.2–3.3](api/contract-phase3.md#33-fan-out-which-events-notify-whom)). One row per recipient and event, written by the fan-out in the event's transaction; `uq_notifications_user_id_dedupe_key` (`<type>:<event id>`, `mention:<comment id>`, `evaluation_reminder:<idea id>:<local due date>:<days before>`) makes the fan-out, the reminder scan and retries idempotent, and **is** the reminder bookkeeping. `idea_id` is required (every type is about one idea); `comment_id` is set exactly for `comment` and `mention` (`ck_notifications_comment_iff_comment_type`). `payload` holds the type's data (from/to status, due date, days before, submitted count), never scores. `email_mode` is the recipient's preference when it was created (`off` also when email isn't configured or the address is unusable); `email_id` is the outbox row that carried it: its own immediate email, or the digest that collected it. **Digest bookkeeping:** pending = `email_mode = 'digest' AND email_id IS NULL` (`ix_notifications_digest_pending`), and only items from the last 7 days are collected; the daily cleanup sets `email_mode = 'off'` on older pending items, including those whose digest row was pruned (`email_id` back to null), so nothing is mailed twice; `ck_notifications_no_email_when_off`. Indexes: inbox `(user_id, created_at, id)`, unread (partial on `read_at IS NULL`), `email_id`, `comment_id` (partial), `idea_id`, and `ix_notifications_mention_actor (actor_id, created_at)` partial on `type = 'mention'` (the per-author cap on mention emails). Deleted after 90 days. |
+| `notification_preferences` | A user's email mode per notification type, only where it differs from the defaults in code (`app.schemas.notifications.DEFAULT_MODES`); primary key `(user_id, type)`. |
+| `outbound_email` | The transactional outbox ([ADR 0003](adr/0003-background-jobs-procrastinate-and-email-outbox.md), [contract-phase3 §3.9](api/contract-phase3.md#39-the-outbox-and-the-worker)). One row per email, inserted with its `send_email` job in the event's transaction; the row is the truth. Exactly one recipient: `recipient_user_id` (address looked up at send time, and checked to be one plain address) or `to_address` (a test email to an address; Phase 4 public submitters), `ck_outbound_email_one_recipient`. Content is rendered at send time from the notifications pointing at it, so no subject or body is stored. `status`: `queued` (waiting for `next_attempt_at`), `sending` (claimed; `next_attempt_at` is the 5-minute lease), `sent` (`sent_at` set, `ck_outbound_email_sent_at_iff_sent`), `failed` (admins may retry it for 3 days, digests 2), `cancelled` (by the send-time checks); `next_attempt_at` is set exactly while queued or sending (`ck_outbound_email_next_attempt_iff_pending`). `message_id` is unique and fixed at insert (a resend after a crash has the same Message-ID); `idempotency_key` unique when set (`digest:<user id>:<local date>`; Phase 4 per submission). `attempts`/`max_attempts` (12, test emails 1) drive the capped exponential backoff; `last_error` is a phrase built by our code, never the server's text. `payload` is for what can't be looked up at send time (Phase 4: the sealed tracking link). Indexes: the due partial index on `next_attempt_at` (status queued or sending) for claims and the sweep, `(created_at, id)` and `(status, created_at, id)` for the admin outbox, counts and the admins' "email failing" flag, `recipient_user_id`. Sent and cancelled rows are deleted after 30 days, failed after 90. Phase 4 adds an `idea_id` for public-submitter mail. |
 | `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. |
 
 ## Delete behaviour
@@ -299,6 +347,9 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | a group | Cascades to its IdP values, memberships and project grants: access through it ends at once. |
 | a project | Also cascades to its group grants. |
 | a scored rubric criterion | Refused by the database at commit (deferred FK); archive it instead. |
+| an idea (Phase 3) | Also cascades to its notifications; immediate emails about it lose their notification and are cancelled at send time ("no longer applies"). |
+| a user (Phase 3) | Also cascades to their notifications, preferences and outbox rows addressed to them; `actor_id` and `requested_by_id` become null. |
+| an outbox row (cleanup) | Its notifications stay, with `email_id` null; the same cleanup then turns pending digest items older than 7 days `off`, so a pruned digest's items never look pending again. |
 
 ## Invariants the application enforces
 
@@ -315,3 +366,8 @@ same transaction and tests them:
   group memberships (the break-glass admin acts as platform admin only).
 - `group_idp_values.value` is already normalised
   (`app.schemas.groups.normalise_idp_value`).
+- A notification's recipient passed `idea.view` when it was created; an email goes out
+  only if they still do (re-checked at send time, contract-phase3 §3.9).
+- A notification's `comment_id` belongs to its idea; an outbox row's notifications all
+  have the row's recipient.
+- No notification `payload` or outbox `payload` holds score data.

@@ -940,7 +940,7 @@
         "additionalProperties": false,
         "properties": {
           "body_md": {
-            "description": "Markdown.",
+            "description": "Markdown. Mention someone with @[Display Name](user:<user id>): people with a role in the idea's project who can view it are notified (labels are rewritten to the user's current name, and the result must still fit 10,000 characters; at most 20 people per comment).",
             "maxLength": 10000,
             "minLength": 1,
             "title": "Body Md",
@@ -953,11 +953,99 @@
         "title": "CommentCreate",
         "type": "object"
       },
+      "CommentExcerpt": {
+        "description": "The comment a ``comment`` or ``mention`` notification is about, as it is now.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "excerpt": {
+            "description": "Plain text (Markdown removed, mentions shown as @Name), at most 200 characters; empty when the comment was deleted.",
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "excerpt",
+          "deleted"
+        ],
+        "title": "CommentExcerpt",
+        "type": "object"
+      },
+      "CommentNotification": {
+        "description": "A new comment on an idea you watch.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "comment": {
+            "$ref": "#/components/schemas/CommentExcerpt"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "comment",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "comment"
+        ],
+        "title": "CommentNotification",
+        "type": "object"
+      },
       "CommentUpdate": {
         "additionalProperties": false,
         "properties": {
           "body_md": {
-            "description": "Markdown.",
+            "description": "Markdown. Newly mentioned people are notified. Mention someone with @[Display Name](user:<user id>): people with a role in the idea's project who can view it are notified (labels are rewritten to the user's current name, and the result must still fit 10,000 characters; at most 20 people per comment).",
             "maxLength": 10000,
             "minLength": 1,
             "title": "Body Md",
@@ -1173,6 +1261,190 @@
         "title": "DueDateChangedActivity",
         "type": "object"
       },
+      "EmailConfig": {
+        "description": "The email settings in effect. Credentials are never returned, only whether set.",
+        "properties": {
+          "ca_bundle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Path of the custom CA bundle; null: the system trust store.",
+            "title": "Ca Bundle"
+          },
+          "configured": {
+            "description": "A host and sender are set. False: in-app notifications only.",
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "digest_hour": {
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Digest Hour",
+            "type": "integer"
+          },
+          "from_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Address"
+          },
+          "from_name": {
+            "title": "From Name",
+            "type": "string"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "links_base_url": {
+            "description": "Links in emails start with this (first base URL).",
+            "title": "Links Base Url",
+            "type": "string"
+          },
+          "outbox": {
+            "$ref": "#/components/schemas/OutboxStats"
+          },
+          "password_set": {
+            "title": "Password Set",
+            "type": "boolean"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "reminder_days": {
+            "description": "Days before the due date that reminders go out (0 = due date), descending.",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Reminder Days",
+            "type": "array"
+          },
+          "reply_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply To"
+          },
+          "security": {
+            "description": "none, starttls or tls (implicit TLS).",
+            "enum": [
+              "none",
+              "starttls",
+              "tls"
+            ],
+            "title": "Security",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "timezone": {
+            "description": "IANA time zone for digests, reminders and dates.",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "username_set": {
+            "title": "Username Set",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "host",
+          "port",
+          "security",
+          "username_set",
+          "password_set",
+          "from_address",
+          "from_name",
+          "reply_to",
+          "ca_bundle",
+          "timeout_seconds",
+          "links_base_url",
+          "timezone",
+          "digest_hour",
+          "reminder_days",
+          "outbox"
+        ],
+        "title": "EmailConfig",
+        "type": "object"
+      },
+      "EmailStatus": {
+        "description": "Where an outbox email is in its life (contract-phase3 section 3.9).",
+        "enum": [
+          "queued",
+          "sending",
+          "sent",
+          "failed",
+          "cancelled"
+        ],
+        "title": "EmailStatus",
+        "type": "string"
+      },
+      "EmailTestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "to": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "minLength": 3,
+                "pattern": "^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One plain address to send it to; null or omitted: your own address. Names, lists and .invalid addresses are refused.",
+            "title": "To"
+          }
+        },
+        "title": "EmailTestRequest",
+        "type": "object"
+      },
+      "EmailType": {
+        "description": "What an outbox email is (``outbound_email.type``).",
+        "enum": [
+          "owner_assigned",
+          "evaluator_invited",
+          "evaluation_reminder",
+          "evaluations_complete",
+          "status_changed",
+          "comment",
+          "mention",
+          "digest",
+          "test",
+          "submission_received",
+          "submission_status_changed"
+        ],
+        "title": "EmailType",
+        "type": "string"
+      },
       "Evaluation": {
         "description": "A submitted evaluation as others see it (drafts are never shown to anyone else).",
         "properties": {
@@ -1335,6 +1607,78 @@
         "title": "EvaluationList",
         "type": "object"
       },
+      "EvaluationReminderNotification": {
+        "description": "An evaluation you still owe is due soon. Show the date (\"Due Fri 9 Oct\"; \"today\"\nonly while it is today), never a countdown from ``days_before``.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "days_before": {
+            "description": "Which reminder this was (days before the due date, 0 = on the due date); not a countdown: phrase the reminder with due_at.",
+            "minimum": 0.0,
+            "title": "Days Before",
+            "type": "integer"
+          },
+          "due_at": {
+            "description": "The due date the reminder was sent for.",
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "evaluation_reminder",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "due_at",
+          "days_before"
+        ],
+        "title": "EvaluationReminderNotification",
+        "type": "object"
+      },
       "EvaluationReopenedActivity": {
         "properties": {
           "actor": {
@@ -1462,6 +1806,71 @@
         "title": "EvaluationSubmittedActivity",
         "type": "object"
       },
+      "EvaluationsCompleteNotification": {
+        "description": "Every evaluator of an idea you own has submitted. Never includes scores.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evaluator_count": {
+            "description": "How many evaluators submitted (all).",
+            "minimum": 1.0,
+            "title": "Evaluator Count",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "evaluations_complete",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "evaluator_count"
+        ],
+        "title": "EvaluationsCompleteNotification",
+        "type": "object"
+      },
       "EvaluatorAddedActivity": {
         "properties": {
           "actor": {
@@ -1515,6 +1924,78 @@
           "evaluator"
         ],
         "title": "EvaluatorAddedActivity",
+        "type": "object"
+      },
+      "EvaluatorInvitedNotification": {
+        "description": "You were asked to evaluate the idea. Link: ``/ideas/{key}?evaluate=1``.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The due date set by the request that invited you (the idea page and the email show the current one).",
+            "title": "Due At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "evaluator_invited",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "due_at"
+        ],
+        "title": "EvaluatorInvitedNotification",
         "type": "object"
       },
       "EvaluatorProgress": {
@@ -3226,6 +3707,68 @@
         "title": "MemberUpdate",
         "type": "object"
       },
+      "MentionNotification": {
+        "description": "You were @mentioned in a comment.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "comment": {
+            "$ref": "#/components/schemas/CommentExcerpt"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "mention",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "comment"
+        ],
+        "title": "MentionNotification",
+        "type": "object"
+      },
       "MyEvaluation": {
         "description": "Your evaluation of an idea you were asked to evaluate (the evaluate sheet).",
         "properties": {
@@ -3424,6 +3967,495 @@
         "title": "MyScoreIn",
         "type": "object"
       },
+      "NotificationMode": {
+        "description": "How a notification type reaches you by email (per user and type).",
+        "enum": [
+          "immediate",
+          "digest",
+          "off"
+        ],
+        "title": "NotificationMode",
+        "type": "string"
+      },
+      "NotificationPage": {
+        "description": "Newest first. Only notifications about ideas you can view now.",
+        "properties": {
+          "items": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "comment": "#/components/schemas/CommentNotification",
+                  "evaluation_reminder": "#/components/schemas/EvaluationReminderNotification",
+                  "evaluations_complete": "#/components/schemas/EvaluationsCompleteNotification",
+                  "evaluator_invited": "#/components/schemas/EvaluatorInvitedNotification",
+                  "mention": "#/components/schemas/MentionNotification",
+                  "owner_assigned": "#/components/schemas/OwnerAssignedNotification",
+                  "status_changed": "#/components/schemas/StatusChangedNotification"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/OwnerAssignedNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/EvaluatorInvitedNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/EvaluationReminderNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/EvaluationsCompleteNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/StatusChangedNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/CommentNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/MentionNotification"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "NotificationPage",
+        "type": "object"
+      },
+      "NotificationPreference": {
+        "properties": {
+          "default_mode": {
+            "$ref": "#/components/schemas/NotificationMode"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/NotificationMode",
+            "description": "Your choice, or the default."
+          },
+          "type": {
+            "$ref": "#/components/schemas/NotificationType"
+          }
+        },
+        "required": [
+          "type",
+          "mode",
+          "default_mode"
+        ],
+        "title": "NotificationPreference",
+        "type": "object"
+      },
+      "NotificationPreferences": {
+        "description": "Your email preference for every type, in a fixed order.",
+        "properties": {
+          "digest_hour": {
+            "description": "When the daily digest goes out.",
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Digest Hour",
+            "type": "integer"
+          },
+          "email_available": {
+            "description": "Email is configured; when false, say that nothing is emailed for now.",
+            "title": "Email Available",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "One per type, in NotificationType order.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationPreference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "timezone": {
+            "description": "IANA time zone of digest_hour, e.g. Europe/London.",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email_available",
+          "digest_hour",
+          "timezone",
+          "items"
+        ],
+        "title": "NotificationPreferences",
+        "type": "object"
+      },
+      "NotificationPreferencesUpdate": {
+        "additionalProperties": false,
+        "description": "Change some types; omitted or null types are unchanged. Choosing the default\nclears your choice (later default changes then apply to you).",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluation_reminder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluations_complete": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluator_invited": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mention": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner_assigned": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status_changed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "NotificationPreferencesUpdate",
+        "type": "object"
+      },
+      "NotificationSummary": {
+        "description": "What the app shell needs: the bell's badge and the email banners.",
+        "properties": {
+          "email_available": {
+            "description": "Email is configured on this instance. False: notifications are in-app only (platform admins see a banner).",
+            "title": "Email Available",
+            "type": "boolean"
+          },
+          "email_trouble": {
+            "description": "Platform admins only (always false for everyone else, and while email isn't configured): an email failed in the last 24 hours, or one has been queued for more than 15 minutes. Show admins a banner linking to Settings -> Email.",
+            "title": "Email Trouble",
+            "type": "boolean"
+          },
+          "unread_count": {
+            "description": "Unread notifications you can see, counted up to 100.",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count",
+          "email_available",
+          "email_trouble"
+        ],
+        "title": "NotificationSummary",
+        "type": "object"
+      },
+      "NotificationType": {
+        "description": "What a notification is about (contract-phase3 section 3.3). Each type has its own\nemail preference; the in-app inbox always gets every notification.",
+        "enum": [
+          "owner_assigned",
+          "evaluator_invited",
+          "evaluation_reminder",
+          "evaluations_complete",
+          "status_changed",
+          "comment",
+          "mention"
+        ],
+        "title": "NotificationType",
+        "type": "string"
+      },
+      "OutboxEmail": {
+        "description": "One email in the outbox. Its content isn't stored (rendered when sent).",
+        "properties": {
+          "address_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Masked address when the recipient is not a user: \"j•••@example.com\".",
+            "title": "Address Hint"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdeaRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The idea it is about (from its notification); null for digests, test emails and when the idea is gone or the notification was pruned."
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the last attempt failed, e.g. \"SMTP 535: authentication failed\" or \"connection timed out\". Never the server's own text.",
+            "title": "Last Error"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "next_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Queued: when the next attempt is due; sending: when the worker's claim expires; otherwise null.",
+            "title": "Next Attempt At"
+          },
+          "recipient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user it is for; null for an address."
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The admin who sent a test email."
+          },
+          "retryable": {
+            "description": "Failed and still recent enough to send (3 days after it was queued; digests 2 days): show the Retry button. Older mail would be out of date.",
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EmailStatus"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EmailType"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "recipient",
+          "address_hint",
+          "idea",
+          "requested_by",
+          "attempts",
+          "max_attempts",
+          "next_attempt_at",
+          "last_error",
+          "created_at",
+          "sent_at",
+          "retryable"
+        ],
+        "title": "OutboxEmail",
+        "type": "object"
+      },
+      "OutboxEmailPage": {
+        "description": "Newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OutboxEmail"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "OutboxEmailPage",
+        "type": "object"
+      },
+      "OutboxRetryResult": {
+        "properties": {
+          "retried": {
+            "description": "Failed emails queued again (only retryable ones).",
+            "title": "Retried",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retried"
+        ],
+        "title": "OutboxRetryResult",
+        "type": "object"
+      },
+      "OutboxStats": {
+        "description": "The outbox at a glance (the page's header and the failures callout).",
+        "properties": {
+          "failed": {
+            "description": "Failed for good (kept 90 days): retry them.",
+            "title": "Failed",
+            "type": "integer"
+          },
+          "last_sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sent At"
+          },
+          "oldest_queued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Created time of the oldest queued email: long ago means the worker isn't running or the server is unreachable.",
+            "title": "Oldest Queued At"
+          },
+          "queued": {
+            "description": "Waiting to be sent (including retries).",
+            "title": "Queued",
+            "type": "integer"
+          },
+          "sending": {
+            "description": "Claimed by a worker right now.",
+            "title": "Sending",
+            "type": "integer"
+          },
+          "sent_last_24h": {
+            "title": "Sent Last 24H",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued",
+          "sending",
+          "failed",
+          "sent_last_24h",
+          "oldest_queued_at",
+          "last_sent_at"
+        ],
+        "title": "OutboxStats",
+        "type": "object"
+      },
       "OwnerAssign": {
         "additionalProperties": false,
         "properties": {
@@ -3445,6 +4477,64 @@
           "user_id"
         ],
         "title": "OwnerAssign",
+        "type": "object"
+      },
+      "OwnerAssignedNotification": {
+        "description": "Someone else made you the idea's owner (volunteering notifies nobody).",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "owner_assigned",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type"
+        ],
+        "title": "OwnerAssignedNotification",
         "type": "object"
       },
       "OwnerChangedActivity": {
@@ -4696,6 +5786,104 @@
         "title": "StatusChangedActivity",
         "type": "object"
       },
+      "StatusChangedNotification": {
+        "description": "The idea moved; labels are the project's (for closed: the resolution's).",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_label": {
+            "title": "From Label",
+            "type": "string"
+          },
+          "from_resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Resolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from_status": {
+            "$ref": "#/components/schemas/IdeaStatus"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "to_label": {
+            "title": "To Label",
+            "type": "string"
+          },
+          "to_resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Resolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_status": {
+            "$ref": "#/components/schemas/IdeaStatus"
+          },
+          "type": {
+            "const": "status_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "from_status",
+          "from_resolution",
+          "from_label",
+          "to_status",
+          "to_resolution",
+          "to_label"
+        ],
+        "title": "StatusChangedNotification",
+        "type": "object"
+      },
       "StatusLabels": {
         "description": "The label to show for every status and resolution (overrides applied).\n\nA closed idea shows its resolution's label (e.g. \"Accepted\"), not \"Closed\".",
         "properties": {
@@ -4883,6 +6071,57 @@
         ],
         "title": "TagInfo",
         "type": "object"
+      },
+      "UnsubscribeInfo": {
+        "description": "The unsubscribe page (no sign-in). Says whose emails stop without naming them.",
+        "properties": {
+          "email_hint": {
+            "description": "The address, masked: \"a•••@example.com\".",
+            "title": "Email Hint",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/UnsubscribeScope",
+            "description": "What the link (or all=true) turns off."
+          },
+          "types": {
+            "description": "The types it turns off: the link's type; for digest, the types sent in the digest (before confirming) or just switched off (after); for all, every type.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationType"
+            },
+            "title": "Types",
+            "type": "array"
+          },
+          "unsubscribed": {
+            "description": "Every type in types is off now.",
+            "title": "Unsubscribed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scope",
+          "types",
+          "unsubscribed",
+          "email_hint"
+        ],
+        "title": "UnsubscribeInfo",
+        "type": "object"
+      },
+      "UnsubscribeScope": {
+        "description": "What an email's unsubscribe link turns off: its notification type, every type\ncurrently sent in the digest (the digest's link), or every type.",
+        "enum": [
+          "owner_assigned",
+          "evaluator_invited",
+          "evaluation_reminder",
+          "evaluations_complete",
+          "status_changed",
+          "comment",
+          "mention",
+          "digest",
+          "all"
+        ],
+        "title": "UnsubscribeScope",
+        "type": "string"
       },
       "UserGroup": {
         "description": "A group the user belongs to, with provenance (both flags can be true).",
@@ -5683,6 +6922,569 @@
           }
         ],
         "summary": "Read the audit log",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/email": {
+      "get": {
+        "description": "Platform admins (platform.configure_email). The SMTP settings in effect with credentials masked, the notification schedule, and outbox counts.",
+        "operationId": "get_email_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Effective email configuration",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/email/outbox": {
+      "get": {
+        "description": "Platform admins. Emails newest first, optionally only some statuses and types (repeat a parameter for several). Kept 30 days after sending or cancelling (failed: 90).",
+        "operationId": "list_outbox_emails",
+        "parameters": [
+          {
+            "description": "Only these statuses.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/EmailStatus"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only these statuses.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Only these types.",
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/EmailType"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only these types.",
+              "title": "Type"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxEmailPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The email outbox",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/email/outbox/retry-failed": {
+      "post": {
+        "description": "Platform admins. Queues every retryable failed email again with fresh attempts (after an outage longer than the retries); failed mail older than 3 days (digests 2) is left as it is. 409 smtp_not_configured when email is off. Audited.",
+        "operationId": "retry_failed_outbox_emails",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxRetryResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Retry every failed email",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/email/outbox/{email_id}": {
+      "get": {
+        "description": "Platform admins. Its status, attempts and last error (no content).",
+        "operationId": "get_outbox_email",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "email_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Email Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxEmail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "One outbox email",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/email/outbox/{email_id}/retry": {
+      "post": {
+        "description": "Platform admins. A failed email is queued again with fresh attempts. 409 email_not_retryable unless it is failed and recent enough to send (retryable); 409 smtp_not_configured when email is off. Audited.",
+        "operationId": "retry_outbox_email",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "email_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Email Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxEmail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Retry a failed email",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/email/test": {
+      "post": {
+        "description": "Platform admins. Queues one test email (one attempt, no retries) to you or to the given address and returns it; poll get_outbox_email for sent or the error. At most 5 per admin per 10 minutes (429 too_many_attempts with Retry-After). 409 smtp_not_configured when email is off. Audited.",
+        "operationId": "send_test_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxEmail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Send a test email",
         "tags": [
           "admin"
         ]
@@ -10387,6 +12189,460 @@
         ]
       }
     },
+    "/api/v1/me/notification-preferences": {
+      "get": {
+        "description": "Per notification type: immediate, daily digest or off, with the defaults resolved (self.manage_profile; sessions only). The inbox always shows everything.",
+        "operationId": "get_notification_preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "My email preferences",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "patch": {
+        "description": "Omitted or null types are unchanged; choosing a type's default clears your choice (self.manage_profile; sessions only).",
+        "operationId": "update_notification_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change my email preferences",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/me/notifications": {
+      "get": {
+        "description": "Your inbox, newest first: notifications about ideas you can view now (others are skipped, not shown as gaps). unread=true: unread ones only.",
+        "operationId": "list_notifications",
+        "parameters": [
+          {
+            "description": "Only unread notifications.",
+            "in": "query",
+            "name": "unread",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only unread notifications.",
+              "title": "Unread",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "My notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/me/notifications/read-all": {
+      "post": {
+        "description": "Every unread notification of yours, or with idea only those about that idea (the idea page calls this when it opens). Returns the new summary.",
+        "operationId": "mark_all_notifications_read",
+        "parameters": [
+          {
+            "description": "Only this idea: its id or key such as \"CUST-12\" (any case).",
+            "in": "query",
+            "name": "idea",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this idea: its id or key such as \"CUST-12\" (any case).",
+              "title": "Idea"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Mark all notifications read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/me/notifications/summary": {
+      "get": {
+        "description": "For the app shell, polled about once a minute and on focus: the bell's unread count (up to 100), whether email is configured, and for platform admins whether email is failing (the banners). Polling isn't activity: this request doesn't keep the session alive (idle timeouts still apply).",
+        "operationId": "get_notification_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Unread count and email status",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/me/notifications/{notification_id}/read": {
+      "post": {
+        "description": "Idempotent. 404 unless it is your notification about an idea you can view.",
+        "operationId": "mark_notification_read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Mark a notification read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/v1/me/owned-ideas": {
       "get": {
         "description": "Ideas you own in non-archived projects, most recently active first. 'Load more' for a My work group: status=<group.status>, cursor=<group.next_cursor>.",
@@ -12785,6 +15041,163 @@
         "summary": "Search ideas and projects",
         "tags": [
           "search"
+        ]
+      }
+    },
+    "/api/v1/unsubscribe": {
+      "get": {
+        "description": "Public (self.unsubscribe, c14): the page's data. Changes nothing. 404 for an invalid token or a user who is no longer active. A browser navigation (Accept lists text/html) is answered with 303 to the SPA page /unsubscribe?token=..., without checking the token.",
+        "operationId": "get_unsubscribe",
+        "parameters": [
+          {
+            "description": "The signed token from the email's link.",
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "description": "The signed token from the email's link.",
+              "maxLength": 512,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "303": {
+            "description": "Opened in a browser (Accept lists text/html): to /unsubscribe?token=...",
+            "headers": {
+              "Location": {
+                "description": "Where the browser goes next.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "What an unsubscribe link turns off",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "post": {
+        "description": "Public (self.unsubscribe, c14), idempotent: turns off email for the link's scope, or for every type with all=true. Also the RFC 8058 one-click target: the mail client's form body (List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session is needed (the token is the authority). 404 for an invalid token or a user who is no longer active.",
+        "operationId": "confirm_unsubscribe",
+        "parameters": [
+          {
+            "description": "The signed token from the email's link.",
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "description": "The signed token from the email's link.",
+              "maxLength": 512,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Turn off every email notification type.",
+            "in": "query",
+            "name": "all",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Turn off every email notification type.",
+              "title": "All",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Unsubscribe",
+        "tags": [
+          "notifications"
         ]
       }
     },

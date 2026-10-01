@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import psycopg
 import pytest
@@ -35,6 +36,9 @@ DOMAIN_TABLES = {
     "idea_votes",
     "idea_watchers",
     "ideas",
+    "notification_preferences",
+    "notifications",
+    "outbound_email",
     "project_group_grants",
     "project_members",
     "projects",
@@ -599,3 +603,145 @@ def test_0004_stateless_sign_in_drops_attempts_and_plain_id_tokens(
     assert "oidc_login_attempts" in tables_after
     command.upgrade(config, "head")
     command.check(config)
+
+
+# --- Phase 3: outbox, notifications and preferences -------------------------------------
+async def _idea_and_user(session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
+    project_id = await _insert_project(session)
+    idea_id = uuid.uuid4()
+    await session.execute(
+        text("INSERT INTO ideas (id, project_id, number, title) VALUES (:i, :p, 1, 'Idea')"),
+        {"i": idea_id, "p": project_id},
+    )
+    return idea_id, await _insert_user(session, "n@x.io")
+
+
+INSERT_EMAIL = text(
+    "INSERT INTO outbound_email (id, type, status, recipient_user_id, to_address, message_id,"
+    " idempotency_key, next_attempt_at, sent_at)"
+    " VALUES (:id, :type, :status, :user, :address, :message_id, :key, :next, :sent)"
+)
+
+
+def _email(**values: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "id": uuid.uuid4(), "type": "test", "status": "queued", "user": None,
+        "address": "someone@example.com", "key": None, "sent": None,
+        "next": datetime.now(UTC),
+    }  # fmt: skip
+    row.update(values)
+    row.setdefault("message_id", f"<{row['id']}@soundings.example>")
+    return row
+
+
+async def test_outbound_email_has_exactly_one_recipient_and_consistent_state(
+    db_session: AsyncSession,
+) -> None:
+    _, user_id = await _idea_and_user(db_session)
+    await db_session.execute(INSERT_EMAIL, _email())
+    await db_session.execute(INSERT_EMAIL, _email(user=user_id, address=None))
+
+    cases: list[tuple[dict[str, object], str]] = [
+        ({"user": user_id}, "ck_outbound_email_one_recipient"),
+        ({"address": None}, "ck_outbound_email_one_recipient"),
+        ({"next": None}, "ck_outbound_email_next_attempt_iff_pending"),
+        ({"status": "failed"}, "ck_outbound_email_next_attempt_iff_pending"),
+        ({"status": "sent", "next": None}, "ck_outbound_email_sent_at_iff_sent"),
+        ({"type": "newsletter"}, "ck_outbound_email_type"),
+        ({"status": "bounced", "next": None}, "ck_outbound_email_status"),
+    ]
+    for values, constraint in cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(INSERT_EMAIL, _email(**values))
+    await db_session.execute(INSERT_EMAIL, _email(status="sent", next=None, sent=datetime.now(UTC)))
+    await db_session.rollback()
+
+
+async def test_outbound_email_message_ids_and_idempotency_keys_are_unique(
+    db_session: AsyncSession,
+) -> None:
+    await db_session.execute(INSERT_EMAIL, _email(message_id="<a@x>", key="digest:u:2026-10-01"))
+    await db_session.execute(INSERT_EMAIL, _email(key=None))
+    await db_session.execute(INSERT_EMAIL, _email(key=None))  # no key: no limit
+
+    for values, constraint in [
+        ({"message_id": "<a@x>"}, "uq_outbound_email_message_id"),
+        ({"key": "digest:u:2026-10-01"}, "uq_outbound_email_idempotency_key"),
+    ]:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(INSERT_EMAIL, _email(**values))
+    await db_session.rollback()
+
+
+INSERT_NOTIFICATION = text(
+    "INSERT INTO notifications (id, user_id, type, idea_id, comment_id, dedupe_key,"
+    " email_mode, email_id) VALUES (:id, :user, :type, :idea, :comment, :key, :mode, :email)"
+)
+
+
+async def test_notifications_are_deduplicated_per_user_and_consistent(
+    db_session: AsyncSession,
+) -> None:
+    idea_id, user_id = await _idea_and_user(db_session)
+    other = await _insert_user(db_session, "o@x.io")
+    email_id = uuid.uuid4()
+    await db_session.execute(INSERT_EMAIL, _email(id=email_id, user=user_id, address=None))
+    comment_id = uuid.uuid4()
+    await db_session.execute(
+        text("INSERT INTO comments (id, idea_id, body_md) VALUES (:c, :i, 'Hi')"),
+        {"c": comment_id, "i": idea_id},
+    )
+
+    def row(**values: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "id": uuid.uuid4(), "user": user_id, "type": "status_changed", "idea": idea_id,
+            "comment": None, "key": "status_changed:e1", "mode": "immediate", "email": email_id,
+        }  # fmt: skip
+        return base | values
+
+    await db_session.execute(INSERT_NOTIFICATION, row())
+    await db_session.execute(INSERT_NOTIFICATION, row(user=other, email=None, mode="off"))
+    await db_session.execute(
+        INSERT_NOTIFICATION, row(type="mention", comment=comment_id, key=f"mention:{comment_id}")
+    )
+    cases: list[tuple[dict[str, object], str]] = [
+        ({}, "uq_notifications_user_id_dedupe_key"),
+        ({"key": "k2", "type": "comment"}, "ck_notifications_comment_iff_comment_type"),
+        ({"key": "k3", "comment": comment_id}, "ck_notifications_comment_iff_comment_type"),
+        ({"key": "k4", "mode": "off"}, "ck_notifications_no_email_when_off"),
+        ({"key": "k5", "mode": "weekly"}, "ck_notifications_email_mode"),
+    ]
+    for values, constraint in cases:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(INSERT_NOTIFICATION, row(**values))
+
+    # Pruning the email keeps the notification; deleting the idea removes both kinds.
+    await db_session.execute(text("DELETE FROM outbound_email WHERE id = :e"), {"e": email_id})
+    assert (
+        await db_session.scalar(text("SELECT count(*) FROM notifications WHERE email_id IS NULL"))
+        == 3
+    )
+    await db_session.execute(text("DELETE FROM ideas WHERE id = :i"), {"i": idea_id})
+    assert await db_session.scalar(text("SELECT count(*) FROM notifications")) == 0
+    await db_session.rollback()
+
+
+async def test_notification_preferences_are_one_per_user_and_type(
+    db_session: AsyncSession,
+) -> None:
+    user_id = await _insert_user(db_session, "p@x.io")
+    insert = text("INSERT INTO notification_preferences (user_id, type, mode) VALUES (:u, :t, :m)")
+    await db_session.execute(insert, {"u": user_id, "t": "comment", "m": "off"})
+
+    for values, constraint in [
+        ({"t": "comment", "m": "digest"}, "pk_notification_preferences"),
+        ({"t": "comments", "m": "off"}, "ck_notification_preferences_type"),
+        ({"t": "mention", "m": "weekly"}, "ck_notification_preferences_mode"),
+    ]:
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(insert, {"u": user_id} | values)
+    await db_session.rollback()

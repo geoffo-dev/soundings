@@ -24,6 +24,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Effective email configuration
+         * @description Platform admins (platform.configure_email). The SMTP settings in effect with credentials masked, the notification schedule, and outbox counts.
+         */
+        get: operations["get_email_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/email/outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The email outbox
+         * @description Platform admins. Emails newest first, optionally only some statuses and types (repeat a parameter for several). Kept 30 days after sending or cancelling (failed: 90).
+         */
+        get: operations["list_outbox_emails"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/email/outbox/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry every failed email
+         * @description Platform admins. Queues every retryable failed email again with fresh attempts (after an outage longer than the retries); failed mail older than 3 days (digests 2) is left as it is. 409 smtp_not_configured when email is off. Audited.
+         */
+        post: operations["retry_failed_outbox_emails"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/email/outbox/{email_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One outbox email
+         * @description Platform admins. Its status, attempts and last error (no content).
+         */
+        get: operations["get_outbox_email"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/email/outbox/{email_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a failed email
+         * @description Platform admins. A failed email is queued again with fresh attempts. 409 email_not_retryable unless it is failed and recent enough to send (retryable); 409 smtp_not_configured when email is off. Audited.
+         */
+        post: operations["retry_outbox_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/email/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test email
+         * @description Platform admins. Queues one test email (one attempt, no retries) to you or to the given address and returns it; poll get_outbox_email for sent or the error. At most 5 per admin per 10 minutes (429 too_many_attempts with Retry-After). 409 smtp_not_configured when email is off. Audited.
+         */
+        post: operations["send_test_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/groups": {
         parameters: {
             query?: never;
@@ -829,6 +949,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My email preferences
+         * @description Per notification type: immediate, daily digest or off, with the defaults resolved (self.manage_profile; sessions only). The inbox always shows everything.
+         */
+        get: operations["get_notification_preferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change my email preferences
+         * @description Omitted or null types are unchanged; choosing a type's default clears your choice (self.manage_profile; sessions only).
+         */
+        patch: operations["update_notification_preferences"];
+        trace?: never;
+    };
+    "/api/v1/me/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My notifications
+         * @description Your inbox, newest first: notifications about ideas you can view now (others are skipped, not shown as gaps). unread=true: unread ones only.
+         */
+        get: operations["list_notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark all notifications read
+         * @description Every unread notification of yours, or with idea only those about that idea (the idea page calls this when it opens). Returns the new summary.
+         */
+        post: operations["mark_all_notifications_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/notifications/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unread count and email status
+         * @description For the app shell, polled about once a minute and on focus: the bell's unread count (up to 100), whether email is configured, and for platform admins whether email is failing (the banners). Polling isn't activity: this request doesn't keep the session alive (idle timeouts still apply).
+         */
+        get: operations["get_notification_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a notification read
+         * @description Idempotent. 404 unless it is your notification about an idea you can view.
+         */
+        post: operations["mark_notification_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/owned-ideas": {
         parameters: {
             query?: never;
@@ -1131,6 +1355,30 @@ export interface paths {
         get: operations["global_search"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What an unsubscribe link turns off
+         * @description Public (self.unsubscribe, c14): the page's data. Changes nothing. 404 for an invalid token or a user who is no longer active. A browser navigation (Accept lists text/html) is answered with 303 to the SPA page /unsubscribe?token=..., without checking the token.
+         */
+        get: operations["get_unsubscribe"];
+        put?: never;
+        /**
+         * Unsubscribe
+         * @description Public (self.unsubscribe, c14), idempotent: turns off email for the link's scope, or for every type with all=true. Also the RFC 8058 one-click target: the mail client's form body (List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session is needed (the token is the authority). 404 for an invalid token or a user who is no longer active.
+         */
+        post: operations["confirm_unsubscribe"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1583,15 +1831,64 @@ export interface components {
         CommentCreate: {
             /**
              * Body Md
-             * @description Markdown.
+             * @description Markdown. Mention someone with @[Display Name](user:<user id>): people with a role in the idea's project who can view it are notified (labels are rewritten to the user's current name, and the result must still fit 10,000 characters; at most 20 people per comment).
              */
             body_md: string;
+        };
+        /**
+         * CommentExcerpt
+         * @description The comment a ``comment`` or ``mention`` notification is about, as it is now.
+         */
+        CommentExcerpt: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Excerpt
+             * @description Plain text (Markdown removed, mentions shown as @Name), at most 200 characters; empty when the comment was deleted.
+             */
+            excerpt: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * CommentNotification
+         * @description A new comment on an idea you watch.
+         */
+        CommentNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            comment: components["schemas"]["CommentExcerpt"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "comment";
         };
         /** CommentUpdate */
         CommentUpdate: {
             /**
              * Body Md
-             * @description Markdown.
+             * @description Markdown. Newly mentioned people are notified. Mention someone with @[Display Name](user:<user id>): people with a role in the idea's project who can view it are notified (labels are rewritten to the user's current name, and the result must still fit 10,000 characters; at most 20 people per comment).
              */
             body_md: string;
         };
@@ -1693,6 +1990,82 @@ export interface components {
             type: "due_date_changed";
         };
         /**
+         * EmailConfig
+         * @description The email settings in effect. Credentials are never returned, only whether set.
+         */
+        EmailConfig: {
+            /**
+             * Ca Bundle
+             * @description Path of the custom CA bundle; null: the system trust store.
+             */
+            ca_bundle: string | null;
+            /**
+             * Configured
+             * @description A host and sender are set. False: in-app notifications only.
+             */
+            configured: boolean;
+            /** Digest Hour */
+            digest_hour: number;
+            /** From Address */
+            from_address: string | null;
+            /** From Name */
+            from_name: string;
+            /** Host */
+            host: string | null;
+            /**
+             * Links Base Url
+             * @description Links in emails start with this (first base URL).
+             */
+            links_base_url: string;
+            outbox: components["schemas"]["OutboxStats"];
+            /** Password Set */
+            password_set: boolean;
+            /** Port */
+            port: number;
+            /**
+             * Reminder Days
+             * @description Days before the due date that reminders go out (0 = due date), descending.
+             */
+            reminder_days: number[];
+            /** Reply To */
+            reply_to: string | null;
+            /**
+             * Security
+             * @description none, starttls or tls (implicit TLS).
+             * @enum {string}
+             */
+            security: "none" | "starttls" | "tls";
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /**
+             * Timezone
+             * @description IANA time zone for digests, reminders and dates.
+             */
+            timezone: string;
+            /** Username Set */
+            username_set: boolean;
+        };
+        /**
+         * EmailStatus
+         * @description Where an outbox email is in its life (contract-phase3 section 3.9).
+         * @enum {string}
+         */
+        EmailStatus: "queued" | "sending" | "sent" | "failed" | "cancelled";
+        /** EmailTestRequest */
+        EmailTestRequest: {
+            /**
+             * To
+             * @description One plain address to send it to; null or omitted: your own address. Names, lists and .invalid addresses are refused.
+             */
+            to?: string | null;
+        };
+        /**
+         * EmailType
+         * @description What an outbox email is (``outbound_email.type``).
+         * @enum {string}
+         */
+        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "digest" | "test" | "submission_received" | "submission_status_changed";
+        /**
          * Evaluation
          * @description A submitted evaluation as others see it (drafts are never shown to anyone else).
          */
@@ -1785,6 +2158,48 @@ export interface components {
              */
             score_hidden: boolean;
         };
+        /**
+         * EvaluationReminderNotification
+         * @description An evaluation you still owe is due soon. Show the date ("Due Fri 9 Oct"; "today"
+         *     only while it is today), never a countdown from ``days_before``.
+         */
+        EvaluationReminderNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Days Before
+             * @description Which reminder this was (days before the due date, 0 = on the due date); not a countdown: phrase the reminder with due_at.
+             */
+            days_before: number;
+            /**
+             * Due At
+             * Format: date-time
+             * @description The due date the reminder was sent for.
+             */
+            due_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "evaluation_reminder";
+        };
         /** EvaluationReopenedActivity */
         EvaluationReopenedActivity: {
             /** @description Who did it; null if the user no longer exists. */
@@ -1854,6 +2269,41 @@ export interface components {
              */
             type: "evaluation_submitted";
         };
+        /**
+         * EvaluationsCompleteNotification
+         * @description Every evaluator of an idea you own has submitted. Never includes scores.
+         */
+        EvaluationsCompleteNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Evaluator Count
+             * @description How many evaluators submitted (all).
+             */
+            evaluator_count: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "evaluations_complete";
+        };
         /** EvaluatorAddedActivity */
         EvaluatorAddedActivity: {
             /** @description Who did it; null if the user no longer exists. */
@@ -1879,6 +2329,41 @@ export interface components {
              * @enum {string}
              */
             type: "evaluator_added";
+        };
+        /**
+         * EvaluatorInvitedNotification
+         * @description You were asked to evaluate the idea. Link: ``/ideas/{key}?evaluate=1``.
+         */
+        EvaluatorInvitedNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Due At
+             * @description The due date set by the request that invited you (the idea page and the email show the current one).
+             */
+            due_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "evaluator_invited";
         };
         /**
          * EvaluatorProgress
@@ -2766,6 +3251,37 @@ export interface components {
             role: components["schemas"]["ProjectRole"];
         };
         /**
+         * MentionNotification
+         * @description You were @mentioned in a comment.
+         */
+        MentionNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            comment: components["schemas"]["CommentExcerpt"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mention";
+        };
+        /**
          * MyEvaluation
          * @description Your evaluation of an idea you were asked to evaluate (the evaluate sheet).
          */
@@ -2854,6 +3370,195 @@ export interface components {
             /** Score */
             score?: number | null;
         };
+        /**
+         * NotificationMode
+         * @description How a notification type reaches you by email (per user and type).
+         * @enum {string}
+         */
+        NotificationMode: "immediate" | "digest" | "off";
+        /**
+         * NotificationPage
+         * @description Newest first. Only notifications about ideas you can view now.
+         */
+        NotificationPage: {
+            /** Items */
+            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"])[];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** NotificationPreference */
+        NotificationPreference: {
+            default_mode: components["schemas"]["NotificationMode"];
+            /** @description Your choice, or the default. */
+            mode: components["schemas"]["NotificationMode"];
+            type: components["schemas"]["NotificationType"];
+        };
+        /**
+         * NotificationPreferences
+         * @description Your email preference for every type, in a fixed order.
+         */
+        NotificationPreferences: {
+            /**
+             * Digest Hour
+             * @description When the daily digest goes out.
+             */
+            digest_hour: number;
+            /**
+             * Email Available
+             * @description Email is configured; when false, say that nothing is emailed for now.
+             */
+            email_available: boolean;
+            /**
+             * Items
+             * @description One per type, in NotificationType order.
+             */
+            items: components["schemas"]["NotificationPreference"][];
+            /**
+             * Timezone
+             * @description IANA time zone of digest_hour, e.g. Europe/London.
+             */
+            timezone: string;
+        };
+        /**
+         * NotificationPreferencesUpdate
+         * @description Change some types; omitted or null types are unchanged. Choosing the default
+         *     clears your choice (later default changes then apply to you).
+         */
+        NotificationPreferencesUpdate: {
+            comment?: components["schemas"]["NotificationMode"] | null;
+            evaluation_reminder?: components["schemas"]["NotificationMode"] | null;
+            evaluations_complete?: components["schemas"]["NotificationMode"] | null;
+            evaluator_invited?: components["schemas"]["NotificationMode"] | null;
+            mention?: components["schemas"]["NotificationMode"] | null;
+            owner_assigned?: components["schemas"]["NotificationMode"] | null;
+            status_changed?: components["schemas"]["NotificationMode"] | null;
+        };
+        /**
+         * NotificationSummary
+         * @description What the app shell needs: the bell's badge and the email banners.
+         */
+        NotificationSummary: {
+            /**
+             * Email Available
+             * @description Email is configured on this instance. False: notifications are in-app only (platform admins see a banner).
+             */
+            email_available: boolean;
+            /**
+             * Email Trouble
+             * @description Platform admins only (always false for everyone else, and while email isn't configured): an email failed in the last 24 hours, or one has been queued for more than 15 minutes. Show admins a banner linking to Settings -> Email.
+             */
+            email_trouble: boolean;
+            /**
+             * Unread Count
+             * @description Unread notifications you can see, counted up to 100.
+             */
+            unread_count: number;
+        };
+        /**
+         * NotificationType
+         * @description What a notification is about (contract-phase3 section 3.3). Each type has its own
+         *     email preference; the in-app inbox always gets every notification.
+         * @enum {string}
+         */
+        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention";
+        /**
+         * OutboxEmail
+         * @description One email in the outbox. Its content isn't stored (rendered when sent).
+         */
+        OutboxEmail: {
+            /**
+             * Address Hint
+             * @description Masked address when the recipient is not a user: "j•••@example.com".
+             */
+            address_hint: string | null;
+            /** Attempts */
+            attempts: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about (from its notification); null for digests, test emails and when the idea is gone or the notification was pruned. */
+            idea: components["schemas"]["IdeaRef"] | null;
+            /**
+             * Last Error
+             * @description Why the last attempt failed, e.g. "SMTP 535: authentication failed" or "connection timed out". Never the server's own text.
+             */
+            last_error: string | null;
+            /** Max Attempts */
+            max_attempts: number;
+            /**
+             * Next Attempt At
+             * @description Queued: when the next attempt is due; sending: when the worker's claim expires; otherwise null.
+             */
+            next_attempt_at: string | null;
+            /** @description The user it is for; null for an address. */
+            recipient: components["schemas"]["UserRef"] | null;
+            /** @description The admin who sent a test email. */
+            requested_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Retryable
+             * @description Failed and still recent enough to send (3 days after it was queued; digests 2 days): show the Retry button. Older mail would be out of date.
+             */
+            retryable: boolean;
+            /** Sent At */
+            sent_at: string | null;
+            status: components["schemas"]["EmailStatus"];
+            type: components["schemas"]["EmailType"];
+        };
+        /**
+         * OutboxEmailPage
+         * @description Newest first.
+         */
+        OutboxEmailPage: {
+            /** Items */
+            items: components["schemas"]["OutboxEmail"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** OutboxRetryResult */
+        OutboxRetryResult: {
+            /**
+             * Retried
+             * @description Failed emails queued again (only retryable ones).
+             */
+            retried: number;
+        };
+        /**
+         * OutboxStats
+         * @description The outbox at a glance (the page's header and the failures callout).
+         */
+        OutboxStats: {
+            /**
+             * Failed
+             * @description Failed for good (kept 90 days): retry them.
+             */
+            failed: number;
+            /** Last Sent At */
+            last_sent_at: string | null;
+            /**
+             * Oldest Queued At
+             * @description Created time of the oldest queued email: long ago means the worker isn't running or the server is unreachable.
+             */
+            oldest_queued_at: string | null;
+            /**
+             * Queued
+             * @description Waiting to be sent (including retries).
+             */
+            queued: number;
+            /**
+             * Sending
+             * @description Claimed by a worker right now.
+             */
+            sending: number;
+            /** Sent Last 24H */
+            sent_last_24h: number;
+        };
         /** OwnerAssign */
         OwnerAssign: {
             /**
@@ -2861,6 +3566,36 @@ export interface components {
              * @description New owner (effective role member or admin), or null to leave it unowned.
              */
             user_id: string | null;
+        };
+        /**
+         * OwnerAssignedNotification
+         * @description Someone else made you the idea's owner (volunteering notifies nobody).
+         */
+        OwnerAssignedNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "owner_assigned";
         };
         /** OwnerChangedActivity */
         OwnerChangedActivity: {
@@ -3465,6 +4200,44 @@ export interface components {
             type: "status_changed";
         };
         /**
+         * StatusChangedNotification
+         * @description The idea moved; labels are the project's (for closed: the resolution's).
+         */
+        StatusChangedNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** From Label */
+            from_label: string;
+            from_resolution: components["schemas"]["Resolution"] | null;
+            from_status: components["schemas"]["IdeaStatus"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /** To Label */
+            to_label: string;
+            to_resolution: components["schemas"]["Resolution"] | null;
+            to_status: components["schemas"]["IdeaStatus"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "status_changed";
+        };
+        /**
          * StatusLabels
          * @description The label to show for every status and resolution (overrides applied).
          *
@@ -3531,6 +4304,36 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * UnsubscribeInfo
+         * @description The unsubscribe page (no sign-in). Says whose emails stop without naming them.
+         */
+        UnsubscribeInfo: {
+            /**
+             * Email Hint
+             * @description The address, masked: "a•••@example.com".
+             */
+            email_hint: string;
+            /** @description What the link (or all=true) turns off. */
+            scope: components["schemas"]["UnsubscribeScope"];
+            /**
+             * Types
+             * @description The types it turns off: the link's type; for digest, the types sent in the digest (before confirming) or just switched off (after); for all, every type.
+             */
+            types: components["schemas"]["NotificationType"][];
+            /**
+             * Unsubscribed
+             * @description Every type in types is off now.
+             */
+            unsubscribed: boolean;
+        };
+        /**
+         * UnsubscribeScope
+         * @description What an email's unsubscribe link turns off: its notification type, every type
+         *     currently sent in the digest (the digest's link), or every type.
+         * @enum {string}
+         */
+        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "digest" | "all";
         /**
          * UserGroup
          * @description A group the user belongs to, with provenance (both flags can be true).
@@ -3851,6 +4654,404 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_email_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailConfig"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_outbox_emails: {
+        parameters: {
+            query?: {
+                /** @description Only these statuses. */
+                status?: components["schemas"]["EmailStatus"][] | null;
+                /** @description Only these types. */
+                type?: components["schemas"]["EmailType"][] | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxEmailPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    retry_failed_outbox_emails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxRetryResult"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_outbox_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxEmail"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    retry_outbox_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxEmail"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    send_test_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxEmail"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Problem */
@@ -7187,6 +8388,329 @@ export interface operations {
             };
         };
     };
+    get_notification_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferences"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_notification_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferences"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_notifications: {
+        parameters: {
+            query?: {
+                /** @description Only unread notifications. */
+                unread?: boolean;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    mark_all_notifications_read: {
+        parameters: {
+            query?: {
+                /** @description Only this idea: its id or key such as "CUST-12" (any case). */
+                idea?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSummary"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_notification_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSummary"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    mark_notification_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_my_owned_ideas: {
         parameters: {
             query?: {
@@ -8611,6 +10135,117 @@ export interface operations {
             };
             /** @description Not signed in (unauthorized) */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_unsubscribe: {
+        parameters: {
+            query: {
+                /** @description The signed token from the email's link. */
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsubscribeInfo"];
+                };
+            };
+            /** @description Opened in a browser (Accept lists text/html): to /unsubscribe?token=... */
+            303: {
+                headers: {
+                    /** @description Where the browser goes next. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    confirm_unsubscribe: {
+        parameters: {
+            query: {
+                /** @description The signed token from the email's link. */
+                token: string;
+                /** @description Turn off every email notification type. */
+                all?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsubscribeInfo"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

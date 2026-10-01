@@ -55,7 +55,9 @@ def test_every_route_of_the_area_is_covered() -> None:
     mine = {
         operation_id
         for _, path, operation_id in CONTRACT
-        if "/ideas" in path or "/board" in path or "/comments" in path or "/me/" in path
+        if ("/ideas" in path or "/board" in path or "/comments" in path or "/me/" in path)
+        # Phase 3 inbox and preferences (/me/notification...) get their own guard tests.
+        and "/me/notification" not in path
     }
     assert mine == set(ROUTES)
 

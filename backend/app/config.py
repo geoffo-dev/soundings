@@ -14,11 +14,12 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-from datetime import timedelta
+from datetime import UTC, timedelta, tzinfo
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -32,6 +33,9 @@ _ACCEPTED_DRIVERS = {"postgres", "postgresql", "postgresql+psycopg"}
 
 Environment = Literal["development", "test", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+SmtpSecurity = Literal["none", "starttls", "tls"]
+"""``none``: plain SMTP (in-cluster relays, Mailpit); ``starttls``: upgrade on port 587;
+``tls``: implicit TLS, usually port 465."""
 
 
 def _split_csv(value: object) -> object:
@@ -69,6 +73,41 @@ OIDC_ISSUER_MAX_LENGTH = 512
 
 _SCOPE_TOKEN = re.compile(r"[\x21\x23-\x5b\x5d-\x7e]+")  # RFC 6749 scope-token
 _EXTERNAL_ID_KIND = re.compile(r"[a-z][a-z0-9_]{0,39}")  # = app.models.user's pattern
+_SMTP_HOST = re.compile(r"[A-Za-z0-9._-]{1,253}")  # a DNS name or IPv4 address
+
+_ATEXT = r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+_DOMAIN_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+MAIL_ADDRESS_PATTERN = rf"^{_ATEXT}(?:\.{_ATEXT})*@{_DOMAIN_LABEL}(?:\.{_DOMAIN_LABEL})*$"
+"""One plain ASCII address, ``local@domain``: a dot-atom local part and a host name.
+No display name, comment, quoting, IP literal, list or whitespace, so nothing a
+header could be split on and nothing that names a second recipient
+(``victim@corp.com,postmaster`` fails). Used for From / Reply-To, the test email's
+``to`` and, at send time, every recipient address (contract-phase3 section 3.11)."""
+MAIL_ADDRESS = re.compile(MAIL_ADDRESS_PATTERN)
+MAIL_ADDRESS_MAX_LENGTH = 254
+"""RFC 5321's limit for a forward path, without the angle brackets."""
+MAIL_LOCAL_PART_MAX_LENGTH = 64
+
+
+def is_mail_address(value: str) -> bool:
+    """``value`` is exactly one plain ASCII address (:data:`MAIL_ADDRESS_PATTERN`) within
+    the RFC 5321 lengths."""
+    return (
+        len(value) <= MAIL_ADDRESS_MAX_LENGTH
+        and MAIL_ADDRESS.fullmatch(value) is not None
+        and len(value.rpartition("@")[0]) <= MAIL_LOCAL_PART_MAX_LENGTH
+    )
+
+
+SMTP_DEFAULT_PORTS: dict[str, int] = {"none": 587, "starttls": 587, "tls": 465}
+"""``SOUNDINGS_SMTP_PORT`` when it is unset or empty, by ``SOUNDINGS_SMTP_SECURITY``."""
+
+REMINDER_DAYS_MAX = 30
+"""Evaluation reminders go out at most this many days before the due date."""
+
+
+def _has_control_characters(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
 class DatabaseSettings(BaseSettings):
@@ -260,6 +299,82 @@ class Settings(DatabaseSettings):
     break_glass_username: SecretStr | None = None
     break_glass_password: SecretStr | None = None
 
+    # --- Email over SMTP (contract-phase3 section 3.1) -------------------------------
+    # Names match the chart (deploy/helm/README.md); credentials come from a Secret.
+    smtp_host: str | None = Field(
+        default=None,
+        description=(
+            "SMTP server host name or IP address. Empty: email is off and people get "
+            "in-app notifications only (platform admins see a banner)."
+        ),
+    )
+    smtp_port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+        description="SMTP port. Unset or empty: 465 with security tls, else 587.",
+    )
+    smtp_security: SmtpSecurity = Field(
+        default="starttls",
+        description=(
+            "none (plain SMTP: an in-cluster relay, Mailpit), starttls (upgrade, usually "
+            "port 587) or tls (implicit TLS, usually port 465). TLS verifies the server's "
+            "certificate and host name."
+        ),
+    )
+    smtp_username: SecretStr | None = Field(
+        default=None, description="Optional SMTP AUTH user name (from the chart's Secret)."
+    )
+    smtp_password: SecretStr | None = Field(
+        default=None, description="Optional SMTP AUTH password (from the chart's Secret)."
+    )
+    smtp_from: str | None = Field(
+        default=None,
+        description="Sender address, e.g. soundings@example.com (required with smtp_host).",
+    )
+    smtp_from_name: str = Field(
+        default="Soundings", max_length=100, description="Sender display name."
+    )
+    smtp_reply_to: str | None = Field(
+        default=None, description="Optional Reply-To address (default: no Reply-To header)."
+    )
+    smtp_ca_bundle: Path | None = Field(
+        default=None,
+        description=(
+            "PEM file with the CA certificate(s) that signed the SMTP server's certificate "
+            "(default: the system trust store). The chart mounts it from a ConfigMap."
+        ),
+    )
+    smtp_timeout: float = Field(
+        default=10,
+        gt=0,
+        le=120,
+        description="Seconds to wait for the connection and for each SMTP command.",
+    )
+
+    # --- Notifications (contract-phase3 sections 3.6-3.7) ---------------------------
+    timezone: str = Field(
+        default="UTC",
+        description=(
+            "IANA time zone of the organisation (e.g. Europe/London): the daily digest "
+            "and evaluation reminders go out at digest_hour in it, and emails show dates "
+            "in it. One zone per instance (no per-user zones)."
+        ),
+    )
+    digest_hour: int = Field(
+        default=8,
+        ge=0,
+        le=23,
+        description="Hour of the day (0-23, in timezone) for daily digests and reminders.",
+    )
+    reminder_days: Annotated[list[int], NoDecode] = Field(
+        default=[2, 0],
+        description=(
+            "Evaluation reminders: days before the due date (0 = on the due date), e.g. "
+            "2,0. Empty: no reminders."
+        ),
+    )
+
     # --- Observability / worker -----------------------------------------------------
     otel_endpoint: str | None = Field(
         default=None,
@@ -267,10 +382,104 @@ class Settings(DatabaseSettings):
     )
     worker_concurrency: int = Field(default=4, ge=1, le=64)
 
-    @field_validator("base_urls", "trusted_proxies", "oidc_scopes", mode="before")
+    @field_validator("base_urls", "trusted_proxies", "oidc_scopes", "reminder_days", mode="before")
     @classmethod
     def _parse_list(cls, value: object) -> object:
         return _split_csv(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_smtp_port(cls, data: object) -> object:
+        """An unset or empty port follows the security mode (465 for implicit TLS)."""
+        if not isinstance(data, dict):
+            return data
+        port = data.get("smtp_port")
+        if port is None or (isinstance(port, str) and not port.strip()):
+            security = data.get("smtp_security") or "starttls"
+            default = SMTP_DEFAULT_PORTS.get(str(security).strip(), 587)
+            return {**data, "smtp_port": default}
+        return data
+
+    @field_validator(
+        "smtp_host",
+        "smtp_username",
+        "smtp_password",
+        "smtp_from",
+        "smtp_reply_to",
+        "smtp_ca_bundle",
+        mode="before",
+    )
+    @classmethod
+    def _empty_is_unset(cls, value: object) -> object:
+        """The chart passes optional values as empty strings; treat them as unset."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("smtp_host")
+    @classmethod
+    def _validate_smtp_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if ":" in value:  # only an IPv6 address may contain colons (no host:port)
+            try:
+                ipaddress.IPv6Address(value)
+            except ValueError:
+                raise ValueError(
+                    "smtp_host must be a host name or IP address (no scheme or port)"
+                ) from None
+        elif not _SMTP_HOST.fullmatch(value):
+            raise ValueError("smtp_host must be a host name or IP address (no scheme or port)")
+        return value
+
+    @field_validator("smtp_from", "smtp_reply_to")
+    @classmethod
+    def _validate_mail_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not is_mail_address(value):
+            raise ValueError("must be a plain email address such as soundings@example.com")
+        return value
+
+    @field_validator("smtp_from_name")
+    @classmethod
+    def _validate_from_name(cls, value: str) -> str:
+        value = value.strip()
+        if _has_control_characters(value):
+            raise ValueError("smtp_from_name must not contain control characters")
+        return value or "Soundings"
+
+    @field_validator("smtp_ca_bundle")
+    @classmethod
+    def _validate_ca_bundle(cls, value: Path | None) -> Path | None:
+        if value is not None and not value.is_file():
+            raise ValueError("smtp_ca_bundle must be the path of an existing PEM file")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        value = value.strip() or "UTC"
+        if value == "UTC":
+            return value  # needs no time zone database
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError(
+                f"timezone must be an IANA time zone such as Europe/London: {value!r}"
+            ) from None
+        return value
+
+    @field_validator("reminder_days")
+    @classmethod
+    def _validate_reminder_days(cls, value: list[int]) -> list[int]:
+        if any(day < 0 or day > REMINDER_DAYS_MAX for day in value):
+            raise ValueError(f"reminder_days must be between 0 and {REMINDER_DAYS_MAX}")
+        if len(set(value)) > 5:
+            raise ValueError("at most 5 reminder days")
+        return sorted(set(value), reverse=True)
 
     @field_validator("trusted_proxies")
     @classmethod
@@ -362,6 +571,15 @@ class Settings(DatabaseSettings):
     def _production_guards(self) -> Settings:
         if self.session_max_age < self.session_idle_timeout:
             raise ValueError("session_max_age must be at least session_idle_timeout")
+        if self.smtp_host and not self.smtp_from:
+            raise ValueError("SOUNDINGS_SMTP_FROM is required when SOUNDINGS_SMTP_HOST is set")
+        password = self.smtp_password.get_secret_value() if self.smtp_password else ""
+        if self.is_production and self.smtp_host and self.smtp_security == "none" and password:
+            # SMTP AUTH over a plain connection sends the password in clear text.
+            raise ValueError(
+                "SOUNDINGS_SMTP_SECURITY=none can't be used with a password in "
+                "production: use starttls or tls"
+            )
         if self.is_production:
             secret = self.secret_key.get_secret_value()
             if secret == DEV_SECRET_KEY or len(secret) < 32:
@@ -410,6 +628,22 @@ class Settings(DatabaseSettings):
     def sso_configured(self) -> bool:
         """SSO sign-in is on: an issuer is configured."""
         return self.oidc_issuer is not None
+
+    @property
+    def smtp_configured(self) -> bool:
+        """Email is on: a host (and, enforced above, a sender) is configured. Otherwise
+        nothing is written to the outbox and people get in-app notifications only."""
+        return self.smtp_host is not None and self.smtp_from is not None
+
+    @property
+    def public_base_url(self) -> str:
+        """The origin used in links that leave the app (emails): the first base URL."""
+        return self.base_urls[0]
+
+    @property
+    def tz(self) -> tzinfo:
+        """:attr:`timezone` as a ``tzinfo`` (``datetime.UTC`` for ``UTC``)."""
+        return UTC if self.timezone == "UTC" else ZoneInfo(self.timezone)
 
     @property
     def break_glass_available(self) -> bool:

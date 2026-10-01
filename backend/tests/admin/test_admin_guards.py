@@ -67,8 +67,12 @@ def test_every_route_of_the_area_is_covered() -> None:
     mine = {
         operation_id
         for _, path, operation_id in CONTRACT
-        if path.startswith(("/api/v1/admin/", "/api/v1/groups"))
-        or path.endswith(("/groups", "/groups/{group_id}", "/access"))
+        if (
+            path.startswith(("/api/v1/admin/", "/api/v1/groups"))
+            or path.endswith(("/groups", "/groups/{group_id}", "/access"))
+        )
+        # Phase 3 Admin -> Email (/admin/email...) gets its own guard tests.
+        and not path.startswith("/api/v1/admin/email")
     }
     assert mine == set(ROUTES)
 
