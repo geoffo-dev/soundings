@@ -42,7 +42,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `logLevel` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR`. JSON logs, no PII. |
 | `devLogin` | `false` | Dev login stub; also switches the app to development mode. Never on shared installs. |
 | `demo.seed` | `false` | Load the demo data after install and upgrades (hook Job, see [Demo data](#demo-data)). Needs `devLogin`. |
-| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `P7D` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds. |
+| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `PT24H` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds. |
 | `metrics.port` | `9090` | Port of Prometheus `/metrics` (container and Service port `metrics`); never the app port. |
 | `secretKey.existingSecret` / `.existingSecretKey` | `""` / `secret-key` | Session/CSRF signing key. Empty: generated once, kept across upgrades. |
 | `oidc.issuer` | `""` | OIDC issuer URL, exactly the provider's `issuer` (https unless `devLogin`). Empty: SSO off; the break-glass admin works instead. See [Single sign-on](#single-sign-on). |
@@ -222,11 +222,11 @@ apply at the person's next sign-in.
 
 **Offboarding = deactivate** (Settings > Users). Removing someone from the IdP stops new
 sign-ins, but a running session lasts until it ends (`sessions.idleTimeout`, at most
-`sessions.maxAge`, 7 days by default) and their synced memberships stay until they
+`sessions.maxAge`, 24 hours by default) and their synced memberships stay until they
 sign in again. Deactivating ends their sessions at once; "Sign out everywhere" (same
 page) ends them without deactivating, so a removed IdP group applies at the next
-sign-in. For IdP changes to apply sooner on their own, shorten `sessions.maxAge` (e.g.
-`P1D`). There is no back-channel logout.
+sign-in. Without either, IdP changes apply within a day. There is no back-channel
+logout.
 
 **Production** (`devLogin: false`) requires an https issuer and https `baseUrls` once
 SSO is configured (the chart refuses otherwise, and so would the app): the redirect

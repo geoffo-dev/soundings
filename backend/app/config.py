@@ -178,9 +178,12 @@ class Settings(DatabaseSettings):
         description="A session ends after this long without a request (seconds or ISO 8601).",
     )
     session_max_age: timedelta = Field(
-        default=timedelta(days=7),
+        default=timedelta(hours=24),
         gt=timedelta(0),
-        description="A session ends this long after sign-in, however active it is.",
+        description=(
+            "A session ends this long after sign-in, however active it is (default 24 "
+            "hours, so IdP removals and group changes apply within a day)."
+        ),
     )
     cookie_secure: bool | None = Field(
         default=None,

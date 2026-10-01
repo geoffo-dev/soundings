@@ -298,6 +298,12 @@ describe('audit sentences', () => {
     expect(onIdea('evaluation.submit', { evaluation_id: 'x' })).toBe(
       'Alice Anders submitted an evaluation of CUST-12',
     )
+    expect(onIdea('evaluation.close', { rule: 'evaluation.close' })).toBe(
+      'Alice Anders closed evaluation of CUST-12',
+    )
+    expect(onIdea('evaluation.reopen', { rule: 'evaluation.close' })).toBe(
+      'Alice Anders reopened evaluation of CUST-12',
+    )
     // The backend's evaluator entries target the evaluator, with the idea id in details.
     expect(
       say(
@@ -376,6 +382,8 @@ describe('audit categories', () => {
       'evaluator.add': true,
       'evaluator.remove': true,
       'evaluation.submit': true,
+      'evaluation.close': true,
+      'evaluation.reopen': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

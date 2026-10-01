@@ -17,7 +17,10 @@ organisation sign-in for good: an employee number (or similar ID) an administrat
 entered for you, then your email address if your organisation has verified it, then,
 only where the instance allows it, a new account with no access of its own. If none of
 that works you see "You don't have a Soundings account yet": ask an administrator to
-add you, then sign in again.
+add you, then sign in again. Signed in with the wrong account (a personal one, say)?
+Choose **Use a different account** under the sign-in button: your organisation's page
+then lets you pick or enter another account instead of reusing the one it remembers
+(on Keycloak's page, use the restart button next to your username).
 
 What you can see comes from your project roles: the ones given to you directly and the
 ones your **groups** grant. Groups that come from your organisation's directory are
@@ -29,10 +32,10 @@ out and in again to pick it up.
 | "That sign-in took too long or was already used" | Start again; the link from the sign-in page is single-use and lasts 10 minutes. |
 | "Sign-in was cancelled" | You declined at your organisation's page; sign in again when ready. |
 | "Single sign-on isn't available right now" / "We couldn't verify your sign-in" | Try again in a few minutes; if it persists, tell an administrator (the details are in the audit log). |
-| "Your account is deactivated" / "…needs an administrator to finish linking it" | Contact an administrator. |
+| "Your account is deactivated" / "…needs an administrator to finish linking it" | Contact an administrator. For the second one, "Use a different account" helps if you simply signed in as the wrong person. |
 | "Too many sign-in attempts from your network" | Wait a minute. |
 
-A session lasts up to 7 days and ends after 12 hours without activity; then the app
+A session lasts up to 24 hours and ends after 12 hours without activity; then the app
 says "Your session has ended" and takes you back to where you were after you sign in.
 **Signing out** (account menu, or "Sign out" in the palette) also signs you out of your
 organisation's sign-in page, so the next sign-in asks for your password again, and it
@@ -155,7 +158,8 @@ Due dates can be up to five years ahead.
 
 "Close evaluation" stops further scoring (the page suggests it once everyone has
 submitted); "Reopen" undoes it. Closing does **not** reveal scores to evaluators who
-never submitted. Closing the idea itself also ends evaluation.
+never submitted. Closing the idea itself also ends evaluation. Both are recorded in the
+platform's audit log.
 
 ## Evaluating [Phase 1]
 
@@ -344,8 +348,8 @@ Secrets are never shown.
 ### Audit log
 
 Every sign-in (and refused sign-in, with the reason), admin change, project membership
-and group grant change, owner and evaluator assignment, submitted evaluation, status
-change and idea deletion, newest first, one sentence each, for example "Priya Natarajan
+and group grant change, owner and evaluator assignment, submitted evaluation, closing
+and reopening of evaluation, status change and idea deletion, newest first, one sentence each, for example "Priya Natarajan
 added Lena Novak to group Tools members". Filter by who did it, what kind of action,
 project, dates, or "About" a user or group; "Details" shows the raw fields. Entries
 name ids, never emails, tokens or claims, and each records how the person had signed in

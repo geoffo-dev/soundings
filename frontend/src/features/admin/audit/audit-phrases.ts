@@ -430,6 +430,10 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       return [actor, text(' removed '), evaluator(), text(' as an evaluator of '), idea()]
     case 'evaluation.submit':
       return [actor, text(' submitted an evaluation of '), idea()]
+    case 'evaluation.close':
+      return [actor, text(' closed evaluation of '), idea()]
+    case 'evaluation.reopen':
+      return [actor, text(' reopened evaluation of '), idea()]
   }
   // An action this screen doesn't know yet: say what is certain.
   return [

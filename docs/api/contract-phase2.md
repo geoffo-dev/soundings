@@ -28,9 +28,9 @@ Audit log) and the project Members tab; qa: section 3.13 as e2e against Keycloak
 
 | Topic | Rule |
 |---|---|
-| Sessions | Every sign-in method (SSO, break-glass, dev login) creates the same Phase 1 server-side session through `app.services.sessions.start_session`, which always rotates. The session row records `auth_method` (`sso`, `break_glass`, `dev_login`) and, for SSO, the ID token (only as `id_token_hint` for sign-out, and only up to 3,072 characters, §3.9). A session works only while its method is available (§3.9). |
-| Cookies | Unchanged names over plain HTTP (development): `soundings_session`, `soundings_csrf`, plus the short-lived `soundings_oidc`. **When cookies are `Secure`** (production, any HTTPS request; `app.auth.cookies.cookie_secure`) they are named `__Host-soundings_session`, `__Host-soundings_csrf` and `__Host-soundings_oidc`, all `Path=/`. The server reads only the variant matching `cookie_secure(request)`; the SPA reads the CSRF cookie as `__Host-soundings_csrf` first, then `soundings_csrf`. This closes the Phase 1 review item F10 (cookie tossing from a sibling subdomain). |
-| Browser navigations | `GET /auth/login` and `GET /auth/callback` are top-level navigations, and `POST /auth/logout/redirect` is a plain HTML form post: never `fetch` them. They answer with redirects (302/303, `Location`), never JSON. Overlong or unexpected parameter values (a long IdP `error_description` or `code`, a `next` over 2048 characters) are handled by the flow as described below, never a 422; only a NUL character (`%00`, possible only in a crafted URL) is a 422. |
+| Sessions | Every sign-in method (SSO, break-glass, dev login) creates the same Phase 1 server-side session through `app.services.sessions.start_session`, which always rotates. The session row records `auth_method` (`sso`, `break_glass`, `dev_login`) and, for SSO, the ID token, sealed (encrypted, §3.9; only as `id_token_hint` for sign-out, and only up to 3,072 characters). Sessions end after 12 hours idle or 24 hours in all (break-glass: 1 hour / 8 hours). A session works only while its method is available (§3.9). |
+| Cookies | Unchanged names over plain HTTP (development): `soundings_session`, `soundings_csrf`, plus the short-lived `soundings_oidc`, which carries the sealed sign-in attempt (§3.2; HttpOnly, 10 minutes). **When cookies are `Secure`** (production, any HTTPS request; `app.auth.cookies.cookie_secure`) they are named `__Host-soundings_session`, `__Host-soundings_csrf` and `__Host-soundings_oidc`, all `Path=/`. The server reads only the variant matching `cookie_secure(request)`; the SPA reads the CSRF cookie as `__Host-soundings_csrf` first, then `soundings_csrf`. This closes the Phase 1 review item F10 (cookie tossing from a sibling subdomain). |
+| Browser navigations | `GET /auth/login` and `GET /auth/callback` are top-level navigations, and `POST /auth/logout/redirect` is a plain HTML form post: never `fetch` them. They answer with redirects (302/303, `Location`), never JSON. Overlong or unexpected parameter values (a long IdP `error_description` or `code`, a `next` over 2048 characters) are handled by the flow as described below, never a 422; only a NUL character (`%00`, possible only in a crafted URL) and a `prompt` other than `login` / `select_account` (set only by the SPA) are a 422. |
 | Public routes | No session needed: `get_auth_config`, `sso_login`, `sso_callback`, `break_glass_login`, `logout_redirect` (plus Phase 1's `list_dev_users`, `dev_login`, `logout`). Everything else is 401 without a session. |
 | Admin routes | `/admin/*` need a session of a platform admin. Check order: 401 → 422 `validation_error` (shape) → 403 `forbidden` (not a platform admin; nothing about the resource is revealed) → 404 → 403 specific codes (`cannot_change_self`) → 422 business codes → 409. They are **session only** (role matrix section 5): from Phase 5 an API key gets 403 `insufficient_scope`. |
 | Active users | "Active" means `users.is_active`. Deactivated users keep their rows (memberships, roles) but can't sign in, have no sessions and **count nowhere**: not in `member_count`, `list_project_access`, group member counts, or c11. c11 also leaves out service accounts (a project keeps a human admin). Lists for admins (`list_group_members`, `list_admin_users`) still show deactivated users, flagged. |
@@ -47,7 +47,7 @@ not repeated per row.
 | Method & path | operation_id | Rule | Request → response | Errors |
 |---|---|---|---|---|
 | `GET /auth/config` | `get_auth_config` | public | → `AuthConfig {sso, dev_login, break_glass}` (booleans, §3.1) | |
-| `GET /auth/login?next=` | `sso_login` | public | browser navigation → 302 to the IdP (§3.2) | 302 `/login?error=sso_unavailable` or `too_many_attempts` |
+| `GET /auth/login?next=&prompt=` | `sso_login` | public | browser navigation → 302 to the IdP (§3.2); `prompt` (`LoginPrompt`: `login`, `select_account`) is passed on | 302 `/login?error=sso_unavailable` or `too_many_attempts`; 422 for another `prompt` |
 | `GET /auth/callback?code=&state=&error=&error_description=&iss=` | `sso_callback` | public | browser navigation from the IdP → 302 to the saved `next` with a new session (§3.2–3.6) | 302 `/login?error=<code>` (§4.2) |
 | `POST /auth/break-glass` | `break_glass_login` | public; break-glass available (§3.8) | `BreakGlassLogin {username, password}` → `CurrentUser`; sets the session cookies | 404 unavailable; 401 `invalid_credentials`; 403 `account_disabled`; 429 `too_many_attempts` (with `Retry-After`) |
 | `POST /auth/logout/redirect` | `logout_redirect` | public | HTML form post, no body → 303 to the IdP's end-session endpoint or `/login?signed_out=1` (§3.9) | none (always 303) |
@@ -125,31 +125,39 @@ audited in the same transaction (§3.11).
 
 One OIDC provider per instance, configured by `SOUNDINGS_OIDC_*` (Helm `oidc.*`).
 Authorization code flow with PKCE (S256), `state` and `nonce`, all server-side; the
-browser only ever holds `state` (in the URL and the `soundings_oidc` cookie). Authlib
-1.8 is verified against Keycloak 26 ([research R1 §3](../research/backend-libraries.md));
-its Starlette client needs `request.session`, so prefer its lower-level pieces
-(`AsyncOAuth2Client` with `code_challenge_method="S256"`, and its/joserfc's JWT
-validation) over `SessionMiddleware`, and keep the attempt in `oidc_login_attempts`.
+browser only ever holds `state` in the clear (in the URL); the attempt itself travels
+sealed (encrypted and authenticated) in the HttpOnly `soundings_oidc` cookie, and nothing
+is stored until the callback signs someone in. The client is httpx + `joserfc`
+(`app/auth/oidc.py`); the attempt is `app/auth/login_attempt.py`, the sealing
+`app/auth/sealing.py` (AES-256-GCM with a per-purpose key derived from
+`SOUNDINGS_SECRET_KEY` by HKDF-SHA256).
 
-**`GET /auth/login?next=`**
+**`GET /auth/login?next=&prompt=`**
 
 1. SSO not configured → 302 `/login?error=sso_unavailable`.
 2. **Origin.** `base = settings.base_url_for_host(Host)`. When the request's `Host`
    (with port) is not exactly the host of one of `SOUNDINGS_BASE_URLS` (localhost
-   outside production, say), 302 to `<first base URL>/api/v1/auth/login?next=…` first,
+   outside production, say), 302 to `<first base URL>/api/v1/auth/login?next=…` (with
+   `prompt`, when given) first,
    so the whole flow (cookie included) runs on a configured origin. The redirect URI is
    always `base + "/api/v1/auth/callback"`, built from configuration, never from the
    raw `Host`: each public host signs in on itself (multi-domain).
-3. **`next`** is kept only if it is a same-origin SPA path: starts with `/`, not `//`
-   or `/\`, no `\`, no control or whitespace characters, at most 2048 characters, and
-   not under `/api/`. Anything else becomes `/` (no error): open-redirect protection.
-4. **Throttle** (this endpoint is public and writes a row): at most **60 starts per
-   client IP per minute** (IPv6 addresses counted per /64; the client IP is uvicorn's,
-   which honours `trustedProxies`), per process, with the same limiter as break-glass
-   (§3.8) → 302 `/login?error=too_many_attempts`. And at most **10,000 live**
-   (unexpired) attempts in the table → 302 `/login?error=sso_unavailable` and a
-   warning in the log (no audit entry, nothing written). 60 a minute leaves room for an
-   office behind one NAT address; one address can hold at most about 600 live rows.
+3. **`next`** is kept only if it is a same-origin SPA path: starts with `/`, no `\`,
+   no control or whitespace characters, at most 2048 characters, and in its path part
+   (before `?` or `#`) no `//`, no `.` or `..` segment (`%2e` counts as a dot) and
+   nothing at or under `/api`. Anything else becomes `/` (no error): open-redirect
+   protection. The SPA's `safeNextPath` applies the same rule.
+4. **Throttle** (this endpoint is public): at most **60 starts per client IP per
+   minute** (IPv6 addresses counted per /64), per process, with the same limiter as
+   break-glass (§3.8) → 302 `/login?error=too_many_attempts`. 60 a minute leaves room
+   for an office behind one NAT address. There is no global cap: starting a sign-in
+   stores nothing, so unfinished sign-ins can't lock anyone out (review H1). **Client
+   IP:** the app resolves it itself (`app.middleware.ProxyHeadersMiddleware`; uvicorn's
+   proxy headers are off): `X-Forwarded-For` counts only from a peer in
+   `SOUNDINGS_TRUSTED_PROXIES`, and only its `SOUNDINGS_TRUSTED_PROXY_HOPS` rightmost
+   entries (default 1, the ingress controller), stopping at the first entry that is not
+   a trusted proxy; a non-IP entry ends the walk, and a non-IP client shares the key
+   `unknown`. Anything further left is the client's own and ignored (review M1).
 5. Provider metadata from `<issuer>/.well-known/openid-configuration` (cache it for
    about an hour; its `issuer` must equal `SOUNDINGS_OIDC_ISSUER` exactly). Unreachable
    or invalid → 302 `/login?error=sso_unavailable`. **Cache a failed fetch for 30
@@ -157,15 +165,27 @@ validation) over `SessionMiddleware`, and keep the attempt in `oidc_login_attemp
    The same cached result feeds `SsoConfig.discovery` (§3.10).
 6. `state` and `nonce` = 256-bit random (`secrets.token_urlsafe(32)`), `code_verifier`
    = `secrets.token_urlsafe(64)`, challenge `BASE64URL(SHA256(verifier))`.
-7. Insert an `oidc_login_attempts` row: `state_hash` = SHA-256 of `state`, `nonce`,
-   `code_verifier`, `redirect_uri`, `next_path`, `expires_at = now + 10 minutes`.
-   Delete expired attempts in the same transaction (no job needed).
-8. Set the `soundings_oidc` cookie (§1 for the `__Host-` name) = `state`: HttpOnly,
-   `SameSite=Lax` (sent on the IdP's top-level redirect back), `Path=/`,
-   `Max-Age=600`, `Secure` per `cookie_secure`.
+7. **Seal the attempt:** `state`, `nonce`, `code_verifier`, `redirect_uri`,
+   `next_path` and `expires_at = now + 10 minutes`, as compact JSON sealed for the
+   purpose `oidc-login-attempt` (`base64url(nonce ‖ ciphertext ‖ tag)`). Nothing is
+   written to the database. A sealed value over 3,800 characters (only a very long
+   non-ASCII `next`) is sealed again with `next` = `/`, so the cookie stays under the
+   browsers' 4 KB limit. Changing the secret key restarts sign-ins in progress.
+8. Set the `soundings_oidc` cookie (§1 for the `__Host-` name) = the sealed attempt:
+   HttpOnly, `SameSite=Lax` (sent on the IdP's top-level redirect back), `Path=/`,
+   `Max-Age=600`, `Secure` per `cookie_secure`. The browser can neither read the
+   verifier or nonce nor change anything.
 9. 302 to `authorization_endpoint` with `response_type=code`, `client_id`,
    `redirect_uri`, `scope` (space-joined `SOUNDINGS_OIDC_SCOPES`, `openid` always
-   first), `state`, `nonce`, `code_challenge`, `code_challenge_method=S256`.
+   first), `state`, `nonce`, `code_challenge`, `code_challenge_method=S256` and, when
+   given, `prompt` **with `max_age=0`**. **`prompt`** (`login` or `select_account`;
+   anything else is a 422 before any of the above) is for "Use a different account" on
+   the sign-in page after `no_account` or `identity_conflict`: otherwise the IdP would
+   reuse the session of the account it just refused. Entra ID and Google show their
+   account picker for `select_account`; Keycloak 26 ignores `select_account`, but
+   `max_age=0` makes it ask to re-authenticate, with "Restart login" to switch account
+   (verified in e2e LE-09; Keycloak counts `max_age` in whole seconds). The ID token's
+   `auth_time` is not checked.
 
 **`GET /auth/callback`**
 
@@ -178,15 +198,17 @@ is never shown or logged. Query values have no length limits in the schema: an o
 token endpoint (`sso_failed`).
 
 **Transactions:** never hold a database transaction open across the token request
-(up to 10 s). Step 2 deletes the attempt and commits; steps 3–7 use no transaction;
-steps 8–10 (matching, sync, session, audit) run in one new transaction. Denials and
-their audit entries commit on their own.
+(up to 10 s). Steps 2–7 use no transaction; steps 8–10 (matching, sync, session, audit)
+run in one transaction. Denials and their audit entries commit on their own.
 
 1. SSO not configured → `sso_unavailable`.
-2. **State.** `state` query parameter and the cookie both present and equal (constant
-   time), and a row with `state_hash = sha256(state)` exists → else `login_expired`.
-   **Delete the row now** (single use, committed even if a later step fails); then
-   `expires_at <= now` → `login_expired`. The cookie binds the attempt to the browser
+2. **State.** The `soundings_oidc` cookie opens (sealed by this server, with the
+   current key, unchanged) and its `state` equals the `state` query parameter
+   (constant time) → else `login_expired`, with no audit entry (nothing to speak of,
+   and anonymous requests can't fill the log). Then `expires_at <= now` →
+   `login_expired` (audited). **Single use:** every outcome clears the cookie, and the
+   IdP accepts each code once (replaying a callback with a kept copy of the cookie fails
+   at the token endpoint: `sso_failed`). The cookie binds the attempt to the browser
    that started it: a callback URL handed to someone else fails (login CSRF).
 3. `iss` present and not equal to the issuer (RFC 9207, mix-up defence) → `sso_failed`.
 4. `error=access_denied` → `login_cancelled`; any other `error` → `sso_failed`;
@@ -212,8 +234,9 @@ their audit entries commit on their own.
    to the application", or app roles).
 8. **Login matching** (§3.3) → a user, or a denial.
 9. **Group sync** (§3.6), same transaction.
-10. **Session:** `start_session(auth_method="sso")` with the raw ID token stored on the
-    row when it is at most 3,072 characters (else none: §3.9), rotating any session the
+10. **Session:** `start_session(auth_method="sso")` with the ID token sealed on the
+    row (purpose `session-id-token`) when it is at most 3,072 characters (else none:
+    §3.9), rotating any session the
     browser had; set the cookies; `user_identities.last_login_at = now`. Audit
     `session.sign_in` `{method: "sso", session_id, identity_id, matched_by}`.
 11. 302 to the attempt's `next_path`.
@@ -556,9 +579,16 @@ With `V` = the extracted values and `M` = the groups that match `V`:
   `settings.break_glass_available` (and the 8-hour / 1-hour limits, §3.8), `dev_login`
   sessions need `SOUNDINGS_DEV_LOGIN_ENABLED`. The issuer itself isn't checked: after
   moving to another IdP (a new `oidc.issuer`), sessions from the old one last until
-  they expire (at most 7 days) unless an admin ends them; the people are the same, and
-  their groups re-sync at the next sign-in.
-- **The ID token is stored only up to 3,072 characters.** A larger one (many groups in
+  they expire (at most 24 hours by default) unless an admin ends them; the people are
+  the same, and their groups re-sync at the next sign-in.
+- **Lifetimes:** 12 hours without a request (`SOUNDINGS_SESSION_IDLE_TIMEOUT`, chart
+  `sessions.idleTimeout`) or **24 hours** after sign-in (`SOUNDINGS_SESSION_MAX_AGE`,
+  `sessions.maxAge`), whichever comes first, for every method; break-glass sessions
+  are capped at 1 hour idle and 8 hours (§3.8). The 24-hour default (Phase 1 had 7
+  days) bounds how long an IdP removal or group change takes to apply without an
+  admin (review L3).
+- **The ID token is stored sealed** (AES-256-GCM, purpose `session-id-token`, review
+  L4) and **only up to 3,072 characters.** A larger one (many groups in
   the token, e.g. Entra ID) isn't stored at all: as `id_token_hint` it would push the
   303 `Location` past common proxy header limits (ingress-nginx buffers 4 KB by
   default) and sign-out would fail with a 502.
@@ -583,7 +613,9 @@ With `V` = the extracted values and `M` = the groups that match `V`:
     arrives without it and ends nothing; the origin check above covers same-site
     origins. CSP `form-action` is deliberately unset (it would block the redirect to
     the IdP; `app/middleware.py`).
-- The ID token lives only on the session row and goes with it. It reaches the browser
+- The ID token lives only on the session row (sealed) and goes with it; a value that no
+  longer opens (another secret key, or a plain-text token from before migration 0004)
+  is not sent, and sign-out goes without the hint. It reaches the browser
   only inside the 303 `Location` to the IdP that issued it (the standard RP-initiated
   logout request); JavaScript never sees it.
 - Signing in again at the IdP after `signed_out=1` shows the IdP's login (Keycloak's
@@ -640,10 +672,11 @@ on the account it tried). `target_type` is `user`, `project`, `idea` or `group`
 | `group.member_add` | group | `user_id` |
 | `group.member_remove` | group | `user_id`, `manual`, `synced` (what it was) |
 | `project.group_grant_add` / `_update` / `_remove` | group (+ `project_id`) | `role`, `from_role` |
+| `evaluation.close` / `evaluation.reopen` | idea | `rule` (`evaluation.close`) only; written only when the state changes (repeats are no-ops) |
 | Phase 1, unchanged | | `project.create`, `project.update`, `project.member_add/_update/_remove`, `project.rubric_replace`, `idea.delete`, `idea.owner_change`, `idea.status_change`, `evaluator.add`, `evaluator.remove`, `evaluation.submit` |
 
 SPEC's list (sign-ins, assignments, evaluations, status changes, admin changes) is
-covered by `session.*`, `idea.owner_change` / `evaluator.*`, `evaluation.submit`,
+covered by `session.*`, `idea.owner_change` / `evaluator.*`, `evaluation.*`,
 `idea.status_change` and the `user.*`, `group.*`, `project.*` actions.
 
 **Viewer (`list_audit_entries`)**: newest first by `(created_at, id)` (keyset cursor).
@@ -794,7 +827,7 @@ Simpler option chosen each time; the lead may revisit (also logged in
 
 | Decision | Why |
 |---|---|
-| Login attempts live in `oidc_login_attempts` (hashed `state`, nonce, PKCE verifier, `redirect_uri`, `next`, 10-minute expiry, single use); the HttpOnly `soundings_oidc` cookie holds only `state`, binding the attempt to the browser. | The browser never holds the verifier or nonce (ADR 0005); no signed-cookie machinery (`itsdangerous`); expired rows are swept at the next login. |
+| Login attempts are sealed into the HttpOnly `soundings_oidc` cookie (`state`, nonce, PKCE verifier, `redirect_uri`, `next`, 10-minute expiry; AES-256-GCM with a key derived from the secret key); nothing is stored until the callback. *Changed by review H1; the contract first had an `oidc_login_attempts` table with a 10,000-live-attempts cap.* | No table to fill and no global cap that anyone could exhaust to lock everyone out; the browser can neither read the verifier or nonce (ADR 0005) nor change the attempt; single use comes from clearing the cookie and the IdP's one-time codes. |
 | Claims come from the ID token only; no userinfo call. | One validated source; the providers we document put everything we need in the ID token. |
 | Matching steps decide on the first user found; a match on an ineligible or already-linked user denies instead of falling through. | Falling through could link or create a second account for a deactivated or conflicting person. |
 | Email matching and auto-create both require `email_verified` true; missing counts as unverified. Auto-create never reuses an existing address. A user with an external ID of the configured kind is linked only by that external ID, never by email. | Linking an existing account is account takeover if the email is wrong; an unverified address (Entra ID's `email`) can name anyone; an admin who set an external ID chose the stronger proof. |
@@ -812,8 +845,10 @@ Simpler option chosen each time; the lead may revisit (also logged in
 | No new rule names: `platform.manage_users`, `platform.manage_groups`, `platform.configure_sso` (now read-only), `platform.view_audit_log`, `project.manage_members`, `user.search` cover Phase 2; sign-in routes are public. | The role matrix already had them; the policy and its table-driven tests don't change shape. |
 | Break-glass is available only while SSO is not configured; its sessions die when that changes and last at most 8 hours (1 hour idle); throttled per IP (IPv6 per /64) with `Retry-After`, no global cap; digests compared in constant time; production needs a 16+ character password; every action in its sessions is audited as such. | SPEC "off once SSO is configured"; an outage procedure (unset the issuer) needs cluster access; a global cap would let anyone lock the emergency door. |
 | SSO and dev-login sessions likewise need their method to be configured; unlinking an identity ends the user's SSO sessions. | One rule for every method; an unlinked IdP account is no longer trusted. |
-| `GET /auth/login` is throttled (60 starts per IP per minute, at most 10,000 live attempts) and caches a failed metadata fetch for 30 s. | It is public and writes a row; NAT'd offices still fit. |
-| The ID token is stored only up to 3,072 characters; sign-out without it sends `client_id` + `post_logout_redirect_uri`. | A large token in the 303 `Location` breaks proxies (502 on sign-out). |
+| `GET /auth/login` is throttled (60 starts per client IP per minute; the client IP from trusted proxies only, `trustedProxyHops` entries from the right) and caches a failed metadata fetch for 30 s. | It is public; NAT'd offices still fit; a spoofed `X-Forwarded-For` can't mint new throttle keys. |
+| The ID token is stored sealed and only up to 3,072 characters; sign-out without it sends `client_id` + `post_logout_redirect_uri`. | A large token in the 303 `Location` breaks proxies (502 on sign-out); a database dump holds no usable token. |
+| Sessions last at most 24 hours (12 hours idle) for every method by default; break-glass 8 hours (1 hour idle). *Phase 1 had 7 days; changed in the final verification (review L3).* | IdP removals and group changes apply within a day without an admin; one sign-in a working day. |
+| "Use a different account" on the sign-in page sends `prompt=select_account` (`GET /auth/login?prompt=`, review M3). | After `no_account` the IdP would otherwise reuse the refused account's session; no sign-out-of-the-IdP instructions needed. |
 | Entra ID group overage (`_claim_names`) denies the sign-in (`sso_failed`, reason `groups_overage`). | Otherwise the missing claim would silently remove every managed membership. |
 | c11 and every count (`member_count`, access list, group counts) consider active users only; c11 also leaves out service accounts. c18 keeps one active platform admin besides the break-glass account. | A deactivated admin can't administer; a project keeps a human admin; two admins demoting each other can't leave none. |
 | Fixed texts instead of settings: no `SOUNDINGS_OIDC_DISPLAY_NAME_CLAIM` (always `name` → `preferred_username` → email local part) or `_BUTTON_LABEL` ("Sign in with SSO"). `_EXTERNAL_ID_KIND` defaults to the claim path's last segment. | Simple beats configurable; the documented IdPs all send `name`. |
@@ -944,3 +979,27 @@ regenerated `openapi.json` / `schema.d.ts` carry the schema changes):
 - **Reserved emails (review N2):** `.invalid` with a trailing dot is reserved too
   (`app.schemas.admin_users.is_reserved_email`, also used for the IdP `email` claim);
   no OpenAPI change.
+
+**2026-10-01, final verification (lead decisions on review L3, L6 and M3):**
+
+- **`AuditAction` gains `evaluation.close` and `evaluation.reopen`** (review L6):
+  `set_evaluation_closed` records them (target the idea, `details.rule` =
+  `evaluation.close`) only when the state changes; §3.11 lists them. The SPA's audit
+  phrases ("closed evaluation of CUST-12"), the Evaluations category and the mock
+  were updated in the same change.
+- **`GET /auth/login` gains an optional `prompt` query parameter** (review M3; new
+  schema enum `LoginPrompt`: `login`, `select_account`; any other value is a 422
+  `validation_error`), passed on to the IdP's authorization request together with
+  `max_age=0` (Keycloak 26 ignores `select_account` and would otherwise reuse the
+  refused account's session), and kept when an unconfigured host is sent to the first
+  base URL. The sign-in page offers "Use a
+  different account" (`prompt=select_account`) after `no_account` and
+  `identity_conflict` (§3.2 step 9).
+- **Sessions last 24 hours by default** (review L3; `SOUNDINGS_SESSION_MAX_AGE`, chart
+  `sessions.maxAge: PT24H`, was 7 days) for every method; idle 12 hours; break-glass
+  unchanged (8 hours, 1 hour idle). §1 and §3.9 say so.
+- **Text only:** §1, §3.2, §3.9 and §5 now describe the sealed sign-in cookie, the
+  sealed ID token and the client-address rules as built (the security review fixes
+  entry above), instead of the original `oidc_login_attempts` table.
+- `make gen-api`: `openapi.json` / `schema.d.ts` gain `LoginPrompt`, the `prompt`
+  parameter and the two `AuditAction` values; nothing renamed or removed.

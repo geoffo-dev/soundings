@@ -75,6 +75,10 @@ fi
 
 # Request bodies over 1 MiB: 413 from the app itself, anonymous, both with a
 # Content-Length and streamed (chunked), so they never fill the API pod's memory.
+# The app stops reading a streamed body just past the limit and closes the connection;
+# Traefik, still sending it, then sometimes sees a reset and answers 502 instead of
+# passing the 413 on (refused either way). So through the ingress a chunked body may
+# be 413 or 502, and the app's own answer is checked inside the pod: always 413.
 big="$workdir/big.json"
 head -c $((2 * 1024 * 1024)) /dev/zero | tr '\0' 'x' >"$big"
 for mode in content-length chunked; do
@@ -85,10 +89,26 @@ for mode in content-length chunked; do
     "$BASE_URL/api/v1/projects" 2>/dev/null || true)"
   if [ "$status" = "413" ]; then
     ok "2 MiB POST ($mode): 413"
+  elif [ "$mode" = chunked ] && [ "$status" = "502" ]; then
+    ok "2 MiB POST ($mode): 502 from the ingress (connection closed early by the app)"
   else
     fail "2 MiB POST ($mode): status $status (want 413)"
   fi
 done
+app_port="$(kubectl -n "$NAMESPACE" get "$deployment" \
+  -o jsonpath='{.spec.template.spec.containers[0].ports[?(@.name=="http")].containerPort}')"
+in_pod="$(kubectl -n "$NAMESPACE" exec "$deployment" -c api -- python -c "
+import http.client
+conn = http.client.HTTPConnection('127.0.0.1', $app_port, timeout=10)
+chunks = (b'x' * 65536 for _ in range(32))
+conn.request('POST', '/api/v1/projects', body=chunks, encode_chunked=True,
+             headers={'Content-Type': 'application/json', 'Host': 'localhost:$K3S_HTTP_PORT'})
+print(conn.getresponse().status)" 2>/dev/null || true)"
+if [ "$in_pod" = "413" ]; then
+  ok "2 MiB POST (chunked) inside the pod: 413"
+else
+  fail "2 MiB POST (chunked) inside the pod: status '${in_pod:-none}' (want 413)"
+fi
 
 # Dev login (only when the release enables it): sign in as the first listed user (a
 # platform admin), check CSRF on a write, and read My work.

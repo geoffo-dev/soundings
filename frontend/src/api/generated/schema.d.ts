@@ -397,7 +397,7 @@ export interface paths {
         };
         /**
          * Start SSO sign-in
-         * @description Public; navigate the browser here (not fetch). Starts the authorization code flow with PKCE: seals the attempt (encrypted) into the short-lived HttpOnly soundings_oidc cookie, stores nothing, and redirects (302) to the IdP. The redirect URI is <base URL of this host>/api/v1/auth/callback; a host that is not one of SOUNDINGS_BASE_URLS is first redirected to the same path on the first base URL. next must be a same-origin SPA path of at most 2048 characters (else /). SSO not configured or the IdP unreachable: 302 to /login?error=sso_unavailable; too many starts from this client IP: 302 to /login?error=too_many_attempts.
+         * @description Public; navigate the browser here (not fetch). Starts the authorization code flow with PKCE: seals the attempt (encrypted) into the short-lived HttpOnly soundings_oidc cookie, stores nothing, and redirects (302) to the IdP. The redirect URI is <base URL of this host>/api/v1/auth/callback; a host that is not one of SOUNDINGS_BASE_URLS is first redirected to the same path on the first base URL. next must be a same-origin SPA path of at most 2048 characters (else /). prompt (login or select_account, else 422) is passed on to the IdP with max_age=0, for "Use a different account": the IdP shows its account picker or asks to sign in again instead of reusing its session. SSO not configured or the IdP unreachable: 302 to /login?error=sso_unavailable; too many starts from this client IP: 302 to /login?error=too_many_attempts.
          */
         get: operations["sso_login"];
         put?: never;
@@ -1379,7 +1379,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -2648,6 +2648,14 @@ export interface components {
             /** Subject */
             subject: string;
         };
+        /**
+         * LoginPrompt
+         * @description ``GET /auth/login?prompt=``: passed on to the IdP's authorization request
+         *     (OIDC Core 3.1.2.1) together with ``max_age=0``, for "Use a different account"
+         *     after ``no_account`` or ``identity_conflict``.
+         * @enum {string}
+         */
+        LoginPrompt: "login" | "select_account";
         /**
          * MappingTestGroup
          * @description One group the claim set matches or, with a user, one of their synced groups
@@ -5368,6 +5376,8 @@ export interface operations {
             query?: {
                 /** @description Where to go after signing in: a path such as /ideas/CUST-12. */
                 next?: string | null;
+                /** @description Passed on to the IdP (with max_age=0): select_account shows its account picker, login asks for credentials again (for signing in as someone else). */
+                prompt?: components["schemas"]["LoginPrompt"] | null;
             };
             header?: never;
             path?: never;

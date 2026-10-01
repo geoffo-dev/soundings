@@ -62,13 +62,14 @@ demo:
 
 # Sign-in sessions (server-side; the cookie holds only a random token). Removing someone
 # in the IdP stops new sign-ins only: deactivate them in Settings > Users (or use "Sign
-# out everywhere") to end running sessions at once. Shorten maxAge (e.g. P1D) to make
-# IdP changes (removals, group changes) apply sooner without that.
+# out everywhere") to end running sessions at once. Otherwise IdP changes (removals,
+# group changes) apply within maxAge, a day by default. Break-glass sessions are
+# shorter (8 hours, 1 hour idle).
 sessions:
   # -- A session ends after this long without a request: ISO 8601 duration or seconds.
   idleTimeout: PT12H
   # -- A session ends this long after sign-in, however active it is (>= idleTimeout).
-  maxAge: P7D
+  maxAge: PT24H
 
 # Prometheus metrics, on their own port so the ingress never exposes them.
 metrics:

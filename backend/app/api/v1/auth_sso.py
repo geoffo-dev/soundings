@@ -48,7 +48,13 @@ from app.db import SessionDep, SessionMaker, session_scope
 from app.errors import NotFoundProblem, ProblemError
 from app.models.base import utcnow
 from app.models.enums import AuthMethod
-from app.schemas.auth import AuthConfig, BreakGlassLogin, CurrentUser, LoginErrorCode
+from app.schemas.auth import (
+    AuthConfig,
+    BreakGlassLogin,
+    CurrentUser,
+    LoginErrorCode,
+    LoginPrompt,
+)
 from app.schemas.base import NoNul
 from app.services.sessions import id_token_hint
 
@@ -143,6 +149,9 @@ async def get_auth_config(request: Request) -> AuthConfig:
         "<base URL of this host>/api/v1/auth/callback; a host that is not one of "
         "SOUNDINGS_BASE_URLS is first redirected to the same path on the first base "
         "URL. next must be a same-origin SPA path of at most 2048 characters (else /). "
+        "prompt (login or select_account, else 422) is passed on to the IdP with "
+        'max_age=0, for "Use a different account": the IdP shows its account picker or '
+        "asks to sign in again instead of reusing its session. "
         "SSO not configured or the IdP unreachable: 302 to "
         "/login?error=sso_unavailable; too many starts from this client IP: 302 to "
         "/login?error=too_many_attempts."
@@ -159,6 +168,16 @@ async def sso_login(
         ),
         NoNul,
     ] = None,
+    prompt: Annotated[
+        LoginPrompt | None,
+        Query(
+            description=(
+                "Passed on to the IdP (with max_age=0): select_account shows its "
+                "account picker, login asks for credentials again (for signing in as "
+                "someone else)."
+            ),
+        ),
+    ] = None,
 ) -> RedirectResponse:
     settings = _settings(request)
     if not settings.sso_configured:
@@ -169,7 +188,10 @@ async def sso_login(
     # signs in on itself; any other host goes to the first base URL first.
     host = (request.headers.get("host") or "").lower()
     if host not in settings.allowed_hosts:
-        query = "?" + urlencode({"next": target}) if target != "/" else ""
+        params = {"next": target} if target != "/" else {}
+        if prompt is not None:
+            params["prompt"] = prompt.value
+        query = "?" + urlencode(params) if params else ""
         return RedirectResponse(
             settings.base_urls[0] + LOGIN_PATH + query, status_code=status.HTTP_302_FOUND
         )
@@ -199,6 +221,10 @@ async def sso_login(
             "nonce": attempt.nonce,
             "code_challenge": attempt.code_challenge,
             "code_challenge_method": "S256",
+            # max_age=0 too: an IdP that ignores the prompt value (Keycloak 26 ignores
+            # select_account) still asks for a fresh sign-in instead of reusing the
+            # session of the account it just refused.
+            **({"prompt": prompt.value, "max_age": "0"} if prompt is not None else {}),
         },
     )
     response = RedirectResponse(location, status_code=status.HTTP_302_FOUND)

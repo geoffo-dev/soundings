@@ -197,6 +197,15 @@ async def set_evaluation_closed(
     idea.evaluation_closed_at = utcnow() if closed else None
     event = "evaluation_closed" if closed else "evaluation_reopened"
     await activity.emit(db, idea, event, actor=principal)
+    await audit.record(
+        db,
+        "evaluation.close" if closed else "evaluation.reopen",
+        actor=principal,
+        target_type="idea",
+        target_id=idea.id,
+        project_id=idea.project_id,
+        details={"rule": Rule.EVALUATION_CLOSE},
+    )
     await db.flush()
 
 

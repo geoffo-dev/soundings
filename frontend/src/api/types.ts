@@ -108,6 +108,8 @@ export type SsoDiscovery = Schemas['SsoDiscovery']
 export type SsoRedirect = Schemas['SsoRedirect']
 export type UserGroup = Schemas['UserGroup']
 export type UserProjectRole = Schemas['UserProjectRole']
+/** `GET /auth/login?prompt=`: passed on to the IdP ("Use a different account"). */
+export type LoginPrompt = Schemas['LoginPrompt']
 /** How a session signed in (contract-phase2 §1): `CurrentUser.auth_method`. */
 export type AuthMethod = Schemas['AuthMethod']
 /** `GET /auth/login` and `/auth/callback` redirect to `/login?error=<code>` (contract-phase2 §4.2). */

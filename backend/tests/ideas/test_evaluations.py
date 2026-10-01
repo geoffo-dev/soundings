@@ -343,6 +343,43 @@ async def test_close_and_reopen_are_idempotent(
     ]
 
 
+async def test_close_and_reopen_are_audited_once_each(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    """Closing and reopening evaluation are audited (the no-op repeats are not)."""
+    idea = await make_idea(db_session, team.project, owner=team.owner)
+    olive = await api(team.owner)
+
+    ok(await olive.post(f"/ideas/{idea.id}/evaluation/close"))
+    ok(await olive.post(f"/ideas/{idea.id}/evaluation/close"))
+    ok(await olive.post(f"/ideas/{idea.id}/evaluation/reopen"))
+    ok(await olive.post(f"/ideas/{idea.id}/evaluation/reopen"))
+
+    rows = (
+        await db_session.execute(
+            select(
+                AuditLog.action,
+                AuditLog.actor_id,
+                AuditLog.target_type,
+                AuditLog.target_id,
+                AuditLog.project_id,
+                AuditLog.details,
+            )
+            .where(AuditLog.action.in_(("evaluation.close", "evaluation.reopen")))
+            .order_by(AuditLog.created_at, AuditLog.id)
+        )
+    ).all()
+    assert [row.action for row in rows] == ["evaluation.close", "evaluation.reopen"]
+    for row in rows:
+        assert (row.actor_id, row.target_type, row.target_id, row.project_id) == (
+            team.owner.id,
+            "idea",
+            idea.id,
+            idea.project_id,
+        )
+        assert row.details["rule"] == "evaluation.close"
+
+
 async def test_close_rules(api: AsUser, team: Team, db_session: AsyncSession) -> None:
     idea = await make_idea(db_session, team.project, status=IdeaStatus.CLOSED)
     ada = await api(team.admin)

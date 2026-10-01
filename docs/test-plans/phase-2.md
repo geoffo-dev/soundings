@@ -115,6 +115,7 @@ SSO button again, `GET /auth/me` 401, a `session.sign_in_denied` entry with no a
 | LE-06 | A real attempt answered with a bogus code and an HTML `error_description` → `sso_failed`; the IdP text is never shown. | ✅ |
 | LE-07 | A forged callback → `login_expired`; a real attempt answered twice → the second is `login_expired` (single use). | ✅ |
 | LE-08 | An unknown `error` value (`<script>…`) → a generic message; the value is never echoed. (Both modes.) | ✅ |
+| LE-09 | nia → `no_account`; "Use a different account" starts sign-in with `prompt=select_account` and `max_age=0` (checked on the request to Keycloak); Keycloak asks to re-authenticate despite nia's session, "Restart login" switches, and dave signs in and lands on `next` (/work). Review M3, final verification. | ✅ |
 | BG-01 | With SSO configured: `auth/config.break_glass` false, no break-glass form, `POST /auth/break-glass` 404 even with the configured credentials. (@sso) | ✅ |
 | BG-02 | Without SSO: a wrong password → "That username and password don't match" (audited: no actor, no username, no password); the right one → the "Signed in with the break-glass account" banner, "Break-glass admin" account, `session.sign_in {method: break_glass}`; the banner's Sign out → `/login?signed_out=1`. Throttle (5 failures → 429 + `Retry-After`) is identity's `test_five_failures_then_429_without_checking_credentials` (not run in e2e: it would lock the stack's break-glass for 15 minutes). | ✅ (no-SSO run) |
 
@@ -179,24 +180,25 @@ in the palette (a new admin command, not a regression); and `switchUserInUi` wai
 the app shell before signing out (it raced a page still loading and went to /login while
 signed in, which bounced back to My work: AC-01…07 failed once in the SSO run).
 
-| Run (fresh stack, 2026-10-01) | Result |
+| Run (fresh stack, 2026-10-01, final verification) | Result |
 |---|---|
-| `E2E_SSO=1 npm --prefix e2e test` | 124 passed, 1 skipped (BG-02: needs SSO off) |
-| `npm --prefix e2e test` (no SSO, break-glass on) | 103 passed, 22 skipped (the @sso specs) |
+| `E2E_SSO=1 npm --prefix e2e test` | 125 passed, 1 skipped (BG-02: needs SSO off) |
+| `npm --prefix e2e test` (no SSO, break-glass on) | 103 passed, 23 skipped (the @sso specs) |
 | `cd backend && uv run pytest tests/acceptance` | 4 passed (2 Phase 1, 2 Phase 2) |
 
 ### SS: screenshots
 
-`e2e/screenshots/phase-2.spec.ts` (`npm --prefix e2e run screenshots:phase2`): 12
-screens × (1440 light, 1440 dark, 390 light) = 36 PNGs in `docs/screenshots/phase-2/`,
+`e2e/screenshots/phase-2.spec.ts` (`npm --prefix e2e run screenshots:phase2`): 13
+screens × (1440 light, 1440 dark, 390 light) = 39 PNGs in `docs/screenshots/phase-2/`,
 from the real app after real Keycloak sign-ins (alice, bob, carol, dave, erin linked and
 synced; mallory and nia refused). Alice signs in once (through Keycloak) and every shot
 reuses her cookies, so the audit log shows that story. Screens: `login-sso`,
-`login-error`, `login-break-glass` (second run, SSO off), `settings-users`,
-`settings-user-detail`, `settings-user-sign-in` (linked account, external IDs,
-sessions), `settings-add-user`, `settings-groups`, `settings-group-detail` (Tools team
-with a test-mapping result for Carol), `settings-sso`, `settings-audit`,
-`project-members-groups` (group grant and everyone with access). The frontend's mock
+`login-error` (with "Use a different account"), `login-break-glass` (second run, SSO
+off), `settings-users`, `settings-user-detail`, `settings-user-sign-in` (linked account,
+external IDs, sessions), `settings-add-user`, `settings-groups`, `settings-group-detail`
+(Tools team, members first), `settings-test-mapping` (the Test mapping sheet with a
+result for Carol), `settings-sso`, `settings-audit`, `project-members-groups` (group
+grant, people, and everyone with access unfolded). The frontend's mock
 screenshots stay in `docs/screenshots/phase-2/mock/`.
 
 ## Known issues
@@ -220,3 +222,13 @@ All 36 read one by one (real app, Keycloak sign-ins). Nothing is broken; polish 
 | settings-audit (all) | "Sign-in sync for Erin Evans: joined Viewers" when Erin was already a manual member: the sync only marked the membership as synced (`added_group_ids` per §3.6). "now synced: Viewers" would be exact. **Fixed in integration:** "now a synced member of Viewers" / "no longer a synced member of …". | frontend-admin |
 | settings-user-detail, settings-user-sign-in | The sheet opens with a focus ring on its Close button (initial focus). Expected for keyboard use; noted only because it is the first thing the eye lands on. | frontend (design system) |
 | login-sso, login-error | The SSO button carries its focus ring on arrival (focused on purpose so Enter signs in). By design. | — |
+
+### Final verification (2026-10-01)
+
+All 39 re-captured after the review fixes and read one by one (and captured once more
+after the fix below, with the Users and Groups shots read again). The two "by design" rows
+above changed with the UX review: sheets now open focused on themselves (no ring on
+Close), and the SSO button is focused without a ring until a key is pressed. One fix:
+on phone cards with an inline meta line (Users, Groups), a wrapped line started with
+the "·" separator ("· Last active 1 min ago"); the separator now trails the previous
+value (`components/ui/table.tsx`). No other defects.

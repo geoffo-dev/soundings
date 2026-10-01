@@ -56,7 +56,7 @@ const CARDS: Record<
     label: 'md:hidden',
     inlineRow: 'max-md:gap-x-2 max-md:gap-y-1',
     inlineField:
-      "max-md:inline-flex max-md:items-center max-md:gap-2 max-md:text-sm max-md:text-muted max-md:[&+&]:before:content-['·']",
+      "max-md:inline-flex max-md:items-center max-md:gap-2 max-md:text-sm max-md:text-muted max-md:[&:not(:last-child)]:after:content-['·']",
   },
   'container-cards': {
     container: '@container overflow-x-auto',
@@ -70,7 +70,7 @@ const CARDS: Record<
     label: '@3xl:hidden',
     inlineRow: '@max-3xl:gap-x-2 @max-3xl:gap-y-1',
     inlineField:
-      "@max-3xl:inline-flex @max-3xl:items-center @max-3xl:gap-2 @max-3xl:text-sm @max-3xl:text-muted @max-3xl:[&+&]:before:content-['·']",
+      "@max-3xl:inline-flex @max-3xl:items-center @max-3xl:gap-2 @max-3xl:text-sm @max-3xl:text-muted @max-3xl:[&:not(:last-child)]:after:content-['·']",
   },
 }
 

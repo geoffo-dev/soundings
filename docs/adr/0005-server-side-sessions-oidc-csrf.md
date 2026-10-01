@@ -28,8 +28,8 @@ Keycloak 26 ([research R1](../research/backend-libraries.md#3-authlib-180-oidc-w
   method (`POST/PUT/PATCH/DELETE`). The server compares it in constant time. Requests
   authenticated by API key (`Authorization: Bearer`) are exempt: no cookie, no CSRF.
 - **Hosts:** the redirect URI is built from the request `Host`, checked against the
-  configured `base_urls` allow-list (400 otherwise); uvicorn trusts forwarded headers
-  only from configured proxies.
+  configured `base_urls` allow-list (400 otherwise); forwarded headers are trusted
+  only from configured proxies (see the amendment: the app now does this itself).
 - Phase 1 uses a **dev-only login stub** (`SOUNDINGS_DEV_LOGIN_ENABLED`, refused in
   production) that creates the same server-side session.
 
@@ -51,10 +51,31 @@ What changed from the decision above when single sign-on shipped
   for 30 s); keys are refetched once for an unknown `kid`; only asymmetric algorithms
   are accepted; claims come from the validated ID token only (no userinfo call), checked
   for `iss`, `aud`/`azp`, `exp`/`iat` (60 s leeway), `nonce` and `sub`.
-- **Login attempts table** (`oidc_login_attempts`): hashed `state`, nonce and PKCE
-  verifier, 10 minutes, single use, at most 10,000 in progress, and `GET /auth/login`
-  is throttled per client IP. The `soundings_oidc` cookie holds only `state`. No
-  database transaction stays open while the IdP is called.
+- **The sign-in attempt is a sealed cookie, not a table** (review H1; it was first an
+  `oidc_login_attempts` table capped at 10,000 attempts in progress, a cap anyone could
+  fill to lock everyone out). `GET /auth/login` stores nothing: `state`, nonce, PKCE
+  verifier, redirect URI, `next` and a 10-minute expiry are sealed into the HttpOnly
+  `soundings_oidc` cookie with AES-256-GCM under a key derived from
+  `SOUNDINGS_SECRET_KEY` (HKDF-SHA256, one key per purpose; `app/auth/sealing.py`,
+  `app/auth/login_attempt.py`; dependency `cryptography`). The browser can neither read
+  the verifier or nonce nor change anything; the cookie binds the attempt to the
+  browser that started it (login CSRF), and single use comes from clearing it at every
+  outcome plus the IdP's one-time codes. Changing the secret key restarts sign-ins in
+  progress. No database transaction stays open while the IdP is called.
+  `GET /auth/login?prompt=select_account|login` is passed on to the IdP with
+  `max_age=0` ("Use a different account" after `no_account` or `identity_conflict`;
+  Keycloak ignores `select_account` but re-authenticates for `max_age=0`).
+- **The ID token is stored sealed** (same scheme, its own purpose key; review L4) and
+  only for `id_token_hint`; a value that no longer opens is simply not sent.
+- **Client address and throttles** (review M1): the app resolves `X-Forwarded-For`
+  itself (`app.middleware.ProxyHeadersMiddleware`; uvicorn's proxy headers are off,
+  since uvicorn falls back to the client-supplied leftmost entry when every entry looks
+  trusted). Only a peer in `trustedProxies` is believed, and only the
+  `trustedProxyHops` (default 1) rightmost entries, stopping at the first entry that
+  is not a trusted proxy. `GET /auth/login` (60 a minute) and break-glass are
+  throttled per resolved client IP (IPv6 per /64). The chart turns
+  `networkPolicy.enabled` on by default so that only the ingress (once
+  `networkPolicy.ingressFrom` is set) and the release's own pods reach the API.
 - **Cookie names:** whenever cookies are `Secure` (production, any https request) they
   are `__Host-soundings_session`, `__Host-soundings_csrf` and `__Host-soundings_oidc`,
   so a sibling subdomain can't plant one; plain names on http development. The SPA
@@ -67,6 +88,8 @@ What changed from the decision above when single sign-on shipped
   post ends nothing.
 - **Sessions carry their sign-in method** (`sso`, `break_glass`, `dev_login`) and stop
   working once that method is unavailable (SSO unconfigured, break-glass switched off by
-  SSO, dev login off). Break-glass sessions last at most 8 hours (1 hour idle).
+  SSO, dev login off). Sessions last at most **24 hours** (12 hours idle) by default,
+  so IdP removals apply within a day (review L3; Phase 1 had 7 days); break-glass
+  sessions at most 8 hours (1 hour idle).
 - **Hosts:** each base URL signs in on itself; a sign-in started on another host is
   sent to the first base URL first.

@@ -17,6 +17,7 @@ from app.models.base import utcnow
 from app.models.enums import AuthMethod
 from app.models.user import User, UserSession
 from app.services import sessions
+from tests.conftest import make_settings
 from tests.factories import make_user
 
 ME = "/api/v1/auth/me"
@@ -162,8 +163,21 @@ async def test_other_sessions_keep_the_configured_limits(
 
     await age(db_session, row, last_seen_at=utcnow() - timedelta(hours=11))
 
-    assert row.expires_at - row.created_at == timedelta(days=7)
+    assert row.expires_at - row.created_at == timedelta(hours=24)
     assert await me(client, token) == 200
+
+
+@pytest.mark.parametrize("method", [AuthMethod.SSO, AuthMethod.DEV_LOGIN])
+def test_sessions_last_at_most_a_day_by_default(method: AuthMethod) -> None:
+    """The absolute lifetime defaults to 24 hours for every sign-in method (idle 12 h);
+    break-glass keeps its own shorter limits."""
+    defaults = make_settings()
+
+    assert sessions.session_limits(defaults, method) == (timedelta(hours=24), timedelta(hours=12))
+    assert sessions.session_limits(defaults, AuthMethod.BREAK_GLASS) == (
+        sessions.BREAK_GLASS_MAX_AGE,
+        sessions.BREAK_GLASS_IDLE_TIMEOUT,
+    )
 
 
 # --- The ID token -----------------------------------------------------------------------------

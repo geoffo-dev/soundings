@@ -130,7 +130,8 @@ random token, of which the database stores only a SHA-256 hash, plus a readable 
 cookie that the SPA echoes in a header on every write. Both are named
 `__Host-soundings_*` whenever they are `Secure`. A session ends after
 `sessions.idleTimeout` without a request (default `PT12H`) or `sessions.maxAge` after
-sign-in (default `P7D`), whichever comes first (break-glass: 1 hour and 8 hours), and
+sign-in (default `PT24H`; Phase 1 had `P7D`), whichever comes first (break-glass: 1
+hour and 8 hours), and
 as soon as its sign-in method stops being available; signing in again always issues a
 new token. The cookies are `Secure` in production; `SOUNDINGS_COOKIE_SECURE` (in
 `extraEnv`) overrides that for unusual setups, but `false` is refused in production.
@@ -146,11 +147,29 @@ the IdP client checklist are in the chart README's
 how-to.
 
 The flow is the server-side authorization code flow with PKCE (S256), `state` and
-`nonce`. The login attempt lives in the database for 10 minutes, the ID token is
-validated (signature with the provider's keys, `iss`, `aud`/`azp`, `exp`, `nonce`) and
-the browser only ever holds the HttpOnly session cookie. Sign-out ends the session and
-then the provider's session (RP-initiated logout with `id_token_hint`) when the
-provider has an end-session endpoint.
+`nonce`. Nothing is stored while a sign-in is in progress: the attempt (state, nonce,
+PKCE verifier, where to go next; 10 minutes) travels in an HttpOnly cookie, encrypted
+and authenticated with a key derived from the app's secret key (`secretKey`), so the
+browser can neither read nor change it. **Rotating the secret key** therefore restarts
+sign-ins in progress (and sign-out then goes without `id_token_hint`, so Keycloak asks
+to confirm it once). The ID token is validated (signature with the provider's keys,
+refetched hourly, `iss`, `aud`/`azp`, `exp`, `nonce`), and the browser only ever holds
+the HttpOnly session cookie. Sign-out ends the session and then the provider's session
+(RP-initiated logout with `id_token_hint`, stored encrypted) when the provider has an
+end-session endpoint. In production every endpoint in the provider's discovery
+document must be https.
+
+People who signed in with the wrong account get "Use a different account" on the
+sign-in page, which sends `prompt=select_account` and `max_age=0` to the provider:
+Entra ID and Google show their account picker; Keycloak asks to re-authenticate, and
+its "Restart login" button (next to the username) lets the person sign in as someone
+else.
+
+**Sessions and IdP changes.** Sessions last at most `sessions.maxAge` (24 hours by
+default) and end after `sessions.idleTimeout` (12 hours) without a request. Group sync
+and login matching run only at sign-in, so a removal or group change in the IdP applies
+within a day on its own; deactivate the person (Settings → Users), or use "Sign out
+everywhere", to apply it at once.
 
 ### Configuring OIDC: Keycloak, Entra ID, Google
 
@@ -369,6 +388,22 @@ responses, so a user's error report can be matched to the log.
 ### Backups and restore
 ### Scaling: replicas, HPA, PodDisruptionBudget
 ### Security: Pod Security `restricted`, NetworkPolicy, secrets
+
+`networkPolicy.enabled` is **on by default**: the bundled Postgres accepts only this
+release's pods, the worker accepts nothing, and the API's HTTP port accepts this
+release's pods plus `networkPolicy.ingressFrom` (any source while that is empty; the
+NOTES remind you). Set `ingressFrom` to your ingress controller's namespace so other
+pods can't reach the API directly with an `X-Forwarded-For` of their choosing, and
+`metricsFrom` to your Prometheus. The policies are ignored on a CNI without
+NetworkPolicy support (k3s's default flannel enforces them through its network policy
+controller).
+
+**Client addresses behind proxies.** The sign-in throttles key on the client IP. The app
+believes `X-Forwarded-For` only from a peer in `trustedProxies` (default: the private
+ranges, where ingress controllers live) and only its `trustedProxyHops` rightmost
+entries (default 1: the ingress controller's; set 2 when an L7 load balancer in front
+of the ingress also appends). Entries further left are whatever the client sent and are
+ignored. Narrow `trustedProxies` to your ingress pods' range where you can.
 ### Audit log
 ### Troubleshooting
 

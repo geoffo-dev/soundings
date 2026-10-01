@@ -105,6 +105,7 @@ const SHOTS: Shot[] = [
       await page.goto('/login?error=no_account&next=%2Fwork')
       await expect(page.locator('main').getByRole('alert')).toBeVisible()
       await expect(page.getByRole('link', { name: 'Sign in with SSO' })).toBeVisible()
+      await expect(page.getByRole('link', { name: 'Use a different account' })).toBeVisible()
     },
   },
   {
@@ -170,14 +171,25 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    // Carol's claims without /tools/members: she would leave the managed Tools team.
+    // Members first, then the identity provider mapping and the project roles.
     name: 'settings-group-detail',
     signedIn: true,
     open: async (page) => {
       await page.goto(`/settings/groups/${toolsTeamId}`)
       await expect(h2(page, 'Tools team')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Test mapping' })).toBeVisible()
+    },
+  },
+  {
+    // Carol's claims without /tools/members: she would leave the managed Tools team.
+    name: 'settings-test-mapping',
+    signedIn: true,
+    open: async (page) => {
+      await page.goto(`/settings/groups/${toolsTeamId}`)
+      await expect(h2(page, 'Tools team')).toBeVisible()
       await settled(page)
-      const box = page.getByRole('region', { name: 'Test mapping' })
+      await page.getByRole('button', { name: 'Test mapping' }).click()
+      const box = page.getByRole('dialog', { name: 'Test mapping' })
       await box
         .getByRole('textbox', { name: 'Claims' })
         .fill(JSON.stringify({ sub: 'carol', groups: ['/innovation/members'] }, null, 2))
@@ -212,9 +224,12 @@ const SHOTS: Shot[] = [
     signedIn: true,
     open: async (page) => {
       await page.goto('/p/internal-tools/settings?tab=members')
-      await expect(page.getByRole('list', { name: 'Everyone with access' })).toBeVisible()
+      await expect(page.getByRole('heading', { level: 3, name: 'Groups' })).toBeVisible()
       await settled(page)
-      // Past the people: the group with a role, and everyone with access and why.
+      // The group with a role, the people, and (unfolded) everyone with access and why.
+      const showAccess = page.getByRole('button', { name: /^Everyone with access/ })
+      if ((await showAccess.getAttribute('aria-expanded')) !== 'true') await showAccess.click()
+      await expect(page.getByRole('list', { name: 'Everyone with access' })).toBeVisible()
       await scrollToTop(page.getByRole('heading', { level: 3, name: 'Groups' }))
     },
   },

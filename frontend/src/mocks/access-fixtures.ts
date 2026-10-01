@@ -491,7 +491,11 @@ export function seedAccess(
               ? 'evaluator.remove'
               : event.type === 'evaluation_submitted'
                 ? 'evaluation.submit'
-                : null
+                : event.type === 'evaluation_closed'
+                  ? 'evaluation.close'
+                  : event.type === 'evaluation_reopened'
+                    ? 'evaluation.reopen'
+                    : null
     if (!action) continue
     // As the backend records them: evaluator changes target the evaluator (the idea is
     // in details), everything else targets the idea.

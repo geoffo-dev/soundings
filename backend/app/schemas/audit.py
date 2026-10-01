@@ -64,6 +64,8 @@ class AuditAction(StrEnum):
     EVALUATOR_ADD = "evaluator.add"
     EVALUATOR_REMOVE = "evaluator.remove"
     EVALUATION_SUBMIT = "evaluation.submit"
+    EVALUATION_CLOSE = "evaluation.close"
+    EVALUATION_REOPEN = "evaluation.reopen"
 
 
 class AuditEntry(ResponseModel):

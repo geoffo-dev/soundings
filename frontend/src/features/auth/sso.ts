@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react'
 
+import type { LoginErrorCode, LoginPrompt } from '@/api/types'
 import { flushPendingCommits } from '@/api/undo'
 import { clearDrafts } from '@/lib/drafts'
 
@@ -16,10 +17,30 @@ export const LOGOUT_REDIRECT_PATH = '/api/v1/auth/logout/redirect'
 /** Inline (not lib/env) so production builds drop the mock IdP. */
 const MOCKS = import.meta.env.VITE_API_MOCKS === 'true'
 
-/** `GET /auth/login?next=…`: where the "Sign in with SSO" link points. */
-export function ssoLoginHref(next?: string): string {
+/**
+ * `GET /auth/login?next=…`: where the "Sign in with SSO" link points. `prompt`
+ * asks the IdP for its account picker (`select_account`) or a fresh sign-in
+ * (`login`); the server adds `max_age=0`, so an IdP that ignores the value
+ * (Keycloak, for `select_account`) still asks to sign in again.
+ */
+export function ssoLoginHref(next?: string, prompt?: LoginPrompt): string {
   const target = safeNextPath(next)
-  return target === '/' ? SSO_LOGIN_PATH : `${SSO_LOGIN_PATH}?next=${encodeURIComponent(target)}`
+  const query = [
+    ...(target === '/' ? [] : [`next=${encodeURIComponent(target)}`]),
+    ...(prompt ? [`prompt=${prompt}`] : []),
+  ]
+  return query.length ? `${SSO_LOGIN_PATH}?${query.join('&')}` : SSO_LOGIN_PATH
+}
+
+/**
+ * Sign-in errors that mean "the IdP signed you in, but as someone Soundings can't
+ * use": signing in again would reuse the IdP's session, so the page also offers
+ * "Use a different account" (`prompt=select_account`).
+ */
+export const WRONG_ACCOUNT_ERRORS: readonly LoginErrorCode[] = ['no_account', 'identity_conflict']
+
+export function offersDifferentAccount(error: string | undefined): boolean {
+  return (WRONG_ACCOUNT_ERRORS as readonly (string | undefined)[]).includes(error)
 }
 
 /**

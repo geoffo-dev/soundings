@@ -3,7 +3,14 @@ import type { Page } from '@playwright/test'
 import { keycloakUrl } from '../scripts/keycloak.ts'
 import { Api, userOf, type AuditEntry } from './support/api'
 import { expect, test } from './support/fixtures'
-import { loginNotice, requireSso, signInMethods, ssoSignIn, ssoSignInAs } from './support/sso'
+import {
+  loginNotice,
+  requireSso,
+  signInAtKeycloak,
+  signInMethods,
+  ssoSignIn,
+  ssoSignInAs,
+} from './support/sso'
 
 /**
  * Sign-in errors and the break-glass admin (contract-phase2 §3.2, §3.3, §3.8, §4.2)
@@ -94,6 +101,34 @@ test.describe('SSO sign-in errors', { tag: '@sso' }, () => {
     expect(await deniedSince(alice, since, 'no_match')).toHaveLength(1)
     // Auto-create is off: nobody was created.
     expect(await alice.adminUserByEmail('nia@example.org')).toBeUndefined()
+  })
+
+  test('LE-09: “Use a different account” gets past the IdP session of the wrong account', async ({
+    page,
+  }) => {
+    await ssoSignIn(page, 'nia', { next: '/work' })
+    await expect(page).toHaveURL(/\/login\?error=no_account&next=%2Fwork$/)
+
+    // Signing in again would reuse nia's Keycloak session. The switch sends
+    // prompt=select_account (an account picker at Entra ID or Google) with max_age=0,
+    // which Keycloak (ignoring select_account) turns into "Please re-authenticate", with
+    // "Restart login" to sign in as someone else.
+    // (Keycloak compares max_age in whole seconds: a person reading the message is
+    // always slower than that, a test isn't.)
+    await page.waitForTimeout(1100)
+    const kcOrigin = new URL(keycloakUrl()).origin
+    const authorization = page.waitForRequest((request) => request.url().startsWith(kcOrigin))
+    await page.getByRole('link', { name: 'Use a different account' }).click()
+    const sent = new URL((await authorization).url()).searchParams
+    expect(sent.get('prompt')).toBe('select_account')
+    expect(sent.get('max_age')).toBe('0')
+    await page.waitForURL((url) => url.origin === kcOrigin)
+    await expect(page.getByText('Please re-authenticate to continue')).toBeVisible()
+    await page.locator('#reset-login').click() // "Restart login"
+    await signInAtKeycloak(page, 'dave') // already signed in by other specs too
+
+    await expect(page).toHaveURL(/\/work$/)
+    await expect(page.getByRole('button', { name: 'Account menu for Dave Davies' })).toBeVisible()
   })
 
   test('LE-03: a deactivated account is refused; reactivated, it signs in', async ({

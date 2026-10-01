@@ -25,12 +25,23 @@ spec:
         - -c
         # The app only answers hosts listed in baseUrls (except /healthz and /readyz), so
         # requests carry the first base URL's host, as the ingress would send it.
+        # Retried for up to 30 s: a NetworkPolicy controller (k3s's kube-router, Calico…)
+        # may admit a new pod's address a moment after the pod starts.
         - |
-          import sys, urllib.request
+          import sys, time, urllib.request
           base, host = sys.argv[1], sys.argv[2]
+          def get(path):
+              for attempt in range(30):
+                  try:
+                      request = urllib.request.Request(base + path, headers={"Host": host})
+                      return urllib.request.urlopen(request, timeout=10)
+                  except OSError as error:
+                      if attempt == 29:
+                          raise
+                      print(path, "not reachable yet:", error)
+                      time.sleep(1)
           for path, expected in (("/readyz", "application/json"), ("/", "text/html")):
-              request = urllib.request.Request(base + path, headers={"Host": host})
-              with urllib.request.urlopen(request, timeout=10) as response:
+              with get(path) as response:
                   kind = response.headers.get("content-type", "")
                   print(path, response.status, kind)
                   if response.status != 200 or not kind.startswith(expected):

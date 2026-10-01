@@ -162,11 +162,19 @@ with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-p
 - **Blind evaluation:** pending evaluators see no score data anywhere; emails never
   contain scores (role matrix section 3, ADR 0006).
 - **Sign-in and audit:** sessions carry `auth_method` and work only while that method is
-  available; cookies are `__Host-soundings_*` when Secure (ADR 0005 amendment). Admin
-  and sign-in changes are recorded with `app/services/audit.py:record` (actions =
-  exactly the contract's `AuditAction`); denied sign-ins have no actor; never log or
-  audit tokens, secrets, cookies, emails or claims. Group-membership writes call
-  `group_sync.lock_user` first (the lock sign-in sync takes).
+  available (24 h max, 12 h idle; break-glass 8 h / 1 h); cookies are
+  `__Host-soundings_*` when Secure (ADR 0005 amendment). A sign-in in progress is
+  sealed into the `soundings_oidc` cookie (`app/auth/login_attempt.py`; nothing is
+  stored), and anything else the server must get back unread uses
+  `app/auth/sealing.py` (per-purpose keys from the secret key). The client IP comes
+  from `app.middleware.ProxyHeadersMiddleware` (trusted proxies, `trusted_proxy_hops`),
+  never from `X-Forwarded-For` directly. Admin, sign-in and assignment changes are
+  recorded with `app/services/audit.py:record` (actions = exactly the contract's
+  `AuditAction`; a new one needs the SPA's phrase, category, mock list and the
+  exhaustive `Record` in `audit-phrases.test.ts` in the same change); denied sign-ins
+  have no actor; never log or audit tokens, secrets, cookies, emails or claims.
+  Group-membership writes call `group_sync.lock_user` first (the lock sign-in sync
+  takes).
 - **Locking:** every write to an idea loads it with `load_idea(for_update=True)`, which
   locks the project row (`FOR KEY SHARE`) before the idea row; whole-project writes
   (`replace_rubric`) take the project `FOR UPDATE`. One order, so no deadlocks or stale
@@ -186,6 +194,11 @@ with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-p
   replacement when the opener is gone);
   server-filtered cmdk lists use `useTopResult` so Enter picks the visible top row, and
   pass empty/loading/error messages as `CommandList empty` (outside the listbox).
+  Sheets open focused on themselves; closing one opened from a list row returns focus
+  to that row (`lib/return-to-row.ts`). Phase 2 design-system pieces: `PasswordInput`,
+  `ButtonShortcut` / `ariaKeys` (`kbd.tsx`; hints only from `sm` with a fine pointer),
+  `Table cardFields="inline"` (one muted line per phone card), `FilterMenu`; toasts
+  move above a side sheet's footer while it is open.
   Unsent drafts go through `lib/drafts.ts` (`draftKey(userId, name)`), which clears them
   on sign-out, 401 and user switch.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
@@ -233,6 +246,13 @@ with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-p
   `keycloak.localhost`. Browser and API must use the same issuer URL
   (`KC_HOSTNAME_STRICT=false` makes it follow the URL used). The app's OIDC client
   (httpx) trusts only `SSL_CERT_FILE` when that is set, as it is in this sandbox.
+  Keycloak 26 ignores `prompt=select_account` (hence `max_age=0` with every prompt) and
+  compares `max_age` in whole seconds: a test that switches accounts right after a
+  sign-in must wait a second (e2e LE-09).
+- **k3s NetworkPolicy** is enforced (kube-router) and on by default in the chart; a new
+  pod's address is admitted a moment after it starts, so in-cluster clients started
+  fresh (the `helm test` pod) retry. Through Traefik an oversized *chunked* POST may get
+  502 instead of the app's 413 (the smoke accepts that and checks 413 in the pod).
 - **SSO e2e data:** an identity links to an account once, so some `@sso` specs need a
   fresh seed and realm (the local stack resets both on start; reseeding uses
   `seed --reset --force` and fails loudly). Use run-unique group names
@@ -314,9 +334,14 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   and smoke: [docs/phase-summaries/phase-1.md](docs/phase-summaries/phase-1.md) (known
   issues and deferred items there). Decisions: `docs/decisions.md` (Phase 1).
 - **Phase 2** (sign-in and access): OIDC code flow + PKCE (`app/auth/oidc.py`,
-  `api/v1/auth_sso.py`), login matching, group mappings and sync, break-glass, project
-  roles via groups, admin Users / Groups / Sign-in (SSO) / Audit log under `/settings`,
-  Keycloak in dev, e2e (`E2E_SSO=1`), k3s and CI. Integrated with every check green;
-  screenshots in `docs/screenshots/phase-2/` (real stack) and `mock/`. Decisions:
-  `docs/decisions.md` (Phase 2). Next: code/security and UX review, then stop for the
-  human's review before Phase 3.
+  `api/v1/auth_sso.py`; stateless sealed sign-in cookie), login matching, group
+  mappings and sync, break-glass, project roles via groups, admin Users / Groups /
+  Sign-in (SSO) / Audit log under `/settings`, "Use a different account"
+  (`prompt=select_account`), 24-hour sessions, Keycloak in dev, e2e (`E2E_SSO=1`), k3s
+  (NetworkPolicy on by default, Keycloak in the cluster) and CI. Code/security and UX
+  reviews applied. Closed on 2026-10-01 with every check green in both e2e modes and a
+  clean k3s install (SSO), upgrade and smoke:
+  [docs/phase-summaries/phase-2.md](docs/phase-summaries/phase-2.md) (known issues and
+  deferred items there). Screenshots: `docs/screenshots/phase-2/` (real stack) and
+  `mock/`. Decisions: `docs/decisions.md` (Phase 2). Stop for the human's review before
+  Phase 3.

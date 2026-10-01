@@ -1,4 +1,4 @@
-import { CloudOff, KeyRound } from 'lucide-react'
+import { CloudOff, KeyRound, UserRoundCog } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { useAuthConfig } from '@/api/auth'
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { BreakGlassForm } from './break-glass-form'
 import { DevLogin } from './dev-login'
 import { loginMessage } from './login-messages'
-import { followSsoLink, ssoLoginHref } from './sso'
+import { followSsoLink, offersDifferentAccount, ssoLoginHref } from './sso'
 
 export interface LoginPageProps {
   next?: string
@@ -69,7 +69,7 @@ export function LoginPage({ next, error, signed_out, expired }: LoginPageProps) 
               }
             />
           ) : (
-            <SignInMethods config={config.data} next={next} />
+            <SignInMethods config={config.data} next={next} error={error} />
           )}
         </div>
 
@@ -84,7 +84,15 @@ export function LoginPage({ next, error, signed_out, expired }: LoginPageProps) 
   )
 }
 
-function SignInMethods({ config, next }: { config: AuthConfig; next?: string }) {
+function SignInMethods({
+  config,
+  next,
+  error,
+}: {
+  config: AuthConfig
+  next?: string
+  error?: string
+}) {
   const devHeadingId = useId()
   const breakGlassHeadingId = useId()
   const primary = config.sso || config.break_glass
@@ -102,7 +110,7 @@ function SignInMethods({ config, next }: { config: AuthConfig; next?: string }) 
 
   return (
     <>
-      {config.sso && <SsoSignIn next={next} />}
+      {config.sso && <SsoSignIn next={next} offerOtherAccount={offersDifferentAccount(error)} />}
       {config.break_glass && (
         <section aria-labelledby={breakGlassHeadingId} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -153,9 +161,12 @@ function SignInMethods({ config, next }: { config: AuthConfig; next?: string }) 
  * "Sign in with SSO": a link (a full-page navigation to `GET /auth/login`, never
  * a fetch), styled as the page's primary button and focused on arrival so Enter
  * signs in. Shows a spinner while the browser goes to the identity provider.
+ * After `no_account` or `identity_conflict` it also offers "Use a different
+ * account" (`prompt=select_account`), since signing in again would reuse the
+ * identity provider's session.
  */
-function SsoSignIn({ next }: { next?: string }) {
-  const [leaving, setLeaving] = useState(false)
+function SsoSignIn({ next, offerOtherAccount }: { next?: string; offerOtherAccount: boolean }) {
+  const [leaving, setLeaving] = useState<'same' | 'other' | null>(null)
   // Focused on arrival but without its ring until a key is pressed: a ring on load
   // looks like a pressed button to mouse users. (Chromium ignores `focusVisible`.)
   const [quietFocus, setQuietFocus] = useState(true)
@@ -173,7 +184,7 @@ function SsoSignIn({ next }: { next?: string }) {
   // Back from the IdP may restore this page from the bfcache: not "leaving" any more.
   useEffect(() => {
     const reset = (event: PageTransitionEvent) => {
-      if (event.persisted) setLeaving(false)
+      if (event.persisted) setLeaving(null)
     }
     window.addEventListener('pageshow', reset)
     return () => window.removeEventListener('pageshow', reset)
@@ -189,21 +200,40 @@ function SsoSignIn({ next }: { next?: string }) {
       >
         <a
           href={ssoLoginHref(next)}
-          aria-busy={leaving || undefined}
+          aria-busy={leaving === 'same' || undefined}
           onClick={(event) => {
             if (leaving) {
               event.preventDefault()
               return
             }
-            setLeaving(true)
+            setLeaving('same')
             followSsoLink(event, next)
           }}
           ref={linkRef}
         >
-          {leaving ? <Spinner /> : <KeyRound aria-hidden="true" />}
+          {leaving === 'same' ? <Spinner /> : <KeyRound aria-hidden="true" />}
           Sign in with SSO
         </a>
       </Button>
+      {offerOtherAccount && (
+        <Button asChild variant="outline" size="lg" className="w-full">
+          <a
+            href={ssoLoginHref(next, 'select_account')}
+            aria-busy={leaving === 'other' || undefined}
+            onClick={(event) => {
+              if (leaving) {
+                event.preventDefault()
+                return
+              }
+              setLeaving('other')
+              followSsoLink(event, next)
+            }}
+          >
+            {leaving === 'other' ? <Spinner /> : <UserRoundCog aria-hidden="true" />}
+            Use a different account
+          </a>
+        </Button>
+      )}
       <p className="text-center text-sm text-muted">
         {leaving
           ? 'Taking you to your organisation’s sign-in page…'

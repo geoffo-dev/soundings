@@ -5,7 +5,7 @@ import {
   breakGlassProblem,
   waitDescription,
 } from '@/features/auth/break-glass-form'
-import { ssoLoginHref } from '@/features/auth/sso'
+import { offersDifferentAccount, ssoLoginHref } from '@/features/auth/sso'
 import { ApiError } from '@/api/errors'
 
 describe('ssoLoginHref', () => {
@@ -15,6 +15,24 @@ describe('ssoLoginHref', () => {
     expect(ssoLoginHref('/p/internal-tools?view=list&owner=me')).toBe(
       '/api/v1/auth/login?next=%2Fp%2Finternal-tools%3Fview%3Dlist%26owner%3Dme',
     )
+  })
+
+  it('asks the IdP for its account picker when switching accounts', () => {
+    expect(ssoLoginHref(undefined, 'select_account')).toBe(
+      '/api/v1/auth/login?prompt=select_account',
+    )
+    expect(ssoLoginHref('/ideas/CUST-1', 'select_account')).toBe(
+      '/api/v1/auth/login?next=%2Fideas%2FCUST-1&prompt=select_account',
+    )
+    expect(ssoLoginHref('//evil.example.com', 'login')).toBe('/api/v1/auth/login?prompt=login')
+  })
+
+  it('offers a different account only when the IdP signed in someone unusable', () => {
+    expect(offersDifferentAccount('no_account')).toBe(true)
+    expect(offersDifferentAccount('identity_conflict')).toBe(true)
+    for (const other of [undefined, '', 'sso_failed', 'account_disabled', 'login_cancelled']) {
+      expect(offersDifferentAccount(other)).toBe(false)
+    }
   })
 
   it.each([

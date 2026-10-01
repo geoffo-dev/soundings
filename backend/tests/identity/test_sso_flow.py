@@ -366,6 +366,70 @@ async def test_an_unconfigured_host_goes_to_the_first_base_url_first(
     assert "set-cookie" not in other.headers
 
 
+async def test_no_prompt_is_sent_by_default(client: httpx.AsyncClient, idp: FakeIdp) -> None:
+    response = await start(client)
+
+    assert response.status_code == 302
+    query = query_of(response.headers["location"])
+    assert "prompt" not in query
+    assert "max_age" not in query
+
+
+@pytest.mark.parametrize("prompt", ["login", "select_account"])
+async def test_prompt_is_passed_to_the_idp(
+    client: httpx.AsyncClient, idp: FakeIdp, prompt: str
+) -> None:
+    """Review M3, "Use a different account": the IdP shows its account picker or
+    sign-in form instead of reusing the account it already has a session for."""
+    response = await client.get(LOGIN, params={"prompt": prompt, "next": "/ideas/CUST-1"})
+
+    assert response.status_code == 302
+    query = query_of(response.headers["location"])
+    assert query["prompt"] == prompt
+    # max_age=0 asks for a fresh sign-in where the prompt value is ignored (Keycloak 26
+    # ignores select_account and would reuse the refused account's session).
+    assert query["max_age"] == "0"
+    assert query["code_challenge_method"] == "S256"
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "",
+        "none",
+        "consent",
+        "SELECT_ACCOUNT",
+        "login select_account",
+        pytest.param("x" * 3000, id="overlong"),
+    ],
+)
+async def test_any_other_prompt_is_a_422(
+    client: httpx.AsyncClient, idp: FakeIdp, prompt: str
+) -> None:
+    response = await client.get(LOGIN, params={"prompt": prompt})
+
+    assert response.status_code == 422, response.text
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "validation_error"
+    assert "soundings_oidc" not in set_cookie_headers(response)
+
+
+@pytest.mark.settings(base_urls=["http://ideas.example.com"])
+async def test_an_unconfigured_host_keeps_the_prompt(
+    client: httpx.AsyncClient, idp: FakeIdp
+) -> None:
+    other = await client.get(
+        LOGIN,
+        params={"next": "/ideas/CUST-1", "prompt": "select_account"},
+        headers={"Host": "localhost:8000"},
+    )
+
+    assert other.status_code == 302
+    assert other.headers["location"] == (
+        "http://ideas.example.com/api/v1/auth/login?next=%2Fideas%2FCUST-1&prompt=select_account"
+    )
+
+
 @pytest.mark.settings(oidc_issuer=None)
 async def test_login_without_sso_configured(client: httpx.AsyncClient) -> None:
     response = await start(client)

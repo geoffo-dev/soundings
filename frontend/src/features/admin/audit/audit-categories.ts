@@ -61,7 +61,11 @@ export const AUDIT_CATEGORIES = [
     label: 'Owners and evaluators',
     actions: ['idea.owner_change', 'evaluator.add', 'evaluator.remove'],
   },
-  { id: 'evaluations', label: 'Evaluations', actions: ['evaluation.submit'] },
+  {
+    id: 'evaluations',
+    label: 'Evaluations',
+    actions: ['evaluation.submit', 'evaluation.close', 'evaluation.reopen'],
+  },
   { id: 'status', label: 'Status changes', actions: ['idea.status_change'] },
   { id: 'deleted_ideas', label: 'Deleted ideas', actions: ['idea.delete'] },
 ] as const satisfies readonly { id: string; label: string; actions: readonly AuditAction[] }[]

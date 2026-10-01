@@ -20,6 +20,7 @@ __all__ = [
     "CurrentUser",
     "DevLoginRequest",
     "LoginErrorCode",
+    "LoginPrompt",
 ]
 
 
@@ -65,6 +66,19 @@ class BreakGlassLogin(RequestModel):
 
     username: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=1, max_length=1024)
+
+
+class LoginPrompt(StrEnum):
+    """``GET /auth/login?prompt=``: passed on to the IdP's authorization request
+    (OIDC Core 3.1.2.1) together with ``max_age=0``, for "Use a different account"
+    after ``no_account`` or ``identity_conflict``."""
+
+    LOGIN = "login"
+    """Ask for credentials again, even with a running IdP session."""
+    SELECT_ACCOUNT = "select_account"
+    """Show the IdP's account picker (Entra ID, Google). Keycloak 26 ignores it; the
+    ``max_age=0`` sent with it makes Keycloak ask to sign in again, with "Restart
+    login" to switch account."""
 
 
 class LoginErrorCode(StrEnum):

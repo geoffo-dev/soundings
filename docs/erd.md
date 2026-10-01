@@ -2,9 +2,11 @@
 
 Schema after Phase 2: `backend/app/models/` (SQLAlchemy 2, typed), created by the
 Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
-(Phase 1) and `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external
-IDs, login attempts, groups, group grants, the group-aware effective-roles view, audit
-indexes). The procrastinate job-queue tables (revision `0001`) are not shown. API
+(Phase 1), `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external IDs,
+groups, group grants, the group-aware effective-roles view, audit indexes) and
+`20261001_0004_stateless_sso_sign_in.py` (Phase 2 review: drops the login-attempts
+table, since sign-in attempts now travel sealed in the `soundings_oidc` cookie, and
+clears plain-text ID tokens, which are now stored sealed). The procrastinate job-queue tables (revision `0001`) are not shown. API
 shapes are in [api/contract-phase1.md](api/contract-phase1.md) and
 [api/contract-phase2.md](api/contract-phase2.md).
 
@@ -63,7 +65,7 @@ erDiagram
         uuid user_id FK
         varchar csrf_token
         varchar auth_method "sso, break_glass, dev_login"
-        text id_token "SSO only, for sign-out"
+        text id_token "SSO only, sealed, for sign-out"
         timestamptz created_at
         timestamptz last_seen_at
         timestamptz expires_at "absolute expiry"
@@ -82,15 +84,6 @@ erDiagram
         varchar kind PK "employee_no, gitlab"
         varchar value "unique per kind, case-insensitive"
         timestamptz created_at
-    }
-    oidc_login_attempts {
-        uuid id PK
-        varchar state_hash UK "sha256 of state"
-        varchar nonce
-        varchar code_verifier "PKCE"
-        varchar redirect_uri
-        varchar next_path
-        timestamptz expires_at "10 minutes"
     }
     groups {
         uuid id PK
@@ -275,10 +268,9 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | Table | Notes |
 |---|---|
 | `users` | Email unique case-insensitively (`uq_users_email_lower` on `lower(email)`); look up with `lower(email) = lower(:email)`. Never deleted in normal use (deactivate). A pre-created user is a normal row without an identity. `is_service_account` is reserved for Phase 5/6 agent accounts. `is_break_glass` marks the single break-glass admin (`uq_users_is_break_glass`, partial unique on `is_break_glass` where true), created at its first sign-in with the reserved address `break-glass@soundings.invalid` (`.invalid` emails can't be given to users). Login matching never selects service or break-glass accounts. Downgrading 0003 leaves that row as an ordinary user; upgrading again marks it as the break-glass account by its email. |
-| `user_sessions` | Cookie holds a 256-bit random token; only its SHA-256 (`token_hash`) is stored. `csrf_token` is mirrored in the readable `soundings_csrf` cookie. `expires_at` is the absolute expiry; idle expiry is `last_seen_at` + idle timeout (settings). `auth_method` (`sso`, `break_glass`, `dev_login`; no server default, existing rows became `dev_login`) says how it started; a session only works while that method is available (break-glass sessions also at most 8 hours, 1 hour idle). `id_token` (SSO only, and only when at most 3,072 characters) is kept solely as `id_token_hint` for RP-initiated logout ([ADR 0005](adr/0005-server-side-sessions-oidc-csrf.md)); never logged or returned. Downgrading 0003 deletes SSO and break-glass sessions. |
+| `user_sessions` | Cookie holds a 256-bit random token; only its SHA-256 (`token_hash`) is stored. `csrf_token` is mirrored in the readable `soundings_csrf` cookie. `expires_at` is the absolute expiry; idle expiry is `last_seen_at` + idle timeout (settings). `auth_method` (`sso`, `break_glass`, `dev_login`; no server default, existing rows became `dev_login`) says how it started; a session only works while that method is available (break-glass sessions also at most 8 hours, 1 hour idle). `id_token` (SSO only, and only when the token is at most 3,072 characters) is kept solely as `id_token_hint` for RP-initiated logout, sealed (AES-256-GCM with a key derived from the secret key, `app/auth/sealing.py`; [ADR 0005](adr/0005-server-side-sessions-oidc-csrf.md)); never logged or returned. Revision 0004 cleared plain-text tokens (those sessions sign out without the hint). Downgrading 0003 deletes SSO and break-glass sessions. |
 | `user_identities` | An OIDC account linked to a user: the ID token's `(iss, sub)`, unique (`uq_user_identities_issuer_subject`), and at most one per user per issuer (`uq_user_identities_user_id_issuer`). Linked at the first sign-in that matches the user; `last_login_at` is updated at every SSO sign-in. Admins can unlink one (the user is matched again next time). |
 | `user_external_ids` | Admin-managed ids (`employee_no = E1001`) that link a pre-created user at first sign-in. One value per kind per user (primary key `(user_id, kind)`); `(kind, lower(value))` unique (`uq_user_external_ids_kind_value_lower`). `kind` matches `^[a-z][a-z0-9_]{0,39}$`. |
-| `oidc_login_attempts` | One SSO sign-in in progress: `state_hash` (SHA-256 of `state`, which is also in the HttpOnly `soundings_oidc` cookie), `nonce`, PKCE `code_verifier`, the exact `redirect_uri` and the validated `next_path`. Single use (deleted at the callback), expires after 10 minutes; expired rows are deleted at the next login start. |
 | `groups` | Internal groups; names unique case-insensitively (`uq_groups_name_lower`). `sync_mode` (`managed` default, `additive`) decides what sign-in sync does with synced memberships. |
 | `group_idp_values` | IdP group values mapped to a group, stored normalised (trim, strip `/` at both ends, lower-case); primary key `(group_id, value)`, indexed by `value` for the sign-in lookup. A value may map to several groups. |
 | `group_memberships` | One row per (group, user) with provenance flags `manual` (admin) and `synced` (sign-in sync); `ck_group_memberships_has_source` keeps at least one true. Sync sets and clears only `synced` (deleting the row when neither is left); admins set `manual`, and "remove member" deletes the row. Sync and the admin add/remove both lock the user's `users` row first, so they serialise. Indexed by `user_id`. Deactivated users' rows stay (they can't sign in) and don't count for c11 or member counts. |

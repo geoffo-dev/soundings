@@ -70,6 +70,31 @@ test('an SSO failure comes back as a calm message with the button again', async 
   await expect(ssoLink(page)).toHaveAttribute('href', '/api/v1/auth/login?next=%2Fideas%2FCUST-1')
 })
 
+test('after no_account or identity_conflict, “Use a different account” asks the IdP to switch', async ({
+  page,
+}) => {
+  await configure(page, { 'soundings-mock-auth': 'sso,dev_login' })
+  const otherAccount = page.getByRole('link', { name: 'Use a different account' })
+  for (const code of ['no_account', 'identity_conflict']) {
+    await page.goto(`/login?error=${code}&next=%2Fideas%2FCUST-1`)
+    await expect(otherAccount, code).toHaveAttribute(
+      'href',
+      '/api/v1/auth/login?next=%2Fideas%2FCUST-1&prompt=select_account',
+    )
+    // Signing in again stays the focused primary action; the switch is the next stop.
+    await expect(ssoLink(page)).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(otherAccount).toBeFocused()
+    expect(await seriousViolations(page), code).toEqual([])
+  }
+  // Only where the IdP signed in someone Soundings can't use.
+  for (const query of ['error=sso_failed', 'error=account_disabled', 'signed_out=1', '']) {
+    await page.goto(`/login?${query}`)
+    await expect(ssoLink(page)).toBeVisible()
+    await expect(otherAccount, query).toHaveCount(0)
+  }
+})
+
 const ERRORS: [string, string, 'alert' | 'status'][] = [
   ['sso_unavailable', 'Single sign-on isn’t available right now', 'alert'],
   ['too_many_attempts', 'Too many sign-in attempts from your network', 'alert'],

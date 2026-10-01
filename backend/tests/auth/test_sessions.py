@@ -73,7 +73,7 @@ async def test_dev_login_sets_session_and_csrf_cookies(
     assert session_cookie["samesite"] == "lax"
     assert session_cookie["path"] == "/"
     assert not session_cookie["secure"]  # plain-http test server outside production
-    assert int(session_cookie["max-age"]) == 7 * 24 * 3600
+    assert int(session_cookie["max-age"]) == 24 * 3600  # the 24-hour default
     assert not csrf_cookie["httponly"]  # the SPA reads it
     assert csrf_cookie["samesite"] == "lax"
     # Only the token's hash is stored; the CSRF token is bound to the session row.
@@ -82,7 +82,7 @@ async def test_dev_login_sets_session_and_csrf_cookies(
     assert session_cookie.value not in row.token_hash
     assert row.csrf_token == csrf_cookie.value
     assert row.user_agent == "Firefox on Linux"
-    assert row.expires_at - row.created_at == timedelta(days=7)
+    assert row.expires_at - row.created_at == timedelta(hours=24)
     assert row.auth_method == "dev_login"
     assert row.id_token is None
 
