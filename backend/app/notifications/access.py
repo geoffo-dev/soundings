@@ -165,9 +165,11 @@ def applies(
         case NotificationType.COMMENT:
             return comment is not None and comment.deleted_at is None
         case NotificationType.MENTION:
+            # People with a role in the project (not every viewer of an internal one).
             return (
                 comment is not None
                 and comment.deleted_at is None
+                and recipient.resource.role is not None
                 and recipient.id in mentioned_user_ids(comment.body_md)
             )
 

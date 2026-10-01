@@ -29,11 +29,13 @@ __all__ = [
     "clean_subject",
     "format_day",
     "format_moment",
+    "one_line",
     "plural",
     "subject_title",
 ]
 
 SUBJECT_TITLE_LENGTH: Final = 80
+_HEX_COLOUR: Final = re.compile(r"#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})")
 
 TYPE_LABELS: Final[Mapping[NotificationType, str]] = {
     NotificationType.OWNER_ASSIGNED: "owner assignments",
@@ -57,6 +59,15 @@ class Branding:
     accent: str = "#1d5fa8"
     accent_text: str = "#ffffff"
     footer_text: str | None = None
+
+    def __post_init__(self) -> None:
+        # Colours go into inline CSS and bgcolor attributes, where HTML escaping
+        # doesn't stop "#fff;background:url(...)": only hex colours are accepted.
+        for colour in (self.accent, self.accent_text):
+            if not _HEX_COLOUR.fullmatch(colour):
+                raise ValueError(
+                    f"branding colours must be a hex colour such as #1d5fa8: {colour!r}"
+                )
 
     @property
     def initial(self) -> str:
@@ -133,12 +144,23 @@ class Links:
         return f"{self.base}/"
 
 
-_CONTROL: Final = re.compile("[\\x00-\\x1f\\x7f\\u2028\\u2029]+")
+_LINE_BREAKS: Final = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029]+")
+"""Control characters (C0, DEL, C1 such as NEL) and the Unicode line and paragraph
+separators: each can start a new line in a text part or a header."""
+_BIDI_CONTROLS: Final = re.compile("[\\u061c\\u202a-\\u202e\\u2066-\\u2069]")
+"""Bidirectional embeddings, overrides and isolates: they can reorder the text around a
+value (a reversed link or name)."""
+
+
+def one_line(text: str) -> str:
+    """``text`` without line breaks, control characters or bidi controls (each break
+    becomes a space): every value an email shows is one line of plain text."""
+    return _BIDI_CONTROLS.sub("", _LINE_BREAKS.sub(" ", text))
 
 
 def clean_subject(subject: str) -> str:
     """No line breaks or control characters in a header (no header injection)."""
-    return " ".join(_CONTROL.sub(" ", subject).split())
+    return " ".join(one_line(subject).split())
 
 
 def subject_title(title: str) -> str:

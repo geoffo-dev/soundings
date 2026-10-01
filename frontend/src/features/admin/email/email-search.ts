@@ -3,8 +3,9 @@ import { searchList } from '@/lib/search-params'
 
 /**
  * `/settings/email?status=failed,queued&type=digest` (defaults dropped; unknown
- * values ignored). With no `status`, the page opens on failed emails when
- * there are any (contract-phase3 §3.10); `status=all` shows everything.
+ * values ignored). With no `status`, the page opens on what needs attention
+ * (contract-phase3 §3.10: failed emails when there are any, with the ones
+ * still queued for another try); `status=all` shows everything.
  */
 export interface EmailSearch {
   status?: (EmailStatus | 'all')[]
@@ -35,11 +36,27 @@ export function validateEmailSearch(search: Record<string, unknown>): EmailSearc
   }
 }
 
-/** The API's status filter: the URL's statuses, or failed when unset and there are failures. */
+/**
+ * What the outbox opens on when the URL says nothing: failed emails, and the
+ * queued ones with them (they are retrying, or waiting for a worker), when
+ * anything failed or mail has waited too long (`stuck`); else everything.
+ */
+export function defaultStatuses(
+  counts: { failed: number; queued: number },
+  stuck: boolean,
+): EmailStatus[] {
+  if (counts.failed === 0 && !stuck) return []
+  return [
+    ...(counts.failed > 0 ? (['failed'] as const) : []),
+    ...(counts.queued > 0 ? (['queued'] as const) : []),
+  ]
+}
+
+/** The API's status filter: the URL's statuses, or the page's default when unset. */
 export function effectiveStatuses(
   status: EmailSearch['status'],
-  failedCount: number,
+  defaults: EmailStatus[],
 ): EmailStatus[] {
-  if (!status) return failedCount > 0 ? ['failed'] : []
+  if (!status) return defaults
   return status.filter((value): value is EmailStatus => value !== 'all')
 }

@@ -180,9 +180,10 @@ test(
         await startMailpit()
       }
 
-      // The banner leads to the page, which opens on failed email.
+      // The banner leads straight to the outbox, which opens on what needs attention.
       await banner(page).getByRole('link', { name: 'Open Email settings' }).click()
-      await expect(page).toHaveURL(/\/settings\/email$/)
+      await expect(page).toHaveURL(/\/settings\/email#outbox$/)
+      await expect(page.getByRole('heading', { level: 3, name: 'Outbox' })).toBeFocused()
       await expect(page.getByRole('button', { name: 'Remove status filter' })).toBeVisible()
       const row = outboxTable(page)
         .getByRole('row')
@@ -194,6 +195,9 @@ test(
       const since = new Date()
       await row.getByRole('button', { name: `Retry: Test email from ${lena.name}` }).click()
       await expect(row).toContainText(/Queued|Sending|Sent/)
+      // The row stays where it was (the list doesn't jump), with a word that it worked.
+      await expect(page.getByText('Queued again')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Remove status filter' })).toBeVisible()
       const mail = await mailpit.waitForMessage(to, { since, subject: 'Soundings test email' })
       expect(mail.To.map((address) => address.Address)).toEqual([to])
       await page.waitForTimeout(2000)
@@ -235,7 +239,9 @@ test('AE-04: without SMTP admins see a calm banner and the setup steps; the test
   await banner(page).getByRole('link', { name: 'Set up email' }).click()
   await expect(page.getByRole('heading', { name: 'Set up email' })).toBeVisible()
   await expect(page.getByText('smtp.host', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send test email' })).toBeDisabled()
+  // Only how to set it up: no test form or outbox until email is on.
+  await expect(page.getByRole('button', { name: 'Send test email' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Outbox' })).toHaveCount(0)
   const refused = await alice.raw('POST', '/admin/email/test', {})
   expect(refused.status()).toBe(409)
   expect(((await refused.json()) as { code: string }).code).toBe('smtp_not_configured')

@@ -15,7 +15,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import select
@@ -36,7 +35,7 @@ from app.email.model import (
     plural,
     subject_title,
 )
-from app.email.outbox import max_age
+from app.email.outbox import max_age, message_id_domain
 from app.models.activity import Comment
 from app.models.enums import (
     EmailType,
@@ -113,7 +112,7 @@ class _Context:
         self.settings = settings
         self.now = now
         self.links = Links(settings.public_base_url)
-        self.host = urlsplit(settings.public_base_url).hostname or "soundings.invalid"
+        self.host = message_id_domain(settings)
 
     def day(self, moment: datetime) -> str:
         return format_day(moment, self.settings.tz, now=self.now)

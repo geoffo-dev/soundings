@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import NotificationMode, NotificationType, ProjectVisibility
+from app.email import delivery
+from app.email.delivery import Runtime
+from app.models.enums import NotificationMode, NotificationType, ProjectRole, ProjectVisibility
 from app.models.notification import Notification
-from app.models.project import Project
+from app.models.project import Project, ProjectMember
 from app.notifications.fanout import MENTION_EMAIL_CAP
-from app.schemas.comments import MAX_MENTIONS
-from tests.factories import make_user
+from app.schemas.comments import MAX_MENTIONS, MENTION_PATTERN
+from tests.factories import add_member, make_user
 from tests.notifications.conftest import AsUser, Outbox, Team, assert_problem, ok
 
 pytestmark = pytest.mark.usefixtures("team")
@@ -166,3 +170,95 @@ async def test_the_51st_mention_email_in_an_hour_is_in_app_only(
         if not note.dedupe_key.startswith("earlier:")
     ]
     assert sorted(note.email_mode.value for note in fresh) == ["immediate", "off"]
+
+
+async def test_nested_tokens_cannot_keep_a_chosen_label(api: AsUser, team: Team) -> None:
+    """Review L1: rewriting the inner (unknown) token used to leave the outer one as a
+    new token with the attacker's label."""
+    ghost = uuid4()
+    body = f"@[Bob @[CEO Jane](user:{ghost})](user:{team.owner.id}) hi"
+
+    item = await comment(api, team, body)
+
+    stored = item["comment"]["body_md"]
+    assert stored == f"@[Olive Owner](user:{team.owner.id}) hi"
+
+
+async def test_every_token_left_in_a_comment_is_canonical(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    ghost = uuid4()
+    deep = f"@[x](user:{ghost})"
+    for _ in range(5):
+        deep = f"@[a {deep}](user:{ghost})"
+    body = f"{deep} @[b @[c](user:{ghost})](user:{team.viewer.id})"
+
+    stored = (await comment(api, team, body))["comment"]["body_md"]
+
+    tokens = list(MENTION_PATTERN.finditer(stored))
+    assert [(m.group("label"), m.group("user_id")) for m in tokens] == [
+        (team.viewer.display_name, str(team.viewer.id))
+    ]
+
+
+async def test_nested_tokens_count_towards_the_mention_limit(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    """Review L1: 25 tokens wrapped around one unknown token were counted as one."""
+    ghost = uuid4()
+    people = [await make_user(db_session) for _ in range(MAX_MENTIONS + 5)]
+    member = await api(team.member)
+    idea = await member.create_idea(team.slug)
+    body = " ".join(f"@[x@[y](user:{ghost})](user:{person.id})" for person in people)
+
+    response = await member.post(f"/ideas/{idea['key']}/comments", {"body_md": body})
+
+    assert_problem(response, 422, "too_many_mentions")
+
+
+async def test_the_mention_email_cap_holds_for_concurrent_comments(
+    api: AsUser, team: Team, outbox: Outbox, db_session: AsyncSession
+) -> None:
+    """Review M2: parallel comments each read the count before any committed (160
+    emails in an hour, cap 50)."""
+    project = await db_session.get(Project, team.project.id)
+    assert project is not None
+    people = [await make_user(db_session) for _ in range(MAX_MENTIONS)]
+    for person in people:
+        await add_member(db_session, project, person, ProjectRole.MEMBER)
+    await db_session.commit()
+    member = await api(team.member)
+    ideas = [(await member.create_idea(team.slug))["key"] for _ in range(4)]
+    body = " ".join(token(person.id) for person in people)
+
+    responses = await asyncio.gather(
+        *(member.post(f"/ideas/{key}/comments", {"body_md": body}) for key in ideas)
+    )
+
+    assert [response.status_code for response in responses] == [201] * 4
+    mentions = await outbox.notifications(type_=NotificationType.MENTION)
+    assert len(mentions) == 4 * MAX_MENTIONS
+    emailed = [note for note in mentions if note.email_mode is not NotificationMode.OFF]
+    assert len(emailed) == MENTION_EMAIL_CAP
+
+
+async def test_a_mention_email_is_cancelled_once_the_recipient_has_no_role(
+    api: AsUser, team: Team, outbox: Outbox, runtime: Runtime, db_session: AsyncSession
+) -> None:
+    """Review nit: mentions reach people with a role in the project; at send time that
+    was not checked again (Vic can still view the now internal project)."""
+    await comment(api, team, f"cc {token(team.viewer.id)}")
+    email = (await outbox.emails(team.viewer.id))[0]
+    project = await db_session.get(Project, team.project.id)
+    assert project is not None
+    project.visibility = ProjectVisibility.INTERNAL
+    await db_session.execute(
+        delete(ProjectMember).where(
+            ProjectMember.project_id == team.project.id,
+            ProjectMember.user_id == team.viewer.id,
+        )
+    )
+    await db_session.commit()
+
+    assert await delivery.send_email(runtime, email.id) == "cancelled"
+    assert (await outbox.email(email.id)).last_error == "Not sent: no longer applies"

@@ -3,8 +3,11 @@
 Templates live in ``app/templates/email`` (shipped in the wheel): ``_layout.html`` /
 ``_layout.txt`` and one ``<template>.html`` / ``.txt`` pair per email. HTML autoescaping
 is on (every value is escaped text; nothing user-written is rendered as HTML or
-Markdown); the text templates are not escaped. Undefined variables raise, so a
-template bug fails the attempt ("Internal error") instead of sending a broken email.
+Markdown); the text templates are not escaped. Every value is made one line first
+(:func:`~app.email.model.one_line`), so a title can't start a line of its own in the
+text part ("Evaluate now: <link>") or reorder the text around it with bidi controls.
+Undefined variables raise, so a template bug fails the attempt ("Internal error")
+instead of sending a broken email.
 """
 
 from __future__ import annotations
@@ -15,8 +18,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+from markupsafe import Markup
 
-from app.email.model import DEFAULT_BRANDING, Branding, EmailContent, clean_subject
+from app.email.model import DEFAULT_BRANDING, Branding, EmailContent, clean_subject, one_line
 
 __all__ = ["TEMPLATES", "TEMPLATE_DIR", "RenderedEmail", "render"]
 
@@ -60,9 +64,18 @@ def _colours(brand: Branding) -> dict[str, str]:
     }
 
 
+def _finalize(value: Any) -> Any:
+    """Each ``{{ value }}``: plain strings one line (markup from a macro is already
+    built from finalized values)."""
+    if isinstance(value, str) and not isinstance(value, Markup):
+        return one_line(value)
+    return value
+
+
 @functools.cache
 def _environment() -> Environment:
     return Environment(
+        finalize=_finalize,
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(
             enabled_extensions=("html",), disabled_extensions=("txt",), default=True

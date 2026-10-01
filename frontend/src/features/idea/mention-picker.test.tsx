@@ -56,9 +56,41 @@ describe('the mention picker', () => {
     expect(list).not.toHaveTextContent('Alice Anders') // not yourself
     expect(field).toHaveAttribute('aria-activedescendant')
     await user.keyboard('{Enter}')
-    expect(field).toHaveValue(`Thanks @[Carol Díaz](user:${USERS.carol}) `)
+    // The box shows the name; the stored text has the token.
+    expect(field).toHaveValue('Thanks @Carol Díaz ')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     expect(submitted).toEqual([]) // Enter chose a person; it didn't post
+    await user.keyboard('please{Control>}{Enter}{/Control}')
+    expect(submitted).toEqual([`Thanks @[Carol Díaz](user:${USERS.carol}) please`])
+  })
+
+  it('tints real mentions, drops one that is edited, and Backspace removes a whole one', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<Composer />)
+    const field = screen.getByRole('textbox', { name: 'Write a comment' })
+    await user.type(field, '@bo')
+    await screen.findByRole('option', { name: /Bob Chen/ })
+    await user.keyboard('{Enter}')
+    expect(field).toHaveValue('@Bob Chen ')
+    expect(container.querySelector(`[data-mention-tint="${USERS.bob}"]`)).toHaveTextContent(
+      '@Bob Chen',
+    )
+    // The caret right after the name doesn't reopen the picker; Backspace removes it all.
+    await user.keyboard('{Backspace}')
+    expect(field).toHaveValue('@Bob Chen')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    await user.keyboard('{Backspace}')
+    expect(field).toHaveValue('')
+    expect(container.querySelector('[data-mention-tint]')).toBeNull()
+
+    // Editing inside a name makes it plain text (no tint, no token).
+    await user.type(field, '@bo')
+    await screen.findByRole('option', { name: /Bob Chen/ })
+    await user.keyboard('{Enter}{ArrowLeft}{ArrowLeft}x')
+    expect(field).toHaveValue('@Bob Chexn ')
+    expect(container.querySelector('[data-mention-tint]')).toBeNull()
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    expect(submitted).toEqual(['@Bob Chexn '])
   })
 
   it('offers only people with a role in the project, and Esc closes it', async () => {
@@ -93,8 +125,25 @@ describe('rendered mentions', () => {
     expect([...chips].map((chip) => chip.textContent)).toEqual(['@Bob Chen', '@Alice Anders'])
     expect(container.querySelector('a[href^="user:"]')).toBeNull()
     expect(container).toHaveTextContent('Hi @Bob Chen and @Alice Anders, see docs')
-    expect(chips[1]).toHaveClass('text-accent') // you
+    expect(chips[1]).toHaveAttribute('data-mention-self') // you
+    expect(chips[0]).not.toHaveAttribute('data-mention-self')
     expect(screen.getAllByRole('link')).toHaveLength(1)
+  })
+
+  it('only for the exact token: other spellings of a user: link are plain text', () => {
+    const { container } = render(
+      <Markdown>
+        {[
+          `@[CEO Jane](user:${USERS.bob} "t")`,
+          `@[CEO Jane](<user:${USERS.bob}>)`,
+          `@[CEO [x] Jane](user:${USERS.bob})`,
+          `[Jane](user:${USERS.bob})`,
+        ].join('\n\n')}
+      </Markdown>,
+    )
+    expect(container.querySelectorAll('[data-mention]')).toHaveLength(0)
+    expect(container.querySelectorAll('a')).toHaveLength(0)
+    expect(container).toHaveTextContent('@CEO Jane @CEO Jane @CEO [x] Jane Jane')
   })
 
   it('leave other "@" text alone', () => {

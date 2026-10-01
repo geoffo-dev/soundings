@@ -61,14 +61,11 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
 3. Email
 {{- if .Values.smtp.host }}
    SMTP is configured: {{ .Values.smtp.host }}:{{ include "soundings.smtpPort" . }}, security {{ .Values.smtp.security }}, from {{ .Values.smtp.from }}.
-   Credentials: {{ if .Values.smtp.existingSecret }}Secret {{ .Values.smtp.existingSecret }}{{ else if or .Values.smtp.username .Values.smtp.password }}the chart's Secret (from values){{ else }}none (no SMTP AUTH){{ end }}. CA: {{ if .Values.smtp.caBundle.configMap }}ConfigMap {{ .Values.smtp.caBundle.configMap }}{{ else }}system trust store{{ end }}.
+   Credentials: {{ if .Values.smtp.existingSecret }}Secret {{ .Values.smtp.existingSecret }} (keys username and password){{ else if or .Values.smtp.username .Values.smtp.password }}the chart's Secret (from values){{ else }}none (no SMTP AUTH){{ end }}, in the worker pods only. CA: {{ if .Values.smtp.caBundle.configMap }}ConfigMap {{ .Values.smtp.caBundle.configMap }}{{ else }}system trust store{{ end }}.
    The worker sends email from an outbox and retries while the server is unreachable.
    Try it: Settings > Email > "Send test email" (as a platform admin).
 {{- if not .Values.worker.enabled }}
    WARNING: worker.enabled is false, so nothing sends the queued email.
-{{- end }}
-{{- if and (eq .Values.smtp.security "none") .Values.smtp.existingSecret (not .Values.devLogin) }}
-   WARNING: smtp.security is none: the app refuses to start if the Secret has a password.
 {{- end }}
 {{- else }}
    SMTP is not configured: notifications are in-app only, and platform admins see a

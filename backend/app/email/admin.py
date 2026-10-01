@@ -2,7 +2,9 @@
 (credentials as "set" flags only), the test email, the outbox list and retry.
 
 Callers check ``platform.configure_email`` first. Audit entries hold ids and flags,
-never addresses (``email.test_send``, ``email.retry``).
+never addresses (``email.test_send``, ``email.retry``). An admin may send five test
+emails in ten minutes; retrying a failed test email (alone or with Retry all) counts as
+one more (``email.retry`` records ``test_emails``).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from app.config import Settings
 from app.domain.principal import Principal
 from app.email import outbox
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
+from app.models.activity import AuditLog
 from app.models.base import utcnow
 from app.models.enums import EmailStatus, EmailType
 from app.models.idea import Idea
@@ -92,8 +95,11 @@ async def email_config(db: AsyncSession, settings: Settings) -> EmailConfig:
         host=settings.smtp_host,
         port=settings.smtp_port,
         security=settings.smtp_security,
-        username_set=bool(settings.smtp_username and settings.smtp_username.get_secret_value()),
-        password_set=bool(settings.smtp_password and settings.smtp_password.get_secret_value()),
+        # API pods get flags from the chart, not the credentials (only workers send).
+        username_set=settings.smtp_username_set
+        or bool(settings.smtp_username and settings.smtp_username.get_secret_value()),
+        password_set=settings.smtp_password_set
+        or bool(settings.smtp_password and settings.smtp_password.get_secret_value()),
         from_address=settings.smtp_from,
         from_name=settings.smtp_from_name,
         reply_to=settings.smtp_reply_to,
@@ -210,6 +216,51 @@ def _not_usable(detail: str) -> ProblemError:
     )
 
 
+async def _lock_test_allowance(db: AsyncSession, principal: Principal) -> None:
+    """One admin's test emails and retries, one at a time (until commit): the count
+    below can't race. Taken before any outbox row lock (one order: no deadlocks)."""
+    await db.execute(
+        select(func.pg_advisory_xact_lock(_TEST_LOCK_SALT, func.hashtext(str(principal.user_id))))
+    )
+
+
+async def _test_email_uses(db: AsyncSession, principal: Principal, now: datetime) -> list[datetime]:
+    """When this admin used the test email allowance in the window, oldest first: each
+    test email they sent, and each test email they queued again (Retry and Retry all
+    record ``test_emails`` in their ``email.retry`` audit entry)."""
+    since = now - TEST_EMAIL_WINDOW
+    uses = list(
+        await db.scalars(
+            select(OutboundEmail.created_at).where(
+                OutboundEmail.type == EmailType.TEST,
+                OutboundEmail.requested_by_id == principal.user_id,
+                OutboundEmail.created_at > since,
+            )
+        )
+    )
+    retries = await db.execute(
+        select(AuditLog.created_at, AuditLog.details["test_emails"].as_integer()).where(
+            AuditLog.actor_id == principal.user_id,
+            AuditLog.action == "email.retry",
+            AuditLog.created_at > since,
+        )
+    )
+    for at, count in retries:
+        uses.extend([at] * max(0, count or 0))
+    return sorted(uses)
+
+
+def _too_many_test_emails(uses: Sequence[datetime], now: datetime) -> ProblemError:
+    # Allowed again once enough of the oldest uses have left the window.
+    wait = (uses[len(uses) - TEST_EMAIL_LIMIT] + TEST_EMAIL_WINDOW - now).total_seconds()
+    return ProblemError(
+        429,
+        "too_many_attempts",
+        detail="Too many test emails: wait a few minutes and try again.",
+        headers={"Retry-After": str(max(1, math.ceil(wait)))},
+    )
+
+
 async def send_test_email(
     db: AsyncSession, settings: Settings, principal: Principal, to: str | None
 ) -> OutboxEmail:
@@ -223,29 +274,10 @@ async def send_test_email(
     if to is not None and not usable_address(to):
         raise _not_usable("Enter one plain email address such as ops@example.com.")
     now = utcnow()
-    # One admin's test emails, one at a time: the count below can't race.
-    await db.execute(
-        select(func.pg_advisory_xact_lock(_TEST_LOCK_SALT, func.hashtext(str(principal.user_id))))
-    )
-    recent = list(
-        await db.scalars(
-            select(OutboundEmail.created_at)
-            .where(
-                OutboundEmail.type == EmailType.TEST,
-                OutboundEmail.requested_by_id == principal.user_id,
-                OutboundEmail.created_at > now - TEST_EMAIL_WINDOW,
-            )
-            .order_by(OutboundEmail.created_at)
-        )
-    )
-    if len(recent) >= TEST_EMAIL_LIMIT:
-        wait = (recent[0] + TEST_EMAIL_WINDOW - now).total_seconds()
-        raise ProblemError(
-            429,
-            "too_many_attempts",
-            detail="Too many test emails: wait a few minutes and try again.",
-            headers={"Retry-After": str(max(1, math.ceil(wait)))},
-        )
+    await _lock_test_allowance(db, principal)
+    uses = await _test_email_uses(db, principal, now)
+    if len(uses) >= TEST_EMAIL_LIMIT:
+        raise _too_many_test_emails(uses, now)
     to_self = to is None or to.lower() == principal.user.email.lower()
     [email_id] = await outbox.enqueue(
         db,
@@ -283,6 +315,9 @@ def _requeue(now: datetime) -> dict[str, object]:
 async def retry_email(
     db: AsyncSession, settings: Settings, principal: Principal, email_id: UUID
 ) -> OutboxEmail:
+    """Queue one failed email again. A test email counts towards the acting admin's
+    test email limit (else a failing one could be retried without end)."""
+    await _lock_test_allowance(db, principal)
     row = await _load(db, email_id, for_update=True)
     if not settings.smtp_configured:
         raise SmtpNotConfiguredProblem
@@ -292,6 +327,12 @@ async def retry_email(
             "Only failed emails from the last 3 days (digests: 2) can be retried.",
             code="email_not_retryable",
         )
+    details: dict[str, object] = {"outbound_email_id": row.id}
+    if row.type is EmailType.TEST:
+        uses = await _test_email_uses(db, principal, now)
+        if len(uses) >= TEST_EMAIL_LIMIT:
+            raise _too_many_test_emails(uses, now)
+        details["test_emails"] = 1
     await db.execute(
         update(OutboundEmail)
         .where(OutboundEmail.id == row.id)
@@ -300,19 +341,22 @@ async def retry_email(
     )
     await db.refresh(row)
     await outbox.defer_send(db, [row.id])
-    await audit.record(db, "email.retry", actor=principal, details={"outbound_email_id": row.id})
+    await audit.record(db, "email.retry", actor=principal, details=details)
     [item] = await _outbox_items(db, [row])
     return item
 
 
 async def retry_all_failed(db: AsyncSession, settings: Settings, principal: Principal) -> int:
-    """Queue every retryable failed email again; returns how many."""
+    """Queue every retryable failed email again; returns how many. Failed test emails
+    are included only while the acting admin's test email limit allows (newest first);
+    the rest stay failed."""
     if not settings.smtp_configured:
         raise SmtpNotConfiguredProblem
     now = utcnow()
-    ids = list(
-        await db.scalars(
-            update(OutboundEmail)
+    await _lock_test_allowance(db, principal)
+    failed = (
+        await db.execute(
+            select(OutboundEmail.id, OutboundEmail.type)
             .where(
                 OutboundEmail.status == EmailStatus.FAILED,
                 or_(
@@ -326,12 +370,32 @@ async def retry_all_failed(db: AsyncSession, settings: Settings, principal: Prin
                     ),
                 ),
             )
-            .values(_requeue(now))
-            .returning(OutboundEmail.id)
-            .execution_options(synchronize_session=False)
+            .order_by(OutboundEmail.created_at.desc(), OutboundEmail.id.desc())
         )
+    ).all()
+    tests = [email_id for email_id, type_ in failed if type_ is EmailType.TEST]
+    if tests:
+        allowance = TEST_EMAIL_LIMIT - len(await _test_email_uses(db, principal, now))
+        tests = tests[: max(0, allowance)]
+    wanted = [email_id for email_id, type_ in failed if type_ is not EmailType.TEST] + tests
+    ids = (
+        list(
+            await db.scalars(
+                update(OutboundEmail)
+                .where(any_of(OutboundEmail.id, wanted), OutboundEmail.status == EmailStatus.FAILED)
+                .values(_requeue(now))
+                .returning(OutboundEmail.id)
+                .execution_options(synchronize_session=False)
+            )
+        )
+        if wanted
+        else []
     )
     await outbox.defer_send(db, ids)
     if ids:
-        await audit.record(db, "email.retry", actor=principal, details={"count": len(ids)})
+        retried_tests = len(set(ids) & set(tests))
+        details: dict[str, object] = {"count": len(ids)}
+        if retried_tests:
+            details["test_emails"] = retried_tests
+        await audit.record(db, "email.retry", actor=principal, details=details)
     return len(ids)

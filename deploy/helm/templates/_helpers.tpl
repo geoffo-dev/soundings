@@ -253,6 +253,13 @@ SOUNDINGS_SMTP_REPLY_TO: {{ . | quote }}
 {{- if .Values.smtp.caBundle.configMap }}
 SOUNDINGS_SMTP_CA_BUNDLE: {{ include "soundings.smtpCaPath" . | quote }}
 {{- end }}
+{{- /* Only the worker gets the credentials (soundings.secretEnv); the api shows these. */}}
+{{- if or .Values.smtp.existingSecret .Values.smtp.username }}
+SOUNDINGS_SMTP_USERNAME_SET: "true"
+{{- end }}
+{{- if or .Values.smtp.existingSecret .Values.smtp.password }}
+SOUNDINGS_SMTP_PASSWORD_SET: "true"
+{{- end }}
 {{- end }}
 {{- end }}
 
@@ -279,8 +286,14 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
 {{- end }}
 {{- end }}
 
+{{/*
+Secrets of the api and worker pods: (dict "ctx" . "signIn" true) for the api (the sign-in
+secrets), (dict "ctx" . "smtp" true) for the worker (the SMTP credentials: only the
+worker sends mail; the api gets SOUNDINGS_SMTP_*_SET flags in the ConfigMap instead).
+*/}}
 {{- define "soundings.secretEnv" -}}
 {{- $signIn := .signIn -}}
+{{- $smtp := .smtp -}}
 {{- with .ctx -}}
 {{- $fullname := include "soundings.fullname" . -}}
 - name: SOUNDINGS_SECRET_KEY
@@ -292,20 +305,18 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
 {{- if $signIn }}
 {{- include "soundings.signInSecretEnv" . }}
 {{- end }}
-{{- if .Values.smtp.host }}
+{{- if and $smtp .Values.smtp.host }}
 {{- if .Values.smtp.existingSecret }}
 - name: SOUNDINGS_SMTP_USERNAME
   valueFrom:
     secretKeyRef:
       name: {{ .Values.smtp.existingSecret }}
       key: username
-      optional: true
 - name: SOUNDINGS_SMTP_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ .Values.smtp.existingSecret }}
       key: password
-      optional: true
 {{- else }}
 {{- if .Values.smtp.username }}
 - name: SOUNDINGS_SMTP_USERNAME
@@ -576,7 +587,7 @@ Validation (errors a JSON schema cannot express)
 {{- if and .Values.smtp.existingSecret (or .Values.smtp.username .Values.smtp.password) }}
 {{- fail "set the SMTP credentials either in smtp.existingSecret or in smtp.username / smtp.password, not both" }}
 {{- end }}
-{{- if and .Values.smtp.host .Values.smtp.password (eq .Values.smtp.security "none") (not .Values.devLogin) }}
+{{- if and .Values.smtp.host (or .Values.smtp.password .Values.smtp.existingSecret) (eq .Values.smtp.security "none") (not .Values.devLogin) }}
 {{- fail "smtp.security none sends the SMTP password in clear text: use starttls or tls (production refuses it)" }}
 {{- end }}
 {{- with toString .Values.smtp.port }}

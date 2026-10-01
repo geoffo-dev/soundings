@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { useListNavigation } from '@/lib/list-navigation'
+import { rememberRow, useReturnToRow } from '@/lib/return-to-row'
 
 import { InboxList } from './inbox-list'
 import { isKnownNotification, unreadBadge } from './notification-text'
@@ -39,8 +40,11 @@ export function NotificationsPage({
   const items = (list.data?.items ?? []).filter(isKnownNotification)
 
   const open = (item: NotificationItem) => {
+    // Back from the idea: focus returns to this row, not the top of the page.
+    rememberRow('notifications', item.id)
     if (item.read_at === null) markRead.mutate(item.id)
   }
+  useReturnToRow('notifications', items.length > 0)
 
   return (
     <Page>
@@ -52,14 +56,16 @@ export function NotificationsPage({
             <Button variant="ghost" size="md" asChild>
               <Link to="/settings/notifications">
                 <Settings2 />
-                <span className="hidden sm:inline">Email preferences</span>
-                <span className="sr-only sm:hidden">Email preferences</span>
+                Email preferences
               </Link>
             </Button>
             <Button
               variant="secondary"
-              disabled={unreadCount === 0}
-              onClick={() => markAll.mutate()}
+              // Not `disabled`: focus would fall to the page when it empties the list.
+              aria-disabled={unreadCount === 0 || undefined}
+              onClick={() => {
+                if (unreadCount > 0) markAll(unreadCount)
+              }}
             >
               <CheckCheck />
               Mark all read

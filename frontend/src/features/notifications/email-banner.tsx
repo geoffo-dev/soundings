@@ -27,11 +27,15 @@ function writeDismissed(kind: BannerKind) {
   }
 }
 
-const COPY: Record<BannerKind, { title: string; body: string; action: string }> = {
+const COPY: Record<
+  BannerKind,
+  { title: string; body: string; action: string; hash: string | undefined }
+> = {
   not_configured: {
     title: 'Email isn’t set up:',
     body: 'people only get in-app notifications.',
     action: 'Set up email',
+    hash: undefined,
   },
   trouble: {
     title: 'Some emails aren’t going out.',
@@ -39,6 +43,8 @@ const COPY: Record<BannerKind, { title: string; body: string; action: string }> 
     // (retried only from the outbox), so the copy promises neither.
     body: 'See why in the outbox and retry any that failed.',
     action: 'Open Email settings',
+    // Straight to the outbox, not the top of the page.
+    hash: 'outbox',
   },
 }
 
@@ -85,6 +91,7 @@ export function EmailBanner() {
         <span className="text-secondary">{copy.body}</span>{' '}
         <Link
           to="/settings/email"
+          hash={copy.hash}
           className="font-medium whitespace-nowrap text-accent underline-offset-4 hover:underline"
         >
           {copy.action}
@@ -97,6 +104,8 @@ export function EmailBanner() {
         onClick={() => {
           writeDismissed(kind)
           setDismissed((current) => ({ ...current, [kind]: true }))
+          // The button goes away with the banner: continue from the page, not <body>.
+          document.getElementById('main')?.focus()
         }}
       >
         <X />

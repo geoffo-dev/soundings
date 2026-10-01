@@ -161,3 +161,14 @@
     display: none;
   }
 }
+
+/*
+ * A mention's tint behind a text field's text (MentionHighlights): no padding, so
+ * the letters stay exactly where the field draws them; a spread shadow in the same
+ * fill gives the tint its room.
+ */
+@utility mention-tint {
+  border-radius: var(--radius-sm);
+  background-color: var(--subtle-hover);
+  box-shadow: 0 0 0 2px var(--subtle-hover);
+}

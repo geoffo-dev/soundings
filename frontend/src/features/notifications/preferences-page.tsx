@@ -18,10 +18,10 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { toastUndo } from '@/components/ui/toaster'
-import { AdminPageHeader, AdminSection, SettingsFrame } from '@/features/admin/settings-frame'
+import { AdminPageHeader, SettingsFrame } from '@/features/admin/settings-frame'
 import { SM_UP, useMediaQuery } from '@/lib/media'
 
-import { describeMode, MODE_OPTIONS, previousModes } from './preferences'
+import { describeMode, MODE_OPTIONS, modeLabel, previousModes } from './preferences'
 import { digestTime, TYPE_COPY } from './notification-text'
 
 /**
@@ -35,7 +35,7 @@ export function NotificationPreferencesPage() {
   return (
     <SettingsFrame>
       <AdminPageHeader
-        title="Notifications"
+        title="Email notifications"
         description="Everything shows up in your inbox (the bell). Choose what is also emailed to you, and when."
       />
       {query.data ? (
@@ -111,11 +111,14 @@ function PreferencesForm({ preferences }: { preferences: NotificationPreferences
         </Callout>
       )}
 
-      <AdminSection
-        id="email"
-        title="Email"
-        description={`The daily digest arrives at ${digestTime(preferences.digest_hour)} (${preferences.timezone}) with everything set to “Daily digest”.`}
-        actions={
+      {/* One heading per page (the h2 above): the list needs no section title of its own. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+          <p className="max-w-2xl text-sm text-muted">
+            {preferences.email_available ? 'The' : 'Once email is on, the'} daily digest arrives at{' '}
+            {digestTime(preferences.digest_hour)} ({preferences.timezone}) with everything set to
+            “Daily digest”.
+          </p>
           <p
             role="status"
             className="flex h-7 items-center gap-1 text-sm text-muted"
@@ -129,9 +132,11 @@ function PreferencesForm({ preferences }: { preferences: NotificationPreferences
               </>
             )}
           </p>
-        }
-      >
-        <ul className="flex flex-col divide-y divide-subtle rounded-lg border">
+        </div>
+        <ul
+          aria-label="Email for each kind of notification"
+          className="flex flex-col divide-y divide-subtle rounded-lg border"
+        >
           {preferences.items.map((item) => (
             <PreferenceRow
               key={item.type}
@@ -153,7 +158,7 @@ function PreferencesForm({ preferences }: { preferences: NotificationPreferences
             Turn off all email
           </Button>
         </div>
-      </AdminSection>
+      </div>
     </div>
   )
 }
@@ -181,7 +186,7 @@ function PreferenceRow({
         </span>
         {changed && (
           <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
-            Default: {describeMode(item.default_mode)}
+            Default: {modeLabel(item.default_mode)}
             <span aria-hidden="true">·</span>
             <button
               type="button"

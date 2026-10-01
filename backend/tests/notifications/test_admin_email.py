@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ from app.models.base import utcnow
 from app.models.enums import EmailStatus, EmailType
 from app.models.notification import OutboundEmail
 from app.models.user import User
+from tests.factories import make_user
 from tests.notifications.conftest import (
     SMTP,
     AsUser,
@@ -85,6 +87,26 @@ async def test_config_shows_the_effective_settings_with_credentials_masked(
         "oldest_queued_at": None,
         "last_sent_at": None,
     }
+
+
+@pytest.mark.settings(
+    smtp_username=None, smtp_password=None, smtp_username_set=True, smtp_password_set=True
+)
+async def test_api_pods_without_the_credentials_still_show_them_as_set(
+    api: AsUser, team: Team
+) -> None:
+    """Review L4: only the worker sends mail, so only the worker gets the SMTP Secret;
+    the chart tells the API pods that credentials are set."""
+    body = ok(await (await api(team.platform)).get("/admin/email"))
+
+    assert (body["username_set"], body["password_set"]) == (True, True)
+
+
+@pytest.mark.settings(smtp_username=None, smtp_password=None)
+async def test_no_credentials_show_as_not_set(api: AsUser, team: Team) -> None:
+    body = ok(await (await api(team.platform)).get("/admin/email"))
+
+    assert (body["username_set"], body["password_set"]) == (False, False)
 
 
 @pytest.mark.settings(smtp_host=None, smtp_from=None)
@@ -314,3 +336,66 @@ async def test_stats(api: AsUser, team: Team, outbox: Outbox) -> None:
 
     assert (stats["queued"], stats["failed"], stats["sending"]) == (1, 1, 0)
     assert stats["oldest_queued_at"] is not None
+
+
+async def fail(outbox: Outbox, email_id: str | UUID) -> None:
+    await outbox.set(
+        OutboundEmail,
+        UUID(str(email_id)),
+        status=EmailStatus.FAILED,
+        attempts=1,
+        next_attempt_at=None,
+        last_error="connection refused",
+    )
+
+
+async def test_retrying_a_test_email_counts_towards_the_test_email_limit(
+    api: AsUser, team: Team, outbox: Outbox
+) -> None:
+    """Review L9: a retry reset the attempts outside the five-per-ten-minutes limit, so a
+    failing test email could be sent again and again."""
+    pat = await api(team.platform)
+    tests = [ok(await pat.post("/admin/email/test", {}), 202) for _ in range(4)]
+    await fail(outbox, tests[0]["id"])
+
+    body = ok(await pat.post(f"/admin/email/outbox/{tests[0]['id']}/retry"))  # 5th use
+    assert (body["status"], body["attempts"]) == ("queued", 0)
+    await fail(outbox, tests[0]["id"])
+
+    response = await pat.post(f"/admin/email/outbox/{tests[0]['id']}/retry")
+    assert_problem(response, 429, "too_many_attempts")
+    assert 590 <= int(response.headers["Retry-After"]) <= 600
+    assert_problem(await pat.post("/admin/email/test", {}), 429, "too_many_attempts")
+    assert (await outbox.email(UUID(tests[0]["id"]))).status is EmailStatus.FAILED
+
+
+async def test_another_admins_retry_uses_their_own_allowance(
+    api: AsUser, team: Team, outbox: Outbox, db_session: AsyncSession
+) -> None:
+    pat = await api(team.platform)
+    tests = [ok(await pat.post("/admin/email/test", {}), 202) for _ in range(5)]
+    await fail(outbox, tests[0]["id"])
+    other = await make_user(db_session, "Polly Platform", platform_admin=True)
+
+    ok(await (await api(other)).post(f"/admin/email/outbox/{tests[0]['id']}/retry"))
+
+
+async def test_retry_all_includes_test_emails_only_within_the_limit(
+    api: AsUser, team: Team, outbox: Outbox, db_session: AsyncSession
+) -> None:
+    pat = await api(team.platform)
+    tests = [ok(await pat.post("/admin/email/test", {}), 202) for _ in range(4)]
+    for test in tests:
+        await fail(outbox, test["id"])
+    owner_email = await failed_email(api, team, outbox)
+
+    assert ok(await pat.post("/admin/email/outbox/retry-failed")) == {"retried": 2}
+
+    statuses = {UUID(t["id"]): (await outbox.email(UUID(t["id"]))).status for t in tests}
+    assert sorted(status.value for status in statuses.values()) == ["failed"] * 3 + ["queued"]
+    assert (await outbox.email(owner_email.id)).status is EmailStatus.QUEUED
+    entry = only(
+        list(await db_session.scalars(select(AuditLog).where(AuditLog.action == "email.retry")))
+    )
+    assert (entry.details["count"], entry.details["test_emails"]) == (2, 1)
+    assert_problem(await pat.post("/admin/email/test", {}), 429, "too_many_attempts")

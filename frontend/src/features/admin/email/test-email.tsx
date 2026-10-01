@@ -1,8 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Send } from 'lucide-react'
-import { useEffect, useState, type SyntheticEvent } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 
-import { TEST_POLL_LIMIT_MS, useOutboxEmail, useSendTestEmail } from '@/api/admin-email'
+import {
+  TEST_POLL_LIMIT_MS,
+  TEST_POLL_MS,
+  TEST_SLOW_POLL_MS,
+  useOutboxEmail,
+  useSendTestEmail,
+} from '@/api/admin-email'
 import { queryKeys } from '@/api/keys'
 import { hasErrorCode, isApiError, type ApiError } from '@/api/errors'
 import type { OutboxEmail } from '@/api/types'
@@ -24,9 +30,15 @@ function minutes(seconds: number): string {
 /**
  * Send a test email (contract-phase3 §3.10): it goes through the outbox and
  * the worker like any other email, with one attempt; the page then checks its
- * row every 2 seconds for up to 30: sent, the error, or "still queued".
+ * row every 2 seconds for up to 30: sent, the error, or "still queued" (then
+ * `onStillQueued(true)`, so the page's status says email may not be going out).
+ * Only shown once email is set up.
  */
-export function TestEmailSection({ configured }: { configured: boolean }) {
+export function TestEmailSection({
+  onStillQueued,
+}: {
+  onStillQueued: (stillQueued: boolean) => void
+}) {
   const me = useCurrentUser()
   const send = useSendTestEmail()
   const [to, setTo] = useState('')
@@ -36,6 +48,7 @@ export function TestEmailSection({ configured }: { configured: boolean }) {
     event.preventDefault()
     if (send.isPending) return
     setSentId(undefined)
+    onStillQueued(false)
     send.mutate(to.trim() || null, { onSuccess: (email) => setSentId(email.id) })
   }
 
@@ -64,26 +77,20 @@ export function TestEmailSection({ configured }: { configured: boolean }) {
               placeholder={me.email}
               value={to}
               maxLength={254}
-              disabled={!configured}
               onChange={(event) => setTo(event.target.value)}
             />
           </Field>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={send.isPending}
-            disabled={!configured}
-            className="sm:mt-6"
-          >
+          <Button type="submit" variant="primary" loading={send.isPending} className="sm:mt-6">
             <Send />
             Send test email
           </Button>
         </div>
-        {!configured && (
-          <p className="text-sm text-muted">Set up email first (above), then try it here.</p>
+        {error && !fieldError && (
+          <InView>
+            <SendError error={error} />
+          </InView>
         )}
-        {error && !fieldError && <SendError error={error} />}
-        {sentId && <TestResult emailId={sentId} />}
+        {sentId && <TestResult emailId={sentId} onStillQueued={onStillQueued} />}
       </form>
     </AdminSection>
   )
@@ -120,11 +127,34 @@ function SendError({ error }: { error: Error }) {
   )
 }
 
+/**
+ * Scrolls its content into view when it appears or its `step` changes: the
+ * result of the test email lands below the button, often below the fold.
+ */
+function InView({ children, step }: { children: ReactNode; step?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [step])
+  return (
+    <div ref={ref} className="scroll-mb-6">
+      {children}
+    </div>
+  )
+}
+
 /** Follows the queued test email until it is sent, fails, or 30 seconds pass. */
-function TestResult({ emailId }: { emailId: string }) {
+function TestResult({
+  emailId,
+  onStillQueued,
+}: {
+  emailId: string
+  onStillQueued: (stillQueued: boolean) => void
+}) {
   const queryClient = useQueryClient()
   const [timedOut, setTimedOut] = useState(false)
-  const email = useOutboxEmail(emailId, { poll: !timedOut })
+  // Every 2 s for 30 s; then less often, so a late send still shows up.
+  const email = useOutboxEmail(emailId, { pollMs: timedOut ? TEST_SLOW_POLL_MS : TEST_POLL_MS })
   const settled = email.data && !['queued', 'sending'].includes(email.data.status)
 
   // Sent or failed: the counters and the outbox below have changed.
@@ -142,23 +172,34 @@ function TestResult({ emailId }: { emailId: string }) {
 
   const data = email.data
   const waiting = !data || data.status === 'queued' || data.status === 'sending'
-  if (waiting && !timedOut) {
+  const stillQueued = waiting && timedOut
+  // Tell the page while it's stuck (its status callout warns), and once it isn't.
+  useEffect(() => {
+    onStillQueued(stillQueued)
+  }, [stillQueued, onStillQueued])
+
+  if (!waiting) {
     return (
-      <p role="status" className="flex items-center gap-2 text-sm text-secondary">
-        <Spinner className="text-muted" />
-        {data?.status === 'sending' ? 'Sending…' : 'Queued, waiting for the worker…'}
-      </p>
+      <InView step={data.status}>
+        <TestOutcome email={data} />
+      </InView>
     )
   }
-  if (waiting) {
-    return (
-      <Callout role="status" tone="warning" title="Still queued: is the worker running?">
-        Nothing has picked it up in 30 seconds. Check that the worker deployment is up and can reach
-        the database; the email goes out as soon as it is.
-      </Callout>
-    )
-  }
-  return <TestOutcome email={data} />
+  return (
+    <InView step={timedOut ? 'stuck' : 'waiting'}>
+      {timedOut ? (
+        <Callout role="status" tone="warning" title="Still queued: is the worker running?">
+          Nothing has picked it up in 30 seconds. Check that the worker deployment is up and can
+          reach the database; the email goes out as soon as it is.
+        </Callout>
+      ) : (
+        <p role="status" className="flex items-center gap-2 text-sm text-secondary">
+          <Spinner className="text-muted" />
+          {data?.status === 'sending' ? 'Sending…' : 'Queued, waiting for the worker…'}
+        </p>
+      )}
+    </InView>
+  )
 }
 
 function TestOutcome({ email }: { email: OutboxEmail }) {

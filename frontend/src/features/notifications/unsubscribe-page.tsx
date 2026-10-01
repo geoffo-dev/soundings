@@ -78,24 +78,40 @@ function SignInToPreferences({ children }: { children: ReactNode }) {
   )
 }
 
-/** Missing, cut-off, forged or outdated (the secret key changed) links all read the same. */
+/** The icon above each state's heading. */
+function StateIcon({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-10 items-center justify-center rounded-xl border bg-surface text-muted [&_svg]:size-5"
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * Missing, cut-off, forged or outdated (the secret key changed) links all read
+ * the same. Laid out like the page's other states.
+ */
 function BrokenLink() {
   return (
-    <EmptyState
-      role="alert"
-      size="compact"
-      headingLevel={1}
-      icon={<LinkIcon />}
-      title="This unsubscribe link doesn’t work"
-      description="It may be incomplete or no longer valid. Sign in to choose which emails you get."
-      action={
-        <Button variant="primary" asChild>
-          <Link to="/login" search={{ next: PREFERENCES }}>
-            Sign in to your email preferences
-          </Link>
-        </Button>
-      }
-    />
+    <div role="alert" className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <StateIcon>
+          <LinkIcon />
+        </StateIcon>
+        <h1 className="text-xl font-semibold text-primary">This unsubscribe link doesn’t work</h1>
+        <p className="text-base text-secondary">
+          It may be incomplete or no longer valid. Sign in to choose which emails you get.
+        </p>
+      </div>
+      <Button variant="primary" size="lg" asChild>
+        <Link to="/login" search={{ next: PREFERENCES }}>
+          Sign in to your email preferences
+        </Link>
+      </Button>
+    </div>
   )
 }
 
@@ -130,8 +146,9 @@ function Unsubscribe({ token, info }: { token: string; info: UnsubscribeInfo }) 
             {justDone ? 'You’re unsubscribed' : 'You’re already unsubscribed'}
           </h1>
           <p className="text-base text-secondary">
-            {subject.done} at <span className="font-medium text-primary">{info.email_hint}</span>.
-            You’ll still see notifications when you open Soundings.
+            {subject.done.before}
+            <span className="font-medium text-primary">{info.email_hint}</span>
+            {subject.done.after} You’ll still see notifications when you open Soundings.
           </p>
         </div>
         <div className="flex flex-col gap-2">
@@ -161,18 +178,16 @@ function Unsubscribe({ token, info }: { token: string; info: UnsubscribeInfo }) 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <span
-          aria-hidden="true"
-          className="flex size-10 items-center justify-center rounded-xl border bg-surface text-muted"
-        >
-          <MailX className="size-5" />
-        </span>
+        <StateIcon>
+          <MailX />
+        </StateIcon>
         <h1 className="text-xl font-semibold text-primary">{subject.title}</h1>
         <p className="text-base text-secondary">
-          Emails to <span className="font-medium text-primary">{info.email_hint}</span>
-          {subject.detail ? `: ${subject.detail}` : subject.list.length > 0 ? ' about:' : '.'}
+          Soundings will stop emailing{' '}
+          <span className="font-medium text-primary">{info.email_hint}</span>
+          {subject.when ? ` when ${subject.when}.` : subject.list.length > 0 ? ' about:' : '.'}
         </p>
-        {!subject.detail && subject.list.length > 0 && (
+        {!subject.when && subject.list.length > 0 && (
           <ul className="flex list-disc flex-col gap-0.5 pl-5 text-base text-primary marker:text-muted">
             {subject.list.map((label) => (
               <li key={label}>{label}</li>

@@ -6,10 +6,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import select, update
+from sqlalchemy import event, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import run_before_commit, session_scope
@@ -24,6 +25,7 @@ from app.models.enums import (
 )
 from app.models.idea import IdeaWatcher
 from app.models.notification import Notification, NotificationPreference, OutboundEmail
+from app.models.project import ProjectMember
 from app.models.user import User
 from app.notifications import fanout
 from app.services import ideas as idea_service
@@ -402,3 +404,180 @@ async def test_outbox_row_is_never_written_for_the_actor(
 
     assert await outbox.notifications(team.owner.id) == []
     assert (await outbox.db.scalar(select(OutboundEmail.id))) is None
+
+
+async def _watchers(db: AsyncSession, team: Team, idea_id: Any, count: int) -> None:
+    users = [
+        {
+            "id": uuid4(),
+            "email": f"watcher{n}-{uuid4().hex[:6]}@example.com",
+            "display_name": f"W{n}",
+        }
+        for n in range(count)
+    ]
+    await db.execute(insert(User).values(users))
+    await db.execute(
+        insert(ProjectMember).values(
+            [
+                {"project_id": team.project.id, "user_id": u["id"], "role": ProjectRole.VIEWER}
+                for u in users
+            ]
+        )
+    )
+    await db.execute(
+        insert(IdeaWatcher).values([{"idea_id": idea_id, "user_id": u["id"]} for u in users])
+    )
+    # Status changes by email at once (the default is the digest).
+    await db.execute(
+        insert(NotificationPreference).values(
+            [
+                {
+                    "user_id": u["id"],
+                    "type": NotificationType.STATUS_CHANGED,
+                    "mode": NotificationMode.IMMEDIATE,
+                }
+                for u in users
+            ]
+        )
+    )
+    await db.commit()
+
+
+async def test_the_fan_out_costs_the_same_statements_for_many_watchers(
+    app: FastAPI, api: AsUser, team: Team, outbox: Outbox, db_session: AsyncSession
+) -> None:
+    """Review L6: the fan-out ran in the request with one UPDATE per email (3,000
+    watchers: 4 s while the idea was locked). Its statements must not grow per person."""
+    admin = await api(team.admin)
+    executed: list[int] = []
+
+    def count(
+        conn: Any, cursor: Any, statement: str, params: Any, context: Any, many: bool
+    ) -> None:
+        # A DBAPI executemany runs one statement per parameter set; a batched
+        # multi-row INSERT (one parameter dict) is one statement.
+        executed.append(len(params) if many and isinstance(params, list) else 1)
+
+    async def statements_for(watchers: int) -> int:
+        idea = await new_idea(api, team)
+        await _watchers(db_session, team, idea["id"], watchers)
+        engine = app.state.engine.sync_engine
+        executed.clear()
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            await move(api, team.admin, idea, "evaluating")
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        return sum(executed)
+
+    few = await statements_for(20)
+    many = await statements_for(400)
+
+    assert many <= few + 2, (few, many)
+    notes = await outbox.notifications(type_=NotificationType.STATUS_CHANGED)
+    assert len(notes) >= 420
+    emails = {e.id: e for e in await outbox.emails()}
+    by_note = {note.user_id: note.email_id for note in notes if note.email_id is not None}
+    assert len(by_note) >= 420  # every watcher's notification is linked to its own email
+    assert all(emails[email_id].recipient_user_id == user for user, email_id in by_note.items())
+    assert admin is not None
+
+
+async def test_a_large_audience_is_notified_by_the_worker(
+    app: FastAPI,
+    settings: Any,
+    api: AsUser,
+    team: Team,
+    outbox: Outbox,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review L6: above the inline limit the request only defers a job (atomically);
+    the worker notifies everyone, once however often it runs."""
+    monkeypatch.setattr(fanout, "FAN_OUT_INLINE_LIMIT", 3)
+    idea = await new_idea(api, team)
+    await _watchers(db_session, team, idea["id"], 5)
+
+    await move(api, team.admin, idea, "evaluating")
+
+    assert await outbox.notifications(type_=NotificationType.STATUS_CHANGED) == []
+    [job] = await outbox.jobs("notify_event")
+    assert job["status"] == "todo"
+    event_id = job["args"]["event_id"]
+
+    await fanout.notify_deferred_event(app.state.sessionmaker, settings, UUID(event_id))
+    await fanout.notify_deferred_event(app.state.sessionmaker, settings, UUID(event_id))
+
+    notes = await outbox.notifications(type_=NotificationType.STATUS_CHANGED)
+    people = [note.user_id for note in notes]
+    assert len(people) == len(set(people)) >= 6  # 5 watchers and the submitter
+    assert team.admin.id not in people  # the actor
+    emails = await outbox.emails()
+    assert {note.email_id for note in notes if note.email_id} == {e.id for e in emails}
+    assert len(emails) >= 5  # the watchers chose immediate
+
+
+async def test_a_deferred_comment_fan_out_keeps_mentions_separate(
+    app: FastAPI,
+    settings: Any,
+    api: AsUser,
+    team: Team,
+    outbox: Outbox,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fanout, "FAN_OUT_INLINE_LIMIT", 3)
+    idea = await new_idea(api, team)
+    await _watchers(db_session, team, idea["id"], 4)
+    ok(await (await api(team.owner)).put(f"/ideas/{idea['key']}/watch"))
+    body = {"body_md": f"@[Olive](user:{team.owner.id}) have a look"}
+
+    ok(await (await api(team.admin)).post(f"/ideas/{idea['key']}/comments", body), 201)
+
+    [mention] = await outbox.notifications(type_=NotificationType.MENTION)  # inline
+    assert mention.user_id == team.owner.id
+    assert await outbox.notifications(type_=NotificationType.COMMENT) == []
+    [job] = await outbox.jobs("notify_event")
+    await fanout.notify_deferred_event(
+        app.state.sessionmaker, settings, UUID(job["args"]["event_id"])
+    )
+
+    comments = await outbox.notifications(type_=NotificationType.COMMENT)
+    users = {note.user_id for note in comments}
+    assert len(users) >= 5  # 4 watchers and the submitter
+    assert team.owner.id not in users  # mentioned instead
+    assert team.admin.id not in users  # the author
+
+
+async def test_a_rolled_back_request_defers_no_fan_out_job(
+    app: FastAPI, api: AsUser, team: Team, outbox: Outbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fanout, "FAN_OUT_INLINE_LIMIT", 0)
+    idea = await new_idea(api, team)
+
+    class Boom(Exception):
+        pass
+
+    deferred: list[object] = []
+
+    async def failing_request() -> None:
+        async with session_scope(app.state.sessionmaker, settings=app.state.settings) as db:
+            admin = await db.get(User, team.admin.id)
+            assert admin is not None
+            principal = Principal(user=admin)
+            loaded = await idea_service.load_idea(db, principal, idea["key"], for_update=True)
+            await idea_service.set_owner(db, principal, loaded, team.owner.id)
+            await run_before_commit(db)
+            deferred.append(
+                await db.scalar(
+                    text("SELECT id FROM procrastinate_jobs WHERE task_name = 'notify_event'")
+                )
+            )
+            raise Boom
+
+    with pytest.raises(Boom):
+        await failing_request()
+
+    assert deferred[0] is not None  # deferred in the transaction ...
+    assert await outbox.jobs("notify_event") == []  # ... and rolled back with it
+    assert await outbox.notifications() == []

@@ -20,7 +20,7 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('formatRelative', () => {
   it('uses words for recent moments', () => {
-    expect(formatRelative(at(0, 0, 0), en)).toBe('now')
+    expect(formatRelative(at(0, 0, 0), en)).toBe('just now')
     expect(formatRelative(at(0, 0, -5), en)).toBe('5 minutes ago')
     expect(formatRelative(at(0, -3), en)).toBe('3 hours ago')
     expect(formatRelative(at(-1, -2), en)).toBe('yesterday')

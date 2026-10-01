@@ -223,8 +223,10 @@ Notifications has your own preferences (immediate, daily digest or off per type)
 - **SMTP down:** `docker compose -f dev/docker-compose.yml stop mailpit`, trigger an
   email, and Settings → Email shows it queued with "connection refused"; `... start
   mailpit` and it arrives at the next retry (30 s, 1, 2, 4 minutes ... after each
-  failure). Mailpit keeps its messages across a stop and start (not across `make
-  dev-down`).
+  failure). After five connection failures in a row the worker pauses sending (30 s,
+  doubling to 5 minutes): due emails wait without using an attempt, and the first one
+  after the pause checks whether the server is back. Mailpit keeps its messages across
+  a stop and start (not across `make dev-down`).
 - **No email at all:** comment out `SOUNDINGS_SMTP_HOST`: the app works with in-app
   notifications only (the bell) and platform admins see a banner.
 - **The same check without a browser:** `make email-smoke` (`scripts/email-smoke.sh`,

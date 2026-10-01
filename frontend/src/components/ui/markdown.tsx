@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { MENTION_HREF } from '@/lib/mentions'
+import { exactMention, MENTION_HREF } from '@/lib/mentions'
 import { cn } from '@/lib/utils'
 
 const isExternal = (href: string | undefined) => !!href && /^https?:\/\//i.test(href)
@@ -133,29 +133,53 @@ interface MdNode {
   url?: string
   children?: MdNode[]
   data?: Record<string, unknown>
+  position?: { start: { offset?: number }; end: { offset?: number } }
 }
 
 function plainText(node: MdNode): string {
   return node.value ?? (node.children ?? []).map(plainText).join('')
 }
 
-function replaceMentions(node: MdNode): void {
+/**
+ * The person a `user:` link names, if its source is exactly one token as the
+ * server reads it (`@[Label](user:<id>)`, lib/mentions); else null. Other
+ * spellings Markdown also accepts (a title, `<user:…>`, brackets in the label)
+ * are never rewritten or notified by the server, so they must not look like a
+ * mention: their label could be anything.
+ */
+function canonicalMention(link: MdNode, source: string): { label: string; userId: string } | null {
+  const start = link.position?.start.offset
+  const end = link.position?.end.offset
+  if (start === undefined || end === undefined || start < 1) return null
+  const token = exactMention(source.slice(start - 1, end))
+  return token && { label: token.label, userId: token.userId }
+}
+
+function replaceMentions(node: MdNode, source: string): void {
   const children = node.children
   if (!children) return
-  children.forEach((child, index) => {
-    const match = child.type === 'link' && child.url ? MENTION_HREF.exec(child.url) : null
-    const before = children[index - 1]
-    if (match && before?.type === 'text' && before.value?.endsWith('@')) {
-      before.value = before.value.slice(0, -1)
-      children[index] = {
-        type: 'text',
-        value: `@${plainText(child)}`,
-        data: { hName: 'span', hProperties: { dataMention: (match[1] ?? '').toLowerCase() } },
+  const next: MdNode[] = []
+  for (const child of children) {
+    if (child.type === 'link' && child.url && MENTION_HREF.test(child.url)) {
+      const before = next.at(-1)
+      const mention = before?.type === 'text' ? canonicalMention(child, source) : null
+      if (before && mention && before.value?.endsWith('@')) {
+        before.value = before.value.slice(0, -1)
+        next.push({
+          type: 'text',
+          value: `@${mention.label}`,
+          data: { hName: 'span', hProperties: { dataMention: mention.userId } },
+        })
+      } else {
+        // Not a mention: its text, never a link (`user:` isn't a URL to follow).
+        next.push({ type: 'text', value: plainText(child) })
       }
-      return
+      continue
     }
-    replaceMentions(child)
-  })
+    replaceMentions(child, source)
+    next.push(child)
+  }
+  node.children = next
 }
 
 /**
@@ -163,10 +187,13 @@ function replaceMentions(node: MdNode): void {
  * a URL anyone should follow). Anything else stays as written.
  */
 function remarkMentions() {
-  return (tree: MdNode) => replaceMentions(tree)
+  // The source text is react-markdown's `children`, a string (the file's value).
+  return (tree: MdNode, file: { value: unknown }) =>
+    replaceMentions(tree, typeof file.value === 'string' ? file.value : '')
 }
 
-const mentionChip = 'rounded-sm px-1 py-px font-medium whitespace-nowrap [overflow-wrap:normal]'
+/** Tight, so punctuation stays with the name ("@Ada Lovelace:"). */
+const mentionChip = 'rounded-sm px-0.5 font-medium whitespace-nowrap [overflow-wrap:normal]'
 
 export interface MarkdownProps {
   children: string
@@ -186,10 +213,9 @@ export function Markdown({ children, className, mentionSelfId }: MarkdownProps) 
         return (
           <span
             data-mention={userId}
-            className={cn(
-              mentionChip,
-              self ? 'bg-accent-subtle text-accent' : 'bg-subtle text-primary',
-            )}
+            data-mention-self={self || undefined}
+            // You: a tint, not the accent text colour links use.
+            className={cn(mentionChip, self ? 'bg-accent-subtle' : 'bg-subtle', 'text-primary')}
           >
             {content}
           </span>

@@ -132,7 +132,12 @@ export function formatRelative(
   const diff = date.getTime() - nowDate.getTime()
   const abs = Math.abs(diff)
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style })
-  if (abs < 45_000) return rtf.format(0, 'second')
+  if (abs < 45_000) {
+    const moment = rtf.format(0, 'second')
+    // "Sent just now", not "Sent now" (a bare "now" reads oddly for the past). A few
+    // seconds ahead is the server's clock, not the future.
+    return diff < 5_000 && moment === 'now' ? 'just now' : moment
+  }
   if (abs < HOUR) return rtf.format(Math.round(diff / MINUTE), 'minute')
   if (abs < DAY && calendarDaysBetween(nowDate, date) === 0)
     return rtf.format(Math.round(diff / HOUR), 'hour')

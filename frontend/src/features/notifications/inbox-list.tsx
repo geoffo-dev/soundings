@@ -6,6 +6,7 @@ import type { NotificationItem } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { RelativeTime, useNow } from '@/components/ui/relative-time'
 import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
+import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
 import { cn } from '@/lib/utils'
 
 import {
@@ -21,7 +22,7 @@ export interface InboxListProps {
   onOpen: (item: NotificationItem) => void
   /** Popover: tighter padding. */
   density?: 'comfortable' | 'compact'
-  /** Mark rows for page-wide j/k navigation (the full page). */
+  /** Mark rows for page-wide j/k navigation and focus return (the full page). */
   navItems?: boolean
   /** Level of the day headings: 2 on the page, 3 under the popover's title. */
   headingLevel?: 2 | 3
@@ -31,8 +32,10 @@ export interface InboxListProps {
 /**
  * The inbox, newest first, grouped by day (Today, Yesterday, Mon 28 Sept): one
  * row per notification with who did it, the idea, a plain sentence and when.
- * Unread rows have a dot and a stronger title (never colour alone: the dot has
- * a label). Rows are links: Enter opens, ↑/↓ move between them.
+ * Consecutive notifications about the same idea share its title (shown once,
+ * on the first). Unread rows have a dot and a stronger title (never colour
+ * alone: the dot has a label). Rows are links: Enter opens, ↑/↓ move between
+ * them.
  */
 export function InboxList({
   items,
@@ -76,7 +79,7 @@ export function InboxList({
             {group.label}
           </Heading>
           <ul className="flex flex-col">
-            {group.items.map((item) => (
+            {group.items.map((item, index) => (
               <li key={item.id}>
                 <InboxRow
                   item={item}
@@ -84,6 +87,7 @@ export function InboxList({
                   onOpen={onOpen}
                   density={density}
                   navItem={navItems}
+                  sameIdea={group.items[index - 1]?.idea.id === item.idea.id}
                 />
               </li>
             ))}
@@ -100,26 +104,34 @@ function InboxRow({
   onOpen,
   density,
   navItem,
+  sameIdea,
 }: {
   item: NotificationItem
   now: number
   onOpen: (item: NotificationItem) => void
   density: 'comfortable' | 'compact'
   navItem: boolean
+  /** The row above is about the same idea: its title isn't repeated. */
+  sameIdea: boolean
 }) {
   const unread = item.read_at === null
   const sentence = describeNotification(item, now)
   const link = notificationLink(item)
   const label = `${unread ? 'Unread: ' : ''}${notificationText(item, now)}. ${item.idea.key} ${item.idea.title}`
-  // Next to the title on a wide page; on the sentence line in the popover and on
-  // phones, so the title keeps its room.
-  const time = (className: string) => (
+  // Always on the first line, so a short sentence never wraps around it.
+  const time = (
     <RelativeTime
       date={item.created_at}
       style="narrow"
       tooltip={false}
-      className={cn('shrink-0 text-xs text-muted', className)}
+      className="shrink-0 text-xs text-muted"
     />
+  )
+  const what = (
+    <span className="min-w-0 flex-1 text-sm text-pretty text-secondary">
+      {sentence.actor && <span className="font-medium text-primary">{sentence.actor} </span>}
+      <SentenceText text={sentence.text} keepTogether={sentence.keepTogether} />
+    </span>
   )
   return (
     <Link
@@ -133,11 +145,14 @@ function InboxRow({
         onOpen(item)
       }}
       data-notification-row=""
-      {...(navItem ? { [NAV_ITEM_ATTRIBUTE]: '' } : {})}
+      {...(navItem ? { [NAV_ITEM_ATTRIBUTE]: '', [ROW_ID_ATTRIBUTE]: item.id } : {})}
       aria-label={label}
+      data-same-idea={sameIdea || undefined}
       className={cn(
-        'group flex items-start gap-3 rounded-md transition-colors duration-100 hover:bg-subtle focus-visible:-outline-offset-2',
-        density === 'compact' ? 'px-3 py-2.5' : 'px-3 py-3',
+        'group flex items-start gap-3 rounded-md px-3 transition-colors duration-100 hover:bg-subtle focus-visible:-outline-offset-2',
+        density === 'compact' ? 'pb-2.5' : 'pb-3',
+        // Under the same idea's row: closer, so the two read as one thread.
+        sameIdea ? 'pt-0.5' : density === 'compact' ? 'pt-2.5' : 'pt-3',
       )}
     >
       {item.actor ? (
@@ -151,27 +166,30 @@ function InboxRow({
         </span>
       )}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 text-xs font-medium text-muted tabular-nums">
-            {item.idea.key}
+        {sameIdea ? (
+          <span className="flex min-w-0 items-baseline gap-2">
+            {what}
+            {time}
           </span>
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-sm',
-              unread ? 'font-semibold text-primary' : 'font-medium text-secondary',
-            )}
-          >
-            {item.idea.title}
-          </span>
-          {density === 'comfortable' && time('hidden sm:inline')}
-        </span>
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="min-w-0 flex-1 text-sm text-pretty text-secondary">
-            {sentence.actor && <span className="font-medium text-primary">{sentence.actor} </span>}
-            <SentenceText text={sentence.text} keepTogether={sentence.keepTogether} />
-          </span>
-          {time(density === 'comfortable' ? 'sm:hidden' : '')}
-        </span>
+        ) : (
+          <>
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="shrink-0 text-xs font-medium text-muted tabular-nums">
+                {item.idea.key}
+              </span>
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-sm',
+                  unread ? 'font-semibold text-primary' : 'font-medium text-secondary',
+                )}
+              >
+                {item.idea.title}
+              </span>
+              {time}
+            </span>
+            {what}
+          </>
+        )}
         {sentence.quote && (
           <span className="line-clamp-2 text-sm [overflow-wrap:anywhere] text-muted">
             “{sentence.quote}”

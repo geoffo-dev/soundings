@@ -1,4 +1,5 @@
 import type { EmailConfig, EmailStatus, EmailType, SmtpSecurity } from '@/api/types'
+import { TYPE_COPY } from '@/features/notifications/notification-text'
 
 /**
  * Words for Admin → Email (contract-phase3 §3.10): email types and statuses,
@@ -7,14 +8,15 @@ import type { EmailConfig, EmailStatus, EmailType, SmtpSecurity } from '@/api/ty
  * failed", "connection refused"); it is shown as plain text, never as HTML.
  */
 
+/** One email of each type: the notification types' shared names (TYPE_COPY), and the rest. */
 export const EMAIL_TYPE_LABEL: Record<EmailType, string> = {
-  owner_assigned: 'Made owner',
-  evaluator_invited: 'Evaluation invitation',
-  evaluation_reminder: 'Evaluation reminder',
-  evaluations_complete: 'All evaluations in',
-  status_changed: 'Status change',
-  comment: 'New comment',
-  mention: '@mention',
+  owner_assigned: TYPE_COPY.owner_assigned.one,
+  evaluator_invited: TYPE_COPY.evaluator_invited.one,
+  evaluation_reminder: TYPE_COPY.evaluation_reminder.one,
+  evaluations_complete: TYPE_COPY.evaluations_complete.one,
+  status_changed: TYPE_COPY.status_changed.one,
+  comment: TYPE_COPY.comment.one,
+  mention: TYPE_COPY.mention.one,
   digest: 'Daily digest',
   test: 'Test email',
   submission_received: 'Submission received',

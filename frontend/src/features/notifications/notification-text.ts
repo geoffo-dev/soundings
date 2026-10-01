@@ -1,4 +1,4 @@
-import type { NotificationItem, NotificationMode, NotificationType } from '@/api/types'
+import type { NotificationItem, NotificationType } from '@/api/types'
 import { calendarDaysBetween, formatDate, type DateInput } from '@/lib/dates'
 
 /**
@@ -166,50 +166,82 @@ export function unreadBadge(count: number): string | null {
 /* Types and modes (Settings → Notifications, the unsubscribe page)    */
 /* ------------------------------------------------------------------ */
 
-export const TYPE_COPY: Record<NotificationType, { label: string; description: string }> = {
+/**
+ * One name per notification type, everywhere: Settings → Notifications, the
+ * unsubscribe page, the admin outbox (`one`) and, in lower case (`phrase`),
+ * the emails' "Unsubscribe from …" footer (`app.email.model.TYPE_LABELS`).
+ */
+export const TYPE_COPY: Record<
+  NotificationType,
+  {
+    /** A list label: "Evaluation requests". */
+    label: string
+    /** One email of the type (the outbox): "Evaluation request". */
+    one: string
+    /** Inside a sentence: "Unsubscribe from evaluation requests". */
+    phrase: string
+    /** "… when someone asks you to evaluate an idea". */
+    when: string
+    /** Under the label in Settings → Notifications. */
+    description: string
+  }
+> = {
   owner_assigned: {
-    label: 'You’re made an owner',
+    label: 'Owner assignments',
+    one: 'Owner assignment',
+    phrase: 'owner assignments',
+    when: 'someone makes you the owner of an idea',
     description: 'Someone else makes you the owner of an idea.',
   },
   evaluator_invited: {
-    label: 'You’re asked to evaluate',
-    description: 'With the due date and a link straight to the evaluation.',
+    label: 'Evaluation requests',
+    one: 'Evaluation request',
+    phrase: 'evaluation requests',
+    when: 'someone asks you to evaluate an idea',
+    description:
+      'Someone asks you to evaluate an idea: with the due date and a link to the evaluation.',
   },
   evaluation_reminder: {
     label: 'Evaluation reminders',
+    one: 'Evaluation reminder',
+    phrase: 'evaluation reminders',
+    when: 'an evaluation you still owe is nearly due',
     description: 'Before an evaluation you still owe is due, and on the day.',
   },
   evaluations_complete: {
     label: 'All evaluations are in',
+    one: 'All evaluations are in',
+    phrase: '“all evaluations are in” emails',
+    when: 'every evaluator of an idea you own has submitted',
     description: 'Every evaluator of an idea you own has submitted.',
   },
   status_changed: {
     label: 'Status changes',
+    one: 'Status change',
+    phrase: 'status changes',
+    when: 'an idea you own, evaluate or watch moves to another status',
     description: 'An idea you own, evaluate or watch moves to another status.',
   },
   comment: {
     label: 'New comments',
+    one: 'New comment',
+    phrase: 'new comments',
+    when: 'someone comments on an idea you watch',
     description: 'Someone comments on an idea you watch.',
   },
   mention: {
-    label: '@mentions',
+    label: 'Mentions',
+    one: 'Mention',
+    phrase: 'mentions',
+    when: 'someone mentions you in a comment',
     description: 'Someone mentions you in a comment.',
   },
 }
 
-/** "evaluation reminders", "new comments" (inside a sentence). */
+/** "evaluation requests", "new comments" (inside a sentence). */
 export function typePhrase(type: NotificationType): string {
-  const label = TYPE_COPY[type].label
-  return label.startsWith('@') ? label : label.charAt(0).toLowerCase() + label.slice(1)
+  return TYPE_COPY[type].phrase
 }
-
-export const MODE_COPY: Record<NotificationMode, { label: string; short: string }> = {
-  immediate: { label: 'Immediately', short: 'Immediate' },
-  digest: { label: 'In the daily digest', short: 'Daily digest' },
-  off: { label: 'Not by email', short: 'Off' },
-}
-
-export const MODES: NotificationMode[] = ['immediate', 'digest', 'off']
 
 /** "08:00" for the digest hour (24-hour, like the instance setting). */
 export function digestTime(hour: number): string {

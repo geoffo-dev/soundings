@@ -81,30 +81,63 @@ describe('the inbox hooks', () => {
     ).not.toBeNull()
   })
 
-  it('mark all read, and roll back with a toast when it fails', async () => {
+  it('mark all read at once, with Undo; sent when the toast closes, restored if that fails', async () => {
     const { result } = renderHook(
       () => ({
         summary: useNotificationSummary(),
         list: useNotifications(),
+        unread: useNotifications({ unread: true }),
         markAll: useMarkAllNotificationsRead(),
       }),
       { wrapper },
     )
     await waitFor(() => expect(result.current.summary.data?.unread_count).toBe(5))
     await waitFor(() => expect(result.current.list.data).toBeDefined())
+    await waitFor(() => expect(result.current.unread.data?.items).toHaveLength(5))
+    const sent: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (request.url.includes('/read-all')) sent.push(request.method)
+    })
+    const allRead = () => result.current.list.data?.items.every((item) => item.read_at !== null)
+
+    // Undo: nothing is sent and every dot comes back.
+    let handle: ReturnType<ReturnType<typeof useMarkAllNotificationsRead>> | undefined
+    act(() => {
+      handle = result.current.markAll(5)
+    })
+    await waitFor(() => expect(result.current.summary.data?.unread_count).toBe(0))
+    expect(allRead()).toBe(true)
+    expect(result.current.unread.data?.items).toEqual([])
+    act(() => handle?.undo())
+    await waitFor(() => expect(result.current.summary.data?.unread_count).toBe(5))
+    expect(result.current.unread.data?.items).toHaveLength(5)
+    expect(sent).toEqual([])
+
+    // The request fails: restored, with a toast.
     server.use(
       http.post('*/api/v1/me/notifications/read-all', () => problemResponse(500, 'internal_error')),
     )
-    act(() => result.current.markAll.mutate())
-    await waitFor(() => expect(result.current.markAll.isError).toBe(true))
-    expect(summary()?.unread_count).toBe(5)
+    act(() => {
+      handle = result.current.markAll(5)
+    })
+    await act(async () => {
+      await handle?.commitNow()
+    })
+    await waitFor(() => expect(result.current.summary.data?.unread_count).toBe(5))
     expect(toasts.errors).toEqual(['Couldn’t mark your notifications read'])
 
+    // It works: read on the server and in the cache.
     server.resetHandlers()
-    act(() => result.current.markAll.mutate())
-    await waitFor(() => expect(result.current.markAll.isSuccess).toBe(true))
+    act(() => {
+      handle = result.current.markAll(5)
+    })
+    await act(async () => {
+      await handle?.commitNow()
+    })
     expect(summary()?.unread_count).toBe(0)
-    expect(result.current.list.data?.items.every((item) => item.read_at !== null)).toBe(true)
+    await waitFor(() => expect(allRead()).toBe(true))
+    expect(sent).toEqual(['POST', 'POST'])
+    server.events.removeAllListeners()
   })
 })
 

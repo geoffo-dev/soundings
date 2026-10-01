@@ -80,9 +80,11 @@ export function useOutboxEmails(filters: OutboxFilters = {}, options: { enabled?
 /** How often the test email's row is checked, and for how long (contract §3.10). */
 export const TEST_POLL_MS = 2_000
 export const TEST_POLL_LIMIT_MS = 30_000
+/** After that, still checked now and then, so a late send (the worker came back) shows. */
+export const TEST_SLOW_POLL_MS = 15_000
 
-/** One outbox email; `poll` re-reads it every 2 s while it is queued or sending. */
-export function useOutboxEmail(emailId: string | undefined, options: { poll?: boolean } = {}) {
+/** One outbox email; `pollMs` re-reads it that often while it is queued or sending. */
+export function useOutboxEmail(emailId: string | undefined, options: { pollMs?: number } = {}) {
   return useQuery({
     queryKey: queryKeys.admin.outboxEmail(emailId ?? ''),
     queryFn: ({ signal }) =>
@@ -95,8 +97,8 @@ export function useOutboxEmail(emailId: string | undefined, options: { poll?: bo
     enabled: Boolean(emailId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return options.poll && (status === undefined || status === 'queued' || status === 'sending')
-        ? TEST_POLL_MS
+      return options.pollMs && (status === undefined || status === 'queued' || status === 'sending')
+        ? options.pollMs
         : false
     },
   })
@@ -165,7 +167,10 @@ export function useRetryOutboxEmail() {
       return { rollback }
     },
     onError: (_error, _id, context) => context?.rollback(),
-    onSuccess: (saved) => patchOutboxEmail(queryClient, saved.id, () => saved),
+    onSuccess: (saved) => {
+      patchOutboxEmail(queryClient, saved.id, () => saved)
+      toast.success('Queued again', { description: 'The worker sends it in a moment.' })
+    },
     // The counters and the banner change; the list keeps the row (now "Queued") in place
     // rather than dropping it from the "Failed" view under the admin's cursor.
     onSettled: () => {

@@ -335,5 +335,19 @@ async def test_the_hourly_job_runs_reminders_digests_and_cleanup(
     result = await run_schedule(app.state.sessionmaker, settings, at(10, 7, 8, 5))
     assert (result.digests, result.cleaned) == (1, True)
     later = await run_schedule(app.state.sessionmaker, settings, at(10, 7, 9, 5))
-    assert (later.digests, later.cleaned) == (0, False)
+    assert (later.digests, later.cleaned) == (0, True)
     assert await db_session.scalar(select(OutboundEmail.id)) is not None
+
+
+async def test_a_run_that_misses_the_digest_hour_still_cleans_up(
+    app: FastAPI, settings: Settings, team: Team, db_session: AsyncSession, outbox: Outbox
+) -> None:
+    """Review nit: the cleanup ran only in a run whose local hour was the digest hour,
+    so a late run (or a day whose digest hour falls in a DST gap) skipped it."""
+    idea = await make_idea(db_session, team.project)
+    old = await pending(db_session, team.member, idea, at(6, 1, 9))
+
+    result = await run_schedule(app.state.sessionmaker, settings, at(10, 7, 9, 40))
+
+    assert result.cleaned
+    assert old.id not in [note.id for note in await outbox.notifications()]

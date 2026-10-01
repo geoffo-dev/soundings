@@ -63,13 +63,19 @@ test('opening a mention jumps to the comment and highlights it', async ({ page }
   await expect(comment.locator('a[href^="user:"]')).toHaveCount(0)
 })
 
-test('mark all read clears the badge', async ({ page }) => {
+test('mark all read clears the badge, keeps focus, and can be undone', async ({ page }) => {
   await page.goto('/')
   await bell(page).click()
-  await panel(page).getByRole('button', { name: 'Mark all read' }).click()
+  const markAll = panel(page).getByRole('button', { name: 'Mark all read' })
+  await markAll.click()
   await expect(bell(page)).toHaveAccessibleName('Notifications')
   await expect(panel(page).getByRole('link', { name: /^Unread:/ })).toHaveCount(0)
-  await expect(panel(page).getByRole('button', { name: 'Mark all read' })).toBeDisabled()
+  // Focus stays on the (now unavailable) button rather than falling to the page.
+  await expect(markAll).toHaveAttribute('aria-disabled', 'true')
+  await expect(markAll).toBeFocused()
+  await expect(page.getByText('5 notifications marked read')).toBeVisible()
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(bell(page)).toHaveAccessibleName('Notifications, 5 unread')
 })
 
 test('"g i" opens the inbox page; j/k move between notifications; All / Unread', async ({

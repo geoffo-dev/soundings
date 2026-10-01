@@ -1,11 +1,17 @@
 import { useCallback, useId, useMemo, useState, type KeyboardEvent, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
 
 import { useDebouncedValue } from '@/api/search'
 import type { UserSearchResult } from '@/api/types'
 import { useUserSearch } from '@/api/users'
 import { Avatar } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
-import { activeMentionQuery, insertMention, type MentionQuery } from '@/lib/mentions'
+import {
+  activeShownQuery,
+  insertMention,
+  type MentionDraft,
+  type MentionQuery,
+} from '@/lib/mentions'
 import { cn } from '@/lib/utils'
 
 /** How many people the picker offers at once. */
@@ -21,17 +27,19 @@ export interface MentionOptions {
 /**
  * @mentions in a Markdown text field: typing "@" (at the start or after a
  * space) opens a list of the project's people; ↑/↓ choose, Enter or Tab
- * insert `@[Name](user:<id>)`, Esc closes it. The text field keeps focus
- * (`aria-activedescendant` points at the highlighted person).
+ * insert "@Name" (stored as `@[Name](user:<id>)`, lib/mentions), Esc closes
+ * it. The text field keeps focus (`aria-activedescendant` points at the
+ * highlighted person).
  */
 export function useMentionPicker({
-  value,
-  onValueChange,
+  draft,
+  onDraftChange,
   textareaRef,
   options,
 }: {
-  value: string
-  onValueChange: (value: string) => void
+  /** The text as shown, and where its mentions are. */
+  draft: MentionDraft
+  onDraftChange: (draft: MentionDraft) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
   options: MentionOptions | undefined
 }) {
@@ -65,20 +73,20 @@ export function useMentionPicker({
   const open = enabled && (people.length > 0 || loading || !/\s/.test(query.query))
   const highlighted = open ? people[Math.min(active, people.length - 1)] : undefined
 
-  /** Re-read the caret (after typing, clicking or moving with the keyboard). */
+  /** Re-read the caret (after typing, clicking or moving with the keyboard); `null` closes. */
   const sync = useCallback(
-    (text = value) => {
+    (current: MentionDraft | null = draft) => {
       const field = textareaRef.current
       if (!options || !field) return
       const caret = field.selectionStart
-      const next = field.selectionEnd === caret ? activeMentionQuery(text, caret) : null
+      const next = current && field.selectionEnd === caret ? activeShownQuery(current, caret) : null
       setQuery((current) =>
         current?.start === next?.start && current?.query === next?.query ? current : next,
       )
       if (!next) setDismissedAt(null)
       setActive(0)
     },
-    [options, textareaRef, value],
+    [options, textareaRef, draft],
   )
 
   const choose = useCallback(
@@ -86,18 +94,19 @@ export function useMentionPicker({
       const field = textareaRef.current
       if (!query || !field) return
       const result = insertMention(
-        value,
+        draft,
         { start: query.start, caret: field.selectionStart },
         person,
       )
-      onValueChange(result.text)
-      setQuery(null)
-      requestAnimationFrame(() => {
-        field.focus()
-        field.setSelectionRange(result.caret, result.caret)
+      // Render the new text now, so the caret can go straight after the name.
+      flushSync(() => {
+        onDraftChange(result.draft)
+        setQuery(null)
       })
+      field.focus()
+      field.setSelectionRange(result.caret, result.caret)
     },
-    [onValueChange, query, textareaRef, value],
+    [onDraftChange, query, textareaRef, draft],
   )
 
   /** Returns true when the key was for the picker (the editor should ignore it). */

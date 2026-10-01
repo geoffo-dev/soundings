@@ -8,11 +8,12 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { snapshot } from '@/api/cache'
 import { api, unwrap } from '@/api/client'
 import { queryKeys } from '@/api/keys'
+import { deferUntilToastCloses, hideItem, unhideItem, useHiddenItems } from '@/api/undo'
 import type {
   NotificationItem,
   NotificationMode,
@@ -28,7 +29,8 @@ import type {
  *
  * The summary is polled about once a minute while the tab is visible (and on
  * focus); the poll never keeps the session alive (§3.2), and a 401 from it is
- * handled like any other 401 (back to sign-in). Marking read is optimistic.
+ * handled like any other 401 (back to sign-in). Marking one read is optimistic;
+ * "Mark all read" waits for its Undo toast (a deferred commit, api/undo).
  */
 
 /** How often the bell asks for the unread count (ms). */
@@ -36,6 +38,13 @@ export const SUMMARY_POLL_MS = 60_000
 const PAGE_SIZE = 30
 
 type NotificationData = InfiniteData<NotificationPage, string | null>
+
+/**
+ * While "Mark all read" waits for its Undo toast, the inbox reads as all read
+ * (through `select`, so a poll in the meantime can't bring the dots back and
+ * Undo is exact: the cache itself is unchanged until the request is sent).
+ */
+const READ_ALL_PENDING = 'notifications:read-all'
 
 export const notificationSummaryQueryOptions = () =>
   queryOptions({
@@ -56,7 +65,16 @@ export const notificationSummaryQueryOptions = () =>
  */
 export function useNotificationSummary(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient()
-  const query = useQuery({ ...notificationSummaryQueryOptions(), enabled: options.enabled ?? true })
+  const readAllPending = useHiddenItems().has(READ_ALL_PENDING)
+  const select = useCallback(
+    (summary: NotificationSummary) => (readAllPending ? { ...summary, unread_count: 0 } : summary),
+    [readAllPending],
+  )
+  const query = useQuery({
+    ...notificationSummaryQueryOptions(),
+    enabled: options.enabled ?? true,
+    select,
+  })
   const count = query.data?.unread_count
   const previous = useRef(count)
   useEffect(() => {
@@ -93,15 +111,34 @@ export const notificationsInfiniteOptions = (
     staleTime: 15_000,
   })
 
-/** The inbox, newest first (`unread: true` for unread only). */
+/**
+ * The inbox, newest first (`unread: true` for unread only: what has been read
+ * since it loaded drops out at once, so "Mark all read" leaves it empty).
+ */
 export function useNotifications(
   params: { unread?: boolean } = {},
   options: { enabled?: boolean } = {},
 ) {
+  const readAllPending = useHiddenItems().has(READ_ALL_PENDING)
+  const unreadOnly = Boolean(params.unread)
+  const select = useCallback(
+    (data: NotificationData) => {
+      const items = data.pages
+        .flatMap((page) => page.items)
+        .map((item) =>
+          readAllPending && item.read_at === null ? { ...item, read_at: item.created_at } : item,
+        )
+      return {
+        ...data,
+        items: unreadOnly ? items.filter((item) => item.read_at === null) : items,
+      }
+    },
+    [readAllPending, unreadOnly],
+  )
   return useInfiniteQuery({
     ...notificationsInfiniteOptions(params),
     enabled: options.enabled ?? true,
-    select: (data) => ({ ...data, items: data.pages.flatMap((page) => page.items) }),
+    select,
   })
 }
 
@@ -171,23 +208,35 @@ export function useMarkNotificationRead() {
   })
 }
 
-/** "Mark all read" (optimistic); the server answers with the new summary. */
+/**
+ * "Mark all read" with Undo (SPEC §5): the inbox reads as all read at once,
+ * and the request is sent when the Undo toast closes (or the page is hidden);
+ * Undo puts every dot back. There's no "mark unread", so this is a deferred
+ * commit (api/undo), not an inverse call. Call it with the unread count (for
+ * the toast).
+ */
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: () => unwrap(api.POST('/api/v1/me/notifications/read-all', {})),
-    onMutate: async () => {
-      const rollback = await snapshot(queryClient, [queryKeys.notifications.all])
-      markCachedRead(queryClient, () => true)
-      patchSummary(queryClient, (summary) => ({ ...summary, unread_count: 0 }))
-      return { rollback }
-    },
-    onError: (_error, _vars, context) => context?.rollback(),
-    onSuccess: (summary) => queryClient.setQueryData(queryKeys.notifications.summary(), summary),
-    onSettled: () =>
-      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications.lists() }),
-    meta: { errorTitle: 'Couldn’t mark your notifications read' },
-  })
+  return useCallback(
+    (unreadCount: number) =>
+      deferUntilToastCloses({
+        title:
+          unreadCount === 1
+            ? '1 notification marked read'
+            : `${unreadCount > 99 ? 'All' : unreadCount.toLocaleString()} notifications marked read`,
+        hide: () => hideItem(READ_ALL_PENDING),
+        restore: () => unhideItem(READ_ALL_PENDING),
+        commit: async ({ keepalive }) => {
+          const summary = await unwrap(api.POST('/api/v1/me/notifications/read-all', { keepalive }))
+          markCachedRead(queryClient, () => true)
+          queryClient.setQueryData(queryKeys.notifications.summary(), summary)
+          unhideItem(READ_ALL_PENDING)
+          void queryClient.invalidateQueries({ queryKey: queryKeys.notifications.lists() })
+        },
+        errorTitle: 'Couldn’t mark your notifications read',
+      }),
+    [queryClient],
+  )
 }
 
 /**

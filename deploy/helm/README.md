@@ -53,7 +53,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `oidc.matchVerifiedEmail` | `true` | Link an existing user by email when the token says `email_verified: true`. |
 | `oidc.autoCreateUsers` | `false` | Create an account (no roles; access only through groups) for an unmatched person with a verified email. |
 | `smtp.host` / `.port` / `.security` | `""` / `""` / `starttls` | SMTP server (host name or IP, no scheme or port); `security`: `none`, `starttls` or `tls` (implicit). Empty port: 465 for `tls`, else 587. Empty host: in-app notifications only. See [Email](#email). |
-| `smtp.existingSecret` | `""` | Secret with optional keys `username`, `password`. Or `smtp.username` / `smtp.password` in values (not both). |
+| `smtp.existingSecret` | `""` | Secret with keys `username` and `password` (both required; mounted in the worker pods only). Or `smtp.username` / `smtp.password` in values (not both). Not with `security: none` unless `devLogin`. |
 | `smtp.from` / `.fromName` / `.replyTo` | `""` / `Soundings` / `""` | Sender address (one plain address, required with `host`), display name, optional Reply-To. |
 | `smtp.caBundle.configMap` / `.key` | `""` / `ca.crt` | Existing ConfigMap with a PEM CA bundle for the SMTP server's certificate, mounted read-only. Empty: system trust store. |
 | `smtp.timeout` | `10` | Seconds for the connection and each SMTP command (max 120). |
@@ -171,12 +171,15 @@ variables: `ENVIRONMENT` (`production`, or `development` with `devLogin`),
 `DIGEST_HOUR`, `REMINDER_DAYS` (comma-separated), and when `smtp.host` is set
 `SMTP_HOST`, `SMTP_PORT` (the effective port), `SMTP_SECURITY`, `SMTP_FROM`,
 `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_TIMEOUT`, `SMTP_CA_BUNDLE` (the mounted file's
-path, `/etc/soundings/smtp-ca/<key>`). The api and worker pods get the same settings:
-the worker sends the email, the api queues it and shows the configuration.
-Secrets arrive as env vars from Secrets: `SOUNDINGS_SECRET_KEY`,
-`SOUNDINGS_DATABASE_PASSWORD`, `SOUNDINGS_SMTP_USERNAME`, `SOUNDINGS_SMTP_PASSWORD`, and
-in the **api pods only** (the worker signs nobody in) `SOUNDINGS_OIDC_CLIENT_SECRET`,
-`SOUNDINGS_BREAK_GLASS_USERNAME` and `SOUNDINGS_BREAK_GLASS_PASSWORD`. Service links are disabled in every pod (a Service
+path, `/etc/soundings/smtp-ca/<key>`), and `SMTP_USERNAME_SET` / `SMTP_PASSWORD_SET`
+(`true` when credentials are configured: the api shows them as set without having
+them). The api and worker pods get the same settings: the worker sends the email, the
+api queues it and shows the configuration.
+Secrets arrive as env vars from Secrets: `SOUNDINGS_SECRET_KEY` and
+`SOUNDINGS_DATABASE_PASSWORD` in both; in the **api pods only** (the worker signs nobody
+in) `SOUNDINGS_OIDC_CLIENT_SECRET`, `SOUNDINGS_BREAK_GLASS_USERNAME` and
+`SOUNDINGS_BREAK_GLASS_PASSWORD`; in the **worker pods only** (the api sends no mail)
+`SOUNDINGS_SMTP_USERNAME` and `SOUNDINGS_SMTP_PASSWORD`. Service links are disabled in every pod (a Service
 named `soundings` would otherwise inject `SOUNDINGS_PORT=tcp://...`). The session
 cookies' `Secure` flag is automatic (always set in production); `SOUNDINGS_COOKIE_SECURE`
 in `extraEnv` overrides it (`false` is refused in production).
@@ -196,7 +199,7 @@ only and platform admins see a banner.
 smtp:
   host: smtp.example.com
   security: starttls            # port 587 by default; tls → 465; none → plain (relays)
-  existingSecret: soundings-smtp  # optional keys username, password
+  existingSecret: soundings-smtp  # keys username and password (worker pods only)
   from: ideas@example.com
   fromName: Example Ideas
   replyTo: innovation@example.com
@@ -214,7 +217,7 @@ kubectl -n soundings create configmap smtp-ca --from-file=ca.crt=./corporate-ca.
 configuration (password masked), the outbox and a **Send test email** button. Links in
 emails use the first of `baseUrls`. With `security: none` the connection is plain (an
 in-cluster relay or Mailpit); production refuses a password over it, and so does the
-chart for `smtp.password` (unless `devLogin`). TLS (`starttls`, `tls`) always verifies
+chart for `smtp.password` and `smtp.existingSecret` (unless `devLogin`). TLS (`starttls`, `tls`) always verifies
 the server's certificate and host name, against `smtp.caBundle` when set (a certificate
 it doesn't trust shows as "TLS certificate not trusted" in the outbox). Changing a value
 rolls the api and worker pods (config checksum); a new password in `existingSecret` or a

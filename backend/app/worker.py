@@ -1,7 +1,8 @@
 """Background jobs with procrastinate (Postgres-backed; no Redis).
 
 Tasks are defined in the modules listed in :data:`TASK_MODULES` (``app.email.tasks``:
-``send_email``, ``sweep_outbox``, ``notification_schedule``, ``remove_old_jobs``).
+``send_email``, ``notify_event``, ``sweep_outbox``, ``notification_schedule``,
+``remove_old_jobs``).
 Request code defers jobs **on the request's own connection**, atomically with its
 writes (``app.email.outbox.defer_send``); the API process also opens a small
 job-queue pool in its lifespan. The worker runs with ``soundings worker``; the

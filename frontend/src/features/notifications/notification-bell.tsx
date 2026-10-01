@@ -122,10 +122,11 @@ function InboxPanel({
       <div
         className={cn(
           'flex shrink-0 flex-col gap-2 border-b border-subtle',
-          variant === 'sheet' ? 'px-4 pt-3 pr-14 pb-3' : 'px-3 pt-3 pb-2.5',
+          variant === 'sheet' ? 'px-4 pt-3 pb-3' : 'px-3 pt-3 pb-2.5',
         )}
       >
-        <div className="flex items-center gap-2">
+        {/* In the sheet, only the title row leaves room for its close button. */}
+        <div className={cn('flex items-center gap-2', variant === 'sheet' && 'pr-10')}>
           <Title className="mr-auto text-base font-semibold text-primary">Notifications</Title>
           <WithTooltip content="Email preferences">
             <Button variant="ghost" size="icon-sm" asChild>
@@ -158,8 +159,11 @@ function InboxPanel({
             variant="ghost"
             size="sm"
             className="ml-auto"
-            disabled={unreadCount === 0}
-            onClick={() => markAll.mutate()}
+            // Not `disabled`: focus would fall to the page when it empties the list.
+            aria-disabled={unreadCount === 0 || undefined}
+            onClick={() => {
+              if (unreadCount > 0) markAll(unreadCount)
+            }}
           >
             <CheckCheck />
             Mark all read

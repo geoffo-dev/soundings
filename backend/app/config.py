@@ -14,6 +14,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import ssl
 from datetime import UTC, timedelta, tzinfo
 from functools import lru_cache
 from pathlib import Path
@@ -328,6 +329,17 @@ class Settings(DatabaseSettings):
     smtp_password: SecretStr | None = Field(
         default=None, description="Optional SMTP AUTH password (from the chart's Secret)."
     )
+    smtp_username_set: bool = Field(
+        default=False,
+        description=(
+            "API pods: the worker has an SMTP user name. Only the worker sends mail, so "
+            "the chart gives the credentials to the worker alone and tells the API "
+            "(Settings > Email) that they are set."
+        ),
+    )
+    smtp_password_set: bool = Field(
+        default=False, description="API pods: the worker has an SMTP password (as above)."
+    )
     smtp_from: str | None = Field(
         default=None,
         description="Sender address, e.g. soundings@example.com (required with smtp_host).",
@@ -454,8 +466,20 @@ class Settings(DatabaseSettings):
     @field_validator("smtp_ca_bundle")
     @classmethod
     def _validate_ca_bundle(cls, value: Path | None) -> Path | None:
-        if value is not None and not value.is_file():
+        if value is None:
+            return None
+        if not value.is_file():
             raise ValueError("smtp_ca_bundle must be the path of an existing PEM file")
+        # Fail at startup, not on every send ("TLS handshake failed", twelve times).
+        try:
+            context = ssl.create_default_context(cafile=str(value))
+        except (ssl.SSLError, OSError, ValueError):
+            context = None
+        if context is None or not context.cert_store_stats().get("x509"):
+            raise ValueError(
+                "smtp_ca_bundle must be a PEM file with at least one certificate "
+                "(-----BEGIN CERTIFICATE-----)"
+            )
         return value
 
     @field_validator("timezone")
@@ -574,6 +598,7 @@ class Settings(DatabaseSettings):
         if self.smtp_host and not self.smtp_from:
             raise ValueError("SOUNDINGS_SMTP_FROM is required when SOUNDINGS_SMTP_HOST is set")
         password = self.smtp_password.get_secret_value() if self.smtp_password else ""
+        password = password or ("set" if self.smtp_password_set else "")
         if self.is_production and self.smtp_host and self.smtp_security == "none" and password:
             # SMTP AUTH over a plain connection sends the password in clear text.
             raise ValueError(

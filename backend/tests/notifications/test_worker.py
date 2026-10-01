@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import pytest
 from procrastinate import App
+from procrastinate.jobs import Status
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.email import tasks
 from app.email.delivery import Runtime
@@ -62,3 +65,43 @@ def test_the_jobs_need_the_worker_runtime() -> None:
 
     with pytest.raises(RuntimeError, match="soundings worker"):
         tasks.runtime_of(Context())  # type: ignore[arg-type]
+
+
+async def test_jobs_of_a_crashed_worker_are_finished_as_failed(
+    jobs: App, db_session: AsyncSession
+) -> None:
+    """Review L7: after a SIGKILL the worker's jobs stayed ``doing`` forever (the daily
+    cleanup only removes finished jobs). Their outbox rows recover through the sweep."""
+    for n in range(3):
+        await jobs.configure_task("send_email").defer_async(email_id=f"{n:032x}")
+    dead = await jobs.job_manager.register_worker()
+    alive = await jobs.job_manager.register_worker()
+    crashed = [await jobs.job_manager.fetch_job(None, dead) for _ in range(2)]
+    running = await jobs.job_manager.fetch_job(None, alive)
+    assert running is not None
+    assert all(job is not None for job in crashed)
+    await db_session.execute(
+        text(
+            "UPDATE procrastinate_workers SET last_heartbeat = now() - interval '10 minutes'"
+            " WHERE id = :id"
+        ),
+        {"id": dead},
+    )
+    # Another worker started meanwhile and pruned a third crashed worker: no worker id.
+    await db_session.execute(
+        text("UPDATE procrastinate_jobs SET worker_id = NULL WHERE id = :id"),
+        {"id": crashed[1].id if crashed[1] else None},
+    )
+    await db_session.commit()
+
+    assert await tasks.finish_stalled_jobs(jobs) == 2
+
+    rows = await db_session.execute(text("SELECT id, status FROM procrastinate_jobs ORDER BY id"))
+    statuses = {row.id: row.status for row in rows}
+    await db_session.commit()
+    assert [statuses[job.id] for job in crashed if job] == ["failed", "failed"]
+    assert statuses[running.id] == "doing"
+    assert await tasks.finish_stalled_jobs(jobs) == 0
+    await jobs.job_manager.finish_job(running, status=Status.SUCCEEDED, delete_job=True)
+    await jobs.job_manager.unregister_worker(alive)
+    await jobs.job_manager.unregister_worker(dead)

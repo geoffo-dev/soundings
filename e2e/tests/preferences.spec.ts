@@ -27,7 +27,7 @@ const row = (page: Page, label: string) =>
 
 async function openPreferences(page: Page) {
   await page.goto('/settings/notifications')
-  await expect(page.getByRole('heading', { level: 2, name: 'Notifications' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'Email notifications' })).toBeVisible()
   await expect(page.getByRole('radiogroup')).toHaveCount(7)
 }
 
@@ -53,11 +53,11 @@ test('PR-01: defaults per type; a change saves at once and “Reset” goes back
     await signInAs(page, theo)
     await openPreferences(page)
     for (const label of [
-      'You’re made an owner',
-      'You’re asked to evaluate',
+      'Owner assignments',
+      'Evaluation requests',
       'Evaluation reminders',
       'All evaluations are in',
-      '@mentions',
+      'Mentions',
     ]) {
       await expect(row(page, label).getByRole('radio', { name: 'Immediate' })).toBeChecked()
     }
@@ -105,7 +105,7 @@ test('PR-02: “Off” for invitations: the inbox still gets it, no email is que
     const { key } = await projectWithIdea(alice, 'Prefs off', [nora, theo], { owner: nora })
     await signInAs(page, theo)
     await openPreferences(page)
-    await choose(page, 'You’re asked to evaluate', 'Off')
+    await choose(page, 'Evaluation requests', 'Off')
 
     const since = new Date()
     await nora.api.inviteUsers(key, [theo.user], daysFromNow(4))
@@ -121,7 +121,7 @@ test('PR-02: “Off” for invitations: the inbox still gets it, no email is que
   }
 })
 
-test('PR-03: “Daily digest” for @mentions: in-app now, no email now (it waits for the digest)', async ({
+test('PR-03: “Daily digest” for mentions: in-app now, no email now (it waits for the digest)', async ({
   page,
   api,
 }) => {
@@ -135,7 +135,7 @@ test('PR-03: “Daily digest” for @mentions: in-app now, no email now (it wait
     })
     await signInAs(page, theo)
     await openPreferences(page)
-    await choose(page, '@mentions', 'Daily digest')
+    await choose(page, 'Mentions', 'Daily digest')
 
     // Nora mentions both: Iris (default: immediate) gets an email; Theo doesn't, yet.
     const since = new Date()
@@ -195,6 +195,6 @@ test('PR-05: without SMTP the page says nothing is emailed for now; choices stil
   await signIn(page, 'erin')
   await openPreferences(page)
   await expect(page.getByText('Email isn’t set up on this server yet')).toBeVisible()
-  await choose(page, '@mentions', 'Daily digest')
-  await choose(page, '@mentions', 'Immediate')
+  await choose(page, 'Mentions', 'Daily digest')
+  await choose(page, 'Mentions', 'Immediate')
 })

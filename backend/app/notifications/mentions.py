@@ -5,6 +5,11 @@ a comment is written: more than :data:`~app.schemas.comments.MAX_MENTIONS` disti
 people is 422 ``too_many_mentions``; each token naming an active person is rewritten
 with their current display name (so a label can't impersonate anyone) and any other
 token becomes its label as plain text; the 10,000-character limit applies after that.
+
+Rewriting repeats until nothing changes: turning an unknown token into its label
+removes brackets, which can make the text around it a new token
+(``@[Bob @[x](user:<unknown>)](user:<alice>)``). Every token left is canonical, and
+the people limit counts every token found on the way.
 """
 
 from __future__ import annotations
@@ -41,17 +46,8 @@ class TooManyMentionsProblem(ProblemError):
 
 async def rewrite_mentions(db: AsyncSession, body_md: str) -> tuple[str, list[UUID]]:
     """The body with every mention token rewritten, and the people it now mentions."""
-    ids = mentioned_user_ids(body_md)
-    if len(ids) > MAX_MENTIONS:
-        raise TooManyMentionsProblem
     names: dict[UUID, str] = {}
-    if ids:
-        rows = await db.execute(
-            select(User.id, User.display_name).where(
-                any_of(User.id, ids), User.is_active, User.is_service_account.is_(False)
-            )
-        )
-        names = dict(rows.all())
+    seen: set[UUID] = set()
 
     def replace(match: re.Match[str]) -> str:
         user_id = UUID(match.group("user_id"))
@@ -59,7 +55,25 @@ async def rewrite_mentions(db: AsyncSession, body_md: str) -> tuple[str, list[UU
             return mention_token(user_id, names[user_id])
         return "@" + match.group("label")
 
-    rewritten = MENTION_PATTERN.sub(replace, body_md)
+    rewritten = body_md
+    # Each pass that changes the text either removes an unknown token (and its "[") or
+    # only relabels known ones (then the next pass changes nothing): this terminates.
+    for _ in range(body_md.count("[") + 2):
+        found = [user_id for user_id in mentioned_user_ids(rewritten) if user_id not in seen]
+        seen.update(found)
+        if len(seen) > MAX_MENTIONS:
+            raise TooManyMentionsProblem
+        if found:
+            rows = await db.execute(
+                select(User.id, User.display_name).where(
+                    any_of(User.id, found), User.is_active, User.is_service_account.is_(False)
+                )
+            )
+            names.update(rows.all())
+        text = MENTION_PATTERN.sub(replace, rewritten)
+        if text == rewritten:
+            break
+        rewritten = text
     if len(rewritten) > MAX_COMMENT_LENGTH:
         raise ProblemError(
             422,
@@ -76,4 +90,4 @@ async def rewrite_mentions(db: AsyncSession, body_md: str) -> tuple[str, list[UU
                 )
             ],
         )
-    return rewritten, [user_id for user_id in ids if user_id in names]
+    return rewritten, [user_id for user_id in mentioned_user_ids(rewritten) if user_id in names]

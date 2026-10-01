@@ -9,6 +9,7 @@ job only wakes the worker (:mod:`app.email.delivery`).
 
 from __future__ import annotations
 
+import ipaddress
 import random
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -19,14 +20,14 @@ from uuid import UUID, uuid4
 
 import psycopg
 from procrastinate.types import JSONValue
-from sqlalchemy import Table, bindparam, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import DateTime, SmallInteger, String, Uuid, bindparam, text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.models.base import utcnow
 from app.models.enums import EmailStatus, EmailType
-from app.models.notification import MAX_EMAIL_ATTEMPTS, Notification, OutboundEmail
+from app.models.notification import MAX_EMAIL_ATTEMPTS, OutboundEmail
 from app.worker import procrastinate_app
 
 __all__ = [
@@ -42,8 +43,8 @@ __all__ = [
     "backoff",
     "defer_send",
     "enqueue",
-    "enqueue_for_notifications",
     "max_age",
+    "message_id_domain",
     "new_message_id",
     "psycopg_connection",
     "retryable",
@@ -81,10 +82,20 @@ def retryable(email: OutboundEmail, now: datetime) -> bool:
     return email.status is EmailStatus.FAILED and now - email.created_at < max_age(email.type)
 
 
-def new_message_id(settings: Settings) -> str:
-    """``<uuid4-hex@host-of-the-first-base-url>``, fixed for the row's life."""
+def message_id_domain(settings: Settings) -> str:
+    """The right side of our Message-IDs and References: the first base URL's host
+    name, or an address literal (``[192.0.2.1]``, ``[IPv6:2001:db8::1]``) for an IP."""
     host = urlsplit(settings.public_base_url).hostname or "soundings.invalid"
-    return f"<{uuid4().hex}@{host}>"
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    return f"[IPv6:{address}]" if address.version == 6 else f"[{address}]"
+
+
+def new_message_id(settings: Settings) -> str:
+    """``<uuid4-hex@domain>`` (:func:`message_id_domain`), fixed for the row's life."""
+    return f"<{uuid4().hex}@{message_id_domain(settings)}>"
 
 
 async def psycopg_connection(db: AsyncSession) -> psycopg.AsyncConnection[Any]:
@@ -123,75 +134,68 @@ class NewEmail:
     max_attempts: int = MAX_EMAIL_ATTEMPTS
 
 
+_INSERT_EMAILS: Final = text(
+    """
+    INSERT INTO outbound_email
+        (id, type, status, recipient_user_id, to_address, requested_by_id, payload,
+         message_id, idempotency_key, attempts, max_attempts, next_attempt_at,
+         created_at, updated_at)
+    SELECT row.id, row.type, 'queued', row.recipient_user_id, row.to_address,
+           row.requested_by_id, row.payload, row.message_id, row.idempotency_key, 0,
+           row.max_attempts, :now, :now, :now
+      FROM unnest(
+               :ids, :types, :recipient_user_ids, :to_addresses, :requested_by_ids,
+               :payloads, :message_ids, :idempotency_keys, :max_attempts
+           ) AS row(id, type, recipient_user_id, to_address, requested_by_id, payload,
+                    message_id, idempotency_key, max_attempts)
+    ON CONFLICT (idempotency_key) DO NOTHING
+    RETURNING id
+    """
+).bindparams(
+    bindparam("ids", type_=ARRAY(Uuid())),
+    bindparam("types", type_=ARRAY(String())),
+    bindparam("recipient_user_ids", type_=ARRAY(Uuid())),
+    bindparam("to_addresses", type_=ARRAY(String())),
+    bindparam("requested_by_ids", type_=ARRAY(Uuid())),
+    bindparam("payloads", type_=ARRAY(JSONB())),
+    bindparam("message_ids", type_=ARRAY(String())),
+    bindparam("idempotency_keys", type_=ARRAY(String())),
+    bindparam("max_attempts", type_=ARRAY(SmallInteger())),
+    bindparam("now", type_=DateTime(timezone=True)),
+)
+"""Queued rows: one statement with an array per column, however many emails."""
+
+
 async def enqueue(
     db: AsyncSession, settings: Settings, emails: Iterable[NewEmail], *, now: datetime | None = None
 ) -> list[UUID]:
     """Insert queued rows and defer their jobs, in the caller's transaction.
 
     Rows with an ``idempotency_key`` that already exists are skipped (``ON CONFLICT DO
-    NOTHING``); returns the ids actually inserted, in order.
+    NOTHING``); returns the ids actually inserted, in order (all of them when no
+    email has a key).
     """
     now = now or utcnow()
-    values: list[dict[str, Any]] = [
-        {
-            "id": uuid4(),
-            "type": email.type,
-            "status": EmailStatus.QUEUED,
-            "recipient_user_id": email.recipient_user_id,
-            "to_address": email.to_address,
-            "requested_by_id": email.requested_by_id,
-            "payload": dict(email.payload),
-            "message_id": new_message_id(settings),
-            "idempotency_key": email.idempotency_key,
-            "attempts": 0,
-            "max_attempts": email.max_attempts,
-            "next_attempt_at": now,
-            "created_at": now,
-            "updated_at": now,
-        }
-        for email in emails
-    ]
-    if not values:
+    wanted = list(emails)
+    if not wanted:
         return []
+    ids = [uuid4() for _ in wanted]
     result = await db.execute(
-        insert(OutboundEmail)
-        .values(values)
-        .on_conflict_do_nothing(index_elements=["idempotency_key"])
-        .returning(OutboundEmail.id)
+        _INSERT_EMAILS,
+        {
+            "ids": ids,
+            "types": [email.type.value for email in wanted],
+            "recipient_user_ids": [email.recipient_user_id for email in wanted],
+            "to_addresses": [email.to_address for email in wanted],
+            "requested_by_ids": [email.requested_by_id for email in wanted],
+            "payloads": [dict(email.payload) for email in wanted],
+            "message_ids": [new_message_id(settings) for _ in wanted],
+            "idempotency_keys": [email.idempotency_key for email in wanted],
+            "max_attempts": [email.max_attempts for email in wanted],
+            "now": now,
+        },
     )
-    inserted = set(result.scalars())
-    ids: list[UUID] = [value["id"] for value in values if value["id"] in inserted]
-    await defer_send(db, ids)
-    return ids
-
-
-async def enqueue_for_notifications(
-    db: AsyncSession,
-    settings: Settings,
-    type_: EmailType,
-    notifications: Sequence[tuple[UUID, UUID]],
-    *,
-    now: datetime | None = None,
-) -> list[UUID]:
-    """One immediate email per ``(notification id, user id)``; links each notification
-    to its email (``notifications.email_id``)."""
-    if not notifications:
-        return []
-    ids = await enqueue(
-        db,
-        settings,
-        [NewEmail(type=type_, recipient_user_id=user_id) for _, user_id in notifications],
-        now=now,
-    )
-    table = Notification.__table__
-    assert isinstance(table, Table)  # noqa: S101 - a mapped table
-    await db.execute(
-        update(table)
-        .where(table.c.id == bindparam("notification_id"))
-        .values(email_id=bindparam("new_email_id")),
-        [
-            {"notification_id": notification_id, "new_email_id": email_id}
-            for (notification_id, _), email_id in zip(notifications, ids, strict=True)
-        ],
-    )
-    return ids
+    inserted: set[UUID] = set(result.scalars())
+    queued = [email_id for email_id in ids if email_id in inserted]
+    await defer_send(db, queued)
+    return queued

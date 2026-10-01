@@ -93,6 +93,8 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         # Admin outbox, newest first, all or by status; per-status counts; pruning.
         Index("ix_outbound_email_created_at_id", "created_at", "id"),
         Index("ix_outbound_email_status_created_at_id", "status", "created_at", "id"),
+        # The hourly cleanup's deletes and the admins' "an email failed lately" banner.
+        Index("ix_outbound_email_status_updated_at", "status", "updated_at"),
     )
 
     type: Mapped[EmailType] = mapped_column(str_enum(EmailType, "type"))
@@ -154,6 +156,8 @@ class Notification(UUIDPrimaryKeyMixin, Base):
         CheckConstraint("email_id IS NULL OR email_mode <> 'off'", name="no_email_when_off"),
         # The inbox, newest first; unread only (filter and the bell's count).
         Index("ix_notifications_user_id_created_at", "user_id", "created_at", "id"),
+        # The hourly cleanup prunes notifications older than 90 days.
+        Index("ix_notifications_created_at", "created_at"),
         Index(
             "ix_notifications_user_id_unread",
             "user_id",

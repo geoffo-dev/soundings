@@ -55,11 +55,9 @@ test('UN-01: the email’s footer link opens the page; nothing changes until “
     expect(link).toMatch(/\/unsubscribe\?token=[A-Za-z0-9_.-]{16,512}$/)
 
     await page.goto(link)
+    // The type named as the email's footer names it (“Unsubscribe from evaluation requests”).
     await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: 'Unsubscribe from “You’re asked to evaluate” emails?',
-      }),
+      page.getByRole('heading', { level: 1, name: 'Unsubscribe from evaluation requests?' }),
     ).toBeVisible()
     await expect(page.getByText(`${theo.email[0]}•••@example.com`)).toBeVisible()
     await expect(page.locator('body')).not.toContainText(theo.email)
@@ -70,7 +68,9 @@ test('UN-01: the email’s footer link opens the page; nothing changes until “
     await page.getByRole('button', { name: 'Unsubscribe', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'You’re unsubscribed' })).toBeFocused()
     await expect(
-      page.getByText('You won’t get “You’re asked to evaluate” emails any more'),
+      page.getByText(
+        `Soundings won’t email ${theo.email[0]}•••@example.com about evaluation requests any more.`,
+      ),
     ).toBeVisible()
     expect(await modes(theo)).toMatchObject({ evaluator_invited: 'off', mention: 'immediate' })
 
@@ -118,7 +118,9 @@ test('UN-02: the same link again says “already unsubscribed” and offers all 
       page.getByRole('heading', { level: 1, name: 'You’re already unsubscribed' }),
     ).toBeVisible()
     await page.getByRole('button', { name: 'Unsubscribe from all Soundings email' }).click()
-    await expect(page.getByText('You won’t get any email from Soundings')).toBeVisible()
+    await expect(
+      page.getByText(/^Soundings won’t email \S+•••@example\.com any more\./),
+    ).toBeVisible()
     expect(new Set(Object.values(await modes(iris)))).toEqual(new Set(['off']))
 
     // "Email preferences" leads to sign-in, then the preferences page.
@@ -153,7 +155,7 @@ test('UN-03: the List-Unsubscribe URL: a browser lands on the page; a one-click 
     await page.goto(url)
     await expect(page).toHaveURL(new RegExp(`/unsubscribe\\?token=${token}$`))
     await expect(
-      page.getByRole('heading', { level: 1, name: /^Unsubscribe from “You’re asked to evaluate”/ }),
+      page.getByRole('heading', { level: 1, name: 'Unsubscribe from evaluation requests?' }),
     ).toBeVisible()
     expect((await modes(owen)).evaluator_invited).toBe('immediate')
 

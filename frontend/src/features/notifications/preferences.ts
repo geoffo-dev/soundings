@@ -25,7 +25,12 @@ const MODE_WORDS: Record<NotificationMode, string> = {
   off: 'Not emailed',
 }
 
-/** "Immediately", "In the daily digest", "Not emailed". */
+/** The option's own label ("Immediate", "Daily digest", "Off"): "Default: Daily digest". */
+export function modeLabel(mode: NotificationMode): string {
+  return MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode
+}
+
+/** "Immediately", "In the daily digest", "Not emailed" (inside a sentence). */
 export function describeMode(mode: NotificationMode): string {
   return MODE_WORDS[mode]
 }
@@ -57,40 +62,45 @@ function joinWords(words: string[]): string {
 }
 
 /**
- * What an unsubscribe link is about, as the page's heading and list:
- * one type ("Evaluation reminders"), the digest, or everything.
+ * What an unsubscribe link is about, for the page: its heading, what stops
+ * (one type: when those emails come; the digest and "all": a list), and the
+ * sentence once it's done, around the masked address
+ * (`${done.before}c•••@example.com${done.after}`).
  */
 export function unsubscribeSubject(info: Pick<UnsubscribeInfo, 'scope' | 'types'>): {
   title: string
-  done: string
-  /** The types, for the digest and "all" (a list on the page). */
+  /** One type: when those emails come ("someone asks you to evaluate an idea"). */
+  when?: string
+  /** The types (for the digest and "all"). */
   list: string[]
-  /** One type: what those emails are about (instead of a one-item list). */
-  detail?: string
+  done: { before: string; after: string }
 } {
   const list = info.types.map((type) => TYPE_COPY[type].label)
   if (info.scope === 'all') {
     return {
       title: 'Unsubscribe from all Soundings email?',
-      done: 'You won’t get any email from Soundings',
       list,
+      done: { before: 'Soundings won’t email ', after: ' any more.' },
     }
   }
   if (info.scope === 'digest') {
     return {
       title: 'Stop the daily digest?',
-      done:
-        info.types.length > 0
-          ? `You won’t get the daily digest (${joinWords(info.types.map(typePhrase))})`
-          : 'You won’t get the daily digest',
       list,
+      done: {
+        before: 'Soundings won’t send the daily digest to ',
+        after:
+          info.types.length > 0
+            ? ` any more (it had ${joinWords(info.types.map(typePhrase))}).`
+            : ' any more.',
+      },
     }
   }
-  const { label, description } = TYPE_COPY[info.scope]
+  const { phrase, when } = TYPE_COPY[info.scope]
   return {
-    title: `Unsubscribe from “${label}” emails?`,
-    done: `You won’t get “${label}” emails any more`,
+    title: `Unsubscribe from ${phrase}?`,
+    when,
     list,
-    detail: description.charAt(0).toLowerCase() + description.slice(1),
+    done: { before: 'Soundings won’t email ', after: ` about ${phrase} any more.` },
   }
 }

@@ -30,6 +30,7 @@ __all__ = [
     "Transport",
     "classify",
     "internal_failure",
+    "tls_context",
 ]
 
 AUTH_CODES: Final = frozenset({530, 534, 535, 538})
@@ -43,17 +44,22 @@ class Transport(Protocol):
     async def send(self, message: EmailMessage, *, sender: str, recipient: str) -> None: ...
 
 
+def tls_context(settings: Settings) -> ssl.SSLContext | None:
+    """Certificate and host name verification, against the CA bundle when one is set
+    (else the system trust store); ``None`` for security ``none``."""
+    if settings.smtp_security == "none":
+        return None
+    cafile = str(settings.smtp_ca_bundle) if settings.smtp_ca_bundle else None
+    return ssl.create_default_context(cafile=cafile)
+
+
 class SmtpTransport:
-    """The real thing: one connection per message (simple, and nothing to keep alive)."""
+    """The real thing: one connection per message (simple, and nothing to keep alive).
+    The TLS context is built once, when the worker starts."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-
-    def _tls_context(self) -> ssl.SSLContext | None:
-        if self.settings.smtp_security == "none":
-            return None
-        cafile = str(self.settings.smtp_ca_bundle) if self.settings.smtp_ca_bundle else None
-        return ssl.create_default_context(cafile=cafile)
+        self.tls_context = tls_context(settings)
 
     async def send(self, message: EmailMessage, *, sender: str, recipient: str) -> None:
         settings = self.settings
@@ -69,7 +75,7 @@ class SmtpTransport:
             use_tls=settings.smtp_security == "tls",
             start_tls=settings.smtp_security == "starttls",
             validate_certs=True,
-            tls_context=self._tls_context(),
+            tls_context=self.tls_context,
             username=username or None,
             password=password or None,
             timeout=settings.smtp_timeout,
@@ -78,12 +84,19 @@ class SmtpTransport:
 
 @dataclass(frozen=True, slots=True)
 class Failure:
-    """Why an attempt failed. ``error_class`` and ``code`` are safe to log."""
+    """Why an attempt failed. ``error_class`` and ``code`` are safe to log.
+    ``unreachable``: no SMTP conversation happened (refused, timed out, cut off), which
+    is what the worker's circuit breaker counts (:class:`app.email.delivery.Breaker`)."""
 
     transient: bool
     last_error: str
     error_class: str
     code: int | None = None
+    unreachable: bool = False
+
+
+def _unreachable(last_error: str, error_class: str) -> Failure:
+    return Failure(True, last_error, error_class, unreachable=True)
 
 
 def internal_failure(exc: BaseException) -> Failure:
@@ -131,15 +144,15 @@ def classify(exc: BaseException) -> Failure:
     if isinstance(exc, aiosmtplib.SMTPDataError):
         return _reply(exc, exc.code, "message refused")
     if isinstance(exc, aiosmtplib.SMTPConnectTimeoutError):
-        return Failure(True, "connection timed out", name)
+        return _unreachable("connection timed out", name)
     if isinstance(exc, aiosmtplib.SMTPConnectResponseError):
         return _reply(exc, exc.code, "server busy" if 400 <= exc.code < 500 else "server error")
     if isinstance(exc, aiosmtplib.SMTPConnectError):
-        return _tls(exc) or Failure(True, "connection refused", name)
+        return _tls(exc) or _unreachable("connection refused", name)
     if isinstance(exc, aiosmtplib.SMTPTimeoutError):
-        return Failure(True, "timed out", name)
+        return _unreachable("timed out", name)
     if isinstance(exc, aiosmtplib.SMTPServerDisconnected):
-        return _tls(exc) or Failure(True, "server disconnected", name)
+        return _tls(exc) or _unreachable("server disconnected", name)
     if isinstance(exc, aiosmtplib.SMTPNotSupported):
         return Failure(True, "server doesn't support STARTTLS or AUTH", name)
     if isinstance(exc, aiosmtplib.SMTPResponseException):
@@ -154,9 +167,9 @@ def classify(exc: BaseException) -> Failure:
     if isinstance(exc, ssl.SSLError):
         return _tls(exc) or Failure(True, "TLS handshake failed", name)
     if isinstance(exc, ConnectionRefusedError):
-        return Failure(True, "connection refused", name)
+        return _unreachable("connection refused", name)
     if isinstance(exc, TimeoutError):
-        return Failure(True, "timed out", name)
+        return _unreachable("timed out", name)
     if isinstance(exc, OSError):
-        return Failure(True, "connection failed", name)
+        return _unreachable("connection failed", name)
     return internal_failure(exc)

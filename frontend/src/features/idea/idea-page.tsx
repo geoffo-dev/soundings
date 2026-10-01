@@ -23,6 +23,7 @@ import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/compo
 import { Skeleton, SkeletonGroup, SkeletonIdeaPage } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { toast } from '@/components/ui/toaster'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { SHORTCUTS } from '@/lib/shortcuts'
 
@@ -112,11 +113,17 @@ function LoadedIdeaPage({
     [setSearch],
   )
 
-  // Only evaluators have a sheet: the param is ignored (and dropped) for everyone else.
+  // Only evaluators have a sheet: the param is dropped for everyone else, with a word
+  // why (an old email's link after the owner removed you, say).
   const evaluateOpen = Boolean(search.evaluate && ownEvaluator)
   useEffect(() => {
-    if (search.evaluate && !ownEvaluator) setSearch({ evaluate: undefined })
-  }, [search.evaluate, ownEvaluator, setSearch])
+    if (!search.evaluate || ownEvaluator) return
+    setSearch({ evaluate: undefined })
+    toast.info('You’re not evaluating this idea', {
+      id: `not-evaluating:${ideaKey}`,
+      description: 'Its owner may have removed you as an evaluator.',
+    })
+  }, [search.evaluate, ownEvaluator, setSearch, ideaKey])
 
   const openEvaluate = useCallback(() => {
     if (ownEvaluator) setSearch({ evaluate: true })

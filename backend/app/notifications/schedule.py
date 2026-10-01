@@ -1,5 +1,5 @@
 """The hourly ``notification_schedule`` job: evaluation reminders, then daily digests,
-then (at the digest hour) the cleanup (contract-phase3 sections 3.6, 3.7 and 3.9).
+then the cleanup (contract-phase3 sections 3.6, 3.7 and 3.9).
 
 Everything follows the instance time zone (``SOUNDINGS_TIMEZONE``) and takes ``now``
 as an argument, so tests drive it with any clock. Both jobs are idempotent: reminders
@@ -272,8 +272,10 @@ async def _digest_for(
 
 # --- Cleanup ------------------------------------------------------------------------------
 async def cleanup(db: AsyncSession, now: datetime) -> None:
-    """Daily, in this order: prune old outbox rows; turn off digest items older than the
-    window (including those whose digest row was just pruned); prune old notifications."""
+    """Hourly, in this order: prune old outbox rows; turn off digest items older than the
+    window (including those whose digest row was just pruned); prune old notifications.
+    Indexed: ``ix_outbound_email_status_updated_at``, ``ix_notifications_digest_pending``
+    and ``ix_notifications_created_at``."""
     await db.execute(
         delete(OutboundEmail).where(
             OutboundEmail.status.in_([EmailStatus.SENT, EmailStatus.CANCELLED]),
@@ -308,17 +310,14 @@ async def run_schedule(
     sessionmaker: SessionMaker, settings: Settings, now: datetime
 ) -> ScheduleResult:
     """Reminders, then digests (so a reminder in digest mode makes today's digest), then
-    the cleanup once a day at the digest hour."""
+    the cleanup. The cleanup runs every hour (it is idempotent, and indexed): tied to
+    one hour of the day, a late run or a day whose digest hour falls in a DST gap
+    would skip it."""
     async with session_scope(sessionmaker, settings=settings) as db:
         reminders = await send_reminders(db, settings, now)
     digests = await build_digests(sessionmaker, settings, now)
-    cleaned = now.astimezone(settings.tz).hour == settings.digest_hour
-    if cleaned:
-        async with session_scope(sessionmaker) as db:
-            await cleanup(db, now)
-    if reminders or digests or cleaned:
-        logger.info(
-            "notification schedule ran",
-            extra={"reminders": reminders, "digests": digests, "cleanup": cleaned},
-        )
-    return ScheduleResult(reminders=reminders, digests=digests, cleaned=cleaned)
+    async with session_scope(sessionmaker) as db:
+        await cleanup(db, now)
+    if reminders or digests:
+        logger.info("notification schedule ran", extra={"reminders": reminders, "digests": digests})
+    return ScheduleResult(reminders=reminders, digests=digests, cleaned=True)

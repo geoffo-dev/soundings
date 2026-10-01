@@ -10,7 +10,7 @@ import {
   RotateCw,
   Tag,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 
 import {
   useOutboxEmails,
@@ -50,13 +50,11 @@ import { EMAIL_STATUSES, EMAIL_TYPES, type EmailSearch } from './email-search'
  */
 export function OutboxSection({
   stats,
-  configured,
   status,
   type,
   onChange,
 }: {
   stats: OutboxStats
-  configured: boolean
   /** The statuses in effect (the URL's, or failed by default). */
   status: EmailStatus[]
   type: EmailType[]
@@ -74,9 +72,9 @@ export function OutboxSection({
     <AdminSection
       id="outbox"
       title="Outbox"
-      description="Every email Soundings sends goes through here: queued in the same transaction as what caused it, then sent by the worker with retries."
+      description="Every email waits here; the worker sends it, and retries while the mail server is down."
       actions={
-        stats.failed > 0 && configured ? (
+        stats.failed > 0 ? (
           <Button
             variant="secondary"
             size="sm"
@@ -243,14 +241,14 @@ export function OutboxSection({
                 <TableHead className="w-44">To</TableHead>
                 <TableHead className="w-60">Status</TableHead>
                 <TableHead className="w-28 text-right">Queued</TableHead>
-                <TableHead className="w-24">
+                <TableHead className="w-32">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((email) => (
-                <OutboxRow key={email.id} email={email} configured={configured} />
+                <OutboxRow key={email.id} email={email} />
               ))}
             </TableBody>
           </Table>
@@ -375,9 +373,21 @@ function StatusLabel({ status }: { status: EmailStatus }) {
   )
 }
 
-function OutboxRow({ email, configured }: { email: OutboxEmail; configured: boolean }) {
+/** "3 of 12 attempts": while it isn't sent, or when it took more than one. */
+function attemptsText(email: OutboxEmail): string | null {
+  if (email.status === 'sent') {
+    return email.attempts > 1 ? `on attempt ${email.attempts.toLocaleString()}` : null
+  }
+  if (email.attempts === 0 && email.status !== 'failed') return null
+  return `${email.attempts} of ${email.max_attempts} ${email.max_attempts === 1 ? 'attempt' : 'attempts'}`
+}
+
+function OutboxRow({ email }: { email: OutboxEmail }) {
   const retry = useRetryOutboxEmail()
+  // Retry replaces its button with "Queued": focus moves to the row's status, not the page.
+  const statusRef = useRef<HTMLDivElement>(null)
   const hint = errorHint(email.last_error)
+  const attempts = attemptsText(email)
   const what =
     email.type === 'test' && email.requested_by
       ? `Test email from ${email.requested_by.display_name}`
@@ -410,15 +420,15 @@ function OutboxRow({ email, configured }: { email: OutboxEmail; configured: bool
         )}
       </TableCell>
       <TableCell label="Status" className="min-w-0">
-        <div className="flex min-w-0 flex-col gap-0.5 py-2">
+        <div
+          ref={statusRef}
+          tabIndex={-1}
+          data-outbox-status=""
+          className="-mx-1 flex min-w-0 flex-col gap-0.5 rounded-sm px-1 py-2"
+        >
           <span className="flex flex-wrap items-center gap-x-2">
             <StatusLabel status={email.status} />
-            {(email.attempts > 0 || email.status === 'failed') && (
-              <span className="text-xs text-muted tabular-nums">
-                {email.attempts} of {email.max_attempts}{' '}
-                {email.max_attempts === 1 ? 'attempt' : 'attempts'}
-              </span>
-            )}
+            {attempts && <span className="text-xs text-muted tabular-nums">{attempts}</span>}
           </span>
           {email.last_error && (
             <span
@@ -447,12 +457,15 @@ function OutboxRow({ email, configured }: { email: OutboxEmail; configured: bool
         {email.status === 'failed' && !email.retryable && (
           <span className="text-xs whitespace-nowrap text-muted">Too old to send</span>
         )}
-        {email.retryable && configured && (
+        {email.retryable && (
           <Button
             variant="outline"
             size="sm"
             loading={retry.isPending}
-            onClick={() => retry.mutate(email.id)}
+            onClick={() => {
+              statusRef.current?.focus()
+              retry.mutate(email.id)
+            }}
             aria-label={`Retry: ${what}${email.recipient ? ` to ${email.recipient.display_name}` : ''}`}
           >
             <RotateCw />

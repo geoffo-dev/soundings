@@ -16,6 +16,14 @@
 Delivery is at-least-once: a crash between the server's acceptance and step 5 leaves
 the row ``sending``; the sweep re-queues it after the lease, and the resend has the
 same Message-ID. Logs carry ids, types, attempt numbers and error classes only.
+
+While the server is unreachable (five connection failures in a row: refused, timed
+out, cut off) the worker's :class:`Breaker` is open: due emails are **postponed** to the
+end of the pause without being claimed (no attempt used, no connection made), and the
+first attempt after the pause probes the server. A blackholed server then costs one
+connection timeout per pause instead of one per email, and sends never crowd out the
+sweep or the schedule (which also run first: their jobs have a higher priority). Test
+emails are always tried: an admin's test is a probe.
 """
 
 from __future__ import annotations
@@ -43,12 +51,13 @@ from app.email.model import DEFAULT_BRANDING
 from app.email.render import render
 from app.email.smtp import Failure, SmtpTransport, Transport, classify, internal_failure
 from app.models.base import utcnow
-from app.models.enums import EmailStatus
+from app.models.enums import EmailStatus, EmailType
 from app.models.notification import OutboundEmail
 from app.observability import EMAILS_CANCELLED, EMAILS_FAILED, EMAILS_QUEUED, EMAILS_SENT
 
 __all__ = [
     "WORKER_STOPPED",
+    "Breaker",
     "Outcome",
     "Runtime",
     "SweepResult",
@@ -63,6 +72,48 @@ LOST_JOB_GRACE: Final = timedelta(minutes=1)
 
 
 @dataclass(slots=True)
+class Breaker:
+    """A circuit breaker for one worker's SMTP server.
+
+    Opens after :attr:`threshold` unreachable attempts in a row, for :attr:`cooldown`
+    (doubling on each reopening up to :attr:`max_cooldown`); afterwards the next
+    attempts probe the server: one more unreachable attempt reopens it, any attempt
+    that reached the server (sent, or a reply such as 451) closes it.
+    """
+
+    threshold: int = 5
+    cooldown: timedelta = timedelta(seconds=30)
+    max_cooldown: timedelta = timedelta(minutes=5)
+    failures: int = 0
+    pause: timedelta = timedelta(0)
+    open_until: datetime | None = None
+
+    def is_open(self, now: datetime) -> bool:
+        return self.open_until is not None and now < self.open_until
+
+    def failed(self, now: datetime) -> None:
+        """An attempt that couldn't reach the server."""
+        self.failures += 1
+        if self.failures < self.threshold:
+            return
+        self.pause = min(self.pause * 2, self.max_cooldown) if self.pause else self.cooldown
+        self.open_until = now + self.pause
+        self.failures = self.threshold - 1  # half-open afterwards: one failure reopens
+        logger.warning(
+            "SMTP server unreachable: pausing sends",
+            extra={"pause_seconds": int(self.pause.total_seconds())},
+        )
+
+    def succeeded(self) -> None:
+        """An attempt that reached the server."""
+        if self.open_until is not None:
+            logger.info("SMTP server reachable again: sending")
+        self.failures = 0
+        self.pause = timedelta(0)
+        self.open_until = None
+
+
+@dataclass(slots=True)
 class Runtime:
     """What the jobs need: settings, a session factory, the SMTP transport, the opened
     job queue (for the sweep's own defers) and a clock (tests inject one)."""
@@ -74,14 +125,21 @@ class Runtime:
     clock: Callable[[], datetime] = utcnow
     rng: random.Random = field(default_factory=random.Random)
     deadline: timedelta = outbox.ATTEMPT_DEADLINE
+    breaker: Breaker = field(default_factory=Breaker)
 
     def __post_init__(self) -> None:
         if self.transport is None:
             self.transport = SmtpTransport(self.settings)
 
 
-Outcome = Literal["skipped", "not_claimed", "sent", "cancelled", "retry", "failed", "lost"]
-"""``lost``: the row changed under us (its lease was re-claimed); nothing recorded."""
+Outcome = Literal[
+    "skipped", "not_claimed", "postponed", "sent", "cancelled", "retry", "failed", "lost"
+]
+"""``lost``: the row changed under us (its lease was re-claimed); nothing recorded.
+``postponed``: the breaker is open; the row waits for the end of the pause."""
+POSTPONE_SPREAD: Final = 0.25
+"""Postponed rows are spread over the first quarter of a pause after it ends, so they
+don't all reach the server at the same moment."""
 
 
 async def _claim(runtime: Runtime, email_id: UUID) -> content.OutboxRow | None:
@@ -160,6 +218,8 @@ async def send_email(runtime: Runtime, email_id: UUID) -> Outcome:
     errors: the row records them and the next attempt is its own job."""
     if not runtime.settings.smtp_configured:
         return "skipped"  # the row waits, untouched, until SMTP is configured again
+    if runtime.breaker.is_open(runtime.clock()) and await _postpone(runtime, email_id):
+        return "postponed"
     email = await _claim(runtime, email_id)
     if email is None:
         return "not_claimed"
@@ -180,6 +240,33 @@ async def send_email(runtime: Runtime, email_id: UUID) -> Outcome:
 
 def _is_smtp(exc: BaseException) -> bool:
     return isinstance(exc, aiosmtplib.SMTPException)
+
+
+async def _postpone(runtime: Runtime, email_id: UUID) -> bool:
+    """While the breaker is open: move a due, queued row (not a test email) to the end
+    of the pause, with its next job, without claiming it. ``False``: nothing to do here
+    (not due, not queued, or a test email to try now)."""
+    breaker = runtime.breaker
+    assert breaker.open_until is not None  # noqa: S101 - only while open
+    now = runtime.clock()
+    spread = breaker.pause * runtime.rng.uniform(0, POSTPONE_SPREAD)
+    retry_at = breaker.open_until + spread
+    async with session_scope(runtime.sessionmaker) as db:
+        postponed = await db.scalar(
+            update(OutboundEmail)
+            .where(
+                OutboundEmail.id == email_id,
+                OutboundEmail.status == EmailStatus.QUEUED,
+                OutboundEmail.next_attempt_at <= now,
+                OutboundEmail.type != EmailType.TEST,
+            )
+            .values(next_attempt_at=retry_at, updated_at=now)
+            .returning(OutboundEmail.id)
+            .execution_options(synchronize_session=False)
+        )
+        if postponed is not None:
+            await outbox.defer_send(db, [email_id], schedule_at=retry_at)
+    return postponed is not None
 
 
 async def _record(
@@ -239,6 +326,10 @@ async def _record(
         )
         if recorded is not None and retry_at is not None:
             await outbox.defer_send(db, [email.id], schedule_at=retry_at)
+    if failure is not None and failure.unreachable:
+        runtime.breaker.failed(now)
+    elif cancelled is None and (failure is None or failure.code is not None):
+        runtime.breaker.succeeded()  # the server answered
     if recorded is None:
         logger.warning(
             "email outcome not recorded: the row changed",

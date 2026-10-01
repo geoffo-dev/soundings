@@ -7,6 +7,7 @@ import ssl
 from dataclasses import replace
 from datetime import UTC, datetime
 from email.message import EmailMessage
+from pathlib import Path
 
 import aiosmtplib
 import pytest
@@ -17,6 +18,7 @@ from app.email.message import build_message
 from app.email.preview import sample_contents
 from app.email.render import render
 from app.email.smtp import SmtpTransport, classify
+from tests.certs import write_ca_bundle
 from tests.conftest import make_settings
 from tests.notifications.smtp_server import FakeSmtpServer
 
@@ -197,3 +199,38 @@ async def test_a_long_list_unsubscribe_header_stays_usable_on_the_wire() -> None
         "quoted-printable",
     ]
     assert max(len(line) for line in raw.split(b"\r\n")) <= 998
+
+
+async def test_the_tls_context_is_built_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Review L5: the CA bundle was read again for every message."""
+    bundle = write_ca_bundle(tmp_path / "ca.crt")
+    settings = smtp_settings(2525, smtp_security="starttls", smtp_ca_bundle=str(bundle))
+    transport = SmtpTransport(settings)
+    built: list[object] = []
+    used: list[object] = []
+    real = ssl.create_default_context
+
+    def counting(*args: object, **kwargs: object) -> ssl.SSLContext:
+        built.append(args)
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    async def fake_send(*args: object, **kwargs: object) -> None:
+        used.append(kwargs["tls_context"])
+
+    monkeypatch.setattr(ssl, "create_default_context", counting)
+    monkeypatch.setattr(aiosmtplib, "send", fake_send)
+    for _ in range(3):
+        await transport.send(message(), sender="soundings@example.com", recipient="o@example.com")
+
+    assert built == []
+    assert len(used) == 3
+    assert used[0] is used[1] is used[2] is transport.tls_context
+    assert isinstance(transport.tls_context, ssl.SSLContext)
+    assert transport.tls_context.verify_mode is ssl.CERT_REQUIRED
+    assert transport.tls_context.check_hostname
+
+
+def test_plain_smtp_has_no_tls_context() -> None:
+    assert SmtpTransport(smtp_settings(2525)).tls_context is None

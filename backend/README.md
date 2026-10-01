@@ -19,7 +19,7 @@ The `soundings` command (`uv run soundings --help`):
 | Command | What it does |
 |---|---|
 | `soundings api [--host --port --workers --reload]` | uvicorn; the app believes `X-Forwarded-For`/`-Proto` only from `SOUNDINGS_TRUSTED_PROXIES`, and only the `SOUNDINGS_TRUSTED_PROXY_HOPS` entries they appended (`app/middleware.py`); also starts the metrics listener (below) |
-| `soundings worker [--concurrency N]` | procrastinate worker: sends email from the outbox, the per-minute outbox sweep, the hourly reminder/digest schedule, the daily job cleanup; stops gracefully on SIGTERM |
+| `soundings worker [--concurrency N]` | procrastinate worker: sends email from the outbox (pausing while the SMTP server is unreachable), the per-minute outbox sweep (also marks jobs of crashed workers failed), large notification fan-outs, the hourly reminder/digest/cleanup schedule, the daily job cleanup; periodic jobs run before waiting sends; stops gracefully on SIGTERM |
 | `soundings migrate` | `alembic upgrade head` (app tables **and** procrastinate schema); idempotent. Reads only the database settings: no `SECRET_KEY` needed |
 | `soundings wait-for-db [--timeout N]` | polls until Postgres answers `SELECT 1` (default 60 s); exit 1 on timeout. For init containers and scripts |
 | `soundings openapi [--output FILE]` | sorted, deterministic OpenAPI JSON (`make openapi OPENAPI_OUT=...`) |

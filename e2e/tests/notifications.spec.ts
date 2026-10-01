@@ -130,10 +130,14 @@ test('NO-02: the inbox page filters unread, marks one read when opened and all r
 
     await page.goto('/notifications?unread=1')
     await expect(page.getByRole('link', { name: /^Unread: / })).toHaveCount(2)
+    // Read at once, with Undo; the server hears about it when the toast closes.
     await page.getByRole('button', { name: 'Mark all read' }).click()
     await expect(page.getByRole('heading', { name: 'You’re all caught up' })).toBeVisible()
     await expect(bell(page)).toHaveAccessibleName('Notifications')
-    expect((await theo.api.notifications(true)).length).toBe(0)
+    await expect(page.getByRole('button', { name: 'Mark all read' })).toBeFocused()
+    await expect
+      .poll(async () => (await theo.api.notifications(true)).length, { timeout: 15_000 })
+      .toBe(0)
     expect((await theo.api.notifications()).length).toBe(3)
   } finally {
     await disposePeople(people)

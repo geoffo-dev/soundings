@@ -1,9 +1,10 @@
+import { useLocation } from '@tanstack/react-router'
 import { Lock, LockOpen, Mail } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { useEmailConfig } from '@/api/admin-email'
 import { useNotificationSummary } from '@/api/notifications'
-import type { EmailConfig } from '@/api/types'
+import type { EmailConfig, EmailStatus } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -13,15 +14,16 @@ import { CopyButton } from '@/features/admin/copy-button'
 import { AdminPageHeader, AdminSection } from '@/features/admin/settings-frame'
 
 import { reminderDaysText, scheduleTime, SECURITY } from './email-copy'
-import { effectiveStatuses, type EmailSearch } from './email-search'
+import { defaultStatuses, effectiveStatuses, type EmailSearch } from './email-search'
 import { OutboxSection } from './outbox-section'
 import { TestEmailSection } from './test-email'
 
 /**
- * Admin settings → Email (contract-phase3 §3.10, wireframe 07): whether email
- * works, the SMTP settings in effect (read-only: Helm values `smtp.*`, the
- * credentials from a Secret and never shown), a test email, and the outbox
- * with retry. Without SMTP, how to set it up.
+ * Admin settings → Email (contract-phase3 §3.10, wireframe 07), in the order
+ * an admin needs it: whether email works, the outbox with retry (the banner
+ * links straight to it, `#outbox`), a test email, the SMTP settings in effect
+ * (read-only: Helm values `smtp.*`, the credentials from a Secret and never
+ * shown) and the schedule. Without SMTP, only how to set it up.
  */
 export function EmailPage({
   search,
@@ -77,6 +79,9 @@ function Code({ children }: { children: ReactNode }) {
   return <code className="font-mono text-secondary">{children}</code>
 }
 
+/** How long mail may wait before the page (and the admin banner) call it stuck. */
+const STUCK_MS = 15 * 60_000
+
 function EmailDetails({
   config,
   search,
@@ -86,27 +91,69 @@ function EmailDetails({
   search: EmailSearch
   onSearchChange: (patch: Partial<EmailSearch>) => void
 }) {
-  const status = effectiveStatuses(search.status, config.outbox.failed)
+  const now = useNow()
+  const { outbox, configured } = config
+  const stuck =
+    outbox.oldest_queued_at !== null && Date.parse(outbox.oldest_queued_at) < now - STUCK_MS
+  // The default filter is chosen once, as the page opens (what needs attention), so the
+  // list doesn't jump to "All" under the admin's cursor when Retry empties "Failed".
+  const [defaults] = useState<EmailStatus[]>(() => defaultStatuses(outbox, stuck))
+  const status = effectiveStatuses(search.status, defaults)
+  const [testQueued, setTestQueued] = useState(false)
+  useScrollToSection(configured)
+
+  // Without SMTP only what helps: how to set it up (no test form, outbox or server).
   return (
     <div className="flex flex-col gap-10">
-      <StatusCallout config={config} />
-      {config.configured ? <ServerSettings config={config} /> : <SetupChecklist />}
-      <TestEmailSection configured={config.configured} />
-      <OutboxSection
-        stats={config.outbox}
-        configured={config.configured}
-        status={status}
-        type={search.type ?? []}
-        onChange={onSearchChange}
-      />
+      <StatusCallout config={config} stuck={stuck} testQueued={testQueued} />
+      {!configured && <SetupChecklist />}
+      {configured && (
+        <OutboxSection
+          stats={outbox}
+          status={status}
+          type={search.type ?? []}
+          onChange={onSearchChange}
+        />
+      )}
+      {configured && <TestEmailSection onStillQueued={setTestQueued} />}
+      {configured && <ServerSettings config={config} />}
       <Schedule config={config} />
     </div>
   )
 }
 
-function StatusCallout({ config }: { config: EmailConfig }) {
+/**
+ * `/settings/email#outbox` (the admin banner) and the other sections' ids:
+ * the section is only there once the settings have loaded, so scroll to it
+ * then, and move focus to its heading for keyboard and screen reader users.
+ */
+function useScrollToSection(ready: boolean) {
+  const hash = useLocation({ select: (location) => location.hash })
+  useEffect(() => {
+    if (!ready || !hash) return
+    const section = document.getElementById(hash)
+    const heading = document.getElementById(`${hash}-heading`)
+    if (section?.tagName !== 'SECTION') return
+    section.scrollIntoView({ block: 'start' })
+    if (heading) {
+      heading.tabIndex = -1
+      heading.focus({ preventScroll: true })
+    }
+  }, [hash, ready])
+}
+
+function StatusCallout({
+  config,
+  stuck,
+  testQueued,
+}: {
+  config: EmailConfig
+  /** Mail has waited more than 15 minutes. */
+  stuck: boolean
+  /** A test email sent from this page is still waiting for the worker. */
+  testQueued: boolean
+}) {
   const summary = useNotificationSummary()
-  const now = useNow()
   const { outbox } = config
   if (!config.configured) {
     return (
@@ -116,8 +163,13 @@ function StatusCallout({ config }: { config: EmailConfig }) {
       </Callout>
     )
   }
-  const stuck =
-    outbox.oldest_queued_at !== null && Date.parse(outbox.oldest_queued_at) < now - 15 * 60_000
+  if (testQueued && !stuck && !summary.data?.email_trouble) {
+    return (
+      <Callout role="status" tone="warning" title="Email may not be going out">
+        Your test email is still waiting to be sent: is the worker running?
+      </Callout>
+    )
+  }
   if (summary.data?.email_trouble || stuck) {
     return (
       <Callout role="status" tone="warning" title="Some emails aren’t going out">
@@ -129,7 +181,7 @@ function StatusCallout({ config }: { config: EmailConfig }) {
           </>
         ) : null}
         {outbox.failed > 0 &&
-          `${outbox.failed.toLocaleString()} failed; retry them below once the cause is fixed.`}
+          `${outbox.failed.toLocaleString()} failed: retry them below once the cause is fixed.`}
       </Callout>
     )
   }
@@ -241,6 +293,7 @@ function Schedule({ config }: { config: EmailConfig }) {
       title="Digests and reminders"
       description={
         <>
+          {!config.configured && 'They start once email is on. '}
           Instance settings (<Code>SOUNDINGS_TIMEZONE</Code>, <Code>SOUNDINGS_DIGEST_HOUR</Code>,{' '}
           <Code>SOUNDINGS_REMINDER_DAYS</Code>).
         </>

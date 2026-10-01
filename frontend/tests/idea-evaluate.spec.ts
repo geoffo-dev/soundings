@@ -116,13 +116,16 @@ test('?evaluate=1 opens the sheet; Esc closes it and keeps the draft', async ({ 
   ).toBeChecked()
 })
 
-test('?evaluate=1 is ignored for someone who isn’t an evaluator', async ({ page }) => {
+test('?evaluate=1 is dropped for someone who isn’t an evaluator, with a word why', async ({
+  page,
+}) => {
   await page.goto('/ideas/CUST-2?evaluate=1')
   await expect(
     page.getByRole('heading', { level: 1, name: 'Print-free returns with a QR code' }),
   ).toBeVisible()
   await expect(page).toHaveURL(/\/ideas\/CUST-2$/)
   await expect(sheet(page)).toHaveCount(0)
+  await expect(page.getByText('You’re not evaluating this idea')).toBeVisible()
 })
 
 test('a draft saved earlier comes back, and the reveal can be edited again', async ({ page }) => {

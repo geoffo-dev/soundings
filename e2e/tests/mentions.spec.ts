@@ -54,7 +54,8 @@ test('ME-01: the picker offers the project’s people; the mention arrives in th
     await page.keyboard.press('Enter')
     await expect(picker(page)).toBeHidden()
     await page.keyboard.type('can you check the courier API?')
-    await expect(composer(page)).toHaveValue(`Thanks ${token(theo)} can you check the courier API?`)
+    // The box shows the name (the stored comment has the token).
+    await expect(composer(page)).toHaveValue('Thanks @Theo Marsh can you check the courier API?')
     const since = new Date()
     await composer(page).press('ControlOrMeta+Enter')
     const posted = page

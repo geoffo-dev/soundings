@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from tests.certs import write_ca_bundle
 from tests.conftest import make_settings
 
 STRONG_SECRET = "s" * 40
@@ -32,8 +33,7 @@ def test_email_is_off_by_default() -> None:
 
 def test_chart_environment_names_are_read(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The names deploy/helm/README.md documents (configmap and secret)."""
-    ca_bundle = tmp_path / "ca.crt"
-    ca_bundle.write_text("-----BEGIN CERTIFICATE-----\n")
+    ca_bundle = write_ca_bundle(tmp_path / "ca.crt")
     for name, value in {
         "SOUNDINGS_SMTP_HOST": "smtp.example.com",
         "SOUNDINGS_SMTP_PORT": "465",
@@ -138,6 +138,32 @@ def test_ca_bundle_must_exist(tmp_path: Path) -> None:
         make_settings(smtp_ca_bundle=str(tmp_path))  # a directory
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "",
+        "-----BEGIN CERTIFICATE-----\n",
+        "-----BEGIN CERTIFICATE-----\nnot base64\n-----END CERTIFICATE-----\n",
+        "just some text\n",
+    ],
+    ids=["empty", "truncated", "garbage", "text"],
+)
+def test_ca_bundle_must_hold_a_certificate(tmp_path: Path, content: str) -> None:
+    """Review L5: an unusable bundle was accepted at startup and then failed every
+    send as "TLS handshake failed", twelve times."""
+    path = tmp_path / "ca.crt"
+    path.write_text(content)
+
+    with pytest.raises(ValidationError, match="PEM file with at least one certificate"):
+        make_settings(smtp_ca_bundle=str(path))
+
+
+def test_a_ca_bundle_with_a_certificate_is_accepted(tmp_path: Path) -> None:
+    path = write_ca_bundle(tmp_path / "ca.crt")
+
+    assert make_settings(smtp_ca_bundle=str(path)).smtp_ca_bundle == path
+
+
 @pytest.mark.parametrize("value", ["Mars/Olympus", "UTC+1", "../../etc/passwd"])
 def test_timezone_must_be_an_iana_name(value: str) -> None:
     with pytest.raises(ValidationError, match="IANA time zone"):
@@ -224,3 +250,35 @@ def test_an_empty_port_from_the_chart_follows_the_security_mode(
     monkeypatch.setenv("SOUNDINGS_SMTP_PORT", "")
 
     assert Settings().smtp_port == 465
+
+
+def test_api_pods_get_credential_flags_instead_of_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review L4: the chart gives the SMTP Secret to the worker only; API pods get
+    SOUNDINGS_SMTP_USERNAME_SET / _PASSWORD_SET for the admin page."""
+    monkeypatch.setenv("SOUNDINGS_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SOUNDINGS_SMTP_FROM", "soundings@example.com")
+    monkeypatch.setenv("SOUNDINGS_SMTP_USERNAME_SET", "true")
+    monkeypatch.setenv("SOUNDINGS_SMTP_PASSWORD_SET", "true")
+
+    settings = Settings()
+
+    assert settings.smtp_username is None
+    assert settings.smtp_password is None
+    assert settings.smtp_username_set
+    assert settings.smtp_password_set
+    assert not make_settings().smtp_password_set
+
+
+def test_production_refuses_a_plain_connection_with_a_password_flag() -> None:
+    with pytest.raises(ValidationError, match="SECURITY=none"):
+        make_settings(
+            environment="production",
+            secret_key=STRONG_SECRET,
+            base_urls=["https://ideas.example.com"],
+            smtp_host="relay.example.com",
+            smtp_security="none",
+            smtp_from="ideas@example.com",
+            smtp_password_set=True,
+        )

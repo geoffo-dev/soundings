@@ -58,20 +58,25 @@ describe('email preference mapping (contract-phase3 §3.4)', () => {
 })
 
 describe('what an unsubscribe link turns off (contract-phase3 §3.5)', () => {
-  it('one type: names it and says what those emails are', () => {
+  it('one type: names it the way the email does, and says when those emails come', () => {
     expect(unsubscribeSubject({ scope: 'comment', types: ['comment'] })).toMatchObject({
-      title: 'Unsubscribe from “New comments” emails?',
-      detail: 'someone comments on an idea you watch.',
+      title: 'Unsubscribe from new comments?',
+      when: 'someone comments on an idea you watch',
+      done: { before: 'Soundings won’t email ', after: ' about new comments any more.' },
     })
+    expect(
+      unsubscribeSubject({ scope: 'evaluator_invited', types: ['evaluator_invited'] }).title,
+    ).toBe('Unsubscribe from evaluation requests?')
   })
 
   it('the digest and everything list the types', () => {
     const digest = unsubscribeSubject({ scope: 'digest', types: ['status_changed', 'comment'] })
     expect(digest.title).toBe('Stop the daily digest?')
     expect(digest.list).toEqual(['Status changes', 'New comments'])
-    expect(digest.done).toBe('You won’t get the daily digest (status changes and new comments)')
+    expect(digest.done.after).toBe(' any more (it had status changes and new comments).')
     const all = unsubscribeSubject({ scope: 'all', types: ['owner_assigned', 'mention'] })
     expect(all.title).toBe('Unsubscribe from all Soundings email?')
-    expect(all.detail).toBeUndefined()
+    expect(all.when).toBeUndefined()
+    expect(all.list).toEqual(['Owner assignments', 'Mentions'])
   })
 })

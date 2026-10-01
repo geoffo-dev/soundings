@@ -139,7 +139,8 @@ smtp:
   # existingSecret. Production refuses a password with security none.
   username: ""
   password: ""
-  # -- Existing Secret with keys `username` and `password` (both optional).
+  # -- Existing Secret with keys `username` and `password` (both required). Only the
+  # worker pods get the credentials. Not with security none (unless devLogin).
   existingSecret: ""
   # -- Sender address of every email (one plain address); required when host is set.
   from: ""
