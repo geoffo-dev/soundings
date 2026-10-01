@@ -53,6 +53,7 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
         url=links.idea("OPS-4"),
     )
     token = "sample-token.preview-only"  # noqa: S105 - not a secret
+    all_token = "sample-all-token.preview-only"  # noqa: S105 - not a secret
 
     def footer(type_: NotificationType, reason: str) -> dict[str, str]:
         return {
@@ -60,6 +61,7 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             "preferences_url": links.preferences(),
             "unsubscribe_url": links.unsubscribe_page(token),
             "unsubscribe_label": TYPE_LABELS[type_],
+            "unsubscribe_all_url": links.unsubscribe_page(all_token),
         }
 
     evaluate = Button("Evaluate", links.idea(idea.key, evaluate=True))
@@ -162,6 +164,7 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             preferences_url=links.preferences(),
             unsubscribe_url=links.unsubscribe_page(token),
             unsubscribe_label="the daily digest",
+            unsubscribe_all_url=links.unsubscribe_page(all_token),
         ),
         "test": EmailContent(
             template="test",

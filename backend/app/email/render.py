@@ -124,6 +124,7 @@ def render(content: EmailContent, branding: Branding = DEFAULT_BRANDING) -> Rend
         "preferences_url": content.preferences_url,
         "unsubscribe_url": content.unsubscribe_url,
         "unsubscribe_label": content.unsubscribe_label,
+        "unsubscribe_all_url": content.unsubscribe_all_url,
         "brand": branding,
         "s": _STYLES,
         "c": _colours(branding),

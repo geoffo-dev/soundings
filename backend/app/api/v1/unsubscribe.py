@@ -75,19 +75,27 @@ def _wants_html(request: Request) -> bool:
     summary="Unsubscribe",
     description=(
         "Public (self.unsubscribe, c14), idempotent: turns off email for the link's "
-        "scope, or for every type with all=true. Also the RFC 8058 one-click target: "
-        "the mail client's form body (List-Unsubscribe=One-Click) is accepted and "
-        "ignored; no CSRF token or session is needed (the token is the authority). 404 "
-        "for an invalid token or a user who is no longer active."
+        "scope. Also the RFC 8058 one-click target: the mail client's form body "
+        "(List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session "
+        "is needed (the token is the authority). 404 for an invalid token or a user who "
+        "is no longer active; 403 insufficient_scope for all=true with a token that is "
+        "not scoped to all."
     ),
-    responses=problems(404),
+    responses=problems(403, 404),
 )
 async def confirm_unsubscribe(
     request: Request,
     session: SessionDep,
     token: UnsubscribeToken,
     all_types: Annotated[
-        bool, Query(alias="all", description="Turn off every email notification type.")
+        bool,
+        Query(
+            alias="all",
+            description=(
+                "Turn off every email notification type. Only for a token scoped to "
+                "all (the footer's 'Unsubscribe from all email' link), else 403."
+            ),
+        ),
     ] = False,
 ) -> UnsubscribeInfo:
     settings: Settings = request.app.state.settings

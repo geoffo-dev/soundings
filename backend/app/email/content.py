@@ -227,6 +227,7 @@ async def _notification(
         "preferences_url": context.links.preferences(),
         "unsubscribe_url": context.links.unsubscribe_page(token),
         "unsubscribe_label": TYPE_LABELS[notification.type],
+        "unsubscribe_all_url": _unsubscribe_all_url(context, user),
         "list_unsubscribe_url": context.links.unsubscribe_api(token),
         "references": f"<idea-{idea.id}@{context.host}>",
     }
@@ -334,6 +335,14 @@ async def _notification(
                 ),
                 **base,
             )
+
+
+def _unsubscribe_all_url(context: _Context, user: User) -> str:
+    """The footer's "Unsubscribe from all email" link: the only token scoped to ``all``
+    (a type's or the digest's link can't turn off every email, contract section 3.5)."""
+    return context.links.unsubscribe_page(
+        make_token(context.settings, user.id, UnsubscribeScope.ALL)
+    )
 
 
 def _labels(project: Project, payload: Mapping[str, Any]) -> tuple[str, str]:
@@ -458,6 +467,7 @@ async def _digest(
         preferences_url=context.links.preferences(),
         unsubscribe_url=context.links.unsubscribe_page(token),
         unsubscribe_label="the daily digest",
+        unsubscribe_all_url=_unsubscribe_all_url(context, user),
         list_unsubscribe_url=context.links.unsubscribe_api(token),
     )
 

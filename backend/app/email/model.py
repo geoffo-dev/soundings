@@ -108,6 +108,8 @@ class EmailContent:
     preferences_url: str | None = None
     unsubscribe_url: str | None = None
     unsubscribe_label: str | None = None
+    unsubscribe_all_url: str | None = None
+    """"Unsubscribe from all email": the only link whose token turns off every type."""
     list_unsubscribe_url: str | None = None
     """``List-Unsubscribe`` (with ``List-Unsubscribe-Post: List-Unsubscribe=One-Click``)."""
     references: str | None = None

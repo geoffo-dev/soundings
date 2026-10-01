@@ -149,6 +149,8 @@ class Resource:
       (:func:`app.authz.loaders.other_platform_admins`). ``None`` = the change takes
       no platform admin away.
     * ``ai_available``: c10. ``token_valid``: c9 / c14.
+    * ``token_covers_request``: c14, the unsubscribe token's scope covers what is
+      asked (``all=true`` needs a token scoped to ``all``); unset fails.
     """
 
     project: ProjectFacts | None = None
@@ -162,6 +164,7 @@ class Resource:
     platform_admins_after_change: int | None = None
     ai_available: bool = False
     token_valid: bool = False
+    token_covers_request: bool = False
 
     def replace(self, **changes: object) -> Resource:
         return dataclasses.replace(self, **changes)  # type: ignore[arg-type]
@@ -259,7 +262,10 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     ),
     "c12": (Check("c12", 404, "not_found", lambda p, r, _: not _idea(r).awaiting_moderation),),
     "c13": (Check("c13", 409, "idea_has_owner", lambda p, r, _: _idea(r).owner_id is None),),
-    "c14": (Check("c14", 404, "not_found", lambda p, r, _: r.token_valid),),
+    "c14": (
+        Check("c14", 404, "not_found", lambda p, r, _: r.token_valid),
+        Check("c14", 403, "insufficient_scope", lambda p, r, _: r.token_covers_request),
+    ),
     "c15": (
         Check("c15", 401, "unauthorized", _is_api_key),
         Check("c15", 403, "insufficient_scope", _has_mcp_scope),

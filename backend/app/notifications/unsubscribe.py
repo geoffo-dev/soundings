@@ -6,7 +6,9 @@ derived from ``SOUNDINGS_SECRET_KEY`` by HKDF-SHA256 (info ``soundings/unsubscri
 compared in constant time. Rotating the secret key invalidates every link.
 
 A GET never changes anything (link scanners prefetch); a POST turns email off for the
-token's scope (``self.unsubscribe``, c14: the token is the authority, no session).
+token's scope (``self.unsubscribe``, c14: the token is the authority, no session). Only a
+token scoped to ``all`` (the footer's "Unsubscribe from all email" link) turns off every
+type; ``all=true`` with a type or digest token is 403 ``insufficient_scope``.
 """
 
 from __future__ import annotations
@@ -104,14 +106,24 @@ def email_hint(address: str) -> str:
     return f"{local[:1]}•••@{domain}" if domain else "•••"
 
 
-async def _user(db: AsyncSession, settings: Settings, token: str) -> tuple[User, Unsubscribe]:
-    """The token's active user; 404 otherwise (policy ``self.unsubscribe``, c14)."""
+async def _user(
+    db: AsyncSession, settings: Settings, token: str, *, all_types: bool = False
+) -> tuple[User, Unsubscribe]:
+    """The token's active user; 404 otherwise, and 403 ``insufficient_scope`` when
+    ``all_types`` is asked with a token not scoped to ``all`` (policy
+    ``self.unsubscribe``, c14): a link that turns off one type (or the digest) can't
+    turn off every email, so a forwarded email can't silence its recipient entirely."""
     found = read_token(settings, token)
     user = None
     if found is not None:
         user = await db.scalar(select(User).where(User.id == found.user_id))
     valid = found is not None and user is not None and user.is_active
-    require(None, Rule.SELF_UNSUBSCRIBE, Resource(token_valid=valid))
+    covers = found is not None and (not all_types or found.scope is UnsubscribeScope.ALL)
+    require(
+        None,
+        Rule.SELF_UNSUBSCRIBE,
+        Resource(token_valid=valid, token_covers_request=covers),
+    )
     assert user is not None  # noqa: S101 - narrowed by require
     assert found is not None  # noqa: S101
     return user, found
@@ -143,9 +155,11 @@ async def unsubscribe_info(db: AsyncSession, settings: Settings, token: str) -> 
 async def confirm(
     db: AsyncSession, settings: Settings, token: str, *, all_types: bool = False
 ) -> UnsubscribeInfo:
-    """Turn email off for the token's scope (or every type); idempotent."""
-    user, found = await _user(db, settings, token)
-    scope = UnsubscribeScope.ALL if all_types else found.scope
+    """Turn email off for the token's scope; idempotent. ``all_types`` (``all=true``)
+    is accepted only for a token scoped to ``all`` (the footer's "Unsubscribe from all
+    email" link), where it changes nothing."""
+    user, found = await _user(db, settings, token, all_types=all_types)
+    scope = found.scope
     modes = await preferences.all_modes(db, user.id)
     types = _scope_types(scope, modes)
     await preferences.update(db, user.id, dict.fromkeys(types, NotificationMode.OFF))

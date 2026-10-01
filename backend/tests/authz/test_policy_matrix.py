@@ -96,7 +96,7 @@ MATRIX: dict[str, tuple[str, ...]] = {
     "ai.cancel_run": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
 }
 
-# Role matrix section 4: the response when each condition fails (c1 and c15 have two
+# Role matrix section 4: the response when each condition fails (c1, c14 and c15 have two
 # parts). "breaks" names the ways the tests break it.
 CONDITION_RESPONSES: dict[str, dict[str, tuple[int, str]]] = {
     "c1": {"not_submitter": (403, "not_submitter"), "not_new": (409, "idea_not_new")},
@@ -112,7 +112,7 @@ CONDITION_RESPONSES: dict[str, dict[str, tuple[int, str]]] = {
     "c11": {"no_admin_left": (409, "last_admin")},
     "c12": {"moderation": (404, "not_found")},
     "c13": {"owned": (409, "idea_has_owner")},
-    "c14": {"no_token": (404, "not_found")},
+    "c14": {"no_token": (404, "not_found"), "narrow_token": (403, "insufficient_scope")},
     "c15": {"session": (401, "unauthorized"), "no_scope": (403, "insufficient_scope")},
 }
 
@@ -207,6 +207,7 @@ class State:
     admins_after_change: int | None = None
     ai_available: bool = True
     token_valid: bool = True
+    token_covers_request: bool = True
 
     def build(self) -> tuple[Principal | None, Resource]:
         principal = None
@@ -239,6 +240,7 @@ class State:
             admins_after_change=self.admins_after_change,
             ai_available=self.ai_available,
             token_valid=self.token_valid,
+            token_covers_request=self.token_covers_request,
         )
 
 
@@ -313,7 +315,10 @@ BREAKS: dict[str, dict[str, Callable[[State, str], State]]] = {
     "c11": {"no_admin_left": lambda s, _: replace(s, admins_after_change=0)},
     "c12": {"moderation": lambda s, _: replace(s, awaiting_moderation=True)},
     "c13": {"owned": lambda s, _: replace(s, owner_id=OTHER)},
-    "c14": {"no_token": lambda s, _: replace(s, token_valid=False)},
+    "c14": {
+        "no_token": lambda s, _: replace(s, token_valid=False),
+        "narrow_token": lambda s, _: replace(s, token_covers_request=False),
+    },
     "c15": {
         "session": lambda s, _: replace(s, auth="session", scopes=None),
         "no_scope": lambda s, _: replace(s, scopes=frozenset({"read", "write", "evaluate"})),

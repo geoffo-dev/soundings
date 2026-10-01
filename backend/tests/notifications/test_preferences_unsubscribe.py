@@ -175,15 +175,56 @@ async def test_the_digest_link_turns_off_every_digest_type(
     }
 
 
-async def test_all_turns_off_everything(
-    client: httpx.AsyncClient, settings: Settings, team: Team
+async def test_the_all_link_turns_off_everything(
+    client: httpx.AsyncClient, settings: Settings, team: Team, db_session: AsyncSession
 ) -> None:
-    token = make_token(settings, team.owner.id, UnsubscribeScope.COMMENT)
+    """The footer's "Unsubscribe from all email" link carries the only token scoped to
+    all; all=true with it changes nothing more."""
+    token = make_token(settings, team.owner.id, UnsubscribeScope.ALL)
+    every = [t.value for t in NotificationType]
 
-    body = ok(await client.post(f"{API}/unsubscribe", params={"token": token, "all": "true"}))
+    before = ok(await info(client, token))
+    body = ok(await client.post(f"{API}/unsubscribe", params={"token": token}))
+    again = ok(await client.post(f"{API}/unsubscribe", params={"token": token, "all": "true"}))
 
-    assert body["scope"] == "all"
-    assert body["types"] == [t.value for t in NotificationType]
+    assert (before["scope"], before["types"], before["unsubscribed"]) == ("all", every, False)
+    assert (body["scope"], body["types"], body["unsubscribed"]) == ("all", every, True)
+    assert (again["scope"], again["types"]) == ("all", every)
+    rows = await db_session.scalars(
+        select(NotificationPreference.mode).where(NotificationPreference.user_id == team.owner.id)
+    )
+    assert list(rows) == [NotificationMode.OFF] * len(NotificationType)
+
+
+@pytest.mark.parametrize("scope", [UnsubscribeScope.COMMENT, UnsubscribeScope.DIGEST])
+async def test_a_type_or_digest_link_cannot_turn_off_every_email(
+    client: httpx.AsyncClient,
+    settings: Settings,
+    team: Team,
+    db_session: AsyncSession,
+    scope: UnsubscribeScope,
+) -> None:
+    """Lead decision L8: a link that turns off one type (or the digest) can't be
+    widened with all=true, so a forwarded email can't silence its recipient entirely.
+    The token is still checked first (404 before 403)."""
+    token = make_token(settings, team.owner.id, scope)
+
+    response = await client.post(f"{API}/unsubscribe", params={"token": token, "all": "true"})
+
+    assert_problem(response, 403, "insufficient_scope")
+    stored = await db_session.scalar(
+        select(func.count())
+        .select_from(NotificationPreference)
+        .where(NotificationPreference.user_id == team.owner.id)
+    )
+    assert stored == 0
+    assert ok(await info(client, token))["unsubscribed"] is False
+    forged = token[:-3] + ("AAA" if not token.endswith("AAA") else "BBB")
+    assert_problem(
+        await client.post(f"{API}/unsubscribe", params={"token": forged, "all": "true"}),
+        404,
+        "not_found",
+    )
 
 
 async def test_invalid_tokens_and_inactive_users_get_404(
