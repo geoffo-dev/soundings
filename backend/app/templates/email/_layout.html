@@ -56,7 +56,8 @@
 <tr>
 <td class="sx-muted" style="padding:18px 4px 0 4px;font-family:{{ s.font }};font-size:12px;line-height:1.6;color:{{ c.muted }};">
 {% if reason %}<p style="margin:0 0 6px 0;">{{ reason }}</p>{% endif %}
-<p style="margin:0;">{% if preferences_url %}<a class="sx-muted" href="{{ preferences_url }}" style="color:{{ c.muted }};text-decoration:underline;">Email preferences</a>{% endif %}{% if preferences_url and unsubscribe_url %} &nbsp;·&nbsp; {% endif %}{% if unsubscribe_url %}<a class="sx-muted" href="{{ unsubscribe_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from {{ unsubscribe_label }}</a>{% endif %}{% if unsubscribe_all_url %} &nbsp;·&nbsp; <a class="sx-muted" href="{{ unsubscribe_all_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from all email</a>{% endif %}</p>
+<p style="margin:0;">{% if preferences_url %}<a class="sx-muted" href="{{ preferences_url }}" style="color:{{ c.muted }};text-decoration:underline;">Email preferences</a>{% endif %}{% if preferences_url and unsubscribe_url %} &nbsp;·&nbsp; {% endif %}{% if unsubscribe_url %}<a class="sx-muted" href="{{ unsubscribe_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from {{ unsubscribe_label }}</a>{% endif %}</p>
+{% if unsubscribe_all_url %}<p style="margin:4px 0 0 0;"><a class="sx-muted" href="{{ unsubscribe_all_url }}" style="color:{{ c.muted }};text-decoration:underline;">Unsubscribe from all email</a></p>{% endif %}
 <p style="margin:10px 0 0 0;">{{ brand.footer_text or "Sent by " ~ brand.product_name ~ "." }}</p>
 </td>
 </tr>

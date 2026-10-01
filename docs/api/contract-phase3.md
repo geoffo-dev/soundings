@@ -71,7 +71,7 @@ not repeated per row.
 | Method & path | operation_id | Rule | Request → response | Errors |
 |---|---|---|---|---|
 | `GET /unsubscribe?token=` | `get_unsubscribe` | `self.unsubscribe` (c14) | → `UnsubscribeInfo {scope, types, unsubscribed, email_hint}`; changes nothing. A browser navigation (`Accept` lists `text/html`) → 303 to the SPA page `/unsubscribe?token=…` (§3.5) | 404 invalid token or inactive user |
-| `POST /unsubscribe?token=&all=` | `confirm_unsubscribe` | `self.unsubscribe` (c14) | no body (an RFC 8058 form body is accepted and ignored) → `UnsubscribeInfo` after the change; idempotent | 404 |
+| `POST /unsubscribe?token=&all=` | `confirm_unsubscribe` | `self.unsubscribe` (c14) | no body (an RFC 8058 form body is accepted and ignored) → `UnsubscribeInfo` after the change; idempotent; `all=true` only with a token scoped to `all` | 404; 403 `insufficient_scope` (`all=true` with a type or digest token) |
 
 ### Admin: email (`tags: admin`)
 
@@ -118,7 +118,8 @@ read-only). Names match `deploy/helm/README.md`:
 | `SOUNDINGS_SMTP_HOST` | unset | Host name or IP (no scheme, no port). Unset or empty: email off. |
 | `SOUNDINGS_SMTP_PORT` | `465` with `tls`, else `587` | Unset or empty: by the security mode (`app.config.SMTP_DEFAULT_PORTS`). An explicit value always wins. |
 | `SOUNDINGS_SMTP_SECURITY` | `starttls` | `none` (plain: in-cluster relay, Mailpit), `starttls`, `tls` (implicit, usually 465). TLS verifies the certificate and host name. With `none`, pass `start_tls=False` explicitly to aiosmtplib (its default is opportunistic STARTTLS; research R1 §5). |
-| `SOUNDINGS_SMTP_USERNAME` / `_PASSWORD` | unset | From the chart's Secret (`smtp.existingSecret`). Empty = unset. Production refuses a password with `security=none`. |
+| `SOUNDINGS_SMTP_USERNAME` / `_PASSWORD` | unset | From the chart's Secret (`smtp.existingSecret`, keys `username` and `password` required), given to **worker pods only**. Empty = unset. Production refuses a password with `security=none`. |
+| `SOUNDINGS_SMTP_USERNAME_SET` / `_PASSWORD_SET` | `false` | API pods: the worker has a user name / password, so Settings → Email shows them as set (the chart sets them; the API never gets the credentials). |
 | `SOUNDINGS_SMTP_FROM` | unset | Required when the host is set (startup error otherwise). One plain ASCII address (`MAIL_ADDRESS_PATTERN`). |
 | `SOUNDINGS_SMTP_FROM_NAME` | `Soundings` | No control characters. |
 | `SOUNDINGS_SMTP_REPLY_TO` | unset | One plain ASCII address; no Reply-To header when unset. |
@@ -291,14 +292,20 @@ Notes:
   sign-in → preferences). Charset `[A-Za-z0-9_.-]`, 16–512 characters (else 422).
 - **Scope:** an immediate email's link turns off its own type; the digest's link turns
   off every type currently in `digest` mode (`digest`); `all` turns off every type.
-  Test emails and Phase 4 submitter emails carry no such link.
+  Every notification email and digest also carries a footer link "Unsubscribe from all
+  email" with a token scoped to `all` (the only way to stop every email without
+  signing in). `List-Unsubscribe` carries the type's (or the digest's) token. Test
+  emails and Phase 4 submitter emails carry no such link.
 - `GET` validates the token (404 if invalid, or the user is unknown or inactive) and
   returns `scope`, `types` (the link's type; for `digest` the types now in digest mode;
   for `all` every type), `unsubscribed` (all of `types` already off) and `email_hint`
   (the user's address masked: first character, `•••`, `@domain`). **It never changes
   anything**: link scanners prefetch.
-- `POST` (idempotent) sets `off` for the scope's types (`all=true`: every type) and
-  returns the same shape (for `digest`, `types` = the types it just switched off). It is
+- `POST` (idempotent) sets `off` for the scope's types and returns the same shape (for
+  `digest`, `types` = the types it just switched off). `all=true` is accepted **only for
+  a token scoped to `all`** (where it changes nothing); with a type or digest token it is
+  403 `insufficient_scope` (c14, checked after the 404), so a forwarded email can't be
+  used to silence its recipient entirely (lead decision L8, §7). It is
   also the **RFC 8058 one-click** target: mail clients POST
   `List-Unsubscribe=One-Click` as `application/x-www-form-urlencoded` with no cookies;
   the body is ignored; no session or CSRF check applies (the route takes no principal).
@@ -310,8 +317,9 @@ Notes:
   application/json`, so it gets the JSON. `POST` never redirects.
 - Not audited (a user's own preference). Not throttled (tokens can't be guessed).
 - The SPA page `/unsubscribe?token=…` (outside the signed-in shell, like `/login`)
-  shows what stops, one primary "Unsubscribe" button (POST), a secondary "Unsubscribe
-  from all Soundings email" (`all=true`), and a link to the preferences (sign-in).
+  shows what stops (for `all`: every type), one primary "Unsubscribe" button (POST,
+  never `all=true`), and a link to the preferences (sign-in), where people can stop
+  everything or switch to the digest.
 
 ### 3.6 Daily digest
 
@@ -398,8 +406,12 @@ Notes:
   Counted from `notifications` (`type = 'mention'`, `actor_id` = the author,
   `created_at` in the last hour, `email_mode <> 'off'`) on
   `ix_notifications_mention_actor`. No error to the author.
+- The project-role requirement is re-checked wherever the notification is used: the
+  fan-out, the digest and at send time (a recipient whose role was removed since gets
+  no email: "Not sent: no longer applies").
 - Mentioned users don't start watching. The SPA renders tokens as a name chip and
-  never as a link with the `user:` scheme; emails and excerpts show `@Name`.
+  never as a link with the `user:` scheme (a chip only for text that is exactly a
+  canonical token); emails and excerpts show `@Name`.
 
 ### 3.9 The outbox and the worker
 
@@ -424,6 +436,7 @@ adds the idea reference its submitter emails need.)
 |---|---|---|---|
 | `send_email(email_id)` | `email` | deferred with each row, retries and sweeps | one attempt, steps 1–5 below |
 | `sweep_outbox` | `email` | periodic, every minute (`queueing_lock`) | step 6 |
+| `notify_event(event_id)` | `notifications` | deferred by a request whose event has more than 500 candidate recipients (`FAN_OUT_INLINE_LIMIT`) | the §3.3 fan-out of that event, in the worker |
 | `notification_schedule` | `notifications` | periodic, hourly | reminders (§3.7), then digests (§3.6), then cleanup |
 | `remove_old_jobs` | `notifications` | periodic, daily | procrastinate's builtin (`procrastinate.builtin_tasks.remove_old_jobs`, `max_hours=168`, `remove_failed`, `remove_cancelled`, `remove_aborted` all true) |
 
@@ -543,7 +556,8 @@ transient: rows stay `queued`, backing off, and go out when it is back (the Phas
 acceptance test). The admin page shows queued count, oldest queued time and the last
 error meanwhile, and admins see the `email_trouble` banner (§3.1).
 
-**Cleanup** (daily, in `notification_schedule` at the digest hour), in this order:
+**Cleanup** (hourly, at the end of every `notification_schedule` run; idempotent and
+indexed, so a late run or a digest hour inside a DST gap never skips it), in this order:
 delete `outbound_email` rows `sent` or `cancelled` more than 30 days ago (by
 `updated_at`) and `failed` ones after 90 days; then set `email_mode = 'off'` on
 notifications still pending for a digest (`email_mode = 'digest' AND email_id IS NULL`)
@@ -586,7 +600,11 @@ retry, and the send-time checks already cancel what shouldn't go out).
 - **Retry** (409 `email_not_retryable` unless retryable): `queued`, `attempts = 0`,
   `next_attempt_at = now()`, `last_error = null`, a job deferred in the same
   transaction. **Retry all failed** does that for every retryable row (the rest stay
-  `failed` until the cleanup) and returns the count. Failed rows are kept 90 days for
+  `failed` until the cleanup) and returns the count. Retrying a **test email** counts
+  toward the acting admin's test-email limit (5 per 10 minutes, 429
+  `too_many_attempts` with `Retry-After` beyond it); Retry all includes failed test
+  emails only while that limit allows (newest first) and records how many in the audit
+  entry (`test_emails`). Failed rows are kept 90 days for
   support questions; `email_trouble` (§3.1) only looks at the last 24 hours, so old
   failures don't keep the banner up.
 - **Audit** (in the same transaction; actor the admin; target none, so no address or
@@ -738,12 +756,13 @@ New in Phase 3:
 
 | Status | `code` | When |
 |---|---|---|
+| 403 | `insufficient_scope` | `all=true` on an unsubscribe link whose token isn't scoped to `all` (§3.5) |
 | 404 | `not_found` | an invalid unsubscribe token, or its user is unknown or inactive; someone else's notification; an unknown outbox email |
 | 409 | `smtp_not_configured` | test email or retry while email is off |
 | 409 | `email_not_retryable` | retrying an email that is not `failed`, or is out of date (older than 3 days; digests 2) |
 | 422 | `too_many_mentions` | a comment mentioning more than 20 distinct people |
 | 422 | `validation_error` | also: a test email to a reserved (`.invalid`), malformed or multiple address, or to yourself when your address can't receive mail; a comment over 10,000 characters after mention labels are rewritten |
-| 429 | `too_many_attempts` | more than 5 test emails per admin in 10 minutes, with `Retry-After` |
+| 429 | `too_many_attempts` | more than 5 test emails per admin in 10 minutes (retries of test emails count), with `Retry-After` |
 
 ## 5. Decisions
 
@@ -767,7 +786,7 @@ Simpler option chosen each time; the lead may revisit (also logged in
 | Reminder and digest bookkeeping live in `notifications` (dedupe keys, `email_mode`/`email_id`) and the outbox's idempotency key; no extra tables. | Fewer tables; the same uniqueness that dedupes the fan-out makes both jobs idempotent. |
 | A reminder goes out only on its own day, phrased as a date; never for overdue evaluations or before the invitation. | No bursts after an outage, and no "due in 2 days" a day before the (moved) due date; overdue items are on My work. |
 | The digest collects at most a week of items, and the cleanup turns older pending items off. | Pruned digest rows can't make old items look pending again; SMTP coming back after weeks doesn't send a month of news. |
-| Unsubscribe tokens are signed (HMAC, key derived from the secret key), not stored, and don't expire; GET never changes anything; POST is RFC 8058 one-click. | No table; links in old mail keep working; link scanners can't unsubscribe anyone; Gmail and Yahoo require one-click for bulk senders. |
+| Unsubscribe tokens are signed (HMAC, key derived from the secret key), not stored, and don't expire; GET never changes anything; POST is RFC 8058 one-click. A token turns off only its own scope; "all" has its own footer link (final verification, L8). | No table; links in old mail keep working; link scanners can't unsubscribe anyone; Gmail and Yahoo require one-click for bulk senders; a forwarded email can't silence its recipient entirely. |
 | @mentions are tokens `@[Name](user:<id>)` parsed when the comment is written; labels rewritten to current names; no mentions table. | Unambiguous (no `@ada` collisions), can't impersonate, and the notification rows record who was told. |
 | Mention autocomplete reuses `search_users?project=`, and only people with a role in the project are notified; at most 50 mention emails per author per hour (beyond: in-app only). | No new endpoint; the server notifies whom the picker offers, not the whole organisation of an internal project; mentions can't be used to flood mailboxes. |
 | The inbox shows only ideas you can view now; `read-all?idea=` lets the idea page clear its notifications. | Lost access hides old titles; visiting an idea is reading its news. |
@@ -854,3 +873,50 @@ migration `0005` and client regenerated):
 - **Plain-text part:** a blank line before the action link and the RFC 3676 signature
   separator (`-- `) before the footer, so clients dim the footer and leave it out of
   replies.
+
+**2026-10-01, review fixes** (security review H1, M1–M2, L1–L9 and nits; UX review M1–M4;
+backend, platform and frontend fixers):
+
+- **No schema change.** `email.retry` audit details gain `test_emails` (additive).
+- **Test-email retries count toward the limit** (L9, §3.10): Retry of a test email is
+  429 `too_many_attempts` with `Retry-After` beyond 5 per admin per 10 minutes; Retry
+  all includes test emails only while the limit allows.
+- **Mention rule at send time** (§3.8): the project-role requirement is re-checked in
+  the digest and at send time, not only in the fan-out.
+- **Cleanup is hourly** (§3.9), at the end of every `notification_schedule` run.
+- **`notify_event` job** (L6, §3.9): an event with more than 500 candidate recipients
+  is fanned out by a `notify_event` job deferred in the request's transaction (atomic
+  with it); its inbox items appear once the worker runs it. Smaller events stay in the
+  request, at a constant number of statements.
+- **Job priorities and a breaker** (M1): the periodic jobs (priority 100) and
+  `notify_event` (50) run before `send_email` (0). After five unreachable attempts in a
+  row a worker pauses sending for 30 s, doubling to 5 minutes; due emails are postponed
+  to the end of the pause without using an attempt; test emails are always tried.
+- **Crashed workers' jobs** (L7): the minute sweep marks jobs of workers without a
+  heartbeat for 2 minutes as failed (their rows are re-queued by the lease as before).
+- **Settings:** `SOUNDINGS_SMTP_USERNAME_SET` / `_PASSWORD_SET` (L4, §3.1): the chart
+  gives SMTP credentials to worker pods only; `smtp.existingSecret` needs the keys
+  `username` and `password`. `SOUNDINGS_SMTP_CA_BUNDLE` must hold at least one
+  certificate (startup error otherwise; L5).
+- **Migration 0006:** `ix_outbound_email_status_updated_at` and
+  `ix_notifications_created_at` (cleanup and retention lookups; erd.md).
+- **Email content:** template values are one line without C1 or bidi controls (L2); a
+  subject containing `=?` is sent RFC 2047-encoded as a whole (L3); Message-IDs use an
+  address literal when the base URL's host is an IP; branding colours must be hex.
+
+**2026-10-01, final verification (lead decisions):**
+
+- **Unsubscribe scopes (L8, §3.5):** `confirm_unsubscribe` with `all=true` is accepted
+  only for a token scoped to `all`; with a type or digest token it is **403
+  `insufficient_scope`** (a second check of c14 in the policy, after the 404; role
+  matrix §4). The OpenAPI gains the 403 response on `confirm_unsubscribe` and new
+  descriptions (`make gen-api`). Every notification email and digest gains the footer
+  link "Unsubscribe from all email" (HTML and text) carrying an `all`-scoped token; the
+  SPA page no longer offers "Unsubscribe from all Soundings email" for type or digest
+  links. No token versioning or expiry: links in old emails keep working
+  (decisions.md).
+- **Input hygiene:** `SingleLine` (`app.schemas.base.has_control`) also rejects U+2028 /
+  U+2029 (Unicode `Zl` / `Zp`) and the bidi controls U+202A–U+202E, U+2066–U+2069 and
+  U+061C with 422 `validation_error` (idea titles, display names); the marks U+200E /
+  U+200F stay allowed. Names from SSO claims turn separators into spaces and drop those
+  controls. Validation only: the OpenAPI document is unchanged by this.

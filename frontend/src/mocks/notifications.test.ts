@@ -246,13 +246,19 @@ describe('unsubscribe links', () => {
     expect(getDb().notificationPrefs[USERS.alice]?.mention).toBe('off')
   })
 
-  it('digest: turns off what is in the digest now; all=true: everything', async () => {
+  it('digest: turns off what is in the digest now; only an all-scoped link turns off everything', async () => {
     const token = unsubscribeToken(USERS.alice, 'digest')
     const { data } = await api.POST('/api/v1/unsubscribe', { params: { query: { token } } })
     expect(data).toMatchObject({ scope: 'digest', types: ['status_changed'], unsubscribed: true })
+    const widened = await rejection(
+      api.POST('/api/v1/unsubscribe', { params: { query: { token, all: true } } }),
+    )
+    expect(widened.status).toBe(403)
+    expect(widened.code).toBe('insufficient_scope')
     const { data: all } = await api.POST('/api/v1/unsubscribe', {
-      params: { query: { token, all: true } },
+      params: { query: { token: unsubscribeToken(USERS.alice, 'all') } },
     })
+    expect(all).toMatchObject({ scope: 'all', unsubscribed: true })
     expect(all?.types).toHaveLength(7)
   })
 

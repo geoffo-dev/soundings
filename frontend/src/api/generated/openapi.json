@@ -15125,7 +15125,7 @@
         ]
       },
       "post": {
-        "description": "Public (self.unsubscribe, c14), idempotent: turns off email for the link's scope, or for every type with all=true. Also the RFC 8058 one-click target: the mail client's form body (List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session is needed (the token is the authority). 404 for an invalid token or a user who is no longer active.",
+        "description": "Public (self.unsubscribe, c14), idempotent: turns off email for the link's scope. Also the RFC 8058 one-click target: the mail client's form body (List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session is needed (the token is the authority). 404 for an invalid token or a user who is no longer active; 403 insufficient_scope for all=true with a token that is not scoped to all.",
         "operationId": "confirm_unsubscribe",
         "parameters": [
           {
@@ -15143,13 +15143,13 @@
             }
           },
           {
-            "description": "Turn off every email notification type.",
+            "description": "Turn off every email notification type. Only for a token scoped to all (the footer's 'Unsubscribe from all email' link), else 403.",
             "in": "query",
             "name": "all",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Turn off every email notification type.",
+              "description": "Turn off every email notification type. Only for a token scoped to all (the footer's 'Unsubscribe from all email' link), else 403.",
               "title": "All",
               "type": "boolean"
             }
@@ -15165,6 +15165,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
           },
           "404": {
             "content": {

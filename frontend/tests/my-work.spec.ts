@@ -79,7 +79,10 @@ test('the sidebar shows My work counts and the projects', async ({ page }) => {
 test('shows an error with a retry when My work fails to load', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('soundings-mock-fail', '/me/work'))
   await page.goto('/')
-  await expect(page.getByRole('alert')).toContainText('We couldn’t load your work')
+  // The error shows after the client's retries (about 3 s): allow for a busy machine.
+  await expect(page.getByRole('alert')).toContainText('We couldn’t load your work', {
+    timeout: 10_000,
+  })
   await page.evaluate(() => localStorage.removeItem('soundings-mock-fail'))
   await page.getByRole('button', { name: 'Try again' }).click()
   await expect(

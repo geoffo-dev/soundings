@@ -164,7 +164,7 @@ One notification per person per event, dedupe on retries, rollback leaves nothin
 | ID | Case |
 |---|---|
 | UN-01 | The invitation's footer link (also in the text part; token 16–512 safe characters) in a signed-out browser: "Unsubscribe from “You’re asked to evaluate” emails?", the address masked (`t•••@example.com`, never in full), title "Unsubscribe · Soundings"; nothing changed yet. "Unsubscribe" → "You’re unsubscribed" (focused), only that type off. The next invitation: in the inbox, no outbox row, no email. |
-| UN-02 | The same link again: "You’re already unsubscribed"; "Unsubscribe from all Soundings email" → every type off; "Email preferences" → sign-in with `next=/settings/notifications`. |
+| UN-02 | The same link again: "You’re already unsubscribed", no "all" button; the type's token with `all=true` → 403 `insufficient_scope`, nothing else changed (lead decision L8); the footer's "Unsubscribe from all email" link (HTML and text, a different token) → "Unsubscribe from all Soundings email?" → every type off; "Email preferences" → sign-in with `next=/settings/notifications`. |
 | UN-03 | The `List-Unsubscribe` URL (same token as the footer): a browser lands on the SPA page and nothing changes; a mail client's POST (form body `List-Unsubscribe=One-Click`, no cookies, no CSRF) → 200 `{scope: evaluator_invited, unsubscribed: true}`, twice (idempotent), masked hint. |
 | UN-04 | Someone else's id with a valid signature, a tampered signature, a truncated token, a malformed one: API GET and POST → 404/422 problem+json; the page says "This unsubscribe link doesn’t work" with "Sign in to your email preferences"; nobody's preferences changed. |
 
@@ -297,3 +297,26 @@ New tests: `test_control_characters_in_titles_and_display_names_are_a_422` (K3-1
 `admin-email.spec.ts` "the settings row scrolls … into view" at 390 px (K3-2, fails
 without the fix) and the banner copy (K3-3); `notification-text.test.ts` keeps the due
 date together (K3-4).
+
+## Final verification (2026-10-01)
+
+On the final tree (`E2E_PREFIX=p3-final-`), after the review fixes and the lead's
+decisions (scoped unsubscribe links with a footer "Unsubscribe from all email", L8;
+`SingleLine` also rejecting U+2028/U+2029 and bidi controls):
+
+| Run | Result |
+|---|---|
+| `make -C backend check`, `make -C backend test-slow` | pass (3,746 passed, 1 skipped; slow 1 passed) |
+| `npm --prefix frontend run check`, `test:pw` | pass (vitest 358; page tests 241 passed, 98 skipped) |
+| `npm --prefix e2e test` (dev login) | 141 passed, 25 skipped, incl. `smtp-outage` (AC3-02 1.8 min) |
+| `E2E_SSO=1 npm --prefix e2e test` | 163 passed, 3 skipped, incl. `smtp-outage` |
+| k3s with Mailpit in the cluster | `k3s-install SMTP=1`, `k3s-smoke SMTP=1` (outage drill: delivered once 31 s after Mailpit came back), `helm upgrade` with changed values, smoke again (30 s) |
+| Screenshots | Phase 1 (42), Phase 2 (39), Phase 3 (33 screens + 56 emails) and the Phase 3 mock set (24) captured again from fresh data; every Phase 3 PNG read |
+
+Changed or added cases: UN-02 (above); `notification-preferences.spec.ts` "the “all
+email” link stops every type"; backend `test_a_type_or_digest_link_cannot_turn_off_every_email`,
+`test_the_all_link_turns_off_everything`, `test_the_footer_links_turn_off_this_type_or_everything`,
+the digest footer in `test_the_digest_email`, c14 `narrow_token` in `test_policy_matrix.py`,
+and the input-hygiene cases in `test_input_robustness.py` and `test_claims.py`. The
+email footer puts "Unsubscribe from all email" on its own line (at 390 px a third link
+left a separator dangling at a line end).

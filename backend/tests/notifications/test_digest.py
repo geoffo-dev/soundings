@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -28,6 +30,8 @@ from app.models.notification import Notification, NotificationPreference, Outbou
 from app.models.project import ProjectMember
 from app.models.user import User
 from app.notifications.schedule import build_digests, cleanup, run_schedule
+from app.notifications.unsubscribe import read_token
+from app.schemas.notifications import UnsubscribeScope
 from tests.factories import make_idea
 from tests.notifications.conftest import SMTP, Clock, Outbox, RecordingTransport, Team, only
 
@@ -280,6 +284,16 @@ async def test_the_digest_email(
     html = html_part.get_content()
     assert "Refunds &lt;b&gt;now&lt;/b&gt;" in html
     assert "<b>now</b>" not in html
+    # The digest's link turns off the digest's types; only "all email" turns off all.
+    links = dict(re.findall(r"^Unsubscribe from (the daily digest|all email): (\S+)$", text, re.M))
+    scopes = {
+        label: read_token(settings, parse_qs(urlsplit(url).query)["token"][0])
+        for label, url in links.items()
+    }
+    assert {label: found and found.scope for label, found in scopes.items()} == {
+        "the daily digest": UnsubscribeScope.DIGEST,
+        "all email": UnsubscribeScope.ALL,
+    }
 
 
 async def test_a_digest_older_than_two_days_is_cancelled(

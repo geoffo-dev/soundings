@@ -162,12 +162,30 @@ test.describe('the unsubscribe page', () => {
     ).toBeVisible()
     expect(posts).toHaveLength(1)
     expect(posts[0]).not.toContain('all=')
-    // Still possible: everything, or sign in to fine-tune.
-    await page.getByRole('button', { name: 'Unsubscribe from all Soundings email' }).click()
-    await expect(page.getByText('Soundings won’t email a•••@example.com any more.')).toBeVisible()
-    expect(posts.at(-1)).toContain('all=true')
+    // A type's link stops only that type (lead decision L8): no "all" button here;
+    // the email's own "Unsubscribe from all email" link or the preferences do that.
+    await expect(page.getByRole('button', { name: /all Soundings email/ })).toHaveCount(0)
     await page.getByRole('link', { name: 'Email preferences' }).click()
     await expect(page).toHaveURL(/\/login\?next=%2Fsettings%2Fnotifications/)
+  })
+
+  test('the “all email” link stops every type', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (request) => {
+      if (request.url().includes('/api/v1/unsubscribe') && request.method() === 'POST') {
+        posts.push(request.url())
+      }
+    })
+    await page.goto(`/unsubscribe?token=${token(USERS.alice, 'all')}`)
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Unsubscribe from all Soundings email?' }),
+    ).toBeVisible()
+    await expect(page.getByRole('listitem')).toHaveCount(7)
+    await page.getByRole('button', { name: 'Unsubscribe', exact: true }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'You’re unsubscribed' })).toBeFocused()
+    await expect(page.getByText('Soundings won’t email a•••@example.com any more.')).toBeVisible()
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).not.toContain('all=')
   })
 
   test('the digest link lists the types in the digest', async ({ page }) => {

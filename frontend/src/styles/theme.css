@@ -162,6 +162,12 @@
   }
 }
 
+/* A tall popover (the bell's inbox): up to 36rem, never taller than the viewport
+   below the top bar. */
+@utility max-h-popover-tall {
+  max-height: min(36rem, calc(100dvh - 5rem));
+}
+
 /*
  * A mention's tint behind a text field's text (MentionHighlights): no padding, so
  * the letters stay exactly where the field draws them; a spread shadow in the same

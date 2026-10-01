@@ -192,6 +192,10 @@ def test_email_claim(claims: dict[str, Any], address: str | None, verified: bool
         # email subjects or plain-text emails (QA K3-1).
         ({"name": "Nia\r\nBcc: x@evil.test"}, "Nia Bcc: x@evil.test"),
         ({"name": "\t\x07 ", "preferred_username": "nia\x00lee"}, "nia lee"),
+        # Line separators become spaces and bidi controls go (Phase 3 input hygiene).
+        ({"name": "Nia\u2028Lee\u2029"}, "Nia Lee"),
+        ({"name": "Nia \u202eeeL\u202c \u2067x\u2069\u061c"}, "Nia eeL x"),
+        ({"name": "\u202e\u2066", "preferred_username": "nia"}, "nia"),
     ],
 )
 def test_display_name(claims: dict[str, Any], expected: str) -> None:

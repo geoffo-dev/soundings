@@ -1376,7 +1376,7 @@ export interface paths {
         put?: never;
         /**
          * Unsubscribe
-         * @description Public (self.unsubscribe, c14), idempotent: turns off email for the link's scope, or for every type with all=true. Also the RFC 8058 one-click target: the mail client's form body (List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session is needed (the token is the authority). 404 for an invalid token or a user who is no longer active.
+         * @description Public (self.unsubscribe, c14), idempotent: turns off email for the link's scope. Also the RFC 8058 one-click target: the mail client's form body (List-Unsubscribe=One-Click) is accepted and ignored; no CSRF token or session is needed (the token is the authority). 404 for an invalid token or a user who is no longer active; 403 insufficient_scope for all=true with a token that is not scoped to all.
          */
         post: operations["confirm_unsubscribe"];
         delete?: never;
@@ -10226,7 +10226,7 @@ export interface operations {
             query: {
                 /** @description The signed token from the email's link. */
                 token: string;
-                /** @description Turn off every email notification type. */
+                /** @description Turn off every email notification type. Only for a token scoped to all (the footer's 'Unsubscribe from all email' link), else 403. */
                 all?: boolean;
             };
             header?: never;
@@ -10242,6 +10242,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnsubscribeInfo"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Not found, or not visible to you (not_found) */

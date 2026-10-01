@@ -3,6 +3,7 @@ import { findIdea, isValidIdeaRef, canViewIdea, paginate } from '@/mocks/domain'
 import {
   allowOnly,
   failValidation,
+  forbidden,
   noContent,
   notFound,
   publicRoute,
@@ -145,9 +146,13 @@ export const notificationHandlers = [
     const all = queryBool(url, 'all')
     const found = readUnsubscribeToken(db, token)
     if (!found) notFound('This link is not valid.')
-    const scope = all ? 'all' : found.scope
-    const types = scopeTypes(db, found.user, scope)
+    // Only the footer's "Unsubscribe from all email" link (scoped to all) may
+    // turn off everything; a type's or the digest's link can't be widened.
+    if (all && found.scope !== 'all') {
+      forbidden('insufficient_scope', 'This link turns off only its own emails.')
+    }
+    const types = scopeTypes(db, found.user, found.scope)
     for (const type of types) setPreference(db, found.user.id, type, 'off')
-    return unsubscribeInfo(db, found.user, scope, types)
+    return unsubscribeInfo(db, found.user, found.scope, types)
   }),
 ]

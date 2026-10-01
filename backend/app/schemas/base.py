@@ -5,7 +5,8 @@
   anywhere in a body may contain a NUL character (422): PostgreSQL text cannot
   store one. Text query parameters use :data:`NoNul` for the same reason.
   One-line names that reach email subjects and headers (idea titles, display names)
-  also reject line breaks and other control characters (:data:`SingleLine`).
+  also reject line breaks, other control characters and bidi controls
+  (:data:`SingleLine`).
 * :class:`ResponseModel`: response bodies. Every field is *required* in the
   OpenAPI schema (a default only helps the server build it), so generated
   TypeScript types have no optional response fields; nullable fields are
@@ -15,7 +16,7 @@
 from __future__ import annotations
 
 import unicodedata
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import (
     AfterValidator,
@@ -27,6 +28,7 @@ from pydantic import (
 )
 
 __all__ = [
+    "BIDI_CONTROLS",
     "IDEA_KEY_PATTERN",
     "PROJECT_KEY_PATTERN",
     "SLUG_PATTERN",
@@ -66,9 +68,25 @@ NoNul = AfterValidator(reject_nul)
 """``Annotated[str | None, Query(...), NoNul]``: 422 instead of a database error."""
 
 
+BIDI_CONTROLS: Final = frozenset(
+    "\u061c"  # ARABIC LETTER MARK
+    + "".join(map(chr, range(0x202A, 0x202F)))  # LRE, RLE, PDF, LRO, RLO
+    + "".join(map(chr, range(0x2066, 0x206A)))  # LRI, RLI, FSI, PDI
+)
+"""Bidi controls that reorder the text after them (a display name could make an email
+line read backwards); the marks U+200E / U+200F stay allowed."""
+
+_BREAKING_CATEGORIES: Final = frozenset({"Cc", "Zl", "Zp"})
+
+
 def has_control(value: str) -> bool:
-    """True if ``value`` has a control character (Unicode ``Cc``: CR, LF, tab, NUL, …)."""
-    return any(unicodedata.category(char) == "Cc" for char in value)
+    """True if ``value`` has a control character (Unicode ``Cc``: CR, LF, tab, NUL, …),
+    a line or paragraph separator (``Zl`` / ``Zp``: U+2028, U+2029) or a bidi control
+    (:data:`BIDI_CONTROLS`)."""
+    return any(
+        unicodedata.category(char) in _BREAKING_CATEGORIES or char in BIDI_CONTROLS
+        for char in value
+    )
 
 
 def reject_control[T](value: T) -> T:
@@ -81,7 +99,8 @@ def reject_control[T](value: T) -> T:
 
 SingleLine = AfterValidator(reject_control)
 """``Annotated[str, Field(...), SingleLine]``: a one-line name (an idea title, a display
-name) that ends up in email subjects, so CR/LF and other control characters are a 422."""
+name) that ends up in email subjects, so CR/LF and other control characters, U+2028 /
+U+2029 and bidi controls are a 422 (:func:`has_control`)."""
 
 
 class RequestModel(BaseModel):

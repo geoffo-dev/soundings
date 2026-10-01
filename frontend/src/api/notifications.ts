@@ -347,16 +347,16 @@ export function useUnsubscribeInfo(token: string | undefined) {
   return useQuery({ ...unsubscribeQueryOptions(token ?? ''), enabled: Boolean(token) })
 }
 
-/** Confirm: turns the link's types off (`all`: every type). Errors are shown inline. */
+/**
+ * Confirm: turns the link's types off. Only a link scoped to `all` (the
+ * email footer's "Unsubscribe from all email") turns off every type; the API
+ * refuses `all=true` for the others (403), so the page never sends it.
+ * Errors are shown inline.
+ */
 export function useConfirmUnsubscribe(token: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ all }: { all: boolean }) =>
-      unwrap(
-        api.POST('/api/v1/unsubscribe', {
-          params: { query: { token, all: all || undefined } },
-        }),
-      ),
+    mutationFn: () => unwrap(api.POST('/api/v1/unsubscribe', { params: { query: { token } } })),
     onSuccess: (info) => {
       queryClient.setQueryData(queryKeys.notifications.unsubscribe(token), info)
       // A signed-in tab's preferences are out of date now.

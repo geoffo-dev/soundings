@@ -87,7 +87,7 @@ export function NotificationBell() {
       <PopoverContent
         align="end"
         aria-label="Notifications"
-        className="flex max-h-[min(36rem,calc(100dvh-5rem))] w-md flex-col p-0"
+        className="flex max-h-popover-tall w-md flex-col p-0"
       >
         <InboxPanel variant="popover" onDone={close} unreadCount={count} />
       </PopoverContent>

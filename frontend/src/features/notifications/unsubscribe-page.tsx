@@ -18,8 +18,9 @@ const PREFERENCES = '/settings/notifications'
 /**
  * /unsubscribe?token=… (contract-phase3 §3.5): public, no sign-in. Opening the
  * page changes nothing (mail scanners prefetch links); it says what stops and
- * for which address (masked), and one button confirms. People can also stop
- * all Soundings email, or sign in to fine-tune their preferences.
+ * for which address (masked), and one button confirms. A link stops only what
+ * it was made for: its type, the digest, or (the footer's "Unsubscribe from
+ * all email") everything. People can sign in to fine-tune their preferences.
  */
 export function UnsubscribePage({ token }: { token: string | undefined }) {
   const info = useUnsubscribeInfo(token)
@@ -151,22 +152,11 @@ function Unsubscribe({ token, info }: { token: string; info: UnsubscribeInfo }) 
             {subject.done.after} You’ll still see notifications when you open Soundings.
           </p>
         </div>
-        <div className="flex flex-col gap-2">
-          <Button variant="secondary" size="lg" asChild>
-            <Link to="/login" search={{ next: PREFERENCES }}>
-              Email preferences
-            </Link>
-          </Button>
-          {info.scope !== 'all' && (
-            <Button
-              variant="ghost"
-              loading={confirm.isPending}
-              onClick={() => confirm.mutate({ all: true })}
-            >
-              Unsubscribe from all Soundings email
-            </Button>
-          )}
-        </div>
+        <Button variant="secondary" size="lg" asChild>
+          <Link to="/login" search={{ next: PREFERENCES }}>
+            Email preferences
+          </Link>
+        </Button>
         <p className="text-center text-sm text-muted">
           Changed your mind? <SignInToPreferences>Sign in</SignInToPreferences> and turn them back
           on.
@@ -201,29 +191,18 @@ function Unsubscribe({ token, info }: { token: string; info: UnsubscribeInfo }) 
           Nothing changed. Check your connection and try again.
         </Callout>
       )}
-      <div className="flex flex-col gap-2">
-        <Button
-          variant="primary"
-          size="lg"
-          loading={confirm.isPending && !confirm.variables.all}
-          disabled={confirm.isPending}
-          onClick={() => confirm.mutate({ all: false })}
-        >
-          Unsubscribe
-        </Button>
-        {info.scope !== 'all' && (
-          <Button
-            variant="ghost"
-            loading={confirm.isPending && confirm.variables.all}
-            disabled={confirm.isPending}
-            onClick={() => confirm.mutate({ all: true })}
-          >
-            Unsubscribe from all Soundings email
-          </Button>
-        )}
-      </div>
+      <Button
+        variant="primary"
+        size="lg"
+        loading={confirm.isPending}
+        onClick={() => confirm.mutate()}
+      >
+        Unsubscribe
+      </Button>
       <p className="text-center text-sm text-muted">
-        Want to choose per kind of email, or get a daily digest instead?{' '}
+        {info.scope === 'all'
+          ? 'Want to choose per kind of email, or get a daily digest instead? '
+          : 'Want to stop all Soundings email, or get a daily digest instead? '}
         <SignInToPreferences>Sign in to your email preferences</SignInToPreferences>.
       </p>
     </div>

@@ -160,7 +160,9 @@ const SHOTS: Shot[] = [
     as: 'carol',
     open: async (page) => {
       await page.goto('/settings/notifications')
-      await expect(page.getByRole('heading', { level: 2, name: 'Notifications' })).toBeVisible()
+      await expect(
+        page.getByRole('heading', { level: 2, name: 'Email notifications' }),
+      ).toBeVisible()
       await expect(page.getByRole('radiogroup')).toHaveCount(7)
     },
   },

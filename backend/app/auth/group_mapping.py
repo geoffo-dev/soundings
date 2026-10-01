@@ -40,6 +40,7 @@ from app.models.group import Group, GroupIdpValue, GroupMembership, ProjectGroup
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.schemas.admin_users import is_reserved_email
+from app.schemas.base import BIDI_CONTROLS
 from app.schemas.groups import (
     GroupRef,
     MappingTestGroup,
@@ -195,8 +196,9 @@ def email_from_claims(claims: Mapping[str, Any]) -> EmailClaim:
 
 def display_name_from_claims(claims: Mapping[str, Any], email: str) -> str:
     """For auto-created users: ``name``, else ``preferred_username``, else the email's
-    local part; on one line (control characters such as CR/LF become spaces, as the
-    admin API rejects them), trimmed and cut to 100 characters (fixed, no setting)."""
+    local part; on one line (control characters such as CR/LF and U+2028 become spaces
+    and bidi controls are removed, as the admin API rejects them), trimmed and cut to
+    100 characters (fixed, no setting)."""
     for key in ("name", "preferred_username"):
         value = claims.get(key)
         if isinstance(value, str) and (name := _one_line(value)):
@@ -205,9 +207,18 @@ def display_name_from_claims(claims: Mapping[str, Any], email: str) -> str:
 
 
 def _one_line(value: str) -> str:
-    """``value`` with control characters as spaces, runs of white space collapsed."""
+    """``value`` with control characters and line separators as spaces, bidi controls
+    removed and runs of white space collapsed: what the admin API rejects
+    (:func:`app.schemas.base.has_control`)."""
     return " ".join(
-        "".join(" " if unicodedata.category(char) == "Cc" else char for char in value).split()
+        "".join(
+            ""
+            if char in BIDI_CONTROLS
+            else " "
+            if unicodedata.category(char) in ("Cc", "Zl", "Zp")
+            else char
+            for char in value
+        ).split()
     )
 
 

@@ -234,8 +234,13 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   ASCII recipient per email (`MAIL_ADDRESS_PATTERN`). Logs carry outbox ids, types,
   attempts and error classes; never addresses, subjects, bodies, tokens, SMTP
   credentials or server replies. One-line names that reach subjects (idea titles,
-  display names) use `SingleLine` (`app/schemas/base.py`: no CR/LF or control
-  characters).
+  display names) use `SingleLine` (`app/schemas/base.py`: no CR/LF or other control
+  characters, U+2028/U+2029 or bidi controls). Unsubscribe tokens are scoped: a type's
+  or the digest's link turns off only that; `all=true` needs a token scoped to `all`
+  (the footer's "Unsubscribe from all email" link; else 403 `insufficient_scope`, c14).
+  SMTP credentials reach worker pods only (the API gets `SOUNDINGS_SMTP_*_SET`).
+  Events for more than 500 people fan out in a `notify_event` job; periodic jobs
+  outrank sends; a worker pauses sending after 5 connection failures in a row.
 - **Tests first** for authz, login matching and group sync, blind-evaluation
   visibility, API-key scoping and the email outbox.
 - **Frontend:** only design-system components and tokens (no hex values, no arbitrary
@@ -256,7 +261,12 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   session alive); inbox `/notifications` (`g i`), Settings → Notifications, public
   `/unsubscribe?token=` (its fetch must keep `Accept: application/json`, or the API
   answers 303), Admin → Email (`features/admin/email/`); mentions are
-  `@[Name](user:<id>)` tokens (`lib/mentions.ts`), shown as chips, never links.
+  `@[Name](user:<id>)` tokens (`lib/mentions.ts`), shown as chips (only for text that
+  is exactly a canonical token), never links; comment boxes show "@Name" with a tint
+  (`features/idea/mention-highlights.tsx`) while the stored text keeps the tokens.
+  "Mark all read" is a deferred commit: it waits for its Undo toast (`api/undo.ts`),
+  like comment delete. Theme utilities for features: `mention-tint`,
+  `max-h-popover-tall`, `avatar-tint`, `scrollbar-none` (`styles/theme.css`).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -294,7 +304,9 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   (`VITE_NO_HMR=1` turns that off; `test:pw` sets it for the server it starts, not for a
   running one it reuses), and parallel Playwright runs share `test-results/` (pass
   `--output=<dir>`). `pkill -f <pattern>` also matches the calling shell's own
-  command line and kills it; stop servers by pid.
+  command line and kills it; stop servers by pid. Page tests that wait for an error
+  state shown after the client's query retries (about 3 s) need a 10 s timeout: the
+  default 5 s flakes while backend tests or image builds load the machine.
 - **`ruff format`** also formats Python code blocks in `backend/README.md`.
 - **Keycloak:** it marks its cookies `Secure` even on http://localhost, so curl must
   pass cookies by hand (`scripts/lib/keycloak.sh` does). glibc and Node don't resolve
@@ -423,5 +435,13 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   with a Secret and CA bundle; Mailpit in dev, the e2e stack, `make demo`, CI and k3s
   (`SMTP=1`). Integration (2026-10-01): every check green in both e2e modes, QA's
   K3-1…K3-5 fixed; test plan `docs/test-plans/phase-3.md`, screenshots
-  `docs/screenshots/phase-3/` (+ `emails/`). Decisions: `docs/decisions.md` (Phase 3
-  build and integration). Next: code/security and UX reviews, phase summary.
+  `docs/screenshots/phase-3/` (+ `emails/`, `mock/`). Security and UX reviews applied
+  (linear excerpts, send breaker and job priorities, mention cap lock, one-line email
+  values, worker-only SMTP credentials, `notify_event` for large audiences, scoped
+  unsubscribe links with a footer "Unsubscribe from all email", input hygiene for bidi
+  and line separators, retry and inbox focus, "@Name" in the composer). Closed on
+  2026-10-01 with every check green in both e2e modes and a clean k3s install with
+  Mailpit (`SMTP=1`), SMTP outage drill, upgrade and smoke:
+  [docs/phase-summaries/phase-3.md](docs/phase-summaries/phase-3.md) (known issues and
+  deferred items there). Decisions: `docs/decisions.md` (Phase 3). Stop for the
+  human's review before Phase 4.

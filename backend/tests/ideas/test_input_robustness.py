@@ -33,7 +33,7 @@ from app.api.v1 import (
     users,
     work,
 )
-from app.schemas.base import RequestModel, TagName
+from app.schemas.base import BIDI_CONTROLS, RequestModel, TagName, has_control
 from app.schemas.ideas import IdeaCreate
 from tests.factories import make_idea
 from tests.ideas.conftest import API, AsUser, Team, assert_problem
@@ -126,7 +126,19 @@ async def test_nul_in_a_body_is_a_422(api: AsUser, team: Team) -> None:
     IdeaCreate.model_validate(idea)  # the same body without NUL is fine
 
 
-@pytest.mark.parametrize("bad", ["Line one\r\nBcc: x@evil.test", "Tab\there", "Bell\x07"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "Line one\r\nBcc: x@evil.test",
+        "Tab\there",
+        "Bell\x07",
+        "Line\u2028separator",
+        "Paragraph\u2029separator",
+        "Evil \u202eexe.txt",  # RIGHT-TO-LEFT OVERRIDE
+        "Isolate \u2067x\u2069",  # RLI ... PDI
+        "Arabic letter mark \u061c",
+    ],
+)
 async def test_control_characters_in_titles_and_display_names_are_a_422(
     api: AsUser, team: Team, db_session: AsyncSession, bad: str
 ) -> None:
@@ -153,6 +165,30 @@ async def test_control_characters_in_titles_and_display_names_are_a_422(
     )
     ok_create = await alice.post(f"/projects/{team.slug}/ideas", idea)
     assert ok_create.status_code == 201, ok_create.text
+
+
+@pytest.mark.parametrize(
+    "fine",
+    [
+        "Café für alle",
+        "\u05e9\u05dc\u05d5\u05dd \u200f\u05e2\u05d5\u05dc\u05dd",
+        "Emoji 😀 and NBSP\u00a0here",
+        "a\u200db",
+    ],
+)
+def test_one_line_names_allow_unicode_text_and_bidi_marks(fine: str) -> None:
+    """Only breaks and the reordering bidi controls are rejected: right-to-left text and
+    the LRM / RLM marks it needs, zero-width joiners and emoji stay valid (lead decision
+    on input hygiene, Phase 3 final)."""
+    assert not has_control(fine)
+    assert IdeaCreate.model_validate({"title": fine, "summary": "x"}).title == fine
+
+
+def test_has_control_covers_every_listed_bidi_control() -> None:
+    listed = [0x061C, *range(0x202A, 0x202F), *range(0x2066, 0x206A)]
+    assert sorted(map(ord, BIDI_CONTROLS)) == listed
+    for code in [*listed, 0x2028, 0x2029, 0x0A, 0x85]:
+        assert has_control(f"a{chr(code)}b"), hex(code)
 
 
 # --- Query and path parameters ---------------------------------------------------------------

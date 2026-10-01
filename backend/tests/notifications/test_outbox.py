@@ -6,9 +6,12 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from datetime import timedelta
 from email.message import EmailMessage
+from html import unescape
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 import aiosmtplib
@@ -25,6 +28,8 @@ from app.models.enums import EmailStatus, NotificationMode, NotificationType, Pr
 from app.models.notification import NotificationPreference, OutboundEmail
 from app.models.project import ProjectMember
 from app.models.user import User
+from app.notifications.unsubscribe import read_token
+from app.schemas.notifications import UnsubscribeScope
 from tests.notifications.conftest import (
     AsUser,
     Clock,
@@ -84,6 +89,41 @@ async def test_an_email_is_sent_once_to_exactly_its_recipient(
     # Sent mail is never sent again.
     assert await delivery.send_email(runtime, email.id) == "not_claimed"
     assert len(transport.sent) == 1
+
+
+async def test_the_footer_links_turn_off_this_type_or_everything(
+    api: AsUser,
+    team: Team,
+    outbox: Outbox,
+    runtime: Runtime,
+    transport: RecordingTransport,
+    settings: Settings,
+) -> None:
+    """Lead decision L8: the type's link (and List-Unsubscribe) carries a token scoped to
+    the email's type; only "Unsubscribe from all email" carries one scoped to all."""
+    email = await queue_owner_email(api, team, outbox)
+    assert await delivery.send_email(runtime, email.id) == "sent"
+    message = only(transport.messages)
+    text_part, html_part = message.get_body(("plain",)), message.get_body(("html",))
+    assert text_part is not None
+    assert html_part is not None
+    text, html = text_part.get_content(), html_part.get_content()
+
+    def scope_of(url: str) -> tuple[UUID, UnsubscribeScope]:
+        found = read_token(settings, parse_qs(urlsplit(url).query)["token"][0])
+        assert found is not None
+        return found.user_id, found.scope
+
+    one = re.search(r"^Unsubscribe from owner assignments: (\S+)$", text, re.M)
+    every = re.search(r"^Unsubscribe from all email: (\S+)$", text, re.M)
+    assert one is not None
+    assert every is not None
+    assert scope_of(one[1]) == (team.owner.id, UnsubscribeScope.OWNER_ASSIGNED)
+    assert scope_of(every[1]) == (team.owner.id, UnsubscribeScope.ALL)
+    header = str(message["List-Unsubscribe"]).strip("<>")
+    assert scope_of(header) == (team.owner.id, UnsubscribeScope.OWNER_ASSIGNED)
+    hrefs = re.findall(r'href="([^"]+)"[^>]*>Unsubscribe from all email</a>', html)
+    assert [scope_of(unescape(href)) for href in hrefs] == [(team.owner.id, UnsubscribeScope.ALL)]
 
 
 async def test_two_jobs_for_one_row_send_it_once(

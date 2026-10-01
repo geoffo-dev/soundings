@@ -9,6 +9,7 @@ import {
   newPeople,
   projectWithIdea,
   requireEmail,
+  unsubscribeAllLink,
   unsubscribeLink,
   type Someone,
 } from './support/email'
@@ -95,9 +96,10 @@ test('UN-01: the email’s footer link opens the page; nothing changes until “
   }
 })
 
-test('UN-02: the same link again says “already unsubscribed” and offers all email; “all” turns every type off', async ({
+test('UN-02: the same link again says “already unsubscribed”; it can’t turn off all email, the footer’s “all email” link does', async ({
   page,
   api,
+  baseURL,
 }) => {
   const alice = await api('alice')
   await requireEmail(alice)
@@ -117,7 +119,31 @@ test('UN-02: the same link again says “already unsubscribed” and offers all 
     await expect(
       page.getByRole('heading', { level: 1, name: 'You’re already unsubscribed' }),
     ).toBeVisible()
-    await page.getByRole('button', { name: 'Unsubscribe from all Soundings email' }).click()
+    await expect(page.getByRole('button', { name: /all Soundings email/ })).toHaveCount(0)
+
+    // A type's link can't be widened to every email (lead decision L8): 403, no change.
+    const client = await request.newContext({ baseURL })
+    try {
+      const token = new URL(link).searchParams.get('token') ?? ''
+      const widened = await client.post(`${API}/unsubscribe?token=${token}&all=true`)
+      expect(widened.status()).toBe(403)
+      expect(((await widened.json()) as { code: string }).code).toBe('insufficient_scope')
+    } finally {
+      await client.dispose()
+    }
+    const afterOne = await modes(iris)
+    expect(afterOne.evaluator_invited).toBe('off')
+    expect(afterOne.owner_assigned).toBe('immediate')
+
+    // The footer's “Unsubscribe from all email” link turns every type off.
+    const all = unsubscribeAllLink(mail)
+    expect(all).not.toBe(link)
+    expect(mail.Text).toContain(`Unsubscribe from all email: ${all}`)
+    await page.goto(all)
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Unsubscribe from all Soundings email?' }),
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Unsubscribe', exact: true }).click()
     await expect(
       page.getByText(/^Soundings won’t email \S+•••@example\.com any more\./),
     ).toBeVisible()

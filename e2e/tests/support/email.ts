@@ -214,3 +214,10 @@ export function unsubscribeLink(message: Message): string {
   if (!link) throw new Error('the email has no unsubscribe link')
   return link
 }
+
+/** The footer's "Unsubscribe from all email" link (the only token scoped to all). */
+export function unsubscribeAllLink(message: Message): string {
+  const match = /href\s*=\s*"([^"]*)"[^>]*>Unsubscribe from all email</i.exec(message.HTML)
+  if (!match?.[1]) throw new Error('the email has no “Unsubscribe from all email” link')
+  return match[1].replaceAll('&amp;', '&')
+}

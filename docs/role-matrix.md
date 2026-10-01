@@ -233,7 +233,7 @@ IDs (409 `system_account`; contract-phase2 §3.4).
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub |
 |---|---|---|---|---|---|---|---|---|
 | `self.manage_profile` | Own profile and email notification preferences (immediate / daily digest / off, per notification type) | Y | Y | Y | Y | Y | Y | 401 |
-| `self.unsubscribe` | One-click unsubscribe from an email link (turns email off for that type, the digest's types, or every type), no sign-in needed | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) |
+| `self.unsubscribe` | One-click unsubscribe from an email link (turns email off for that type, the digest's types, or, with the footer's "all email" link, every type), no sign-in needed | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) |
 | `user.search` | Find users by name or email, and groups by name (member, group-grant, owner and evaluator pickers, @mentions) | Y | Y | Y | Y | Y | Y | 401 |
 | `api_key.manage_own` | Create, list and revoke your own API keys | Y | Y | Y | Y | Y | Y | 401 |
 | `mcp.connect` | Call `/mcp`; each tool then checks its own rule (section 6) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | 401 |
@@ -324,7 +324,7 @@ evaluations and one AI evaluation present.
 | c11 | After the change, the project still has at least one admin (effective role, direct or via a group) who is active and not a service account | 409 `last_admin` |
 | c12 | The idea is not awaiting moderation (always true for PA and PAd) | 404 |
 | c13 | The idea has no owner | 409 `idea_has_owner` |
-| c14 | The request carries a valid unsubscribe token (signed with a key derived from the instance secret key) whose user exists and is active (contract-phase3 §3.5) | 404 |
+| c14 | The request carries a valid unsubscribe token (signed with a key derived from the instance secret key) whose user exists and is active, and the token's scope covers the request: `all=true` needs a token scoped to `all` (contract-phase3 §3.5) | invalid token or user → 404; `all=true` with a type or digest token → 403 `insufficient_scope` |
 | c15 | The request authenticates with an API key that has the `mcp` scope | no key → 401; no scope → 403 `insufficient_scope` |
 | c16 | Removing an evaluator: the evaluator is not the principal (contract-phase1 §3.5) | 403 `cannot_remove_self` |
 | c17 | Changing a user's `is_active` or `is_platform_admin`: the user is not the principal (contract-phase2 §3.4) | 403 `cannot_change_self` |

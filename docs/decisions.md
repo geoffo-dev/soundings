@@ -298,7 +298,7 @@ the known issues QA found (K3-1 to K3-5) are fixed below.
 | HTML emails add a fixed 600 px table for Outlook for Windows only (`<!--[if mso]>`), `mso-padding-alt` on the button, and digest bullets in their own cell. | Decided | Word-based Outlook ignores `max-width` and link padding; long digest lines now hang under the text instead of under the bullet. |
 | `last_error` gains "connection failed" (DNS, unreachable network), transient like "connection refused". | Decided | A stopped Mailpit reached by container name (`make demo`) fails name resolution, not the connection. |
 | A deactivated recipient's queued email is cancelled at send time ("Not sent: no longer applies"). | Decided | Deactivated users are never notified; the same rule at send time. |
-| `remove_old_jobs` is our own daily periodic task calling procrastinate's job manager; the data cleanup runs in the hourly schedule's run that falls in the digest hour, so a day the worker is down at that hour skips it (the next day catches up). | Proposed | procrastinate's builtin can't take the `timestamp` a periodic task receives; one cleanup a day is enough. |
+| `remove_old_jobs` is our own daily periodic task calling procrastinate's job manager; the data cleanup runs in the hourly schedule's run that falls in the digest hour, so a day the worker is down at that hour skips it (the next day catches up). | Superseded (review: the cleanup runs every hour) | procrastinate's builtin can't take the `timestamp` a periodic task receives; one cleanup a day is enough. |
 | The worker counts `soundings_emails_*` metrics but serves no metrics port yet; operators watch the banner, the outbox and the logs. | Proposed | A worker metrics listener and ServiceMonitor are a small follow-up (platform). |
 | Idea titles and display names reject line breaks and other control characters (422, `SingleLine`); names from SSO claims are collapsed to one line. | Decided | QA K3-1: headers were already safe, but CR/LF reached plain-text emails and the UI. |
 | The seed fans each story step out to the inbox only (no outbox rows), backdated with the step; notifications older than 3 days are read; bob and carol have non-default email preferences. | Decided | A fresh demo shows a lived-in inbox without mailing anyone. |
@@ -322,3 +322,39 @@ the known issues QA found (K3-1 to K3-5) are fixed below.
 | Digests and reminders are tested end to end in `backend/tests/acceptance/test_phase3_acceptance.py` with a moved clock and a real Mailpit, not in the browser. | Decided | E2E can't move the clock; the API test covers the schedule through real SMTP. |
 | Mailpit's chaos mode (`MP_ENABLE_CHAOS`) isn't used yet. | Proposed | Optional QA request; stopping the container already covers the acceptance where it can run. |
 | e2e AU-03 checks that a non-admin's Settings row lists exactly Account and Notifications. | Decided | Its old `toHaveCount(0)` passed only because it looked before the row rendered. |
+
+## 2026-10-01 · Phase 3 review and final verification
+
+Calls made on the security and UX reviews' findings and in the final verification
+([phase-summaries/phase-3.md](phase-summaries/phase-3.md#review-findings-and-outcomes)
+has every finding and its tests). Contract changes are additive and listed in
+[contract-phase3.md §7](api/contract-phase3.md#7-changes-after-the-contract).
+
+### Security and email
+
+| Decision | Status | Why |
+|---|---|---|
+| **Unsubscribe links are scoped (L8):** a type's or the digest's link (and `List-Unsubscribe`) turns off only that; `all=true` is accepted only with a token scoped to `all`, which every email carries in a separate footer link, "Unsubscribe from all email" (else 403 `insufficient_scope`, a second check of c14). The SPA page offers no "all" button for other links. | Decided | A forwarded email (or one read over someone's shoulder) could silence every email its recipient gets; one more footer link keeps "stop everything" one click away. |
+| **No token versioning or expiry** for unsubscribe links: links in old emails keep working until the secret key changes. | Decided (trade-off) | A per-user version would need a column, a migration and a "reset my links" flow for a narrow risk (someone holding an old email can only turn email *off*, which the owner sees in their preferences and can undo); mail sits in inboxes for months and must still unsubscribe. |
+| One-line names (`SingleLine`) also reject U+2028 / U+2029 and the bidi controls U+202A–U+202E, U+2066–U+2069, U+061C; the marks U+200E / U+200F stay allowed. SSO names turn separators into spaces and drop those controls. | Decided | Input hygiene: emails were already safe (template values are one line without bidi controls), but such names could still reorder or break lines in the UI and in other clients of the API. |
+| Comment excerpts read at most 2,000 characters with linear-time patterns. | Decided | Review H1: crafted comments stalled inbox and `/auth/me` requests for seconds. |
+| Periodic jobs (priority 100) and `notify_event` (50) run before sends; a worker pauses sending after 5 connection failures in a row (30 s doubling to 5 min) without using attempts; test emails are always tried. | Decided | Review M1: a blackholed server let a backlog of 10-second timeouts delay the sweep, reminders and digests. |
+| Mention-email cap counted under a per-author advisory lock; mention tokens rewritten until stable (nested tokens count toward the 20); the project-role rule re-checked at send time. | Decided | Reviews M2, L1 and a nit. |
+| Template values are one line without C1 or bidi controls; a subject with `=?` is RFC 2047-encoded as a whole; Message-IDs use address literals for IP base URLs; branding colours must be hex. | Decided | Reviews L2, L3 and nits. |
+| SMTP credentials go to worker pods only (`SOUNDINGS_SMTP_*_SET` tells the API); `smtp.existingSecret` needs both keys; the chart refuses it with `security: none` unless `devLogin`; a CA bundle must hold a certificate. | Decided | Reviews L4, L5: the API never sends mail. |
+| Events for more than 500 people fan out in a `notify_event` job deferred in the request's transaction; smaller ones in the request at a constant number of statements. | Decided | Review L6: one UPDATE per person made big status changes slow requests. In-app items of such events appear once the worker runs. |
+| The minute sweep fails jobs of workers without a heartbeat for 2 minutes; the data cleanup runs every hour; migration 0006 indexes it. | Decided | Review L7 and nits. |
+| Retrying a test email counts toward the admin's 5-per-10-minutes limit. | Decided | Review L9: Retry was a way around the limit. Test emails stay retryable. |
+
+### Screens
+
+| Decision | Status | Why |
+|---|---|---|
+| Retry keeps the outbox filter and moves focus to the row's status with a "Queued again" toast; the default filter (failed plus queued when there are failures) is set once when the page opens. | Decided | UX M1. Deviation: the contract's UI default was "failed" only. |
+| "Mark all read" waits for its Undo toast before telling the server (no "mark unread" endpoint), and the button keeps focus (`aria-disabled`). | Decided | UX M2. |
+| The comment box shows "@Name" with a light tint while the stored text keeps the tokens; typing inside a name makes it plain text, Backspace after it removes the whole mention. Chips render only for text that is exactly a canonical token. | Decided | UX M3, security L1 (SPA). |
+| Admin → Email reads status, outbox, test email, server, schedule; the banner links to `#outbox`. | Decided | UX M4. |
+| The app and the email footers use the same type names ("evaluation requests"…). | Decided | UX m2. |
+| Dates in emails stay in the instance's format, not the viewer's browser language. | Rejected (UX p4) | Emails can't know the reader's locale; the app's format follows the browser. |
+| Undo on the "You're unsubscribed" page. | Deferred | Needs a public re-subscribe endpoint; people can sign in to their preferences. |
+

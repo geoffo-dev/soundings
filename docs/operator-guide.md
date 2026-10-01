@@ -362,7 +362,7 @@ smtp:
   host: smtp.example.com          # empty: no email (in-app notifications only)
   port: ""                        # empty: 587, or 465 with security: tls
   security: starttls              # none | starttls | tls
-  existingSecret: soundings-smtp  # optional keys: username, password
+  existingSecret: soundings-smtp  # keys username and password (worker pods only)
   from: ideas@example.com         # required with host; one plain address
   fromName: Example Ideas         # default "Soundings"
   replyTo: innovation@example.com # optional
@@ -381,11 +381,15 @@ kubectl -n soundings create secret generic soundings-smtp \
   --from-literal=username=soundings@example.com --from-literal=password='…'
 ```
 
-Credentials come from the Secret (or `smtp.username` / `smtp.password` in values, not
-both); both keys are optional, for relays that accept your cluster without
-authentication. The api and worker pods get the same settings (the api queues mail and
-shows the configuration, the worker sends it). Changing a value rolls both
-Deployments; a new password in the Secret or a new CA needs `kubectl -n soundings
+Credentials come from the Secret, which must have both keys `username` and
+`password` (or set `smtp.username` / `smtp.password` in values, not both). For a relay
+that accepts your cluster without authentication, set neither. The chart refuses
+`existingSecret` and `smtp.password` with `security: none` (except with `devLogin`).
+**Only the worker pods get the credentials** (they send the mail); the api pods get
+every other SMTP setting, so they can queue mail and show the configuration, plus
+`SOUNDINGS_SMTP_USERNAME_SET` / `_PASSWORD_SET`, so Settings → Email can say a user
+name and password are set without the api ever holding them. Changing a value rolls
+both Deployments; a new password in the Secret or a new CA needs `kubectl -n soundings
 rollout restart deploy`. Links in emails use the first of `baseUrls`, so list the
 address people use first.
 
@@ -402,7 +406,11 @@ settings):
 
 Whatever the provider, publish SPF and DKIM for the `from` domain; mail arrives with
 `List-Unsubscribe` and one-click unsubscribe headers (RFC 8058), which large mailbox
-providers expect from automated mail.
+providers expect from automated mail. The one-click header and the footer's
+"Unsubscribe from <type>" link turn off only that kind of email (or the digest); the
+footer's separate "Unsubscribe from all email" link turns off everything. The links are
+signed with a key derived from `secretKey` and don't expire; rotating the secret key
+breaks every link in mail already sent (people then sign in to their preferences).
 
 ### Security modes (`none`, `starttls`, `tls`) and custom CA bundles
 
@@ -423,7 +431,8 @@ helm upgrade … --set smtp.caBundle.configMap=smtp-ca   # key: smtp.caBundle.ke
 ```
 
 It is mounted read-only (`/etc/soundings/smtp-ca/ca.crt`, `SOUNDINGS_SMTP_CA_BUNDLE`)
-and **replaces** the system trust store for SMTP only (sign-in uses the image's trust
+and **replaces** the system trust store for SMTP only; the pods refuse to start when
+the file holds no PEM certificate (a wrong key or an empty ConfigMap) (sign-in uses the image's trust
 store, or `SSL_CERT_FILE`). A certificate that fails verification (an unknown CA, or
 issued for another host name) shows as "TLS certificate not trusted" in the outbox and
 the test email's result; other TLS problems (no common protocol, a plain-text server on
@@ -458,7 +467,8 @@ address), type, status, attempts and the last error, in our own words ("connecti
 refused", "SMTP 535: authentication failed", "TLS certificate not trusted"; the server's
 reply text is never stored, since it can contain addresses). **Retry** sends a failed
 email again with fresh attempts; **Retry all failed** does that for every failed email
-that is still current. Mail older than **3 days** (digests: **2 days**) is never sent
+that is still current. Test emails are limited to 5 per admin per 10 minutes, and
+retrying a failed test email counts toward that limit. Mail older than **3 days** (digests: **2 days**) is never sent
 late: it is cancelled as "Not sent: out of date", as are emails whose recipient lost
 access, turned that type off, or has an unusable address. Platform admins see a banner,
 "Some emails aren't going out", while an email failed in the last 24 hours or one has
@@ -475,7 +485,14 @@ and the logs.
 
 **When the SMTP server is down**, nothing is lost: email waits in the outbox and goes out
 when the server is back (the next retry, at most an hour later), once, with the same
-Message-ID. An outage longer than about 5 hours leaves emails Failed: use **Retry all
+Message-ID. After **five connection failures in a row** (refused, timed out, cut off) a
+worker **pauses sending** for 30 seconds, doubling up to 5 minutes while the server
+stays unreachable: due emails are postponed to the end of the pause **without using an
+attempt**, and the first one after it probes the server. So an unreachable server costs
+one timeout per pause rather than one per email, and the minute sweep, reminders,
+digests and in-app notifications never wait behind a backlog of sends (their jobs run
+first). Test emails are always tried. Each worker process pauses on its own; the log
+says "SMTP server unreachable: pausing sends" and "SMTP server reachable again". An outage longer than about 5 hours leaves emails Failed: use **Retry all
 failed** within three days. **When the worker is down** (or scaled to 0), email,
 reminders and digests wait; when it starts, queued email goes out, a missed digest hour
 is caught up that day, and a reminder day that passed is skipped (people still see due
@@ -497,7 +514,7 @@ Everything time-based follows **one time zone for the whole installation**, `tim
   twice, and a changed due date reschedules them. `[]` turns reminders off; people can
   also turn them off for themselves.
 - The schedule runs in the worker every hour and handles daylight-saving changes; the
-  daily cleanup (old notifications and outbox rows) runs in the digest hour's run.
+  cleanup (old notifications and outbox rows) runs at the end of every hourly run.
 
 ### Running without SMTP
 
@@ -511,14 +528,19 @@ notification; nothing from before is sent late.
 ### Worker and scaling
 
 The worker (`soundings worker`, Deployment `worker`) runs every background job: sending
-email, the per-minute outbox sweep, the hourly schedule and the daily job cleanup. Keep
+email, the per-minute outbox sweep, the hourly schedule, the daily job cleanup, and the
+in-app notifications of very large events: a status change or comment that would notify
+**more than 500 people** is handed to the worker (a `notify_event` job written in the
+same transaction), so those inbox items, and their emails, appear only once the worker
+runs it. Smaller events notify people within the request. Keep
 `worker.enabled` on whenever SMTP is configured. One replica with `worker.concurrency`
 4 is plenty for most organisations; more replicas are safe (each email is claimed by
 exactly one worker with a 5-minute lease, and periodic jobs are queued once however
 many workers run), and give you continuity during node drains. Each attempt must finish
 within 4 minutes; a worker that dies mid-send leaves the email to the sweep, which
 retries it after the lease (the recipient may then, rarely, get it twice, with the
-same Message-ID). The worker serves no HTTP and needs no Service; shutdown waits
+same Message-ID); jobs of a worker without a heartbeat for 2 minutes are marked failed
+by the sweep, so they don't stay "doing" for ever. The worker serves no HTTP and needs no Service; shutdown waits
 `worker.terminationGracePeriodSeconds` for running jobs.
 
 ## Public submission and anti-abuse [Phase 4]

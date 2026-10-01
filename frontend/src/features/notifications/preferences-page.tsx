@@ -152,7 +152,7 @@ function PreferencesForm({ preferences }: { preferences: NotificationPreferences
         </ul>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-muted">
-            Every email has an unsubscribe link that turns off just that kind of email.
+            Every email has links to turn off just that kind of email, or all email.
           </p>
           <Button variant="ghost" size="sm" disabled={allOff} onClick={turnAllOff}>
             Turn off all email

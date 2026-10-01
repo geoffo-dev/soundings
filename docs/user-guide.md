@@ -123,8 +123,9 @@ toast puts it back exactly.
   seconds. Comments are flat (no threads).
 - **@mentions:** type `@` in the comment box and pick a person from the list (people
   with a role in the project: admins, members and viewers, never yourself). The mention
-  shows as the person's name and always points at that person, even if their name
-  changes. They get a notification, and an email unless they turned mentions off
+  shows as "@Name" with a light tint, in the comment box too, and always points at that
+  person, even if their name changes. Typing inside a name turns it into plain text;
+  Backspace right after it removes the whole mention. They get a notification, and an email unless they turned mentions off
   ([Notifications](#notifications-and-email-preferences-phase-3)); people who can't see
   the idea are not told. Up to 20 people per comment. Adding someone by editing a
   comment notifies only the newly mentioned people.
@@ -226,7 +227,8 @@ score is hidden from you) come last.
 The bell at the top of every page shows how many notifications you haven't read. It
 opens your latest ones (on a phone, a full-height panel); **See all notifications**, or
 `G` then `I`, opens the inbox page, grouped by day, with **All** and **Unread** and
-**Mark all read**. Each notification says who did what on which idea, in one sentence:
+**Mark all read** (with **Undo** for a few seconds). Each notification says who did
+what on which idea, in one sentence:
 
 | You're told when | Opens |
 |---|---|
@@ -273,15 +275,17 @@ footer that says why you got it.
 
 ### Unsubscribing
 
-Every notification email ends with two links: **Email preferences** (sign in and choose
-per type) and **Unsubscribe from …** that kind of email (from the digest: everything you
-get as a digest). The unsubscribe link opens a page that shows what will stop and for
-which address (partly hidden), and changes nothing until you press **Unsubscribe**;
-**Unsubscribe from all Soundings email** turns every type off. You don't need to sign
-in, and the links in old emails keep working. Mail apps that show their own
-"Unsubscribe" button next to the sender use the same link: one click there turns that
-kind of email off. Unsubscribing never affects the in-app inbox; to get emails
-again, change the type back in Settings → Notifications.
+Every notification email ends with three links: **Email preferences** (sign in and
+choose per type), **Unsubscribe from …** that kind of email (from the digest: everything
+you get as a digest) and **Unsubscribe from all email**. Each unsubscribe link opens a
+page that shows what will stop and for which address (partly hidden), and changes
+nothing until you press **Unsubscribe**. A link only stops what it says: the "…
+evaluation requests" link can't turn off your other emails, so to stop everything use
+**Unsubscribe from all email** or your preferences. You don't need to sign in, and the
+links in old emails keep working. Mail apps that show their own "Unsubscribe" button
+next to the sender use the first link: one click there turns that kind of email off.
+Unsubscribing never affects the in-app inbox; to get emails again, change the type back
+in Settings → Notifications.
 
 ## API keys and MCP [Phase 5]
 
