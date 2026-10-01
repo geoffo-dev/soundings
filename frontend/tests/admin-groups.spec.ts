@@ -73,9 +73,17 @@ test('edits a mapping with normalised values and saves it', async ({ page }) => 
 
   await page.getByRole('radio', { name: /Managed/ }).click()
   await page.getByRole('button', { name: 'Remove viewers' }).click()
-  await expect(
-    page.getByRole('region', { name: 'Test mapping' }).getByText('Save the mapping to test it'),
-  ).toBeVisible()
+  // Test mapping is a sheet: it says the unsaved mapping isn't what it tests.
+  await page
+    .getByRole('region', { name: 'Identity provider' })
+    .getByRole('button', {
+      name: 'Test mapping',
+    })
+    .click()
+  const sheet = page.getByRole('dialog', { name: 'Test mapping' })
+  await expect(sheet.getByText('Save the mapping to test it')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
   await page.getByRole('button', { name: 'Save mapping' }).click()
   await expect(toast(page, 'Mapping saved')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save mapping' })).toHaveCount(0)
@@ -126,6 +134,8 @@ test('test mapping shows joins, leaves and stays for a person', async ({ page })
   await expect(
     sheet.getByText('That isn’t valid JSON. Check for missing quotes or commas.'),
   ).toBeVisible()
+  // Straight back to the field to fix.
+  await expect(claims).toBeFocused()
 
   await claims.fill(
     JSON.stringify({ sub: 'k-1', groups: ['/Innovation/Members', '/viewers', 42, '/'] }),
@@ -159,4 +169,33 @@ test('test mapping shows joins, leaves and stays for a person', async ({ page })
   await expect(result.getByText('The claims changed: test again to update.')).toBeVisible()
   await sheet.getByRole('button', { name: 'Test mapping' }).click()
   await expect(sheet.getByText('No “groups” claim in these claims')).toBeVisible()
+})
+
+test('the group page puts members first and returns to its row in the list', async ({ page }) => {
+  await page.goto('/settings/groups')
+  const table = page.getByRole('table', { name: 'Groups' })
+  const tools = table.getByRole('row').filter({ hasText: 'Tools members' }).getByRole('link')
+  await tools.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { level: 2, name: 'Tools members' })).toBeVisible()
+  await expect(page.getByRole('main').getByRole('heading', { level: 3 }).first()).toHaveText(
+    'Members',
+  )
+
+  // The test keeps its claims when the sheet closes and opens again.
+  await page.getByRole('button', { name: 'Test mapping' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Test mapping' })
+  await expect(sheet).toBeFocused()
+  await sheet.getByRole('textbox', { name: 'Claims' }).fill('{ "groups": ["/tools/members"] }')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Test mapping' }).click()
+  await expect(sheet.getByRole('textbox', { name: 'Claims' })).toHaveValue(
+    '{ "groups": ["/tools/members"] }',
+  )
+  await sheet.getByRole('button', { name: 'Test mapping' }).click()
+  await expect(sheet.getByRole('region', { name: 'Test result' })).toContainText('This group')
+  await page.keyboard.press('Escape')
+
+  await page.getByRole('link', { name: 'All groups' }).click()
+  await expect(tools).toBeFocused()
 })

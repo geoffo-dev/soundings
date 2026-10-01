@@ -22,7 +22,7 @@ import { formatRelative } from '@/lib/dates'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
-import { ariaKeys, ButtonShortcut } from './button-shortcut'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { CriterionField, RecommendationField } from './criterion-field'
 import {
   describeMissing,

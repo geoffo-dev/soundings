@@ -29,6 +29,7 @@ __all__ = [
     "ExternalIdsReplace",
     "LinkedIdentity",
     "UserGroup",
+    "is_reserved_email",
 ]
 
 EXTERNAL_ID_KIND_PATTERN = r"^[a-z][a-z0-9_]{0,39}$"
@@ -41,8 +42,13 @@ RESERVED_EMAIL_DOMAIN = ".invalid"
 accounts (``break-glass@soundings.invalid``): admins can't give one to a user."""
 
 
+def is_reserved_email(address: str) -> bool:
+    """Under ``.invalid``, also written with a trailing dot (``x@host.invalid.``)."""
+    return address.lower().rstrip(".").endswith(RESERVED_EMAIL_DOMAIN)
+
+
 def _not_reserved(email: str) -> str:
-    if email.lower().endswith(RESERVED_EMAIL_DOMAIN):
+    if is_reserved_email(email):
         raise ValueError("addresses under .invalid are reserved for system accounts")
     return email
 

@@ -16,10 +16,18 @@ import {
 import { DatePicker } from '@/components/ui/date-picker'
 import { Field } from '@/components/ui/field'
 import { FilterMenu, FilterMenuOption } from '@/components/ui/filter-menu'
+import { useNow } from '@/components/ui/relative-time'
 import { formatShortDate } from '@/lib/dates'
 
 import { AUDIT_CATEGORIES, type AuditCategory } from './audit-categories'
-import { hasAuditFilters, parseTarget, type AuditSearch } from './audit-search'
+import {
+  DATE_PRESETS,
+  hasAuditFilters,
+  matchingPreset,
+  parseTarget,
+  presetFrom,
+  type AuditSearch,
+} from './audit-search'
 
 /**
  * Audit log filters (contract-phase2 §3.11): who did it, what kind of action,
@@ -245,8 +253,11 @@ function DateFilter({
   onChange: (from: string | undefined, to: string | undefined) => void
 }) {
   const day = (value: string) => formatShortDate(`${value}T12:00:00`)
-  const label =
-    from && to
+  const now = useNow()
+  const preset = matchingPreset(from, to, now)
+  const label = preset
+    ? preset.label
+    : from && to
       ? from === to
         ? day(from)
         : `${day(from)} – ${day(to)}`
@@ -263,8 +274,25 @@ function DateFilter({
       onClear={() => onChange(undefined, undefined)}
       menuClassName="w-auto p-3"
     >
-      {() => (
+      {(close) => (
         <div className="flex flex-col gap-3">
+          <div role="group" aria-label="Quick ranges" className="flex flex-wrap gap-1.5">
+            {DATE_PRESETS.map((option) => (
+              <Button
+                key={option.days}
+                variant="outline"
+                size="sm"
+                aria-pressed={preset?.days === option.days}
+                className="aria-pressed:border-accent/40 aria-pressed:bg-accent-subtle aria-pressed:text-accent"
+                onClick={() => {
+                  onChange(presetFrom(option.days, now), undefined)
+                  close()
+                }}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Field label="From">
               <DatePicker

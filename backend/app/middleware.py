@@ -1,12 +1,14 @@
-"""Pure-ASGI middleware: request context (id, access log, metrics, 500s), security
-headers, trusted-host checking and the request body size limit."""
+"""Pure-ASGI middleware: the client address and scheme behind trusted proxies, request
+context (id, access log, metrics, 500s), security headers, trusted-host checking and
+the request body size limit."""
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 import uuid
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from time import perf_counter
 from typing import Any, Final
 
@@ -23,6 +25,106 @@ logger = logging.getLogger("soundings.request")
 REQUEST_ID_HEADER = "X-Request-ID"
 _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _QUIET_ROUTES = frozenset({"/healthz", "/readyz", "/metrics"})
+
+
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def parse_address(value: str) -> IPAddress | None:
+    """An IP address from a peer or ``X-Forwarded-For`` entry (``1.2.3.4``,
+    ``1.2.3.4:80``, ``2001:db8::1``, ``[2001:db8::1]:443``); IPv4-mapped IPv6 as IPv4.
+    ``None`` for anything else (host names, ``unknown``, garbage)."""
+    value = value.strip()
+    if value.startswith("["):
+        value = value[1 : value.find("]")] if "]" in value else ""
+    elif value.count(":") == 1:
+        value = value.split(":", 1)[0]
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped
+    return address
+
+
+class TrustedProxies:
+    """``SOUNDINGS_TRUSTED_PROXIES``: addresses and networks, or ``*`` for everyone."""
+
+    def __init__(self, entries: Iterable[str]) -> None:
+        entries = list(entries)
+        self.everyone = "*" in entries
+        self.networks = tuple(
+            ipaddress.ip_network(entry, strict=False) for entry in entries if entry != "*"
+        )
+
+    def __contains__(self, address: IPAddress) -> bool:
+        return self.everyone or any(address in network for network in self.networks)
+
+
+def forwarded_client(
+    peer: str, forwarded_for: Sequence[str], trusted: TrustedProxies, hops: int
+) -> str:
+    """The client address for a request from ``peer`` (review M1).
+
+    Only a trusted proxy's ``X-Forwarded-For`` counts, and only the ``hops`` entries at
+    its right end, which the trusted proxies in front of the app appended (the
+    ingress controller: 1). Reading from the right, an entry that is not itself a
+    trusted proxy is the client: nothing to its left was added by us. Anything to the
+    left of those entries is whatever the client sent, private-looking or not. An entry
+    that isn't an IP address ends the walk (the last address found stands), so a
+    client can't invent throttle keys."""
+    address = parse_address(peer)
+    if address is None or address not in trusted:
+        return peer
+    client = address
+    entries = [entry for header in forwarded_for for entry in header.split(",")]
+    for entry in list(reversed(entries))[:hops]:
+        found = parse_address(entry)
+        if found is None:
+            break
+        client = found
+        if found not in trusted:
+            break
+    return str(client)
+
+
+class ProxyHeadersMiddleware:
+    """Outermost: the client address (``X-Forwarded-For``, see :func:`forwarded_client`)
+    and scheme (``X-Forwarded-Proto``, its last value) from trusted proxies, for the
+    throttles, ``cookie_secure`` and everything else. Replaces uvicorn's proxy headers
+    handling, which falls back to the client-supplied leftmost entry when every entry
+    is in a trusted range (any client on a private network behind the ingress)."""
+
+    def __init__(self, app: ASGIApp, *, trusted_proxies: Iterable[str], hops: int) -> None:
+        self.app = app
+        self.trusted = TrustedProxies(trusted_proxies)
+        self.hops = hops
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        client = scope.get("client")
+        if scope["type"] not in {"http", "websocket"} or not client:
+            await self.app(scope, receive, send)
+            return
+        peer = parse_address(str(client[0]))
+        if peer is None or peer not in self.trusted:
+            await self.app(scope, receive, send)
+            return
+        forwarded_for: list[str] = []
+        proto: str | None = None
+        for name, value in scope.get("headers", ()):
+            if name == b"x-forwarded-for":
+                forwarded_for.append(value.decode("latin-1"))
+            elif name == b"x-forwarded-proto":
+                proto = value.decode("latin-1").rsplit(",", 1)[-1].strip().lower()
+        if forwarded_for:
+            address = forwarded_client(str(client[0]), forwarded_for, self.trusted, self.hops)
+            if address != str(client[0]):
+                scope["client"] = (address, 0)
+        if proto in {"http", "https"}:
+            websocket = scope["type"] == "websocket"
+            scope["scheme"] = proto.replace("http", "ws") if websocket else proto
+        await self.app(scope, receive, send)
 
 
 def route_template(scope: Scope) -> str:

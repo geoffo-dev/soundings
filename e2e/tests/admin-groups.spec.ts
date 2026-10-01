@@ -158,6 +158,11 @@ test('AG-03: a manual member gets the group’s project role, and leaves it with
   await page.getByRole('option', { name: 'Viewer' }).click()
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(toast(page, `${group.name} added as viewer`)).toBeVisible()
+  // "Everyone with access" is folded away while groups have a role.
+  // Unfolded already when nobody has a direct role (it is then the only list of people).
+  const showAccess = page.getByRole('button', { name: /^Everyone with access/ })
+  await expect(showAccess).toBeVisible()
+  if ((await showAccess.getAttribute('aria-expanded')) !== 'true') await showAccess.click()
   const access = page.getByRole('list', { name: 'Everyone with access' })
   await expect(access.getByRole('listitem').filter({ hasText: 'Kenji Watanabe' })).toContainText(
     `via ${group.name}`,
@@ -201,7 +206,9 @@ test.describe('with SSO', { tag: '@sso' }, () => {
     // Synced rows are read-only (sync owns them).
     await expect(daveRow.getByRole('button', { name: 'Remove Dave Davies' })).toHaveCount(0)
 
-    const panel = page.getByRole('region', { name: 'Test mapping' })
+    // Test mapping opens as a sheet from the identity-provider section.
+    await page.getByRole('button', { name: 'Test mapping' }).click()
+    const panel = page.getByRole('dialog', { name: 'Test mapping' })
     await panel.getByRole('textbox', { name: 'Claims' }).fill('{ "groups": ["/viewers"] }')
     await panel.getByRole('combobox', { name: /Person/ }).click()
     await page.getByPlaceholder('Search by name or email…').fill('dave')

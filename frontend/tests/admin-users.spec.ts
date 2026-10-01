@@ -38,12 +38,12 @@ test('lists everyone, searches and filters through the URL', async ({ page }) =>
   await expect(userRow(page, 'Lena Novak')).toContainText('Not linked yet')
 
   await page.getByRole('searchbox', { name: 'Search users' }).fill('')
-  await page.getByRole('button', { name: 'Not signed in yet' }).click()
+  await page.getByRole('button', { name: 'SSO not linked' }).click()
   await expect(page).toHaveURL(/unlinked=1/)
   await expect(userRow(page, 'Lena Novak')).toBeVisible()
   await expect(userRow(page, 'Bob Chen')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Not signed in yet' }).click()
+  await page.getByRole('button', { name: 'SSO not linked' }).click()
   await page.getByRole('button', { name: /^Status/ }).click()
   await page.getByRole('option', { name: 'Deactivated' }).click()
   await expect(page).toHaveURL(/status=deactivated/)
@@ -208,4 +208,24 @@ test('the command palette lists the admin pages for platform admins', async ({ p
   await expect(alice).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('dialog', { name: /Alice Anders/ })).toBeVisible()
+})
+
+test('the user sheet opens on itself and closes back to the row', async ({ page }) => {
+  await openUsers(page)
+  const bob = userRow(page, 'Bob Chen').getByRole('link')
+  await bob.focus()
+  await page.keyboard.press('Enter')
+  const sheet = page.getByRole('dialog', { name: /Bob Chen/ })
+  // Focus on the sheet, never on the Name field with its text selected.
+  await expect(sheet).toBeFocused()
+  await expect(sheet.getByRole('textbox', { name: 'Name' })).not.toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
+  await expect(bob).toBeFocused()
+
+  // Same with the close button, and from a cached user.
+  await page.keyboard.press('Enter')
+  await expect(sheet).toBeFocused()
+  await sheet.getByRole('button', { name: 'Close' }).click()
+  await expect(bob).toBeFocused()
 })

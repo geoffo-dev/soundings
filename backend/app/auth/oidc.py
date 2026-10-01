@@ -5,20 +5,22 @@ validation (contract-phase2 section 3.2). One provider per instance
 Deliberately small: HTTP with ``httpx`` (timeouts, no redirects, proxy and CA
 settings from the environment) and signatures with ``joserfc`` (what Authlib 1.8 uses
 underneath). Authlib's Starlette client would need a cookie-backed
-``request.session``; here the login attempt lives in ``oidc_login_attempts`` and the
-browser only ever holds ``state``.
+``request.session``; here the login attempt is sealed into the ``soundings_oidc``
+cookie (:mod:`app.auth.login_attempt`).
 
 * :meth:`OidcProvider.discover`: ``<issuer>/.well-known/openid-configuration``, cached
   for an hour when usable and for 30 seconds when not (an unreachable IdP is neither
   hammered nor slow for every request). Its ``issuer`` must equal
-  ``SOUNDINGS_OIDC_ISSUER`` exactly. The same result feeds ``GET /admin/sso``
-  (:meth:`OidcProvider.discovery_status`).
+  ``SOUNDINGS_OIDC_ISSUER`` exactly, and in production every endpoint must be https
+  (the token request carries the client secret and the code). The same result feeds
+  ``GET /admin/sso`` (:meth:`OidcProvider.discovery_status`).
 * :meth:`OidcProvider.exchange_code`: the token request (10 s timeout), with the PKCE
   verifier and ``client_secret_basic`` (``client_secret_post`` when the provider only
   supports that; a public client sends just ``client_id``).
 * :meth:`OidcProvider.validate_id_token`: signature against the JWKS (asymmetric
-  algorithms only; one re-fetch for an unknown ``kid``), ``iss``, ``aud``/``azp``,
-  ``exp``/``iat`` (60 s leeway), ``nonce`` and ``sub``.
+  algorithms only; fetched again every hour, so a key the IdP withdrew stops working,
+  and once for an unknown ``kid``), ``iss``, ``aud``/``azp``, ``exp``/``iat`` (60 s
+  leeway), ``nonce`` and ``sub``.
 
 Nothing here logs tokens, codes, claims or IdP error text: failures carry a fixed
 reason for the server log only.
@@ -75,6 +77,8 @@ CLOCK_LEEWAY: Final = 60.0
 
 DISCOVERY_TTL: Final = 3600.0
 FAILED_DISCOVERY_TTL: Final = 30.0
+JWKS_TTL: Final = 3600.0
+"""The key set is fetched again after this long (and at once for an unknown ``kid``)."""
 DISCOVERY_TIMEOUT: Final = httpx.Timeout(5.0)
 TOKEN_TIMEOUT: Final = httpx.Timeout(10.0)
 MAX_SUBJECT_LENGTH: Final = 255
@@ -114,21 +118,29 @@ class Discovery:
         return DISCOVERY_TTL if self.status == "ok" else FAILED_DISCOVERY_TTL
 
 
+_ENDPOINTS: Final = ("authorization_endpoint", "token_endpoint", "jwks_uri")
+
+
 def _url(value: object) -> str | None:
     if isinstance(value, str) and urlsplit(value).scheme in {"http", "https"}:
         return value
     return None
 
 
-def parse_metadata(document: object, issuer: str) -> ProviderMetadata | DiscoveryStatus:
-    """The usable parts of a discovery document, or why it is unusable."""
+def parse_metadata(
+    document: object, issuer: str, *, https_only: bool = False
+) -> ProviderMetadata | DiscoveryStatus:
+    """The usable parts of a discovery document, or why it is unusable.
+    ``https_only`` (production): an endpoint that isn't https makes it ``invalid``."""
     if not isinstance(document, Mapping):
         return "invalid"
-    endpoints = {
-        name: _url(document.get(name))
-        for name in ("authorization_endpoint", "token_endpoint", "jwks_uri")
-    }
+    endpoints = {name: _url(document.get(name)) for name in _ENDPOINTS}
     if None in endpoints.values():
+        return "invalid"
+    if https_only and any(
+        isinstance(url, str) and urlsplit(url).scheme != "https"
+        for url in (*endpoints.values(), document.get("end_session_endpoint"))
+    ):
         return "invalid"
     if document.get("issuer") != issuer:
         return "issuer_mismatch"
@@ -165,6 +177,7 @@ class OidcProvider:
         self._discovery_lock = asyncio.Lock()
         self._keys: KeySet | None = None
         self._keys_uri: str | None = None
+        self._keys_fetched_at = 0.0
 
     # --- HTTP -------------------------------------------------------------------------
     def _client(self, timeout: httpx.Timeout) -> httpx.AsyncClient:
@@ -219,7 +232,7 @@ class OidcProvider:
         except (httpx.HTTPError, ValueError) as exc:
             status: DiscoveryStatus = "invalid" if isinstance(exc, ValueError) else "unreachable"
             return Discovery(status, None, checked_at, fetched_at)
-        parsed = parse_metadata(document, issuer)
+        parsed = parse_metadata(document, issuer, https_only=self.settings.is_production)
         if isinstance(parsed, str):
             return Discovery(parsed, None, checked_at, fetched_at)
         return Discovery("ok", parsed, checked_at, fetched_at)
@@ -285,15 +298,20 @@ class OidcProvider:
 
     # --- ID token ---------------------------------------------------------------------------
     async def _key_set(self, metadata: ProviderMetadata, *, refresh: bool) -> KeySet:
-        if refresh or self._keys is None or self._keys_uri != metadata.jwks_uri:
+        """The provider's keys: cached for :data:`JWKS_TTL`, fetched now when
+        ``refresh`` (an unknown ``kid``), when due, or when ``jwks_uri`` changed."""
+        due = self._clock() - self._keys_fetched_at >= JWKS_TTL
+        if refresh or due or self._keys is None or self._keys_uri != metadata.jwks_uri:
+            fetched_at = self._clock()
             try:
                 document = await self._get_json(metadata.jwks_uri)
                 if not isinstance(document, dict) or not isinstance(document.get("keys"), list):
                     raise OidcError("jwks is not a key set")
-                self._keys = KeySet.import_key_set({"keys": document["keys"]})
+                keys = KeySet.import_key_set({"keys": document["keys"]})
             except (httpx.HTTPError, ValueError, JoseError) as exc:
                 raise OidcError("jwks unavailable") from exc
-            self._keys_uri = metadata.jwks_uri
+            self._keys, self._keys_uri, self._keys_fetched_at = keys, metadata.jwks_uri, fetched_at
+            return keys
         return self._keys
 
     async def validate_id_token(

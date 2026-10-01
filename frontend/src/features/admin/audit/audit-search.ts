@@ -81,3 +81,33 @@ export function hasAuditFilters(search: AuditSearch): boolean {
     Boolean(search.action?.length)
   )
 }
+
+/** `YYYY-MM-DD` of the viewer's local day `offset` days from `now`. */
+export function localDay(now: number, offset = 0): string {
+  const date = new Date(now)
+  date.setDate(date.getDate() + offset)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/** Quick ranges in the "When" filter: the last N days, today included. */
+export const DATE_PRESETS = [
+  { label: 'Today', days: 1 },
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+] as const
+
+/** The preset's `from` (open-ended: no `to`). */
+export function presetFrom(days: number, now: number): string {
+  return localDay(now, -(days - 1))
+}
+
+/** The preset a range is, if any (so the chip says "Last 7 days", not "From 25 Sept"). */
+export function matchingPreset(
+  from: string | undefined,
+  to: string | undefined,
+  now: number,
+): (typeof DATE_PRESETS)[number] | undefined {
+  if (!from || (to && to !== localDay(now))) return undefined
+  return DATE_PRESETS.find((preset) => presetFrom(preset.days, now) === from)
+}

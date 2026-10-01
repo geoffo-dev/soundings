@@ -57,8 +57,10 @@ def _api(args: argparse.Namespace) -> int:
         workers=args.workers or settings.workers,
         reload=args.reload,
         reload_dirs=[str(BACKEND_DIR / "app")] if args.reload else None,
-        proxy_headers=True,
-        forwarded_allow_ips=settings.forwarded_allow_ips,
+        # The app resolves X-Forwarded-For itself (app.middleware.ProxyHeadersMiddleware):
+        # uvicorn's handling believes the client's own leftmost entry whenever every
+        # entry is in a trusted range.
+        proxy_headers=False,
         log_config=None,  # app.observability configures JSON logging
         access_log=False,  # replaced by RequestContextMiddleware's PII-free access log
         server_header=False,

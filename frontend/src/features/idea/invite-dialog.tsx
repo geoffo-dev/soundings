@@ -19,7 +19,7 @@ import { Field } from '@/components/ui/field'
 import { toast } from '@/components/ui/toaster'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
-import { ariaKeys, ButtonShortcut } from './button-shortcut'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { dateInputInDays, fromDateInput, latestDueInput, toDateInput, todayInput } from './due-date'
 import { useIdeaPage } from './idea-context'
 import { toUserRef } from './owner-dialog'

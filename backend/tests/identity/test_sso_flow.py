@@ -14,14 +14,15 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from joserfc.jwk import RSAKey
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1 import auth_sso
+from app.auth.login_attempt import LoginAttempt, open_attempt, seal_attempt
 from app.auth.oidc import OidcProvider
-from app.auth.tokens import hash_token
+from app.auth.sealing import unseal
 from app.models.base import utcnow
-from app.models.user import OidcLoginAttempt, User, UserIdentity, UserSession
+from app.models.user import User, UserIdentity, UserSession
 from tests.factories import make_user
 from tests.identity.fake_idp import CLIENT_ID, CLIENT_SECRET, DROP, ISSUER, FakeIdp, hmac_key
 from tests.identity.helpers import (
@@ -83,6 +84,29 @@ def set_cookie_headers(response: httpx.Response) -> dict[str, str]:
     return {header.split("=", 1)[0]: header for header in response.headers.get_list("set-cookie")}
 
 
+def attempt_of(app: FastAPI, client: httpx.AsyncClient) -> LoginAttempt:
+    """The sign-in attempt sealed in the client's ``soundings_oidc`` cookie."""
+    attempt = open_attempt(app.state.settings, client.cookies.get("soundings_oidc"))
+    assert attempt is not None
+    return attempt
+
+
+def stored_id_token(app: FastAPI, stored: str | None) -> str:
+    """The ID token a session row keeps (sealed at rest: review L4)."""
+    assert stored is not None
+    raw = unseal(app.state.settings, "session-id-token", stored)
+    assert raw is not None
+    return raw.decode()
+
+
+def plant_attempt(app: FastAPI, client: httpx.AsyncClient, **changes: Any) -> None:
+    """Re-seal the client's attempt with ``changes`` (as only the server could)."""
+    from dataclasses import replace
+
+    changed = replace(attempt_of(app, client), **changes)
+    client.cookies.set("soundings_oidc", seal_attempt(app.state.settings, changed))
+
+
 # --- Sign-in methods (section 3.1) ------------------------------------------------------------
 @pytest.mark.parametrize(
     ("overrides", "expected"),
@@ -140,7 +164,7 @@ async def test_auth_config(
 
 # --- Starting the flow (section 3.2, GET /auth/login) -------------------------------------------
 async def test_login_redirects_to_the_idp_with_pkce(
-    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp
+    app: FastAPI, client: httpx.AsyncClient, idp: FakeIdp
 ) -> None:
     response = await start(client, "/ideas/CUST-12")
 
@@ -155,20 +179,115 @@ async def test_login_redirects_to_the_idp_with_pkce(
     assert query["code_challenge_method"] == "S256"
     assert len(query["state"]) >= 43  # 256 bits
     assert len(query["nonce"]) >= 43
-    # The browser holds only state: in the URL and an HttpOnly cookie.
+    # The attempt is sealed into an HttpOnly cookie: the browser can't read the
+    # verifier or nonce, and nothing is stored server-side.
     cookie = set_cookie_headers(response)["soundings_oidc"]
-    assert f"soundings_oidc={query['state']};" in cookie
     for attribute in ("HttpOnly", "Max-Age=600", "Path=/", "SameSite=lax"):
         assert attribute in cookie
-    [attempt] = list(await db_session.scalars(select(OidcLoginAttempt)))
-    assert attempt.state_hash == hash_token(query["state"])
+    value = client.cookies["soundings_oidc"]
+    attempt = attempt_of(app, client)
+    assert attempt.state == query["state"]
     assert attempt.nonce == query["nonce"]
     challenge = base64.urlsafe_b64encode(hashlib.sha256(attempt.code_verifier.encode()).digest())
     assert challenge.rstrip(b"=").decode() == query["code_challenge"]
     assert attempt.code_verifier not in location
+    raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    for secret in (attempt.code_verifier, attempt.nonce, attempt.state, "CUST-12"):
+        assert secret not in value
+        assert secret.encode() not in raw
     assert attempt.next_path == "/ideas/CUST-12"
     assert attempt.redirect_uri == query["redirect_uri"]
-    assert attempt.expires_at - attempt.created_at == __import__("datetime").timedelta(minutes=10)
+    remaining = (attempt.expires_at - utcnow()).total_seconds()
+    assert 590 <= remaining <= 600
+
+
+async def test_starting_sign_ins_stores_nothing_and_locks_no_one_out(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    idp: FakeIdp,
+    erin: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review H1: unfinished sign-ins from many addresses can't make SSO unavailable for
+    anyone else (a global cap of live attempts could be filled from ~17 addresses)."""
+    monkeypatch.setattr(auth_sso, "MAX_LIVE_ATTEMPTS", 100, raising=False)  # the old cap
+    for n in range(4):  # 4 addresses x 60 starts (the per-address limit)
+        transport = httpx.ASGITransport(app=app, client=(f"198.51.100.{n}", 1234))
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as other:
+            for _ in range(60):
+                assert (await start(other)).headers["location"].startswith(ISSUER)
+
+    response = await sso_sign_in(client, idp, ERIN)
+
+    assert response.headers["location"] == "/"
+    assert (await client.get("/api/v1/auth/me")).json()["id"] == str(erin.id)
+    tables = set(
+        await db_session.scalars(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
+        )
+    )
+    assert "oidc_login_attempts" not in tables  # nothing to fill
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["flip_a_byte", "truncate", "garbage", "other_purpose", "other_secret_key", "plain_state"],
+)
+async def test_a_forged_or_changed_attempt_cookie_is_refused(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    idp: FakeIdp,
+    erin: User,
+    tamper: str,
+) -> None:
+    from app.auth.sealing import seal
+    from tests.conftest import make_settings
+
+    started = await start(client)
+    callback = idp.authorize(started.headers["location"], ERIN)
+    value = client.cookies["soundings_oidc"]
+    attempt = attempt_of(app, client)
+    match tamper:
+        case "flip_a_byte":
+            raw = bytearray(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+            raw[20] ^= 1
+            forged = base64.urlsafe_b64encode(bytes(raw)).rstrip(b"=").decode()
+        case "truncate":
+            forged = value[:-4]
+        case "garbage":
+            forged = "not-a-sealed-value"
+        case "other_purpose":  # sealed by this server, but for something else
+            forged = seal(app.state.settings, "session-id-token", b'{"s":"x"}')
+        case "other_secret_key":
+            other = make_settings(secret_key="another-secret-key-of-32-characters!")
+            forged = seal_attempt(other, attempt)
+        case "plain_state":  # the old cookie format (just the state)
+            forged = attempt.state
+    client.cookies.set("soundings_oidc", forged)
+
+    response = await client.get(callback)
+
+    assert response.headers["location"] == "/login?error=login_expired"
+    assert (await client.get("/api/v1/auth/me")).status_code == 401
+    assert await denials(db_session) == []  # no attempt to speak of
+
+
+async def test_a_very_long_next_still_fits_in_the_cookie(
+    app: FastAPI, client: httpx.AsyncClient, idp: FakeIdp
+) -> None:
+    from app.auth.login_attempt import MAX_COOKIE_VALUE
+
+    ascii_next = "/" + "x" * 2047
+    await start(client, ascii_next)
+    assert attempt_of(app, client).next_path == ascii_next
+    assert len(client.cookies["soundings_oidc"]) <= MAX_COOKIE_VALUE
+
+    await start(client, "/" + "\u00e9" * 2047)  # 4 KB of UTF-8: too big for a cookie
+
+    assert attempt_of(app, client).next_path == "/"
+    assert len(client.cookies["soundings_oidc"]) <= MAX_COOKIE_VALUE
 
 
 @pytest.mark.parametrize(
@@ -190,13 +309,24 @@ async def test_login_redirects_to_the_idp_with_pkce(
         ("/a\u0085b", "/"),
         ("/api/v1/auth/logout", "/"),
         ("/api", "/"),
-        ("/" + "x" * 2047, "/" + "x" * 2047),
-        ("/" + "x" * 2048, "/"),
+        ("/api?x=1", "/"),
+        pytest.param("/" + "x" * 2047, "/" + "x" * 2047, id="2048-characters"),
+        pytest.param("/" + "x" * 2048, "/", id="2049-characters"),
+        # Review N1: no dot segments (also percent-encoded) and no "//" in the path.
+        ("/..//evil.example.com", "/"),
+        ("/./ideas", "/"),
+        ("/ideas/..", "/"),
+        ("/%2e%2e//evil.example.com", "/"),
+        ("/%2E./ideas", "/"),
+        ("/.%2e/ideas", "/"),
+        ("/ideas//CUST-1", "/"),
+        ("/ideas/CUST-1?q=a//b#x//y", "/ideas/CUST-1?q=a//b#x//y"),  # query and fragment
+        ("/ideas/v1.2/..x", "/ideas/v1.2/..x"),  # dots inside a segment are fine
     ],
 )
 async def test_next_must_be_a_same_origin_spa_path(
+    app: FastAPI,
     client: httpx.AsyncClient,
-    db_session: AsyncSession,
     idp: FakeIdp,
     next_path: str | None,
     kept: str,
@@ -204,7 +334,8 @@ async def test_next_must_be_a_same_origin_spa_path(
     response = await start(client, next_path)
 
     assert response.status_code == 302
-    assert await db_session.scalar(select(OidcLoginAttempt.next_path)) == kept
+    assert attempt_of(app, client).next_path == kept
+    assert auth_sso.safe_next_path(next_path) == kept
 
 
 @pytest.mark.settings(base_urls=["http://ideas.example.com", "http://testserver"])
@@ -221,7 +352,7 @@ async def test_each_configured_host_signs_in_on_itself(
 
 @pytest.mark.settings(base_urls=["http://ideas.example.com"])
 async def test_an_unconfigured_host_goes_to_the_first_base_url_first(
-    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp
+    client: httpx.AsyncClient, idp: FakeIdp
 ) -> None:
     other = await client.get(
         LOGIN, params={"next": "/ideas/CUST-1"}, headers={"Host": "localhost:8000"}
@@ -233,7 +364,6 @@ async def test_an_unconfigured_host_goes_to_the_first_base_url_first(
         == "http://ideas.example.com/api/v1/auth/login?next=%2Fideas%2FCUST-1"
     )
     assert "set-cookie" not in other.headers
-    assert await db_session.scalar(select(func.count()).select_from(OidcLoginAttempt)) == 0
 
 
 @pytest.mark.settings(oidc_issuer=None)
@@ -293,6 +423,53 @@ async def test_discovery_is_cached(client: httpx.AsyncClient, idp: FakeIdp) -> N
     assert idp.calls("openid-configuration") == 1
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    ["authorization_endpoint", "token_endpoint", "jwks_uri", "end_session_endpoint"],
+)
+async def test_production_needs_https_idp_endpoints(endpoint: str) -> None:
+    """Review L5: the issuer is https, but discovery could still point the token
+    request (client secret, code) or the JWKS at plain http."""
+    from tests.conftest import make_settings
+
+    https = {"base_urls": ["https://ideas.example.com"], "oidc_issuer": ISSUER}
+    production = make_settings(
+        environment="production", secret_key="k" * 32, dev_login_enabled=False, **https
+    )
+    fake = FakeIdp()
+    fake.discovery = {**fake.document(), endpoint: "http://idp.example.com/plain"}
+
+    found = await OidcProvider(production, transport=fake.transport()).discover()
+    outside_production = await OidcProvider(
+        make_settings(**https), transport=fake.transport()
+    ).discover()
+
+    assert (found.status, found.metadata) == ("invalid", None)
+    assert outside_production.status == "ok"
+
+
+async def test_signing_keys_are_refreshed_hourly(app: FastAPI, client: httpx.AsyncClient) -> None:
+    """Review L1: a key the IdP has withdrawn stops working within an hour, even when
+    no token with an unknown kid ever arrives."""
+    now = [1000.0]
+    idp = FakeIdp()
+    app.state.oidc_provider = OidcProvider(
+        app.state.settings, transport=idp.transport(), clock=lambda: now[0]
+    )
+    erin = {**ERIN, "sub": "kc-erin-2"}
+    await sso_sign_in(client, idp, erin)  # caches the key set
+    idp.published_keys = [RSAKey.generate_key(2048, auto_kid=True)]  # the old key is withdrawn
+
+    now[0] += 3000  # within the hour: the cached keys still verify
+    within = await sso_sign_in(client, idp, erin)
+    now[0] += 700  # past the hour: fetched again, and the withdrawn key is gone
+    after = await sso_sign_in(client, idp, erin)
+
+    assert within.headers["location"] == "/login?error=no_account"  # verified, then matched
+    assert after.headers["location"] == "/login?error=sso_failed"
+    assert idp.calls("/certs") >= 2
+
+
 async def test_login_starts_are_throttled_per_client(
     app: FastAPI, client: httpx.AsyncClient, idp: FakeIdp
 ) -> None:
@@ -302,36 +479,9 @@ async def test_login_starts_are_throttled_per_client(
     assert statuses[60] == "/login?error=too_many_attempts"
 
 
-async def test_live_attempts_are_capped(
-    client: httpx.AsyncClient,
-    idp: FakeIdp,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    monkeypatch.setattr(auth_sso, "MAX_LIVE_ATTEMPTS", 2)
-
-    responses = [await start(client) for _ in range(3)]
-
-    assert [r.headers["location"].startswith(ISSUER) for r in responses] == [True, True, False]
-    assert responses[2].headers["location"] == "/login?error=sso_unavailable"
-    assert "too many sso sign-ins in progress" in caplog.text
-
-
-async def test_expired_attempts_are_swept_at_the_next_login(
-    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp
-) -> None:
-    await start(client)
-    await db_session.execute(update(OidcLoginAttempt).values(expires_at=utcnow()))
-    await db_session.commit()
-
-    await start(client)
-
-    assert await db_session.scalar(select(func.count()).select_from(OidcLoginAttempt)) == 1
-
-
 # --- The callback: success --------------------------------------------------------------------
 async def test_sso_sign_in(
-    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, erin: User
+    app: FastAPI, client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, erin: User
 ) -> None:
     response = await sso_sign_in(client, idp, ERIN, next_path="/ideas/CUST-12")
 
@@ -350,8 +500,7 @@ async def test_sso_sign_in(
     [session] = list(await db_session.scalars(select(UserSession)))
     assert session.auth_method == "sso"
     assert session.id_token is not None
-    assert session.id_token.count(".") == 2
-    assert await db_session.scalar(select(func.count()).select_from(OidcLoginAttempt)) == 0
+    assert stored_id_token(app, session.id_token).count(".") == 2
     [signed_in] = await audit_entries(db_session, "session.sign_in")
     assert signed_in.actor_id == erin.id
     assert signed_in.details == {
@@ -527,26 +676,33 @@ async def test_a_callback_url_works_only_once(
     cookie = client.cookies["soundings_oidc"]
 
     first = await client.get(callback)
-    client.cookies.set("soundings_oidc", cookie)
+    after_first = client.cookies["soundings_session"]
+    replay_without_cookie = await client.get(callback)  # the callback cleared it
+    client.cookies.set("soundings_oidc", cookie)  # someone kept a copy
     replay = await client.get(callback)
 
     assert first.headers["location"] == "/"
-    assert replay.headers["location"] == "/login?error=login_expired"
+    assert "Max-Age=0" in set_cookie_headers(first)["soundings_oidc"]
+    assert replay_without_cookie.headers["location"] == "/login?error=login_expired"
+    # The IdP accepts each code once, so a kept cookie doesn't help either.
+    assert replay.headers["location"] == "/login?error=sso_failed"
+    assert [reason for reason, *_ in await denials(db_session)] == ["sso_failed"]
+    assert client.cookies["soundings_session"] == after_first  # no second session
+    assert await db_session.scalar(select(func.count()).select_from(UserSession)) == 1
 
 
 async def test_expired_attempt(
-    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp
+    app: FastAPI, client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp
 ) -> None:
     started = await start(client, "/ideas/CUST-1")
-    await db_session.execute(update(OidcLoginAttempt).values(expires_at=utcnow()))
-    await db_session.commit()
+    plant_attempt(app, client, expires_at=utcnow())  # a browser that kept the cookie
     state = query_of(started.headers["location"])["state"]
 
     response = await client.get(CALLBACK, params={"code": "x", "state": state})
 
     assert response.headers["location"] == "/login?error=login_expired&next=%2Fideas%2FCUST-1"
     assert await denials(db_session) == [("login_expired", None, None)]
-    assert await db_session.scalar(select(func.count()).select_from(OidcLoginAttempt)) == 0
+    assert "Max-Age=0" in set_cookie_headers(response)["soundings_oidc"]
 
 
 @pytest.mark.parametrize(
@@ -737,6 +893,7 @@ async def test_deactivated_user_is_refused(
 
 
 async def test_nothing_personal_reaches_the_audit_log_or_logs(
+    app: FastAPI,
     client: httpx.AsyncClient,
     db_session: AsyncSession,
     idp: FakeIdp,
@@ -748,8 +905,7 @@ async def test_nothing_personal_reaches_the_audit_log_or_logs(
     await sso_sign_in(
         client, idp, {"sub": "kc-y", "email": "stranger@example.com", "email_verified": True}
     )
-    token = await db_session.scalar(select(UserSession.id_token))
-    assert token is not None
+    token = stored_id_token(app, await db_session.scalar(select(UserSession.id_token)))
 
     rendered = str([entry.details for entry in await audit_entries(db_session)])
     for secret in (
@@ -765,10 +921,10 @@ async def test_nothing_personal_reaches_the_audit_log_or_logs(
 
 # --- Sign-out with the IdP (section 3.9) --------------------------------------------------------
 async def test_logout_redirect_ends_the_sso_session_at_the_idp(
-    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, erin: User
+    app: FastAPI, client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, erin: User
 ) -> None:
     await sso_sign_in(client, idp, ERIN)
-    id_token = await db_session.scalar(select(UserSession.id_token))
+    id_token = stored_id_token(app, await db_session.scalar(select(UserSession.id_token)))
 
     response = await client.post(
         LOGOUT, headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"}
@@ -796,6 +952,36 @@ async def test_logout_redirect_without_a_stored_id_token(
 ) -> None:
     await sso_sign_in(client, idp, ERIN)
     await db_session.execute(update(UserSession).values(id_token=None))
+    await db_session.commit()
+
+    response = await client.post(LOGOUT)
+
+    assert set(query_of(response.headers["location"])) == {"client_id", "post_logout_redirect_uri"}
+
+
+async def test_the_id_token_is_sealed_at_rest(
+    app: FastAPI, client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, erin: User
+) -> None:
+    """Review L4: the stored ID token (email, name, groups, employee_no) is unreadable
+    without the secret key; sign-out still sends it as id_token_hint."""
+    await sso_sign_in(client, idp, {**ERIN, "groups": ["/tools"], "employee_no": "E1005"})
+    stored = await db_session.scalar(select(UserSession.id_token))
+    assert stored is not None
+    id_token = stored_id_token(app, stored)
+
+    payload = id_token.split(".")[1]
+    assert payload not in stored
+    assert "." not in stored
+    raw = base64.urlsafe_b64decode(stored + "=" * (-len(stored) % 4))
+    for secret in (b"erin@example.com", b"E1005", b"/tools", payload.encode()):
+        assert secret not in raw
+
+
+async def test_a_legacy_plaintext_id_token_is_not_sent(
+    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, erin: User
+) -> None:
+    await sso_sign_in(client, idp, ERIN)
+    await db_session.execute(update(UserSession).values(id_token="aaa.bbb.ccc"))
     await db_session.commit()
 
     response = await client.post(LOGOUT)

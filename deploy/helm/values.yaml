@@ -31,12 +31,20 @@ image:
 baseUrls:
   - http://localhost:8000
 
-# -- IPs/CIDRs whose X-Forwarded-For/-Proto headers are trusted (your ingress controller
-# or gateway). The defaults are the private ranges clusters normally use for pods.
+# -- IPs/CIDRs of the proxies in front of Soundings (your ingress controller or gateway)
+# whose X-Forwarded-For/-Proto headers are believed. The defaults are the private ranges
+# clusters normally use for pods: narrow them to your ingress controller's pods, and set
+# networkPolicy.ingressFrom so other pods can't reach the API directly.
 trustedProxies:
   - 10.0.0.0/8
   - 172.16.0.0/12
   - 192.168.0.0/16
+
+# -- How many trusted proxies append to X-Forwarded-For: 1 for an ingress controller or
+# gateway, 2 with an L7 load balancer in front of it that also appends. The client
+# address (used by the sign-in throttles) is that many entries from the right; anything
+# further left is whatever the client sent and is ignored.
+trustedProxyHops: 1
 
 # -- DEBUG | INFO | WARNING | ERROR. Logs are JSON on stdout and never contain PII.
 logLevel: INFO
@@ -52,7 +60,10 @@ demo:
   # the database has projects, so upgrades keep your changes.
   seed: false
 
-# Sign-in sessions (server-side; the cookie holds only a random token).
+# Sign-in sessions (server-side; the cookie holds only a random token). Removing someone
+# in the IdP stops new sign-ins only: deactivate them in Settings > Users (or use "Sign
+# out everywhere") to end running sessions at once. Shorten maxAge (e.g. P1D) to make
+# IdP changes (removals, group changes) apply sooner without that.
 sessions:
   # -- A session ends after this long without a request: ISO 8601 duration or seconds.
   idleTimeout: PT12H
@@ -361,9 +372,14 @@ externalDatabase:
   sslmode: require
 
 networkPolicy:
-  enabled: false
-  # -- Who may reach the API's HTTP port, as NetworkPolicy peers (e.g. your ingress
-  # controller's namespace). Empty: any source. Pods of this release are always allowed.
+  # -- Ingress policies for the API, the worker (nothing) and the bundled Postgres (this
+  # release's pods only). Enforced by most CNIs; ignored where NetworkPolicy isn't.
+  enabled: true
+  # -- Who may reach the API's HTTP port, as NetworkPolicy peers. Set your ingress
+  # controller's namespace, e.g. [{namespaceSelector: {matchLabels:
+  # {kubernetes.io/metadata.name: ingress-nginx}}}]. Empty: any source, so any pod in
+  # the cluster can reach the API directly and choose its own X-Forwarded-For. Pods of
+  # this release are always allowed.
   ingressFrom: []
   # -- Who may scrape the metrics port (e.g. the Prometheus namespace), as peers.
   # Empty: any source. Pods of this release are always allowed.

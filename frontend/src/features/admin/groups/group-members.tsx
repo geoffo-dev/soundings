@@ -58,36 +58,34 @@ export function GroupMembers({ group }: { group: Group }) {
   const counts =
     group.member_count === 0
       ? 'Nobody yet.'
-      : `${group.member_count} active ${group.member_count === 1 ? 'member' : 'members'}: ${group.manual_member_count} added by hand, ${group.synced_member_count} synced from the identity provider.`
+      : `${group.member_count} active: ${group.manual_member_count} added by hand, ${group.synced_member_count} synced from the identity provider.`
 
   return (
-    <AdminSection
-      id="members"
-      title="Members"
-      description={`${counts} Deactivated people are listed but get no access.`}
-    >
+    <AdminSection id="members" title="Members" description={counts}>
       <form
-        className="flex flex-col gap-2 rounded-lg border bg-background p-3 sm:flex-row sm:items-end"
+        className="flex flex-col gap-2 rounded-lg border bg-background p-3"
         onSubmit={(event) => {
           event.preventDefault()
           submit()
         }}
       >
-        <Field label="Add a person by hand" className="min-w-0 flex-1">
-          <PersonPicker
-            ref={pickerRef}
-            value={person}
-            onChange={setPerson}
-            exclude={manualIds}
-            excludeHint="Already added"
-            placeholder="Search by name or email…"
-          />
-        </Field>
-        <Button type="submit" variant="secondary" disabled={!person} loading={add.isPending}>
-          Add
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <Field label="Add a person by hand" className="min-w-0 flex-1">
+            <PersonPicker
+              ref={pickerRef}
+              value={person}
+              onChange={setPerson}
+              exclude={manualIds}
+              excludeHint="Already added"
+              placeholder="Search by name or email…"
+            />
+          </Field>
+          <Button type="submit" variant="secondary" disabled={!person} loading={add.isPending}>
+            Add
+          </Button>
+        </div>
+        <p className="text-xs text-muted">Sign-in sync never removes people added by hand.</p>
       </form>
-      <p className="text-sm text-muted">Sign-in sync never touches people added by hand.</p>
 
       {(group.member_count > 10 || q) && (
         <SearchField

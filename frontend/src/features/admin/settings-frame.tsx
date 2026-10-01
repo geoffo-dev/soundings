@@ -27,11 +27,9 @@ export function SettingsFrame({ children }: { children: ReactNode }) {
     <Page>
       <PageHeader
         title="Settings"
-        description={
-          me.is_platform_admin
-            ? 'Your account, and who can sign in and what they can reach.'
-            : 'Your account, appearance and projects.'
-        }
+        // Platform admins get the section row instead: it already says what's here,
+        // and each page has its own heading and one-line purpose.
+        description={me.is_platform_admin ? undefined : 'Your account, appearance and projects.'}
       />
       <div className="flex flex-col gap-6">
         {me.is_platform_admin && <SettingsNav />}

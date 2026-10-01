@@ -4,9 +4,10 @@
 * ``soundings_csrf``: the session's CSRF token, readable by the SPA, which echoes it
   in ``X-CSRF-Token`` on unsafe methods (double submit, checked against the session
   row). Same attributes except ``HttpOnly``.
-* ``soundings_oidc``: during an SSO sign-in only, the ``state`` that binds the
-  login attempt to this browser. ``HttpOnly``, ``SameSite=Lax`` (sent on the IdP's
-  top-level redirect back), ``Max-Age=600``.
+* ``soundings_oidc``: during an SSO sign-in only, the sign-in attempt (state, nonce,
+  PKCE verifier, redirect URI, next path) sealed with the secret key
+  (:mod:`app.auth.login_attempt`), which binds it to this browser. ``HttpOnly``,
+  ``SameSite=Lax`` (sent on the IdP's top-level redirect back), ``Max-Age=600``.
 
 **When cookies are Secure** (production, any HTTPS request: :func:`cookie_secure`)
 they are named ``__Host-soundings_session``, ``__Host-soundings_csrf`` and
@@ -48,7 +49,7 @@ CSRF_COOKIE: Final = "soundings_csrf"
 """Readable (non-HttpOnly) cookie with the session's CSRF token (plain-http name)."""
 
 OIDC_COOKIE: Final = "soundings_oidc"
-"""HttpOnly cookie holding an SSO sign-in's ``state`` (plain-http name)."""
+"""HttpOnly cookie holding an SSO sign-in's sealed attempt (plain-http name)."""
 
 SECURE_PREFIX: Final = "__Host-"
 """Prefix of every cookie name when cookies are Secure."""
@@ -134,9 +135,17 @@ def clear_session_cookies(response: Response, request: Request, settings: Settin
     _clear(response, request, settings, CSRF_COOKIE, httponly=False)
 
 
-def set_oidc_cookie(response: Response, request: Request, settings: Settings, state: str) -> None:
+def set_oidc_cookie(
+    response: Response, request: Request, settings: Settings, sealed_attempt: str
+) -> None:
     _set(
-        response, request, settings, OIDC_COOKIE, state, max_age=OIDC_COOKIE_MAX_AGE, httponly=True
+        response,
+        request,
+        settings,
+        OIDC_COOKIE,
+        sealed_attempt,
+        max_age=OIDC_COOKIE_MAX_AGE,
+        httponly=True,
     )
 
 

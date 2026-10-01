@@ -18,6 +18,14 @@ async function openMembers(page: Page, slug = 'internal-tools') {
   await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
 }
 
+/** "Everyone with access" is folded away while groups have a role (it repeats People). */
+async function showAccess(page: Page) {
+  const toggle = page.getByRole('button', { name: /^Everyone with access/ })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+}
+
 const groups = (page: Page) => page.getByRole('list', { name: /^\d+ groups?$/ })
 const groupRow = (page: Page, name: string) =>
   groups(page).getByRole('listitem').filter({ hasText: name })
@@ -27,6 +35,12 @@ const accessRow = (page: Page, name: string) =>
 
 test('shows who has access and why', async ({ page }) => {
   await openMembers(page)
+  // Groups first: each covers many people.
+  const headings = page.getByRole('main').getByRole('heading', { level: 3 })
+  await expect(headings.nth(0)).toHaveText('Groups')
+  await expect(headings.nth(1)).toHaveText('People')
+  await expect(access(page)).toHaveCount(0)
+  await showAccess(page)
   await expect(groupRow(page, 'Tools members')).toContainText('Group · 6 people')
   await expect(page.getByText('7 people, each with the highest of their roles')).toBeVisible()
   await expect(accessRow(page, 'Kofi Boateng')).toContainText('Member')
@@ -40,6 +54,7 @@ test('shows who has access and why', async ({ page }) => {
 
 test('adds a group with a role, changes it and removes it, with Undo', async ({ page }) => {
   await openMembers(page)
+  await showAccess(page)
   await page.getByRole('radio', { name: 'Group' }).click()
   const picker = page.getByRole('combobox', { name: 'Add a group' })
   await expect(picker).toBeVisible()
@@ -83,6 +98,7 @@ test('adds a group with a role, changes it and removes it, with Undo', async ({ 
 
 test('the last admin is protected, whether direct or through a group', async ({ page }) => {
   await openMembers(page)
+  await showAccess(page)
   const people = page.getByRole('list', { name: /^\d+ members$/ })
   const alice = people.getByRole('listitem').filter({ hasText: 'Alice Anders' })
   await expect(alice.getByRole('combobox', { name: 'Role of Alice Anders' })).toBeDisabled()
@@ -116,6 +132,7 @@ test('members see the same lists, read-only', async ({ page }) => {
     page.getByText('Everyone signed in can view this project, because it is internal.'),
   ).toBeVisible()
   // Nine people: the list can be searched.
+  await showAccess(page)
   await page.getByRole('textbox', { name: 'Find someone with access' }).fill('kofi')
   await expect(access(page).getByRole('listitem')).toHaveCount(1)
   await expect(accessRow(page, 'Kofi Boateng')).toContainText('via Innovation members')
@@ -142,6 +159,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme })
     for (const slug of ['internal-tools', 'customer-innovation']) {
       await openMembers(page, slug)
+      await showAccess(page)
       // Alice manages Internal Tools (the add form, on Group) and only views the other.
       if (slug === 'internal-tools') await page.getByRole('radio', { name: 'Group' }).click()
       expect(await seriousViolations(page), slug).toEqual([])
@@ -154,6 +172,7 @@ test.describe('on a phone (390px)', () => {
 
   test('the members tab fits, with roles and their sources under each name', async ({ page }) => {
     await openMembers(page)
+    await showAccess(page)
     await page.getByRole('radio', { name: 'Group' }).click()
     const overflow = await page.evaluate(() => {
       const main = document.querySelector('main')

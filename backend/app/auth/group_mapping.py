@@ -38,7 +38,7 @@ from app.models.enums import GroupSyncMode, ProjectRole
 from app.models.group import Group, GroupIdpValue, GroupMembership, ProjectGroupGrant
 from app.models.project import Project, ProjectMember
 from app.models.user import User
-from app.schemas.admin_users import RESERVED_EMAIL_DOMAIN
+from app.schemas.admin_users import is_reserved_email
 from app.schemas.groups import (
     GroupRef,
     MappingTestGroup,
@@ -185,11 +185,7 @@ def email_from_claims(claims: Mapping[str, Any]) -> EmailClaim:
     if not isinstance(raw, str):
         return EmailClaim(address=None, verified=False)
     address = raw.strip()
-    if (
-        "@" not in address
-        or len(address) > EMAIL_MAX_LENGTH
-        or address.lower().endswith(RESERVED_EMAIL_DOMAIN)
-    ):
+    if "@" not in address or len(address) > EMAIL_MAX_LENGTH or is_reserved_email(address):
         return EmailClaim(address=None, verified=False)
     flag = claims.get("email_verified")
     verified = flag is True or (isinstance(flag, str) and flag.strip().lower() == "true")

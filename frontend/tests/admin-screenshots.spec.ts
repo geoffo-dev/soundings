@@ -51,7 +51,8 @@ const SHOTS: Shot[] = [
     url: '/settings/groups/90000000-0000-4000-8000-000000000003',
     heading: 'Tools members',
     open: async (page) => {
-      const box = page.getByRole('region', { name: 'Test mapping' })
+      await page.getByRole('button', { name: 'Test mapping' }).click()
+      const box = page.getByRole('dialog', { name: 'Test mapping' })
       await box
         .getByRole('textbox', { name: 'Claims' })
         .fill(JSON.stringify({ sub: 'k-2', groups: ['/innovation/members', '/viewers'] }, null, 2))
@@ -61,7 +62,6 @@ const SHOTS: Shot[] = [
       await box.getByRole('button', { name: 'Test mapping' }).click()
       const result = box.getByRole('region', { name: 'Test result' })
       await expect(result).toBeVisible()
-      await box.scrollIntoViewIfNeeded()
     },
   },
   { name: 'admin-sso', url: '/settings/sso', heading: 'Sign-in (SSO)' },

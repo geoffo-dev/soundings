@@ -2,13 +2,16 @@
 3.2 and 3.8).
 
 In-process sliding windows: simple, no table or job, and enough for what they guard.
-``GET /auth/login`` (60 starts a minute, it writes a row) and break-glass failures
-(5 per 15 minutes, against 16+ character passwords). With several API replicas the
+``GET /auth/login`` (60 starts a minute; it stores nothing, but each start mints a
+sealed cookie and an IdP redirect) and break-glass failures (5 per 15 minutes, against
+16+ character passwords). With several API replicas the
 limits multiply (contract section 6); a restart forgets them, which costs an attacker
 nothing they couldn't get from a second IP address anyway.
 
-The client IP is uvicorn's (``request.client``), which honours the trusted proxies'
-``X-Forwarded-For``. IPv6 addresses count per /64: one host usually owns a whole /64.
+The client IP is ``request.client``, which honours trusted proxies' ``X-Forwarded-For``
+only as far as they appended to it (:func:`app.middleware.forwarded_client`), so a
+client can't pick its own key. IPv6 addresses count per /64: one host usually owns a
+whole /64. A client that isn't an IP address (a unix socket) shares one key.
 """
 
 from __future__ import annotations
@@ -34,12 +37,13 @@ MAX_KEYS: Final = 50_000
 
 
 def client_key(request: Request) -> str:
-    """The throttle key: the client IPv4 address, or its IPv6 /64."""
+    """The throttle key: the client IPv4 address, or its IPv6 /64; ``unknown`` for
+    anything that isn't an IP address (never a value a client chose)."""
     host = request.client.host if request.client else ""
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        return host or "unknown"
+        return "unknown"
     if isinstance(address, ipaddress.IPv6Address):
         if address.ipv4_mapped is not None:
             return str(address.ipv4_mapped)

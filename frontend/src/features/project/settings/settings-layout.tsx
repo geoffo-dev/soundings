@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -151,13 +151,10 @@ export function FormActions({
         variant={dirty ? 'primary' : 'secondary'}
         loading={saving}
         className={cn(!dirty && 'text-muted')}
+        aria-keyshortcuts={ariaKeys(SHORTCUTS.saveSettings.keys)}
       >
         {saveLabel}
-        <KbdShortcut
-          keys={SHORTCUTS.saveSettings.keys}
-          tone={dirty ? 'accent' : 'default'}
-          className="ml-1 hidden sm:inline-flex"
-        />
+        <ButtonShortcut keys={SHORTCUTS.saveSettings.keys} tone={dirty ? 'accent' : 'default'} />
       </Button>
     </div>
   )

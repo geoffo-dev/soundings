@@ -11,6 +11,7 @@ guards.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from datetime import timedelta
@@ -138,7 +139,21 @@ class Settings(DatabaseSettings):
     )
     trusted_proxies: Annotated[list[str], NoDecode] = Field(
         default=["127.0.0.1"],
-        description="IPs/CIDRs whose X-Forwarded-* headers are trusted ('*' = all).",
+        description=(
+            "IPs/CIDRs of the proxies in front of the app (the ingress controller) whose "
+            "X-Forwarded-For/-Proto headers are believed ('*' = any peer)."
+        ),
+    )
+    trusted_proxy_hops: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description=(
+            "How many trusted proxies append to X-Forwarded-For in front of the app: 1 "
+            "for an ingress controller, 2 with a load balancer in front of it that also "
+            "appends. The client is that many entries from the right (fewer if one of "
+            "them is not a trusted proxy); entries further left are the client's own."
+        ),
     )
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
@@ -253,6 +268,20 @@ class Settings(DatabaseSettings):
     @classmethod
     def _parse_list(cls, value: object) -> object:
         return _split_csv(value)
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _validate_trusted_proxies(cls, value: list[str]) -> list[str]:
+        for entry in value:
+            if entry == "*":
+                continue
+            try:
+                ipaddress.ip_network(entry, strict=False)
+            except ValueError:
+                raise ValueError(
+                    f"trusted_proxies must be IP addresses, CIDR networks or '*': {entry!r}"
+                ) from None
+        return value
 
     @field_validator("oidc_issuer")
     @classmethod
@@ -415,11 +444,6 @@ class Settings(DatabaseSettings):
                 if urlsplit(url).netloc == wanted:
                     return url
         return self.base_urls[0]
-
-    @property
-    def forwarded_allow_ips(self) -> str:
-        """``trusted_proxies`` in the comma-separated form uvicorn expects."""
-        return ",".join(self.trusted_proxies)
 
 
 @lru_cache

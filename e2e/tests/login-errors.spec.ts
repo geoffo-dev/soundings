@@ -229,11 +229,11 @@ test.describe('break-glass admin', () => {
     await page.goto('/login')
     const form = page.getByRole('form', { name: 'Break-glass admin' })
     await form.getByRole('textbox', { name: 'Username' }).fill(BREAK_GLASS.username)
-    await form.getByLabel('Password').fill(`${BREAK_GLASS.password}-wrong`)
+    await form.getByLabel('Password', { exact: true }).fill(`${BREAK_GLASS.password}-wrong`)
     await form.getByRole('button', { name: 'Sign in' }).click()
     await expect(form.getByRole('alert')).toContainText('That username and password don’t match')
 
-    await form.getByLabel('Password').fill(BREAK_GLASS.password)
+    await form.getByLabel('Password', { exact: true }).fill(BREAK_GLASS.password)
     await form.getByRole('button', { name: 'Sign in' }).click()
     await expect(
       page.getByRole('status').filter({ hasText: 'Signed in with the break-glass account.' }),

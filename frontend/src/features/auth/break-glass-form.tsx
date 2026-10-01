@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 
 import { safeNextPath } from './session'
 
@@ -65,6 +66,16 @@ export function breakGlassProblem(error: unknown): FormProblem {
 }
 
 /**
+ * Where a break-glass sign-in lands: the page it was sent from, or else the
+ * sign-in settings (setting up single sign-on is what the account is for; My
+ * work would only say "you're not in any projects yet").
+ */
+export function breakGlassLanding(next: string | undefined): string {
+  const target = safeNextPath(next)
+  return target === '/' ? '/settings/sso' : target
+}
+
+/**
  * The break-glass admin form (contract-phase2 §3.8): only shown while it is
  * available (before single sign-on is configured). Credentials come from the
  * Kubernetes Secret; every attempt is audited and throttled per network address.
@@ -98,7 +109,7 @@ export function BreakGlassForm({ next, headingId }: { next?: string; headingId: 
     login.mutate(
       { username, password },
       {
-        onSuccess: () => void navigate({ to: safeNextPath(next), replace: true }),
+        onSuccess: () => void navigate({ to: breakGlassLanding(next), replace: true }),
         onError: (error) => {
           if (isApiError(error) && error.code === 'too_many_attempts') {
             setLockedUntil(Date.now() + (error.retryAfterSeconds ?? 15 * 60) * 1000)
@@ -145,9 +156,8 @@ export function BreakGlassForm({ next, headingId }: { next?: string; headingId: 
         />
       </Field>
       <Field label="Password" error={errors.password} id="break-glass-password">
-        <Input
+        <PasswordInput
           ref={passwordRef}
-          type="password"
           value={password}
           autoComplete="current-password"
           maxLength={1024}

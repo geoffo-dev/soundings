@@ -18,7 +18,7 @@ The `soundings` command (`uv run soundings --help`):
 
 | Command | What it does |
 |---|---|
-| `soundings api [--host --port --workers --reload]` | uvicorn with proxy headers trusted from `SOUNDINGS_TRUSTED_PROXIES`; also starts the metrics listener (below) |
+| `soundings api [--host --port --workers --reload]` | uvicorn; the app believes `X-Forwarded-For`/`-Proto` only from `SOUNDINGS_TRUSTED_PROXIES`, and only the `SOUNDINGS_TRUSTED_PROXY_HOPS` entries they appended (`app/middleware.py`); also starts the metrics listener (below) |
 | `soundings worker [--concurrency N]` | procrastinate worker; stops gracefully on SIGTERM |
 | `soundings migrate` | `alembic upgrade head` (app tables **and** procrastinate schema); idempotent. Reads only the database settings: no `SECRET_KEY` needed |
 | `soundings wait-for-db [--timeout N]` | polls until Postgres answers `SELECT 1` (default 60 s); exit 1 on timeout. For init containers and scripts |
@@ -52,7 +52,8 @@ can migrate; `alembic` run from `backend/` uses the same directory
 trusted hosts), `SECRET_KEY` (32+ chars, required in production for the API and
 worker, not for `migrate`/`wait-for-db`), `DEV_LOGIN_ENABLED` (refused in
 production), `ENVIRONMENT` (`development`/`test`/`production`), `STATIC_DIR`,
-`LOG_LEVEL`, `TRUSTED_PROXIES` (IPs/CIDRs or `*`), `HOST`, `PORT`, `WORKERS`,
+`LOG_LEVEL`, `TRUSTED_PROXIES` (IPs/CIDRs or `*`), `TRUSTED_PROXY_HOPS` (default 1:
+how many of them append to `X-Forwarded-For`), `HOST`, `PORT`, `WORKERS`,
 `METRICS_PORT` (default 9090; 0 = none), `WORKER_CONCURRENCY`, `OTEL_ENDPOINT`
 (OTLP/HTTP base URL; needs the `otel` extra), `SESSION_IDLE_TIMEOUT` (default 12
 hours) and `SESSION_MAX_AGE` (default 7 days; seconds or ISO 8601 such as `PT8H`),

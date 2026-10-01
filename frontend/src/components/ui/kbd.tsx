@@ -59,3 +59,38 @@ export function KbdShortcut({
     </span>
   )
 }
+
+/**
+ * A shortcut hint inside a button ("Create group  Ctrl ↵"), on the button's
+ * fill. Hidden from assistive tech (give the button `aria-keyshortcuts`, see
+ * `ariaKeys`) and wherever there's probably no keyboard: below `sm` and on
+ * touch-first devices (coarse primary pointer).
+ */
+export function ButtonShortcut({
+  keys,
+  tone = 'accent',
+  className,
+}: {
+  keys: string
+  tone?: KbdTone
+  className?: string
+}) {
+  return (
+    <KbdShortcut
+      keys={keys}
+      aria-hidden="true"
+      tone={tone}
+      className={cn('ml-1 hidden sm:pointer-fine:inline-flex', className)}
+    />
+  )
+}
+
+/** `aria-keyshortcuts` for the registry's key syntax ("e" → "E", "mod+enter" → both platforms). */
+export function ariaKeys(keys: string): string {
+  if (keys.startsWith('mod+')) {
+    const rest = keys.slice('mod+'.length)
+    const key = rest === 'enter' ? 'Enter' : rest.toUpperCase()
+    return `Control+${key} Meta+${key}`
+  }
+  return keys.toUpperCase()
+}

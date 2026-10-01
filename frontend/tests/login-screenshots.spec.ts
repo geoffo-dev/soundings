@@ -66,7 +66,7 @@ test.describe('signed out', () => {
     await page.setViewportSize(VIEWPORTS.desktop)
     await page.goto('/login')
     await page.getByRole('textbox', { name: 'Username' }).fill('break-glass')
-    await page.getByLabel('Password').fill('wrong')
+    await page.getByLabel('Password', { exact: true }).fill('wrong')
     await page.keyboard.press('Enter')
     await expect(page.getByRole('alert')).toBeVisible()
     await capture(page, 'login-break-glass-errors-1440-dark')
@@ -107,7 +107,8 @@ for (const [name, slug, viewport, colorScheme] of [
     await page.emulateMedia({ colorScheme })
     await page.setViewportSize({ ...VIEWPORTS[viewport], height: 2000 })
     await page.goto(`/p/${slug}/settings?tab=members`)
-    await expect(page.getByRole('heading', { name: 'Everyone with access' })).toBeVisible()
+    await page.getByRole('button', { name: /^Everyone with access/ }).click()
+    await expect(page.getByRole('list', { name: 'Everyone with access' })).toBeVisible()
     await capture(page, name)
   })
 }

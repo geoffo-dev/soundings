@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { KeyRound, Lock, LockOpen } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -28,8 +29,7 @@ export function SsoPage() {
         title="Sign-in (SSO)"
         description={
           <>
-            How people sign in. Set in the Helm values (<Code>oidc.*</Code>,{' '}
-            <Code>breakGlass.*</Code>) and shown here read-only; secrets are never shown.
+            Set in the Helm values (<Code>oidc.*</Code>); read-only here.
           </>
         }
       />
@@ -81,6 +81,8 @@ function SsoDetails({ config }: { config: SsoConfig }) {
           </Callout>
         )}
       </div>
+
+      {!config.enabled && <SetupChecklist />}
 
       {config.enabled && (
         <AdminSection id="provider" title="Identity provider">
@@ -156,6 +158,23 @@ function SsoDetails({ config }: { config: SsoConfig }) {
         )}
       </AdminSection>
 
+      {config.enabled && <SignInRules config={config} />}
+
+      <AdminSection
+        id="break-glass"
+        title="Break-glass account"
+        description="An emergency platform admin whose credentials come from the deployment (a Kubernetes Secret with the Helm chart). Every use is in the audit log."
+      >
+        <BreakGlass config={config} />
+      </AdminSection>
+    </div>
+  )
+}
+
+/** How sign-in finds the account and syncs groups: only meaningful once SSO is configured. */
+function SignInRules({ config }: { config: SsoConfig }) {
+  return (
+    <>
       <AdminSection
         id="matching"
         title="Finding the account"
@@ -182,7 +201,7 @@ function SsoDetails({ config }: { config: SsoConfig }) {
           </Step>
           {config.external_id_claim && (
             <li className="px-4 py-3">
-              <Callout tone="warning" title="Only an attribute your identity provider’s admins set">
+              <Callout tone="neutral" title="Only an attribute your identity provider’s admins set">
                 Whoever can choose the value of <Code>{config.external_id_claim}</Code> can sign in
                 as the pre-created user who has it, platform admins included. In Keycloak, make the
                 attribute admin-editable only and keep unmanaged attributes off; in Entra ID use{' '}
@@ -223,15 +242,42 @@ function SsoDetails({ config }: { config: SsoConfig }) {
           </Row>
         </dl>
       </AdminSection>
+    </>
+  )
+}
 
-      <AdminSection
-        id="break-glass"
-        title="Break-glass account"
-        description="An emergency platform admin whose credentials come from the deployment (a Kubernetes Secret with the Helm chart). Every use is in the audit log."
-      >
-        <BreakGlass config={config} />
-      </AdminSection>
-    </div>
+/** With no identity provider yet: what to do, in order (README "Single sign-on" has the details). */
+function SetupChecklist() {
+  return (
+    <AdminSection
+      id="setup"
+      title="Set up single sign-on"
+      description="Three steps. Until the last one, platform admins sign in with the break-glass account."
+    >
+      <ol className="flex flex-col divide-y divide-subtle rounded-lg border">
+        <Step n={1} title="Register Soundings with your identity provider" on={null}>
+          Create an OpenID Connect client (authorization code flow with PKCE) and add the redirect
+          URIs below for every address people use.
+        </Step>
+        <Step n={2} title="Prepare access" on={null}>
+          Add people in{' '}
+          <Link to="/settings/users" className="text-accent underline underline-offset-4">
+            Users
+          </Link>{' '}
+          and map{' '}
+          <Link to="/settings/groups" className="text-accent underline underline-offset-4">
+            Groups
+          </Link>{' '}
+          to your identity provider’s groups, so everyone gets the right projects at their first
+          sign-in.
+        </Step>
+        <Step n={3} title="Set the Helm values and upgrade" on={null}>
+          <Code>oidc.issuer</Code>, <Code>oidc.clientId</Code> and the client secret (
+          <Code>oidc.existingSecret</Code>), then <Code>helm upgrade</Code>. Break-glass sign-in
+          turns off as soon as the issuer is set.
+        </Step>
+      </ol>
+    </AdminSection>
   )
 }
 
@@ -327,10 +373,9 @@ function StatusCallout({ config }: { config: SsoConfig }) {
   if (!config.enabled) {
     return (
       <Callout tone="warning" title="Single sign-on isn’t configured">
-        Set <Code>oidc.issuer</Code> in the Helm values.
         {config.break_glass.available
-          ? ' Until then, platform admins sign in with the break-glass account.'
-          : ''}
+          ? 'Nobody can sign in with your organisation’s accounts yet: only the break-glass account works.'
+          : 'Nobody can sign in with your organisation’s accounts yet.'}
       </Callout>
     )
   }
@@ -367,7 +412,7 @@ function BreakGlass({ config }: { config: SsoConfig }) {
   const { enabled, credentials_set: credentials, available } = config.break_glass
   if (available) {
     return (
-      <Callout tone="warning" title="Available" icon={<KeyRound />}>
+      <Callout tone="neutral" title="Available" icon={<KeyRound />}>
         Single sign-on isn’t configured, so the break-glass account can sign in. It turns off as
         soon as <Code>oidc.issuer</Code> is set.
       </Callout>

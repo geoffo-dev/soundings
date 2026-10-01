@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { useSsoConfig, useTestGroupMapping } from '@/api/admin'
 import { describeError, hasErrorCode } from '@/api/errors'
@@ -36,19 +36,37 @@ function exampleClaims(claim: string | null): string {
   return JSON.stringify(body, null, 2)
 }
 
+/** What's typed into the box: kept by the page, so closing the sheet doesn't lose it. */
+export interface MappingTestDraft {
+  claims: string
+  person: UserSearchResult | null
+}
+
+export const EMPTY_MAPPING_TEST: MappingTestDraft = { claims: '', person: null }
+
 /**
  * The "Test mapping" box (contract-phase2 §3.12): paste a claim set (a decoded
  * ID token), optionally pick a person, and see what signing in would do: the
  * values found, the groups they'd join, leave or stay in (diff-style), and the
  * project roles that result. Same code as sign-in on the server; nothing is
- * stored or logged.
+ * stored or logged. Shown in the "Test mapping" sheet (mapping-test-sheet.tsx).
  */
-export function MappingTestPanel({ highlightGroupId }: { highlightGroupId?: string }) {
+export function MappingTestPanel({
+  draft,
+  onDraftChange,
+  highlightGroupId,
+}: {
+  draft: MappingTestDraft
+  onDraftChange: (draft: MappingTestDraft) => void
+  highlightGroupId?: string
+}) {
   const id = useId()
   const sso = useSsoConfig()
   const test = useTestGroupMapping()
-  const [claims, setClaims] = useState('')
-  const [person, setPerson] = useState<UserSearchResult | null>(null)
+  const { claims, person } = draft
+  const setClaims = (next: string) => onDraftChange({ ...draft, claims: next })
+  const setPerson = (next: UserSearchResult | null) => onDraftChange({ ...draft, person: next })
+  const claimsRef = useRef<HTMLTextAreaElement>(null)
   const [inputError, setInputError] = useState<string | null>(null)
   const [ran, setRan] = useState<{ claims: string; personId: string | null } | null>(null)
   const result = test.data
@@ -58,6 +76,8 @@ export function MappingTestPanel({ highlightGroupId }: { highlightGroupId?: stri
     const parsed = parseClaims(claims)
     if (!parsed.ok) {
       setInputError(parsed.message)
+      // Straight to the field to fix (the message is its description).
+      claimsRef.current?.focus()
       return
     }
     setInputError(null)
@@ -105,11 +125,12 @@ export function MappingTestPanel({ highlightGroupId }: { highlightGroupId?: stri
           id={`${id}-claims`}
         >
           <Textarea
+            ref={claimsRef}
             value={claims}
             rows={7}
             spellCheck={false}
             autoCapitalize="none"
-            placeholder={'{\n  "sub": "…",\n  "groups": ["/innovation/members"]\n}'}
+            placeholder="Paste the claims as JSON…"
             className="font-mono text-sm sm:text-sm"
             onChange={(event) => {
               setClaims(event.target.value)
@@ -135,7 +156,7 @@ export function MappingTestPanel({ highlightGroupId }: { highlightGroupId?: stri
                 Clear person
               </Button>
             )}
-            <Button type="submit" variant="secondary" loading={test.isPending}>
+            <Button type="submit" variant="primary" loading={test.isPending}>
               Test mapping
             </Button>
           </div>

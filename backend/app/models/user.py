@@ -1,4 +1,4 @@
-"""Users, their sign-in identities and external IDs, sessions and OIDC login attempts."""
+"""Users, their sign-in identities and external IDs, and sessions."""
 
 from __future__ import annotations
 
@@ -135,7 +135,8 @@ class UserSession(UUIDPrimaryKeyMixin, Base):
     # How the session started; every sign-in passes it (no default of any kind).
     auth_method: Mapped[AuthMethod] = mapped_column(str_enum(AuthMethod, "auth_method"))
     # SSO sessions only: the ID token, kept server-side solely as ``id_token_hint`` for
-    # RP-initiated logout. Never logged, never returned by the API.
+    # RP-initiated logout, sealed with the secret key (app.auth.sealing). Never logged,
+    # never returned by the API.
     id_token: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now()
@@ -146,27 +147,3 @@ class UserSession(UUIDPrimaryKeyMixin, Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     # Short summary such as "Firefox on macOS" for a future "your sessions" list.
     user_agent: Mapped[str | None] = mapped_column(String(200))
-
-
-class OidcLoginAttempt(UUIDPrimaryKeyMixin, Base):
-    """One SSO sign-in in progress (``GET /auth/login`` -> ``GET /auth/callback``).
-
-    Server-side so the browser never holds the PKCE verifier or nonce. Looked up by
-    the SHA-256 of ``state``; the same ``state`` is also in the HttpOnly
-    ``soundings_oidc`` cookie, which binds the attempt to the browser that started it.
-    Single use (deleted at the callback) and short-lived (``expires_at``, 10 minutes).
-    """
-
-    __tablename__ = "oidc_login_attempts"
-
-    state_hash: Mapped[str] = mapped_column(String(64), unique=True)
-    nonce: Mapped[str] = mapped_column(String(128))
-    code_verifier: Mapped[str] = mapped_column(String(128))
-    # The exact redirect_uri sent to the IdP (repeated in the token request).
-    redirect_uri: Mapped[str] = mapped_column(String(2048))
-    # Where to go after sign-in: an already validated same-origin path.
-    next_path: Mapped[str] = mapped_column(String(2048), default="/", server_default="/")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, server_default=func.now()
-    )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

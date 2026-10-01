@@ -230,7 +230,8 @@ async def test_the_throttle_is_per_client(app: FastAPI, db_session: AsyncSession
         ("203.0.113.7", "203.0.113.7"),
         ("2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64"),
         ("::ffff:203.0.113.7", "203.0.113.7"),
-        ("testclient", "testclient"),
+        ("testclient", "unknown"),
+        ("pwn-123", "unknown"),
     ],
 )
 def test_client_key(host: str, key: str) -> None:

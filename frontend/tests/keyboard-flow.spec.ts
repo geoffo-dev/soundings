@@ -99,7 +99,10 @@ test.describe('as a platform admin on an idea', () => {
     // With focus still in the search field: invites, doesn't toggle Hannah off again.
     await page.keyboard.press('ControlOrMeta+Enter')
     await expect(dialog).toBeHidden()
-    await expect(page.getByText('Invited Hannah Weber')).toBeVisible()
+    // The toast (the activity feed soon says "… invited Hannah Weber" too).
+    await expect(
+      page.locator('[data-sonner-toast]', { hasText: 'Invited Hannah Weber' }),
+    ).toBeVisible()
   })
 })
 

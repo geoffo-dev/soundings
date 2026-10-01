@@ -903,3 +903,44 @@ regenerated `openapi.json` / `schema.d.ts` carry the schema changes):
 - Implementation note on §3.2: the OIDC client is httpx + `joserfc`
   (`app/auth/oidc.py`); the unused Authlib dependency was removed and `joserfc` is now
   a direct dependency.
+
+**2026-10-01, security review fixes (backend, platform):**
+
+- **Descriptions only** in the schema: `sso_login` and `sso_callback` now say the attempt
+  is sealed into the `soundings_oidc` cookie (`make gen-api`: two descriptions change).
+- **§3.2 (review H1): sign-in attempts are stateless.** `GET /auth/login` stores
+  nothing: state, nonce, PKCE verifier, redirect URI, `next` and expiry are sealed
+  (AES-256-GCM, key derived from `SOUNDINGS_SECRET_KEY` by HKDF, `app/auth/sealing.py`)
+  into the HttpOnly `soundings_oidc` cookie (same name, attributes and 10 minutes). The
+  10,000-live-attempts cap and `oidc_login_attempts` are gone (migration 0004), so no
+  number of unfinished sign-ins locks anyone out. The callback opens the cookie and
+  compares `state` (constant time); a missing, forged, changed or other-key cookie is
+  `login_expired` without an audit entry, an expired one is audited `login_expired`.
+  Replaying a callback after sign-in: without the (cleared) cookie `login_expired`; with
+  a kept copy the IdP refuses the used code → `sso_failed` (audited). A sealed attempt
+  over 3,800 characters (only a very long non-ASCII `next`) is sealed again with `next`
+  = `/`. The 60-starts-per-minute throttle stays.
+- **§3.2 step 3 (review N1):** `next` is also refused (→ `/`) when its path part
+  (before `?`/`#`) contains `//` or a `.`/`..` segment (`%2e` counts as a dot), and
+  `/api?…` counts as under `/api`. Same rule for the SPA's `safeNextPath`.
+- **§3.2 step 5 (review L5):** in production every discovery endpoint
+  (`authorization_endpoint`, `token_endpoint`, `jwks_uri`, `end_session_endpoint` when
+  present) must be https, else discovery is `invalid` (`sso_unavailable`).
+- **§3.2 step 6 (review L1):** the JWKS is fetched again when an hour old (and, as
+  before, once for an unknown `kid`), so a key the IdP withdrew stops working.
+- **§3.9 (review L4):** the stored ID token is sealed the same way (purpose-separated
+  key); sign-out unseals it for `id_token_hint`. Migration 0004 removes plain-text ID
+  tokens (those sessions sign out at the IdP without a hint).
+- **Client address (review M1; §3.2 step 4, §3.8):** the app resolves
+  `X-Forwarded-For` itself (`app.middleware.ProxyHeadersMiddleware`; uvicorn's proxy
+  headers are off): only from `SOUNDINGS_TRUSTED_PROXIES` peers, and only the
+  `SOUNDINGS_TRUSTED_PROXY_HOPS` (default 1; chart `trustedProxyHops`) rightmost
+  entries, stopping at the first entry that isn't a trusted proxy; a non-IP entry ends
+  the walk; a non-IP client shares the throttle key `unknown`. `trustedProxies` must be
+  IPs, CIDRs or `*`. The chart turns `networkPolicy.enabled` on by default and its
+  NOTES ask for `networkPolicy.ingressFrom`.
+- **Tracing (review L2):** spans keep query parameter names only
+  (`code=REDACTED&state=REDACTED`).
+- **Reserved emails (review N2):** `.invalid` with a trailing dot is reserved too
+  (`app.schemas.admin_users.is_reserved_email`, also used for the IdP `email` claim);
+  no OpenAPI change.

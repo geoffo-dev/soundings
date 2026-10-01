@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority'
 import { X } from 'lucide-react'
 import { Dialog as SheetPrimitive } from 'radix-ui'
-import type { ComponentProps } from 'react'
+import { useEffect, useSyncExternalStore, type ComponentProps } from 'react'
 
 import { DialogOverlay } from '@/components/ui/dialog'
 import { FocusOrigin, useReturnFocus } from '@/components/ui/return-focus'
@@ -37,6 +37,42 @@ const sheet = cva('fixed z-50 flex flex-col bg-elevated text-primary shadow-dial
   defaultVariants: { side: 'right', size: 'md' },
 })
 
+/*
+ * Open side sheets, so toasts can move up out of the way of a sheet's footer
+ * actions (toaster.tsx) instead of covering them.
+ */
+let openSideSheets = 0
+const sheetListeners = new Set<() => void>()
+
+function subscribeToSheets(listener: () => void) {
+  sheetListeners.add(listener)
+  return () => {
+    sheetListeners.delete(listener)
+  }
+}
+
+/** True while a side sheet (`side="right"`, a bottom sheet on phones) is open. */
+export function useSideSheetOpen(): boolean {
+  return useSyncExternalStore(
+    subscribeToSheets,
+    () => openSideSheets > 0,
+    () => false,
+  )
+}
+
+/** Rendered inside an open side sheet's content: counts it as open while mounted. */
+function SideSheetPresence() {
+  useEffect(() => {
+    openSideSheets += 1
+    sheetListeners.forEach((listener) => listener())
+    return () => {
+      openSideSheets -= 1
+      sheetListeners.forEach((listener) => listener())
+    }
+  }, [])
+  return null
+}
+
 export interface SheetContentProps extends ComponentProps<typeof SheetPrimitive.Content> {
   side?: 'right' | 'left'
   size?: 'sm' | 'md' | 'lg'
@@ -49,6 +85,7 @@ export function SheetContent({
   side = 'right',
   size = 'md',
   hideClose = false,
+  onOpenAutoFocus,
   onCloseAutoFocus,
   ref,
   ...props
@@ -62,10 +99,21 @@ export function SheetContent({
         ref={attach}
         data-slot="sheet-content"
         className={cn(sheet({ side, size }), className)}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          // A sheet is a view, not a form: it opens with focus on itself (its title is
+          // announced; Tab goes to the first control). Radix would focus the first field,
+          // with its text selected (one stray key rewrites it) or the phone keyboard up,
+          // and where that lands would depend on whether the content was still loading.
+          event.preventDefault()
+          ;(event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true })
+        }}
         onCloseAutoFocus={closeAutoFocus}
         {...props}
       >
         <FocusOrigin capture={capture} />
+        {side === 'right' && <SideSheetPresence />}
         {side === 'right' && (
           <span
             aria-hidden="true"

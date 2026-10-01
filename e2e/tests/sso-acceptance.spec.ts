@@ -217,6 +217,10 @@ test.describe('SSO acceptance', { tag: '@sso' }, () => {
         if (user === 'alice') {
           // A platform admin sees every project; her role here is the group's.
           await page.goto(`/p/${innovation.slug}/settings?tab=members`)
+          // Unfolded already when nobody has a direct role (it is then the only list of people).
+          const showAccess = page.getByRole('button', { name: /^Everyone with access/ })
+          await expect(showAccess).toBeVisible()
+          if ((await showAccess.getAttribute('aria-expanded')) !== 'true') await showAccess.click()
           const access = page.getByRole('list', { name: 'Everyone with access' })
           await expect(
             access.getByRole('listitem').filter({ hasText: 'Alice Anders' }),

@@ -27,7 +27,7 @@ from app.models.project import (
     Tag,
     project_effective_roles,
 )
-from app.models.user import OidcLoginAttempt, User, UserExternalId, UserIdentity, UserSession
+from app.models.user import User, UserExternalId, UserIdentity, UserSession
 
 __all__ = [
     "ActivityEvent",
@@ -49,7 +49,6 @@ __all__ = [
     "IdeaTag",
     "IdeaVote",
     "IdeaWatcher",
-    "OidcLoginAttempt",
     "Project",
     "ProjectGroupGrant",
     "ProjectMember",

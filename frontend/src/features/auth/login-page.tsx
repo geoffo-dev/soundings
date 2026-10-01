@@ -9,6 +9,7 @@ import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
 
 import { BreakGlassForm } from './break-glass-form'
 import { DevLogin } from './dev-login'
@@ -155,11 +156,18 @@ function SignInMethods({ config, next }: { config: AuthConfig; next?: string }) 
  */
 function SsoSignIn({ next }: { next?: string }) {
   const [leaving, setLeaving] = useState(false)
+  // Focused on arrival but without its ring until a key is pressed: a ring on load
+  // looks like a pressed button to mouse users. (Chromium ignores `focusVisible`.)
+  const [quietFocus, setQuietFocus] = useState(true)
   const linkRef = useRef<HTMLAnchorElement>(null)
 
   // The page's one primary action: Enter signs in. (React's autoFocus skips links.)
   useEffect(() => {
-    linkRef.current?.focus()
+    const options: FocusOptions & { focusVisible?: boolean } = { focusVisible: false }
+    linkRef.current?.focus(options)
+    const reveal = () => setQuietFocus(false)
+    window.addEventListener('keydown', reveal, { capture: true, once: true })
+    return () => window.removeEventListener('keydown', reveal, { capture: true })
   }, [])
 
   // Back from the IdP may restore this page from the bfcache: not "leaving" any more.
@@ -173,7 +181,12 @@ function SsoSignIn({ next }: { next?: string }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <Button asChild variant="primary" size="lg" className="w-full">
+      <Button
+        asChild
+        variant="primary"
+        size="lg"
+        className={cn('w-full', quietFocus && 'focus-visible:outline-none')}
+      >
         <a
           href={ssoLoginHref(next)}
           aria-busy={leaving || undefined}

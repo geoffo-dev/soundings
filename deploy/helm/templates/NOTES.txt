@@ -77,4 +77,17 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    pre-install/pre-upgrade hook Job ({{ $fullname }}-migrate).
 {{- end }}
 
+{{- if not .Values.networkPolicy.enabled }}
+
+5. Network
+   networkPolicy.enabled is false: any pod in the cluster can reach the API and the
+   bundled database, and send the API its own X-Forwarded-For.
+{{- else if not .Values.networkPolicy.ingressFrom }}
+
+5. Network
+   networkPolicy.ingressFrom is empty: any pod in the cluster can reach the API directly
+   and send its own X-Forwarded-For (the sign-in throttles' client address). Set it to
+   your ingress controller's namespace, and narrow trustedProxies to its pods.
+{{- end }}
+
 Check the release: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

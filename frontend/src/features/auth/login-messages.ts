@@ -60,7 +60,9 @@ const ERROR_MESSAGES: Record<LoginErrorCode, LoginMessage> = {
     tone: 'warning',
     role: 'alert',
     title: 'You don’t have a Soundings account yet',
-    description: 'Ask an administrator to add you, then sign in again.',
+    // Signing in again reuses the identity provider's session, so say how to switch.
+    description:
+      'Ask an administrator to add you, then sign in again. Signed in with the wrong account? Sign out of your organisation’s sign-in page first.',
   },
   account_disabled: {
     tone: 'danger',

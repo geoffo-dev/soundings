@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/table'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { NAV_ITEM_ATTRIBUTE, useListNavigation } from '@/lib/list-navigation'
+import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
 import { useShortcut } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -32,7 +33,7 @@ import { AddUserDialog } from './add-user-dialog'
 import { UserBadges } from './user-badges'
 import { hasUserFilters, toUserFilters, type UsersSearch } from './users-search'
 
-const ROW_HEIGHT = { table: 52, card: 96 } as const
+const ROW_HEIGHT = { table: 52, card: 76 } as const
 const CARDS_BELOW_PX = 768
 
 /**
@@ -61,7 +62,7 @@ export function UsersPage({
     <>
       <AdminPageHeader
         title="Users"
-        description="Everyone who can sign in. Add people before their first sign-in so the right account is linked by external ID or verified email."
+        description="Everyone who can sign in."
         actions={
           <Button variant="primary" onClick={() => setAdding(true)}>
             <UserPlus />
@@ -129,7 +130,7 @@ export function UsersPage({
             onPressedChange={(on) => set({ unlinked: on ? true : undefined })}
             icon={<Link2Off aria-hidden="true" />}
           >
-            Not signed in yet
+            SSO not linked
           </FilterChip>
         </div>
       </div>
@@ -258,7 +259,12 @@ function UsersList({ search, onClear }: { search: UsersSearch; onClear: () => vo
       )}
       aria-busy={query.isPlaceholderData || undefined}
     >
-      <Table mobile="container-cards" aria-label="Users" className="@3xl:table-fixed">
+      <Table
+        mobile="container-cards"
+        cardFields="inline"
+        aria-label="Users"
+        className="@3xl:table-fixed"
+      >
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
@@ -338,7 +344,7 @@ function UserRow({
           to="/settings/users/$userId"
           params={{ userId: user.id }}
           search={true}
-          {...{ [NAV_ITEM_ATTRIBUTE]: '' }}
+          {...{ [NAV_ITEM_ATTRIBUTE]: '', [ROW_ID_ATTRIBUTE]: user.id }}
           className={cn(
             'flex min-w-0 items-center gap-3 outline-none',
             // The whole row is the link; the focus ring outlines the row.
@@ -380,20 +386,33 @@ function UserRow({
       </TableCell>
       <TableCell label="SSO account">
         {user.has_identity ? (
-          <span className="text-sm text-secondary">Linked</span>
+          <CellText table="Linked" card="SSO linked" className="text-secondary" />
         ) : user.is_break_glass || user.is_service_account ? (
-          <span className="text-sm text-muted">Never</span>
+          <CellText table="Never" card="No SSO" />
         ) : (
-          <span className="text-sm text-muted">Not linked yet</span>
+          <CellText table="Not linked yet" card="SSO not linked" />
         )}
       </TableCell>
       <TableCell label="Last active" className="@3xl:text-right">
         {user.last_seen_at ? (
-          <RelativeTime date={user.last_seen_at} style="short" className="text-sm text-secondary" />
+          <span className="text-sm text-secondary">
+            <span className="@3xl:hidden">Last active </span>
+            <RelativeTime date={user.last_seen_at} style="short" />
+          </span>
         ) : (
-          <span className="text-sm text-muted">Never</span>
+          <CellText table="Never" card="Never active" />
         )}
       </TableCell>
     </TableRow>
+  )
+}
+
+/** A cell's words in the table, and fuller ones for the card's meta line (no column label there). */
+function CellText({ table, card, className }: { table: string; card: string; className?: string }) {
+  return (
+    <span className={cn('text-sm text-muted', className)}>
+      <span className="@max-3xl:hidden">{table}</span>
+      <span className="@3xl:hidden">{card}</span>
+    </span>
   )
 }

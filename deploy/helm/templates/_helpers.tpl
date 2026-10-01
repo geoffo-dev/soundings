@@ -197,6 +197,7 @@ SOUNDINGS_ENVIRONMENT: {{ ternary "development" "production" .Values.devLogin | 
 SOUNDINGS_DEV_LOGIN_ENABLED: {{ .Values.devLogin | quote }}
 SOUNDINGS_BASE_URLS: {{ join "," .Values.baseUrls | quote }}
 SOUNDINGS_TRUSTED_PROXIES: {{ join "," .Values.trustedProxies | quote }}
+SOUNDINGS_TRUSTED_PROXY_HOPS: {{ .Values.trustedProxyHops | quote }}
 SOUNDINGS_LOG_LEVEL: {{ .Values.logLevel | quote }}
 SOUNDINGS_DATABASE_URL: {{ include "soundings.databaseUrl" . | quote }}
 SOUNDINGS_METRICS_PORT: {{ .Values.metrics.port | quote }}

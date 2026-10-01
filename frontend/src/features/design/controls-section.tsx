@@ -18,6 +18,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Field } from '@/components/ui/field'
 import { FilterMenu, FilterMenuOption } from '@/components/ui/filter-menu'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { SegmentedControl, scoreOptions } from '@/components/ui/segmented-control'
 import {
@@ -199,6 +200,11 @@ export function FormsSection() {
             <Example label="disabled">
               <Field label="Disabled example" hideLabel disabled className="w-full">
                 <Input value="Viewers can’t edit" readOnly />
+              </Field>
+            </Example>
+            <Example label="password">
+              <Field label="Password" hideLabel className="w-full">
+                <PasswordInput defaultValue="correct horse battery staple" />
               </Field>
             </Example>
           </div>

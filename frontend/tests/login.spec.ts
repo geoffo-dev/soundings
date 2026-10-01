@@ -27,6 +27,11 @@ test('SSO and the dev login: SSO is the focused primary action, people below a d
   await page.goto('/login?next=%2Fp%2Finternal-tools%3Fview%3Dlist')
   await expect(heading(page)).toBeVisible()
   await expect(ssoLink(page)).toBeFocused()
+  // Focused without its ring (it would look pressed); the first key press shows it.
+  const outline = () => ssoLink(page).evaluate((link) => getComputedStyle(link).outlineStyle)
+  expect(await outline()).toBe('none')
+  await page.keyboard.press('Shift')
+  await expect.poll(outline).toBe('solid')
   // A real navigation to the API, which redirects to the identity provider.
   await expect(ssoLink(page)).toHaveAttribute(
     'href',
@@ -117,7 +122,7 @@ test.describe('break-glass admin (SSO not configured)', () => {
     await expect(username).toBeFocused()
 
     await username.fill('break-glass')
-    await page.getByLabel('Password').fill('correct horse battery staple')
+    await page.getByLabel('Password', { exact: true }).fill('correct horse battery staple')
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/settings$/)
     const banner = page.getByRole('status').filter({
@@ -130,9 +135,26 @@ test.describe('break-glass admin (SSO not configured)', () => {
     await expect(page).toHaveURL(/\/login\?signed_out=1$/)
   })
 
+  test('lands on the sign-in settings, and the password can be shown', async ({ page }) => {
+    await page.goto('/login')
+    await page.getByRole('textbox', { name: 'Username' }).fill('break-glass')
+    const password = page.getByLabel('Password', { exact: true })
+    await password.fill('correct horse battery staple')
+    const show = page.getByRole('button', { name: 'Show password' })
+    await expect(show).toHaveAttribute('aria-pressed', 'false')
+    await expect(password).toHaveAttribute('type', 'password')
+    await show.click()
+    await expect(show).toHaveAttribute('aria-pressed', 'true')
+    await expect(password).toHaveAttribute('type', 'text')
+    await password.press('Enter')
+    // Not My work ("you're not in any projects yet"): setting up SSO is what it is for.
+    await expect(page).toHaveURL(/\/settings\/sso$/)
+    await expect(page.getByRole('heading', { name: 'Set up single sign-on' })).toBeVisible()
+  })
+
   test('wrong passwords: one message for both fields, then a pause', async ({ page }) => {
     await page.goto('/login')
-    const password = page.getByLabel('Password')
+    const password = page.getByLabel('Password', { exact: true })
     await page.getByRole('textbox', { name: 'Username' }).fill('break-glass')
     for (let attempt = 1; attempt <= 5; attempt++) {
       await password.fill(`guess ${attempt}`)

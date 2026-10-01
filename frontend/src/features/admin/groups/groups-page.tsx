@@ -6,14 +6,6 @@ import { useAdminGroups } from '@/api/admin'
 import type { GroupSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import {
   Table,
@@ -24,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { NAV_ITEM_ATTRIBUTE, useListNavigation } from '@/lib/list-navigation'
+import { ROW_ID_ATTRIBUTE, useReturnToRow } from '@/lib/return-to-row'
 import { useShortcut } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 import { peopleCount } from '@/features/project/settings/access'
@@ -31,7 +24,8 @@ import { peopleCount } from '@/features/project/settings/access'
 import { SearchField } from '@/features/admin/search-field'
 import { AdminPageHeader } from '@/features/admin/settings-frame'
 import { CreateGroupDialog } from './create-group-dialog'
-import { MappingTestPanel } from './mapping-test-panel'
+import { EMPTY_MAPPING_TEST } from './mapping-test-panel'
+import { MappingTestSheet } from './mapping-test-sheet'
 import { syncModeLabel } from './mapping'
 
 /**
@@ -43,6 +37,7 @@ import { syncModeLabel } from './mapping'
 export function GroupsPage() {
   const [creating, setCreating] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [testDraft, setTestDraft] = useState(EMPTY_MAPPING_TEST)
   const [q, setQ] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   useShortcut('focusFilters', () => searchRef.current?.focus())
@@ -51,7 +46,7 @@ export function GroupsPage() {
     <>
       <AdminPageHeader
         title="Groups"
-        description="Groups give project roles to many people at once. Map one to your identity provider’s groups to keep its members in sync at each sign-in."
+        description="Give many people a project role at once."
         actions={
           <>
             <Button variant="outline" onClick={() => setTesting(true)}>
@@ -74,19 +69,12 @@ export function GroupsPage() {
       />
       <GroupsList q={q} onCreate={() => setCreating(true)} onClear={() => setQ('')} />
       <CreateGroupDialog open={creating} onOpenChange={setCreating} />
-      <Sheet open={testing} onOpenChange={setTesting}>
-        <SheetContent size="lg">
-          <SheetHeader>
-            <SheetTitle>Test mapping</SheetTitle>
-            <SheetDescription>
-              What signing in with these claims would do to group memberships and project roles.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            <MappingTestPanel />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+      <MappingTestSheet
+        open={testing}
+        onOpenChange={setTesting}
+        draft={testDraft}
+        onDraftChange={setTestDraft}
+      />
     </>
   )
 }
@@ -103,6 +91,8 @@ function GroupsList({
   const query = useAdminGroups(q)
   const groups = query.data?.pages.flatMap((page) => page.items) ?? []
   const { listRef } = useListNavigation()
+  // Back from a group's page ("All groups", the breadcrumb, Back): to its row.
+  useReturnToRow('groups', groups.length > 0)
 
   if (query.isPending) {
     return (
@@ -181,7 +171,12 @@ function GroupsList({
         )}
         aria-busy={query.isPlaceholderData || undefined}
       >
-        <Table mobile="container-cards" aria-label="Groups" className="@3xl:table-fixed">
+        <Table
+          mobile="container-cards"
+          cardFields="inline"
+          aria-label="Groups"
+          className="@3xl:table-fixed"
+        >
           <TableHeader>
             <TableRow>
               <TableHead>Group</TableHead>
@@ -222,7 +217,7 @@ function GroupRow({ group }: { group: GroupSummary }) {
         <Link
           to="/settings/groups/$groupId"
           params={{ groupId: group.id }}
-          {...{ [NAV_ITEM_ATTRIBUTE]: '' }}
+          {...{ [NAV_ITEM_ATTRIBUTE]: '', [ROW_ID_ATTRIBUTE]: group.id }}
           className={cn(
             'flex min-w-0 flex-col outline-none',
             'after:absolute after:inset-0 after:rounded-sm',
@@ -257,7 +252,19 @@ function GroupRow({ group }: { group: GroupSummary }) {
         )}
       </TableCell>
       <TableCell label="Projects" className="text-sm text-secondary tabular-nums @3xl:text-right">
-        {group.project_count === 0 ? <span className="text-muted">None</span> : group.project_count}
+        {group.project_count === 0 ? (
+          <span className="text-muted">
+            <span className="@max-3xl:hidden">None</span>
+            <span className="@3xl:hidden">No projects</span>
+          </span>
+        ) : (
+          <span>
+            {group.project_count}
+            <span className="@3xl:hidden">
+              {group.project_count === 1 ? ' project' : ' projects'}
+            </span>
+          </span>
+        )}
       </TableCell>
     </TableRow>
   )

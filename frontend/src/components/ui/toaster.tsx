@@ -2,19 +2,28 @@ import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { Toaster as Sonner, toast as sonnerToast, type ExternalToast } from 'sonner'
 
+import { useSideSheetOpen } from '@/components/ui/sheet'
 import { Spinner } from '@/components/ui/spinner'
 import { useTheme } from '@/components/theme-provider'
+
+/**
+ * Toasts sit this far up while a side sheet is open, above its footer (a 56px
+ * action bar), so "Saved" never covers the sheet's own buttons.
+ */
+const ABOVE_SHEET_FOOTER = 72
 
 /** Mounted once in the root route. */
 export function Toaster() {
   const { resolvedTheme } = useTheme()
+  const sheetOpen = useSideSheetOpen()
   return (
     <Sonner
       theme={resolvedTheme}
       position="bottom-right"
       gap={8}
       visibleToasts={4}
-      mobileOffset={16}
+      offset={sheetOpen ? { bottom: ABOVE_SHEET_FOOTER } : undefined}
+      mobileOffset={sheetOpen ? { bottom: ABOVE_SHEET_FOOTER } : 16}
       containerAriaLabel="Notifications"
       icons={{
         success: <CircleCheck className="size-4 text-success" />,

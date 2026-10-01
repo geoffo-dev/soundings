@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
@@ -159,9 +159,14 @@ function CreateGroupForm({ onDone }: { onDone: () => void }) {
         <Button type="button" variant="ghost" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" loading={create.isPending}>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={create.isPending}
+          aria-keyshortcuts={ariaKeys(SHORTCUTS.submitForm.keys)}
+        >
           Create group
-          <KbdShortcut keys={SHORTCUTS.submitForm.keys} tone="accent" />
+          <ButtonShortcut keys={SHORTCUTS.submitForm.keys} />
         </Button>
       </DialogFooter>
     </form>

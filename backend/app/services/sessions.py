@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.sealing import seal, unseal
 from app.auth.tokens import hash_token, new_token
 from app.auth.user_agent import summarise_user_agent
 from app.config import Settings
@@ -41,6 +42,7 @@ __all__ = [
     "NewSession",
     "end_session",
     "end_user_sessions",
+    "id_token_hint",
     "method_available",
     "resolve_session",
     "session_limits",
@@ -104,7 +106,8 @@ async def start_session(
     The session id always rotates at sign-in: ``replacing_token`` (the cookie the
     browser already had, whoever it belonged to) is ended first. The user's expired
     sessions are removed while we're here. ``id_token`` (SSO only) is kept, solely as
-    the sign-out ``id_token_hint``, when at most :data:`ID_TOKEN_MAX_LENGTH` long.
+    the sign-out ``id_token_hint``, when at most :data:`ID_TOKEN_MAX_LENGTH` long, and
+    sealed with the secret key: the database alone doesn't reveal its claims.
     """
     now = utcnow()
     if replacing_token:
@@ -119,11 +122,9 @@ async def start_session(
         )
     )
     max_age, _ = session_limits(settings, auth_method)
-    keep_id_token = (
-        auth_method is AuthMethod.SSO
-        and id_token is not None
-        and len(id_token) <= ID_TOKEN_MAX_LENGTH
-    )
+    sealed_id_token = None
+    if auth_method is AuthMethod.SSO and id_token and len(id_token) <= ID_TOKEN_MAX_LENGTH:
+        sealed_id_token = seal(settings, "session-id-token", id_token.encode("utf-8"))
     token, csrf_token = new_token(), new_token()
     row = UserSession(
         id=uuid4(),
@@ -131,7 +132,7 @@ async def start_session(
         user_id=user.id,
         csrf_token=csrf_token,
         auth_method=auth_method,
-        id_token=id_token if keep_id_token else None,
+        id_token=sealed_id_token,
         created_at=now,
         last_seen_at=now,
         expires_at=now + max_age,
@@ -141,6 +142,15 @@ async def start_session(
     user.last_seen_at = now
     await db.flush()
     return NewSession(row=row, token=token, csrf_token=csrf_token, max_age=max_age)
+
+
+def id_token_hint(settings: Settings, row: UserSession) -> str | None:
+    """The ID token a session keeps for sign-out, or ``None`` (none kept, or sealed
+    under another secret key)."""
+    if not row.id_token:
+        return None
+    raw = unseal(settings, "session-id-token", row.id_token)
+    return raw.decode("utf-8") if raw is not None else None
 
 
 def _expired(row: UserSession, settings: Settings, now: datetime) -> bool:

@@ -75,10 +75,7 @@ export function AuditPage({
 }) {
   return (
     <>
-      <AdminPageHeader
-        title="Audit log"
-        description="Sign-ins, assignments, evaluations, status changes and admin changes, newest first. Entries are kept indefinitely and never hold passwords, tokens or emails."
-      />
+      <AdminPageHeader title="Audit log" description="Who did what, newest first." />
       <AuditFilters search={search} onChange={onSearchChange} />
       <AuditFeed search={search} onClear={() => onSearchChange(CLEARED)} />
     </>
@@ -296,7 +293,10 @@ function AuditRow({
             {breakGlass && (
               <Badge variant="warning">
                 <KeyRound aria-hidden="true" />
-                Break-glass session
+                {/* A refused attempt never had a session. */}
+                {entry.action === 'session.sign_in_denied'
+                  ? 'Break-glass attempt'
+                  : 'Break-glass session'}
               </Badge>
             )}
           </p>

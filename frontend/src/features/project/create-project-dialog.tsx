@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
@@ -300,13 +300,14 @@ function CreateProjectForm() {
         <Button variant="ghost" onClick={closeDialog}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" loading={create.isPending}>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={create.isPending}
+          aria-keyshortcuts={ariaKeys(SHORTCUTS.submitForm.keys)}
+        >
           Create project
-          <KbdShortcut
-            keys={SHORTCUTS.submitForm.keys}
-            tone="accent"
-            className="ml-1 hidden sm:inline-flex"
-          />
+          <ButtonShortcut keys={SHORTCUTS.submitForm.keys} />
         </Button>
       </DialogFooter>
     </form>

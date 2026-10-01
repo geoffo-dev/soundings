@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { breakGlassProblem, waitDescription } from '@/features/auth/break-glass-form'
+import {
+  breakGlassLanding,
+  breakGlassProblem,
+  waitDescription,
+} from '@/features/auth/break-glass-form'
 import { ssoLoginHref } from '@/features/auth/sso'
 import { ApiError } from '@/api/errors'
 
@@ -48,5 +52,14 @@ describe('break-glass form copy', () => {
       retryAfterSeconds: 600,
     })
     expect(breakGlassProblem(error).description).toContain('about 10 minutes')
+  })
+})
+
+describe('breakGlassLanding', () => {
+  it('lands on the sign-in settings unless sent from a page', () => {
+    expect(breakGlassLanding(undefined)).toBe('/settings/sso')
+    expect(breakGlassLanding('/')).toBe('/settings/sso')
+    expect(breakGlassLanding('//evil.example.com')).toBe('/settings/sso')
+    expect(breakGlassLanding('/settings/users?q=lena')).toBe('/settings/users?q=lena')
   })
 })

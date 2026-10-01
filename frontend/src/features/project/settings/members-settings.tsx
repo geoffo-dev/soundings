@@ -1,4 +1,5 @@
-import { CloudOff, Search, UserMinus, UsersRound } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ChevronRight, CloudOff, Search, UserMinus, UsersRound } from 'lucide-react'
 import { useId, useRef, useState, type ReactNode } from 'react'
 
 import { describeError } from '@/api/errors'
@@ -41,6 +42,7 @@ import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/toaster'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { useCurrentUser } from '@/features/auth/current-user'
+import { cn } from '@/lib/utils'
 
 import {
   describeSources,
@@ -58,8 +60,9 @@ const LAST_ADMIN = 'A project needs at least one admin'
 
 /**
  * Members (wireframe 07, contract-phase2 §3.7): who has a role here and why.
- * People with a direct role, groups with a role (everyone in the group gets
- * it), and everyone with access with the source of their role. Admins add
+ * Groups with a role first (each covers many people), then people with a role
+ * of their own; "Everyone with access" (each person's highest role and its
+ * source) is folded away while it would mostly repeat those people. Admins add
  * people or groups, change roles and remove them (with Undo); the last admin,
  * direct or through a group, can't be demoted or removed.
  */
@@ -87,6 +90,12 @@ export function MembersSettings({ project }: { project: Project }) {
         {canManage && (
           <AddAccess project={project} members={members.data ?? []} grants={grants.data ?? []} />
         )}
+        <GroupsSection
+          project={project}
+          grants={grants}
+          canManage={canManage}
+          lockReason={lockReason}
+        />
         <PeopleSection
           project={project}
           members={members}
@@ -94,13 +103,13 @@ export function MembersSettings({ project }: { project: Project }) {
           lockReason={lockReason}
           hasGroups={(grants.data?.length ?? 0) > 0}
         />
-        <GroupsSection
+        <AccessSection
           project={project}
-          grants={grants}
-          canManage={canManage}
-          lockReason={lockReason}
+          // Without groups it would list exactly the people above. Shown once both lists
+          // have loaded, so whether it starts unfolded is settled when it appears.
+          show={members.isSuccess && grants.isSuccess && grants.data.length > 0}
+          openAtFirst={members.data?.length === 0}
         />
-        <AccessSection project={project} />
       </div>
     </SettingsSection>
   )
@@ -431,6 +440,7 @@ function GroupRow({
   canManage: boolean
   lockedReason: string | null
 }) {
+  const me = useCurrentUser()
   const updateRole = useUpdateProjectGroupGrant(project.slug)
   const remove = useRemoveProjectGroupGrant(project.slug)
   const { name } = grant.group
@@ -444,7 +454,18 @@ function GroupRow({
         <UsersRound className="size-4" />
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium text-primary">{name}</span>
+        {me.is_platform_admin ? (
+          // Its members and identity-provider mapping are on the group's page.
+          <Link
+            to="/settings/groups/$groupId"
+            params={{ groupId: grant.group.id }}
+            className="truncate text-sm font-medium text-primary hover:underline"
+          >
+            {name}
+          </Link>
+        ) : (
+          <span className="truncate text-sm font-medium text-primary">{name}</span>
+        )}
         <span className="truncate text-xs text-muted">
           Group · {peopleCount(grant.group.member_count)}
         </span>
@@ -484,8 +505,77 @@ function GroupRow({
 
 const SEARCH_FROM = 9
 
-function AccessSection({ project }: { project: Project }) {
+function AccessSection({
+  project,
+  show,
+  openAtFirst,
+}: {
+  project: Project
+  /** False: the list would repeat People exactly (no group has a role), so only the note shows. */
+  show: boolean
+  /** Unfolded on arrival (nobody has a role of their own: this is the only list of people). */
+  openAtFirst: boolean
+}) {
+  const note = (
+    <p className="text-xs text-muted">
+      Platform admins can see and manage every project without a role here.
+      {project.visibility === 'internal' &&
+        ' Everyone signed in can view this project, because it is internal.'}
+    </p>
+  )
+  if (!show) return note
+  return <AccessDisclosure project={project} openAtFirst={openAtFirst} note={note} />
+}
+
+function AccessDisclosure({
+  project,
+  openAtFirst,
+  note,
+}: {
+  project: Project
+  openAtFirst: boolean
+  note: ReactNode
+}) {
+  const [expanded, setExpanded] = useState(openAtFirst)
   const headingId = useId()
+  const listId = useId()
+
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <h3 id={headingId} className="text-base font-semibold text-primary">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => setExpanded(!expanded)}
+            className="-ml-1 inline-flex items-center gap-1 rounded-sm px-1 transition-colors hover:bg-subtle"
+          >
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                'size-4 text-muted transition-transform duration-150',
+                expanded && 'rotate-90',
+              )}
+            />
+            Everyone with access
+            <span className="font-normal text-muted">({project.member_count})</span>
+          </button>
+        </h3>
+        <p className="text-sm text-muted">
+          {peopleCount(project.member_count)}, each with the highest of their roles and where it
+          comes from.
+        </p>
+      </div>
+      <div id={listId} hidden={!expanded} className="flex flex-col gap-3">
+        {expanded && <AccessList project={project} />}
+      </div>
+      {note}
+    </section>
+  )
+}
+
+function AccessList({ project }: { project: Project }) {
   const me = useCurrentUser()
   const [q, setQ] = useState('')
   const debounced = useDebouncedValue(q.trim())
@@ -493,12 +583,7 @@ function AccessSection({ project }: { project: Project }) {
   const entries = access.data?.pages.flatMap((page) => page.items) ?? []
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <SubHeading
-        id={headingId}
-        title="Everyone with access"
-        hint={`${peopleCount(project.member_count)}, each with the highest of their roles and where it comes from.`}
-      />
+    <>
       {(project.member_count >= SEARCH_FROM || q) && (
         <Input
           aria-label="Find someone with access"
@@ -542,12 +627,7 @@ function AccessSection({ project }: { project: Project }) {
           Show more
         </Button>
       )}
-      <p className="text-xs text-muted">
-        Platform admins can see and manage every project without a role here.
-        {project.visibility === 'internal' &&
-          ' Everyone signed in can view this project, because it is internal.'}
-      </p>
-    </section>
+    </>
   )
 }
 

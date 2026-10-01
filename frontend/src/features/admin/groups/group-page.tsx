@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, History, UsersRound } from 'lucide-react'
+import { ArrowLeft, FlaskConical, History, UsersRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import {
@@ -21,13 +21,15 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
 import { peopleCount, roleLabel } from '@/features/project/settings/access'
+import { rememberRow } from '@/lib/return-to-row'
 
 import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { AdminPageHeader, AdminSection } from '@/features/admin/settings-frame'
 import { GroupMembers } from './group-members'
 import { IdpValuesInput, SyncModeField } from './mapping-fields'
 import { GroupPageSkeleton } from './group-page-skeleton'
-import { MappingTestPanel } from './mapping-test-panel'
+import { EMPTY_MAPPING_TEST } from './mapping-test-panel'
+import { MappingTestSheet } from './mapping-test-sheet'
 
 function BackToGroups() {
   return (
@@ -41,9 +43,10 @@ function BackToGroups() {
 }
 
 /**
- * One group (contract-phase2 §3.5–3.7, §3.12): name and description, the
- * identity-provider mapping (values and managed/additive), the "Test mapping"
- * box, the project roles it grants, its members with provenance, and delete.
+ * One group (contract-phase2 §3.5–3.7, §3.12), in the order people come here
+ * for: its members with provenance, the identity-provider mapping (values and
+ * managed/additive, with "Test mapping" in a sheet), the project roles it
+ * grants, then name, description and delete. One column, one width.
  */
 export function GroupPage({ groupId }: { groupId: string }) {
   const query = useAdminGroup(groupId)
@@ -75,6 +78,10 @@ export function GroupPage({ groupId }: { groupId: string }) {
 function GroupDetail({ group }: { group: Group }) {
   const sso = useSsoConfig()
   const [mappingDirty, setMappingDirty] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testDraft, setTestDraft] = useState(EMPTY_MAPPING_TEST)
+  // "All groups", the breadcrumb or Back then return focus to this group's row.
+  useEffect(() => rememberRow('groups', group.id), [group.id])
   const summary = [
     peopleCount(group.member_count),
     group.idp_values.length > 0
@@ -86,7 +93,7 @@ function GroupDetail({ group }: { group: Group }) {
   ].join(' · ')
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex max-w-3xl flex-col gap-10">
       <AdminPageHeader
         back={<BackToGroups />}
         title={group.name}
@@ -106,10 +113,18 @@ function GroupDetail({ group }: { group: Group }) {
         }
       />
 
+      <GroupMembers group={group} />
+
       <AdminSection
         id="mapping"
         title="Identity provider"
-        description="People in any of these identity provider groups join at sign-in. Changes apply to each person at their next sign-in."
+        description="People in any of these groups join at their next sign-in."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setTesting(true)}>
+            <FlaskConical />
+            Test mapping
+          </Button>
+        }
       >
         {sso.data && !sso.data.groups_claim && (
           <Callout tone="warning" title="Group sync is off">
@@ -121,23 +136,24 @@ function GroupDetail({ group }: { group: Group }) {
         <MappingForm group={group} onDirtyChange={setMappingDirty} />
       </AdminSection>
 
-      <AdminSection
-        id="test-mapping"
-        title="Test mapping"
-        description="Check what a sign-in with a given set of claims would do, across every group."
-      >
-        {mappingDirty && (
-          <Callout tone="info" title="Save the mapping to test it">
-            The test uses the saved mappings of every group.
-          </Callout>
-        )}
-        <MappingTestPanel highlightGroupId={group.id} />
-      </AdminSection>
-
       <ProjectGrants group={group} />
-      <GroupMembers group={group} />
       <DetailsForm group={group} />
       <DeleteGroup group={group} />
+
+      <MappingTestSheet
+        open={testing}
+        onOpenChange={setTesting}
+        draft={testDraft}
+        onDraftChange={setTestDraft}
+        highlightGroupId={group.id}
+        notice={
+          mappingDirty && (
+            <Callout tone="info" title="Save the mapping to test it">
+              The test uses the saved mappings of every group.
+            </Callout>
+          )
+        }
+      />
     </div>
   )
 }
@@ -187,7 +203,7 @@ function MappingForm({
   return (
     <form
       noValidate
-      className="flex max-w-2xl flex-col gap-5"
+      className="flex flex-col gap-5"
       onSubmit={(event) => {
         event.preventDefault()
         save()
@@ -198,7 +214,7 @@ function MappingForm({
         description={
           values.length === 0
             ? 'Not mapped: sign-in never adds anyone. Type a group path or ID and press Enter.'
-            : 'Matched exactly once normalised: a subgroup never matches its parent’s value.'
+            : 'Keycloak paths work with or without the leading slash. A subgroup needs its own entry.'
         }
         error={error}
       >
@@ -306,7 +322,7 @@ function DetailsForm({ group }: { group: Group }) {
     <AdminSection id="details" title="Name and description">
       <form
         noValidate
-        className="flex max-w-2xl flex-col gap-4"
+        className="flex flex-col gap-4"
         onSubmit={(event) => {
           event.preventDefault()
           save()

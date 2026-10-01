@@ -22,6 +22,7 @@ from app.db import create_engine, create_sessionmaker
 from app.errors import install_exception_handlers
 from app.middleware import (
     BodySizeLimitMiddleware,
+    ProxyHeadersMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
     TrustedHostMiddleware,
@@ -104,6 +105,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         SecurityHeadersMiddleware,
         content_security_policy=content_security_policy(spa.script_hashes if spa else ()),
+    )
+    # Outermost: everything inside sees the client and scheme behind trusted proxies.
+    app.add_middleware(
+        ProxyHeadersMiddleware,
+        trusted_proxies=settings.trusted_proxies,
+        hops=settings.trusted_proxy_hops,
     )
 
     app.include_router(health.router)

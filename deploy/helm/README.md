@@ -37,7 +37,8 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `global.imageRegistry` | `""` | Registry for **every** image (app + Postgres), for air-gapped mirrors. |
 | `image.registry` / `.repository` / `.tag` / `.digest` | `""` / `soundings` / appVersion / `""` | The Soundings image. |
 | `image.pullPolicy` / `.pullSecrets` | `IfNotPresent` / `[]` | Pull policy; names of existing registry Secrets. |
-| `trustedProxies` | private ranges | IPs/CIDRs whose `X-Forwarded-*` headers are trusted (ingress controller). |
+| `trustedProxies` | private ranges | IPs/CIDRs of the proxies (ingress controller, gateway) whose `X-Forwarded-For`/`-Proto` are believed. Narrow to your ingress controller's pods (see [Security](#security)). |
+| `trustedProxyHops` | `1` | How many trusted proxies append to `X-Forwarded-For` (2 with an L7 load balancer in front of the ingress controller that also appends). |
 | `logLevel` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR`. JSON logs, no PII. |
 | `devLogin` | `false` | Dev login stub; also switches the app to development mode. Never on shared installs. |
 | `demo.seed` | `false` | Load the demo data after install and upgrades (hook Job, see [Demo data](#demo-data)). Needs `devLogin`. |
@@ -87,7 +88,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `externalDatabase.host` / `.port` / `.database` / `.user` | `""` / `5432` / `soundings` / `soundings` | Used when `postgresql.enabled=false` (host required). |
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
 | `externalDatabase.sslmode` | `require` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. |
-| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `false` / `[]` / `[]` | Ingress-only policies: peers for the HTTP port / the metrics port (see below). |
+| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress-only policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace. |
 | `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` / `.labels` | `false` / `30s` / `10s` / `{}` | Prometheus Operator scrape of the Service's `metrics` port. |
 
 ## Migrations: why two paths
@@ -221,8 +222,11 @@ apply at the person's next sign-in.
 
 **Offboarding = deactivate** (Settings > Users). Removing someone from the IdP stops new
 sign-ins, but a running session lasts until it ends (`sessions.idleTimeout`, at most
-`sessions.maxAge`) and their synced memberships stay until they sign in again.
-Deactivating ends their sessions at once.
+`sessions.maxAge`, 7 days by default) and their synced memberships stay until they
+sign in again. Deactivating ends their sessions at once; "Sign out everywhere" (same
+page) ends them without deactivating, so a removed IdP group applies at the next
+sign-in. For IdP changes to apply sooner on their own, shorten `sessions.maxAge` (e.g.
+`P1D`). There is no back-channel logout.
 
 **Production** (`devLogin: false`) requires an https issuer and https `baseUrls` once
 SSO is configured (the chart refuses otherwise, and so would the app): the redirect
@@ -260,12 +264,24 @@ app ignores them until the issuer is unset.
   Postgres uid 70), read-only root filesystem with an emptyDir `/tmp`, all capabilities
   dropped, no privilege escalation, seccomp `RuntimeDefault`, no ServiceAccount token.
   `scripts/k3s-install.sh` installs into a namespace that enforces it.
-- `networkPolicy.enabled`: the API accepts traffic on its HTTP port from `ingressFrom`
-  peers and on its metrics port from `metricsFrom` peers, plus this release's pods (each
-  port: any source when its list is empty); the worker accepts nothing; the bundled
-  Postgres accepts only this release's api, worker, migration and seed pods. Egress is
-  not restricted (IdP, SMTP, kagent and the database differ per cluster); add your own
-  egress policy if you need one.
+- `networkPolicy.enabled` (default on): the API accepts traffic on its HTTP port from
+  `ingressFrom` peers and on its metrics port from `metricsFrom` peers, plus this
+  release's pods (each port: any source when its list is empty); the worker accepts
+  nothing; the bundled Postgres accepts only this release's api, worker, migration and
+  seed pods. Egress is not restricted (IdP, SMTP, kagent and the database differ per
+  cluster); add your own egress policy if you need one.
+- **Client addresses behind the ingress.** The sign-in throttles (60 SSO starts a
+  minute, 5 failed break-glass sign-ins per 15 minutes) count per client address. The
+  app believes `X-Forwarded-For` only from `trustedProxies`, and only the
+  `trustedProxyHops` entries they appended, read from the right; whatever a client
+  puts further left is ignored, private-looking or not. A pod that can reach the API
+  directly is a "proxy" in a trusted range and can choose that entry, so set
+  `networkPolicy.ingressFrom` to your ingress controller's namespace and narrow
+  `trustedProxies` to its pod CIDR (or node IPs for a host-network controller). If
+  every request seems to come from one address (the load balancer or a node after
+  SNAT), give the ingress controller's Service `externalTrafficPolicy: Local` or let
+  it trust the load balancer's headers, and raise `trustedProxyHops` if that load
+  balancer appends its own entry.
 - `/metrics` is served only on `metrics.port` (Service port `metrics`), never on the app
   port, so the ingress and HTTPRoute (which route `http` only) do not expose it.
 - The app refuses requests for hosts that are not in `baseUrls`, so a spoofed `Host`

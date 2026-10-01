@@ -12,7 +12,9 @@ import { clearDrafts } from '@/lib/drafts'
  * Only same-site paths are allowed as `?next=` targets (no open redirects).
  * Returns "/" for anything else: other origins (`//host`, `/\host`, which browsers
  * read as `//host`), control characters, the login page itself, and API paths
- * (the server refuses those as `next` too: contract-phase2 §3.2).
+ * (the server refuses those as `next` too: contract-phase2 §3.2). Paths with
+ * `.`/`..` segments or an empty segment (`//`), even encoded, are refused too:
+ * `/..//host` resolves to `//host` after another hop (review N1).
  */
 export function safeNextPath(next: unknown): string {
   if (typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//')) return '/'
@@ -26,9 +28,15 @@ export function safeNextPath(next: unknown): string {
   }
   if (url.origin !== window.location.origin) return '/'
   let path: string
+  let raw: string
   try {
     path = decodeURIComponent(url.pathname)
+    // The path as written (the URL parser has already resolved dot segments).
+    raw = decodeURIComponent(next.split(/[?#]/, 1)[0] ?? '')
   } catch {
+    return '/'
+  }
+  if (raw.includes('//') || raw.split('/').some((segment) => segment === '.' || segment === '..')) {
     return '/'
   }
   if (path.startsWith('/login') || /^\/api(\/|$)/.test(path)) return '/'

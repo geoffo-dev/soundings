@@ -169,6 +169,7 @@ def test_external_id_claim_missing_or_unconfigured() -> None:
         ({"email": 42, "email_verified": True}, None, False),
         ({"email": "break-glass@soundings.invalid", "email_verified": True}, None, False),
         ({"email": "x@Foo.INVALID", "email_verified": True}, None, False),
+        ({"email": "break-glass@soundings.invalid.", "email_verified": True}, None, False),
         ({"email_verified": True}, None, False),
     ],
 )

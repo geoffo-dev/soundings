@@ -77,7 +77,15 @@ def test_pre_created_user_needs_an_email_shape() -> None:
 
 
 @pytest.mark.parametrize(
-    "email", [BREAK_GLASS_EMAIL, "Break-Glass@Soundings.INVALID", "agent@x.invalid"]
+    "email",
+    [
+        BREAK_GLASS_EMAIL,
+        "Break-Glass@Soundings.INVALID",
+        "agent@x.invalid",
+        # Review N2: a trailing dot names the same domain.
+        "BREAK-GLASS@SOUNDINGS.INVALID.",
+        "agent@x.invalid..",
+    ],
 )
 def test_reserved_invalid_addresses_are_refused(email: str) -> None:
     """.invalid is for system accounts: a pre-created user can't take the break-glass

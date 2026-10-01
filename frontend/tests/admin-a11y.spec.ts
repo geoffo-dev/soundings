@@ -37,7 +37,8 @@ const PAGES: { path: string; heading: string; open?: (page: Page) => Promise<voi
     path: '/settings/groups/90000000-0000-4000-8000-000000000003',
     heading: 'Tools members',
     open: async (page) => {
-      const box = page.getByRole('region', { name: 'Test mapping' })
+      await page.getByRole('button', { name: 'Test mapping' }).click()
+      const box = page.getByRole('dialog', { name: 'Test mapping' })
       await box
         .getByRole('textbox', { name: 'Claims' })
         .fill('{"groups": ["/innovation/members", "/viewers"]}')
@@ -46,6 +47,17 @@ const PAGES: { path: string; heading: string; open?: (page: Page) => Promise<voi
     },
   },
   { path: '/settings/sso', heading: 'Sign-in (SSO)' },
+  {
+    // Before SSO is configured: the three-step setup checklist instead of the rules.
+    path: '/settings/sso',
+    heading: 'Sign-in (SSO)',
+    open: async (page) => {
+      await page.evaluate(() => localStorage.setItem('soundings-mock-auth', 'break_glass'))
+      await page.reload()
+      await expect(page.getByRole('heading', { name: 'Set up single sign-on' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Finding the account' })).toHaveCount(0)
+    },
+  },
   {
     path: '/settings/audit',
     heading: 'Audit log',
@@ -104,8 +116,11 @@ test.describe('on a phone (390px)', () => {
     await nav.getByRole('link', { name: 'Audit log' }).click()
     await expect(page.getByRole('heading', { level: 2, name: 'Audit log' })).toBeVisible()
     await page.goto('/settings/users')
-    // Cards: the column names are repeated in each row, the header is for screen readers.
+    // Cards: one meta line under the name (no repeated column names); the header is for
+    // screen readers.
     const row = page.getByRole('row').filter({ hasText: 'Bob Chen' })
-    await expect(row.getByText('SSO account')).toBeVisible()
+    await expect(row.getByText('SSO linked', { exact: true })).toBeVisible()
+    await expect(row.getByText('Linked', { exact: true })).toBeHidden()
+    await expect(row.getByText('SSO account')).toHaveCount(0)
   })
 })

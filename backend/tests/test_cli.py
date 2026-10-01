@@ -44,8 +44,8 @@ def test_api_runs_uvicorn_behind_trusted_proxies(
     assert call["host"] == "0.0.0.0"  # noqa: S104
     assert call["port"] == 8001
     assert call["workers"] == 1
-    assert call["proxy_headers"] is True
-    assert call["forwarded_allow_ips"] == "10.0.0.0/8,127.0.0.1"
+    assert call["proxy_headers"] is False  # app.middleware.ProxyHeadersMiddleware does it
+    assert "forwarded_allow_ips" not in call
     assert call["access_log"] is False
     assert call["log_config"] is None
     assert no_metrics_server == [cli_settings]  # the separate /metrics port (9090)

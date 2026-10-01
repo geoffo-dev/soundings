@@ -3,14 +3,17 @@
 Off unless ``SOUNDINGS_OTEL_ENDPOINT`` is set (an OTLP/HTTP base URL such as
 ``http://otel-collector:4318``) and the ``otel`` extra is installed
 (``uv sync --extra otel``). Only traces are exported: metrics go to Prometheus and
-logs to stdout. Spans carry route templates and URL paths, never bodies or headers
-- another reason never to put secrets or PII in URLs.
+logs to stdout. Spans carry route templates and URL paths, never bodies or headers,
+and query parameter names without their values (``code=REDACTED&state=REDACTED``):
+the SSO callback's code and state, ``next`` paths and search terms stay out of traces.
+Never put secrets or PII in URL paths.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qsl, urlencode
 
 from fastapi.telemetry import TelemetryConfig
 
@@ -18,7 +21,7 @@ from app import __version__
 from app.config import Settings
 
 if TYPE_CHECKING:
-    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,25 @@ _DISABLED: TelemetryConfig = {
     "operation_spans": False,
     "auto_configure": False,
 }
+
+
+def redact_query(query: str) -> str:
+    """``a=1&b=2`` -> ``a=REDACTED&b=REDACTED``: parameter names only."""
+    return urlencode([(name, "REDACTED") for name, _ in parse_qsl(query, keep_blank_values=True)])
+
+
+def query_redactor() -> SpanProcessor:
+    """A span processor that replaces ``url.query`` values as each span starts (before
+    any processor can export it)."""
+    from opentelemetry.sdk.trace import SpanProcessor
+
+    class RedactQueryValues(SpanProcessor):
+        def on_start(self, span: Any, parent_context: Any = None) -> None:
+            query = (span.attributes or {}).get("url.query")
+            if isinstance(query, str) and query:
+                span.set_attribute("url.query", redact_query(query))
+
+    return RedactQueryValues()
 
 
 def create_tracer_provider(endpoint: str) -> TracerProvider | None:
@@ -56,6 +78,7 @@ def telemetry_config(settings: Settings) -> tuple[TelemetryConfig, TracerProvide
     provider = create_tracer_provider(settings.otel_endpoint)
     if provider is None:
         return _DISABLED, None
+    provider.add_span_processor(query_redactor())
     config: TelemetryConfig = {
         **_DISABLED,
         "tracing": True,

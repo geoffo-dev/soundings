@@ -97,7 +97,8 @@ const SCREENS: Screen[] = [
       await page.goto(`/settings/groups/${id}`)
       await expect(h2(page, 'Tools team')).toBeVisible()
       await settled(page)
-      const box = page.getByRole('region', { name: 'Test mapping' })
+      await page.getByRole('button', { name: 'Test mapping' }).click()
+      const box = page.getByRole('dialog', { name: 'Test mapping' })
       await box
         .getByRole('textbox', { name: 'Claims' })
         .fill('{ "groups": ["/tools/members", "/viewers", 42] }')
@@ -129,6 +130,10 @@ const SCREENS: Screen[] = [
     signedIn: true,
     open: async (page) => {
       await page.goto('/p/internal-tools/settings?tab=members')
+      // Unfolded already when nobody has a direct role (it is then the only list of people).
+      const showAccess = page.getByRole('button', { name: /^Everyone with access/ })
+      await expect(showAccess).toBeVisible()
+      if ((await showAccess.getAttribute('aria-expanded')) !== 'true') await showAccess.click()
       await expect(page.getByRole('list', { name: 'Everyone with access' })).toBeVisible()
       await settled(page)
       await page.getByRole('radio', { name: 'Group' }).click()

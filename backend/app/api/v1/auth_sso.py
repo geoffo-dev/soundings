@@ -4,26 +4,22 @@ with the IdP. Contract and business rules: docs/api/contract-phase2.md section 3
 SSO is a browser flow: the SPA *navigates* to ``GET /auth/login``; the IdP sends the
 browser back to ``GET /auth/callback``, which signs in and redirects into the SPA.
 Sign-out with the IdP is a plain HTML form ``POST`` to ``/auth/logout/redirect``.
-The browser never sees IdP tokens or the PKCE verifier: the attempt (nonce, verifier,
-redirect URI, next path) lives in ``oidc_login_attempts``, and the browser holds only
-``state``, in the URL and the HttpOnly ``soundings_oidc`` cookie.
+The browser never sees IdP tokens or the PKCE verifier: the attempt (state, nonce,
+verifier, redirect URI, next path) is sealed (encrypted and authenticated) into the
+HttpOnly ``soundings_oidc`` cookie (:mod:`app.auth.login_attempt`); nothing is stored
+until the callback signs someone in.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import logging
 import math
-import secrets
 import unicodedata
-from datetime import timedelta
 from typing import Annotated, Final
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, func, select
 
 from app.api.v1.responses import problems, redirect
 from app.auth.break_glass import break_glass_account, credentials_match
@@ -35,6 +31,7 @@ from app.auth.cookies import (
 )
 from app.auth.group_mapping import groups_overage
 from app.auth.group_sync import sync_groups
+from app.auth.login_attempt import new_attempt, open_attempt, seal_attempt
 from app.auth.login_matching import (
     DENIAL_CODES,
     DenialReason,
@@ -45,23 +42,21 @@ from app.auth.login_matching import (
 from app.auth.oidc import OidcError, get_provider
 from app.auth.sign_in import current_user, end_current_session, sign_in
 from app.auth.throttle import BREAK_GLASS_THROTTLE, LOGIN_THROTTLE, client_key, get_throttle
-from app.auth.tokens import hash_token, tokens_match
+from app.auth.tokens import tokens_match
 from app.config import Settings
 from app.db import SessionDep, SessionMaker, session_scope
 from app.errors import NotFoundProblem, ProblemError
 from app.models.base import utcnow
 from app.models.enums import AuthMethod
-from app.models.user import OidcLoginAttempt
 from app.schemas.auth import AuthConfig, BreakGlassLogin, CurrentUser, LoginErrorCode
 from app.schemas.base import NoNul
+from app.services.sessions import id_token_hint
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 logger = logging.getLogger("soundings.auth")
 
 LOGIN_PATH: Final = "/api/v1/auth/login"
-ATTEMPT_LIFETIME: Final = timedelta(minutes=10)
-MAX_LIVE_ATTEMPTS: Final = 10_000
 MAX_NEXT_LENGTH: Final = 2048
 SIGNED_OUT_PATH: Final = "/login?signed_out=1"
 
@@ -85,15 +80,22 @@ def _sessionmaker(request: Request) -> SessionMaker:
 
 def safe_next_path(value: str | None) -> str:
     """``value`` if it is a same-origin SPA path, else ``/`` (open-redirect protection):
-    starts with ``/`` (not ``//`` or ``/\\``), no backslash, no whitespace or control
-    characters, at most 2048 characters, not under ``/api/``."""
+    starts with ``/``, no backslash, no whitespace or control characters, at most 2048
+    characters; and in its path part (before ``?`` or ``#``) no ``//``, no ``.`` or
+    ``..`` segment (``%2e`` counts as a dot) and nothing under ``/api``. The SPA's
+    ``safeNextPath`` applies the same rule."""
     if not value or len(value) > MAX_NEXT_LENGTH:
         return "/"
-    if not value.startswith("/") or value.startswith(("//", "/\\")) or "\\" in value:
+    if not value.startswith("/") or "\\" in value:
         return "/"
     if any(ch.isspace() or unicodedata.category(ch).startswith("C") for ch in value):
         return "/"
-    if value == "/api" or value.startswith("/api/"):
+    path = value.split("?", 1)[0].split("#", 1)[0]
+    if "//" in path:
+        return "/"
+    if any(segment in {".", ".."} for segment in path.lower().replace("%2e", ".").split("/")):
+        return "/"
+    if path == "/api" or path.startswith("/api/"):
         return "/"
     return value
 
@@ -135,8 +137,9 @@ async def get_auth_config(request: Request) -> AuthConfig:
     summary="Start SSO sign-in",
     description=(
         "Public; navigate the browser here (not fetch). Starts the authorization code "
-        "flow with PKCE: stores the attempt server-side, sets the short-lived HttpOnly "
-        "soundings_oidc cookie and redirects (302) to the IdP. The redirect URI is "
+        "flow with PKCE: seals the attempt (encrypted) into the short-lived HttpOnly "
+        "soundings_oidc cookie, stores nothing, and redirects (302) to the IdP. The "
+        "redirect URI is "
         "<base URL of this host>/api/v1/auth/callback; a host that is not one of "
         "SOUNDINGS_BASE_URLS is first redirected to the same path on the first base "
         "URL. next must be a same-origin SPA path of at most 2048 characters (else /). "
@@ -148,7 +151,6 @@ async def get_auth_config(request: Request) -> AuthConfig:
 )
 async def sso_login(
     request: Request,
-    session: SessionDep,
     next_path: Annotated[
         str | None,
         Query(
@@ -179,50 +181,28 @@ async def sso_login(
         return _login_error(LoginErrorCode.TOO_MANY_ATTEMPTS)
     throttle.hit(client)
 
-    # The provider's metadata first (cached), so no transaction is open during a fetch.
     metadata = await get_provider(request.app).metadata()
     if metadata is None:
         return _login_error(LoginErrorCode.SSO_UNAVAILABLE)
 
-    now = utcnow()
-    live = await session.scalar(
-        select(func.count()).select_from(OidcLoginAttempt).where(OidcLoginAttempt.expires_at > now)
-    )
-    if (live or 0) >= MAX_LIVE_ATTEMPTS:
-        logger.warning("too many sso sign-ins in progress", extra={"live_attempts": live})
-        return _login_error(LoginErrorCode.SSO_UNAVAILABLE)
-
-    state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-    verifier = secrets.token_urlsafe(64)
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
-    redirect_uri = settings.oidc_redirect_uri(base_url)
-    await session.execute(delete(OidcLoginAttempt).where(OidcLoginAttempt.expires_at <= now))
-    session.add(
-        OidcLoginAttempt(
-            state_hash=hash_token(state),
-            nonce=nonce,
-            code_verifier=verifier,
-            redirect_uri=redirect_uri,
-            next_path=target,
-            created_at=now,
-            expires_at=now + ATTEMPT_LIFETIME,
-        )
+    attempt = new_attempt(
+        redirect_uri=settings.oidc_redirect_uri(base_url), next_path=target, now=utcnow()
     )
     location = _with_query(
         metadata.authorization_endpoint,
         {
             "response_type": "code",
             "client_id": settings.oidc_client_id,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": attempt.redirect_uri,
             "scope": " ".join(settings.oidc_scopes),
-            "state": state,
-            "nonce": nonce,
-            "code_challenge": challenge.rstrip(b"=").decode("ascii"),
+            "state": attempt.state,
+            "nonce": attempt.nonce,
+            "code_challenge": attempt.code_challenge,
             "code_challenge_method": "S256",
         },
     )
     response = RedirectResponse(location, status_code=status.HTTP_302_FOUND)
-    set_oidc_cookie(response, request, settings, state)
+    set_oidc_cookie(response, request, settings, seal_attempt(settings, attempt))
     return response
 
 
@@ -233,8 +213,9 @@ async def sso_login(
     response_class=RedirectResponse,
     summary="Finish SSO sign-in",
     description=(
-        "Public; the IdP redirects the browser here. Checks state against the "
-        "soundings_oidc cookie, exchanges the code (with the PKCE verifier), validates "
+        "Public; the IdP redirects the browser here. Checks state against the attempt "
+        "sealed in the soundings_oidc cookie, exchanges the code (with the PKCE "
+        "verifier), validates "
         "the ID token, matches the user, syncs groups, starts a session (rotating any "
         "existing one) and redirects (302) to the saved next path. " + _CALLBACK_ERRORS
     ),
@@ -266,20 +247,11 @@ async def sso_callback(
         return finish(_login_error(LoginErrorCode.SSO_UNAVAILABLE))
     issuer = settings.oidc_issuer
 
-    # State: in the URL and in this browser's cookie, and a stored attempt. The attempt
-    # is deleted now (single use), committed even if a later step fails.
-    cookie_state = read_cookie(request, settings, OIDC_COOKIE)
-    attempt = None
-    if state and cookie_state and tokens_match(state, cookie_state):
-        async with session_scope(sessionmaker) as db:
-            attempt = await db.scalar(
-                select(OidcLoginAttempt)
-                .where(OidcLoginAttempt.state_hash == hash_token(state))
-                .with_for_update()
-            )
-            if attempt is not None:
-                await db.delete(attempt)
-    if attempt is None:
+    # State: in the URL and in the attempt this browser's cookie carries (sealed, so
+    # only this server made it). The cookie goes with every outcome, and the IdP
+    # accepts each code once: a callback URL works once, and only in this browser.
+    attempt = open_attempt(settings, read_cookie(request, settings, OIDC_COOKIE))
+    if attempt is None or not tokens_match(state, attempt.state):
         return finish(_login_error(LoginErrorCode.LOGIN_EXPIRED))
     next_path = attempt.next_path
 
@@ -447,8 +419,9 @@ async def logout_redirect(request: Request, session: SessionDep) -> RedirectResp
         "client_id": settings.oidc_client_id,
         "post_logout_redirect_uri": settings.oidc_post_logout_redirect_uri(base_url),
     }
-    if ended.id_token:
-        params["id_token_hint"] = ended.id_token
+    hint = id_token_hint(settings, ended)
+    if hint:
+        params["id_token_hint"] = hint
     response.headers["location"] = _with_query(metadata.end_session_endpoint, params)
     return response
 

@@ -16,6 +16,11 @@ import { cn } from '@/lib/utils'
  *   sidebar, where the viewport says little about the room left. The
  *   container is a CSS container, so cells can also use `@3xl:` / `@max-3xl:`
  *   (and wider) variants to hide columns as the table narrows.
+ *
+ * Cards show their fields `stacked` (label above value) by default, or
+ * `inline`: one muted meta line under the title ("Active · SSO linked · Last
+ * active 2d") with no labels, for short values that read on their own (a cell
+ * can add words only the card shows with `@3xl:hidden` / `md:hidden`).
  */
 export type TableMobileLayout = 'scroll' | 'cards' | 'container-cards'
 
@@ -34,6 +39,9 @@ const CARDS: Record<
     primary: string
     field: string
     label: string
+    /** `cardFields="inline"`: the row and its non-primary cells. */
+    inlineRow: string
+    inlineField: string
   }
 > = {
   cards: {
@@ -46,6 +54,9 @@ const CARDS: Record<
     primary: 'max-md:basis-full',
     field: 'max-md:flex max-md:flex-col max-md:gap-0.5',
     label: 'md:hidden',
+    inlineRow: 'max-md:gap-x-2 max-md:gap-y-1',
+    inlineField:
+      "max-md:inline-flex max-md:items-center max-md:gap-2 max-md:text-sm max-md:text-muted max-md:[&+&]:before:content-['·']",
   },
   'container-cards': {
     container: '@container overflow-x-auto',
@@ -57,19 +68,29 @@ const CARDS: Record<
     primary: '@max-3xl:basis-full',
     field: '@max-3xl:flex @max-3xl:flex-col @max-3xl:gap-0.5',
     label: '@3xl:hidden',
+    inlineRow: '@max-3xl:gap-x-2 @max-3xl:gap-y-1',
+    inlineField:
+      "@max-3xl:inline-flex @max-3xl:items-center @max-3xl:gap-2 @max-3xl:text-sm @max-3xl:text-muted @max-3xl:[&+&]:before:content-['·']",
   },
 }
 
-const TableLayout = createContext<TableMobileLayout>('scroll')
+export type TableCardFields = 'stacked' | 'inline'
+
+const TableLayout = createContext<{ mobile: TableMobileLayout; fields: TableCardFields }>({
+  mobile: 'scroll',
+  fields: 'stacked',
+})
 
 /** The card styles of the table around, or null for a plain (scrolling) table. */
 function useCards() {
-  const layout = use(TableLayout)
-  return layout === 'scroll' ? null : CARDS[layout]
+  const { mobile, fields } = use(TableLayout)
+  return mobile === 'scroll' ? null : { ...CARDS[mobile], inline: fields === 'inline' }
 }
 
 export interface TableProps extends ComponentProps<'table'> {
   mobile?: TableMobileLayout
+  /** How cards show their non-primary cells (see above). */
+  cardFields?: TableCardFields
   /** The scrolling wrapper, e.g. to give a virtualised table its own vertical scroll. */
   containerRef?: Ref<HTMLDivElement>
   containerClassName?: string
@@ -78,13 +99,14 @@ export interface TableProps extends ComponentProps<'table'> {
 export function Table({
   className,
   mobile = 'scroll',
+  cardFields = 'stacked',
   containerRef,
   containerClassName,
   ...props
 }: TableProps) {
   const cards = mobile === 'scroll' ? null : CARDS[mobile]
   return (
-    <TableLayout value={mobile}>
+    <TableLayout value={{ mobile, fields: cardFields }}>
       <div
         ref={containerRef}
         data-slot="table-container"
@@ -134,6 +156,7 @@ export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
       className={cn(
         'border-b border-subtle transition-colors duration-100 hover:bg-subtle data-[state=selected]:bg-accent-subtle',
         cards?.row,
+        cards?.inline && cards.inlineRow,
         className,
       )}
       {...props}
@@ -225,12 +248,12 @@ export function TableCell({
       className={cn(
         'h-11 px-3 align-middle text-primary first:pl-4 last:pr-4',
         cards?.cell,
-        cards && (primary ? cards.primary : cards.field),
+        cards && (primary ? cards.primary : cards.inline ? cards.inlineField : cards.field),
         className,
       )}
       {...props}
     >
-      {cards && label && !primary && (
+      {cards && label && !primary && !cards.inline && (
         <span aria-hidden="true" className={cn('text-xs text-muted', cards.label)}>
           {label}
         </span>

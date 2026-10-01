@@ -19,7 +19,6 @@ def test_list_settings_accept_csv_and_json(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert settings.base_urls == ["https://ideas.example.com", "https://ideas.example.org"]
     assert settings.trusted_proxies == ["10.0.0.0/8", "127.0.0.1"]
-    assert settings.forwarded_allow_ips == "10.0.0.0/8,127.0.0.1"
     assert settings.allowed_hosts == ["ideas.example.com", "ideas.example.org"]
 
 

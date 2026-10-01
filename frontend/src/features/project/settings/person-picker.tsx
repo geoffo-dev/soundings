@@ -127,7 +127,11 @@ export function PersonPicker({
                       <span className="truncate">{person.display_name}</span>
                       <span className="truncate text-xs text-muted">{person.email}</span>
                     </span>
-                    {taken && <span className="ml-auto text-xs text-muted">{excludeHint}</span>}
+                    {taken && (
+                      <span className="ml-auto shrink-0 pl-2 text-xs whitespace-nowrap text-muted">
+                        {excludeHint}
+                      </span>
+                    )}
                   </CommandItem>
                 )
               })}

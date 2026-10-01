@@ -79,8 +79,16 @@
       "type": "array",
       "items": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "pattern": "^(\\*|[0-9A-Fa-f:.]+(/[0-9]{1,3})?)$",
+        "description": "IP address, CIDR network or * (everyone)"
       }
+    },
+    "trustedProxyHops": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Trusted proxies that append to X-Forwarded-For (ingress controller: 1)"
     },
     "logLevel": {
       "type": "string",

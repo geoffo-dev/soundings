@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
@@ -375,13 +375,10 @@ function NewIdeaForm({ contextSlug }: { contextSlug?: string }) {
           loading={create.isPending}
           disabled={!project || create.isPending}
           className="max-sm:h-11"
+          aria-keyshortcuts={ariaKeys(SHORTCUTS.submitForm.keys)}
         >
           Submit idea
-          <KbdShortcut
-            keys={SHORTCUTS.submitForm.keys}
-            tone="accent"
-            className="ml-1 hidden sm:inline-flex"
-          />
+          <ButtonShortcut keys={SHORTCUTS.submitForm.keys} />
         </Button>
       </DialogFooter>
     </form>

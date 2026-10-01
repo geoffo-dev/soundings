@@ -35,7 +35,6 @@ DOMAIN_TABLES = {
     "idea_votes",
     "idea_watchers",
     "ideas",
-    "oidc_login_attempts",
     "project_group_grants",
     "project_members",
     "projects",
@@ -566,5 +565,37 @@ def test_phase2_downgrade_keeps_direct_roles_and_sessions(scratch_database_url: 
     assert roles_at_head == [(ids["member"], "admin"), (ids["grouped"], "member")]
     assert roles_after == [(ids["member"], "admin")]
     assert sessions_after == (1,)
+    command.upgrade(config, "head")
+    command.check(config)
+
+
+def test_0004_stateless_sign_in_drops_attempts_and_plain_id_tokens(
+    scratch_database_url: str,
+) -> None:
+    """Review H1/L4: no login-attempt table, and no ID token left in plain text."""
+    config = alembic_config(make_settings(database_url=scratch_database_url).sqlalchemy_url)
+    command.upgrade(config, "0003")
+    ids = {"user": uuid.uuid4(), "session": uuid.uuid4()}
+    tables = "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()"
+    with psycopg.connect(_dsn(scratch_database_url), autocommit=True) as connection:
+        for statement in (
+            "INSERT INTO users (id, email, display_name) VALUES (%(user)s, 'e@x.io', 'E')",
+            "INSERT INTO user_sessions (id, token_hash, user_id, csrf_token, expires_at,"
+            " auth_method, id_token) VALUES (%(session)s, 'h', %(user)s, 'c',"
+            " now() + interval '1 day', 'sso', 'header.claims.signature')",
+        ):
+            connection.execute(statement, ids)
+
+        command.upgrade(config, "head")
+        kept = connection.execute(
+            "SELECT auth_method, id_token FROM user_sessions WHERE id = %(session)s", ids
+        ).fetchone()
+        tables_at_head = {row[0] for row in connection.execute(tables)}
+        command.downgrade(config, "0003")
+        tables_after = {row[0] for row in connection.execute(tables)}
+
+    assert kept == ("sso", None)  # the session stays, its plain ID token goes
+    assert "oidc_login_attempts" not in tables_at_head
+    assert "oidc_login_attempts" in tables_after
     command.upgrade(config, "head")
     command.check(config)

@@ -317,7 +317,7 @@ export interface paths {
         };
         /**
          * Finish SSO sign-in
-         * @description Public; the IdP redirects the browser here. Checks state against the soundings_oidc cookie, exchanges the code (with the PKCE verifier), validates the ID token, matches the user, syncs groups, starts a session (rotating any existing one) and redirects (302) to the saved next path. On failure it redirects to /login?error=<code> (sso_unavailable, login_expired, login_cancelled, sso_failed, no_account, account_disabled, identity_conflict); the reason is in the audit log. Overlong or unexpected parameter values fail the flow (a redirect); only a NUL character is a 422.
+         * @description Public; the IdP redirects the browser here. Checks state against the attempt sealed in the soundings_oidc cookie, exchanges the code (with the PKCE verifier), validates the ID token, matches the user, syncs groups, starts a session (rotating any existing one) and redirects (302) to the saved next path. On failure it redirects to /login?error=<code> (sso_unavailable, login_expired, login_cancelled, sso_failed, no_account, account_disabled, identity_conflict); the reason is in the audit log. Overlong or unexpected parameter values fail the flow (a redirect); only a NUL character is a 422.
          */
         get: operations["sso_callback"];
         put?: never;
@@ -397,7 +397,7 @@ export interface paths {
         };
         /**
          * Start SSO sign-in
-         * @description Public; navigate the browser here (not fetch). Starts the authorization code flow with PKCE: stores the attempt server-side, sets the short-lived HttpOnly soundings_oidc cookie and redirects (302) to the IdP. The redirect URI is <base URL of this host>/api/v1/auth/callback; a host that is not one of SOUNDINGS_BASE_URLS is first redirected to the same path on the first base URL. next must be a same-origin SPA path of at most 2048 characters (else /). SSO not configured or the IdP unreachable: 302 to /login?error=sso_unavailable; too many starts from this client IP: 302 to /login?error=too_many_attempts.
+         * @description Public; navigate the browser here (not fetch). Starts the authorization code flow with PKCE: seals the attempt (encrypted) into the short-lived HttpOnly soundings_oidc cookie, stores nothing, and redirects (302) to the IdP. The redirect URI is <base URL of this host>/api/v1/auth/callback; a host that is not one of SOUNDINGS_BASE_URLS is first redirected to the same path on the first base URL. next must be a same-origin SPA path of at most 2048 characters (else /). SSO not configured or the IdP unreachable: 302 to /login?error=sso_unavailable; too many starts from this client IP: 302 to /login?error=too_many_attempts.
          */
         get: operations["sso_login"];
         put?: never;

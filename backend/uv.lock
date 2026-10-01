@@ -1496,6 +1496,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosmtplib" },
     { name = "alembic" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
@@ -1529,6 +1530,7 @@ dev = [
 requires-dist = [
     { name = "aiosmtplib", specifier = ">=3.0" },
     { name = "alembic", specifier = ">=1.16" },
+    { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.142" },
     { name = "fastapi", extras = ["opentelemetry"], marker = "extra == 'otel'", specifier = ">=0.142" },
     { name = "httpx", specifier = ">=0.27" },

@@ -24,6 +24,7 @@ import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/toaster'
 import { useCurrentUser } from '@/features/auth/current-user'
+import { focusRow } from '@/lib/return-to-row'
 
 import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { validateEmail } from './add-user-dialog'
@@ -44,7 +45,14 @@ export function UserSheet({ userId, onClose }: { userId: string; onClose: () => 
   const user = query.data
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent size="lg" aria-describedby={undefined}>
+      <SheetContent
+        size="lg"
+        aria-describedby={undefined}
+        // Back to this user's row in the list (it stays rendered under the sheet).
+        onCloseAutoFocus={(event) => {
+          if (focusRow(userId)) event.preventDefault()
+        }}
+      >
         {user ? (
           <UserDetail key={user.id} user={user} />
         ) : query.isError ? (
@@ -393,9 +401,7 @@ function ProfileForm({ user, system }: { user: AdminUser; system: boolean }) {
             />
           </Field>
         </div>
-        <p className="text-sm text-muted">
-          Sign-in never changes these: after the first sign-in, name and email are Soundings’ own.
-        </p>
+        <p className="text-sm text-muted">Sign-in doesn’t overwrite these; edit them here.</p>
         {dirty && (
           <div className="flex justify-end gap-2">
             <Button
