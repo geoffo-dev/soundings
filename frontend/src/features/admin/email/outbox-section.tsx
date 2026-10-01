@@ -318,7 +318,7 @@ function OutboxCounters({
         stats.queued,
         stats.oldest_queued_at ? (
           <>
-            oldest <RelativeTime date={stats.oldest_queued_at} tooltip={false} />
+            oldest queued <RelativeTime date={stats.oldest_queued_at} tooltip={false} />
           </>
         ) : (
           'nothing waiting'
@@ -332,7 +332,7 @@ function OutboxCounters({
         stats.sent_last_24h,
         stats.last_sent_at ? (
           <>
-            last <RelativeTime date={stats.last_sent_at} tooltip={false} />
+            last sent <RelativeTime date={stats.last_sent_at} tooltip={false} />
           </>
         ) : (
           'none yet'

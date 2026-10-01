@@ -213,11 +213,14 @@ kubectl -n soundings create configmap smtp-ca --from-file=ca.crt=./corporate-ca.
 `NOTES.txt` says whether SMTP is configured; Settings > Email shows the effective
 configuration (password masked), the outbox and a **Send test email** button. Links in
 emails use the first of `baseUrls`. With `security: none` the connection is plain (an
-in-cluster relay or Mailpit); production refuses a password over it, and the chart
-refuses `smtp.password` with it. TLS (`starttls`, `tls`) always verifies the server's
-certificate and host name. Changing a setting rolls the api and worker pods (config
-checksum). To try it out, point `smtp.host` at Mailpit:
-`dev/k3s/mailpit.yaml` and `make k3s-install SMTP=1` do that on the local k3s cluster.
+in-cluster relay or Mailpit); production refuses a password over it, and so does the
+chart for `smtp.password` (unless `devLogin`). TLS (`starttls`, `tls`) always verifies
+the server's certificate and host name, against `smtp.caBundle` when set (a certificate
+it doesn't trust shows as "TLS certificate not trusted" in the outbox). Changing a value
+rolls the api and worker pods (config checksum); a new password in `existingSecret` or a
+new CA in the ConfigMap needs `kubectl -n <ns> rollout restart deploy`. To try it out,
+point `smtp.host` at Mailpit: `dev/k3s/mailpit.yaml` and `make k3s-install SMTP=1` do
+that on the local k3s cluster (below).
 
 ## Single sign-on
 
@@ -388,3 +391,21 @@ make k3s-install SSO=1                  # + dev/k3s-sso-values.yaml (OIDC via ex
 make k3s-smoke SSO=1                    # + code flow through the ingress, groups → access
 make k3s-down
 ```
+
+Email end to end on k3s, with Mailpit in the cluster (`dev/k3s/mailpit.yaml`, namespace
+`mailpit`, SMTP `mailpit.mailpit.svc.cluster.local:1025`, inbox and API at
+`http://mailpit.localhost:18081`):
+
+```sh
+make k3s-up image k3s-mailpit           # Mailpit into the cluster
+make k3s-install SMTP=1                 # + dev/k3s-smtp-values.yaml (SMTP, time zone, egress policies)
+make k3s-smoke SMTP=1                   # + scripts/email-smoke.sh through the ingress: an invited
+                                        # evaluator's email (subject, evaluate link, List-Unsubscribe);
+                                        # Mailpit scaled to 0 → queued with "connection refused" →
+                                        # scaled back → delivered once
+make k3s-down
+```
+
+`SSO=1 SMTP=1` combines both (CI does). `dev/k3s-smtp-values.yaml` also turns on
+`networkPolicy.egress`: the worker may reach only DNS, Postgres and Mailpit's namespace
+on 1025, and the api DNS, Postgres and (with SSO) Keycloak.

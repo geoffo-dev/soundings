@@ -24,6 +24,7 @@ Claims are personal data: nothing here logs or stores them.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, Literal
@@ -194,12 +195,20 @@ def email_from_claims(claims: Mapping[str, Any]) -> EmailClaim:
 
 def display_name_from_claims(claims: Mapping[str, Any], email: str) -> str:
     """For auto-created users: ``name``, else ``preferred_username``, else the email's
-    local part; trimmed and cut to 100 characters (fixed, no setting)."""
+    local part; on one line (control characters such as CR/LF become spaces, as the
+    admin API rejects them), trimmed and cut to 100 characters (fixed, no setting)."""
     for key in ("name", "preferred_username"):
         value = claims.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()[:DISPLAY_NAME_MAX_LENGTH]
-    return email.split("@", 1)[0].strip()[:DISPLAY_NAME_MAX_LENGTH] or "New user"
+        if isinstance(value, str) and (name := _one_line(value)):
+            return name[:DISPLAY_NAME_MAX_LENGTH]
+    return _one_line(email.split("@", 1)[0])[:DISPLAY_NAME_MAX_LENGTH] or "New user"
+
+
+def _one_line(value: str) -> str:
+    """``value`` with control characters as spaces, runs of white space collapsed."""
+    return " ".join(
+        "".join(" " if unicodedata.category(char) == "Cc" else char for char in value).split()
+    )
 
 
 # --- What sync does (section 3.6) -------------------------------------------------------------

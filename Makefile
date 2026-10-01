@@ -12,8 +12,10 @@ BUILD_CA ?= $(SSL_CERT_FILE)
 IMAGE_BUILD_ARGS ?=
 VCS_REF := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 OPENAPI_JSON := frontend/src/api/generated/openapi.json
-# `make demo`: the image with demo data on http://localhost:$(DEMO_PORT) (scripts/demo.sh).
+# `make demo`: the image with demo data on http://localhost:$(DEMO_PORT) and its email in
+# Mailpit on http://localhost:$(DEMO_MAILPIT_PORT) (scripts/demo.sh).
 DEMO_PORT ?= 8000
+DEMO_MAILPIT_PORT ?= 8026
 # `make e2e` runs against this URL (by default the one `make demo` serves).
 E2E_BASE_URL ?= http://localhost:$(DEMO_PORT)
 # `make k3s-install SSO=1` / `make k3s-smoke SSO=1`: single sign-on with Keycloak in k3s.
@@ -22,13 +24,16 @@ SSO ?=
 SMTP ?=
 # `make sso-smoke` runs against this app (configured for the dev Keycloak realm).
 SSO_BASE_URL ?= http://localhost:8000
+# `make email-smoke` runs against this app (dev login, worker, Mailpit: MAILPIT_URL,
+# MAILPIT_CONTAINER; defaults: the dev compose Mailpit).
+EMAIL_BASE_URL ?= http://localhost:8000
 
 comma := ,
 build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(BUILD_CA))
 
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
         check-scripts e2e image demo demo-down k3s-up k3s-load k3s-keycloak k3s-mailpit k3s-install k3s-smoke \
-        k3s-down openapi gen-api seed sso-smoke
+        k3s-down openapi gen-api seed sso-smoke email-smoke
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
@@ -50,11 +55,13 @@ dev: ## How to run the backend and frontend dev servers (with Keycloak SSO)
 	@echo "   make -C backend install migrate               # once, and after pulling migrations"
 	@echo "   make seed                                     # demo data (alice is the platform admin)"
 	@echo "3. make -C backend dev                           # API on http://localhost:8000"
-	@echo "   make -C backend worker                        # background jobs (other terminal)"
+	@echo "   make -C backend worker                        # sends email, reminders, digests (other terminal)"
 	@echo "4. npm --prefix frontend ci && npm --prefix frontend run dev   # SPA on http://localhost:5173"
 	@echo "   (npm --prefix frontend run dev:mock runs the SPA against MSW mocks, no backend needed)"
 	@echo "5. http://localhost:5173 -> Sign in with SSO -> alice / password (Keycloak users: dev/README.md)"
 	@echo "   make sso-smoke                                # the same flow scripted with curl, plus groups -> access"
+	@echo "6. http://localhost:8025                         # Mailpit: every email the worker sends"
+	@echo "   make email-smoke                              # invite -> email with the evaluate link; SMTP outage -> delivered later"
 
 # --- Checks ------------------------------------------------------------------------------
 check: check-backend check-frontend check-helm check-scripts ## Run every check
@@ -81,8 +88,8 @@ image: ## Build the container image (IMAGE, default soundings:dev)
 	docker build $(build_ca_flag) --build-arg VCS_REF=$(VCS_REF) \
 	  --build-arg BUILD_DATE=$$(date -u +%Y-%m-%dT%H:%M:%SZ) $(IMAGE_BUILD_ARGS) -t $(IMAGE) .
 
-demo: image ## Build the image, run it with Postgres + demo data on localhost:DEMO_PORT
-	IMAGE=$(IMAGE) DEMO_PORT=$(DEMO_PORT) scripts/demo.sh up
+demo: image ## Build the image, run it with Postgres, the worker, Mailpit (localhost:DEMO_MAILPIT_PORT) + demo data on localhost:DEMO_PORT
+	IMAGE=$(IMAGE) DEMO_PORT=$(DEMO_PORT) DEMO_MAILPIT_PORT=$(DEMO_MAILPIT_PORT) scripts/demo.sh up
 
 demo-down: ## Remove the demo containers and their data
 	scripts/demo.sh down
@@ -111,6 +118,9 @@ k3s-down: ## Delete the local k3s cluster
 
 sso-smoke: ## Scripted SSO sign-in + groups -> access against SSO_BASE_URL (default the make dev API)
 	scripts/sso-smoke.sh $(SSO_BASE_URL)
+
+email-smoke: ## Invite -> branded email in Mailpit, then an SMTP outage -> delivered once (EMAIL_BASE_URL, MAILPIT_URL)
+	scripts/email-smoke.sh $(EMAIL_BASE_URL)
 
 # --- API contract ------------------------------------------------------------------------
 openapi: ## Export the backend's OpenAPI document to $(OPENAPI_JSON)

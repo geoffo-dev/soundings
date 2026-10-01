@@ -7,6 +7,7 @@ Writes ``<template>.html``, ``<template>.txt`` and an ``index.html`` linking the
 from __future__ import annotations
 
 import html
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
@@ -107,7 +108,8 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             preheader="Bob Baker moved CUST-12 from Evaluating to Shortlisted.",
             context={
                 "actor": "Bob Baker",
-                "idea": idea,
+                # The card shows the status at send time: the one it moved to.
+                "idea": replace(idea, status="Shortlisted"),
                 "from_label": "Evaluating",
                 "to_label": "Shortlisted",
             },

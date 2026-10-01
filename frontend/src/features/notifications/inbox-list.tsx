@@ -111,6 +111,16 @@ function InboxRow({
   const sentence = describeNotification(item, now)
   const link = notificationLink(item)
   const label = `${unread ? 'Unread: ' : ''}${notificationText(item, now)}. ${item.idea.key} ${item.idea.title}`
+  // Next to the title on a wide page; on the sentence line in the popover and on
+  // phones, so the title keeps its room.
+  const time = (className: string) => (
+    <RelativeTime
+      date={item.created_at}
+      style="narrow"
+      tooltip={false}
+      className={cn('shrink-0 text-xs text-muted', className)}
+    />
+  )
   return (
     <Link
       to="/ideas/$ideaKey"
@@ -153,16 +163,14 @@ function InboxRow({
           >
             {item.idea.title}
           </span>
-          <RelativeTime
-            date={item.created_at}
-            style="narrow"
-            tooltip={false}
-            className="shrink-0 text-xs text-muted"
-          />
+          {density === 'comfortable' && time('hidden sm:inline')}
         </span>
-        <span className="text-sm text-secondary">
-          {sentence.actor && <span className="font-medium text-primary">{sentence.actor} </span>}
-          {sentence.text}
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 flex-1 text-sm text-pretty text-secondary">
+            {sentence.actor && <span className="font-medium text-primary">{sentence.actor} </span>}
+            <SentenceText text={sentence.text} keepTogether={sentence.keepTogether} />
+          </span>
+          {time(density === 'comfortable' ? 'sm:hidden' : '')}
         </span>
         {sentence.quote && (
           <span className="line-clamp-2 text-sm [overflow-wrap:anywhere] text-muted">
@@ -174,5 +182,16 @@ function InboxRow({
         {unread && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
       </span>
     </Link>
+  )
+}
+
+/** The sentence, with its due date kept on one line ("due Sat, 3 Oct", never "Sat, / 3 Oct"). */
+function SentenceText({ text, keepTogether }: { text: string; keepTogether?: string }) {
+  if (!keepTogether || !text.endsWith(keepTogether)) return text
+  return (
+    <>
+      {text.slice(0, -keepTogether.length)}
+      <span className="whitespace-nowrap">{keepTogether}</span>
+    </>
   )
 }

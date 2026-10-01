@@ -34,16 +34,20 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the wheel),
                   tests/ — uv, Python 3.12; app/seed/ is the demo story (`soundings seed`)
   app/schemas/      API contract (lead)          app/authz/ app/auth/ app/api_keys/ (identity)
+  app/notifications/  fan-out, preferences, digests, reminders, mentions, inbox, unsubscribe
+  app/email/          outbox, worker tasks, SMTP, rendering; app/templates/email/ (Jinja2)
 frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 4
   src/api/generated/  openapi.json + schema.d.ts (lead, generated)
   src/components/ui/  design system; /design shows it (dev only)
 deploy/helm/      Helm chart          deploy/kagent/  example agent manifests
-dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit
+dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit;
+                  k3s/ (Mailpit, Keycloak manifests), k3s-*-values.yaml
 e2e/              Playwright e2e against the real stack + review screenshots (qa)
 scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers
 docs/             ADRs, role matrix, ownership, wireframes, guides, research,
                   test-plans/phase-N.md (qa), screenshots/phase-N/ (real-stack review
-                  screenshots, light/dark/390 px; the frontend's mock ones in mock/),
+                  screenshots, light/dark/390 px; the frontend's mock ones in mock/;
+                  phase-3/emails/: every email template, light/dark, desktop/390 px),
                   phase-summaries/phase-N.md (lead), user-guide.md, operator-guide.md
 .claude/          settings.json (team env, permissions, hook), agents/ (8 agent types)
 Dockerfile        one image: API + built SPA; `worker` and `migrate` subcommands
@@ -66,10 +70,12 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make dev` | Prints how to run API, worker and SPA against the dev services |
 | `make seed` | Migrate + load the demo data into `SOUNDINGS_DATABASE_URL` (default: the dev compose DB); a no-op once there are projects, `RESET=1` wipes app data first. Who's who: `dev/README.md` |
 | `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`). This sandbox has no Debian mirror: add `IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export then fails) |
-| `make demo` / `demo-down` | Build the image and run it with Postgres, dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`; `scripts/demo.sh`) / remove it all |
+| `make demo` / `demo-down` | Build the image and run it with Postgres, the worker, Mailpit (inbox http://localhost:8026), dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_MAILPIT_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`, `DEMO_SMTP=0` in-app only, `DEMO_TIMEZONE=`; `scripts/demo.sh`) / remove it all |
 | `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work, and a break-glass sign-in when available) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`) |
+| `make k3s-mailpit` · `k3s-install SMTP=1` · `k3s-smoke SMTP=1` | Mailpit in the cluster (`scripts/k3s-mailpit.sh up\|scale 0\|1\|down`; SMTP `mailpit.mailpit.svc.cluster.local:1025`, inbox http://mailpit.localhost:18081), install with `dev/k3s-smtp-values.yaml` (SMTP, time zone, egress policies), then `scripts/email-smoke.sh` through the ingress (invite → email with the evaluate link; Mailpit scaled to 0 → queued → delivered once). `SSO=1 SMTP=1` combines both (CI) |
 | `make k3s-keycloak` · `k3s-install SSO=1` · `k3s-smoke SSO=1` | Keycloak with the dev realm in the cluster (`scripts/k3s-keycloak.sh up\|down`; issuer `http://keycloak.localhost:18081/realms/soundings` for browser and pods; creates Secret `soundings-oidc`), then install with `dev/k3s-sso-values.yaml` and run `scripts/sso-smoke.sh` through the ingress |
 | `make sso-smoke` | `scripts/sso-smoke.sh $(SSO_BASE_URL)` (default :8000, the `make dev` API with `dev/.env`): alice signs in through Keycloak with curl, then the Phase 2 acceptance (managed group → private project; removed in Keycloak → 404 at next sign-in); needs `jq`, cleans up |
+| `make email-smoke` | `scripts/email-smoke.sh $(EMAIL_BASE_URL)` (default :8000) against an app with dev login, the worker and Mailpit (`MAILPIT_URL`, default :8025; `MAILPIT_CONTAINER`, default the dev compose one; `MAILPIT_OUTAGE=0` skips the outage step); needs `jq` |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
 | `make e2e` | Playwright e2e in `e2e/` against `E2E_BASE_URL` (default http://localhost:8000, i.e. `make demo`); CI runs it against the built image with the demo data |
@@ -77,15 +83,21 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 Backend (`make -C backend <target>`): `install` (uv sync --locked), `check`, `lint`,
 `typecheck`, `test`, `test-slow` (10k-idea performance checks, excluded from `test`),
 `fmt`, `dev` (API on :8000 with reload; also serves the SPA from `frontend/dist` once
-built), `worker`, `migrate`, `revision m="..."` (backend owner only), `openapi`,
-`vendor-swagger` (refresh the bundled Swagger UI). `tests/identity/test_keycloak.py`
+built), `worker` (sends email, runs the outbox sweep, the hourly reminder/digest
+schedule and job cleanup; needed for any email), `migrate`, `revision m="..."` (backend
+owner only), `openapi`, `vendor-swagger` (refresh the bundled Swagger UI).
+`tests/acceptance/test_phase3_acceptance.py` sends through a real Mailpit (testcontainer,
+about 10 s; `SOUNDINGS_TEST_MAILPIT=0` skips, `SOUNDINGS_TEST_MAILPIT_SMTP=host:port` +
+`_URL` reuse one, as CI does). `tests/identity/test_keycloak.py`
 runs a real Keycloak 26 testcontainer (about 45 s of `test`): `SOUNDINGS_TEST_KEYCLOAK=0`
 skips it, `SOUNDINGS_TEST_KEYCLOAK_URL=<url>` reuses a running Keycloak with the dev
 realm (CI loads it with `dev/keycloak/import_realm.py`). The other SSO tests use the fake
 IdP in `tests/identity/fake_idp.py`. The `soundings` CLI (`uv run soundings
 <cmd>` in `backend/`, the image's entrypoint): `api`, `worker`, `migrate`,
 `wait-for-db --timeout N`, `seed [--reset] [--force]` (refuses production without
-`--force`), `openapi`.
+`--force`), `openapi`, `email-preview -o DIR` (every email template with sample data as
+`.html` + `.txt` and an `index.html`; no database or SMTP needed; for reviewing
+templates in browsers and mail clients).
 
 Frontend (`npm --prefix frontend run <script>`, after `npm --prefix frontend ci`):
 `dev` (Vite on :5173, proxies `/api`, `/mcp`, `/metrics` to :8000), `dev:mock` (MSW, no
@@ -100,6 +112,10 @@ sign-in knobs (localStorage, `frontend/README.md`): `soundings-mock-auth` (`sso`
 `-sso-error`, `-sso-discovery`; the mock break-glass login is `break-glass` / `correct
 horse battery staple`. Phase 2 mock screenshots: `SCREENSHOTS=1 npx playwright test
 admin-screenshots login-screenshots` in `frontend/` → `docs/screenshots/phase-2/mock/`.
+Phase 3 mock knob: `soundings-mock-email` = `off` (no SMTP) or `failing` (a dead
+server); the mock's pretend worker "sends" queued mail after 1.5 s. Phase 3 mock
+screenshots: `SCREENSHOTS=1 npx playwright test notifications-screenshots` →
+`docs/screenshots/phase-3/mock/`.
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -119,17 +135,31 @@ always restores the membership) on top of `e2e/scripts/keycloak.ts` (Keycloak ad
 module and CLI). Without SSO the break-glass admin is on (`E2E_BREAK_GLASS_USERNAME` /
 `_PASSWORD`, default `admin` / `e2e-break-glass-password`; `E2E_BREAK_GLASS=0` turns it
 off). Changing mode restarts the API; `stop-stack.sh` also removes Keycloak.
-`npm --prefix e2e run screenshots` writes `docs/screenshots/phase-1/` and
-`screenshots:phase2` `docs/screenshots/phase-2/` (an SSO run, then a break-glass run),
-both from freshly seeded data (the local stack reseeds on start); `npm --prefix e2e run
-check` = tsc + prettier. Test plans and case IDs: `docs/test-plans/phase-1.md`,
-`phase-2.md`.
+**Email (Phase 3):** the stack also runs `soundings worker` and Mailpit
+`<prefix>mailpit` (SMTP 127.0.0.1:`E2E_MAILPIT_SMTP_PORT` 1125, inbox and API
+`E2E_MAILPIT_PORT` 8125, emptied on every start, messages survive `docker stop`/`start`),
+instance time zone `E2E_TIMEZONE` (Europe/London); `node e2e/scripts/mailpit.ts
+list|show|clear|stop|start`. `E2E_SMTP=0` runs without SMTP (email specs skip; the
+banner/"not set up" specs PR-05, AE-04 run). Against `E2E_BASE_URL` set `E2E_MAILPIT_URL`
+and, for the outage specs, `E2E_MAILPIT_CONTAINER`. Specs that stop Mailpit are tagged
+`@smtp-outage` and run last in their own Playwright project `smtp-outage` (one worker,
+depends on `e2e`): any failure in `e2e` skips them; rerun with `npx --prefix e2e
+playwright test --project=smtp-outage --no-deps`, and add `--project=e2e` to run one
+file's other tests without the outage ones. Email specs create run-unique people
+(`tests/support/email.ts` `newPeople`) and always filter mail by recipient and `since`.
+`npm --prefix e2e run screenshots` writes `docs/screenshots/phase-1/`,
+`screenshots:phase2` `docs/screenshots/phase-2/` (an SSO run, then a break-glass run)
+and `screenshots:phase3` `docs/screenshots/phase-3/` + `emails/` (an SMTP run, then
+`E2E_SMTP=0`), all from freshly seeded data (the local stack reseeds on start);
+`npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
+`docs/test-plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
 Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000 (and
 `/metrics` on 9090 unless `--reload`), Vite 5173, Playwright 5174, e2e stack 8100
-(Postgres 55433, Keycloak 8180), k3s API 16443, k3s ingress 18081. Dev logins, the demo
+(Postgres 55433, Keycloak 8180, Mailpit 8125 / SMTP 1125), `make demo` Mailpit 8026,
+k3s API 16443, k3s ingress 18081. Dev logins, the demo
 people and groups, and the Keycloak users are in `dev/README.md`.
 
 **SSO in development** (`dev/README.md` has the walkthrough): `make dev-up` (Keycloak
@@ -141,6 +171,13 @@ imports `dev/keycloak/realm-soundings.json`), `cp dev/.env.example dev/.env` onc
 :8000, :5173, :8100 (localhost and 127.0.0.1) and :18081; on other ports register yours
 through Keycloak's admin API in your own Keycloak container. Break-glass works only
 with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-password`).
+
+**Email in development** (`dev/README.md` "Email: Mailpit and the worker"): `dev/.env.example`
+points the backend at the compose Mailpit (`SOUNDINGS_SMTP_HOST=localhost`, port 1025,
+`security=none`) with `SOUNDINGS_TIMEZONE`; run `make -C backend worker` next to the
+API and read mail at http://localhost:8025. Without `SOUNDINGS_SMTP_HOST` the app is
+in-app only and platform admins see the "Email isn't set up" banner. Templates:
+`uv run soundings email-preview -o /tmp/emails` and open `index.html`.
 
 ## Conventions
 
@@ -184,7 +221,21 @@ with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-p
   (`app/pagination.py`). Malformed input is a 4xx, never a 500.
 - **Demo data:** `soundings seed --reset` needs `--force` once anyone who is not a demo
   person has an account; it refuses production without `--force`.
-- **Email:** outbox row + job deferred in the same transaction (ADR 0003).
+- **Email and notifications** (contract-phase3 §3, ADR 0003 amended): services call
+  `app.services.activity.emit`; a **before-commit hook** (`app/db.py`) runs the fan-out
+  once, after the request's last write, in its transaction: in-app notification rows,
+  plus an `outbound_email` row and its `send_email` job (deferred on the same
+  connection) for immediate email. Jobs or CLI code that emit activity must open their
+  session with `session_scope(..., settings=settings)`, or their notifications are
+  recorded with email off. Content is rendered at send time, after re-checking access,
+  preference and age. Recipients pass the policy (`idea.view`, `evaluation.submit_own`);
+  the actor, inactive, service and break-glass users never get anything. Emails and
+  inbox items **never carry score data** (role matrix §3 rules 1 and 8). One plain
+  ASCII recipient per email (`MAIL_ADDRESS_PATTERN`). Logs carry outbox ids, types,
+  attempts and error classes; never addresses, subjects, bodies, tokens, SMTP
+  credentials or server replies. One-line names that reach subjects (idea titles,
+  display names) use `SingleLine` (`app/schemas/base.py`: no CR/LF or control
+  characters).
 - **Tests first** for authz, login matching and group sync, blind-evaluation
   visibility, API-key scoping and the email outbox.
 - **Frontend:** only design-system components and tokens (no hex values, no arbitrary
@@ -200,7 +251,12 @@ with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-p
   `Table cardFields="inline"` (one muted line per phone card), `FilterMenu`; toasts
   move above a side sheet's footer while it is open.
   Unsent drafts go through `lib/drafts.ts` (`draftKey(userId, name)`), which clears them
-  on sign-out, 401 and user switch.
+  on sign-out, 401 and user switch. Phase 3: the bell (`features/notifications/`) polls
+  `get_notification_summary` every minute while visible (the poll doesn't keep the
+  session alive); inbox `/notifications` (`g i`), Settings → Notifications, public
+  `/unsubscribe?token=` (its fetch must keep `Accept: application/json`, or the API
+  answers 303), Admin → Email (`features/admin/email/`); mentions are
+  `@[Name](user:<id>)` tokens (`lib/mentions.ts`), shown as chips, never links.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -257,6 +313,15 @@ with `SOUNDINGS_OIDC_ISSUER` unset (`.env.example`: `admin` / `dev-break-glass-p
   fresh seed and realm (the local stack resets both on start; reseeding uses
   `seed --reset --force` and fails loudly). Use run-unique group names
   (`group_name_taken` otherwise).
+- **Mailpit and the worker:** email goes out only while a worker runs (`make -C backend
+  worker`, the e2e stack and `make demo` start one). After an SMTP failure the worker
+  retries 30 s, 1 min, 2 min… later, so a test that restarts Mailpit allows about 2.5
+  minutes. A worker that reaches Mailpit by container name (`make demo`) reports a
+  stopped Mailpit as "connection failed" (DNS), by IP as "connection refused". Mailpit
+  refuses to start with both `MP_SMTP_REQUIRE_STARTTLS` and `MP_SMTP_AUTH_ALLOW_INSECURE`.
+  Mailpit's inbox is shared by a whole e2e run: filter by recipient and time. aiosmtplib
+  tries STARTTLS opportunistically unless told not to: `security=none` passes
+  `start_tls=False`.
 - **Undo inside sheets:** a toast's Undo can't be clicked while a modal sheet is open
   (the sheet blocks outside clicks), so destructive actions in sheets confirm instead.
 - **Library pins that matter:** TypeScript 5.9.x (7.x breaks typescript-eslint and
@@ -345,3 +410,18 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   deferred items there). Screenshots: `docs/screenshots/phase-2/` (real stack) and
   `mock/`. Decisions: `docs/decisions.md` (Phase 2). Stop for the human's review before
   Phase 3.
+- **Phase 3** (email and notifications): one fan-out (before-commit hook) writes in-app
+  notifications and outbox rows for seven types (made owner, asked to evaluate,
+  reminders, all evaluations in, status changed, comment, @mention); transactional
+  outbox sent by `soundings worker` (lease, 12 attempts with backoff, sweep, send-time
+  re-checks, no score data); per-type preferences (immediate / daily digest / off),
+  daily digests and reminders in the instance time zone, signed unsubscribe links (RFC
+  8058 one-click), branded table-based HTML + text templates (`soundings
+  email-preview`), the bell and inbox (`g i`), Settings → Notifications, the
+  unsubscribe page, Admin → Email (settings in effect, test email, outbox with retry),
+  admin banners, @mention picker and chips; SMTP via Helm values / `SOUNDINGS_SMTP_*`
+  with a Secret and CA bundle; Mailpit in dev, the e2e stack, `make demo`, CI and k3s
+  (`SMTP=1`). Integration (2026-10-01): every check green in both e2e modes, QA's
+  K3-1…K3-5 fixed; test plan `docs/test-plans/phase-3.md`, screenshots
+  `docs/screenshots/phase-3/` (+ `emails/`). Decisions: `docs/decisions.md` (Phase 3
+  build and integration). Next: code/security and UX reviews, phase summary.

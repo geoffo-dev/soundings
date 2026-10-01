@@ -82,9 +82,16 @@ class RenderedEmail:
     text: str
 
 
+SIGNATURE_SEPARATOR: Final = "-- "
+"""Starts the footer of the text part (RFC 3676 4.3): clients dim it and leave it out
+of replies. Its trailing space is kept."""
+
+
 def _tidy_text(text: str) -> str:
-    """At most one blank line in a row; no trailing spaces."""
-    lines = [line.rstrip() for line in text.strip().splitlines()]
+    """At most one blank line in a row; no trailing spaces (but the footer's ``-- ``)."""
+    lines = [
+        line if line == SIGNATURE_SEPARATOR else line.rstrip() for line in text.strip().splitlines()
+    ]
     tidy: list[str] = []
     for line in lines:
         if line or (tidy and tidy[-1]):

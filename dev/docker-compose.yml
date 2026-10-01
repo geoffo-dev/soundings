@@ -61,6 +61,9 @@ services:
   mailpit:
     image: ${MAILPIT_IMAGE:-axllent/mailpit:latest}
     environment:
+      # A file inside the container: messages survive `stop`/`start` (an SMTP outage
+      # drill, dev/README.md), not `down`.
+      MP_DATABASE: /tmp/mailpit.db
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
       MP_DISABLE_VERSION_CHECK: "true"

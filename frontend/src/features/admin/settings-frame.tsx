@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { Link, useLocation } from '@tanstack/react-router'
+import { type ReactNode, useEffect, useRef } from 'react'
 
 import { Page, PageHeader } from '@/components/layout/page'
 import { useCurrentUser } from '@/features/auth/current-user'
@@ -46,9 +46,24 @@ const navLink = cn(
 
 function SettingsNav({ admin }: { admin: boolean }) {
   const pages = SETTINGS_PAGES.filter((page) => admin || !page.admin)
+  const listRef = useRef<HTMLUListElement>(null)
+  const pathname = useLocation({ select: (location) => location.pathname })
+  // On phones the row scrolls sideways: bring the current section into view (an
+  // admin on Email or Audit log would otherwise see the row end at "SSO"). Only the
+  // row scrolls, never the page.
+  useEffect(() => {
+    const list = listRef.current
+    const active = list?.querySelector<HTMLElement>('a[data-status="active"]')
+    if (!list || !active) return
+    const row = list.getBoundingClientRect()
+    const link = active.getBoundingClientRect()
+    const margin = 16
+    if (link.right > row.right) list.scrollLeft += link.right - row.right + margin
+    else if (link.left < row.left) list.scrollLeft -= row.left - link.left + margin
+  }, [pathname, admin])
   return (
     <nav aria-label="Settings sections" className="-mx-4 px-4 sm:mx-0 sm:px-0">
-      <ul className="scrollbar-none flex items-center gap-4 overflow-x-auto border-b">
+      <ul ref={listRef} className="scrollbar-none flex items-center gap-4 overflow-x-auto border-b">
         {pages.map((page, index) => (
           <li key={page.to} className="flex shrink-0 items-center gap-4">
             {page.admin && !pages[index - 1]?.admin && (

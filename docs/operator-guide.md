@@ -38,16 +38,21 @@ are in the image; there is no telemetry.
 ### `make demo`: the image on your machine
 
 ```sh
-make demo                        # build soundings:dev, run it with Postgres and demo data
+make demo                        # build soundings:dev, run it with Postgres, the worker,
+                                 # Mailpit and demo data
 open http://localhost:8000       # pick a person on the sign-in page (Alice is the admin)
+open http://localhost:8026       # Mailpit: every email the demo sends
 make demo-down                   # remove the containers and their data
 ```
 
 `make demo` (`scripts/demo.sh`) runs the same image as the cluster, in development mode
 with the dev login and the demo story (12 people, three projects, 45 ideas; who's who
-in [dev/README.md](../dev/README.md#demo-data)). `DEMO_PORT` changes the port,
-`DEMO_RESET=1` reloads fresh demo data, and running it again after `make image` swaps
-the app container and keeps the data. Without a Debian mirror, build with
+in [dev/README.md](../dev/README.md#demo-data)), plus `soundings worker` and Mailpit as
+its SMTP server, so invitations, mentions and the rest arrive in Mailpit's inbox.
+`DEMO_PORT` changes the app's port and `DEMO_MAILPIT_PORT` Mailpit's, `DEMO_SMTP=0`
+runs without email (in-app notifications only), `DEMO_TIMEZONE` sets the instance time
+zone, `DEMO_RESET=1` reloads fresh demo data, and running it again after `make image`
+swaps the app and worker containers and keeps the data. Without a Debian mirror, build with
 `IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export, a Phase 4 feature,
 then has no system libraries).
 
@@ -340,10 +345,181 @@ off. That needs cluster access, the right bar for an emergency account.
 
 ## Email [Phase 3]
 
+Soundings emails people when they are made owner, asked to evaluate, reminded of a due
+evaluation, when all evaluations are in, and (by default in a daily digest) about
+status changes and comments; @mentions too. Every notification also lands in the
+in-app inbox, so email is optional. Mail goes through **any SMTP server**: your
+organisation's relay, Microsoft 365, Google Workspace or a sending service. Nothing else
+is needed (no queue service: the outbox is a PostgreSQL table, sent by the worker).
+
 ### SMTP settings and `existingSecret`
+
+Configured only through Helm values (environment variables `SOUNDINGS_SMTP_*`); there
+is no settings screen. Settings → Email shows the values in effect, read-only.
+
+```yaml
+smtp:
+  host: smtp.example.com          # empty: no email (in-app notifications only)
+  port: ""                        # empty: 587, or 465 with security: tls
+  security: starttls              # none | starttls | tls
+  existingSecret: soundings-smtp  # optional keys: username, password
+  from: ideas@example.com         # required with host; one plain address
+  fromName: Example Ideas         # default "Soundings"
+  replyTo: innovation@example.com # optional
+  timeout: 10                     # seconds, per connection and command (max 120)
+  caBundle:
+    configMap: ""                 # a ConfigMap with your CA (PEM), key ca.crt
+baseUrls: [https://ideas.example.com]   # the first one is used in email links
+timezone: Europe/London
+notifications:
+  digestHour: 8
+  reminderDays: [2, 0]
+```
+
+```sh
+kubectl -n soundings create secret generic soundings-smtp \
+  --from-literal=username=soundings@example.com --from-literal=password='…'
+```
+
+Credentials come from the Secret (or `smtp.username` / `smtp.password` in values, not
+both); both keys are optional, for relays that accept your cluster without
+authentication. The api and worker pods get the same settings (the api queues mail and
+shows the configuration, the worker sends it). Changing a value rolls both
+Deployments; a new password in the Secret or a new CA needs `kubectl -n soundings
+rollout restart deploy`. Links in emails use the first of `baseUrls`, so list the
+address people use first.
+
+**Common providers** (check your provider's current documentation; these are the usual
+settings):
+
+| Provider | `host` | `security` (port) | Username / password | Notes |
+|---|---|---|---|---|
+| Your organisation's relay (Postfix, Exchange connector) | the relay | `starttls` (587) or `none` (25) | often none | `none` only inside your network; production refuses a password with `none`. A relay with a private CA needs `caBundle`. |
+| Microsoft 365 | `smtp.office365.com` | `starttls` (587) | a licensed mailbox and its password | SMTP AUTH must be enabled for that mailbox; `from` must be the mailbox or one it may send as. Otherwise use an Exchange connector as a relay (row above). |
+| Google Workspace | `smtp.gmail.com`, or `smtp-relay.gmail.com` | `starttls` (587) or `tls` (465) | an app password; the relay can allow your egress IPs instead | `from` must be the account or an alias. |
+| Amazon SES | `email-smtp.<region>.amazonaws.com` | `starttls` (587) or `tls` (465) | the SES SMTP credentials (not the IAM keys) | Verify the `from` domain; leave the sandbox. |
+| SendGrid, Mailgun, Postmark… | the service's SMTP host | `starttls` (587) | the service's SMTP credentials (SendGrid: `apikey` and the API key) | Verify the sender domain (SPF/DKIM) so mail isn't marked as spam. |
+
+Whatever the provider, publish SPF and DKIM for the `from` domain; mail arrives with
+`List-Unsubscribe` and one-click unsubscribe headers (RFC 8058), which large mailbox
+providers expect from automated mail.
+
 ### Security modes (`none`, `starttls`, `tls`) and custom CA bundles
+
+- `starttls` (default, port 587): connects in plain text and upgrades with STARTTLS; a
+  server that doesn't offer it fails ("server doesn't support STARTTLS or AUTH").
+- `tls` (port 465): TLS from the first byte ("implicit TLS", SMTPS).
+- `none`: plain SMTP, for a relay or Mailpit inside your network. No STARTTLS is
+  attempted. Production refuses a password with it (it would cross the network in
+  clear text), and so does the chart for `smtp.password`.
+
+TLS always verifies the server's certificate and host name. For a server whose
+certificate comes from a private or corporate CA, put the CA (PEM, the whole chain's
+roots) in a ConfigMap and name it:
+
+```sh
+kubectl -n soundings create configmap smtp-ca --from-file=ca.crt=./corporate-ca.pem
+helm upgrade … --set smtp.caBundle.configMap=smtp-ca   # key: smtp.caBundle.key (ca.crt)
+```
+
+It is mounted read-only (`/etc/soundings/smtp-ca/ca.crt`, `SOUNDINGS_SMTP_CA_BUNDLE`)
+and **replaces** the system trust store for SMTP only (sign-in uses the image's trust
+store, or `SSL_CERT_FILE`). A certificate that fails verification (an unknown CA, or
+issued for another host name) shows as "TLS certificate not trusted" in the outbox and
+the test email's result; other TLS problems (no common protocol, a plain-text server on
+a TLS port) as "TLS handshake failed". There is no setting to skip verification.
+
+With `networkPolicy.egress.enabled`, only the worker may open connections to the SMTP
+port; narrow it with `networkPolicy.egress.smtp.to` (the relay's CIDR). See the
+[chart README](../deploy/helm/README.md#security).
+
 ### Sending a test email; failed sends and retries
+
+**Settings → Email → Send test email** (platform admins) sends a real email to yourself
+or one address through the outbox and the worker, and shows the result within about 30
+seconds: "Sent to …" when the server accepted it, or the reason it didn't, with a hint
+(host and port, TLS, credentials). A test email has one attempt, so a failure shows at
+once. If it stays "Queued", the worker isn't running or can't reach the database.
+
+**How sending works.** Each email is a row in `outbound_email`, written in the same
+database transaction as the event that causes it (an invitation, a comment), together
+with its `send_email` job; the worker sends it. Content is rendered when it is sent, so
+an email never shows what the recipient may no longer see, and no message bodies are
+stored. If the server doesn't accept it, the email goes back in the queue:
+
+- **Transient** (connection refused or timed out, TLS problems, any 4xx reply such as
+  greylisting, authentication failures): retried after 30 s, 1, 2, 4, 8, 16, 32 minutes
+  and then hourly, 12 attempts over about 5 hours, then **Failed**.
+- **Permanent** (a 5xx reply other than authentication, for example an unknown
+  recipient or a refused sender): **Failed** at once.
+
+The outbox on Settings → Email lists every email with its recipient's name (never the
+address), type, status, attempts and the last error, in our own words ("connection
+refused", "SMTP 535: authentication failed", "TLS certificate not trusted"; the server's
+reply text is never stored, since it can contain addresses). **Retry** sends a failed
+email again with fresh attempts; **Retry all failed** does that for every failed email
+that is still current. Mail older than **3 days** (digests: **2 days**) is never sent
+late: it is cancelled as "Not sent: out of date", as are emails whose recipient lost
+access, turned that type off, or has an unusable address. Platform admins see a banner,
+"Some emails aren't going out", while an email failed in the last 24 hours or one has
+waited more than 15 minutes; it clears by itself.
+
+Sent and cancelled rows are kept 30 days, failed ones 90 days; in-app notifications 90
+days. Test emails and retries are in the audit log (without the address). The worker
+logs outbox ids, types, attempt numbers and error classes, never addresses, subjects,
+bodies, tokens or the server's replies. Its counters are `soundings_emails_sent_total`,
+`soundings_email_attempts_failed_total` (by type and kind: transient, permanent,
+internal), `soundings_emails_cancelled_total` and the gauge `soundings_emails_queued`;
+in Phase 3 the worker doesn't serve them on a port yet, so watch the banner, the outbox
+and the logs.
+
+**When the SMTP server is down**, nothing is lost: email waits in the outbox and goes out
+when the server is back (the next retry, at most an hour later), once, with the same
+Message-ID. An outage longer than about 5 hours leaves emails Failed: use **Retry all
+failed** within three days. **When the worker is down** (or scaled to 0), email,
+reminders and digests wait; when it starts, queued email goes out, a missed digest hour
+is caught up that day, and a reminder day that passed is skipped (people still see due
+evaluations on My work).
+
+### Digests, reminders and the time zone
+
+Everything time-based follows **one time zone for the whole installation**, `timezone`
+(IANA name, default `UTC`); emails show dates with its name ("Fri 9 Oct, 17:00
+(Europe/London)"). There are no per-user time zones.
+
+- **Daily digest:** once a day, at `notifications.digestHour` (default 8) local time or
+  in the first hourly run after it, each person who has notifications set to "Daily
+  digest" and not yet read in the app gets one email with them, grouped by idea (at most
+  the last 7 days). Nobody gets two digests a day.
+- **Evaluation reminders:** `notifications.reminderDays` (default `[2, 0]`: two days
+  before the due date and on the day), sent at the digest hour to evaluators who
+  haven't submitted, only on that local day: never for overdue evaluations, never
+  twice, and a changed due date reschedules them. `[]` turns reminders off; people can
+  also turn them off for themselves.
+- The schedule runs in the worker every hour and handles daylight-saving changes; the
+  daily cleanup (old notifications and outbox rows) runs in the digest hour's run.
+
 ### Running without SMTP
+
+Leave `smtp.host` empty (the default). The app works with in-app notifications only:
+the bell and inbox are unchanged, preferences can still be set (the page says email
+isn't set up), nothing is written to the outbox, and platform admins see a dismissible
+banner "Email isn't set up" linking to Settings → Email, which lists the setup steps.
+Test email and retry answer 409. Configure SMTP later and email starts with the next
+notification; nothing from before is sent late.
+
+### Worker and scaling
+
+The worker (`soundings worker`, Deployment `worker`) runs every background job: sending
+email, the per-minute outbox sweep, the hourly schedule and the daily job cleanup. Keep
+`worker.enabled` on whenever SMTP is configured. One replica with `worker.concurrency`
+4 is plenty for most organisations; more replicas are safe (each email is claimed by
+exactly one worker with a 5-minute lease, and periodic jobs are queued once however
+many workers run), and give you continuity during node drains. Each attempt must finish
+within 4 minutes; a worker that dies mid-send leaves the email to the sweep, which
+retries it after the lease (the recipient may then, rarely, get it twice, with the
+same Message-ID). The worker serves no HTTP and needs no Service; shutdown waits
+`worker.terminationGracePeriodSeconds` for running jobs.
 
 ## Public submission and anti-abuse [Phase 4]
 
@@ -387,6 +563,8 @@ responses, so a user's error report can be matched to the log.
 
 ### Backups and restore
 ### Scaling: replicas, HPA, PodDisruptionBudget
+
+The worker's scaling is described under [Worker and scaling](#worker-and-scaling).
 ### Security: Pod Security `restricted`, NetworkPolicy, secrets
 
 `networkPolicy.enabled` is **on by default**: the bundled Postgres accepts only this

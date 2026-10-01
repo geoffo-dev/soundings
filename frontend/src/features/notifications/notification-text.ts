@@ -13,6 +13,8 @@ export interface NotificationSentence {
   text: string
   /** A comment excerpt, shown quoted on its own line. */
   quote: string | null
+  /** The end of `text` that must not break across lines: a due date ("Sat, 3 Oct"). */
+  keepTogether?: string
 }
 
 /** Unknown types (a newer API) are skipped, not shown wrongly (schema: "skip types you don't know"). */
@@ -54,9 +56,15 @@ export function describeNotification(
         actor,
         text: `${someone}asked you to evaluate${item.due_at ? `, ${dueOn(item.due_at, now)}` : ''}`,
         quote: null,
+        ...(item.due_at ? { keepTogether: formatDate(item.due_at, { now }) } : {}),
       }
     case 'evaluation_reminder':
-      return { actor: null, text: `Your evaluation is ${dueOn(item.due_at, now)}`, quote: null }
+      return {
+        actor: null,
+        text: `Your evaluation is ${dueOn(item.due_at, now)}`,
+        quote: null,
+        keepTogether: formatDate(item.due_at, { now }),
+      }
     case 'evaluations_complete':
       return {
         actor: null,

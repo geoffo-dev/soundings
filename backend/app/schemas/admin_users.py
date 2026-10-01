@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import AfterValidator, Field, StringConstraints
 
-from app.schemas.base import RequestModel, ResponseModel
+from app.schemas.base import RequestModel, ResponseModel, SingleLine
 from app.schemas.common import Page
 from app.schemas.groups import GroupRef, UserProjectRole
 from app.schemas.users import UserRef
@@ -63,7 +63,7 @@ EmailAddress = Annotated[
 """An email address (only the shape is checked: something@something), not under the
 reserved ``.invalid`` domain."""
 
-DisplayName = Annotated[str, Field(min_length=1, max_length=100)]
+DisplayName = Annotated[str, Field(min_length=1, max_length=100), SingleLine]
 
 
 class ExternalIdIn(RequestModel):

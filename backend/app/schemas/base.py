@@ -4,6 +4,8 @@
   strings are stripped, so ``"  "`` fails a ``min_length=1`` check. No string
   anywhere in a body may contain a NUL character (422): PostgreSQL text cannot
   store one. Text query parameters use :data:`NoNul` for the same reason.
+  One-line names that reach email subjects and headers (idea titles, display names)
+  also reject line breaks and other control characters (:data:`SingleLine`).
 * :class:`ResponseModel`: response bodies. Every field is *required* in the
   OpenAPI schema (a default only helps the server build it), so generated
   TypeScript types have no optional response fields; nullable fields are
@@ -12,6 +14,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -32,7 +35,9 @@ __all__ = [
     "ResponseModel",
     "Score",
     "ScoreKey",
+    "SingleLine",
     "TagName",
+    "reject_control",
     "reject_nul",
 ]
 
@@ -59,6 +64,24 @@ def reject_nul[T](value: T) -> T:
 
 NoNul = AfterValidator(reject_nul)
 """``Annotated[str | None, Query(...), NoNul]``: 422 instead of a database error."""
+
+
+def has_control(value: str) -> bool:
+    """True if ``value`` has a control character (Unicode ``Cc``: CR, LF, tab, NUL, …)."""
+    return any(unicodedata.category(char) == "Cc" for char in value)
+
+
+def reject_control[T](value: T) -> T:
+    """``value`` unchanged, or ``ValueError`` if it is a string with a line break or
+    another control character."""
+    if isinstance(value, str) and has_control(value):
+        raise ValueError("must be one line without control characters")
+    return value
+
+
+SingleLine = AfterValidator(reject_control)
+"""``Annotated[str, Field(...), SingleLine]``: a one-line name (an idea title, a display
+name) that ends up in email subjects, so CR/LF and other control characters are a 422."""
 
 
 class RequestModel(BaseModel):

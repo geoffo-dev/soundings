@@ -25,8 +25,9 @@ E2E_BREAK_GLASS_USERNAME="${E2E_BREAK_GLASS_USERNAME:-admin}"
 E2E_BREAK_GLASS_PASSWORD="${E2E_BREAK_GLASS_PASSWORD:-e2e-break-glass-password}"
 # Email (Phase 3): Mailpit ($E2E_PREFIX-mailpit) catches everything the worker sends:
 # SMTP on 127.0.0.1:$E2E_MAILPIT_SMTP_PORT, inbox and API on $E2E_MAILPIT_URL. Its
-# messages survive `docker stop`/`start` (mailpit.sh stop|start: "the SMTP server is
-# down"). E2E_SMTP=0: no SMTP at all (in-app notifications only; admins see a banner).
+# messages survive `docker stop`/`start` ("the SMTP server is down": stopMailpit() and
+# startMailpit() in mailpit.ts, or `node e2e/scripts/mailpit.ts stop|start`).
+# E2E_SMTP=0: no SMTP at all (in-app notifications only; admins see a banner).
 E2E_SMTP="${E2E_SMTP:-1}"
 E2E_MAILPIT_PORT="${E2E_MAILPIT_PORT:-8125}"
 E2E_MAILPIT_SMTP_PORT="${E2E_MAILPIT_SMTP_PORT:-1125}"
@@ -166,7 +167,7 @@ start_process() {
   local name="$1"
   shift
   (
-    cd "$repo/backend"
+    cd "$repo/backend" || exit 1
     app_env
     setsid nohup "$@" >"$E2E_STATE_DIR/$name.log" 2>&1 &
     echo $! >"$E2E_STATE_DIR/$name.pid"

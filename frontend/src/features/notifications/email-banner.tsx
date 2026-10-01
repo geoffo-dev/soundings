@@ -35,7 +35,9 @@ const COPY: Record<BannerKind, { title: string; body: string; action: string }> 
   },
   trouble: {
     title: 'Some emails aren’t going out.',
-    body: 'Soundings keeps retrying; check the outbox.',
+    // Either cause: mail queued for a while (retried by itself) or a failed email
+    // (retried only from the outbox), so the copy promises neither.
+    body: 'See why in the outbox and retry any that failed.',
     action: 'Open Email settings',
   },
 }

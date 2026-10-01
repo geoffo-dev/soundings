@@ -188,6 +188,10 @@ def test_email_claim(claims: dict[str, Any], address: str | None, verified: bool
         ({"name": 7, "preferred_username": " nia "}, "nia"),
         ({}, "nia.lee"),
         ({"name": "N" * 150}, "N" * 100),
+        # One line: a name claim can't put CR/LF or other control characters into
+        # email subjects or plain-text emails (QA K3-1).
+        ({"name": "Nia\r\nBcc: x@evil.test"}, "Nia Bcc: x@evil.test"),
+        ({"name": "\t\x07 ", "preferred_username": "nia\x00lee"}, "nia lee"),
     ],
 )
 def test_display_name(claims: dict[str, Any], expected: str) -> None:

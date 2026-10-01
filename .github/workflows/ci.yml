@@ -14,6 +14,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Mailpit catches the email of the backend's SMTP integration tests and the e2e runs.
+  MAILPIT_IMAGE: axllent/mailpit:v1.31.3
+
 jobs:
   backend:
     runs-on: ubuntu-24.04
@@ -38,9 +42,17 @@ jobs:
             -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
             -e KC_HOSTNAME_STRICT=false -e KC_LOG_LEVEL=warn keycloak/keycloak:26.0 start-dev
           python3 ../dev/keycloak/import_realm.py http://localhost:8080 --origin http://testserver
+      # Mailpit for the email tests that talk to a real SMTP server (SMTP 1025, API 8025).
+      - name: Mailpit
+        run: |
+          docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 \
+            -e MP_SMTP_AUTH_ACCEPT_ANY=true -e MP_SMTP_AUTH_ALLOW_INSECURE=true \
+            -e MP_DISABLE_VERSION_CHECK=true "$MAILPIT_IMAGE"
       - run: uv run pytest
         env:
           SOUNDINGS_TEST_KEYCLOAK_URL: http://localhost:8080
+          SOUNDINGS_TEST_MAILPIT_URL: http://localhost:8025
+          SOUNDINGS_TEST_MAILPIT_SMTP: localhost:1025
 
   frontend:
     runs-on: ubuntu-24.04
@@ -94,11 +106,14 @@ jobs:
           if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
           else echo "No e2e/ yet: nothing to run."; fi
       # Builds the image and runs Postgres + the app (dev login, demo data, the
-      # break-glass admin as in the local e2e stack) on :8000.
+      # break-glass admin as in the local e2e stack) on :8000, the worker, and Mailpit
+      # (inbox and API on :8026, container soundings-demo-mailpit).
       - if: steps.e2e.outputs.present == 'true'
         run: make demo
         env:
           DEMO_BREAK_GLASS_PASSWORD: e2e-break-glass-password
+          # The browser's zone (playwright.config.ts), as in the local e2e stack.
+          DEMO_TIMEZONE: Europe/London
       - if: steps.e2e.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
@@ -113,8 +128,13 @@ jobs:
         run: npm --prefix e2e run test
         env:
           E2E_BASE_URL: http://localhost:8000
+          E2E_MAILPIT_URL: http://localhost:8026
+          # The SMTP-outage specs stop and start it (e2e/scripts/mailpit.ts).
+          E2E_MAILPIT_CONTAINER: soundings-demo-mailpit
       - if: failure() && steps.e2e.outputs.present == 'true'
-        run: docker logs soundings-demo-app
+        run: |
+          docker logs soundings-demo-app
+          docker logs soundings-demo-worker
       - if: always() && steps.e2e.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -127,8 +147,9 @@ jobs:
         run: make demo-down
 
   # The SSO specs (tagged @sso) against the working tree: e2e/scripts/start-stack.sh with
-  # E2E_SSO=1 runs Postgres and Keycloak (dev realm) in Docker and the API with SSO on
-  # http://localhost:8100, all on localhost like a developer's machine.
+  # E2E_SSO=1 runs Postgres, Keycloak (dev realm) and Mailpit in Docker, and the API with
+  # SSO on http://localhost:8100 plus the worker, all on localhost like a developer's
+  # machine.
   e2e-sso:
     runs-on: ubuntu-24.04
     steps:
@@ -158,7 +179,9 @@ jobs:
           E2E_SSO: "1"
           E2E_PREFIX: ci-
       - if: failure() && steps.e2e.outputs.present == 'true'
-        run: tail -n 100 e2e/.stack/api.log
+        run: |
+          tail -n 100 e2e/.stack/api.log
+          tail -n 100 e2e/.stack/worker.log
       - if: always() && steps.e2e.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:

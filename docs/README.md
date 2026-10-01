@@ -13,7 +13,7 @@
 | `test-plans/` | Acceptance test plans (qa) |
 | [phase-summaries/](phase-summaries/phase-1.md) | Per phase: what was built, acceptance evidence, review outcomes, known issues, screenshots |
 | `screenshots/` | Review screenshots per phase (real app, light/dark/390 px) |
-| [user-guide.md](user-guide.md) | End-user guide (filled in per phase; Phase 1 done) |
-| [operator-guide.md](operator-guide.md) | Install and operations guide (filled in per phase; Phase 0–1 done) |
+| [user-guide.md](user-guide.md) | End-user guide (filled in per phase; Phases 1–3 done) |
+| [operator-guide.md](operator-guide.md) | Install and operations guide (filled in per phase; Phases 0–3 done) |
 
 Agents: start with [../CLAUDE.md](../CLAUDE.md), then [ownership.md](ownership.md).

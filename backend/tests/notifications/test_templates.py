@@ -58,7 +58,12 @@ def test_text_has_the_same_content_with_full_urls(name: str) -> None:
 
     assert rendered.text.startswith("Soundings\n=========\n")
     if content.button is not None:
-        assert f"{content.button.label}: {content.button.url}" in rendered.text
+        # The link stands on its own line, after a blank one.
+        assert f"\n\n{content.button.label}: {content.button.url}\n" in rendered.text
+    # The footer follows a blank line and a signature separator (RFC 3676: "-- ").
+    body, footer = rendered.text.split("\n\n-- \n")
+    assert body.strip()
+    assert "-- " not in footer
     if content.unsubscribe_url is not None:
         assert content.unsubscribe_url in rendered.text
     assert "&amp;" not in rendered.text

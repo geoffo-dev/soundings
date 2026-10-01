@@ -90,6 +90,8 @@ test.describe('with SMTP down', () => {
     await page.goto('/')
     const banner = page.getByTestId('email-banner')
     await expect(banner).toContainText('Some emails aren’t going out.')
+    // Either cause (queued for long, or failed): the banner promises no automatic retry.
+    await expect(banner).toContainText('See why in the outbox and retry any that failed.')
     await banner.getByRole('link', { name: 'Open Email settings' }).click()
     await expect(page).toHaveURL(/\/settings\/email$/)
     await expect(page.getByTestId('email-banner')).toHaveCount(0) // the page says it itself
@@ -113,6 +115,31 @@ test.describe('with SMTP down', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Sign-in (SSO)' })).toBeVisible()
     await expect(page.getByTestId('email-banner')).toHaveCount(0)
   })
+})
+
+test.describe('on a phone (390px)', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  for (const [path, name] of [
+    ['/settings/email', 'Email'],
+    ['/settings/audit', 'Audit log'],
+  ] as const) {
+    test(`the settings row scrolls ${name} into view on ${path}`, async ({ page }) => {
+      await page.goto(path)
+      const nav = page.getByRole('navigation', { name: 'Settings sections' })
+      const current = nav.getByRole('link', { name, exact: true })
+      await expect(current).toHaveAttribute('aria-current', 'page')
+      // The whole tab is on screen (the row scrolled sideways), not cut off at the right.
+      await expect
+        .poll(async () => {
+          const box = await current.boundingBox()
+          return box !== null && box.x >= 0 && box.x + box.width <= 390
+        })
+        .toBe(true)
+      // Only the row scrolled, not the page.
+      expect(await page.evaluate(() => window.scrollX)).toBe(0)
+    })
+  }
 })
 
 test.describe('without SMTP', () => {

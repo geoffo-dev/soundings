@@ -19,10 +19,11 @@ The `soundings` command (`uv run soundings --help`):
 | Command | What it does |
 |---|---|
 | `soundings api [--host --port --workers --reload]` | uvicorn; the app believes `X-Forwarded-For`/`-Proto` only from `SOUNDINGS_TRUSTED_PROXIES`, and only the `SOUNDINGS_TRUSTED_PROXY_HOPS` entries they appended (`app/middleware.py`); also starts the metrics listener (below) |
-| `soundings worker [--concurrency N]` | procrastinate worker; stops gracefully on SIGTERM |
+| `soundings worker [--concurrency N]` | procrastinate worker: sends email from the outbox, the per-minute outbox sweep, the hourly reminder/digest schedule, the daily job cleanup; stops gracefully on SIGTERM |
 | `soundings migrate` | `alembic upgrade head` (app tables **and** procrastinate schema); idempotent. Reads only the database settings: no `SECRET_KEY` needed |
 | `soundings wait-for-db [--timeout N]` | polls until Postgres answers `SELECT 1` (default 60 s); exit 1 on timeout. For init containers and scripts |
 | `soundings openapi [--output FILE]` | sorted, deterministic OpenAPI JSON (`make openapi OPENAPI_OUT=...`) |
+| `soundings email-preview -o DIR` | every email template rendered with sample data (`<template>.html`, `.txt`, `index.html`); no database, SMTP or settings needed |
 
 Endpoints: `/api/v1/...` (REST), `/api/v1/openapi.json`, `/api/docs` (Swagger UI,
 vendored assets), `/healthz` (liveness), `/readyz` (DB check). If
@@ -56,9 +57,15 @@ production), `ENVIRONMENT` (`development`/`test`/`production`), `STATIC_DIR`,
 how many of them append to `X-Forwarded-For`), `HOST`, `PORT`, `WORKERS`,
 `METRICS_PORT` (default 9090; 0 = none), `WORKER_CONCURRENCY`, `OTEL_ENDPOINT`
 (OTLP/HTTP base URL; needs the `otel` extra), `SESSION_IDLE_TIMEOUT` (default 12
-hours) and `SESSION_MAX_AGE` (default 7 days; seconds or ISO 8601 such as `PT8H`),
+hours) and `SESSION_MAX_AGE` (default 24 hours; seconds or ISO 8601 such as `PT8H`),
 `COOKIE_SECURE` (default: `Secure` except on plain-http requests outside
-production; `false` is refused in production). See `app/config.py`.
+production; `false` is refused in production). Email (contract-phase3 §3.1):
+`SMTP_HOST` (unset: in-app notifications only), `SMTP_PORT` (default 465 with `tls`,
+else 587), `SMTP_SECURITY` (`none`/`starttls`/`tls`), `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM` (required with the host), `SMTP_FROM_NAME`,
+`SMTP_REPLY_TO`, `SMTP_CA_BUNDLE` (PEM path), `SMTP_TIMEOUT` (default 10 s),
+`TIMEZONE` (default UTC), `DIGEST_HOUR` (default 8), `REMINDER_DAYS` (default `2,0`).
+See `app/config.py`.
 
 ## Sign-in and authorisation
 
@@ -166,10 +173,21 @@ procrastinate's tables are managed by Alembic too, from vendored SQL: see
   route templates. Keep secrets and PII out of URLs (they reach traces and
   proxy logs).
 - **Background jobs**: `@procrastinate_app.task` in a module listed in
-  `app/worker.py:TASK_MODULES`; defer from the API with `await task.defer_async(...)`.
+  `app/worker.py:TASK_MODULES`; defer from the API with `await task.defer_async(...)`,
+  on the request's connection when it must commit with the request
+  (`app/email/outbox.py:defer_send`).
+- **Notifications and email**: services call `app.services.activity.emit`; the
+  before-commit hook in `app/db.py` runs the fan-out (`app/notifications/fanout.py`)
+  once per transaction. Outside requests open sessions with `session_scope(...,
+  settings=settings)`, or notifications are recorded with email off. Emails are
+  rendered at send time (`app/email/`, templates in `app/templates/email/`) and never
+  contain score data.
 - **Metrics**: `soundings_http_requests_total` / `soundings_http_request_duration_seconds`,
-  labelled by route template, on the metrics port (above). Run one uvicorn worker
-  per pod (or set `PROMETHEUS_MULTIPROC_DIR`).
+  labelled by route template, on the metrics port (above). Run one uvicorn worker per
+  pod (or set `PROMETHEUS_MULTIPROC_DIR`). The worker counts
+  `soundings_emails_sent_total`, `soundings_email_attempts_failed_total`,
+  `soundings_emails_cancelled_total` and `soundings_emails_queued` (not served on a
+  port yet).
 - **Security headers**: CSP (`script-src 'self'` plus hashes of `index.html`'s
   inline scripts, computed at startup), `nosniff`, `frame-ancestors 'none'`,
   `Referrer-Policy`, HSTS over HTTPS, `Cache-Control: no-store` on `/api/*`.

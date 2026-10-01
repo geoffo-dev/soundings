@@ -98,8 +98,11 @@ test('AU-03: you can’t lock yourself out; non-admins get a plain 404', async (
   await signIn(page, 'bob')
   await page.goto('/settings/users')
   await expect(page.getByRole('heading', { name: 'We couldn’t find that page' })).toBeVisible()
+  // Phase 3: everyone has Account and Notifications; the admin sections stay hidden.
   await page.goto('/settings')
-  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
+  await expect(
+    page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link'),
+  ).toHaveText(['Account', 'Notifications'])
 })
 
 test.describe('pre-created users and SSO', { tag: '@sso' }, () => {

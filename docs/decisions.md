@@ -281,3 +281,44 @@ before builders started; contract-phase3 §7 lists the schema changes.
 | The summary poll doesn't slide the session's idle timer. | Proposed | Review must-fix 4: an open tab kept sessions (break-glass included) alive for ever. |
 | 4-minute attempt deadline under the 5-minute lease; send-time checks for out-of-date mail (3 days, digests 2), past-due reminders and types turned off; the fan-out runs after the request's last write; type conditions through the policy (`evaluation.submit_own`); reminders only on their own day; mentions only to project members, 50 emails per author per hour; `email_trouble` for admins; authentication errors transient, internal errors failed at once; the unsubscribe URL redirects browsers (303). | Proposed | Review should-fix 5-14. |
 | No admin cancel; `outbound_email.idea_id` moves to Phase 4; no server details in the test email; SMTP port defaults to 465 for `tls`; unwatching stops only watcher-only notifications; mention length checked after rewriting. | Proposed | Review "consider" items taken. Not taken: a preferences flag for `.invalid` addresses (only system accounts have them, and they are never notified) and a `created_at` index for the 90-day notification cleanup (a daily scan is fine at this scale). |
+
+## 2026-10-01 · Phase 3 build and integration
+
+Calls made while building and integrating email and notifications. Contract changes
+are listed in [contract-phase3.md §7](api/contract-phase3.md#7-changes-after-the-contract);
+the known issues QA found (K3-1 to K3-5) are fixed below.
+
+### Email, the outbox and the worker
+
+| Decision | Status | Why |
+|---|---|---|
+| The fan-out runs from a **before-commit hook** (`app/db.py`) over the events `activity.emit` queued on the session: once, after the request's last write, in its transaction. Jobs and CLI code that emit activity open their session with `session_scope(…, settings=)`, or their notifications are recorded with email off. | Decided | An invitation carries the due date the same request set; a rollback drops notification, email and job together. |
+| Both MIME parts are quoted-printable and headers are folded at 998 characters, so `List-Unsubscribe` stays a plain URL. | Decided | Found live: folding at 78 turned it into encoded words that mail clients can't use. |
+| The plain-text part has a blank line before the action link and an RFC 3676 `-- ` before the footer. | Decided | Integration review of the text emails: the link ran into the paragraph, and clients now dim the footer and leave it out of replies. |
+| HTML emails add a fixed 600 px table for Outlook for Windows only (`<!--[if mso]>`), `mso-padding-alt` on the button, and digest bullets in their own cell. | Decided | Word-based Outlook ignores `max-width` and link padding; long digest lines now hang under the text instead of under the bullet. |
+| `last_error` gains "connection failed" (DNS, unreachable network), transient like "connection refused". | Decided | A stopped Mailpit reached by container name (`make demo`) fails name resolution, not the connection. |
+| A deactivated recipient's queued email is cancelled at send time ("Not sent: no longer applies"). | Decided | Deactivated users are never notified; the same rule at send time. |
+| `remove_old_jobs` is our own daily periodic task calling procrastinate's job manager; the data cleanup runs in the hourly schedule's run that falls in the digest hour, so a day the worker is down at that hour skips it (the next day catches up). | Proposed | procrastinate's builtin can't take the `timestamp` a periodic task receives; one cleanup a day is enough. |
+| The worker counts `soundings_emails_*` metrics but serves no metrics port yet; operators watch the banner, the outbox and the logs. | Proposed | A worker metrics listener and ServiceMonitor are a small follow-up (platform). |
+| Idea titles and display names reject line breaks and other control characters (422, `SingleLine`); names from SSO claims are collapsed to one line. | Decided | QA K3-1: headers were already safe, but CR/LF reached plain-text emails and the UI. |
+| The seed fans each story step out to the inbox only (no outbox rows), backdated with the step; notifications older than 3 days are read; bob and carol have non-default email preferences. | Decided | A fresh demo shows a lived-in inbox without mailing anyone. |
+
+### Screens
+
+| Decision | Status | Why |
+|---|---|---|
+| The Settings section row shows for everyone (Account · Notifications), the admin pages after a divider; on phones it scrolls the current section into view. | Decided | Preferences belong in Settings; QA K3-2 (on Email or Audit log the active tab was off-screen at 390 px). |
+| The bell polls every minute while the tab is visible and on focus; desktop opens a 28rem popover, phones a full-height sheet; `g i` opens the inbox page. In the popover and on phones the time sits on the sentence line, so titles keep their room, and a due date never breaks across lines. | Decided | QA K3-4: titles were cut to about 20 characters and "due Sat, 3 / Oct" wrapped. |
+| The "Some emails aren't going out" banner says "See why in the outbox and retry any that failed", not "Soundings keeps retrying". | Decided | QA K3-3: a failed email (a test email has one attempt) isn't retried until an admin does. |
+| Mentions are inserted from a picker as `@[Name](user:<id>)` and shown as name chips, never links; the picker also filters on the client, so Enter can't pick a stale match. | Decided | Unambiguous, can't impersonate; Enter picks what is visible (Phase 1 picker rule). |
+| The `email-preview` sample of `status_changed` shows the new status in the idea card. | Decided | QA K3-5: the sample read "Moved to Shortlisted" over "Status: Evaluating" (real emails were right). |
+
+### Testing and operations
+
+| Decision | Status | Why |
+|---|---|---|
+| The local e2e stack, `make demo`, GitHub and GitLab CI run `soundings worker` with Mailpit as the SMTP server; `E2E_SMTP=0` / `DEMO_SMTP=0` run in-app only. `make demo`'s Mailpit is on 8026, the e2e stack's on 8125 (SMTP 1125). CI pins `axllent/mailpit:v1.31.3`. | Decided | The acceptance needs a real worker and SMTP server; ports don't clash with the dev Mailpit. |
+| Specs that stop Mailpit are tagged `@smtp-outage` and run in their own Playwright project after every other spec, one at a time; they skip where Mailpit can't be stopped (GitLab services). Any `e2e` failure skips them (`--project=smtp-outage --no-deps` reruns them). | Decided | While Mailpit is down no other spec may wait for mail. |
+| Digests and reminders are tested end to end in `backend/tests/acceptance/test_phase3_acceptance.py` with a moved clock and a real Mailpit, not in the browser. | Decided | E2E can't move the clock; the API test covers the schedule through real SMTP. |
+| Mailpit's chaos mode (`MP_ENABLE_CHAOS`) isn't used yet. | Proposed | Optional QA request; stopping the container already covers the acceptance where it can run. |
+| e2e AU-03 checks that a non-admin's Settings row lists exactly Account and Notifications. | Decided | Its old `toHaveCount(0)` passed only because it looked before the row rendered. |

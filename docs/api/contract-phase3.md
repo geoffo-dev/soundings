@@ -842,3 +842,15 @@ migration `0005` and client regenerated):
 - **`last_error` phrase added:** "connection failed" for network errors that are neither
   a refusal nor a timeout (DNS failures, unreachable networks); transient like them.
 - No schema, route or migration changes otherwise.
+
+**2026-10-01, integration:**
+
+- **One-line names** (QA K3-1): idea titles (`IdeaCreate.title`, `IdeaUpdate.title`)
+  and display names (`AdminUserCreate`, `AdminUserUpdate`) reject line breaks and other
+  control characters (Unicode `Cc`) with 422 `validation_error`
+  (`app.schemas.base.SingleLine`); names from SSO claims are collapsed to one line
+  instead. They reach email subjects and plain-text emails. Validation only: the
+  OpenAPI document and the generated client are unchanged (`make gen-api`: no diff).
+- **Plain-text part:** a blank line before the action link and the RFC 3676 signature
+  separator (`-- `) before the footer, so clients dim the footer and leave it out of
+  replies.

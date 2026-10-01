@@ -126,6 +126,35 @@ async def test_nul_in_a_body_is_a_422(api: AsUser, team: Team) -> None:
     IdeaCreate.model_validate(idea)  # the same body without NUL is fine
 
 
+@pytest.mark.parametrize("bad", ["Line one\r\nBcc: x@evil.test", "Tab\there", "Bell\x07"])
+async def test_control_characters_in_titles_and_display_names_are_a_422(
+    api: AsUser, team: Team, db_session: AsyncSession, bad: str
+) -> None:
+    """Idea titles and display names go into email subjects and plain-text emails, so
+    they are one line (QA K3-1); multi-line text (summary, description) is unchanged."""
+    alice = await api(team.member)
+    idea = {"title": "Self-service refunds", "summary": "Refund\nwithout calling us."}
+    created = await alice.post(f"/projects/{team.slug}/ideas", idea | {"title": bad})
+    body = assert_problem(created, 422, "validation_error")
+    assert body["errors"][0]["loc"] == ["body", "title"]
+
+    existing = await make_idea(db_session, team.project, submitted_by=team.member)
+    key = f"{team.project.key}-{existing.number}"
+    edited = await alice.patch(f"/ideas/{key}", {"title": bad})
+    assert_problem(edited, 422, "validation_error")
+
+    admin = await api(team.platform)
+    person = {"email": f"k31.{uuid4().hex[:8]}@example.com", "display_name": bad}
+    assert_problem(await admin.post("/admin/users", person), 422, "validation_error")
+    assert_problem(
+        await admin.patch(f"/admin/users/{team.member.id}", {"display_name": bad}),
+        422,
+        "validation_error",
+    )
+    ok_create = await alice.post(f"/projects/{team.slug}/ideas", idea)
+    assert ok_create.status_code == 201, ok_create.text
+
+
 # --- Query and path parameters ---------------------------------------------------------------
 def _cursor(values: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(json.dumps(values).encode()).decode().rstrip("=")

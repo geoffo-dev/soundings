@@ -10,8 +10,9 @@
 #      reminders, digests), both in the background (pids and logs in $E2E_STATE_DIR)
 #   5. Mailpit ($E2E_PREFIX-mailpit) as their SMTP server: SMTP on
 #      127.0.0.1:$E2E_MAILPIT_SMTP_PORT, inbox and API on http://localhost:$E2E_MAILPIT_PORT,
-#      emptied on every start. `scripts/mailpit.sh stop|start` simulates an SMTP outage;
-#      specs use scripts/mailpit.ts. E2E_SMTP=0: no SMTP (in-app notifications only).
+#      emptied on every start. Specs read it and simulate an SMTP outage with
+#      scripts/mailpit.ts (`node scripts/mailpit.ts list|show|clear|stop|start` from a
+#      shell). E2E_SMTP=0: no SMTP (in-app notifications only).
 #
 # E2E_SSO=1 adds Keycloak 26 ($E2E_PREFIX-kc on http://localhost:$E2E_KC_PORT) with a
 # fresh copy of the dev realm on every start (users and groups as committed, this

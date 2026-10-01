@@ -2,12 +2,13 @@
 {{ "=" * (brand.product_name | length) }}
 
 {% block content %}{% endblock %}
+
+
 {% if button %}
-
 {{ button.label }}: {{ button.url }}
-{% endif %}
 
---
+{% endif %}
+{{ "-- " }}
 {% if reason %}{{ reason }}
 {% endif %}
 {% if preferences_url %}Email preferences: {{ preferences_url }}

@@ -21,6 +21,12 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * Phase 2: specs that need single sign-on are tagged @sso and skip unless the app has it
  * (`E2E_SSO=1` starts Keycloak next to the local stack; see e2e/README.md).
+ *
+ * Phase 3: the stack runs the worker and Mailpit. Specs that stop Mailpit ("the SMTP
+ * server is down") are tagged @smtp-outage and run in their own project, `smtp-outage`,
+ * after every other spec and one at a time, so no other spec waits for mail meanwhile
+ * (`--project=smtp-outage --no-deps` runs only them). `npm run screenshots:phase3`
+ * (SCREENSHOTS=phase-3) runs screenshots/phase-3.spec.ts (docs/screenshots/phase-3/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -28,7 +34,11 @@ const screenshots = Boolean(process.env.SCREENSHOTS)
 const screenshotSpec =
   process.env.SCREENSHOTS === 'phase-2'
     ? /screenshots\/phase-2\.spec\.ts$/
-    : /screenshots\/phase-1\.spec\.ts$/
+    : process.env.SCREENSHOTS === 'phase-3'
+      ? /screenshots\/phase-3\.spec\.ts$/
+      : /screenshots\/phase-1\.spec\.ts$/
+const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
+const smtpOutage = /@smtp-outage/
 
 export default defineConfig({
   testDir: '.',
@@ -57,14 +67,24 @@ export default defineConfig({
         {
           name: 'screenshots',
           testMatch: screenshotSpec,
-          use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+          use: desktop,
         },
       ]
     : [
         {
           name: 'e2e',
           testMatch: /tests\/.*\.spec\.ts$/,
-          use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+          grepInvert: smtpOutage,
+          use: desktop,
+        },
+        {
+          // Stops and starts Mailpit: after everything else, one test at a time.
+          name: 'smtp-outage',
+          testMatch: /tests\/.*\.spec\.ts$/,
+          grep: smtpOutage,
+          dependencies: ['e2e'],
+          workers: 1,
+          use: desktop,
         },
       ],
 })

@@ -195,19 +195,52 @@ every start) and runs the API with SSO and the dev login (`e2e/scripts/start-sta
 yet; its dev database lives inside the container, so recreating the container is
 enough). Changes made in the admin console are lost when the container is recreated.
 
-## Sending a test email to Mailpit
+## Email: Mailpit and the worker
+
+Mailpit catches every email: inbox and API at http://localhost:8025, SMTP on
+`localhost:1025` (plain, any credentials). `dev/.env.example` points the backend at it
+(`SOUNDINGS_SMTP_HOST=localhost`, `_PORT=1025`, `_SECURITY=none`, `_FROM`) and sets the
+time zone of digests and reminders. The API only **queues** email (an outbox row written
+in the same transaction as the event); the **worker** sends it, retries it while SMTP is
+down, and runs the reminders, daily digests and clean-up. Run it in a third shell:
 
 ```sh
-python3 - <<'EOF'
-import smtplib
-from email.message import EmailMessage
-m = EmailMessage(); m["From"] = "soundings@example.com"; m["To"] = "alice@example.com"
-m["Subject"] = "Hello"; m.set_content("It works")
-with smtplib.SMTP("localhost", 1025) as s: s.send_message(m)
-EOF
+set -a; . dev/.env; set +a
+make -C backend worker               # soundings worker: email, reminders, digests
 ```
 
-Then open http://localhost:8025.
+Then, signed in as Alice, add Bob as an evaluator of an idea: within seconds Mailpit
+shows "Please evaluate ..." to bob@example.com, HTML and plain text, with a button that
+opens the idea with the evaluate sheet (`/ideas/CUST-n?evaluate=1`). Links in emails use
+the first of `SOUNDINGS_BASE_URLS` (`http://localhost:8000`, which serves the SPA once
+`npm --prefix frontend run build` has built `frontend/dist`; put
+`http://localhost:5173` first to open them in the Vite dev server). Settings → Email
+shows the effective configuration, the outbox and **Send test email**; Settings →
+Notifications has your own preferences (immediate, daily digest or off per type).
+
+- **No worker running?** Email waits in the outbox (`queued`) and goes out when the
+  worker starts; after 15 minutes platform admins see "Some emails aren't going out."
+- **SMTP down:** `docker compose -f dev/docker-compose.yml stop mailpit`, trigger an
+  email, and Settings → Email shows it queued with "connection refused"; `... start
+  mailpit` and it arrives at the next retry (30 s, 1, 2, 4 minutes ... after each
+  failure). Mailpit keeps its messages across a stop and start (not across `make
+  dev-down`).
+- **No email at all:** comment out `SOUNDINGS_SMTP_HOST`: the app works with in-app
+  notifications only (the bell) and platform admins see a banner.
+- **The same check without a browser:** `make email-smoke` (`scripts/email-smoke.sh`,
+  needs `jq`) signs in with the dev login, invites an evaluator, checks the email in
+  Mailpit (subject, evaluate link in both parts, `List-Unsubscribe`), then stops
+  Mailpit, invites a second one, sees the email queued, starts Mailpit and waits until
+  it arrives, once. It removes both evaluators again. Against `make demo`:
+  `make email-smoke EMAIL_BASE_URL=http://localhost:8000 MAILPIT_URL=http://localhost:8026
+  MAILPIT_CONTAINER=soundings-demo-mailpit`.
+- **Preview the templates** without sending: `uv run soundings email-preview` in
+  `backend/` writes every email, HTML and text, with sample data to `email-previews/`.
+
+Mailpit's API is handy in scripts: `curl -s localhost:8025/api/v1/messages | jq
+'.messages[] | {Subject, To}'`, `GET /api/v1/message/<ID>` (HTML, Text),
+`/api/v1/message/<ID>/headers`, and `curl -X DELETE localhost:8025/api/v1/messages`
+empties it.
 
 ## Local Kubernetes (k3s in Docker)
 
@@ -239,6 +272,19 @@ scripts/k3s-keycloak.sh down
 
 Then sign in at http://localhost:18081 with **Sign in with SSO** (alice / password);
 Keycloak's admin console is http://keycloak.localhost:18081/admin/ (admin / admin).
+
+**Email on k3s.** Mailpit runs in the cluster (`dev/k3s/mailpit.yaml`, namespace
+`mailpit`) and its inbox is http://mailpit.localhost:18081:
+
+```sh
+make k3s-mailpit         # Mailpit (SMTP mailpit.mailpit.svc.cluster.local:1025)
+make k3s-install SMTP=1  # + dev/k3s-smtp-values.yaml: SMTP, time zone, egress NetworkPolicies
+make k3s-smoke SMTP=1    # + scripts/email-smoke.sh: invite -> email; Mailpit scaled to 0 ->
+                         # queued -> scaled back -> delivered once
+scripts/k3s-mailpit.sh scale 0|1    # the SMTP outage by hand; `down` removes it
+```
+
+`SSO=1 SMTP=1` combines both.
 
 `export KUBECONFIG=$PWD/.k3s/soundings-k3s/kubeconfig` for your own kubectl, or use
 `docker exec soundings-k3s kubectl ...`. Scripts and their settings: `scripts/k3s-*.sh`.

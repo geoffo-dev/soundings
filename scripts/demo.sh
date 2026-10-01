@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Run the Soundings image with demo data in Docker: Postgres plus the app (API + SPA)
-# with the dev login on, migrated and seeded. `make demo` builds the image first.
+# Run the Soundings image with demo data in Docker: Postgres, the app (API + SPA) with
+# the dev login on, migrated and seeded, the worker (email, reminders, digests) and
+# Mailpit, which catches every email. `make demo` builds the image first.
 #
-#   scripts/demo.sh up      # start (or restart the app on a newer image; data is kept)
+#   scripts/demo.sh up      # start (or restart app and worker on a newer image; data kept)
 #   scripts/demo.sh down    # remove the containers, the data and the network
 #
 #   IMAGE           image to run (default soundings:dev)
 #   DEMO_PORT       host port of the app (default 8000): http://localhost:$DEMO_PORT
+#   DEMO_MAILPIT_PORT  host port of Mailpit's inbox and API (default 8026); its SMTP
+#                   port stays inside the demo network ($DEMO_NAME-mailpit:1025)
 #   DEMO_NAME       name prefix of the containers and network (default soundings-demo)
 #   DEMO_RESET=1    replace the data with fresh demo data (soundings seed --reset)
-#   DEMO_BIND_ADDRESS  address the port binds to (default 127.0.0.1)
+#   DEMO_BIND_ADDRESS  address the ports bind to (default 127.0.0.1)
 #   DEMO_BREAK_GLASS_PASSWORD  set: the break-glass admin "admin" with this password
-#   POSTGRES_IMAGE  (default postgres:16-alpine)
+#   DEMO_SMTP=0     no Mailpit and no SMTP: in-app notifications only (admins see a banner)
+#   DEMO_TIMEZONE   instance time zone of digests, reminders and dates in emails (UTC)
+#   POSTGRES_IMAGE  (default postgres:16-alpine)   MAILPIT_IMAGE  (axllent/mailpit:latest)
 # Development mode only: fixed database password, no TLS, anyone can sign in as anyone.
 set -euo pipefail
 
@@ -19,11 +24,18 @@ IMAGE="${IMAGE:-soundings:dev}"
 DEMO_PORT="${DEMO_PORT:-8000}"
 DEMO_NAME="${DEMO_NAME:-soundings-demo}"
 DEMO_BIND_ADDRESS="${DEMO_BIND_ADDRESS:-127.0.0.1}"
+DEMO_MAILPIT_PORT="${DEMO_MAILPIT_PORT:-8026}"
+DEMO_SMTP="${DEMO_SMTP:-1}"
+DEMO_TIMEZONE="${DEMO_TIMEZONE:-UTC}"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16-alpine}"
+MAILPIT_IMAGE="${MAILPIT_IMAGE:-axllent/mailpit:latest}"
 network="$DEMO_NAME"
 db="$DEMO_NAME-db"
 app="$DEMO_NAME-app"
+worker="$DEMO_NAME-worker"
+mailpit="$DEMO_NAME-mailpit"
 url="http://localhost:$DEMO_PORT"
+mailpit_url="http://localhost:$DEMO_MAILPIT_PORT"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -34,7 +46,13 @@ app_env=(
   -e SOUNDINGS_ENVIRONMENT=development
   -e SOUNDINGS_DEV_LOGIN_ENABLED=true
   -e "SOUNDINGS_BASE_URLS=$url,http://127.0.0.1:$DEMO_PORT"
+  -e "SOUNDINGS_TIMEZONE=$DEMO_TIMEZONE"
 )
+if [ "$DEMO_SMTP" = "1" ]; then
+  app_env+=(-e "SOUNDINGS_SMTP_HOST=$mailpit" -e SOUNDINGS_SMTP_PORT=1025
+    -e SOUNDINGS_SMTP_SECURITY=none -e SOUNDINGS_SMTP_FROM=soundings@example.com
+    -e "SOUNDINGS_SMTP_FROM_NAME=Soundings (demo)")
+fi
 if [ -n "${DEMO_BREAK_GLASS_PASSWORD:-}" ]; then
   app_env+=(-e SOUNDINGS_BREAK_GLASS_ENABLED=true -e SOUNDINGS_BREAK_GLASS_USERNAME=admin
     -e "SOUNDINGS_BREAK_GLASS_PASSWORD=$DEMO_BREAK_GLASS_PASSWORD")
@@ -74,6 +92,23 @@ up() {
       "$POSTGRES_IMAGE" -c fsync=off -c synchronous_commit=off >/dev/null
   fi
 
+  if [ "$DEMO_SMTP" = "1" ]; then
+    if running "$mailpit"; then
+      log "Mailpit '$mailpit' is already running (messages kept)"
+    else
+      docker rm -f "$mailpit" >/dev/null 2>&1 || true
+      log "starting Mailpit '$mailpit' ($MAILPIT_IMAGE) on $mailpit_url"
+      # Messages in a file inside the container: they survive `docker stop`/`start`
+      # (an SMTP outage drill), not `demo.sh down`.
+      docker run -d --name "$mailpit" --network "$network" \
+        -p "$DEMO_BIND_ADDRESS:$DEMO_MAILPIT_PORT:8025" \
+        -e MP_DATABASE=/tmp/mailpit.db -e MP_MAX_MESSAGES=5000 \
+        -e MP_SMTP_AUTH_ACCEPT_ANY=true -e MP_SMTP_AUTH_ALLOW_INSECURE=true \
+        -e MP_DISABLE_VERSION_CHECK=true \
+        "$MAILPIT_IMAGE" >/dev/null
+    fi
+  fi
+
   log "migrating and seeding the demo data ($IMAGE)"
   quietly soundings wait-for-db --timeout 60 >/dev/null
   quietly soundings migrate >/dev/null
@@ -82,16 +117,27 @@ up() {
   seeded="$(quietly soundings "${seed_args[@]}")"
   grep -v '^{' <<<"$seeded" || true # the summary, without the JSON log lines
 
-  docker rm -f "$app" >/dev/null 2>&1 || true
-  log "starting the app '$app' on $url"
+  docker rm -f "$app" "$worker" >/dev/null 2>&1 || true
+  log "starting the app '$app' on $url and the worker '$worker'"
   docker run -d --name "$app" --network "$network" "${app_env[@]}" \
     -p "$DEMO_BIND_ADDRESS:$DEMO_PORT:8000" "$IMAGE" api >/dev/null
+  # The worker sends the email the app queues, and runs reminders and digests.
+  docker run -d --name "$worker" --network "$network" "${app_env[@]}" "$IMAGE" worker >/dev/null
 
   for _ in $(seq 1 60); do
     if curl -fsS --noproxy '*' --max-time 2 -o /dev/null "$url/readyz" 2>/dev/null; then
+      running "$worker" || {
+        docker logs --tail 40 "$worker" >&2 || true
+        die "the worker '$worker' stopped"
+      }
       log "Soundings is ready: $url"
       printf '    Sign in as Alice Anders (platform admin) or any other demo user.\n'
-      printf '    Logs: docker logs -f %s    Stop: make demo-down\n' "$app"
+      if [ "$DEMO_SMTP" = "1" ]; then
+        printf '    Email: %s (Mailpit; e.g. add an evaluator to an idea)\n' "$mailpit_url"
+      else
+        printf '    Email: off (DEMO_SMTP=0): in-app notifications only\n'
+      fi
+      printf '    Logs: docker logs -f %s (or %s)    Stop: make demo-down\n' "$app" "$worker"
       return 0
     fi
     sleep 1
@@ -101,8 +147,8 @@ up() {
 }
 
 down() {
-  log "removing $app, $db and network $network"
-  docker rm -f -v "$app" "$db" >/dev/null 2>&1 || true
+  log "removing $app, $worker, $mailpit, $db and network $network"
+  docker rm -f -v "$app" "$worker" "$mailpit" "$db" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
 }
 

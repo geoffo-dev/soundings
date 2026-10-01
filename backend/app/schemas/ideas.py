@@ -14,7 +14,7 @@ from uuid import UUID
 from pydantic import AfterValidator, AwareDatetime, Field, field_validator, model_validator
 
 from app.models.enums import EvaluatorState, IdeaStatus, Resolution
-from app.schemas.base import RequestModel, ResponseModel, TagName
+from app.schemas.base import RequestModel, ResponseModel, SingleLine, TagName
 from app.schemas.common import Page
 from app.schemas.projects import ProjectRef
 from app.schemas.users import UserRef
@@ -275,7 +275,7 @@ def _dedupe_tags(tags: list[str]) -> list[str]:
 
 
 class IdeaCreate(RequestModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: Annotated[str, Field(min_length=1, max_length=200), SingleLine]
     summary: str = Field(min_length=1, max_length=500, description="One or two sentences.")
     description_md: str = Field(default="", max_length=50_000, description="Markdown.")
     tags: list[TagName] = Field(
@@ -293,7 +293,7 @@ class IdeaCreate(RequestModel):
 class IdeaUpdate(RequestModel):
     """Partial update: omitted or null fields are unchanged; ``tags`` replaces the set."""
 
-    title: str | None = Field(default=None, min_length=1, max_length=200)
+    title: Annotated[str, Field(min_length=1, max_length=200), SingleLine] | None = None
     summary: str | None = Field(default=None, min_length=1, max_length=500)
     description_md: str | None = Field(default=None, max_length=50_000)
     tags: list[TagName] | None = Field(default=None, max_length=MAX_TAGS_PER_IDEA)

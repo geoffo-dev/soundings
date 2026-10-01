@@ -11,7 +11,8 @@
 # docker:dind (backend tests, deploy-test) pulls postgres/k3s/busybox images itself: give
 # the runner's dind a registry mirror (--registry-mirror) or keep them in REGISTRY_MIRROR.
 # Keycloak (KEYCLOAK_IMAGE) runs as a service for the backend identity tests and the
-# e2e:sso job; the k3s job's node pulls it through K3S_REGISTRY_MIRROR.
+# e2e:sso job, Mailpit (MAILPIT_IMAGE) for the backend email tests and both e2e jobs; the
+# k3s job's node pulls them through K3S_REGISTRY_MIRROR.
 # kaniko is archived upstream (Google, 2025); KANIKO_IMAGE can point at a maintained fork.
 
 stages:
@@ -42,6 +43,7 @@ variables:
   KANIKO_IMAGE: gcr.io/kaniko-project/executor:v1.23.2-debug
   K3S_IMAGE: ${REGISTRY_MIRROR}/rancher/k3s:v1.31.4-k3s1
   KEYCLOAK_IMAGE: ${REGISTRY_MIRROR}/keycloak/keycloak:26.0
+  MAILPIT_IMAGE: ${REGISTRY_MIRROR}/axllent/mailpit:v1.31.3
   UV_VERSION: "0.8.17"
   # Where the built image is pushed (defaults to this project's container registry).
   IMAGE_REPOSITORY: ${CI_REGISTRY_IMAGE}
@@ -168,7 +170,14 @@ helm:lint:
                  "oidc.issuer=https://idp/realms/a" \
                  "oidc.issuer=http://idp/realms/a,oidc.clientSecret=s,baseUrls[0]=https://a.example" \
                  "oidc.issuer=https://idp/realms/a,oidc.clientSecret=s" \
-                 "oidc.issuer=https://idp/r,oidc.clientSecret=s,baseUrls[0]=https://a.example,oidc.externalIdClaim=https://x/emp-no"; do
+                 "oidc.issuer=https://idp/r,oidc.clientSecret=s,baseUrls[0]=https://a.example,oidc.externalIdClaim=https://x/emp-no" \
+                 "smtp.host=smtp.example.com" "smtp.host=smtp.example.com:25,smtp.from=a@example.com" \
+                 "smtp.host=s.example.com,smtp.from=not-an-address" \
+                 "smtp.host=s.example.com,smtp.from=a@example.com,smtp.security=none,smtp.password=p" \
+                 "smtp.host=s.example.com,smtp.from=a@example.com,smtp.existingSecret=x,smtp.username=u" \
+                 "smtp.port=70000" "smtp.timeout=0" "timezone=Europe/London;x" \
+                 "notifications.digestHour=24" "notifications.reminderDays={1,1}" \
+                 "notifications.reminderDays={31}" "networkPolicy.egress.smtp.port=0"; do
         if helm template ci deploy/helm --set "$bad" > /dev/null 2>&1; then
           echo "chart accepted invalid value: $bad"; exit 1
         fi
@@ -196,6 +205,13 @@ backend:test:
         # The issuer follows the URL used: http://keycloak:8080 for tests and app alike.
         KC_HOSTNAME_STRICT: "false"
         KC_LOG_LEVEL: warn
+    # Mailpit for the email tests that talk to a real SMTP server.
+    - name: ${MAILPIT_IMAGE}
+      alias: mailpit
+      variables:
+        MP_SMTP_AUTH_ACCEPT_ANY: "true"
+        MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+        MP_DISABLE_VERSION_CHECK: "true"
   variables:
     # testcontainers talks to the dind service; published ports live on that host.
     DOCKER_HOST: tcp://docker:2375
@@ -206,6 +222,8 @@ backend:test:
     # Use the service instead of a testcontainers Keycloak; the tests fail (not skip)
     # when it doesn't answer.
     SOUNDINGS_TEST_KEYCLOAK_URL: http://keycloak:8080
+    SOUNDINGS_TEST_MAILPIT_URL: http://mailpit:8025
+    SOUNDINGS_TEST_MAILPIT_SMTP: mailpit:1025
   script:
     - python3 ../dev/keycloak/import_realm.py http://keycloak:8080 --origin http://testserver
     - uv run pytest -p no:cacheprovider --junitxml=report.xml
@@ -297,9 +315,12 @@ image:trivy:
 
 # --- deploy-test ------------------------------------------------------------------------
 
-# Playwright end-to-end tests (e2e/, qa) against the image just built: Postgres and the
-# app run as services, the app migrated and seeded with the demo data and the dev login
-# on. The tests get the app's URL in E2E_BASE_URL.
+# Playwright end-to-end tests (e2e/, qa) against the image just built: Postgres, Mailpit
+# and the app run as services, the app migrated and seeded with the demo data and the dev
+# login on, and its worker (email, reminders, digests) running next to the API in the
+# same service. The tests get the app's URL in E2E_BASE_URL and Mailpit's API in
+# E2E_MAILPIT_URL; services can't be stopped, so the SMTP-outage specs skip here (the
+# local stack and the k3s job's email smoke cover them).
 e2e:
   stage: deploy-test
   image: ${PLAYWRIGHT_IMAGE}
@@ -309,11 +330,17 @@ e2e:
   services:
     - name: ${POSTGRES_IMAGE}
       alias: postgres
+    - name: ${MAILPIT_IMAGE}
+      alias: mailpit
+      variables:
+        MP_SMTP_AUTH_ACCEPT_ANY: "true"
+        MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+        MP_DISABLE_VERSION_CHECK: "true"
     - name: ${IMAGE_REPOSITORY}:${IMAGE_TAG}
       alias: app
       entrypoint: ["sh", "-c"]
       command:
-        - soundings wait-for-db --timeout 120 && soundings migrate && soundings seed && exec soundings api
+        - soundings wait-for-db --timeout 120 && soundings migrate && soundings seed && { soundings worker & exec soundings api; }
   variables:
     # Services reach each other by alias (the app talks to postgres).
     FF_NETWORK_PER_BUILD: "true"
@@ -324,6 +351,13 @@ e2e:
     SOUNDINGS_ENVIRONMENT: development
     SOUNDINGS_DEV_LOGIN_ENABLED: "true"
     SOUNDINGS_BASE_URLS: http://app:8000
+    # Email to Mailpit, dates in the browser's zone (as in e2e/scripts/stack-env.sh).
+    SOUNDINGS_SMTP_HOST: mailpit
+    SOUNDINGS_SMTP_PORT: "1025"
+    SOUNDINGS_SMTP_SECURITY: none
+    SOUNDINGS_SMTP_FROM: soundings@example.com
+    SOUNDINGS_TIMEZONE: Europe/London
+    E2E_MAILPIT_URL: http://mailpit:8025
     # The break-glass admin, as in the local e2e stack (e2e/scripts/stack-env.sh).
     SOUNDINGS_BREAK_GLASS_ENABLED: "true"
     SOUNDINGS_BREAK_GLASS_USERNAME: admin
@@ -379,11 +413,17 @@ e2e:sso:
         KC_BOOTSTRAP_ADMIN_PASSWORD: admin
         KC_HOSTNAME_STRICT: "false"
         KC_LOG_LEVEL: warn
+    - name: ${MAILPIT_IMAGE}
+      alias: mailpit
+      variables:
+        MP_SMTP_AUTH_ACCEPT_ANY: "true"
+        MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+        MP_DISABLE_VERSION_CHECK: "true"
     - name: ${IMAGE_REPOSITORY}:${IMAGE_TAG}
       alias: app
       entrypoint: ["sh", "-c"]
       command:
-        - soundings wait-for-db --timeout 120 && soundings migrate && soundings seed && exec soundings api
+        - soundings wait-for-db --timeout 120 && soundings migrate && soundings seed && { soundings worker & exec soundings api; }
   variables:
     FF_NETWORK_PER_BUILD: "true"
     POSTGRES_DB: soundings
@@ -398,6 +438,12 @@ e2e:sso:
     SOUNDINGS_OIDC_CLIENT_SECRET: soundings-dev-secret
     SOUNDINGS_OIDC_GROUPS_CLAIM: groups
     SOUNDINGS_OIDC_EXTERNAL_ID_CLAIM: employee_no
+    SOUNDINGS_SMTP_HOST: mailpit
+    SOUNDINGS_SMTP_PORT: "1025"
+    SOUNDINGS_SMTP_SECURITY: none
+    SOUNDINGS_SMTP_FROM: soundings@example.com
+    SOUNDINGS_TIMEZONE: Europe/London
+    E2E_MAILPIT_URL: http://mailpit:8025
     E2E_BASE_URL: http://app:8000
     E2E_SSO: "1"
     E2E_KC_URL: http://keycloak:8080
@@ -422,8 +468,10 @@ e2e:sso:
 
 # Install, upgrade and smoke-test the chart on k3s running in docker:dind, with the same
 # scripts as local development (scripts/k3s-*.sh), in a namespace that enforces the
-# Restricted Pod Security Standard. Also exercises the external-database path, and
-# single sign-on through the ingress against Keycloak in the cluster.
+# Restricted Pod Security Standard. Also exercises the external-database path, single
+# sign-on through the ingress against Keycloak in the cluster, and email to Mailpit in
+# the cluster with egress NetworkPolicies (an invited evaluator's email; an SMTP outage
+# while Mailpit is scaled to 0, then delivery once it is back).
 k3s:install-upgrade:
   extends: .dind
   stage: deploy-test
@@ -458,6 +506,10 @@ k3s:install-upgrade:
     - scripts/k3s-keycloak.sh
     - SSO=1 scripts/k3s-install.sh --set image.tag=ci
     - SSO=1 scripts/k3s-smoke.sh
+    # Email: Mailpit in the cluster, SMTP and egress policies on top of SSO.
+    - scripts/k3s-mailpit.sh
+    - SSO=1 SMTP=1 scripts/k3s-install.sh --set image.tag=ci
+    - SSO=1 SMTP=1 scripts/k3s-smoke.sh
     - IMAGE_TAG=ci scripts/k3s-test-external-db.sh
   after_script:
     - scripts/k3s-down.sh || true

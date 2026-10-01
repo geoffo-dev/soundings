@@ -33,6 +33,17 @@ export type AuditEntry = Schemas['AuditEntry']
 export type ProjectAccessEntry = Schemas['ProjectAccessEntry']
 export type ProjectGroupGrant = Schemas['ProjectGroupGrant']
 export type SsoConfig = Schemas['SsoConfig']
+// Phase 3: notifications and email (contract-phase3).
+export type NotificationItem = Schemas['NotificationPage']['items'][number]
+export type NotificationSummary = Schemas['NotificationSummary']
+export type NotificationPreferences = Schemas['NotificationPreferences']
+export type NotificationType = Schemas['NotificationType']
+export type NotificationMode = Schemas['NotificationMode']
+export type UnsubscribeInfo = Schemas['UnsubscribeInfo']
+export type EmailConfig = Schemas['EmailConfig']
+export type OutboxEmail = Schemas['OutboxEmail']
+export type EmailStatus = Schemas['EmailStatus']
+export type CommentActivity = Schemas['CommentActivity']
 
 /** The seeded people (backend/app/seed/content.py), by username. */
 export const PEOPLE = {
@@ -138,7 +149,11 @@ export class Api {
 
   /** Signs in as `person` with the dev login in a fresh cookie jar. */
   static async as(baseURL: string, person: Person): Promise<Api> {
-    const user = await userOf(baseURL, person)
+    return Api.asUser(baseURL, await userOf(baseURL, person))
+  }
+
+  /** Signs in as any active user (e.g. one a test created) with the dev login. */
+  static async asUser(baseURL: string, user: CurrentUser): Promise<Api> {
     const context = await request.newContext({ baseURL })
     await ok(await context.post(`${API}/auth/dev/login`, { data: { user_id: user.id } }))
     const { cookies } = await context.storageState()
@@ -261,6 +276,30 @@ export class Api {
       comment: options.comment ?? '',
       submit: options.submit ?? true,
     })
+  }
+
+  /** Adds anyone (by account) to a project. */
+  addMemberUser(slug: string, user: { id: string }, role: ProjectRole = 'member') {
+    return this.send('POST', `/projects/${slug}/members`, { user_id: user.id, role }, 201)
+  }
+
+  async setOwnerUser(key: string, user: { id: string }): Promise<IdeaDetail> {
+    return this.send('PUT', `/ideas/${key}/owner`, { user_id: user.id })
+  }
+
+  inviteUsers(key: string, users: { id: string }[], dueAt?: string): Promise<IdeaDetail> {
+    return this.send('POST', `/ideas/${key}/evaluators`, {
+      user_ids: users.map((user) => user.id),
+      due_at: dueAt,
+    })
+  }
+
+  comment(key: string, bodyMd: string): Promise<CommentActivity> {
+    return this.send('POST', `/ideas/${key}/comments`, { body_md: bodyMd }, 201)
+  }
+
+  unwatch(key: string) {
+    return this.send('DELETE', `/ideas/${key}/watch`)
   }
 
   listIdeas(slug: string, query = ''): Promise<IdeaPage> {
@@ -386,6 +425,49 @@ export class Api {
     }
     const page = await this.get<{ items: AuditEntry[] }>(`/admin/audit?${query.toString()}`)
     return page.items
+  }
+
+  // --- Notifications and email (contract-phase3) -------------------------------------
+  /** The caller's inbox, newest first (first page, up to 100). */
+  async notifications(unread = false): Promise<NotificationItem[]> {
+    const page = await this.get<{ items: NotificationItem[] }>(
+      `/me/notifications?limit=100${unread ? '&unread=true' : ''}`,
+    )
+    return page.items
+  }
+
+  notificationSummary(): Promise<NotificationSummary> {
+    return this.get('/me/notifications/summary')
+  }
+
+  preferences(): Promise<NotificationPreferences> {
+    return this.get('/me/notification-preferences')
+  }
+
+  setPreferences(
+    changes: Partial<Record<NotificationType, NotificationMode>>,
+  ): Promise<NotificationPreferences> {
+    return this.send('PATCH', '/me/notification-preferences', changes)
+  }
+
+  emailConfig(): Promise<EmailConfig> {
+    return this.get('/admin/email')
+  }
+
+  async outbox(filters: { status?: EmailStatus; type?: string } = {}): Promise<OutboxEmail[]> {
+    const query = new URLSearchParams({ limit: '100' })
+    if (filters.status) query.append('status', filters.status)
+    if (filters.type) query.append('type', filters.type)
+    const page = await this.get<{ items: OutboxEmail[] }>(`/admin/email/outbox?${query}`)
+    return page.items
+  }
+
+  outboxEmail(id: string): Promise<OutboxEmail> {
+    return this.get(`/admin/email/outbox/${id}`)
+  }
+
+  sendTestEmail(to?: string): Promise<OutboxEmail> {
+    return this.send('POST', '/admin/email/test', to ? { to } : {}, 202)
   }
 }
 

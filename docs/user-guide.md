@@ -72,12 +72,13 @@ development installs a **development login** that lists everyone ("who are you?"
 
 | Where | Keys |
 |---|---|
-| Everywhere | `⌘K` palette · `?` shortcuts · `[` sidebar · `G` `M` My work · `N` new idea · `⌘↵` submit a form or comment |
-| Lists (My work, project list, board) | `J` / `K` or `↓` / `↑` move · `Enter` opens · in My work `E` evaluates the focused idea (or the most urgent one) |
+| Everywhere | `⌘K` palette · `?` shortcuts · `[` sidebar · `G` `M` My work · `G` `I` notifications · `N` new idea · `⌘↵` submit a form or comment |
+| Lists (My work, project list, board, notifications) | `J` / `K` or `↓` / `↑` move · `Enter` opens · in My work `E` evaluates the focused idea (or the most urgent one) |
 | Project page | `V` board/list · `F` search and filter · on the board `←` / `→` move between columns; on a focused card `Space` picks it up, arrows move it, `Space` drops it (`Esc` puts it back) |
 | Idea page | `E` evaluate · `S` change status · `A` assign owner · `C` comment · `1` `2` `3` Overview / Evaluations / Proposal |
 | Evaluate sheet | `1`–`5` score the focused criterion · `Tab` next criterion · `⌘↵` submit · `Esc` close (your draft is kept) |
 | Pickers (owner, evaluators, members, filters) | type to filter · `↑` / `↓` · `Enter` picks the highlighted entry (the best match is highlighted as you type) · in Invite evaluators `⌘↵` sends the invitation |
+| Comment box | `@` opens the people list · `↑` / `↓` · `Enter` or `Tab` inserts the mention · `Esc` closes the list |
 | Project settings | `⌘S` saves the section you are editing |
 
 On macOS `⌘` is Command; elsewhere it is Ctrl. When a dialog, sheet or menu closes,
@@ -92,8 +93,10 @@ Light or Dark), the account menu (your name at the bottom of the sidebar) or typ
 ### Your settings page
 
 **Settings** in the sidebar shows your account (name and email, from sign-in), the
-theme, and links to the settings of every project you manage. Platform admins also see
-the sections described in [Platform administration](#platform-administration-phase-2).
+theme, and links to the settings of every project you manage. **Notifications**, next
+to Account, holds your email preferences
+([below](#notifications-and-email-preferences-phase-3)). Platform admins also see the
+sections described in [Platform administration](#platform-administration-phase-2).
 
 ## Ideas [Phase 1]
 
@@ -117,11 +120,18 @@ toast puts it back exactly.
 
 - **Comments** use Markdown. `C` jumps to the comment box and `⌘↵` posts. You can edit
   or delete your own comments; a deleted comment can be restored with "Undo" for a few
-  seconds. Comments are flat in Phase 1; @mentions come with notifications in Phase 3.
+  seconds. Comments are flat (no threads).
+- **@mentions:** type `@` in the comment box and pick a person from the list (people
+  with a role in the project: admins, members and viewers, never yourself). The mention
+  shows as the person's name and always points at that person, even if their name
+  changes. They get a notification, and an email unless they turned mentions off
+  ([Notifications](#notifications-and-email-preferences-phase-3)); people who can't see
+  the idea are not told. Up to 20 people per comment. Adding someone by editing a
+  comment notifies only the newly mentioned people.
 - **Votes** show support (one per person, any status). They don't affect the score.
-- **Watching** an idea will send you its updates once notifications arrive (Phase 3).
-  You watch ideas you submit, own, evaluate or comment on; the Watch button stops or
-  starts it.
+- **Watching** an idea sends you its new comments and status changes. You watch ideas
+  you submit, own, evaluate or comment on; the Watch button stops or starts it. The
+  owner and evaluators hear about status changes even when they don't watch.
 
 ### Editing an idea
 
@@ -211,8 +221,67 @@ score is hidden from you) come last.
 
 ## Notifications and email preferences [Phase 3]
 
+### The bell and your inbox (`G` `I`)
+
+The bell at the top of every page shows how many notifications you haven't read. It
+opens your latest ones (on a phone, a full-height panel); **See all notifications**, or
+`G` then `I`, opens the inbox page, grouped by day, with **All** and **Unread** and
+**Mark all read**. Each notification says who did what on which idea, in one sentence:
+
+| You're told when | Opens |
+|---|---|
+| someone makes you the **owner** of an idea | the idea |
+| someone **asks you to evaluate** (with the due date) | the evaluate sheet of that idea |
+| your **evaluation is due**: 2 days before the due date and on the day, while you haven't submitted | the evaluate sheet |
+| **all evaluations are in** on an idea you own | the idea |
+| an idea you own, evaluate or watch **changes status** | the idea |
+| someone **comments** on an idea you watch | the comment |
+| someone **@mentions** you | the comment |
+
+Opening a notification marks it read, and so does opening the idea it's about. You're
+never told about your own actions, and you only see notifications about ideas you can
+still open: if you lose access to a project, its notifications disappear from your
+inbox.
+
+**Blind evaluation holds here too:** no notification or email ever contains scores,
+recommendations, the aggregate or anyone's evaluation comments. "All evaluations are
+in" only says how many came in; open the idea to see the results.
+
 ### Immediate, daily digest or off
+
+Everything always shows up in your inbox. **Settings → Notifications** chooses, for each
+kind of notification, whether it is also **emailed**:
+
+- **Immediate**: one email as it happens. The default for things you need to act on:
+  being made owner, being asked to evaluate, reminders, all evaluations in, mentions.
+- **Daily digest**: one email a day with everything set to "Daily digest" that you
+  haven't already read in the app. The default for things you follow: status changes
+  and new comments. The page says when it arrives (for example "08:00
+  (Europe/London)"); the time and the reminder days are set by your administrator for
+  everyone.
+- **Off**: no email; the inbox still shows it.
+
+Changes save as you choose. **Reset** puts one type back to its default, and **Turn off
+all email** switches everything to Off (with Undo). Turning a type off also stops
+emails of that type that are already waiting to go out. If the page says "Email isn't
+set up on this server yet", you get in-app notifications only until an administrator
+configures email; your choices are kept for then.
+
+Every email has a button to the right place (the evaluate button opens the evaluate
+sheet, signing you in first if needed), the idea's key and title in the subject, and a
+footer that says why you got it.
+
 ### Unsubscribing
+
+Every notification email ends with two links: **Email preferences** (sign in and choose
+per type) and **Unsubscribe from …** that kind of email (from the digest: everything you
+get as a digest). The unsubscribe link opens a page that shows what will stop and for
+which address (partly hidden), and changes nothing until you press **Unsubscribe**;
+**Unsubscribe from all Soundings email** turns every type off. You don't need to sign
+in, and the links in old emails keep working. Mail apps that show their own
+"Unsubscribe" button next to the sender use the same link: one click there turns that
+kind of email off. Unsubscribing never affects the in-app inbox; to get emails
+again, change the type back in Settings → Notifications.
 
 ## API keys and MCP [Phase 5]
 
@@ -277,9 +346,9 @@ comes in Phase 4.
 
 ## Platform administration [Phase 2]
 
-Platform admins get four more sections in **Settings** (also in the palette: "Users",
-"Groups", "Sign-in (SSO)", "Audit log"). Everyone else sees a plain "Page not found" at
-those addresses.
+Platform admins get five more sections in **Settings** (also in the palette: "Users",
+"Groups", "Sign-in (SSO)", "Email", "Audit log"). Everyone else sees a plain "Page not
+found" at those addresses.
 
 ### Users
 
@@ -345,11 +414,36 @@ each address the app is served on (with copy buttons), the order sign-in uses to
 an account, group sync, and whether break-glass and the development login are on.
 Secrets are never shown.
 
+### Email
+
+Shows the email settings in effect, read-only (they come from the deployment's
+configuration; the [operator guide](operator-guide.md#email-phase-3) explains them): the
+server and port, the security mode, the sender, the address links in emails point to,
+whether a username and password are set (never their values), and when digests and
+reminders go out. Without a mail server it lists the setup steps instead, and you see a
+quiet banner "Email isn't set up" across the app (dismiss it for the session).
+
+- **Send test email** sends a real email through the outbox to yourself, or to one
+  address you type, and shows whether it arrived at the mail server, with a hint when
+  it didn't (wrong host or port, TLS certificate, password). Five per admin every 10
+  minutes.
+- **Outbox**: every email with its recipient's name (never the address), type, status
+  and attempts. Mail the server didn't accept is retried by itself, 12 times over about
+  5 hours. **Failed** email (after the last attempt, or refused for good) has a
+  **Retry** button, and **Retry all failed** retries every one that is still current.
+  Emails more than three days old (digests: two) are not sent late; they show as "Not
+  sent". When something failed in the last day, or mail has been waiting more than 15
+  minutes, platform admins see the banner "Some emails aren't going out", which links
+  here and clears by itself once mail flows again.
+
+Sending a test email and retrying are recorded in the audit log, without the address.
+
 ### Audit log
 
 Every sign-in (and refused sign-in, with the reason), admin change, project membership
 and group grant change, owner and evaluator assignment, submitted evaluation, closing
-and reopening of evaluation, status change and idea deletion, newest first, one sentence each, for example "Priya Natarajan
+and reopening of evaluation, status change, idea deletion, test email and email retry,
+newest first, one sentence each, for example "Priya Natarajan
 added Lena Novak to group Tools members". Filter by who did it, what kind of action,
 project, dates, or "About" a user or group; "Details" shows the raw fields. Entries
 name ids, never emails, tokens or claims, and each records how the person had signed in

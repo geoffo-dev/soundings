@@ -44,6 +44,16 @@ describe('inbox sentences (contract-phase3 §3.2)', () => {
     expect(notificationText(item({ type: 'evaluator_invited', due_at: null }), NOW)).toBe(
       'Carol Díaz asked you to evaluate',
     )
+    // The date is kept on one line when the sentence wraps (QA K3-4).
+    const invited = describeNotification(
+      item({ type: 'evaluator_invited', due_at: at(9, 17) }),
+      NOW,
+    )
+    expect(invited.keepTogether).toBe('Fri, Oct 9')
+    expect(invited.text.endsWith(invited.keepTogether ?? '-')).toBe(true)
+    expect(
+      describeNotification(item({ type: 'evaluator_invited', due_at: null }), NOW).keepTogether,
+    ).toBeUndefined()
     expect(
       notificationText(
         item({
