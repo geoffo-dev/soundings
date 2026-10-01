@@ -1,9 +1,12 @@
 # Data model (ERD)
 
-Phase 1 schema: `backend/app/models/` (SQLAlchemy 2, typed), created by the Alembic
-revision `backend/app/migrations/versions/20260930_0002_domain_tables.py`. The procrastinate
-job-queue tables (revision `0001`) are not shown. API shapes are in
-[api/contract-phase1.md](api/contract-phase1.md).
+Schema after Phase 2: `backend/app/models/` (SQLAlchemy 2, typed), created by the
+Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
+(Phase 1) and `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external
+IDs, login attempts, groups, group grants, the group-aware effective-roles view, audit
+indexes). The procrastinate job-queue tables (revision `0001`) are not shown. API
+shapes are in [api/contract-phase1.md](api/contract-phase1.md) and
+[api/contract-phase2.md](api/contract-phase2.md).
 
 **Operators:** the migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. `pg_trgm`
 is a trusted extension, so the application's database user needs `CREATE` on the
@@ -13,6 +16,13 @@ Downgrades leave it installed.
 ```mermaid
 erDiagram
     users ||--o{ user_sessions : "signs in with"
+    users ||--o{ user_identities : "is linked to"
+    users ||--o{ user_external_ids : "is known by"
+    users ||--o{ group_memberships : "belongs via"
+    groups ||--o{ group_memberships : has
+    groups ||--o{ group_idp_values : "is mapped to"
+    groups ||--o{ project_group_grants : "is granted"
+    projects ||--o{ project_group_grants : "grants roles to"
     users ||--o{ project_members : "is member via"
     projects ||--o{ project_members : has
     projects ||--o{ rubric_criteria : "scores with"
@@ -44,6 +54,7 @@ erDiagram
         bool is_platform_admin
         bool is_active
         bool is_service_account "reserved: AI agents"
+        bool is_break_glass "at most one row"
         timestamptz last_seen_at
     }
     user_sessions {
@@ -51,10 +62,56 @@ erDiagram
         varchar token_hash UK "sha256 of cookie token"
         uuid user_id FK
         varchar csrf_token
+        varchar auth_method "sso, break_glass, dev_login"
+        text id_token "SSO only, for sign-out"
         timestamptz created_at
         timestamptz last_seen_at
         timestamptz expires_at "absolute expiry"
         varchar user_agent "short summary"
+    }
+    user_identities {
+        uuid id PK
+        uuid user_id FK "unique with issuer"
+        varchar issuer "unique with subject"
+        varchar subject
+        timestamptz created_at "linked at"
+        timestamptz last_login_at
+    }
+    user_external_ids {
+        uuid user_id PK, FK
+        varchar kind PK "employee_no, gitlab"
+        varchar value "unique per kind, case-insensitive"
+        timestamptz created_at
+    }
+    oidc_login_attempts {
+        uuid id PK
+        varchar state_hash UK "sha256 of state"
+        varchar nonce
+        varchar code_verifier "PKCE"
+        varchar redirect_uri
+        varchar next_path
+        timestamptz expires_at "10 minutes"
+    }
+    groups {
+        uuid id PK
+        varchar name "unique on lower(name)"
+        varchar description
+        varchar sync_mode "managed or additive"
+    }
+    group_idp_values {
+        uuid group_id PK, FK
+        varchar value PK "normalised"
+    }
+    group_memberships {
+        uuid group_id PK, FK
+        uuid user_id PK, FK
+        bool manual "admin-added; sync never touches"
+        bool synced "added by sign-in sync"
+    }
+    project_group_grants {
+        uuid project_id PK, FK
+        uuid group_id PK, FK
+        varchar role "admin, member, viewer"
     }
     projects {
         uuid id PK
@@ -179,14 +236,19 @@ Every table with a `uuid id` also has `created_at`, and most have `updated_at`
 (timestamptz, UTC). Join tables use composite primary keys.
 
 **View `project_effective_roles` (project_id, user_id, role):** each user's *effective*
-role per project, one row per pair. Phase 1 it is `SELECT project_id, user_id, role
-FROM project_members`; Phase 2 redefines it (same columns) as the highest of the direct
-and group-granted roles (`admin > member > viewer`). **Every query that needs a project
-role reads this view, never `project_members`:** `list_projects`, `search_users?project=`,
-My work (`evaluations_due`, `recent`), eligibility c4, last admin c11, and the authz
-policy. `project_members` is read directly only to list and edit *direct* members.
-In Python it is `app.models.project_effective_roles` (a lightweight `table()`, kept
-out of `Base.metadata` so Alembic never tries to create it).
+role per project, one row per pair: the highest (`admin > member > viewer`) of the
+direct role (`project_members`) and the role of every grant (`project_group_grants`) to
+a group the user belongs to (`group_memberships`, manual or synced). Revision 0003
+defines it as a `UNION ALL` of both sources grouped by `(project_id, user_id)` (Phase 1
+it mirrored `project_members`; same columns and types). Filters on `project_id` or
+`user_id` are pushed into both branches, which use the primary keys and the
+`user_id`/`group_id` indexes. **Every query that needs a project role reads this view,
+never `project_members`:** `list_projects`, `search_users?project=`, My work
+(`evaluations_due`, `recent`), eligibility c4, last admin c11, `member_count`, the
+access list and the authz policy. `project_members` is read directly only to list and
+edit *direct* members, `project_group_grants` only to list and edit grants. In Python
+it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
+`Base.metadata` so Alembic never tries to create it).
 
 ## Conventions
 
@@ -212,10 +274,17 @@ out of `Base.metadata` so Alembic never tries to create it).
 
 | Table | Notes |
 |---|---|
-| `users` | Email unique case-insensitively (`uq_users_email_lower` on `lower(email)`); look up with `lower(email) = lower(:email)`. Never deleted in normal use (deactivate). `is_service_account` is reserved for Phase 5/6 agent accounts. Phase 2 adds `user_identities` (issuer, subject) and `user_external_ids`. |
-| `user_sessions` | Cookie holds a 256-bit random token; only its SHA-256 (`token_hash`) is stored. `csrf_token` is mirrored in the readable `soundings_csrf` cookie. `expires_at` is the absolute expiry; idle expiry is `last_seen_at` + idle timeout (settings). Phase 2 adds the ID token for RP-initiated logout ([ADR 0005](adr/0005-server-side-sessions-oidc-csrf.md)). |
+| `users` | Email unique case-insensitively (`uq_users_email_lower` on `lower(email)`); look up with `lower(email) = lower(:email)`. Never deleted in normal use (deactivate). A pre-created user is a normal row without an identity. `is_service_account` is reserved for Phase 5/6 agent accounts. `is_break_glass` marks the single break-glass admin (`uq_users_is_break_glass`, partial unique on `is_break_glass` where true), created at its first sign-in with the reserved address `break-glass@soundings.invalid` (`.invalid` emails can't be given to users). Login matching never selects service or break-glass accounts. Downgrading 0003 leaves that row as an ordinary user; upgrading again marks it as the break-glass account by its email. |
+| `user_sessions` | Cookie holds a 256-bit random token; only its SHA-256 (`token_hash`) is stored. `csrf_token` is mirrored in the readable `soundings_csrf` cookie. `expires_at` is the absolute expiry; idle expiry is `last_seen_at` + idle timeout (settings). `auth_method` (`sso`, `break_glass`, `dev_login`; no server default, existing rows became `dev_login`) says how it started; a session only works while that method is available (break-glass sessions also at most 8 hours, 1 hour idle). `id_token` (SSO only, and only when at most 3,072 characters) is kept solely as `id_token_hint` for RP-initiated logout ([ADR 0005](adr/0005-server-side-sessions-oidc-csrf.md)); never logged or returned. Downgrading 0003 deletes SSO and break-glass sessions. |
+| `user_identities` | An OIDC account linked to a user: the ID token's `(iss, sub)`, unique (`uq_user_identities_issuer_subject`), and at most one per user per issuer (`uq_user_identities_user_id_issuer`). Linked at the first sign-in that matches the user; `last_login_at` is updated at every SSO sign-in. Admins can unlink one (the user is matched again next time). |
+| `user_external_ids` | Admin-managed ids (`employee_no = E1001`) that link a pre-created user at first sign-in. One value per kind per user (primary key `(user_id, kind)`); `(kind, lower(value))` unique (`uq_user_external_ids_kind_value_lower`). `kind` matches `^[a-z][a-z0-9_]{0,39}$`. |
+| `oidc_login_attempts` | One SSO sign-in in progress: `state_hash` (SHA-256 of `state`, which is also in the HttpOnly `soundings_oidc` cookie), `nonce`, PKCE `code_verifier`, the exact `redirect_uri` and the validated `next_path`. Single use (deleted at the callback), expires after 10 minutes; expired rows are deleted at the next login start. |
+| `groups` | Internal groups; names unique case-insensitively (`uq_groups_name_lower`). `sync_mode` (`managed` default, `additive`) decides what sign-in sync does with synced memberships. |
+| `group_idp_values` | IdP group values mapped to a group, stored normalised (trim, strip `/` at both ends, lower-case); primary key `(group_id, value)`, indexed by `value` for the sign-in lookup. A value may map to several groups. |
+| `group_memberships` | One row per (group, user) with provenance flags `manual` (admin) and `synced` (sign-in sync); `ck_group_memberships_has_source` keeps at least one true. Sync sets and clears only `synced` (deleting the row when neither is left); admins set `manual`, and "remove member" deletes the row. Sync and the admin add/remove both lock the user's `users` row first, so they serialise. Indexed by `user_id`. Deactivated users' rows stay (they can't sign in) and don't count for c11 or member counts. |
+| `project_group_grants` | A project role for every member of a group; primary key `(project_id, group_id)`, indexed by `group_id`. Feeds the effective-roles view. |
 | `projects` | `slug` (URLs) and `key` (idea keys) are immutable. `key` matches `^[A-Z][A-Z0-9]{1,5}$`. `status_labels` stores overrides only, keyed by status and resolution values. `next_idea_number` is allocated with `UPDATE ... SET next_idea_number = next_idea_number + 1 RETURNING next_idea_number - 1` (race-free, numbers never reused). `archived_at` makes the project read-only and hides it by default. `public_submission_enabled` is Phase 4. |
-| `project_members` | Direct membership only. **Phase 2 extension point:** group grants go in a separate `project_group_grants (project_id, group_id, role)` table, and the `project_effective_roles` view (above) combines both; queries read the view. |
+| `project_members` | Direct membership only. Group grants are in `project_group_grants`; the `project_effective_roles` view (above) combines both, and queries read the view. |
 | `rubric_criteria` | 3–6 active (`archived_at IS NULL`) per project, ordered by `position`. Active names are unique per project, case-insensitively (`uq_rubric_criteria_project_id_name_lower`, partial on `archived_at IS NULL`; unique indexes aren't deferrable, so `replace_rubric` applies renames and archives before inserts). `weight` is `numeric(4,2)`, `> 0`; the API accepts 0.01–10 in steps of 0.01 so nothing rounds to 0. Criteria with scores are archived when removed from the rubric; unscored ones are deleted. Scores reference criteria with a `NO ACTION` FK that is `DEFERRABLE INITIALLY DEFERRED`: deleting a scored criterion fails **at commit**, while deleting the whole project (which cascades to scores too) succeeds. New projects get `app/domain/rubric_defaults.py`. |
 | `tags` | Per project, created on first use; unique on `(project_id, lower(name))`, first spelling wins. Rows are never deleted; `list_project_tags` lists only tags on at least one idea, so typos drop out of the chips once no idea uses them. |
 | `ideas` | `(project_id, number)` unique; key = `project.key || '-' || number`. `resolution` set iff `status = 'closed'` (`ck_ideas_resolution_iff_closed`). Cached, **unmasked** aggregate: `aggregate_score` (1 decimal), `aggregate_count`, `high_disagreement`, recomputed in the same transaction as any evaluation, evaluator or rubric change; blind masking is applied per viewer when reading ([ADR 0006](adr/0006-blind-evaluation-and-aggregate-scoring.md)). `vote_count` caches `idea_votes`. `last_activity_at` is bumped by every activity event. Search: `ILIKE '%q%'` on `title`/`summary` served by `pg_trgm` GIN indexes. Indexes for board/list keyset pages in the default order: `(project_id, last_activity_at, id)` and `(project_id, status, last_activity_at, id)` (also the per-status counts); plus `(project_id, aggregate_score)`, `owner_id`, `last_activity_at` (cross-project My work). Phase 3 reminder scan: partial index `ix_ideas_evaluation_due_at_open` on `evaluation_due_at` where it is set and evaluation is open. Phase 4 adds public-submitter fields (hashed tracking token, contact email, moderation flag). |
@@ -225,7 +294,7 @@ out of `Base.metadata` so Alembic never tries to create it).
 | `idea_votes`, `idea_watchers` | One row per user per idea. Watchers are added automatically for the submitter, owner, evaluators and commenters (Phase 3 notifications). |
 | `comments` | Flat. Every comment also has an `activity_events` row (`type = 'comment'`, `comment_id`) that places it in the feed. Deleting sets `deleted_at` and clears `body_md`. |
 | `activity_events` | The idea feed and, from Phase 3, the source of notifications. `type` is validated in the application (the set grows per phase); `payload` holds ids and from/to values and **never scores**. `idea_id` is nullable for future project-level events. Feed index `(idea_id, created_at, id)`. |
-| `audit_log` | Append-only, filled from Phase 2. No foreign keys, so entries outlive what they mention. Never store secrets or tokens in `details`. |
+| `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. |
 
 ## Delete behaviour
 
@@ -234,7 +303,9 @@ out of `Base.metadata` so Alembic never tries to create it).
 | a project | Cascades to members, rubric, tags, ideas and everything under them, activity. |
 | an idea | Cascades to tags, evaluators → evaluations → scores, votes, watchers, comments, activity. |
 | an evaluator assignment | Cascades to their evaluation and scores. |
-| a user (not a Phase 1 feature) | Sessions, memberships, assignments, votes and watches cascade; `owner_id`, `submitted_by_id`, `invited_by_id`, comment authors and activity actors become null. |
+| a user (not a feature: users are deactivated) | Sessions, identities, external IDs, project and group memberships, assignments, votes and watches cascade; `owner_id`, `submitted_by_id`, `invited_by_id`, comment authors and activity actors become null. |
+| a group | Cascades to its IdP values, memberships and project grants: access through it ends at once. |
+| a project | Also cascades to its group grants. |
 | a scored rubric criterion | Refused by the database at commit (deferred FK); archive it instead. |
 
 ## Invariants the application enforces
@@ -248,3 +319,7 @@ same transaction and tests them:
 - A submitted evaluation has a non-null score for every active criterion (422
   `evaluation_incomplete`).
 - `ideas.vote_count` and the aggregate cache match their source rows.
+- Service and break-glass accounts have no identities, external IDs, project roles or
+  group memberships (the break-glass admin acts as platform admin only).
+- `group_idp_values.value` is already normalised
+  (`app.schemas.groups.normalise_idp_value`).

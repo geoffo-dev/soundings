@@ -19,9 +19,15 @@ code is wrong. To change a rule, message the lead, who updates this file first.
 | **Pub** | Public (anonymous) | No session and no API key |
 
 **Effective project role** = the highest of the user's direct membership and every
-group-derived membership (`admin > member > viewer`), evaluated live on every request.
-Removing a group mapping removes access at the next sign-in sync; removing a direct
-membership removes it immediately.
+group-derived membership (`admin > member > viewer`), evaluated live on every request
+from the `project_effective_roles` view. A user is in a group **manually** (added by a
+platform admin) and/or **synced** (added by sign-in sync from the IdP's groups claim);
+both count the same. Sync runs at each SSO sign-in: a *managed* mapping adds and
+removes synced memberships, an *additive* one only adds, and manual memberships are
+never touched ([contract-phase2 §3.6](api/contract-phase2.md#36-group-sync-at-sign-in)).
+So removing someone from an IdP group removes the access at their next sign-in;
+removing a direct membership, a group membership or a group grant in Soundings removes
+it immediately.
 
 **Per-idea overlays** add to a column; they are assignments, not roles:
 
@@ -44,6 +50,15 @@ membership removes it immediately.
 - **Service account:** a user of kind `service` used by kagent agents via an API key.
   It needs a real project role like any user and follows every rule here, including
   blind evaluation.
+- **Break-glass admin:** the one local account whose credentials come from a K8s
+  Secret, a platform admin (column PA). Usable only while SSO is not configured; every
+  action in its sessions is audited with `auth_method: break_glass`. It never holds
+  project roles, group memberships or external IDs, is never matched by SSO sign-in,
+  and doesn't count as the remaining platform admin for c18.
+- **Deactivated users** keep their rows but hold no access: they can't sign in, and
+  they don't count for c11, member counts or access lists.
+- **How someone signed in** (SSO, break-glass, dev login) changes nothing in these
+  tables: a session is a session. Sign-in itself is not a rule (section 2a).
 
 ## 2. Reading the tables
 
@@ -62,13 +77,30 @@ Evaluation order, first failure wins: **401** (no identity) → **404** (cannot 
 project or idea, key's project restriction, c8, c9, c12) → **403** (rule or key scope,
 then principal conditions) → **422** (request body conditions) → **409** (state
 conditions). Every idea-scoped rule implies `idea.view` first, so an idea hidden by
-moderation (c12) returns 404, not 403.
+moderation (c12) returns 404, not 403. Platform rules (table H) are not about a
+resource the caller may not know, so a non-admin gets 403 before any 404.
+
+## 2a. Signing in (not rules)
+
+Signing in decides *who* the principal is, before any rule runs, so these are
+conditions on public endpoints rather than rows of the matrix
+([contract-phase2 §3](api/contract-phase2.md#3-business-rules)):
+
+| Method | Available when | Who can use it |
+|---|---|---|
+| SSO (OIDC) | `SOUNDINGS_OIDC_ISSUER` is set | A user matched by (issuer, subject), then external ID, then verified email, then auto-create (verified email) if enabled; otherwise denied. Never a deactivated, service or break-glass account. The external-ID claim must be admin-controlled at the IdP. |
+| Break-glass | enabled, both credentials set **and SSO not configured** | Whoever has the Secret's username and password; throttled per IP; every use audited; sessions last at most 8 hours (1 hour idle). |
+| Dev login | `SOUNDINGS_DEV_LOGIN_ENABLED` (refused in production) | Any active person (development and demos only). |
+
+Every session works only while the method that started it is available (an SSO
+session needs SSO configured, and so on); otherwise the request is unauthenticated
+(401). Deactivating a user ends their sessions.
 
 ### A. Projects and ideas
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `project.view` | View a project: board, list, rubric, status labels, members | Y | Y | Y | Y | Y | 404 | 401 | · | · |
+| `project.view` | View a project: board, list, rubric, status labels, members, group grants, everyone with access and why | Y | Y | Y | Y | Y | 404 | 401 | · | · |
 | `project.create` | Create a project and name its first admin | Y | 403 | 403 | 403 | 403 | 403 | 401 | · | · |
 | `idea.view` | View an idea: overview, activity, owner, evaluators and their progress | Y | Y | Y (c12) | Y (c12) | Y (c12) | 404 | 401 | · | · |
 | `idea.create` | Submit an idea (signed-in form, `N`) | Y | Y | Y | 403 | 403 | 404 | 401 | · | · |
@@ -135,7 +167,7 @@ Exports include the aggregate score only when the exporting user passes
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `project.manage_members` | Add or remove users and groups, change roles | Y (c11) | Y (c11) | 403 | 403 | 403 | 404 | 401 | · | · |
+| `project.manage_members` | Add or remove users and groups (group grants), change their roles | Y (c11) | Y (c11) | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.edit_rubric` | Edit rubric criteria (3–6: name, description, weight, inverted, guidance) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.rename_status_labels` | Rename status labels (the stages themselves are fixed) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.edit_settings` | Name, description, visibility, volunteer owners, evaluation window, public submission (moderation, email verification), project branding, archive | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
@@ -159,14 +191,20 @@ platform admin".
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub |
 |---|---|---|---|---|---|---|---|---|
-| `platform.manage_users` | Users, pre-created users, external IDs, deactivation, sessions | Y | 403 | 403 | 403 | 403 | 403 | 401 |
-| `platform.manage_groups` | Groups, IdP group mappings (managed/additive), "test mapping" | Y | 403 | 403 | 403 | 403 | 403 | 401 |
-| `platform.configure_sso` | OIDC providers, login matching, break-glass status | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `platform.manage_users` | Users: list, pre-create, edit, deactivate (c17, c18), external IDs, unlink an SSO identity, sign out everywhere | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `platform.manage_groups` | Groups, IdP group mappings (managed/additive), manual members, "test mapping" | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `platform.configure_sso` | View the effective SSO configuration (read-only: set by Helm values), the redirect URIs to register, break-glass status | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.configure_email` | Effective SMTP config, send test email, failed sends and retry | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.edit_branding` | Global branding and email footer | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.manage_agents` | Register kagent agents and their service accounts | Y | 403 | 403 | 403 | 403 | 403 | 401 |
-| `platform.view_audit_log` | Read the audit log | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `platform.view_audit_log` | Read the audit log (filters, newest first) | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `api_key.manage_any` | List and revoke any user's API keys, including service accounts' | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+
+Notes: c17 applies to `platform.manage_users`: a platform admin can't deactivate
+themselves or remove their own platform-admin flag (403 `cannot_change_self`), and c18
+keeps at least one other active platform admin (409 `last_platform_admin`). Service
+and break-glass accounts can't get an email change, the platform-admin flag or external
+IDs (409 `system_account`; contract-phase2 §3.4).
 
 ### I. Self-service, API keys and MCP
 
@@ -174,7 +212,7 @@ platform admin".
 |---|---|---|---|---|---|---|---|---|
 | `self.manage_profile` | Own profile and notification preferences (immediate / digest / off) | Y | Y | Y | Y | Y | Y | 401 |
 | `self.unsubscribe` | One-click unsubscribe from an email link, no sign-in needed | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) |
-| `user.search` | Find users by name or email (member, owner and evaluator pickers, @mentions) | Y | Y | Y | Y | Y | Y | 401 |
+| `user.search` | Find users by name or email, and groups by name (member, group-grant, owner and evaluator pickers, @mentions) | Y | Y | Y | Y | Y | Y | 401 |
 | `api_key.manage_own` | Create, list and revoke your own API keys | Y | Y | Y | Y | Y | Y | 401 |
 | `mcp.connect` | Call `/mcp`; each tool then checks its own rule (section 6) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | 401 |
 
@@ -259,11 +297,14 @@ evaluations and one AI evaluation present.
 | c8 | The project has public submission enabled | 404 |
 | c9 | The request carries a valid tracking token for this idea | 404 |
 | c10 | AI is enabled (Helm feature toggle) and a suitable agent is registered | 409 `ai_unavailable` |
-| c11 | After the change, the project still has at least one admin | 409 `last_admin` |
+| c11 | After the change, the project still has at least one admin (effective role, direct or via a group) who is active and not a service account | 409 `last_admin` |
 | c12 | The idea is not awaiting moderation (always true for PA and PAd) | 404 |
 | c13 | The idea has no owner | 409 `idea_has_owner` |
 | c14 | The request carries a valid unsubscribe token | 404 |
 | c15 | The request authenticates with an API key that has the `mcp` scope | no key → 401; no scope → 403 `insufficient_scope` |
+| c16 | Removing an evaluator: the evaluator is not the principal (contract-phase1 §3.5) | 403 `cannot_remove_self` |
+| c17 | Changing a user's `is_active` or `is_platform_admin`: the user is not the principal (contract-phase2 §3.4) | 403 `cannot_change_self` |
+| c18 | Demoting or deactivating a platform admin: another active platform admin (not the break-glass account) remains, counted under a lock (contract-phase2 §3.4) | 409 `last_platform_admin` |
 
 ## 5. API keys
 
@@ -310,8 +351,16 @@ with the rule name, decision, user and key id.
   open or closed, owner present, evaluator state `none | invited | draft | submitted`,
   `allow_volunteer_owners`, `public_submission_enabled`, moderation), and the expected
   result (`allow`, `401`, `403`, `404`, or the condition's 409/422 code).
-- Cover the role source: direct membership, group membership, both (highest wins), and
-  an overlay on a demoted user.
+- Cover the role source: direct membership, group membership (manual and synced),
+  both (highest wins), several groups (highest wins), a membership removed by sync or by
+  an admin (access gone on the next request), and an overlay on a demoted user.
+- Sign-in (section 2a) gets its own table-driven tests: each login-matching step and
+  its denials (contract-phase2 §3.3 worked examples, including the external-ID-only
+  rule and auto-create without a verified email), group sync for every before/after
+  cell of §3.6 in both modes (and group overage), break-glass availability, throttling
+  and session limits, and every method's sessions ending when it stops being available.
+- c11 with a deactivated or service-account admin (doesn't count), and c18 with two
+  concurrent demotions (one gets 409).
 - Cover API keys: each scope alone, a project-restricted key, an expired key, a
   revoked key, and a key whose owner was demoted after it was created.
 - A meta-test fails if any route or MCP tool has no rule, or if a rule name used in

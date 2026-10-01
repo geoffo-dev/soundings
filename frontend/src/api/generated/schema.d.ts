@@ -4,6 +4,350 @@
  */
 
 export interface paths {
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the audit log
+         * @description Platform admins (platform.view_audit_log). Newest first; filters combine with AND, several action values with OR. since is inclusive, until exclusive.
+         */
+        get: operations["list_audit_entries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List groups
+         * @description Platform admins (platform.manage_groups). Every group by name (case-insensitive), with mapping and counts. q matches the name.
+         */
+        get: operations["list_admin_groups"];
+        put?: never;
+        /**
+         * Create a group
+         * @description Platform admins (platform.manage_groups). Optionally mapped to IdP values right away. 409 group_name_taken.
+         */
+        post: operations["create_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups/test-mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test the group mapping
+         * @description Platform admins (platform.manage_groups). What a sign-in with these claims would do: the values extracted from the configured groups claim, the groups they match, the effect on each (for user_id's memberships, or a user with none) and the resulting project roles. Changes nothing; the claims are not stored or logged. 422 user_not_found.
+         */
+        post: operations["test_group_mapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a group
+         * @description Platform admins (platform.manage_groups). Mapping, counts by provenance and project grants (members: paged).
+         */
+        get: operations["get_group"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a group
+         * @description Platform admins (platform.manage_groups). Removes its memberships, mapping and project grants: access through it ends immediately. The SPA confirms first (no undo).
+         */
+        delete: operations["delete_group"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename or describe a group
+         * @description Platform admins (platform.manage_groups). Omitted or null fields are unchanged. 409 group_name_taken.
+         */
+        patch: operations["update_group"];
+        trace?: never;
+    };
+    "/api/v1/admin/groups/{group_id}/mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the IdP mapping
+         * @description Platform admins (platform.manage_groups). sync_mode and the complete list of IdP values (normalised). Applies to each user at their next sign-in; memberships don't change now.
+         */
+        put: operations["replace_group_mapping"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups/{group_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List group members
+         * @description Platform admins (platform.manage_groups). By display name, with provenance (manual, synced or both); deactivated members are listed too (is_active false).
+         */
+        get: operations["list_group_members"];
+        put?: never;
+        /**
+         * Add a manual member
+         * @description Platform admins (platform.manage_groups). Sign-in sync never removes a manual membership. A synced member becomes manual too. 409 already_member (already manual); 422 user_not_found (unknown, inactive, service or break-glass account).
+         */
+        post: operations["add_group_member"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups/{group_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a member
+         * @description Platform admins (platform.manage_groups). Removes the membership whatever its provenance (manual and synced). A synced member comes back at their next sign-in while the IdP still sends a mapped value. 404 not a member.
+         */
+        delete: operations["remove_group_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sso": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Effective SSO configuration
+         * @description Platform admins (platform.configure_sso). The settings in effect with secrets masked, the redirect URIs to register at the IdP for each base URL, whether the provider's discovery document can be used, and the break-glass status.
+         */
+        get: operations["get_sso_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List users
+         * @description Platform admins (platform.manage_users). Every account (people, service accounts, the break-glass admin), by display name. q matches name or email (case-insensitive); the filters combine.
+         */
+        get: operations["list_admin_users"];
+        put?: never;
+        /**
+         * Pre-create a user
+         * @description Platform admins (platform.manage_users). An active user without an SSO identity; their first SSO sign-in links them by external ID or verified email. 409 email_taken, external_id_taken.
+         */
+        post: operations["create_admin_user"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a user
+         * @description Platform admins (platform.manage_users). Identities, external IDs, groups with provenance, and every project role with its sources (direct or group).
+         */
+        get: operations["get_admin_user"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a user
+         * @description Platform admins (platform.manage_users). Name, email, active, platform admin. Deactivating ends their sessions. 403 cannot_change_self (your own active / platform admin flags); 409 email_taken; 409 system_account (service or break-glass account: only display_name and is_active change); 409 last_platform_admin (no other active platform admin would remain).
+         */
+        patch: operations["update_admin_user"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/external-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace a user's external IDs
+         * @description Platform admins (platform.manage_users). The complete set, one per kind. 409 external_id_taken (another user has that kind and value); 409 system_account.
+         */
+        put: operations["replace_user_external_ids"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/identities/{identity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unlink an SSO identity
+         * @description Platform admins (platform.manage_users). The user is matched again (external ID, verified email) at their next SSO sign-in, e.g. after their IdP account was recreated. Their SSO sessions end too.
+         */
+        delete: operations["unlink_user_identity"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Sign a user out everywhere
+         * @description Platform admins (platform.manage_users). Ends all their sessions (yours too, if it is you); group changes then apply at their next sign-in. Idempotent.
+         */
+        delete: operations["end_user_sessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/break-glass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign in as the break-glass admin
+         * @description Public. The local platform admin whose credentials come from a K8s Secret, for first sign-in before SSO is configured. 404 unless available (enabled, credentials set, SSO not configured). Sets the session cookies like any sign-in. 401 invalid_credentials (wrong username or password, same answer); 403 account_disabled; 429 too_many_attempts (with Retry-After). Every attempt is audited.
+         */
+        post: operations["break_glass_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finish SSO sign-in
+         * @description Public; the IdP redirects the browser here. Checks state against the soundings_oidc cookie, exchanges the code (with the PKCE verifier), validates the ID token, matches the user, syncs groups, starts a session (rotating any existing one) and redirects (302) to the saved next path. On failure it redirects to /login?error=<code> (sso_unavailable, login_expired, login_cancelled, sso_failed, no_account, account_disabled, identity_conflict); the reason is in the audit log. Overlong or unexpected parameter values fail the flow (a redirect); only a NUL character is a 422.
+         */
+        get: operations["sso_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sign-in methods
+         * @description Public. Which sign-in methods the sign-in page shows: the SSO button (and its label), the development login, the break-glass admin form. No secrets.
+         */
+        get: operations["get_auth_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/dev/login": {
         parameters: {
             query?: never;
@@ -44,6 +388,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start SSO sign-in
+         * @description Public; navigate the browser here (not fetch). Starts the authorization code flow with PKCE: stores the attempt server-side, sets the short-lived HttpOnly soundings_oidc cookie and redirects (302) to the IdP. The redirect URI is <base URL of this host>/api/v1/auth/callback; a host that is not one of SOUNDINGS_BASE_URLS is first redirected to the same path on the first base URL. next must be a same-origin SPA path of at most 2048 characters (else /). SSO not configured or the IdP unreachable: 302 to /login?error=sso_unavailable; too many starts from this client IP: 302 to /login?error=too_many_attempts.
+         */
+        get: operations["sso_login"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -58,6 +422,26 @@ export interface paths {
          * @description Ends the session (if any) and clears the session cookies. Always 204.
          */
         post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout/redirect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out, also at the IdP
+         * @description Public; submit as an HTML form POST (top-level navigation, no body). Ends the session like logout, then redirects (303) to the IdP's end-session endpoint (SSO sessions, when the IdP has one) with id_token_hint (when stored), client_id and post_logout_redirect_uri=<base URL>/login?signed_out=1; otherwise straight to /login?signed_out=1. A cross-origin post ends nothing and redirects to /. Always redirects. POST /auth/logout (204) is unchanged.
+         */
+        post: operations["logout_redirect"];
         delete?: never;
         options?: never;
         head?: never;
@@ -106,6 +490,26 @@ export interface paths {
          * @description The author only (403 not_author); sets edited_at. Deleted comments are 404.
          */
         patch: operations["update_comment"];
+        trace?: never;
+    };
+    "/api/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search groups
+         * @description Signed-in users (user.search: people and group pickers). Groups whose name contains q (case-insensitive), by name; at most limit.
+         */
+        get: operations["search_groups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/ideas/{idea}": {
@@ -513,6 +917,26 @@ export interface paths {
         patch: operations["update_project"];
         trace?: never;
     };
+    "/api/v1/projects/{slug}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everyone with access
+         * @description Anyone who can view the project. Every active user with an effective role, by display name, with the sources of that role (direct, and each group). Not listed: platform admins without a role here, and (internal projects) the signed-in users who can view it without one. q matches name or email; role filters on the effective role.
+         */
+        get: operations["list_project_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{slug}/board": {
         parameters: {
             query?: never;
@@ -531,6 +955,54 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{slug}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List group grants
+         * @description Anyone who can view the project (like members). Groups granted a role here, admins first, then by group name.
+         */
+        get: operations["list_project_group_grants"];
+        put?: never;
+        /**
+         * Grant a group a role
+         * @description Project admins (project.manage_members). Every member of the group gets the role (the highest of all their sources counts). 409 already_granted; 422 group_not_found.
+         */
+        post: operations["add_project_group_grant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{slug}/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a group grant
+         * @description Project admins (project.manage_members, c11). Access through the group ends immediately. 404 not granted; 409 last_admin.
+         */
+        delete: operations["remove_project_group_grant"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a group's role
+         * @description Project admins (project.manage_members, c11). 404 not granted; 409 last_admin.
+         */
+        patch: operations["update_project_group_grant"];
         trace?: never;
     };
     "/api/v1/projects/{slug}/ideas": {
@@ -700,6 +1172,171 @@ export interface components {
             next_cursor: string | null;
         };
         /**
+         * AdminUser
+         * @description One user, everything an admin needs to see where their access comes from.
+         */
+        AdminUser: {
+            /**
+             * Active Session Count
+             * @description Live sessions (signed in on N browsers).
+             */
+            active_session_count: number;
+            /** Avatar Url */
+            avatar_url: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /**
+             * External Ids
+             * @description By kind.
+             */
+            external_ids: components["schemas"]["ExternalId"][];
+            /**
+             * Groups
+             * @description By group name.
+             */
+            groups: components["schemas"]["UserGroup"][];
+            /**
+             * Has Identity
+             * @description Linked to an SSO account. False for pre-created users until they sign in.
+             */
+            has_identity: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Identities */
+            identities: components["schemas"]["LinkedIdentity"][];
+            /**
+             * Initials
+             * @description One or two letters for the avatar fallback.
+             */
+            readonly initials: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Is Break Glass
+             * @description The break-glass admin (K8s Secret credentials).
+             */
+            is_break_glass: boolean;
+            /** Is Platform Admin */
+            is_platform_admin: boolean;
+            /**
+             * Is Service Account
+             * @description An agent account (Phase 6); never signs in.
+             */
+            is_service_account: boolean;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /**
+             * Project Roles
+             * @description By project name.
+             */
+            project_roles: components["schemas"]["UserProjectRole"][];
+        };
+        /**
+         * AdminUserCreate
+         * @description Pre-create a user: they are linked at their first SSO sign-in by an external ID
+         *     or their verified email (section 3.3).
+         */
+        AdminUserCreate: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /** External Ids */
+            external_ids?: components["schemas"]["ExternalIdIn"][];
+            /**
+             * Is Platform Admin
+             * @default false
+             */
+            is_platform_admin: boolean;
+        };
+        /**
+         * AdminUserPage
+         * @description Users by display name.
+         */
+        AdminUserPage: {
+            /** Items */
+            items: components["schemas"]["AdminUserSummary"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * AdminUserSummary
+         * @description A row in Admin settings -> Users.
+         */
+        AdminUserSummary: {
+            /** Avatar Url */
+            avatar_url: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /**
+             * Has Identity
+             * @description Linked to an SSO account. False for pre-created users until they sign in.
+             */
+            has_identity: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Initials
+             * @description One or two letters for the avatar fallback.
+             */
+            readonly initials: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Is Break Glass
+             * @description The break-glass admin (K8s Secret credentials).
+             */
+            is_break_glass: boolean;
+            /** Is Platform Admin */
+            is_platform_admin: boolean;
+            /**
+             * Is Service Account
+             * @description An agent account (Phase 6); never signs in.
+             */
+            is_service_account: boolean;
+            /** Last Seen At */
+            last_seen_at: string | null;
+        };
+        /**
+         * AdminUserUpdate
+         * @description Omitted or null fields are unchanged. You cannot change your own ``is_active``
+         *     or ``is_platform_admin`` (403 ``cannot_change_self``), and the last active platform
+         *     admin stays one (409 ``last_platform_admin``).
+         */
+        AdminUserUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Email */
+            email?: string | null;
+            /**
+             * Is Active
+             * @description false deactivates: ends their sessions, blocks sign-in.
+             */
+            is_active?: boolean | null;
+            /** Is Platform Admin */
+            is_platform_admin?: boolean | null;
+        };
+        /**
          * AggregateScore
          * @description The idea's aggregate over submitted evaluations with include_in_aggregate.
          */
@@ -734,6 +1371,96 @@ export interface components {
             overall: number;
         };
         /**
+         * AuditAction
+         * @description Every action the audit log records (``audit_log.action``).
+         *
+         *     ``app.services.audit.AUDIT_ACTIONS`` must be exactly this set. Names are
+         *     ``<area>.<what happened>``; ``details.rule`` names the role-matrix rule that
+         *     allowed an admin action.
+         * @enum {string}
+         */
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit";
+        /**
+         * AuditEntry
+         * @description One audit entry. Ids are resolved to names where the thing still exists.
+         */
+        AuditEntry: {
+            /**
+             * Action
+             * @description An AuditAction value (a plain string, so older entries stay readable).
+             */
+            action: string;
+            /** @description The actor, if the user still exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Actor Id
+             * @description Who did it; null for denied sign-ins (the matched user, if any, is the target: an attempt is never pinned on the account it tried).
+             */
+            actor_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Details
+             * @description Action-specific ids, enum values and field names; never secrets or PII.
+             */
+            details: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The project it happened in, if it exists. */
+            project: components["schemas"]["ProjectRef"] | null;
+            /** Target Id */
+            target_id: string | null;
+            /**
+             * Target Label
+             * @description Display name of the target if it still exists: a user's name, project name, idea key (CUST-12) or group name.
+             */
+            target_label: string | null;
+            /**
+             * Target Type
+             * @description Null when there is no target.
+             */
+            target_type: ("user" | "project" | "idea" | "group") | null;
+        };
+        /**
+         * AuditPage
+         * @description Newest first.
+         */
+        AuditPage: {
+            /** Items */
+            items: components["schemas"]["AuditEntry"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * AuthConfig
+         * @description Which sign-in methods the sign-in page offers (public, no secrets).
+         */
+        AuthConfig: {
+            /**
+             * Break Glass
+             * @description The break-glass admin form is available: enabled, credentials set, and SSO not configured.
+             */
+            break_glass: boolean;
+            /**
+             * Dev Login
+             * @description The development login picker is enabled.
+             */
+            dev_login: boolean;
+            /**
+             * Sso
+             * @description SSO is configured: show the "Sign in with SSO" button (GET /auth/login).
+             */
+            sso: boolean;
+        };
+        /**
          * Board
          * @description One column per status, always all five, in lifecycle order.
          */
@@ -760,6 +1487,35 @@ export interface components {
             /** @description Closed column only (null elsewhere): count split by resolution. Expand it with GET /projects/{slug}/ideas?status=closed&resolution=<resolution>. */
             resolution_counts: components["schemas"]["ResolutionCounts"] | null;
             status: components["schemas"]["IdeaStatus"];
+        };
+        /**
+         * BreakGlassLogin
+         * @description Break-glass admin credentials (from the K8s Secret). Not trimmed: passwords are
+         *     compared exactly.
+         */
+        BreakGlassLogin: {
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
+        };
+        /** BreakGlassStatus */
+        BreakGlassStatus: {
+            /**
+             * Available
+             * @description Sign-in works now: enabled, credentials set and SSO not configured.
+             */
+            available: boolean;
+            /**
+             * Credentials Set
+             * @description Username and password are both set.
+             */
+            credentials_set: boolean;
+            /**
+             * Enabled
+             * @description SOUNDINGS_BREAK_GLASS_ENABLED.
+             */
+            enabled: boolean;
         };
         /** CommentActivity */
         CommentActivity: {
@@ -868,7 +1624,12 @@ export interface components {
         };
         /**
          * CurrentUser
-         * @description The signed-in user (``GET /auth/me``), also used for the dev login picker.
+         * @description The signed-in user (``GET /auth/me``, sign-in responses), also used for the dev
+         *     login picker.
+         *
+         *     Pending (contract-phase2 section 7): ``auth_method: AuthMethod | None`` lands with
+         *     the identity and frontend builds, which update the tests and mocks that build a
+         *     ``CurrentUser`` in the same change.
          */
         CurrentUser: {
             /** Avatar Url */
@@ -1170,6 +1931,34 @@ export interface components {
             /** User Ids */
             user_ids: string[];
         };
+        /** ExternalId */
+        ExternalId: {
+            /** Kind */
+            kind: string;
+            /** Value */
+            value: string;
+        };
+        /** ExternalIdIn */
+        ExternalIdIn: {
+            /**
+             * Kind
+             * @description e.g. employee_no, gitlab.
+             */
+            kind: string;
+            /**
+             * Value
+             * @description Matched case-insensitively.
+             */
+            value: string;
+        };
+        /**
+         * ExternalIdsReplace
+         * @description The user's complete set of external IDs (one per kind).
+         */
+        ExternalIdsReplace: {
+            /** External Ids */
+            external_ids: components["schemas"]["ExternalIdIn"][];
+        };
         /**
          * FieldError
          * @description One request-validation error.
@@ -1184,6 +1973,249 @@ export interface components {
             msg: string;
             /** Type */
             type: string;
+        };
+        /**
+         * Group
+         * @description A group with its counts by provenance and project grants (members: paged).
+         */
+        Group: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Idp Values
+             * @description Mapped IdP group values, normalised and sorted. Empty: not mapped.
+             */
+            idp_values: string[];
+            /**
+             * Manual Member Count
+             * @description Active members added by an admin (some also synced).
+             */
+            manual_member_count: number;
+            /**
+             * Member Count
+             * @description Active members, manual or synced (deactivated users don't count).
+             */
+            member_count: number;
+            /** Name */
+            name: string;
+            /**
+             * Project Count
+             * @description Projects that grant this group a role.
+             */
+            project_count: number;
+            /**
+             * Project Grants
+             * @description By project name.
+             */
+            project_grants: components["schemas"]["GroupProjectGrant"][];
+            /** @description managed: sign-in sync adds and removes synced memberships; additive: it only adds. Manual memberships are never touched by sync. */
+            sync_mode: components["schemas"]["GroupSyncMode"];
+            /**
+             * Synced Member Count
+             * @description Active members added by sign-in sync.
+             */
+            synced_member_count: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** GroupCreate */
+        GroupCreate: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Idp Values */
+            idp_values?: string[];
+            /** Name */
+            name: string;
+            /** @default managed */
+            sync_mode: components["schemas"]["GroupSyncMode"];
+        };
+        /**
+         * GroupMappingUpdate
+         * @description The complete IdP mapping. Takes effect for each user at their next sign-in.
+         */
+        GroupMappingUpdate: {
+            /** Idp Values */
+            idp_values: string[];
+            sync_mode: components["schemas"]["GroupSyncMode"];
+        };
+        /**
+         * GroupMember
+         * @description A group member with provenance. A user can be both manual and synced.
+         *     Deactivated members are listed (``is_active`` false) but grant no access.
+         */
+        GroupMember: {
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Joined At
+             * Format: date-time
+             * @description When the membership started.
+             */
+            joined_at: string;
+            /**
+             * Manual
+             * @description Added by an admin; sign-in sync never changes it.
+             */
+            manual: boolean;
+            /**
+             * Synced
+             * @description Added by sign-in sync from the IdP claim.
+             */
+            synced: boolean;
+            user: components["schemas"]["UserRef"];
+        };
+        /**
+         * GroupMemberAdd
+         * @description Add a manual member (or mark a synced member manual too).
+         */
+        GroupMemberAdd: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * GroupMemberPage
+         * @description Members by display name.
+         */
+        GroupMemberPage: {
+            /** Items */
+            items: components["schemas"]["GroupMember"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * GroupPage
+         * @description Groups by name.
+         */
+        GroupPage: {
+            /** Items */
+            items: components["schemas"]["GroupSummary"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * GroupProjectGrant
+         * @description A project role granted to the group (seen from the group).
+         */
+        GroupProjectGrant: {
+            project: components["schemas"]["ProjectRef"];
+            role: components["schemas"]["ProjectRole"];
+        };
+        /**
+         * GroupRef
+         * @description Enough to show and link a group.
+         */
+        GroupRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * GroupSearchResult
+         * @description A group in a picker (granting a group a project role).
+         */
+        GroupSearchResult: {
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Member Count
+             * @description Active members, manual or synced (deactivated users don't count).
+             */
+            member_count: number;
+            /** Name */
+            name: string;
+        };
+        /**
+         * GroupSummary
+         * @description A row in Admin settings -> Groups.
+         */
+        GroupSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Idp Values
+             * @description Mapped IdP group values, normalised and sorted. Empty: not mapped.
+             */
+            idp_values: string[];
+            /**
+             * Member Count
+             * @description Active members, manual or synced (deactivated users don't count).
+             */
+            member_count: number;
+            /** Name */
+            name: string;
+            /**
+             * Project Count
+             * @description Projects that grant this group a role.
+             */
+            project_count: number;
+            /** @description managed: sign-in sync adds and removes synced memberships; additive: it only adds. Manual memberships are never touched by sync. */
+            sync_mode: components["schemas"]["GroupSyncMode"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * GroupSyncMode
+         * @description How sign-in sync treats a group's IdP-mapped memberships (contract-phase2 §3.6).
+         *
+         *     ``managed``: synced memberships are exactly the groups the IdP claim matches (sync
+         *     adds and removes). ``additive``: sync only adds. Manual memberships are never
+         *     touched by sync in either mode.
+         * @enum {string}
+         */
+        GroupSyncMode: "managed" | "additive";
+        /**
+         * GroupUpdate
+         * @description Rename or describe a group; omitted or null fields are unchanged. The mapping
+         *     has its own endpoint (``PUT .../mapping``).
+         */
+        GroupUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
         };
         /** IdeaCreate */
         IdeaCreate: {
@@ -1591,6 +2623,108 @@ export interface components {
             title?: string | null;
         };
         /**
+         * LinkedIdentity
+         * @description An SSO account linked to the user (the ID token's ``iss`` and ``sub``).
+         */
+        LinkedIdentity: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Issuer */
+            issuer: string;
+            /** Last Login At */
+            last_login_at: string | null;
+            /**
+             * Linked At
+             * Format: date-time
+             */
+            linked_at: string;
+            /** Subject */
+            subject: string;
+        };
+        /**
+         * MappingTestGroup
+         * @description One group the claim set matches or, with a user, one of their synced groups
+         *     that it no longer matches.
+         */
+        MappingTestGroup: {
+            /**
+             * Effect
+             * @description add: becomes a synced member; keep: stays a synced member (already synced and matched, or an additive group that no longer matches: matched_values empty); remove: the synced membership ends (managed group, nothing matched).
+             * @enum {string}
+             */
+            effect: "add" | "keep" | "remove";
+            group: components["schemas"]["GroupRef"];
+            /**
+             * Manual
+             * @description The user is a manual member (unaffected by sync, stays a member).
+             */
+            manual: boolean;
+            /**
+             * Matched Values
+             * @description Normalised claim values that matched; empty when none did.
+             */
+            matched_values: string[];
+            sync_mode: components["schemas"]["GroupSyncMode"];
+        };
+        /**
+         * MappingTestRequest
+         * @description A claim set pasted by an admin (e.g. a decoded ID token), and optionally a user
+         *     whose current memberships the effects are computed against.
+         */
+        MappingTestRequest: {
+            /**
+             * Claims
+             * @description The token's claims as a JSON object. Nothing is stored or logged.
+             */
+            claims: {
+                [key: string]: unknown;
+            };
+            /**
+             * User Id
+             * @description Compute effects for this user's memberships; null: a user with none.
+             */
+            user_id?: string | null;
+        };
+        /**
+         * MappingTestResult
+         * @description What a sign-in with these claims would do (section 3.6).
+         */
+        MappingTestResult: {
+            /**
+             * Claim Found
+             * @description The claim exists in the pasted claims.
+             */
+            claim_found: boolean;
+            /**
+             * Groups
+             * @description Every matched group, and every synced group of the user's that no longer matches (remove, or keep for additive groups), by name.
+             */
+            groups: components["schemas"]["MappingTestGroup"][];
+            /**
+             * Groups Claim
+             * @description The configured claim path (SOUNDINGS_OIDC_GROUPS_CLAIM); null: sync off.
+             */
+            groups_claim: string | null;
+            /**
+             * Ignored Count
+             * @description Entries ignored: not strings, or empty once normalised.
+             */
+            ignored_count: number;
+            /**
+             * Project Roles
+             * @description The user's effective project roles after the sync: direct roles (with a user), manual groups and the synced groups that result. By project name.
+             */
+            project_roles: components["schemas"]["UserProjectRole"][];
+            /**
+             * Values
+             * @description Extracted values, normalised, de-duplicated, sorted.
+             */
+            values: string[];
+        };
+        /**
          * Member
          * @description A direct project member. ``email`` helps tell people apart (colleagues only).
          */
@@ -1860,6 +2994,32 @@ export interface components {
             visibility: components["schemas"]["ProjectVisibility"];
         };
         /**
+         * ProjectAccessEntry
+         * @description Someone with an effective role in the project, and why.
+         */
+        ProjectAccessEntry: {
+            /** Email */
+            email: string;
+            /** @description Effective role (the highest source). */
+            role: components["schemas"]["ProjectRole"];
+            /**
+             * Sources
+             * @description Direct first, then groups by name.
+             */
+            sources: components["schemas"]["RoleSource"][];
+            user: components["schemas"]["UserRef"];
+        };
+        /**
+         * ProjectAccessPage
+         * @description Everyone with access, by display name.
+         */
+        ProjectAccessPage: {
+            /** Items */
+            items: components["schemas"]["ProjectAccessEntry"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
          * ProjectCreate
          * @description Create a project with the default rubric and one admin (``admin_user_id``).
          */
@@ -1888,6 +3048,33 @@ export interface components {
             slug: string;
             /** @default private */
             visibility: components["schemas"]["ProjectVisibility"];
+        };
+        /**
+         * ProjectGroupGrant
+         * @description A project role granted to every member of a group (seen from the project).
+         */
+        ProjectGroupGrant: {
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
+            group: components["schemas"]["GroupSearchResult"];
+            role: components["schemas"]["ProjectRole"];
+        };
+        /** ProjectGroupGrantAdd */
+        ProjectGroupGrantAdd: {
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
+            /** @default member */
+            role: components["schemas"]["ProjectRole"];
+        };
+        /** ProjectGroupGrantUpdate */
+        ProjectGroupGrantUpdate: {
+            role: components["schemas"]["ProjectRole"];
         };
         /**
          * ProjectPermissions
@@ -2025,6 +3212,21 @@ export interface components {
             rejected: number;
         };
         /**
+         * RoleSource
+         * @description One reason a user holds a project role.
+         */
+        RoleSource: {
+            /** @description The group (kind group), else null. */
+            group: components["schemas"]["GroupRef"] | null;
+            /**
+             * Kind
+             * @description direct: project membership; group: a grant to a group the user is in.
+             * @enum {string}
+             */
+            kind: "direct" | "group";
+            role: components["schemas"]["ProjectRole"];
+        };
+        /**
          * Rubric
          * @description The rubric after ``replace_rubric``: active criteria in display order.
          */
@@ -2121,6 +3323,97 @@ export interface components {
             ideas: components["schemas"]["IdeaRef"][];
             /** Projects */
             projects: components["schemas"]["ProjectRef"][];
+        };
+        /**
+         * SsoConfig
+         * @description The effective sign-in configuration. Secrets are never returned, only whether
+         *     they are set.
+         */
+        SsoConfig: {
+            /** Auto Create Users */
+            auto_create_users: boolean;
+            break_glass: components["schemas"]["BreakGlassStatus"];
+            /** Client Id */
+            client_id: string;
+            /** Client Secret Set */
+            client_secret_set: boolean;
+            /**
+             * Dev Login
+             * @description The development login is on (never in production).
+             */
+            dev_login: boolean;
+            /** @description Null when SSO is not configured. */
+            discovery: components["schemas"]["SsoDiscovery"] | null;
+            /**
+             * Enabled
+             * @description SSO is configured (an issuer is set).
+             */
+            enabled: boolean;
+            /**
+             * External Id Claim
+             * @description Null: no external-ID matching. Must be an attribute only IdP admins can set (Keycloak: user-profile edit permission admin only; Entra ID: oid or employeeid): whoever can choose its value can sign in as the pre-created user who has it.
+             */
+            external_id_claim: string | null;
+            /** External Id Kind */
+            external_id_kind: string | null;
+            /**
+             * Groups Claim
+             * @description Null: group sync is off.
+             */
+            groups_claim: string | null;
+            /** Issuer */
+            issuer: string | null;
+            /** Match Verified Email */
+            match_verified_email: boolean;
+            /**
+             * Redirect Uris
+             * @description One per base URL, in order.
+             */
+            redirect_uris: components["schemas"]["SsoRedirect"][];
+            /** Scopes */
+            scopes: string[];
+        };
+        /**
+         * SsoDiscovery
+         * @description The provider's ``/.well-known/openid-configuration``, as sign-in sees it (the same
+         *     cached fetch; fetched now when nothing is cached). Diagnoses ``sso_unavailable``.
+         */
+        SsoDiscovery: {
+            /**
+             * Checked At
+             * Format: date-time
+             * @description When the document was fetched (or tried).
+             */
+            checked_at: string;
+            /**
+             * End Session Supported
+             * @description It has an end_session_endpoint: sign-out also signs out at the IdP.
+             */
+            end_session_supported: boolean;
+            /**
+             * Status
+             * @description ok; unreachable (network error, timeout or HTTP error); invalid (not JSON, or a required endpoint is missing); issuer_mismatch (its issuer is not exactly SOUNDINGS_OIDC_ISSUER).
+             * @enum {string}
+             */
+            status: "ok" | "unreachable" | "invalid" | "issuer_mismatch";
+        };
+        /**
+         * SsoRedirect
+         * @description What to register at the IdP for one of ``SOUNDINGS_BASE_URLS``.
+         */
+        SsoRedirect: {
+            /** Base Url */
+            base_url: string;
+            /**
+             * Post Logout Redirect Uri
+             * @description Valid post-logout redirect URI: <base_url>/login?signed_out=1.
+             */
+            post_logout_redirect_uri: string;
+            /**
+             * Redirect Uri
+             * @description Valid redirect URI: <base_url>/api/v1/auth/callback.
+             */
+            redirect_uri: string;
         };
         /**
          * StatusChange
@@ -2227,6 +3520,17 @@ export interface components {
             name: string;
         };
         /**
+         * UserGroup
+         * @description A group the user belongs to, with provenance (both flags can be true).
+         */
+        UserGroup: {
+            group: components["schemas"]["GroupRef"];
+            /** Manual */
+            manual: boolean;
+            /** Synced */
+            synced: boolean;
+        };
+        /**
          * UserPage
          * @description A page of users, ordered by display name.
          */
@@ -2235,6 +3539,20 @@ export interface components {
             items: components["schemas"]["UserSearchResult"][];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /**
+         * UserProjectRole
+         * @description A user's effective role in a project and where it comes from.
+         */
+        UserProjectRole: {
+            project: components["schemas"]["ProjectRef"];
+            /** @description Effective role: the highest of the sources. */
+            role: components["schemas"]["ProjectRole"];
+            /**
+             * Sources
+             * @description Direct first, then groups by name.
+             */
+            sources: components["schemas"]["RoleSource"][];
         };
         /**
          * UserRef
@@ -2450,6 +3768,1508 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_audit_entries: {
+        parameters: {
+            query?: {
+                /** @description Entries by this user. */
+                actor_id?: string | null;
+                /** @description Any of these actions. */
+                action?: components["schemas"]["AuditAction"][] | null;
+                /** @description Entries about this kind of thing. */
+                target_type?: ("user" | "project" | "idea" | "group") | null;
+                /** @description Entries about this id. */
+                target_id?: string | null;
+                /** @description Entries in this project. */
+                project_id?: string | null;
+                /** @description From this time (with a UTC offset). */
+                since?: string | null;
+                /** @description Before this time (with a UTC offset). */
+                until?: string | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_admin_groups: {
+        parameters: {
+            query?: {
+                /** @description Part of a name. */
+                q?: string | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    test_group_mapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MappingTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingTestResult"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_group_mapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupMappingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_group_members: {
+        parameters: {
+            query?: {
+                /** @description Part of a name or email. */
+                q?: string | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupMemberPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    add_group_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupMemberAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupMember"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_group_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_sso_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoConfig"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_admin_users: {
+        parameters: {
+            query?: {
+                /** @description Part of a name or email. */
+                q?: string | null;
+                /** @description Only active (or deactivated) users. */
+                active?: boolean | null;
+                /** @description Only platform admins (or only non-admins). */
+                platform_admin?: boolean | null;
+                /** @description false: users never linked to SSO (e.g. pre-created, not signed in). */
+                has_identity?: boolean | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_admin_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_admin_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_admin_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_user_external_ids: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalIdsReplace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    unlink_user_identity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                identity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    end_user_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    break_glass_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BreakGlassLogin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    sso_callback: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+                /** @description Never shown or logged. */
+                error_description?: string | null;
+                /** @description RFC 9207 issuer; must match when present. */
+                iss?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the saved next path, or /login?error=<code>. */
+            302: {
+                headers: {
+                    /** @description Where the browser goes next. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_auth_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthConfig"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     dev_login: {
         parameters: {
             query?: never;
@@ -2539,6 +5359,47 @@ export interface operations {
             };
         };
     };
+    sso_login: {
+        parameters: {
+            query?: {
+                /** @description Where to go after signing in: a path such as /ideas/CUST-12. */
+                next?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the IdP's authorization endpoint (or /login?error=...). */
+            302: {
+                headers: {
+                    /** @description Where the browser goes next. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     logout: {
         parameters: {
             query?: never;
@@ -2551,6 +5412,35 @@ export interface operations {
             /** @description Successful Response */
             204: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logout_redirect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the IdP's end-session endpoint or /login?signed_out=1. */
+            303: {
+                headers: {
+                    /** @description Where the browser goes next. */
+                    Location?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -2731,6 +5621,58 @@ export interface operations {
             };
             /** @description Conflicts with the current state (see code) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    search_groups: {
+        parameters: {
+            query?: {
+                /** @description Part of a name. */
+                q?: string | null;
+                /** @description Most results to return. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupSearchResult"][];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4582,6 +7524,83 @@ export interface operations {
             };
         };
     };
+    list_project_access: {
+        parameters: {
+            query?: {
+                /** @description Part of a name or email. */
+                q?: string | null;
+                /** @description Only this effective role. */
+                role?: components["schemas"]["ProjectRole"] | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectAccessPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     get_board: {
         parameters: {
             query?: {
@@ -4629,6 +7648,304 @@ export interface operations {
             };
             /** @description Not found, or not visible to you (not_found) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_project_group_grants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectGroupGrant"][];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    add_project_group_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectGroupGrantAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectGroupGrant"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_project_group_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_project_group_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectGroupGrantUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectGroupGrant"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

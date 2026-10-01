@@ -81,11 +81,10 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class ProjectMember(TimestampMixin, Base):
     """A user's direct role in a project.
 
-    Extension point (Phase 2): group-based grants live in their own table
-    (``project_group_grants``: project_id, group_id, role). A user's effective role
-    is the highest of their direct role and their groups' roles; queries read it from
-    the ``project_effective_roles`` view (below), never from this table, so Phase 2
-    only redefines the view. This table stays "direct membership only".
+    Group-based grants live in ``project_group_grants`` (``app.models.group``). A
+    user's effective role is the highest of their direct role and their groups'
+    roles; queries read it from the ``project_effective_roles`` view (below), never
+    from this table. This table stays "direct membership only".
     """
 
     __tablename__ = "project_members"
@@ -159,10 +158,12 @@ project_effective_roles: TableClause = table(
 )
 """Read-only view: each user's *effective* role per project, one row per pair.
 
-Phase 1 it mirrors ``project_members``; Phase 2 redefines it (``CREATE OR REPLACE
-VIEW``, same columns) as the highest of the direct and group-granted roles. Every
-query that needs a project role (listing projects, member-only filters, My work,
-assignment eligibility c4, last-admin c11, authz) joins this view instead of
-``project_members``. A lightweight ``table()``, not a model, so it stays out of
-``Base.metadata`` (Alembic must not try to create it as a table).
+The highest (``admin > member > viewer``) of the user's direct role
+(``project_members``) and the role of every grant to a group they belong to
+(``project_group_grants`` x ``group_memberships``, manual or synced); migration
+0003 defines it. Every query that needs a project role (listing projects,
+member-only filters, My work, assignment eligibility c4, last-admin c11, authz)
+joins this view instead of ``project_members``. A lightweight ``table()``, not a
+model, so it stays out of ``Base.metadata`` (Alembic must not try to create it as a
+table).
 """

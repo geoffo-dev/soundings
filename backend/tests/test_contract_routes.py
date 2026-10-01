@@ -1,5 +1,5 @@
-"""The Phase 1 API contract: every route exists with its operation_id and, until it is
-implemented, answers 501 problem+json to a *valid* request.
+"""The API contract (Phases 1 and 2): every route exists with its operation_id and,
+until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
 in ``CONTRACT``). ``CONTRACT`` changes only with the lead (it is the frontend's API).
@@ -20,13 +20,32 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 
 from app.api.deps import get_current_user
-from app.api.v1 import activity, auth, evaluations, ideas, projects, search, users, work
+from app.api.v1 import (
+    activity,
+    admin_audit,
+    admin_groups,
+    admin_sso,
+    admin_users,
+    auth,
+    auth_sso,
+    evaluations,
+    groups,
+    ideas,
+    project_groups,
+    projects,
+    search,
+    users,
+    work,
+)
 from app.api.v1.principal import get_principal
 from app.config import BACKEND_DIR
 from app.models.user import User
 from app.openapi import export_openapi
 
 IDEA = "0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11"
+USER = "5f0e8a52-3c1d-4b8e-9a6f-2d7c4e1b9a03"
+GROUP = "8c2d6f14-9e3b-4a7d-b1c5-6e0f2a8d4b17"
+IDENTITY = "1a4b7c0d-2e5f-4a8b-9c3d-6e9f0a1b2c3d"
 
 # (method, path template, operation_id)
 CONTRACT: list[tuple[str, str, str]] = [
@@ -73,11 +92,121 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/me/work", "get_my_work"),
     ("GET", "/api/v1/me/owned-ideas", "list_my_owned_ideas"),
     ("GET", "/api/v1/search", "global_search"),
+    # --- Phase 2: sign-in and access (docs/api/contract-phase2.md) -------------------
+    ("GET", "/api/v1/auth/config", "get_auth_config"),
+    ("GET", "/api/v1/auth/login", "sso_login"),
+    ("GET", "/api/v1/auth/callback", "sso_callback"),
+    ("POST", "/api/v1/auth/break-glass", "break_glass_login"),
+    ("POST", "/api/v1/auth/logout/redirect", "logout_redirect"),
+    ("GET", "/api/v1/admin/users", "list_admin_users"),
+    ("POST", "/api/v1/admin/users", "create_admin_user"),
+    ("GET", "/api/v1/admin/users/{user_id}", "get_admin_user"),
+    ("PATCH", "/api/v1/admin/users/{user_id}", "update_admin_user"),
+    ("PUT", "/api/v1/admin/users/{user_id}/external-ids", "replace_user_external_ids"),
+    ("DELETE", "/api/v1/admin/users/{user_id}/identities/{identity_id}", "unlink_user_identity"),
+    ("DELETE", "/api/v1/admin/users/{user_id}/sessions", "end_user_sessions"),
+    ("GET", "/api/v1/admin/groups", "list_admin_groups"),
+    ("POST", "/api/v1/admin/groups", "create_group"),
+    ("POST", "/api/v1/admin/groups/test-mapping", "test_group_mapping"),
+    ("GET", "/api/v1/admin/groups/{group_id}", "get_group"),
+    ("PATCH", "/api/v1/admin/groups/{group_id}", "update_group"),
+    ("DELETE", "/api/v1/admin/groups/{group_id}", "delete_group"),
+    ("PUT", "/api/v1/admin/groups/{group_id}/mapping", "replace_group_mapping"),
+    ("GET", "/api/v1/admin/groups/{group_id}/members", "list_group_members"),
+    ("POST", "/api/v1/admin/groups/{group_id}/members", "add_group_member"),
+    ("DELETE", "/api/v1/admin/groups/{group_id}/members/{user_id}", "remove_group_member"),
+    ("GET", "/api/v1/groups", "search_groups"),
+    ("GET", "/api/v1/projects/{slug}/groups", "list_project_group_grants"),
+    ("POST", "/api/v1/projects/{slug}/groups", "add_project_group_grant"),
+    ("PATCH", "/api/v1/projects/{slug}/groups/{group_id}", "update_project_group_grant"),
+    ("DELETE", "/api/v1/projects/{slug}/groups/{group_id}", "remove_project_group_grant"),
+    ("GET", "/api/v1/projects/{slug}/access", "list_project_access"),
+    ("GET", "/api/v1/admin/audit", "list_audit_entries"),
+    ("GET", "/api/v1/admin/sso", "get_sso_config"),
 ]
 
-# operation_id -> a valid request (url with query string, JSON body or None). Empty:
-# every Phase 1 operation is implemented and tested (tests/api, tests/ideas).
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+# operation_id -> a valid request (url with query string, JSON body or None). Every
+# Phase 1 operation is implemented and tested (tests/api, tests/ideas); these are the
+# Phase 2 stubs. Delete a row when you implement its endpoint.
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    "get_auth_config": ("/api/v1/auth/config", None),
+    "sso_login": ("/api/v1/auth/login?next=/ideas/CUST-12", None),
+    "sso_callback": (
+        "/api/v1/auth/callback?code=abc&state=xyz&iss=http://idp&error_description=" + "x" * 5000,
+        None,
+    ),
+    "break_glass_login": ("/api/v1/auth/break-glass", {"username": "admin", "password": " p "}),
+    "logout_redirect": ("/api/v1/auth/logout/redirect", None),
+    "list_admin_users": (
+        "/api/v1/admin/users?q=ada&active=true&platform_admin=false&has_identity=false",
+        None,
+    ),
+    "create_admin_user": (
+        "/api/v1/admin/users",
+        {
+            "email": "ada@example.com",
+            "display_name": "Ada Lovelace",
+            "external_ids": [{"kind": "employee_no", "value": "E1001"}],
+        },
+    ),
+    "get_admin_user": (f"/api/v1/admin/users/{USER}", None),
+    "update_admin_user": (f"/api/v1/admin/users/{USER}", {"is_active": False}),
+    "replace_user_external_ids": (
+        f"/api/v1/admin/users/{USER}/external-ids",
+        {"external_ids": [{"kind": "gitlab", "value": "ada"}]},
+    ),
+    "unlink_user_identity": (f"/api/v1/admin/users/{USER}/identities/{IDENTITY}", None),
+    "end_user_sessions": (f"/api/v1/admin/users/{USER}/sessions", None),
+    "list_admin_groups": ("/api/v1/admin/groups?q=inno&limit=10", None),
+    "create_group": (
+        "/api/v1/admin/groups",
+        {"name": "Innovation admins", "idp_values": ["/innovation/admins"]},
+    ),
+    "test_group_mapping": (
+        "/api/v1/admin/groups/test-mapping",
+        {"claims": {"sub": "x", "groups": ["/innovation/admins", 7]}, "user_id": USER},
+    ),
+    "get_group": (f"/api/v1/admin/groups/{GROUP}", None),
+    "update_group": (f"/api/v1/admin/groups/{GROUP}", {"description": "Leads"}),
+    "delete_group": (f"/api/v1/admin/groups/{GROUP}", None),
+    "replace_group_mapping": (
+        f"/api/v1/admin/groups/{GROUP}/mapping",
+        {"sync_mode": "additive", "idp_values": []},
+    ),
+    "list_group_members": (f"/api/v1/admin/groups/{GROUP}/members?q=ada&limit=10", None),
+    "add_group_member": (f"/api/v1/admin/groups/{GROUP}/members", {"user_id": USER}),
+    "remove_group_member": (f"/api/v1/admin/groups/{GROUP}/members/{USER}", None),
+    "search_groups": ("/api/v1/groups?q=inno&limit=5", None),
+    "list_project_group_grants": ("/api/v1/projects/cust/groups", None),
+    "add_project_group_grant": (
+        "/api/v1/projects/cust/groups",
+        {"group_id": GROUP, "role": "admin"},
+    ),
+    "update_project_group_grant": (f"/api/v1/projects/cust/groups/{GROUP}", {"role": "viewer"}),
+    "remove_project_group_grant": (f"/api/v1/projects/cust/groups/{GROUP}", None),
+    "list_project_access": ("/api/v1/projects/cust/access?q=ada&role=admin", None),
+    "list_audit_entries": (
+        f"/api/v1/admin/audit?actor_id={USER}&action=session.sign_in&action=group.create"
+        "&target_type=group&project_id=" + IDEA + "&since=2026-10-01T00:00:00Z"
+        "&until=2026-10-02T00:00:00%2B01:00",
+        None,
+    ),
+    "get_sso_config": ("/api/v1/admin/sso", None),
+}
+
+PUBLIC_OPERATIONS = frozenset(
+    {
+        "list_dev_users",
+        "dev_login",
+        "logout",
+        "get_auth_config",
+        "sso_login",
+        "sso_callback",
+        "break_glass_login",
+        "logout_redirect",
+    }
+)
+"""Operations that need no session (sign-in and sign-out)."""
 
 _METHODS = {operation_id: method for method, _, operation_id in CONTRACT}
 
@@ -85,7 +214,23 @@ _METHODS = {operation_id: method for method, _, operation_id in CONTRACT}
 def _feature_routes() -> list[APIRoute]:
     return [
         route
-        for module in (activity, auth, evaluations, ideas, projects, search, users, work)
+        for module in (
+            activity,
+            admin_audit,
+            admin_groups,
+            admin_sso,
+            admin_users,
+            auth,
+            auth_sso,
+            evaluations,
+            groups,
+            ideas,
+            project_groups,
+            projects,
+            search,
+            users,
+            work,
+        )
         for route in module.router.routes
         if isinstance(route, APIRoute)
     ]
@@ -199,10 +344,67 @@ def test_every_idea_route_names_the_idea_the_same_way() -> None:
 
 
 def test_signed_in_routes_take_the_principal() -> None:
-    public = {"list_dev_users", "dev_login", "logout"}
     for route in _feature_routes():
         calls = {dependency.call for dependency in route.dependant.dependencies}
-        assert (get_principal in calls) == (route.name not in public), route.name
+        assert (get_principal in calls) == (route.name not in PUBLIC_OPERATIONS), route.name
+
+
+async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
+    """Sign-in routes answer without a session (here: 501, not 401)."""
+    for operation_id in sorted(PUBLIC_OPERATIONS & set(STUBS)):
+        url, body = STUBS[operation_id]
+        response = await client.request(_METHODS[operation_id], url, json=body)
+        assert response.status_code == 501, (operation_id, response.text)
+
+
+async def test_admin_stubs_need_a_session(client: httpx.AsyncClient) -> None:
+    for operation_id in sorted(set(STUBS) - PUBLIC_OPERATIONS):
+        url, body = STUBS[operation_id]
+        response = await client.request(_METHODS[operation_id], url, json=body)
+        assert response.status_code == 401, (operation_id, response.text)
+
+
+def test_redirect_routes_document_their_location() -> None:
+    redirects = {"sso_login": 302, "sso_callback": 302, "logout_redirect": 303}
+    for route in _feature_routes():
+        if route.name in redirects:
+            assert route.status_code == redirects[route.name], route.name
+            assert "Location" in route.responses[route.status_code]["headers"], route.name
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "body"),
+    [
+        ("create_group", {"name": "x", "idp_values": [" / "]}),
+        ("create_group", {"name": "x", "idp_values": ["v"] * 51}),
+        ("create_admin_user", {"email": "not-an-email", "display_name": "A"}),
+        (
+            "create_admin_user",
+            {
+                "email": "a@example.com",
+                "display_name": "A",
+                "external_ids": [
+                    {"kind": "gitlab", "value": "a"},
+                    {"kind": "gitlab", "value": "b"},
+                ],
+            },
+        ),
+        ("replace_user_external_ids", {"external_ids": [{"kind": "Employee No", "value": "1"}]}),
+        ("test_group_mapping", {"claims": ["not", "an", "object"]}),
+        ("add_project_group_grant", {"group_id": GROUP, "role": "owner"}),
+        ("break_glass_login", {"username": "admin"}),
+    ],
+)
+async def test_invalid_phase2_bodies_are_rejected_before_the_stub(
+    client: httpx.AsyncClient, operation_id: str, body: dict[str, Any]
+) -> None:
+    url, _ = STUBS[operation_id]
+
+    response = await client.request(_METHODS[operation_id], url, json=body)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
 
 
 @pytest.mark.usefixtures("signed_in")

@@ -11,7 +11,7 @@ from typing import Any
 
 from app.errors import PROBLEM_CONTENT_TYPE
 
-__all__ = ["problems"]
+__all__ = ["problems", "redirect"]
 
 _DESCRIPTIONS: dict[int, str] = {
     400: "Bad request (e.g. invalid_cursor)",
@@ -20,6 +20,7 @@ _DESCRIPTIONS: dict[int, str] = {
     404: "Not found, or not visible to you (not_found)",
     409: "Conflicts with the current state (see code)",
     422: "Validation failed (validation_error, or a specific code)",
+    429: "Too many attempts (too_many_attempts): wait and retry",
 }
 
 
@@ -38,4 +39,19 @@ def problems(*statuses: int) -> dict[int | str, dict[str, Any]]:
             },
         }
         for status in statuses
+    }
+
+
+def redirect(status: int, description: str) -> dict[int | str, dict[str, Any]]:
+    """``responses=`` entry for a browser redirect (``Location`` header, no body)."""
+    return {
+        status: {
+            "description": description,
+            "headers": {
+                "Location": {
+                    "description": "Where the browser goes next.",
+                    "schema": {"type": "string"},
+                }
+            },
+        }
     }

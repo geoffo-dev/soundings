@@ -65,19 +65,25 @@ class ActivityEvent(UUIDPrimaryKeyMixin, Base):
 
 
 class AuditLog(UUIDPrimaryKeyMixin, Base):
-    """Append-only security audit trail (filled from Phase 2).
+    """Append-only security audit trail (sign-ins, assignments, evaluations, status
+    and admin changes; contract-phase2 §3.11).
 
     No foreign keys on purpose: entries must outlive the users, projects and ideas
-    they mention. Never store secrets or tokens in ``details``.
+    they mention. Never store secrets, tokens, emails or claims in ``details``.
+    The viewer (``GET /admin/audit``) pages newest first by ``(created_at, id)``;
+    each filter has an index leading with its column.
     """
 
     __tablename__ = "audit_log"
     __table_args__ = (
+        Index("ix_audit_log_created_at_id", "created_at", "id"),
+        Index("ix_audit_log_actor_id_created_at", "actor_id", "created_at"),
+        Index("ix_audit_log_action_created_at", "action", "created_at"),
         Index("ix_audit_log_project_id_created_at", "project_id", "created_at"),
         Index("ix_audit_log_target_type_target_id", "target_type", "target_id"),
     )
 
-    actor_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column()
     action: Mapped[str] = mapped_column(String(80))
     target_type: Mapped[str | None] = mapped_column(String(40))
     target_id: Mapped[uuid.UUID | None] = mapped_column()
@@ -86,5 +92,5 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True
+        DateTime(timezone=True), default=utcnow, server_default=func.now()
     )

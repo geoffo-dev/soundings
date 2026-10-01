@@ -27,15 +27,22 @@ DOMAIN_TABLES = {
     "comments",
     "evaluation_scores",
     "evaluations",
+    "group_idp_values",
+    "group_memberships",
+    "groups",
     "idea_evaluators",
     "idea_tags",
     "idea_votes",
     "idea_watchers",
     "ideas",
+    "oidc_login_attempts",
+    "project_group_grants",
     "project_members",
     "projects",
     "rubric_criteria",
     "tags",
+    "user_external_ids",
+    "user_identities",
     "user_sessions",
     "users",
 }
@@ -322,3 +329,242 @@ async def test_effective_roles_view_mirrors_direct_membership(db_session: AsyncS
 
     assert [tuple(row) for row in rows] == [(project_id, user_id, ProjectRole.ADMIN)]
     await db_session.rollback()
+
+
+# --- Phase 2: identities, groups and group-granted roles -------------------------------
+async def _insert_user(
+    session: AsyncSession, email: str, *, is_break_glass: bool = False
+) -> uuid.UUID:
+    user_id = uuid.uuid4()
+    await session.execute(
+        text(
+            "INSERT INTO users (id, email, display_name, is_break_glass)"
+            " VALUES (:u, :e, 'U', :break_glass)"
+        ),
+        {"u": user_id, "e": email, "break_glass": is_break_glass},
+    )
+    return user_id
+
+
+async def _insert_group(session: AsyncSession, name: str) -> uuid.UUID:
+    group_id = uuid.uuid4()
+    await session.execute(
+        text("INSERT INTO groups (id, name) VALUES (:g, :n)"), {"g": group_id, "n": name}
+    )
+    return group_id
+
+
+async def _roles(session: AsyncSession, project_id: uuid.UUID) -> dict[uuid.UUID, ProjectRole]:
+    rows = await session.execute(
+        select(project_effective_roles.c.user_id, project_effective_roles.c.role).where(
+            project_effective_roles.c.project_id == project_id
+        )
+    )
+    found: dict[uuid.UUID, ProjectRole] = dict(rows.all())
+    return found
+
+
+async def test_effective_role_is_the_highest_of_direct_and_group_roles(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await _insert_project(db_session)
+    direct_only, group_only, both, two_groups = [
+        await _insert_user(db_session, f"{name}@x.io") for name in ("d", "g", "b", "t")
+    ]
+    viewers, members, admins = [await _insert_group(db_session, n) for n in ("V", "M", "A")]
+    for group_id, role in ((viewers, "viewer"), (members, "member"), (admins, "admin")):
+        await db_session.execute(
+            text(
+                "INSERT INTO project_group_grants (project_id, group_id, role) VALUES (:p, :g, :r)"
+            ),
+            {"p": project_id, "g": group_id, "r": role},
+        )
+    for user_id, role in ((direct_only, "member"), (both, "admin")):
+        await db_session.execute(
+            text("INSERT INTO project_members (project_id, user_id, role) VALUES (:p, :u, :r)"),
+            {"p": project_id, "u": user_id, "r": role},
+        )
+    memberships = [
+        (viewers, group_only, "manual"),
+        (members, both, "synced"),  # direct admin beats group member
+        (viewers, two_groups, "synced"),
+        (admins, two_groups, "manual"),  # highest group wins
+    ]
+    for group_id, user_id, source in memberships:
+        await db_session.execute(
+            text(
+                "INSERT INTO group_memberships (group_id, user_id, manual, synced)"
+                " VALUES (:g, :u, :manual, :synced)"
+            ),
+            {
+                "g": group_id,
+                "u": user_id,
+                "manual": source == "manual",
+                "synced": source == "synced",
+            },
+        )
+
+    assert await _roles(db_session, project_id) == {
+        direct_only: ProjectRole.MEMBER,
+        group_only: ProjectRole.VIEWER,
+        both: ProjectRole.ADMIN,
+        two_groups: ProjectRole.ADMIN,
+    }
+
+    # Leaving the group (sync removing it, or an admin) removes the access with it.
+    await db_session.execute(
+        text("DELETE FROM group_memberships WHERE group_id = :g AND user_id = :u"),
+        {"g": admins, "u": two_groups},
+    )
+    await db_session.execute(
+        text("DELETE FROM group_memberships WHERE user_id = :u"), {"u": group_only}
+    )
+    roles = await _roles(db_session, project_id)
+    assert roles[two_groups] is ProjectRole.VIEWER
+    assert group_only not in roles
+
+    # Deleting a group removes its memberships and grants.
+    await db_session.execute(text("DELETE FROM groups WHERE id = :g"), {"g": viewers})
+    assert two_groups not in await _roles(db_session, project_id)
+    await db_session.rollback()
+
+
+async def test_group_membership_needs_a_source_and_names_are_unique(
+    db_session: AsyncSession,
+) -> None:
+    group_id = await _insert_group(db_session, "Innovation")
+    user_id = await _insert_user(db_session, "u@x.io")
+
+    with pytest.raises(IntegrityError, match="uq_groups_name_lower"):
+        async with db_session.begin_nested():
+            await _insert_group(db_session, "INNOVATION")
+    with pytest.raises(IntegrityError, match="ck_group_memberships_has_source"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text("INSERT INTO group_memberships (group_id, user_id) VALUES (:g, :u)"),
+                {"g": group_id, "u": user_id},
+            )
+    with pytest.raises(IntegrityError, match="ck_groups_sync_mode"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text("UPDATE groups SET sync_mode = 'mirror' WHERE id = :g"), {"g": group_id}
+            )
+    insert_value = text("INSERT INTO group_idp_values (group_id, value) VALUES (:g, :v)")
+    await db_session.execute(insert_value, {"g": group_id, "v": "innovation/admins"})
+    with pytest.raises(IntegrityError, match="pk_group_idp_values"):
+        async with db_session.begin_nested():
+            await db_session.execute(insert_value, {"g": group_id, "v": "innovation/admins"})
+    await db_session.rollback()
+
+
+async def test_identities_and_external_ids_are_unique(db_session: AsyncSession) -> None:
+    ada, bob = await _insert_user(db_session, "ada@x.io"), await _insert_user(db_session, "b@x.io")
+    insert_identity = text(
+        "INSERT INTO user_identities (id, user_id, issuer, subject) VALUES (:id, :u, :i, :s)"
+    )
+    issuer = "https://idp.example.com/realms/acme"
+    await db_session.execute(
+        insert_identity, {"id": uuid.uuid4(), "u": ada, "i": issuer, "s": "sub-1"}
+    )
+    for user_id, subject, constraint in (
+        (bob, "sub-1", "uq_user_identities_issuer_subject"),  # one user per IdP account
+        (ada, "sub-2", "uq_user_identities_user_id_issuer"),  # one IdP account per user
+    ):
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(
+                    insert_identity, {"id": uuid.uuid4(), "u": user_id, "i": issuer, "s": subject}
+                )
+
+    insert_external_id = text(
+        "INSERT INTO user_external_ids (user_id, kind, value) VALUES (:u, :k, :v)"
+    )
+    await db_session.execute(insert_external_id, {"u": ada, "k": "employee_no", "v": "E1001"})
+    for user_id, kind, value, constraint in (
+        (bob, "employee_no", "e1001", "uq_user_external_ids_kind_value_lower"),
+        (ada, "employee_no", "E2", "pk_user_external_ids"),  # one value per kind
+        (bob, "Employee No", "E3", "ck_user_external_ids_kind"),
+        (bob, "gitlab", "", "ck_user_external_ids_value_not_empty"),
+    ):
+        with pytest.raises(IntegrityError, match=constraint):
+            async with db_session.begin_nested():
+                await db_session.execute(insert_external_id, {"u": user_id, "k": kind, "v": value})
+    # The same value under another kind is fine.
+    await db_session.execute(insert_external_id, {"u": bob, "k": "gitlab", "v": "E1001"})
+    await db_session.rollback()
+
+
+async def test_one_break_glass_user_and_known_session_methods(db_session: AsyncSession) -> None:
+    await _insert_user(db_session, "bg@x.invalid", is_break_glass=True)
+    await _insert_user(db_session, "plain@x.io", is_break_glass=False)
+    with pytest.raises(IntegrityError, match="uq_users_is_break_glass"):
+        async with db_session.begin_nested():
+            await _insert_user(db_session, "bg2@x.invalid", is_break_glass=True)
+
+    user_id = await _insert_user(db_session, "s@x.io")
+    with pytest.raises(IntegrityError, match="ck_user_sessions_auth_method"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text(
+                    "INSERT INTO user_sessions (id, token_hash, user_id, csrf_token, expires_at,"
+                    " auth_method) VALUES (:id, 'h', :u, 'c', now(), 'password')"
+                ),
+                {"id": uuid.uuid4(), "u": user_id},
+            )
+    with pytest.raises(IntegrityError, match="auth_method"):  # no default: always named
+        async with db_session.begin_nested():
+            await db_session.execute(
+                text(
+                    "INSERT INTO user_sessions (id, token_hash, user_id, csrf_token, expires_at)"
+                    " VALUES (:id, 'h', :u, 'c', now())"
+                ),
+                {"id": uuid.uuid4(), "u": user_id},
+            )
+    await db_session.rollback()
+
+
+def test_phase2_downgrade_keeps_direct_roles_and_sessions(scratch_database_url: str) -> None:
+    """0003 down and up again: group grants go, direct roles and sessions stay."""
+    config = alembic_config(make_settings(database_url=scratch_database_url).sqlalchemy_url)
+    command.upgrade(config, "0002")
+    ids = {name: uuid.uuid4() for name in ("project", "member", "session", "group", "grouped")}
+    with psycopg.connect(_dsn(scratch_database_url), autocommit=True) as connection:
+        for statement in (
+            "INSERT INTO projects (id, slug, key, name) VALUES (%(project)s, 'demo', 'DEMO', 'D')",
+            "INSERT INTO users (id, email, display_name) VALUES (%(member)s, 'm@x.io', 'M'),"
+            " (%(grouped)s, 'g@x.io', 'G')",
+            "INSERT INTO project_members (project_id, user_id, role)"
+            " VALUES (%(project)s, %(member)s, 'admin')",
+            "INSERT INTO user_sessions (id, token_hash, user_id, csrf_token, expires_at)"
+            " VALUES (%(session)s, 'h', %(member)s, 'c', now() + interval '1 day')",
+        ):
+            connection.execute(statement, ids)
+
+        command.upgrade(config, "head")
+        method = connection.execute(
+            "SELECT auth_method FROM user_sessions WHERE id = %(session)s", ids
+        ).fetchone()
+        for statement in (
+            "INSERT INTO groups (id, name) VALUES (%(group)s, 'G')",
+            "INSERT INTO group_memberships (group_id, user_id, synced)"
+            " VALUES (%(group)s, %(grouped)s, true)",
+            "INSERT INTO project_group_grants (project_id, group_id, role)"
+            " VALUES (%(project)s, %(group)s, 'member')",
+        ):
+            connection.execute(statement, ids)
+        roles_at_head = connection.execute(
+            "SELECT user_id, role FROM project_effective_roles ORDER BY role"
+        ).fetchall()
+
+        command.downgrade(config, "0002")
+        roles_after = connection.execute(
+            "SELECT user_id, role FROM project_effective_roles"
+        ).fetchall()
+        sessions_after = connection.execute("SELECT count(*) FROM user_sessions").fetchone()
+
+    assert method == ("dev_login",)
+    assert roles_at_head == [(ids["member"], "admin"), (ids["grouped"], "member")]
+    assert roles_after == [(ids["member"], "admin")]
+    assert sessions_after == (1,)
+    command.upgrade(config, "head")
+    command.check(config)

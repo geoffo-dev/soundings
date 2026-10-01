@@ -60,3 +60,23 @@ class Recommendation(StrEnum):
     GO = "go"
     MAYBE = "maybe"
     NO = "no"
+
+
+class GroupSyncMode(StrEnum):
+    """How sign-in sync treats a group's IdP-mapped memberships (contract-phase2 §3.6).
+
+    ``managed``: synced memberships are exactly the groups the IdP claim matches (sync
+    adds and removes). ``additive``: sync only adds. Manual memberships are never
+    touched by sync in either mode.
+    """
+
+    MANAGED = "managed"
+    ADDITIVE = "additive"
+
+
+class AuthMethod(StrEnum):
+    """How a session was started (``user_sessions.auth_method``)."""
+
+    DEV_LOGIN = "dev_login"
+    SSO = "sso"
+    BREAK_GLASS = "break_glass"

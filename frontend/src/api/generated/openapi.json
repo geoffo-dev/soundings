@@ -80,6 +80,354 @@
         "title": "ActivityPage",
         "type": "object"
       },
+      "AdminUser": {
+        "description": "One user, everything an admin needs to see where their access comes from.",
+        "properties": {
+          "active_session_count": {
+            "description": "Live sessions (signed in on N browsers).",
+            "title": "Active Session Count",
+            "type": "integer"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "external_ids": {
+            "description": "By kind.",
+            "items": {
+              "$ref": "#/components/schemas/ExternalId"
+            },
+            "title": "External Ids",
+            "type": "array"
+          },
+          "groups": {
+            "description": "By group name.",
+            "items": {
+              "$ref": "#/components/schemas/UserGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "has_identity": {
+            "description": "Linked to an SSO account. False for pre-created users until they sign in.",
+            "title": "Has Identity",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "identities": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedIdentity"
+            },
+            "title": "Identities",
+            "type": "array"
+          },
+          "initials": {
+            "description": "One or two letters for the avatar fallback.",
+            "readOnly": true,
+            "title": "Initials",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_break_glass": {
+            "description": "The break-glass admin (K8s Secret credentials).",
+            "title": "Is Break Glass",
+            "type": "boolean"
+          },
+          "is_platform_admin": {
+            "title": "Is Platform Admin",
+            "type": "boolean"
+          },
+          "is_service_account": {
+            "description": "An agent account (Phase 6); never signs in.",
+            "title": "Is Service Account",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "project_roles": {
+            "description": "By project name.",
+            "items": {
+              "$ref": "#/components/schemas/UserProjectRole"
+            },
+            "title": "Project Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "avatar_url",
+          "email",
+          "is_platform_admin",
+          "is_active",
+          "is_service_account",
+          "is_break_glass",
+          "has_identity",
+          "last_seen_at",
+          "created_at",
+          "identities",
+          "external_ids",
+          "groups",
+          "project_roles",
+          "active_session_count",
+          "initials"
+        ],
+        "title": "AdminUser",
+        "type": "object"
+      },
+      "AdminUserCreate": {
+        "additionalProperties": false,
+        "description": "Pre-create a user: they are linked at their first SSO sign-in by an external ID\nor their verified email (section 3.3).",
+        "properties": {
+          "display_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "external_ids": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdIn"
+            },
+            "maxItems": 20,
+            "title": "External Ids",
+            "type": "array"
+          },
+          "is_platform_admin": {
+            "default": false,
+            "title": "Is Platform Admin",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email",
+          "display_name"
+        ],
+        "title": "AdminUserCreate",
+        "type": "object"
+      },
+      "AdminUserPage": {
+        "description": "Users by display name.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "AdminUserPage",
+        "type": "object"
+      },
+      "AdminUserSummary": {
+        "description": "A row in Admin settings -> Users.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "has_identity": {
+            "description": "Linked to an SSO account. False for pre-created users until they sign in.",
+            "title": "Has Identity",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "initials": {
+            "description": "One or two letters for the avatar fallback.",
+            "readOnly": true,
+            "title": "Initials",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_break_glass": {
+            "description": "The break-glass admin (K8s Secret credentials).",
+            "title": "Is Break Glass",
+            "type": "boolean"
+          },
+          "is_platform_admin": {
+            "title": "Is Platform Admin",
+            "type": "boolean"
+          },
+          "is_service_account": {
+            "description": "An agent account (Phase 6); never signs in.",
+            "title": "Is Service Account",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "avatar_url",
+          "email",
+          "is_platform_admin",
+          "is_active",
+          "is_service_account",
+          "is_break_glass",
+          "has_identity",
+          "last_seen_at",
+          "created_at",
+          "initials"
+        ],
+        "title": "AdminUserSummary",
+        "type": "object"
+      },
+      "AdminUserUpdate": {
+        "additionalProperties": false,
+        "description": "Omitted or null fields are unchanged. You cannot change your own ``is_active``\nor ``is_platform_admin`` (403 ``cannot_change_self``), and the last active platform\nadmin stays one (409 ``last_platform_admin``).",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "minLength": 3,
+                "pattern": "^[^@\\s]+@[^@\\s]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "false deactivates: ends their sessions, blocks sign-in.",
+            "title": "Is Active"
+          },
+          "is_platform_admin": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Platform Admin"
+          }
+        },
+        "title": "AdminUserUpdate",
+        "type": "object"
+      },
       "AggregateScore": {
         "description": "The idea's aggregate over submitted evaluations with include_in_aggregate.",
         "properties": {
@@ -141,6 +489,217 @@
           "count"
         ],
         "title": "AggregateScoreSummary",
+        "type": "object"
+      },
+      "AuditAction": {
+        "description": "Every action the audit log records (``audit_log.action``).\n\n``app.services.audit.AUDIT_ACTIONS`` must be exactly this set. Names are\n``<area>.<what happened>``; ``details.rule`` names the role-matrix rule that\nallowed an admin action.",
+        "enum": [
+          "session.sign_in",
+          "session.sign_in_denied",
+          "session.sign_out",
+          "user.create",
+          "user.update",
+          "user.external_ids_replace",
+          "user.identity_link",
+          "user.identity_unlink",
+          "user.sessions_end",
+          "user.groups_sync",
+          "group.create",
+          "group.update",
+          "group.delete",
+          "group.mapping_replace",
+          "group.member_add",
+          "group.member_remove",
+          "project.create",
+          "project.update",
+          "project.member_add",
+          "project.member_update",
+          "project.member_remove",
+          "project.group_grant_add",
+          "project.group_grant_update",
+          "project.group_grant_remove",
+          "project.rubric_replace",
+          "idea.delete",
+          "idea.owner_change",
+          "idea.status_change",
+          "evaluator.add",
+          "evaluator.remove",
+          "evaluation.submit"
+        ],
+        "title": "AuditAction",
+        "type": "string"
+      },
+      "AuditEntry": {
+        "description": "One audit entry. Ids are resolved to names where the thing still exists.",
+        "properties": {
+          "action": {
+            "description": "An AuditAction value (a plain string, so older entries stay readable).",
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The actor, if the user still exists."
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who did it; null for denied sign-ins (the matched user, if any, is the target: an attempt is never pinned on the account it tried).",
+            "title": "Actor Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "description": "Action-specific ids, enum values and field names; never secrets or PII.",
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project it happened in, if it exists."
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name of the target if it still exists: a user's name, project name, idea key (CUST-12) or group name.",
+            "title": "Target Label"
+          },
+          "target_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "project",
+                  "idea",
+                  "group"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when there is no target.",
+            "title": "Target Type"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "action",
+          "actor_id",
+          "actor",
+          "target_type",
+          "target_id",
+          "target_label",
+          "project",
+          "details"
+        ],
+        "title": "AuditEntry",
+        "type": "object"
+      },
+      "AuditPage": {
+        "description": "Newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "AuditPage",
+        "type": "object"
+      },
+      "AuthConfig": {
+        "description": "Which sign-in methods the sign-in page offers (public, no secrets).",
+        "properties": {
+          "break_glass": {
+            "description": "The break-glass admin form is available: enabled, credentials set, and SSO not configured.",
+            "title": "Break Glass",
+            "type": "boolean"
+          },
+          "dev_login": {
+            "description": "The development login picker is enabled.",
+            "title": "Dev Login",
+            "type": "boolean"
+          },
+          "sso": {
+            "description": "SSO is configured: show the \"Sign in with SSO\" button (GET /auth/login).",
+            "title": "Sso",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sso",
+          "dev_login",
+          "break_glass"
+        ],
+        "title": "AuthConfig",
         "type": "object"
       },
       "Board": {
@@ -214,6 +773,56 @@
           "next_cursor"
         ],
         "title": "BoardColumn",
+        "type": "object"
+      },
+      "BreakGlassLogin": {
+        "additionalProperties": false,
+        "description": "Break-glass admin credentials (from the K8s Secret). Not trimmed: passwords are\ncompared exactly.",
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "BreakGlassLogin",
+        "type": "object"
+      },
+      "BreakGlassStatus": {
+        "properties": {
+          "available": {
+            "description": "Sign-in works now: enabled, credentials set and SSO not configured.",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "credentials_set": {
+            "description": "Username and password are both set.",
+            "title": "Credentials Set",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "SOUNDINGS_BREAK_GLASS_ENABLED.",
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "credentials_set",
+          "available"
+        ],
+        "title": "BreakGlassStatus",
         "type": "object"
       },
       "CommentActivity": {
@@ -407,7 +1016,7 @@
         "type": "object"
       },
       "CurrentUser": {
-        "description": "The signed-in user (``GET /auth/me``), also used for the dev login picker.",
+        "description": "The signed-in user (``GET /auth/me``, sign-in responses), also used for the dev\nlogin picker.\n\nPending (contract-phase2 section 7): ``auth_method: AuthMethod | None`` lands with\nthe identity and frontend builds, which update the tests and mocks that build a\n``CurrentUser`` in the same change.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -1002,6 +1611,67 @@
         "title": "EvaluatorsAdd",
         "type": "object"
       },
+      "ExternalId": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "ExternalId",
+        "type": "object"
+      },
+      "ExternalIdIn": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "e.g. employee_no, gitlab.",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "description": "Matched case-insensitively.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "ExternalIdIn",
+        "type": "object"
+      },
+      "ExternalIdsReplace": {
+        "additionalProperties": false,
+        "description": "The user's complete set of external IDs (one per kind).",
+        "properties": {
+          "external_ids": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdIn"
+            },
+            "maxItems": 20,
+            "title": "External Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "external_ids"
+        ],
+        "title": "ExternalIdsReplace",
+        "type": "object"
+      },
       "FieldError": {
         "description": "One request-validation error.",
         "properties": {
@@ -1035,6 +1705,440 @@
           "type"
         ],
         "title": "FieldError",
+        "type": "object"
+      },
+      "Group": {
+        "description": "A group with its counts by provenance and project grants (members: paged).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idp_values": {
+            "description": "Mapped IdP group values, normalised and sorted. Empty: not mapped.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Idp Values",
+            "type": "array"
+          },
+          "manual_member_count": {
+            "description": "Active members added by an admin (some also synced).",
+            "title": "Manual Member Count",
+            "type": "integer"
+          },
+          "member_count": {
+            "description": "Active members, manual or synced (deactivated users don't count).",
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_count": {
+            "description": "Projects that grant this group a role.",
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "project_grants": {
+            "description": "By project name.",
+            "items": {
+              "$ref": "#/components/schemas/GroupProjectGrant"
+            },
+            "title": "Project Grants",
+            "type": "array"
+          },
+          "sync_mode": {
+            "$ref": "#/components/schemas/GroupSyncMode",
+            "description": "managed: sign-in sync adds and removes synced memberships; additive: it only adds. Manual memberships are never touched by sync."
+          },
+          "synced_member_count": {
+            "description": "Active members added by sign-in sync.",
+            "title": "Synced Member Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "member_count",
+          "sync_mode",
+          "idp_values",
+          "project_count",
+          "created_at",
+          "updated_at",
+          "manual_member_count",
+          "synced_member_count",
+          "project_grants"
+        ],
+        "title": "Group",
+        "type": "object"
+      },
+      "GroupCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "idp_values": {
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Idp Values",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sync_mode": {
+            "$ref": "#/components/schemas/GroupSyncMode",
+            "default": "managed"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "GroupCreate",
+        "type": "object"
+      },
+      "GroupMappingUpdate": {
+        "additionalProperties": false,
+        "description": "The complete IdP mapping. Takes effect for each user at their next sign-in.",
+        "properties": {
+          "idp_values": {
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Idp Values",
+            "type": "array"
+          },
+          "sync_mode": {
+            "$ref": "#/components/schemas/GroupSyncMode"
+          }
+        },
+        "required": [
+          "sync_mode",
+          "idp_values"
+        ],
+        "title": "GroupMappingUpdate",
+        "type": "object"
+      },
+      "GroupMember": {
+        "description": "A group member with provenance. A user can be both manual and synced.\nDeactivated members are listed (``is_active`` false) but grant no access.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "joined_at": {
+            "description": "When the membership started.",
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "manual": {
+            "description": "Added by an admin; sign-in sync never changes it.",
+            "title": "Manual",
+            "type": "boolean"
+          },
+          "synced": {
+            "description": "Added by sign-in sync from the IdP claim.",
+            "title": "Synced",
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserRef"
+          }
+        },
+        "required": [
+          "user",
+          "email",
+          "is_active",
+          "manual",
+          "synced",
+          "joined_at"
+        ],
+        "title": "GroupMember",
+        "type": "object"
+      },
+      "GroupMemberAdd": {
+        "additionalProperties": false,
+        "description": "Add a manual member (or mark a synced member manual too).",
+        "properties": {
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "GroupMemberAdd",
+        "type": "object"
+      },
+      "GroupMemberPage": {
+        "description": "Members by display name.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupMember"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "GroupMemberPage",
+        "type": "object"
+      },
+      "GroupPage": {
+        "description": "Groups by name.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "GroupPage",
+        "type": "object"
+      },
+      "GroupProjectGrant": {
+        "description": "A project role granted to the group (seen from the group).",
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectRef"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole"
+          }
+        },
+        "required": [
+          "project",
+          "role"
+        ],
+        "title": "GroupProjectGrant",
+        "type": "object"
+      },
+      "GroupRef": {
+        "description": "Enough to show and link a group.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "GroupRef",
+        "type": "object"
+      },
+      "GroupSearchResult": {
+        "description": "A group in a picker (granting a group a project role).",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "member_count": {
+            "description": "Active members, manual or synced (deactivated users don't count).",
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "member_count"
+        ],
+        "title": "GroupSearchResult",
+        "type": "object"
+      },
+      "GroupSummary": {
+        "description": "A row in Admin settings -> Groups.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idp_values": {
+            "description": "Mapped IdP group values, normalised and sorted. Empty: not mapped.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Idp Values",
+            "type": "array"
+          },
+          "member_count": {
+            "description": "Active members, manual or synced (deactivated users don't count).",
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_count": {
+            "description": "Projects that grant this group a role.",
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "sync_mode": {
+            "$ref": "#/components/schemas/GroupSyncMode",
+            "description": "managed: sign-in sync adds and removes synced memberships; additive: it only adds. Manual memberships are never touched by sync."
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "member_count",
+          "sync_mode",
+          "idp_values",
+          "project_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GroupSummary",
+        "type": "object"
+      },
+      "GroupSyncMode": {
+        "description": "How sign-in sync treats a group's IdP-mapped memberships (contract-phase2 §3.6).\n\n``managed``: synced memberships are exactly the groups the IdP claim matches (sync\nadds and removes). ``additive``: sync only adds. Manual memberships are never\ntouched by sync in either mode.",
+        "enum": [
+          "managed",
+          "additive"
+        ],
+        "title": "GroupSyncMode",
+        "type": "string"
+      },
+      "GroupUpdate": {
+        "additionalProperties": false,
+        "description": "Rename or describe a group; omitted or null fields are unchanged. The mapping\nhas its own endpoint (``PUT .../mapping``).",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "GroupUpdate",
         "type": "object"
       },
       "IdeaCreate": {
@@ -1851,6 +2955,184 @@
         "title": "IdeaUpdate",
         "type": "object"
       },
+      "LinkedIdentity": {
+        "description": "An SSO account linked to the user (the ID token's ``iss`` and ``sub``).",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "linked_at": {
+            "format": "date-time",
+            "title": "Linked At",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "subject",
+          "linked_at",
+          "last_login_at"
+        ],
+        "title": "LinkedIdentity",
+        "type": "object"
+      },
+      "MappingTestGroup": {
+        "description": "One group the claim set matches or, with a user, one of their synced groups\nthat it no longer matches.",
+        "properties": {
+          "effect": {
+            "description": "add: becomes a synced member; keep: stays a synced member (already synced and matched, or an additive group that no longer matches: matched_values empty); remove: the synced membership ends (managed group, nothing matched).",
+            "enum": [
+              "add",
+              "keep",
+              "remove"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "group": {
+            "$ref": "#/components/schemas/GroupRef"
+          },
+          "manual": {
+            "description": "The user is a manual member (unaffected by sync, stays a member).",
+            "title": "Manual",
+            "type": "boolean"
+          },
+          "matched_values": {
+            "description": "Normalised claim values that matched; empty when none did.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched Values",
+            "type": "array"
+          },
+          "sync_mode": {
+            "$ref": "#/components/schemas/GroupSyncMode"
+          }
+        },
+        "required": [
+          "group",
+          "sync_mode",
+          "matched_values",
+          "effect",
+          "manual"
+        ],
+        "title": "MappingTestGroup",
+        "type": "object"
+      },
+      "MappingTestRequest": {
+        "additionalProperties": false,
+        "description": "A claim set pasted by an admin (e.g. a decoded ID token), and optionally a user\nwhose current memberships the effects are computed against.",
+        "properties": {
+          "claims": {
+            "additionalProperties": true,
+            "description": "The token's claims as a JSON object. Nothing is stored or logged.",
+            "title": "Claims",
+            "type": "object"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compute effects for this user's memberships; null: a user with none.",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "claims"
+        ],
+        "title": "MappingTestRequest",
+        "type": "object"
+      },
+      "MappingTestResult": {
+        "description": "What a sign-in with these claims would do (section 3.6).",
+        "properties": {
+          "claim_found": {
+            "description": "The claim exists in the pasted claims.",
+            "title": "Claim Found",
+            "type": "boolean"
+          },
+          "groups": {
+            "description": "Every matched group, and every synced group of the user's that no longer matches (remove, or keep for additive groups), by name.",
+            "items": {
+              "$ref": "#/components/schemas/MappingTestGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "groups_claim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The configured claim path (SOUNDINGS_OIDC_GROUPS_CLAIM); null: sync off.",
+            "title": "Groups Claim"
+          },
+          "ignored_count": {
+            "description": "Entries ignored: not strings, or empty once normalised.",
+            "title": "Ignored Count",
+            "type": "integer"
+          },
+          "project_roles": {
+            "description": "The user's effective project roles after the sync: direct roles (with a user), manual groups and the synced groups that result. By project name.",
+            "items": {
+              "$ref": "#/components/schemas/UserProjectRole"
+            },
+            "title": "Project Roles",
+            "type": "array"
+          },
+          "values": {
+            "description": "Extracted values, normalised, de-duplicated, sorted.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups_claim",
+          "claim_found",
+          "values",
+          "ignored_count",
+          "groups",
+          "project_roles"
+        ],
+        "title": "MappingTestResult",
+        "type": "object"
+      },
       "Member": {
         "description": "A direct project member. ``email`` helps tell people apart (colleagues only).",
         "properties": {
@@ -2397,6 +3679,67 @@
         "title": "Project",
         "type": "object"
       },
+      "ProjectAccessEntry": {
+        "description": "Someone with an effective role in the project, and why.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole",
+            "description": "Effective role (the highest source)."
+          },
+          "sources": {
+            "description": "Direct first, then groups by name.",
+            "items": {
+              "$ref": "#/components/schemas/RoleSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserRef"
+          }
+        },
+        "required": [
+          "user",
+          "email",
+          "role",
+          "sources"
+        ],
+        "title": "ProjectAccessEntry",
+        "type": "object"
+      },
+      "ProjectAccessPage": {
+        "description": "Everyone with access, by display name.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectAccessEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "ProjectAccessPage",
+        "type": "object"
+      },
       "ProjectCreate": {
         "additionalProperties": false,
         "description": "Create a project with the default rubric and one admin (``admin_user_id``).",
@@ -2451,6 +3794,61 @@
           "key"
         ],
         "title": "ProjectCreate",
+        "type": "object"
+      },
+      "ProjectGroupGrant": {
+        "description": "A project role granted to every member of a group (seen from the project).",
+        "properties": {
+          "granted_at": {
+            "format": "date-time",
+            "title": "Granted At",
+            "type": "string"
+          },
+          "group": {
+            "$ref": "#/components/schemas/GroupSearchResult"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole"
+          }
+        },
+        "required": [
+          "group",
+          "role",
+          "granted_at"
+        ],
+        "title": "ProjectGroupGrant",
+        "type": "object"
+      },
+      "ProjectGroupGrantAdd": {
+        "additionalProperties": false,
+        "properties": {
+          "group_id": {
+            "format": "uuid",
+            "title": "Group Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole",
+            "default": "member"
+          }
+        },
+        "required": [
+          "group_id"
+        ],
+        "title": "ProjectGroupGrantAdd",
+        "type": "object"
+      },
+      "ProjectGroupGrantUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "ProjectGroupGrantUpdate",
         "type": "object"
       },
       "ProjectPermissions": {
@@ -2758,6 +4156,41 @@
         "title": "ResolutionCounts",
         "type": "object"
       },
+      "RoleSource": {
+        "description": "One reason a user holds a project role.",
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The group (kind group), else null."
+          },
+          "kind": {
+            "description": "direct: project membership; group: a grant to a group the user is in.",
+            "enum": [
+              "direct",
+              "group"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole"
+          }
+        },
+        "required": [
+          "kind",
+          "role",
+          "group"
+        ],
+        "title": "RoleSource",
+        "type": "object"
+      },
       "Rubric": {
         "description": "The rubric after ``replace_rubric``: active criteria in display order.",
         "properties": {
@@ -2946,6 +4379,190 @@
           "projects"
         ],
         "title": "SearchResults",
+        "type": "object"
+      },
+      "SsoConfig": {
+        "description": "The effective sign-in configuration. Secrets are never returned, only whether\nthey are set.",
+        "properties": {
+          "auto_create_users": {
+            "title": "Auto Create Users",
+            "type": "boolean"
+          },
+          "break_glass": {
+            "$ref": "#/components/schemas/BreakGlassStatus"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret_set": {
+            "title": "Client Secret Set",
+            "type": "boolean"
+          },
+          "dev_login": {
+            "description": "The development login is on (never in production).",
+            "title": "Dev Login",
+            "type": "boolean"
+          },
+          "discovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SsoDiscovery"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when SSO is not configured."
+          },
+          "enabled": {
+            "description": "SSO is configured (an issuer is set).",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "external_id_claim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: no external-ID matching. Must be an attribute only IdP admins can set (Keycloak: user-profile edit permission admin only; Entra ID: oid or employeeid): whoever can choose its value can sign in as the pre-created user who has it.",
+            "title": "External Id Claim"
+          },
+          "external_id_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id Kind"
+          },
+          "groups_claim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: group sync is off.",
+            "title": "Groups Claim"
+          },
+          "issuer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer"
+          },
+          "match_verified_email": {
+            "title": "Match Verified Email",
+            "type": "boolean"
+          },
+          "redirect_uris": {
+            "description": "One per base URL, in order.",
+            "items": {
+              "$ref": "#/components/schemas/SsoRedirect"
+            },
+            "title": "Redirect Uris",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "issuer",
+          "client_id",
+          "client_secret_set",
+          "scopes",
+          "groups_claim",
+          "external_id_claim",
+          "external_id_kind",
+          "match_verified_email",
+          "auto_create_users",
+          "redirect_uris",
+          "discovery",
+          "break_glass",
+          "dev_login"
+        ],
+        "title": "SsoConfig",
+        "type": "object"
+      },
+      "SsoDiscovery": {
+        "description": "The provider's ``/.well-known/openid-configuration``, as sign-in sees it (the same\ncached fetch; fetched now when nothing is cached). Diagnoses ``sso_unavailable``.",
+        "properties": {
+          "checked_at": {
+            "description": "When the document was fetched (or tried).",
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "end_session_supported": {
+            "description": "It has an end_session_endpoint: sign-out also signs out at the IdP.",
+            "title": "End Session Supported",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "ok; unreachable (network error, timeout or HTTP error); invalid (not JSON, or a required endpoint is missing); issuer_mismatch (its issuer is not exactly SOUNDINGS_OIDC_ISSUER).",
+            "enum": [
+              "ok",
+              "unreachable",
+              "invalid",
+              "issuer_mismatch"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "end_session_supported",
+          "checked_at"
+        ],
+        "title": "SsoDiscovery",
+        "type": "object"
+      },
+      "SsoRedirect": {
+        "description": "What to register at the IdP for one of ``SOUNDINGS_BASE_URLS``.",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "post_logout_redirect_uri": {
+            "description": "Valid post-logout redirect URI: <base_url>/login?signed_out=1.",
+            "title": "Post Logout Redirect Uri",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "description": "Valid redirect URI: <base_url>/api/v1/auth/callback.",
+            "title": "Redirect Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url",
+          "redirect_uri",
+          "post_logout_redirect_uri"
+        ],
+        "title": "SsoRedirect",
         "type": "object"
       },
       "StatusChange": {
@@ -3234,6 +4851,29 @@
         "title": "TagInfo",
         "type": "object"
       },
+      "UserGroup": {
+        "description": "A group the user belongs to, with provenance (both flags can be true).",
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/GroupRef"
+          },
+          "manual": {
+            "title": "Manual",
+            "type": "boolean"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group",
+          "manual",
+          "synced"
+        ],
+        "title": "UserGroup",
+        "type": "object"
+      },
       "UserPage": {
         "description": "A page of users, ordered by display name.",
         "properties": {
@@ -3261,6 +4901,33 @@
           "next_cursor"
         ],
         "title": "UserPage",
+        "type": "object"
+      },
+      "UserProjectRole": {
+        "description": "A user's effective role in a project and where it comes from.",
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectRef"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ProjectRole",
+            "description": "Effective role: the highest of the sources."
+          },
+          "sources": {
+            "description": "Direct first, then groups by name.",
+            "items": {
+              "$ref": "#/components/schemas/RoleSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "role",
+          "sources"
+        ],
+        "title": "UserProjectRole",
         "type": "object"
       },
       "UserRef": {
@@ -3735,6 +5402,2336 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/audit": {
+      "get": {
+        "description": "Platform admins (platform.view_audit_log). Newest first; filters combine with AND, several action values with OR. since is inclusive, until exclusive.",
+        "operationId": "list_audit_entries",
+        "parameters": [
+          {
+            "description": "Entries by this user.",
+            "in": "query",
+            "name": "actor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Entries by this user.",
+              "title": "Actor Id"
+            }
+          },
+          {
+            "description": "Any of these actions.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditAction"
+                  },
+                  "maxItems": 40,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any of these actions.",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "Entries about this kind of thing.",
+            "in": "query",
+            "name": "target_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "user",
+                    "project",
+                    "idea",
+                    "group"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Entries about this kind of thing.",
+              "title": "Target Type"
+            }
+          },
+          {
+            "description": "Entries about this id.",
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Entries about this id.",
+              "title": "Target Id"
+            }
+          },
+          {
+            "description": "Entries in this project.",
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Entries in this project.",
+              "title": "Project Id"
+            }
+          },
+          {
+            "description": "From this time (with a UTC offset).",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "From this time (with a UTC offset).",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Before this time (with a UTC offset).",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Before this time (with a UTC offset).",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Read the audit log",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups": {
+      "get": {
+        "description": "Platform admins (platform.manage_groups). Every group by name (case-insensitive), with mapping and counts. q matches the name.",
+        "operationId": "list_admin_groups",
+        "parameters": [
+          {
+            "description": "Part of a name.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a name.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List groups",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Platform admins (platform.manage_groups). Optionally mapped to IdP values right away. 409 group_name_taken.",
+        "operationId": "create_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a group",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups/test-mapping": {
+      "post": {
+        "description": "Platform admins (platform.manage_groups). What a sign-in with these claims would do: the values extracted from the configured groups claim, the groups they match, the effect on each (for user_id's memberships, or a user with none) and the resulting project roles. Changes nothing; the claims are not stored or logged. 422 user_not_found.",
+        "operationId": "test_group_mapping",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Test the group mapping",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups/{group_id}": {
+      "delete": {
+        "description": "Platform admins (platform.manage_groups). Removes its memberships, mapping and project grants: access through it ends immediately. The SPA confirms first (no undo).",
+        "operationId": "delete_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete a group",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "description": "Platform admins (platform.manage_groups). Mapping, counts by provenance and project grants (members: paged).",
+        "operationId": "get_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a group",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Platform admins (platform.manage_groups). Omitted or null fields are unchanged. 409 group_name_taken.",
+        "operationId": "update_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rename or describe a group",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups/{group_id}/mapping": {
+      "put": {
+        "description": "Platform admins (platform.manage_groups). sync_mode and the complete list of IdP values (normalised). Applies to each user at their next sign-in; memberships don't change now.",
+        "operationId": "replace_group_mapping",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupMappingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Replace the IdP mapping",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups/{group_id}/members": {
+      "get": {
+        "description": "Platform admins (platform.manage_groups). By display name, with provenance (manual, synced or both); deactivated members are listed too (is_active false).",
+        "operationId": "list_group_members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Part of a name or email.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a name or email.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupMemberPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List group members",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Platform admins (platform.manage_groups). Sign-in sync never removes a manual membership. A synced member becomes manual too. 409 already_member (already manual); 422 user_not_found (unknown, inactive, service or break-glass account).",
+        "operationId": "add_group_member",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupMemberAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupMember"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a manual member",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups/{group_id}/members/{user_id}": {
+      "delete": {
+        "description": "Platform admins (platform.manage_groups). Removes the membership whatever its provenance (manual and synced). A synced member comes back at their next sign-in while the IdP still sends a mapped value. 404 not a member.",
+        "operationId": "remove_group_member",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a member",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/sso": {
+      "get": {
+        "description": "Platform admins (platform.configure_sso). The settings in effect with secrets masked, the redirect URIs to register at the IdP for each base URL, whether the provider's discovery document can be used, and the break-glass status.",
+        "operationId": "get_sso_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Effective SSO configuration",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "Platform admins (platform.manage_users). Every account (people, service accounts, the break-glass admin), by display name. q matches name or email (case-insensitive); the filters combine.",
+        "operationId": "list_admin_users",
+        "parameters": [
+          {
+            "description": "Part of a name or email.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a name or email.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Only active (or deactivated) users.",
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only active (or deactivated) users.",
+              "title": "Active"
+            }
+          },
+          {
+            "description": "Only platform admins (or only non-admins).",
+            "in": "query",
+            "name": "platform_admin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only platform admins (or only non-admins).",
+              "title": "Platform Admin"
+            }
+          },
+          {
+            "description": "false: users never linked to SSO (e.g. pre-created, not signed in).",
+            "in": "query",
+            "name": "has_identity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "false: users never linked to SSO (e.g. pre-created, not signed in).",
+              "title": "Has Identity"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List users",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Platform admins (platform.manage_users). An active user without an SSO identity; their first SSO sign-in links them by external ID or verified email. 409 email_taken, external_id_taken.",
+        "operationId": "create_admin_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Pre-create a user",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}": {
+      "get": {
+        "description": "Platform admins (platform.manage_users). Identities, external IDs, groups with provenance, and every project role with its sources (direct or group).",
+        "operationId": "get_admin_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a user",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Platform admins (platform.manage_users). Name, email, active, platform admin. Deactivating ends their sessions. 403 cannot_change_self (your own active / platform admin flags); 409 email_taken; 409 system_account (service or break-glass account: only display_name and is_active change); 409 last_platform_admin (no other active platform admin would remain).",
+        "operationId": "update_admin_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Update a user",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/external-ids": {
+      "put": {
+        "description": "Platform admins (platform.manage_users). The complete set, one per kind. 409 external_id_taken (another user has that kind and value); 409 system_account.",
+        "operationId": "replace_user_external_ids",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalIdsReplace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Replace a user's external IDs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/identities/{identity_id}": {
+      "delete": {
+        "description": "Platform admins (platform.manage_users). The user is matched again (external ID, verified email) at their next SSO sign-in, e.g. after their IdP account was recreated. Their SSO sessions end too.",
+        "operationId": "unlink_user_identity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "identity_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Identity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Unlink an SSO identity",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/sessions": {
+      "delete": {
+        "description": "Platform admins (platform.manage_users). Ends all their sessions (yours too, if it is you); group changes then apply at their next sign-in. Idempotent.",
+        "operationId": "end_user_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Sign a user out everywhere",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/auth/break-glass": {
+      "post": {
+        "description": "Public. The local platform admin whose credentials come from a K8s Secret, for first sign-in before SSO is configured. 404 unless available (enabled, credentials set, SSO not configured). Sets the session cookies like any sign-in. 401 invalid_credentials (wrong username or password, same answer); 403 account_disabled; 429 too_many_attempts (with Retry-After). Every attempt is audited.",
+        "operationId": "break_glass_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakGlassLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Sign in as the break-glass admin",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "description": "Public; the IdP redirects the browser here. Checks state against the soundings_oidc cookie, exchanges the code (with the PKCE verifier), validates the ID token, matches the user, syncs groups, starts a session (rotating any existing one) and redirects (302) to the saved next path. On failure it redirects to /login?error=<code> (sso_unavailable, login_expired, login_cancelled, sso_failed, no_account, account_disabled, identity_conflict); the reason is in the audit log. Overlong or unexpected parameter values fail the flow (a redirect); only a NUL character is a 422.",
+        "operationId": "sso_callback",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          },
+          {
+            "description": "Never shown or logged.",
+            "in": "query",
+            "name": "error_description",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Never shown or logged.",
+              "title": "Error Description"
+            }
+          },
+          {
+            "description": "RFC 9207 issuer; must match when present.",
+            "in": "query",
+            "name": "iss",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 9207 issuer; must match when present.",
+              "title": "Iss"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "To the saved next path, or /login?error=<code>.",
+            "headers": {
+              "Location": {
+                "description": "Where the browser goes next.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Finish SSO sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/config": {
+      "get": {
+        "description": "Public. Which sign-in methods the sign-in page shows: the SSO button (and its label), the development login, the break-glass admin form. No secrets.",
+        "operationId": "get_auth_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Sign-in methods",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/dev/login": {
       "post": {
         "description": "Starts a session for the user: sets the soundings_session (HttpOnly) and soundings_csrf cookies. Development only: 404 unless SOUNDINGS_DEV_LOGIN_ENABLED=true (always refused in production).",
@@ -3843,6 +7840,69 @@
         ]
       }
     },
+    "/api/v1/auth/login": {
+      "get": {
+        "description": "Public; navigate the browser here (not fetch). Starts the authorization code flow with PKCE: stores the attempt server-side, sets the short-lived HttpOnly soundings_oidc cookie and redirects (302) to the IdP. The redirect URI is <base URL of this host>/api/v1/auth/callback; a host that is not one of SOUNDINGS_BASE_URLS is first redirected to the same path on the first base URL. next must be a same-origin SPA path of at most 2048 characters (else /). SSO not configured or the IdP unreachable: 302 to /login?error=sso_unavailable; too many starts from this client IP: 302 to /login?error=too_many_attempts.",
+        "operationId": "sso_login",
+        "parameters": [
+          {
+            "description": "Where to go after signing in: a path such as /ideas/CUST-12.",
+            "in": "query",
+            "name": "next",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where to go after signing in: a path such as /ideas/CUST-12.",
+              "title": "Next"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "To the IdP's authorization endpoint (or /login?error=...).",
+            "headers": {
+              "Location": {
+                "description": "Where the browser goes next.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Start SSO sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "description": "Ends the session (if any) and clears the session cookies. Always 204.",
@@ -3863,6 +7923,39 @@
           }
         },
         "summary": "Sign out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout/redirect": {
+      "post": {
+        "description": "Public; submit as an HTML form POST (top-level navigation, no body). Ends the session like logout, then redirects (303) to the IdP's end-session endpoint (SSO sessions, when the IdP has one) with id_token_hint (when stored), client_id and post_logout_redirect_uri=<base URL>/login?signed_out=1; otherwise straight to /login?signed_out=1. A cross-origin post ends nothing and redirects to /. Always redirects. POST /auth/logout (204) is unchanged.",
+        "operationId": "logout_redirect",
+        "responses": {
+          "303": {
+            "description": "To the IdP's end-session endpoint or /login?signed_out=1.",
+            "headers": {
+              "Location": {
+                "description": "Where the browser goes next.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Sign out, also at the IdP",
         "tags": [
           "auth"
         ]
@@ -4111,6 +8204,102 @@
         "summary": "Edit a comment",
         "tags": [
           "activity"
+        ]
+      }
+    },
+    "/api/v1/groups": {
+      "get": {
+        "description": "Signed-in users (user.search: people and group pickers). Groups whose name contains q (case-insensitive), by name; at most limit.",
+        "operationId": "search_groups",
+        "parameters": [
+          {
+            "description": "Part of a name.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a name.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Most results to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Most results to return.",
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GroupSearchResult"
+                  },
+                  "title": "Response Search Groups",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Search groups",
+        "tags": [
+          "groups"
         ]
       }
     },
@@ -6659,6 +10848,168 @@
         ]
       }
     },
+    "/api/v1/projects/{slug}/access": {
+      "get": {
+        "description": "Anyone who can view the project. Every active user with an effective role, by display name, with the sources of that role (direct, and each group). Not listed: platform admins without a role here, and (internal projects) the signed-in users who can view it without one. q matches name or email; role filters on the effective role.",
+        "operationId": "list_project_access",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Part of a name or email.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a name or email.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Only this effective role.",
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProjectRole"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this effective role.",
+              "title": "Role"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectAccessPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Everyone with access",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{slug}/board": {
       "get": {
         "description": "All five status columns with their counts and first page of ideas, using the same filters and sort as the list. Load more of a column with list_ideas (status=<column>, same filters, cursor=<column.next_cursor>).",
@@ -6871,6 +11222,427 @@
         "summary": "Board: ideas by status",
         "tags": [
           "ideas"
+        ]
+      }
+    },
+    "/api/v1/projects/{slug}/groups": {
+      "get": {
+        "description": "Anyone who can view the project (like members). Groups granted a role here, admins first, then by group name.",
+        "operationId": "list_project_group_grants",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectGroupGrant"
+                  },
+                  "title": "Response List Project Group Grants",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List group grants",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "description": "Project admins (project.manage_members). Every member of the group gets the role (the highest of all their sources counts). 409 already_granted; 422 group_not_found.",
+        "operationId": "add_project_group_grant",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectGroupGrantAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGroupGrant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Grant a group a role",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{slug}/groups/{group_id}": {
+      "delete": {
+        "description": "Project admins (project.manage_members, c11). Access through the group ends immediately. 404 not granted; 409 last_admin.",
+        "operationId": "remove_project_group_grant",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a group grant",
+        "tags": [
+          "projects"
+        ]
+      },
+      "patch": {
+        "description": "Project admins (project.manage_members, c11). 404 not granted; 409 last_admin.",
+        "operationId": "update_project_group_grant",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "description": "Project slug.",
+              "maxLength": 48,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectGroupGrantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGroupGrant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change a group's role",
+        "tags": [
+          "projects"
         ]
       }
     },

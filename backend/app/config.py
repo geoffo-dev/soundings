@@ -12,13 +12,14 @@ guards.
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 
@@ -52,6 +53,21 @@ _SETTINGS_CONFIG = SettingsConfigDict(
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Hosts always accepted outside production (dev servers, the Vite proxy)."""
+
+OIDC_CALLBACK_PATH = "/api/v1/auth/callback"
+"""Appended to a base URL: the redirect URI the IdP sends the browser back to."""
+
+POST_LOGOUT_PATH = "/login?signed_out=1"
+"""Appended to a base URL: where the IdP returns the browser after signing out."""
+
+BREAK_GLASS_MIN_PASSWORD_LENGTH = 16
+"""Production refuses a shorter break-glass password (the chart generates 24)."""
+
+OIDC_ISSUER_MAX_LENGTH = 512
+"""= ``user_identities.issuer``: the issuer is stored with every linked identity."""
+
+_SCOPE_TOKEN = re.compile(r"[\x21\x23-\x5b\x5d-\x7e]+")  # RFC 6749 scope-token
+_EXTERNAL_ID_KIND = re.compile(r"[a-z][a-z0-9_]{0,39}")  # = app.models.user's pattern
 
 
 class DatabaseSettings(BaseSettings):
@@ -159,6 +175,73 @@ class Settings(DatabaseSettings):
         ),
     )
 
+    # --- Single sign-on (OIDC; contract-phase2 section 3) ----------------------------
+    # One provider per instance. Names match the chart (deploy/helm/README.md).
+    oidc_issuer: str | None = Field(
+        default=None,
+        description=(
+            "OIDC issuer URL, e.g. https://keycloak.example.com/realms/acme (its "
+            "/.well-known/openid-configuration is used). Empty: SSO off."
+        ),
+    )
+    oidc_client_id: str = Field(default="soundings", min_length=1, max_length=255)
+    oidc_client_secret: SecretStr | None = Field(
+        default=None, description="Confidential client secret (none: a public PKCE client)."
+    )
+    oidc_scopes: Annotated[list[str], NoDecode] = Field(
+        default=["openid", "profile", "email"],
+        description="Requested scopes; openid is always included.",
+    )
+    oidc_groups_claim: str = Field(
+        default="groups",
+        max_length=200,
+        description=(
+            "Claim holding the user's IdP groups: a top-level name or a dotted path "
+            "(realm_access.roles). Empty: no group sync."
+        ),
+    )
+    oidc_external_id_claim: str = Field(
+        default="",
+        max_length=200,
+        description=(
+            "Claim (name or dotted path) matched against users' external IDs at first "
+            "sign-in, e.g. employee_no. Empty: no external-ID matching. It MUST come "
+            "from an attribute only IdP admins can set (Keycloak: user-profile edit "
+            "permission admin only, unmanaged attributes not enabled; Entra ID: oid or "
+            "employeeid): whoever can choose its value can sign in as the pre-created "
+            "user who has it, platform admins included."
+        ),
+    )
+    oidc_external_id_kind: str = Field(
+        default="",
+        description=(
+            "External-ID kind the claim is matched against. Default: the claim path's "
+            "last dotted segment (attributes.employee_no -> employee_no); required when "
+            "that is not a valid kind."
+        ),
+    )
+    oidc_match_verified_email: bool = Field(
+        default=True,
+        description="Link an existing user by email when the IdP says email_verified=true.",
+    )
+    oidc_auto_create_users: bool = Field(
+        default=False,
+        description=(
+            "Create an account for an unmatched IdP user with a verified email (else: no access)."
+        ),
+    )
+
+    # --- Break-glass admin (credentials from a K8s Secret) ---------------------------
+    break_glass_enabled: bool = Field(
+        default=False,
+        description=(
+            "Allow the local break-glass admin. It is available only while SSO is not "
+            "configured (no oidc_issuer) and both credentials are set."
+        ),
+    )
+    break_glass_username: SecretStr | None = None
+    break_glass_password: SecretStr | None = None
+
     # --- Observability / worker -----------------------------------------------------
     otel_endpoint: str | None = Field(
         default=None,
@@ -166,10 +249,58 @@ class Settings(DatabaseSettings):
     )
     worker_concurrency: int = Field(default=4, ge=1, le=64)
 
-    @field_validator("base_urls", "trusted_proxies", mode="before")
+    @field_validator("base_urls", "trusted_proxies", "oidc_scopes", mode="before")
     @classmethod
     def _parse_list(cls, value: object) -> object:
         return _split_csv(value)
+
+    @field_validator("oidc_issuer")
+    @classmethod
+    def _validate_oidc_issuer(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        if len(value) > OIDC_ISSUER_MAX_LENGTH:
+            raise ValueError(f"oidc_issuer must be at most {OIDC_ISSUER_MAX_LENGTH} characters")
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            raise ValueError("oidc_issuer must be an absolute http(s) URL")
+        if parts.query or parts.fragment:
+            raise ValueError("oidc_issuer must not have a query or fragment")
+        # Kept exactly as configured: it must equal the provider's `iss`.
+        return value
+
+    @field_validator("oidc_scopes")
+    @classmethod
+    def _validate_oidc_scopes(cls, value: list[str]) -> list[str]:
+        scopes = ["openid", *(scope.strip() for scope in value)]
+        for scope in scopes:
+            if not _SCOPE_TOKEN.fullmatch(scope):
+                raise ValueError(f"invalid OIDC scope: {scope!r}")
+        return list(dict.fromkeys(scopes))
+
+    @field_validator("oidc_groups_claim", "oidc_external_id_claim")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("must not contain control characters")
+        return value
+
+    @field_validator("oidc_external_id_kind")
+    @classmethod
+    def _default_external_id_kind(cls, value: str, info: ValidationInfo) -> str:
+        claim = str(info.data.get("oidc_external_id_claim") or "")
+        if not claim:
+            return ""
+        kind = value.strip() or claim.rsplit(".", 1)[-1]
+        if not _EXTERNAL_ID_KIND.fullmatch(kind):
+            raise ValueError(
+                "SOUNDINGS_OIDC_EXTERNAL_ID_KIND must be set to a kind such as employee_no "
+                "(lower-case letters, digits, underscores) when the claim path's last "
+                "segment is not one"
+            )
+        return kind
 
     @field_validator("base_urls")
     @classmethod
@@ -207,6 +338,22 @@ class Settings(DatabaseSettings):
                 raise ValueError("SOUNDINGS_DEV_LOGIN_ENABLED must be false in production")
             if self.cookie_secure is False:
                 raise ValueError("SOUNDINGS_COOKIE_SECURE must not be false in production")
+            if self.oidc_issuer and urlsplit(self.oidc_issuer).scheme != "https":
+                raise ValueError("SOUNDINGS_OIDC_ISSUER must be an https URL in production")
+            if self.oidc_issuer and any(not url.startswith("https://") for url in self.base_urls):
+                # Redirect URIs (with the authorization code) and cookies would travel
+                # over plain HTTP.
+                raise ValueError(
+                    "SOUNDINGS_BASE_URLS must all be https URLs in production when SSO is "
+                    "configured"
+                )
+            secret_password = self.break_glass_password
+            password = secret_password.get_secret_value() if secret_password else ""
+            if self.break_glass_enabled and 0 < len(password) < BREAK_GLASS_MIN_PASSWORD_LENGTH:
+                raise ValueError(
+                    "SOUNDINGS_BREAK_GLASS_PASSWORD must have at least "
+                    f"{BREAK_GLASS_MIN_PASSWORD_LENGTH} characters in production"
+                )
         return self
 
     # --- Derived values -------------------------------------------------------------
@@ -226,6 +373,30 @@ class Settings(DatabaseSettings):
         if not self.is_production:
             hosts |= LOCAL_HOSTS
         return frozenset(hosts)
+
+    @property
+    def sso_configured(self) -> bool:
+        """SSO sign-in is on: an issuer is configured."""
+        return self.oidc_issuer is not None
+
+    @property
+    def break_glass_available(self) -> bool:
+        """The break-glass sign-in works: enabled, both credentials set, and SSO not
+        configured ("off once SSO is configured"; unset the issuer to bring it back)."""
+        return (
+            self.break_glass_enabled
+            and not self.sso_configured
+            and bool(self.break_glass_username and self.break_glass_username.get_secret_value())
+            and bool(self.break_glass_password and self.break_glass_password.get_secret_value())
+        )
+
+    def oidc_redirect_uri(self, base_url: str) -> str:
+        """The callback URL to register at the IdP for one of ``base_urls``."""
+        return base_url + OIDC_CALLBACK_PATH
+
+    def oidc_post_logout_redirect_uri(self, base_url: str) -> str:
+        """Where the IdP sends the browser after RP-initiated logout, per base URL."""
+        return base_url + POST_LOGOUT_PATH
 
     @property
     def metrics_on_app_port(self) -> bool:

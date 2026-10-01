@@ -16,11 +16,28 @@ from fastapi.routing import APIRoute
 from pydantic import Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1 import activity, auth, evaluations, ideas, projects, search, users, work
+from app.api.v1 import (
+    activity,
+    admin_audit,
+    admin_groups,
+    admin_sso,
+    admin_users,
+    auth,
+    auth_sso,
+    evaluations,
+    groups,
+    ideas,
+    project_groups,
+    projects,
+    search,
+    users,
+    work,
+)
 from app.schemas.base import RequestModel, TagName
 from app.schemas.ideas import IdeaCreate
 from tests.factories import make_idea
 from tests.ideas.conftest import API, AsUser, Team, assert_problem
+from tests.test_contract_routes import STUBS
 
 NUL = "a\x00b"
 
@@ -69,7 +86,23 @@ def test_every_request_body_is_a_request_model() -> None:
     """The NUL check lives on RequestModel: every JSON body must use it."""
     bodies = [
         param.field_info.annotation
-        for module in (activity, auth, evaluations, ideas, projects, search, users, work)
+        for module in (
+            activity,
+            admin_audit,
+            admin_groups,
+            admin_sso,
+            admin_users,
+            auth,
+            auth_sso,
+            evaluations,
+            groups,
+            ideas,
+            project_groups,
+            projects,
+            search,
+            users,
+            work,
+        )
         for route in module.router.routes
         if isinstance(route, APIRoute)
         for param in route.dependant.body_params
@@ -99,10 +132,13 @@ def _cursor(values: dict[str, Any]) -> str:
 
 
 def _string_params(app: FastAPI) -> list[tuple[str, str, str]]:
-    """(path, method, parameter) for every string-typed query or path parameter."""
+    """(path, method, parameter) for every string-typed query or path parameter of the
+    implemented operations (contract stubs answer 501 until they are built)."""
     found = []
     for path, operations in app.openapi()["paths"].items():
         for method, operation in operations.items():
+            if operation["operationId"] in STUBS:
+                continue
             for parameter in operation.get("parameters", []):
                 if parameter["in"] in ("query", "path") and "string" in json.dumps(
                     parameter["schema"]
@@ -121,6 +157,8 @@ async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
         "idea": f"{team.project.key}-{idea.number}",
         "user_id": str(team.member.id),
         "comment_id": str(uuid4()),
+        "group_id": str(uuid4()),
+        "identity_id": str(uuid4()),
     }
     params = _string_params(app)
     assert {name for _, _, name in params} >= {"q", "tag", "cursor", "slug", "idea", "project"}

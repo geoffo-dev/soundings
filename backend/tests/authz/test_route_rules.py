@@ -9,7 +9,7 @@ from app.authz import POLICY, Rule
 from tests.test_contract_routes import CONTRACT
 
 SIGNED_IN = "signed in"  # a session is enough; contents are filtered by view rules
-PUBLIC = "public"  # no principal needed (dev login, logout)
+PUBLIC = "public"  # no principal needed (sign-in methods, logout)
 
 ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "get_me": (SIGNED_IN,),
@@ -55,6 +55,37 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "get_my_work": (SIGNED_IN, "idea.view", "score.view_aggregate"),
     "list_my_owned_ideas": (SIGNED_IN, "idea.view", "score.view_aggregate"),
     "global_search": (SIGNED_IN, "project.view", "idea.view"),
+    # Phase 2 (docs/api/contract-phase2.md section 2)
+    "get_auth_config": (PUBLIC,),
+    "sso_login": (PUBLIC,),
+    "sso_callback": (PUBLIC,),
+    "break_glass_login": (PUBLIC,),
+    "logout_redirect": (PUBLIC,),
+    "list_admin_users": ("platform.manage_users",),
+    "create_admin_user": ("platform.manage_users",),
+    "get_admin_user": ("platform.manage_users",),
+    "update_admin_user": ("platform.manage_users",),
+    "replace_user_external_ids": ("platform.manage_users",),
+    "unlink_user_identity": ("platform.manage_users",),
+    "end_user_sessions": ("platform.manage_users",),
+    "list_admin_groups": ("platform.manage_groups",),
+    "create_group": ("platform.manage_groups",),
+    "test_group_mapping": ("platform.manage_groups",),
+    "get_group": ("platform.manage_groups",),
+    "update_group": ("platform.manage_groups",),
+    "delete_group": ("platform.manage_groups",),
+    "replace_group_mapping": ("platform.manage_groups",),
+    "list_group_members": ("platform.manage_groups",),
+    "add_group_member": ("platform.manage_groups",),
+    "remove_group_member": ("platform.manage_groups",),
+    "search_groups": ("user.search",),
+    "list_project_group_grants": ("project.view",),
+    "add_project_group_grant": ("project.manage_members",),
+    "update_project_group_grant": ("project.manage_members",),
+    "remove_project_group_grant": ("project.manage_members",),
+    "list_project_access": ("project.view",),
+    "list_audit_entries": ("platform.view_audit_log",),
+    "get_sso_config": ("platform.configure_sso",),
 }
 
 
