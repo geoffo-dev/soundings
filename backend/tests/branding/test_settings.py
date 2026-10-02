@@ -307,6 +307,49 @@ async def test_images_must_belong_to_the_profile_and_kind(
     assert own["effective"]["favicon_url"] == global_favicon["url"]  # inherited
 
 
+async def test_a_project_logo_without_an_app_name_makes_the_project_name_the_wordmark(
+    api: AsUser, team: Team, app: FastAPI
+) -> None:
+    """One identity per audience (UX review M3): a project that brings its own logo but
+    no app name is its own brand, so its emails, PDF header and public pages' name say
+    "Customer Innovation", not the instance's app name."""
+    platform = await api(team.platform)
+    ok(await platform.put("/admin/branding", ACME))
+    project_admin = await api(team.admin)
+    logo = ok(await upload(project_admin, png(), slug=team.slug), 201)
+
+    # A colour of its own only: still the instance's app name.
+    ok(await project_admin.put(f"/projects/{team.slug}/branding", {"primary_color": "#7a1f5c"}))
+    async with app.state.sessionmaker() as db:
+        assert (await branding.resolve(db, team.project.id)).app_name == "Acme Ideas"
+
+    saved = ok(
+        await project_admin.put(f"/projects/{team.slug}/branding", {"logo_asset_id": logo["id"]})
+    )
+    assert saved["app_name"] is None  # the override itself is unchanged
+    assert saved["inherited"]["app_name"] == "Acme Ideas"
+    assert saved["effective"]["app_name"] == "Customer Innovation"
+    async with app.state.sessionmaker() as db:
+        resolved = await branding.resolve(db, team.project.id)
+        assert resolved.app_name == "Customer Innovation"
+        assert resolved.email().product_name == "Customer Innovation"
+        assert (await branding.effective_branding(db, team.project.id)).app_name == (
+            "Customer Innovation"
+        )
+        # The signed-in app and other projects keep the instance's name.
+        assert (await branding.resolve(db, None)).app_name == "Acme Ideas"
+
+    # An app name of the project's own wins.
+    ok(
+        await project_admin.put(
+            f"/projects/{team.slug}/branding",
+            {"logo_asset_id": logo["id"], "app_name": "Customer Lab"},
+        )
+    )
+    async with app.state.sessionmaker() as db:
+        assert (await branding.resolve(db, team.project.id)).app_name == "Customer Lab"
+
+
 # --- Cache -------------------------------------------------------------------------------
 async def test_resolution_is_cached_briefly_and_invalidated_by_saves(
     api: AsUser, team: Team, app: FastAPI, monkeypatch: pytest.MonkeyPatch

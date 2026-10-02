@@ -140,6 +140,20 @@ describe('previewBranding', () => {
       previewBranding(form({ app_name: 'Acme', primary_color: '#b42318' }), INHERITED),
     ).toMatchObject({ app_name: 'Acme', primary_color: '#b42318' })
   })
+
+  it('names a project with its own logo and no app name after the project', () => {
+    const project = 'Customer Innovation'
+    expect(previewBranding(form({ logo: LOGO }), INHERITED, project).app_name).toBe(project)
+    // Its own app name wins; without a logo of its own it inherits the name.
+    expect(
+      previewBranding(form({ logo: LOGO, app_name: 'Lab' }), INHERITED, project).app_name,
+    ).toBe('Lab')
+    expect(previewBranding(form({ primary_color: '#b42318' }), INHERITED, project).app_name).toBe(
+      'Soundings',
+    )
+    // The global profile has no project.
+    expect(previewBranding(form({ logo: LOGO }), INHERITED).app_name).toBe('Soundings')
+  })
 })
 
 describe('errors', () => {

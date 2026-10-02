@@ -50,7 +50,8 @@ it immediately.
   and what was submitted, turn status emails on or off, resend the confirmation email,
   erase the submitter's details) and nothing else, whoever holds it; it stops working
   when the submitter's details are erased.
-- **Confirmation-link token:** emailed to a public submitter (`<base>/verify#<token>`);
+- **Confirmation-link token:** emailed to a public submitter (`<base>/<slug>/verify#<token>`;
+  older links `<base>/verify#<token>`);
   grants `public.track` only to confirm that submission's address (and release an idea
   held for it), nothing else. Signed, valid 3 days
   ([contract-phase4 §3.7](api/contract-phase4.md#37-tracking-and-confirmation-links)).
@@ -131,7 +132,7 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
   uploaded logos and favicons (`GET /branding/assets/{id}`) need no sign-in: the sign-in
   page and the public form show them. Editing is `platform.edit_branding` (global) and
   `project.edit_settings` (a project's override and its images), session only.
-- **Public pages** (`/{slug}/submit`, `/track`, `/verify`) are governed by
+- **Public pages** (`/{slug}/submit`, `/track`, `/{slug}/verify`, `/verify`) are governed by
   `public.submit` (c8) and `public.track` (c9) and show nothing but the project's name,
   intro and branding, and the submitter's own idea and status
   ([contract-phase4 §3.5–3.7](api/contract-phase4.md#35-the-public-form)).

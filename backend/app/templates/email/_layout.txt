@@ -4,12 +4,16 @@
 {% block content %}{% endblock %}
 
 
+{% block button %}
 {% if button %}
 {{ button.label }}: {{ button.url }}
 
 {% endif %}
+{% endblock %}
 {{ "-- " }}
 {% if reason %}{{ reason }}
+{% endif %}
+{% if stop_url %}Stop these emails: {{ stop_url }}
 {% endif %}
 {% if preferences_url %}Email preferences: {{ preferences_url }}
 {% endif %}

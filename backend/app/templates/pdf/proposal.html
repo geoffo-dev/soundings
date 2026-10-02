@@ -62,7 +62,10 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.25; font-weight: 600; break-after: avoid
    paragraph for every line it does that on. Long runs carry zero-width spaces instead
    (app/proposals/markdown.py). The cover's short values may break anywhere. */
 .cover { overflow-wrap: break-word; }
-a { color: {{ colors.accent_text }}; text-decoration: underline; }
+/* Links in the primary colour (darkened to 4.5:1 on white); their URL is printed after
+   them in brackets (app/proposals/markdown.py), since paper can't be clicked. */
+a { color: {{ colors.link }}; text-decoration: underline; }
+.link-url { color: {{ colors.muted }}; font-size: 9pt; }
 
 /* Cover ------------------------------------------------------------------ */
 .cover {
@@ -83,6 +86,7 @@ a { color: {{ colors.accent_text }}; text-decoration: underline; }
   color: {{ colors.brand_text }};
 }
 .cover-main { padding: 48mm 20mm 0 20mm; }
+.with-contents .cover-main { padding-top: 26mm; }
 .eyebrow {
   margin: 0 0 4mm 0;
   font-size: 9pt;
@@ -107,7 +111,7 @@ a { color: {{ colors.accent_text }}; text-decoration: underline; }
 .meta th { width: 32mm; color: {{ colors.muted }}; }
 .running { string-set: app-name attr(data-app), idea-key attr(data-key); }
 
-/* Contents --------------------------------------------------------------- */
+/* Contents: a page of its own, or on the cover when the document is short ---- */
 .contents { break-after: page; }
 .contents h2 { font-size: 15pt; margin: 0 0 6mm 0; bookmark-level: none; }
 .contents ol { list-style: none; margin: 0; padding: 0; }
@@ -117,6 +121,16 @@ a { color: {{ colors.accent_text }}; text-decoration: underline; }
   content: leader(" ") target-counter(attr(href), page);
   color: {{ colors.muted }};
 }
+.contents .not-written { color: {{ colors.muted }}; font-style: italic; }
+.cover .contents { break-after: auto; padding: 14mm 20mm 0 20mm; font-size: 10pt; }
+.cover .contents h2 {
+  font-size: 9pt;
+  margin: 0 0 2mm 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: {{ colors.brand_text }};
+}
+.cover .contents li { padding: 1.2mm 0; }
 
 /* Sections --------------------------------------------------------------- */
 .section { margin-bottom: 9mm; }
@@ -127,9 +141,18 @@ a { color: {{ colors.accent_text }}; text-decoration: underline; }
   border-bottom: 1.5pt solid {{ colors.primary }};
   bookmark-level: 2;
 }
-.section h3 { font-size: 12.5pt; margin: 6mm 0 2mm 0; bookmark-level: 3; }
-.section h4 { font-size: 11pt; margin: 5mm 0 1.5mm 0; bookmark-level: none; }
-.section h5, .section h6 { font-size: 10.5pt; margin: 4mm 0 1mm 0; font-weight: 500; bookmark-level: none; }
+/* Headings in a section: one level below the section title (markdown.py), each level
+   semibold with its own size and spacing, so none reads as body text. */
+.section h3 { font-size: 13pt; margin: 6mm 0 2mm 0; bookmark-level: 3; }
+.section h4 { font-size: 11.5pt; margin: 5mm 0 1.5mm 0; bookmark-level: none; }
+.section h5 { font-size: 10.5pt; margin: 4.5mm 0 1mm 0; bookmark-level: none; }
+.section h6 {
+  font-size: 9.5pt;
+  margin: 4mm 0 1mm 0;
+  letter-spacing: 0.02em;
+  color: {{ colors.muted }};
+  bookmark-level: none;
+}
 .section p { margin: 0 0 3mm 0; }
 .section ul, .section ol { margin: 0 0 3mm 0; padding-left: 6mm; }
 .section li { margin: 0.8mm 0; }
@@ -174,7 +197,20 @@ th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; 
 </style>
 </head>
 <body>
-<section class="cover">
+{%- macro contents(running=False) %}
+<nav class="contents">
+  {%- if running %}
+  <div class="running" data-app="{{ app_name }}" data-key="{{ document.idea_key }}"></div>
+  {%- endif %}
+  <h2>Contents</h2>
+  <ol>
+    {%- for section in sections %}
+    <li><a href="#section-{{ section.key }}">{{ section.title }}{% if not section.html %} <span class="not-written">· {{ empty_section }}</span>{% endif %}</a></li>
+    {%- endfor %}
+  </ol>
+</nav>
+{%- endmacro %}
+<section class="cover{% if contents_on_cover %} with-contents{% endif %}">
   <div class="cover-band"></div>
   <div class="cover-brand">
     {%- if logo %}
@@ -199,16 +235,14 @@ th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; 
       </table>
     </div>
   </div>
-</section>
-<nav class="contents">
+  {%- if contents_on_cover %}
   <div class="running" data-app="{{ app_name }}" data-key="{{ document.idea_key }}"></div>
-  <h2>Contents</h2>
-  <ol>
-    {%- for section in sections %}
-    <li><a href="#section-{{ section.key }}">{{ section.title }}</a></li>
-    {%- endfor %}
-  </ol>
-</nav>
+  {{ contents() }}
+  {%- endif %}
+</section>
+{%- if not contents_on_cover %}
+{{ contents(running=True) }}
+{%- endif %}
 {%- for section in sections %}
 <section class="section" id="section-{{ section.key }}">
   <h2>{{ section.title }}</h2>

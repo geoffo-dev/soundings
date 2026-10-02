@@ -19,9 +19,10 @@ import { fillPublicForm, fragmentToken, humanCheckDone, Visitor } from '../tests
  * - <screen>-<1440-light|1440-dark|390-light>.png: the seeded Customer Innovation public
  *   form (its branding: green, IBM Plex Sans, its logo), the receipt after sending, the
  *   tracking page (a real submission, confirmed, approved and shortlisted), the address
- *   confirmation page, the proposal editor of CUST-6 with margin threads, its export
- *   menu, Settings → Branding with an unsaved change in the live preview, the project's
- *   Public form and Branding settings, the review queue and an idea waiting for review.
+ *   confirmation page (`/customer-innovation/verify#…`, before the click), the proposal
+ *   editor of CUST-6 with margin threads, its export menu, Settings → Branding with an
+ *   unsaved change in the live preview, the project's Public form and Branding settings,
+ *   the review queue and an idea waiting for review.
  * - pdf/CUST-6-proposal-page-<n>.png: the exported PDF's first pages, rendered by pdf.js.
  * - emails/mailpit-<subject>-<desktop-light|desktop-dark|390-light>.png: the branded
  *   submitter emails (confirmation, status change) as Mailpit received them.
@@ -214,10 +215,12 @@ const SHOTS: Shot[] = [
     name: 'public-verify',
     as: null,
     open: async (page) => {
-      await page.goto('/verify#eyJ2IjoxfQ.c2lnbmF0dXJl')
+      // The link as emails send it: the project's slug, so its branding shows at once.
+      await page.goto('/customer-innovation/verify#eyJ2IjoxfQ.c2lnbmF0dXJl')
       await expect(
         page.getByRole('heading', { level: 1, name: 'Confirm your email address' }),
       ).toBeVisible()
+      await expect(page.locator('header img')).toBeVisible()
     },
   },
   {

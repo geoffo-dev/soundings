@@ -138,6 +138,9 @@ class EmailContent:
     unsubscribe_label: str | None = None
     unsubscribe_all_url: str | None = None
     """"Unsubscribe from all email": the only link whose token turns off every type."""
+    stop_url: str | None = None
+    """"Stop these emails" in the footer: where the recipient turns these emails off
+    without an unsubscribe token (a public submitter's tracking page)."""
     list_unsubscribe_url: str | None = None
     """``List-Unsubscribe`` (with ``List-Unsubscribe-Post: List-Unsubscribe=One-Click``)."""
     references: str | None = None

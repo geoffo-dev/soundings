@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -84,6 +84,7 @@ async def test_the_tracking_page_shows_the_submitters_own_words_and_status(
         "title": "Recycle packaging at the till",
         "summary": "Let customers hand back packaging when they pay.",
         "submitted_at": body["submitted_at"],
+        "reached_team_at": None,
         "held_for": "moderation",
         "status": "new",
         "resolution": None,
@@ -131,6 +132,31 @@ async def test_after_the_team_edits_the_idea_the_page_shows_what_was_sent(
     for private in ("Internal", "Owner notes", "Secret internal note", "Olive", "CUST"):
         assert private not in text
     assert not all_keys(body) & PRIVATE_FIELDS
+
+
+async def test_the_tracking_page_dates_when_the_idea_reached_the_team(
+    anon: httpx.AsyncClient, api: AsUser, team: Team, form: Form, db_session: AsyncSession
+) -> None:
+    """The "With the team" step (UX review m3): null while held, then the approval's
+    time; at once for an idea nothing holds."""
+    held = await receipt(anon, team.slug, name="Jo")
+    assert ok(await track(anon, held["tracking_token"]))["reached_team_at"] is None
+    _, idea = await submitted(db_session)
+
+    ok(await (await api(team.admin)).post(f"/ideas/{idea.id}/submission/approve"))
+
+    body = ok(await track(anon, held["tracking_token"]))
+    assert body["held_for"] is None
+    row, idea = await submitted(db_session)
+    assert row.reached_team_at is not None
+    reached = datetime.fromisoformat(body["reached_team_at"])
+    assert reached == row.reached_team_at
+    assert reached >= datetime.fromisoformat(body["submitted_at"])
+
+    await form(public_moderation_required=False)
+    open_ = await receipt(anon, team.slug, title="Paper bags only")
+    body = ok(await track(anon, open_["tracking_token"]))
+    assert (body["held_for"], body["reached_team_at"]) == (None, body["submitted_at"])
 
 
 async def test_closed_ideas_show_the_resolutions_label(
@@ -505,6 +531,10 @@ async def test_confirming_releases_an_idea_held_for_it(
     assert row.email_verified_at is not None
     assert (idea.held_for.value if idea.held_for else None) == after
     assert idea.last_activity_at >= before
+    # Released to the team: its "With the team" step is the confirmation.
+    assert (row.reached_team_at is None) == moderated
+    if not moderated:
+        assert row.reached_team_at == row.email_verified_at
     # Idempotent.
     assert ok(await verify(anon, confirmation_token(settings, row)))["held_for"] == after
 

@@ -181,7 +181,9 @@ test('the tracking page shows status and history, and only what was sent', async
   await expect(page.getByText('Triage')).toBeVisible()
   // The status in plain words, and the step where it reached the team.
   await expect(page.getByText('The team has your idea and will look at it soon.')).toBeVisible()
-  await expect(page.getByRole('listitem').filter({ hasText: 'With the team' })).toBeVisible()
+  const withTeam = page.getByRole('listitem').filter({ hasText: 'With the team' })
+  await expect(withTeam).toBeVisible()
+  await expect(withTeam.locator('time')).toHaveCount(1) // dated (reached_team_at)
   await expect(page.getByText('j•••@example.org')).toBeVisible()
   // The fragment stays (the link is meant to be bookmarked).
   await expect(page).toHaveURL(new RegExp(`#${JO}$`))

@@ -204,6 +204,7 @@ async def submit(
         tracking_token_sealed=seal_tracking_token(settings, token),
         submitted_title=body.title,
         submitted_summary=body.summary,
+        reached_team_at=now if held_for is None else None,
         created_at=now,
         updated_at=now,
     )

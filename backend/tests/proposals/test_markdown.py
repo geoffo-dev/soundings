@@ -102,28 +102,54 @@ def test_entities_stay_text() -> None:
 
 
 # --- Links and images ----------------------------------------------------------------
+def printed(url: str) -> str:
+    """The URL printed after a link (``|``: a break opportunity)."""
+    return f'<span class="link-url"> ({url})</span>'
+
+
 @pytest.mark.parametrize(
     ("markdown", "html"),
     [
         (
             "[ok](https://example.com/a?b=1&c=2)",
-            '<a href="https://example.com/a?b=1&amp;c=2">ok</a>',
+            '<a href="https://example.com/a?b=1&amp;c=2">ok</a>'
+            + printed("https://example.com/|a?|b=1&amp;|c=2"),
         ),
-        ("[web](http://example.com)", '<a href="http://example.com">web</a>'),
-        ("[mail](mailto:jo@example.com)", '<a href="mailto:jo@example.com">mail</a>'),
+        (
+            "[web](http://example.com)",
+            '<a href="http://example.com">web</a>' + printed("http://example.com"),
+        ),
+        (
+            "[mail](mailto:jo@example.com)",
+            '<a href="mailto:jo@example.com">mail</a>' + printed("jo@example.com"),
+        ),
+        # Paper can't be clicked, but a link whose text is its URL needs nothing more.
         ("<https://auto.example>", '<a href="https://auto.example">https://auto.example</a>'),
+        ("[https://x.io](https://x.io)", '<a href="https://x.io">https://x.io</a>'),
+        ("[jo@x.io](mailto:jo@x.io)", '<a href="mailto:jo@x.io">jo@x.io</a>'),
         ("[js](javascript:alert(1))", "js"),
         ("[js](JaVaScRiPt:alert(1))", "js"),
         ("[tab](java\tscript:alert(1))", "[tab](java\tscript:alert(1))"),
         ("[file](file:///etc/passwd)", "file"),
         ("[data](data:text/html,<b>x</b>)", "data"),
         ("[relative](/ideas/CUST-1)", "relative"),
-        ("[meta](http://169.254.169.254/)", '<a href="http://169.254.169.254/">meta</a>'),
+        (
+            "[meta](http://169.254.169.254/)",
+            '<a href="http://169.254.169.254/">meta</a>' + printed("http://169.254.169.254/|"),
+        ),
         ("<javascript:alert(1)>", "javascript:alert(1)"),
     ],
 )
 def test_links_keep_only_http_https_and_mailto_targets(markdown: str, html: str) -> None:
-    assert render_html(markdown) == f"<p>{html}</p>\n"
+    assert render_html(markdown).replace(BREAK, "|") == f"<p>{html}</p>\n"
+
+
+def test_a_long_printed_url_wraps_and_is_escaped() -> None:
+    url = "https://example.com/" + "a" * 70 + "?q=<b>&x=1"
+    rendered = render_html(f"[spec]({url})")
+    shown = rendered.split('class="link-url">', 1)[1]
+    assert "<b>" not in shown  # escaped (markdown-it also percent-encodes it)
+    assert shown.count(BREAK) >= 70 // RUN_LENGTH + 1  # the path's "/" and long runs
 
 
 @pytest.mark.parametrize(
@@ -131,21 +157,26 @@ def test_links_keep_only_http_https_and_mailto_targets(markdown: str, html: str)
     [
         (
             "![Chart](https://example.com/c.png)",
-            '<a class="image-link" href="https://example.com/c.png">Chart</a>',
+            '<a class="image-link" href="https://example.com/c.png">Chart</a>'
+            + printed("https://example.com/|c.png"),
         ),
         (
             "![](http://example.com/c.png)",
-            '<a class="image-link" href="http://example.com/c.png">Image</a>',
+            '<a class="image-link" href="http://example.com/c.png">Image</a>'
+            + printed("http://example.com/|c.png"),
         ),
         ("![Local](file:///etc/passwd)", "Local"),
         ("![Inline](data:image/png;base64,AAAA)", "Inline"),
         ("![Rel](c.png)", "Rel"),
         ("![](javascript:x)", ""),
-        ("[![In a link](https://x/i.png)](https://y/)", '<a href="https://y/">In a link</a>'),
+        (
+            "[![In a link](https://x/i.png)](https://y/)",
+            '<a href="https://y/">In a link</a>' + printed("https://y/|"),
+        ),
     ],
 )
 def test_images_are_never_images(markdown: str, html: str) -> None:
-    assert render_html(markdown) == f"<p>{html}</p>\n"
+    assert render_html(markdown).replace(BREAK, "|") == f"<p>{html}</p>\n"
 
 
 def test_safe_href() -> None:
@@ -156,17 +187,19 @@ def test_safe_href() -> None:
 
 
 # --- Headings ------------------------------------------------------------------------
-def test_headings_move_down_two_levels_capped_at_six() -> None:
+def test_headings_move_down_one_level_below_the_sections_capped_at_six() -> None:
+    """UX review M4: ``###`` is an h4 (one level down), never body-sized; ``#`` and
+    ``##`` both sit just below the section titles (h2)."""
     rendered = render_html("# One\n## Two\n### Three\n#### Four\n##### Five\n###### Six")
     assert rendered == (
-        "<h3>One</h3>\n<h4>Two</h4>\n<h5>Three</h5>\n<h6>Four</h6>\n<h6>Five</h6>\n<h6>Six</h6>\n"
+        "<h3>One</h3>\n<h3>Two</h3>\n<h4>Three</h4>\n<h5>Four</h5>\n<h6>Five</h6>\n<h6>Six</h6>\n"
     )
 
 
 def test_setext_headings_are_demoted_and_code_is_not() -> None:
     rendered = render_html("Setext\n===\n\nTwo\n---\n\n```\n# not a heading\n```")
     assert rendered == (
-        "<h3>Setext</h3>\n<h4>Two</h4>\n<pre><code># not a heading\n</code></pre>\n"
+        "<h3>Setext</h3>\n<h3>Two</h3>\n<pre><code># not a heading\n</code></pre>\n"
     )
 
 
@@ -174,17 +207,19 @@ def test_setext_headings_are_demoted_and_code_is_not() -> None:
     ("source", "demoted"),
     [
         ("# One", "### One"),
-        ("## Two ##", "#### Two ##"),
-        ("#### Four", "###### Four"),
+        ("## Two ##", "### Two ##"),
+        ("### Three", "#### Three"),
+        ("#### Four", "##### Four"),
+        ("##### Five", "###### Five"),
         ("###### Six", "###### Six"),
         ("   # Indented", "   ### Indented"),
         ("#\tTab", "###\tTab"),
         ("Setext\n===", "### Setext"),
-        ("Setext two\n---", "#### Setext two"),
+        ("Setext two\n---", "### Setext two"),
         ("Two\nlines\n===", "### Two lines"),
-        ("Issue #\n---", "#### Issue \\#"),
+        ("Issue #\n---", "### Issue \\#"),
         ("C#\n==", "### C#"),
-        ("> ## Quoted", "> #### Quoted"),
+        ("> ## Quoted", "> ### Quoted"),
         ("- # In a list", "- ### In a list"),
         ("> Quoted setext\n> ===", "> ### Quoted setext"),
         ("```\n# code\n```", "```\n# code\n```"),
@@ -333,7 +368,7 @@ NOTE = f'<p class="too-long">{TOO_LONG}</p>'
         ("*a*," * 6_000, "em"),  # inline elements, in one paragraph
         ("a*b*" * 8_000, "em"),
         ("`a`," * 6_000, "code"),
-        ("\n\n".join(["[a](https://x.io)" * 1_000] * 3), "a"),  # links weigh 2
+        ("\n\n".join(["[a](https://x.io)" * 1_000] * 3), "a"),  # links weigh 3
         ("---\n" * 6_000, "hr"),
     ],
     ids=[
@@ -371,14 +406,15 @@ def test_code_lines_count_as_boxes_and_long_code_is_cut() -> None:
 
 
 def test_a_long_paragraph_is_cut_inside_and_its_elements_closed() -> None:
-    budget = RenderBudget(boxes=5)  # the paragraph, then 2 links of 2
+    budget = RenderBudget(boxes=7)  # the paragraph, then 2 links of 3 (with their URLs)
 
     rendered = render_html(
         "Read [one](https://a.io) and [two **b**](https://b.io) and [3](https://c.io)", budget
     )
 
     assert rendered == (
-        f'<p>Read <a href="https://a.io">one</a> and <a href="https://b.io">two </a></p>\n{NOTE}\n'
+        f'<p>Read <a href="https://a.io">one</a>{printed("https://a.io")} and '
+        f'<a href="https://b.io">two </a>{printed("https://b.io")}</p>\n{NOTE}\n'
     )
     balanced(rendered)
 
@@ -449,7 +485,7 @@ def test_long_runs_in_code_links_and_tables_get_break_opportunities() -> None:
         f"[{long}](https://example.com/{long})",
         f"| h |\n|---|\n| {long} |",
     ):
-        rendered = render_html(markdown)
+        rendered = render_html(markdown).split('<span class="link-url">')[0]
         assert rendered.count(BREAK) == 1, markdown
     link = render_html(f"[{long}](https://example.com/{long})")
     assert f'href="https://example.com/{long}"' in link  # targets are never changed

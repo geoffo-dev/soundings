@@ -59,6 +59,9 @@ class PublicSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     * ``submitted_title`` / ``submitted_summary``: what the submitter sent, shown on
       their tracking page and in their status emails. Null once erased.
     * ``project_id`` repeats the idea's project for the per-project rate limit.
+    * ``reached_team_at``: when the idea stopped being held (at submission when nothing
+      held it, else the confirmation or the approval that released it); the tracking
+      page's "With the team" step. Null while held. Not personal data: kept on erasure.
 
     The per-address limit on confirmation emails counts ``confirmation_email_sends``,
     not this table.
@@ -110,6 +113,7 @@ class PublicSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tracking_token_sealed: Mapped[str | None] = mapped_column(String(255))
     submitted_title: Mapped[str | None] = mapped_column(String(200))
     submitted_summary: Mapped[str | None] = mapped_column(String(500))
+    reached_team_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     erased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The admin who erased the details; null for the automatic retention erase.
     erased_by_id: Mapped[uuid.UUID | None] = mapped_column(

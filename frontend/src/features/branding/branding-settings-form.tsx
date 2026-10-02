@@ -117,7 +117,7 @@ export function BrandingSettingsForm({
   useShortcut('saveSettings', save, { enabled: active && !readOnly })
 
   const inherited = settings.inherited
-  const preview = previewBranding(form, inherited)
+  const preview = previewBranding(form, inherited, global ? undefined : projectName)
   const inheritedLabel = global ? 'Default' : 'From the global branding'
   const resetLabel = global ? 'Use the default' : 'Use the global one'
   const empty = isEmptyProfile(form)
@@ -151,12 +151,13 @@ export function BrandingSettingsForm({
             description={
               global
                 ? 'In the sidebar, the browser tab, emails and exported proposals.'
-                : 'On this project’s public form, its emails to submitters and its exported proposals.'
+                : 'On this project’s public form, its emails to submitters and its exported proposals. Empty with a logo of its own: the project’s name.'
             }
           >
             <Input
               value={form.app_name}
-              placeholder={inherited.app_name}
+              // What an empty field means: the inherited name, or the project's own.
+              placeholder={form.app_name.trim() ? inherited.app_name : preview.app_name}
               maxLength={BRANDING_LIMITS.appName + 10}
               autoComplete="off"
               onChange={(event) => set({ app_name: event.target.value })}

@@ -195,6 +195,7 @@ async def tracked_submission(
         title=submission.submitted_title,
         summary=submission.submitted_summary,
         submitted_at=submission.created_at,
+        reached_team_at=None if idea.held_for is not None else submission.reached_team_at,
         held_for=idea.held_for,
         status=idea.status,
         resolution=idea.resolution,
@@ -278,6 +279,8 @@ async def verify_email(
     if idea.held_for is HoldReason.EMAIL_VERIFICATION:
         idea.held_for = HoldReason.MODERATION if project.public_moderation_required else None
         idea.last_activity_at = now
+        if idea.held_for is None:
+            submission.reached_team_at = now
     await db.flush()
     assert submission.submitted_title is not None  # noqa: S101 - not erased
     return EmailVerified(

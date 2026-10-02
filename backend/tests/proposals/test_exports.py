@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 import warnings
 from collections.abc import Iterator
 from typing import Any
@@ -218,7 +219,8 @@ async def test_the_pdf_export_is_a_branded_download(
     )
     reader = PdfReader(io.BytesIO(response.content))
     assert reader.metadata is not None
-    assert reader.metadata.creator == "Acme Ideas"  # the global app name, inherited
+    # The project has a logo of its own and no app name: its name is the brand (M3).
+    assert reader.metadata.creator == "Customer Innovation"
     assert reader.metadata.title == "Self-service refunds"
     pages = [page.extract_text() for page in reader.pages]
     assert "Aggregate score 3.0 from 2 evaluations" in pages[0]
@@ -265,7 +267,8 @@ async def test_a_hostile_proposal_exports_safely(api: AsUser, team: Team, key: s
     assert pdf_response.status_code == 200
     text = "\n".join(pdf_text(pdf_response.content))
     assert "a x c" in text
-    assert "metadata passwd js" in text
+    # Labels only, apart from the image's URL printed in brackets (never fetched).
+    assert "metadata passwd js" in re.sub(r"\s*\([^()]*\)", "", text.replace("\u200b", ""))
     assert "alert" not in text
     assert "color:red" not in text
     # The Markdown export keeps the text as written: it's the user's own source.

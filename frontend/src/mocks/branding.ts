@@ -108,14 +108,21 @@ export function inheritedBranding(db: MockDb, projectId: string | null): Inherit
   }
 }
 
-/** Resolved field by field: project override → global → default (§3.10). */
+/**
+ * Resolved field by field: project override → global → default (§3.10); a project
+ * with a logo of its own and no app name is named after itself (UX M3, as the API).
+ */
 export function effectiveBranding(db: MockDb, projectId: string | null): EffectiveBranding {
   const inherited = inheritedBranding(db, projectId)
   const profile = profileFor(db, projectId)
   const logo = asset(db, profile?.logo_asset_id)
   const favicon = asset(db, profile?.favicon_asset_id)
+  const ownBrand =
+    projectId !== null && logo && !profile?.app_name
+      ? db.projects.find((project) => project.id === projectId)?.name
+      : undefined
   return {
-    app_name: profile?.app_name ?? inherited.app_name,
+    app_name: profile?.app_name ?? ownBrand ?? inherited.app_name,
     primary_color: profile?.primary_color ?? inherited.primary_color,
     accent_color: profile?.accent_color ?? inherited.accent_color,
     font: profile?.font ?? inherited.font,

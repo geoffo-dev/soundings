@@ -249,7 +249,19 @@ def test_valid_colours_are_used_lower_cased() -> None:
         )
     )
     assert "background: #0b6e4f" in style
-    assert "#7c3aed" in style
+    # Links take the primary colour (darkened to 4.5:1 when needed), not the accent.
+    assert "a { color: #0b6e4f;" in style
+    assert "#7c3aed" not in style
+
+
+def test_links_in_a_light_primary_are_darkened_to_read_on_white() -> None:
+    style = _style(
+        build_html(document(branding=ExportBranding(app_name="A", primary_color="#ffd400")))
+    )
+    link = re.search(r"\na \{ color: (#[0-9a-f]{6});", style)
+    assert link is not None
+    assert link[1] != "#ffd400"
+    assert contrast(link[1], "#ffffff") >= 4.5
 
 
 @pytest.mark.parametrize("font", ["Comic Sans MS", "inter;color:red", "../../etc/passwd", ""])
@@ -319,7 +331,10 @@ def test_light_brand_colours_are_not_used_for_text_on_white() -> None:
     )
     assert ".wordmark {" in style
     wordmark = style[style.index(".wordmark {") : style.index("}", style.index(".wordmark {"))]
-    assert INK in wordmark
+    colour = re.search(r"color: (#[0-9a-f]{6});", wordmark)
+    assert colour is not None
+    assert colour[1] != "#ffd700"  # the brand colour darkened until it reads on white
+    assert contrast(colour[1], WHITE) >= 4.5
     assert "#ffd700" in style  # still the band
 
 
@@ -360,7 +375,7 @@ def test_the_cover_band_is_the_brand_colour_and_holds_no_text(primary: str) -> N
 
 def test_the_cover_names_the_project_once() -> None:
     html = build_html(document())
-    cover = html[html.index('<section class="cover">') : html.index("</section>")]
+    cover = html[html.index('<section class="cover') : html.index("</section>")]
     assert cover.count("Customer Innovation") == 1
 
 

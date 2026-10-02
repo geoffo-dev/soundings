@@ -266,6 +266,7 @@ async def approve(
     idea = loaded.idea
     idea.held_for = None
     idea.last_activity_at = now
+    submission.reached_team_at = now  # the submitter's "With the team" step
     await db.flush()
     await audit.record(
         db,

@@ -173,7 +173,9 @@ throttle claims its own address with `X-Forwarded-For` (`tests/support/public.ts
 skips unless `E2E_TRUSTS_FORWARDED=1`, and the per-address limit spec (PA-06) needs
 `E2E_PUBLIC_PER_IP` ≤ 20. Specs that change the global branding are tagged `@serial` and
 run in the `serial` project (after `e2e`, one at a time; `smtp-outage` now depends on
-it; `--project=serial --no-deps` reruns them) and restore the profile in `finally`. PDFs
+it; `--project=serial --no-deps` reruns them; rerun `smtp-outage` in a separate command:
+naming both with `--no-deps` runs them side by side, so the outage specs stop Mailpit
+under the serial ones) and restore the profile in `finally`. PDFs
 are read with `tests/support/pdf.ts` (`pdfjs-dist`, an e2e dev dependency: text,
 metadata, colours, embedded fonts, page renders; there is no poppler here). The demo seed
 has 48 ideas (CUST-21 approved from the public form, CUST-22/23 in the moderation
@@ -300,11 +302,15 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   saved per section with `base_version` (409 `proposal_conflict` carries `current`); a
   save locks the project `FOR KEY SHARE` then the idea `FOR SHARE`. Section Markdown is
   rendered by `app/proposals/markdown.py` exactly as the SPA's `Markdown` does (raw HTML
-  dropped, images as links, headings demoted through the parser, tables capped). PDFs
+  dropped, images as links, http/https/mailto links only, headings one level down but
+  never above h3 through the parser, tables capped; the PDF also prints each link's URL
+  and bounds the layout at 5,000 boxes, `box_cost`). PDFs
   render in a `spawn`ed child process (`app/proposals/pdf.py`; 20 s limit, one render at
   a time, a warm child of about 190 MB per API process, its own temporary folder deleted
-  when it goes): any script that renders a PDF needs an `if __name__ == "__main__":`
-  guard. WeasyPrint gets a fetcher that answers only `data:` logos and
+  when it goes; memory capped at half the container's, an allow-listed environment):
+  any script that renders a PDF needs an `if __name__ == "__main__":` guard
+  (`pdf_child.render_document(ExportDocument(...))` renders one in-process for a quick
+  look; e2e's `renderPdfPages` turns pages into PNGs with pdf.js, no poppler here). WeasyPrint gets a fetcher that answers only `data:` logos and
   `soundings-font:<font>-<weight>[-italic][-ext]` names (`app/proposals/fonts.py`,
   `app/assets/fonts/README.md`); only validated hex colours and fixed font families reach
   its CSS. Importing WeasyPrint turns on Pillow's `LOAD_TRUNCATED_IMAGES` for the whole
@@ -313,21 +319,29 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   `/api/v1/public/`, writes must be JSON (415), throttles use the trusted-proxy client
   address (`app.auth.throttle.client_key`), and they never return private data, scores,
   people or the idea's current text (tracking shows the title and summary *as
-  submitted*). Tokens travel only after `#` (`/track#…`, `/verify#…`) and in bodies,
-  never in URLs the server sees, logs or audit. Held ideas (`ideas.held_for`) appear in
+  submitted*). Tokens travel only after `#` (`/track#…`, `/<slug>/verify#…`; the old
+  `/verify#…` still works) and in bodies, never in URLs the server sees, logs or audit. Held ideas (`ideas.held_for`) appear in
   no list or count for anyone: lists use `listed_ideas`; ideas held for confirmation are
   404 even for admins; writes on ideas held for moderation are 409
   `awaiting_moderation` (c19, watching too). The honeypot is checked last. Submitter
-  emails carry fixed text and the project's branding; erasure
-  (`app/public/erasure.py`) also deletes the idea's submitter outbox rows.
+  emails carry fixed text and the project's branding (the confirmation email has no
+  tracking link; status emails have "Stop these emails" in the footer,
+  `EmailContent.stop_url`); the per-address confirmation limit counts
+  `confirmation_email_sends` (keyed hash, survives erasure); erasure
+  (`app/public/erasure.py`) also deletes the idea's submitter outbox rows. Whatever
+  releases a hold sets `public_submissions.reached_team_at` (tracking's "With the
+  team").
 - **Branding** (contract-phase4 §3.10–3.11, ADR 0012): resolve with
   `app.services.branding` (`effective_branding`, `email_branding_for`, `logo_image`;
   cached 5 s per process, cleared on save, so other replicas lag up to 5 s). Colours are
   `#rrggbb`, fonts one of four `BrandFont` keys; logos and favicons are PNG (re-encoded)
   or allow-listed SVG (re-serialised), served with `nosniff` and a sandboxing CSP and
   shown only through `<img>` / `<link rel=icon>`; in dark mode the SPA puts logos on a
-  light plate (`logo-plate`), and a public header shows the logo alone. The signed-in
-  app always uses the global branding.
+  light plate (`logo-plate`), and a public header shows the logo alone. A project
+  override with its own logo and no app name resolves its app name to the project's
+  name (UX M3; `resolve` and the settings preview). The signed-in app always uses the
+  global branding; its UI text stays Inter (the brand font is `font-brand`: titles,
+  wordmark, public pages).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -517,7 +531,14 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   per-project branding (colours, bundled fonts, PNG/SVG logo and favicon stored in the
   database, footer) applied at runtime to the SPA, public pages, emails and PDFs; the
   image on Ubuntu 24.04 (PDF export works in it); `make public-smoke`. Integration
-  (2026-10-02): every check green, QA's K4-1…K4-5 and PDF nits fixed; test plan
-  `docs/test-plans/phase-4.md`, screenshots `docs/screenshots/phase-4/` (+ `pdf/`,
-  `emails/`, `mock/`). Decisions: `docs/decisions.md` (Phase 4). Review, phase summary
-  and k3s close still to do.
+  (2026-10-02): every check green, QA's K4-1…K4-5 and PDF nits fixed. Security review
+  (PDF layout and memory bounds, keyed per-address limit, no tracking link in the
+  confirmation email, form-lookup throttle, setuid bits, renderer environment) and UX
+  review (focus, moderation counts, branding preview, one identity per audience,
+  `/<slug>/verify`, PDF hierarchy and links, `reached_team_at`, migrations 0008 and
+  0009) applied. Closed on 2026-10-02 with every check green in both e2e modes and a
+  clean k3s install with Mailpit, public-form and PDF smoke through the ingress,
+  upgrade and smoke: [docs/phase-summaries/phase-4.md](docs/phase-summaries/phase-4.md)
+  (known issues and deferred items there). Test plan `docs/test-plans/phase-4.md`,
+  screenshots `docs/screenshots/phase-4/` (+ `pdf/`, `emails/`, `mock/`). Decisions:
+  `docs/decisions.md` (Phase 4). Stop for the human's review before Phase 5.

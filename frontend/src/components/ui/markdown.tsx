@@ -160,9 +160,11 @@ const components: Components = {
 
 /**
  * Headings inside one section of a longer document whose section titles are
- * already h2 (the proposal editor): `#` starts at h3 and none goes deeper than
- * h6. Every level stays visibly a heading (semibold, with its own size and
- * spacing step), never body text with a different weight.
+ * already h2 (the proposal editor): one level down but never above h3 (`#` and
+ * `##` are h3, `###` h4, `####` h5, deeper h6), as the exported PDF and Markdown
+ * have them (backend `app/proposals/markdown.py`). Every level stays visibly a
+ * heading (semibold, with its own size and spacing step), never body text with a
+ * different weight.
  */
 const nestedHeadingClass = {
   h3: 'mt-6 mb-2 text-lg font-semibold first:mt-0',
@@ -177,19 +179,19 @@ const nestedHeadings: Components = {
     </h3>
   ),
   h2: ({ node: _node, children, ...props }) => (
+    <h3 className={nestedHeadingClass.h3} {...props}>
+      {children}
+    </h3>
+  ),
+  h3: ({ node: _node, children, ...props }) => (
     <h4 className={nestedHeadingClass.h4} {...props}>
       {children}
     </h4>
   ),
-  h3: ({ node: _node, children, ...props }) => (
+  h4: ({ node: _node, children, ...props }) => (
     <h5 className={nestedHeadingClass.h5} {...props}>
       {children}
     </h5>
-  ),
-  h4: ({ node: _node, children, ...props }) => (
-    <h6 className={nestedHeadingClass.h6} {...props}>
-      {children}
-    </h6>
   ),
   h5: ({ node: _node, children, ...props }) => (
     <h6 className={nestedHeadingClass.h6} {...props}>

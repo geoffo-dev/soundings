@@ -458,3 +458,44 @@ QA's known issues K4-1 to K4-5 and the PDF nits are fixed below.
 | Chart: `features.publicSubmission` now reaches the app (`SOUNDINGS_PUBLIC_SUBMISSION_ENABLED`; it set an unused variable before); session durations given in seconds become `PT<n>S`; new `publicSubmission.*` and `branding.maxUploadBytes` values; optional `ingress.publicApi.annotations` for an edge rate limit on `/api/v1/public`. | Decided | Two pre-existing chart bugs; edge limits apply to anonymous traffic only. |
 | `scripts/public-smoke.sh` (`make public-smoke`, also in `k3s-smoke`) runs the acceptance through HTTP; `make demo` containers run read-only with a `/tmp` tmpfs and no capabilities; k3s's kubelet evicts at 1 GiB free (`K3S_EVICTION_HARD`). | Decided | The demo behaves like a cluster pod; the percentage defaults evicted every pod on this machine. |
 | e2e: specs that change the global branding run in a `serial` project; per-address throttle specs claim their own address with `X-Forwarded-For` (the stack trusts loopback), and skip against `E2E_BASE_URL` unless `E2E_TRUSTS_FORWARDED=1`; the stack allows 1,000 public submissions per address per hour (`E2E_PUBLIC_PER_IP`); PDFs are read with `pdfjs-dist` (no poppler). | Decided | Every spec submits from 127.0.0.1; global branding is shared state. |
+
+## 2026-10-02 · Phase 4 review and final verification
+
+What the security and UX reviews changed, and the lead's calls on the UX findings no
+fixer owned. Details and tests: [phase-summaries/phase-4.md](phase-summaries/phase-4.md#review-findings-and-outcomes);
+contract changes in [contract-phase4.md §7](api/contract-phase4.md#7-changes-after-the-contract).
+
+### Security
+
+| Decision | Status | Why |
+|---|---|---|
+| PDF layout is bounded before WeasyPrint starts: at most 5,000 layout boxes per document (a section over it is cut with a note pointing to the Markdown export), a zero-width break opportunity every 32 characters of an unbroken run, text over 1,000 characters printed in pieces. No PDF cache. | Decided | Review H1: ordinary-looking text took 9–25 s and up to 250 MB per section. A shared cache can't work: each PDF names its exporter and date. The 10-per-minute export limit stays. |
+| The renderer limits its own memory to half the container's limit (at most 1 GiB), is replaced after growing past it, and starts with an allow-listed environment; the chart's API memory limit is 1Gi. | Decided | Review H1 / N4: a runaway render fails with a 500 instead of an OOM-killed pod; no secrets in the child. |
+| The confirmation-email limit (3 per address per day) counts `confirmation_email_sends` by a keyed hash of the canonical address (case, `+tag`, Gmail dots, Yahoo keywords folded); nothing but the 24-hour cleanup deletes those rows. | Decided | Review M1 / L1: erasure and rejection deleted the outbox rows the limit counted. |
+| The confirmation email carries no tracking link; the `/verify` page shows no submitted text (`EmailVerified.title` stays in the schema, unused). | Decided | Review L2: anyone can type anyone's address; the recipient must not land on our page reading a stranger's words. |
+| Loading a form, its challenge and the submission share a per-address limit of 120 a minute, counted before the form is looked up. | Decided | Review L3: unknown slugs were free to enumerate. 120 (not 60) keeps the existing 30-a-minute challenge limit the tighter one for one address. |
+| Setuid/setgid bits are stripped in the image; the ALTCHA check runs off the event loop; the SPA's Markdown keeps only http, https and mailto links, like the PDF. | Decided | Review N1, N2, N3. |
+
+### UX: lead decisions (final verification)
+
+| Decision | Status | Why |
+|---|---|---|
+| Confirmation links are `<base>/<slug>/verify#<token>`; `/verify#<token>` keeps working. | Decided | UX M1: the confirmation page now shows the project's branding before the click (the slug isn't secret). |
+| One identity per audience: a project override with its own logo and no app name resolves its app name to the project's name (emails, PDF running header and creator, public pages' title and screen-reader name, the settings preview). | Decided | UX M3: the logo on the form and "Soundings" or the instance name in the inbox read as two senders. Done in the resolver, so every surface follows. |
+| Proposal headings move one level down, never above h3 (`#`, `##` → h3, `###` → h4 …), in the PDF, the Markdown export and the editor preview alike; every PDF heading level is semibold with its own size; links print in the primary colour with their URL in brackets; a short proposal's contents go on the cover; empty sections are marked in the contents. | Decided | UX M4, m4, m5: `###` printed exactly like body text; a whole contents page fronted a two-page body; paper can't be clicked. |
+| The confirmation email's text part has the Confirm link right after the first paragraph; status emails put "Stop these emails" in the footer. | Decided | UX p6. |
+| `TrackedSubmission.reached_team_at` (additive; `public_submissions.reached_team_at`, migration 0009) dates the tracking page's "With the team" step. | Decided | UX m3. A stored time rather than one derived from the audit log: verification releases weren't recorded anywhere. |
+| No proposal in the demo seed (UX p7). | Proposed | Still deferred: seeding one changes Phase 1–3 expectations; the screenshot run and the smokes start one through the API. |
+
+### UX: fixed by the frontend
+
+Focus follows every proposal and moderation action (M6); "Close evaluation" is no
+longer a primary action while a proposal is written, and the phone's sticky bar hides
+while typing (M7); "Review n" in the sidebar and "Waiting for review" in My work for
+admins (M5); the branding email preview is the real layout (M2) and opens in a sheet on
+phones (m1); an invalid colour says so (m2); the brand font is for titles, the wordmark
+and public pages, while UI text stays Inter (m9); a softer dark logo plate (m8); plain
+excerpts of resolved threads (m6); the send error sits by the button (m7); form copy,
+receipt at 390 px with Share, conflict labels ("Use Carol's version" / "Keep your
+version"), one Markdown hint, queue polish, a one-line verified ALTCHA status (p1–p5,
+p8).

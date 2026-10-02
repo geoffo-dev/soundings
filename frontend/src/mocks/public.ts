@@ -40,6 +40,8 @@ export interface MockPublicSubmission {
   submitted_title: string | null
   submitted_summary: string | null
   created_at: string
+  /** When a hold released it (approval, confirmation); unset: `created_at` once not held. */
+  reached_team_at?: string | null
   erased_at: string | null
   erased_by_id: string | null
   /** When `submission_received` emails went out (first send and resends). */
@@ -231,6 +233,7 @@ export function trackedSubmission(db: MockDb, submission: MockPublicSubmission):
     title: submission.submitted_title ?? '',
     summary: submission.submitted_summary ?? '',
     submitted_at: submission.created_at,
+    reached_team_at: idea.held_for ? null : (submission.reached_team_at ?? submission.created_at),
     held_for: idea.held_for ?? null,
     status: idea.status,
     resolution: idea.resolution,

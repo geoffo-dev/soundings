@@ -59,6 +59,7 @@ __all__ = [
     "CONFIRMATION_WINDOW",
     "address_key",
     "canonical_address",
+    "confirmation_url",
     "confirmations_sent",
     "queue_confirmation",
     "queue_status_email",
@@ -90,8 +91,11 @@ def tracking_url(settings: Settings, token: str) -> str:
     return f"{settings.public_base_url.rstrip('/')}/track#{token}"
 
 
-def _confirmation_url(settings: Settings, token: str) -> str:
-    return f"{settings.public_base_url.rstrip('/')}/verify#{token}"
+def confirmation_url(settings: Settings, slug: str, token: str) -> str:
+    """``<base>/<slug>/verify#<token>``: the slug (not secret) lets the page show the
+    project's branding before the Confirm click; the token stays in the fragment.
+    ``<base>/verify#<token>`` (links sent before 2026-10-02) still works."""
+    return f"{settings.public_base_url.rstrip('/')}/{slug}/verify#{token}"
 
 
 # --- The per-address limit --------------------------------------------------------------------
@@ -283,8 +287,10 @@ async def submitter_email(
     if email.type is EmailType.SUBMISSION_RECEIVED:
         if submission.email_verified_at is not None:
             return NO_LONGER_APPLIES  # confirmed with an earlier link meanwhile
-        confirm = _confirmation_url(
-            settings, make_confirmation_token(settings, submission.id, submission.email, now=now)
+        confirm = confirmation_url(
+            settings,
+            project.slug,
+            make_confirmation_token(settings, submission.id, submission.email, now=now),
         )
         return EmailContent(
             template="submission_received",
@@ -323,4 +329,5 @@ async def submitter_email(
         },
         button=Button("See where your idea stands", tracking) if tracking else None,
         reason=f"You asked for updates on an idea you sent to {project_name}.",
+        stop_url=tracking,  # the tracking page is the opt-out (no unsubscribe token)
     )

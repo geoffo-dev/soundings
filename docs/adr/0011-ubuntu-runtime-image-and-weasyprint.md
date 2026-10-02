@@ -41,6 +41,19 @@ air-gapped at runtime, non-root, read-only-root compatible and scannable.
   after 20 seconds (503 `export_busy`). WeasyPrint holds the GIL (the contract review
   measured 448 ms event-loop pauses with a render in a thread) and some inputs are slow
   (large tables), so neither the event loop nor other exports may wait on a render.
+- **The layout is bounded before it starts** (security review H1): WeasyPrint's time
+  and memory grow with the boxes it lays out, so a document renders at most 5,000
+  boxes (`app/proposals/markdown.py` `box_cost`; a section that goes over is cut with
+  "The rest of this section is too long for a PDF. Export Markdown for the full
+  text."), long runs get a zero-width break opportunity every 32 characters, and text
+  over 1,000 characters prints in pieces. The worst mixed document takes about 6 s and
+  160 MB on one CPU; ordinary long prose uses a fifth of the budget.
+- **The renderer's memory is capped below the pod's**: the child sets its own
+  `RLIMIT_DATA` to half the container's memory limit (cgroup v2 or v1, at most 1 GiB)
+  and is replaced after it grows past half of that, so a runaway render fails with a
+  500 instead of the pod being OOM-killed (the chart's API limit is 1Gi). It starts
+  with an allow-list of environment variables only (locale, fontconfig, `HOME`,
+  `PATH`, `TMPDIR`, basic `PYTHON*`): no database URL, secret key or OIDC secret.
 - `XDG_CACHE_HOME=/tmp/cache` (the chart mounts an `emptyDir` at `/tmp`), so fontconfig
   can cache with a read-only root filesystem; the image runs as UID 10001 as before.
 - `import weasyprint` happens inside the export, so the API starts (and everything but

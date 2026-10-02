@@ -337,6 +337,7 @@ export const publicHandlers = [
         idea.held_for =
           project && publicFormOf(ctx.db, project).moderation_required ? 'moderation' : null
         idea.last_activity_at = new Date().toISOString()
+        if (!idea.held_for) submission.reached_team_at = idea.last_activity_at
       }
     }
     return emailVerified(ctx.db, submission)

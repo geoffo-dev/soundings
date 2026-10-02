@@ -108,7 +108,7 @@ printf '\033[1;34m==>\033[0m public submission, branding and export smoke agains
   "$BASE_URL" "$PUBLIC_SLUG" >&2
 
 # --- 1. Anonymous reads -------------------------------------------------------------------
-for path in "/$PUBLIC_SLUG/submit" /track /verify; do
+for path in "/$PUBLIC_SLUG/submit" /track "/$PUBLIC_SLUG/verify" /verify; do
   out="$(get "$BASE_URL$path")"
   [[ "$out" == "200 text/html"* ]] && ok "$path: the SPA ($out)" || fail "$path: $out (want 200 text/html)"
 done

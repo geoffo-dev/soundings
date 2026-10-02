@@ -152,6 +152,7 @@ export const submissionHandlers = [
     const { idea, submission } = moderatedIdea(ctx)
     idea.held_for = null
     idea.last_activity_at = new Date().toISOString()
+    submission.reached_team_at = idea.last_activity_at
     recordAudit(
       ctx.db,
       ctx.user,

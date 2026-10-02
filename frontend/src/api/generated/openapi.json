@@ -7729,6 +7729,19 @@
           "project": {
             "$ref": "#/components/schemas/PublicProjectRef"
           },
+          "reached_team_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it reached the team (the \"With the team\" step): at submission when nothing held it, else when the confirmation or the approval released it. Null while held. Added after the contract (2026-10-02).",
+            "title": "Reached Team At"
+          },
           "resolution": {
             "anyOf": [
               {
@@ -7771,6 +7784,7 @@
           "title",
           "summary",
           "submitted_at",
+          "reached_team_at",
           "held_for",
           "status",
           "resolution",

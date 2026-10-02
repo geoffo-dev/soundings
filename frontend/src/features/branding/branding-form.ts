@@ -136,10 +136,21 @@ export interface PreviewBranding {
   favicon_url: string | null
 }
 
-export function previewBranding(form: BrandingForm, inherited: InheritedBranding): PreviewBranding {
+/**
+ * `projectName` is given for a project's override: one with a logo of its own and no
+ * app name is the project's own brand, so the project's name is its wordmark (in its
+ * emails, PDF header and public pages), as the API resolves it.
+ */
+export function previewBranding(
+  form: BrandingForm,
+  inherited: InheritedBranding,
+  projectName?: string,
+): PreviewBranding {
   const name = form.app_name.trim()
+  const ownName = name && name.length <= BRANDING_LIMITS.appName ? name : null
+  const projectBrand = projectName && form.logo && !name ? projectName : null
   return {
-    app_name: name && name.length <= BRANDING_LIMITS.appName ? name : inherited.app_name,
+    app_name: ownName ?? projectBrand ?? inherited.app_name,
     primary_color: normaliseHex(form.primary_color) ?? inherited.primary_color,
     accent_color: normaliseHex(form.accent_color) ?? inherited.accent_color,
     font: form.font ?? inherited.font,

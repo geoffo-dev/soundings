@@ -281,3 +281,23 @@ unchanged in all three modes.
 | `E2E_SSO=1 npm --prefix e2e test` | 220 passed, 4 skipped |
 | `npm --prefix e2e run screenshots:phase4` | 37 passed; every PNG re-read (logo plate and logo-only header in dark mode, the new activity line, the text-less PDF cover band, body-size table cells) |
 
+
+### Final verification (2026-10-02, after the reviews and the lead's UX decisions)
+
+Real stack with `E2E_PREFIX=p4-final-` (API 8100, Postgres 55433, Mailpit 8125/1125,
+the worker; Keycloak 8180 in SSO mode).
+
+| Run | Result |
+|---|---|
+| `npm --prefix e2e test` (dev login, SMTP) | `e2e` project 195 passed, 26 skipped; then `serial` 2 passed and `smtp-outage` 2 passed (rerun with `--no-deps` after updating AC4-01: 198 passed in all). The first run found four stale expectations, fixed in the specs: BR-02 (the dark logo plate is softened, so it checks lightness rather than pure white), PT-01 and AC4-01 (the new `reached_team_at` key and "With the team" step), AC4-01 (the confirmation email has no tracking link since review L2, and links to `/<slug>/verify#`) |
+| `E2E_SSO=1 npm --prefix e2e test` | 220 passed, 4 skipped (BG-02, PR-05, AE-04, PA-06), incl. `serial` and `smtp-outage`; 9.0 min |
+| Screenshots | phases 1–4 re-captured from fresh seeds (42, 36 + 3, 28 + 6, 37); no stale files; every Phase 4 PNG read; the project branding page's empty app name now shows the project's name (it said "Soundings" though the project's own logo makes its name the wordmark), fixed and re-captured |
+
+New and changed cases:
+
+| ID | Case |
+|---|---|
+| PT-01 | Also: `reached_team_at` is between `submitted_at` and the first status change. |
+| AC4-01 | Also: the confirmation email has no `/track` link and no token; its link's path is `/<slug>/verify`; the tracking page's history is Sent → With the team (dated) → Evaluating → Shortlisted. |
+| BR-02 | Also: a project with its own logo and no app name resolves its app name to the project's name (settings `effective`, the public header's screen-reader name). |
+| SS | `public-verify` is captured through `/customer-innovation/verify#…`, so it shows the project's branding before the click. |

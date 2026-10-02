@@ -234,7 +234,8 @@ sections are written and how many open comments each has; on narrow screens it b
 Sections save by themselves a moment after you stop typing ("Saving…", then "Saved
 10:42"). Two people can write different sections at the same time. If someone else saved
 the **same** section since you started, you see both versions side by side with the
-changes marked: **Use theirs**, or **Keep mine** to save yours over it. A save that fails
+changes marked: **Use Carol's version**, or **Keep your version** to save yours over
+it (for your own other tab: **Use the saved version** / **Keep this version**). A save that fails
 keeps your text and shows "Not saved" with **Retry**; the app asks before you leave with
 unsaved text. A section holds up to 20,000 characters.
 
@@ -260,11 +261,16 @@ list the eight sections in order; an empty one reads "Not written yet". The aggr
 score line is included only if you are allowed to see scores (never for an evaluator who
 hasn't submitted yet). Comments are never exported.
 
-The PDF is A4 in the project's branding: a cover with the logo (or the app name), the
-title and the details, a contents page with page numbers, the app name and idea key at
-the top of every page and "Page X of Y" at the bottom, in the project's font and
-colours. Links stay links; pictures in the Markdown become links (a proposal never
-loads anything from the internet). You can export 10 times a minute. One PDF prints at a
+The Export menu warns when sections are still empty ("3 of 8 sections are still
+empty"). The PDF is A4 in the project's branding: a cover with the logo (or the app
+name), the title and the details, the contents with page numbers (on the cover for a
+short proposal, else on their own page; empty sections are marked "Not written yet"),
+the app name and idea key at the top of every page and "Page X of Y" at the bottom, in
+the project's font and colours. Headings keep the levels the editor's preview shows.
+Links stay links, in the primary colour, with their address printed after them in
+brackets (paper can't be clicked); pictures in the Markdown become links (a proposal
+never loads anything from the internet). A very long section (thousands of list items,
+say) is cut in the PDF with a note to export Markdown for the full text. You can export 10 times a minute. One PDF prints at a
 time, and printing stops after 20 seconds (only a huge proposal, such as one full of
 long tables, gets near that): the app then says "The PDF export is busy", so try again a
 few seconds later.
@@ -285,10 +291,12 @@ what you write, plus your name and address only if you give them; never your IP
 address.
 
 **Your private tracking link.** After sending, the page shows a private link
-(`…/track#…`) once, with **Copy**: keep it, it's the only way back to your idea without
-an account. If you gave an address, it is also in the confirmation email. The tracking
-page shows the title and summary as you sent them, the status and its history (dates
-only, no names), and lets you:
+(`…/track#…`) once, with **Copy** (and **Share** on phones): keep it, it's the only way
+back to your idea without an account. It is not in the confirmation email (anyone can
+type any address into the form); status emails carry it once your address is
+confirmed. The tracking page shows the title and summary as you sent them, what the
+status means in plain words, and its history: Sent, **With the team** (the date the
+team got it) and every status change since (dates only, no names). It lets you:
 
 - turn status emails on or off ("Email me when the status changes");
 - **resend** the confirmation email if you haven't confirmed your address;
@@ -298,9 +306,9 @@ only, no names), and lets you:
 Anyone who has the link can do these things, so don't share it.
 
 **Confirming your address.** The confirmation email ("Confirm your idea for <project>")
-contains no text you typed. Its button opens a page where you click **Confirm my email
-address** (nothing happens just by opening the link, so mail scanners can't confirm for
-you). Only confirmed addresses get status emails. Some projects also hold an idea until
+contains no text you typed. Its button opens a page in the project's look
+(`…/<project>/verify#…`) where you click **Confirm my email address** (nothing happens
+just by opening the link, so mail scanners can't confirm for you). Only confirmed addresses get status emails. Some projects also hold an idea until
 its address is confirmed: then the team sees nothing until you click. Confirmation links
 last 3 days; an unconfirmed address is forgotten after 3 days, and an idea still waiting
 for confirmation then is deleted.
@@ -308,7 +316,8 @@ for confirmation then is deleted.
 **What happens next.** Most projects review public ideas first ("The team reviews new
 ideas first"): the idea waits until a project admin approves it, then appears in New
 like any other idea and follows the normal flow. Status emails say only "Your idea "…"
-is now Evaluating" and link to the tracking page, which is also where you stop them.
+is now Evaluating" and link to the tracking page, which is also where you stop them
+("Stop these emails" at the bottom of every status email).
 
 **Limits.** To keep the form usable, each address can send a handful of ideas an hour,
 and a project takes at most 100 public ideas an hour; "You've sent several ideas in a
@@ -443,8 +452,10 @@ lists, search and My work; restore it from the archived notice or the settings.
 project's **public pages, emails to its public submitters and exported proposals**; the
 signed-in app keeps the global look for everyone. Every field says "Use the global one"
 until you set it: app name, logo, favicon, primary and accent colour, font and email
-footer. The preview shows the app, the public form and an
-email, in light and dark, as you type; nothing changes until you save. See
+footer. A project that sets its own logo but no app name is its own brand: its emails,
+PDF header and public pages name the **project** rather than the instance. The preview
+shows the public form and an email to a submitter, in light and dark, as you type (on a
+phone, **Preview** in the save bar opens it); nothing changes until you save. See
 [Branding](#branding) for the rules on colours, fonts and images.
 
 ### Public form, moderation and erasing submitter details
@@ -465,8 +476,9 @@ submission off for the whole instance, or for a project whose address clashes wi
 of the app's own pages. A private project's form shows only its name, introduction and
 branding.
 
-**Moderating.** While ideas wait, the board shows "3 ideas waiting for review", which
-opens the queue (`/p/<project>/review`), oldest first: title, summary, description and
+**Moderating.** While ideas wait, the board shows "3 ideas waiting for review", the
+sidebar a **Review 3** link under the project, and My work a "Waiting for review" group
+(admins only); each opens the queue (`/p/<project>/review`), oldest first: title, summary, description and
 the sender's name if they gave one. **Approve** puts the idea in New (at the top) with no
 email to anyone; **Reject** deletes it for good, for spam, abuse or off-topic posts. Both
 offer Undo for a few seconds. A genuine idea you don't want to pursue is better approved
@@ -574,7 +586,9 @@ Soundings branding. Saves are recorded in the audit log (field names only).
   it derives the shades it needs and the preview warns when a colour has low contrast.
 - **Fonts** come from a bundled set: Inter (default), IBM Plex Sans, Source Serif 4 and
   Atkinson Hyperlegible. They are part of the app, so nothing is downloaded from the
-  internet, and PDFs use the same font.
+  internet. Public pages, emails and PDFs use the font throughout; inside the app it is
+  used for the wordmark and page titles, while the dense working text stays in Inter.
+  An invalid colour says "Use a hex colour such as #1d5fa8." when you leave the field.
 - **Logo and favicon**: PNG or SVG, up to 512 KiB by default (your operator can change
   it), logos at most 2048 × 2048 pixels and favicons 512 × 512. Drop a file or choose
   one. PNGs are re-saved without their metadata; SVGs must be simple drawings (shapes,

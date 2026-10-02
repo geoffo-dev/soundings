@@ -10,17 +10,20 @@ the editor's preview is what the exports show (docs/api/contract-phase4.md 3.4):
 * **an image is never an image**: ``![alt](url)`` is a link labelled with its alt text
   (or "Image") when ``url`` is ``http(s)``, else the plain alt text. Nothing here ever
   produces ``<img>``, ``<link>``, ``<object>``, ``style`` or CSS ``url()``;
-* **headings move down two levels** (``#`` -> ``h3``, never past ``h6``): the section
-  titles are the ``h2``. :func:`demote_headings` does the same to the Markdown source,
-  found through the parser's tokens (setext headings too, never a ``#`` line inside a
-  code fence);
+* **headings move down one level, never above the section titles** (``#`` and ``##``
+  -> ``h3``, ``###`` -> ``h4``, never past ``h6``): the section titles are the
+  ``h2``. :func:`demote_headings` does the same to the Markdown source, found through
+  the parser's tokens (setext headings too, never a ``#`` line inside a code fence);
+* **a printed page can't be clicked**: a link's URL is printed in brackets after its
+  text (without ``mailto:``), unless the text already is the URL;
 * **tables are bounded**: per document at most :data:`MAX_TABLE_CELLS` cells and
   :data:`MAX_TABLE_ROWS` rows per table render as tables (large tables are what makes
   WeasyPrint slow); any other table prints as its Markdown source in a code block;
 * **the boxes are bounded**: WeasyPrint's time and memory grow with the boxes it lays
   out, so a document renders at most :data:`MAX_BOXES` of them (:func:`box_cost`:
   every block, two for a list item and its marker, every inline element, two for a
-  link or a hard line break, every line of code). Where a section goes over, it is cut
+  hard line break, three for a link and its printed URL, every line of code). Where a
+  section goes over, it is cut
   at that point (open elements closed, nothing left empty) and ends with
   :data:`TOO_LONG`; later sections use what is left. 8 x 20,000 characters of prose
   with formatting use about a fifth of it; 2,500 list items (the costliest boxes) take
@@ -64,12 +67,15 @@ __all__ = [
     "PIECE_LENGTH",
     "RUN_LENGTH",
     "TOO_LONG",
+    "TOP_HEADING",
     "RenderBudget",
     "box_cost",
     "close_open_blocks",
     "demote_headings",
+    "heading_level",
     "normalise_newlines",
     "pieces",
+    "printed_url",
     "render_html",
     "safe_href",
 ]
@@ -91,7 +97,10 @@ BREAK: Final = "\u200b"
 """ZERO WIDTH SPACE: a break opportunity that prints nothing."""
 PIECE_LENGTH: Final = 1_000
 """Text longer than this is printed in ``<span>`` pieces of about this length."""
-HEADING_SHIFT: Final = 2
+HEADING_SHIFT: Final = 1
+"""Levels a heading inside a section moves down ..."""
+TOP_HEADING: Final = 3
+"""... but never above this one: the document's title is the h1, its sections the h2s."""
 LINK_SCHEMES: Final = frozenset({"http", "https", "mailto"})
 _WEB_SCHEMES: Final = frozenset({"http", "https"})
 _SCHEME: Final = re.compile(r"([A-Za-z][A-Za-z0-9+.\-]*):")
@@ -99,6 +108,7 @@ _TASK: Final = re.compile(r"\[([ xX])\][ \t]")
 _CONTAINER_PREFIX: Final = re.compile(r"[ \t>*+\-0-9.)]*")
 _PIECE_END: Final = re.compile("[ \t\n\u200b]")
 _CLOSING_SEQUENCE: Final = re.compile(r"(?:^|[ \t])#+$")
+_URL_BREAKS: Final = re.compile(r"(?<!/)/(?!/)|[?&]")
 _ALIGN: Final = {
     "text-align:left": "left",
     "text-align:center": "center",
@@ -162,11 +172,38 @@ def _nothing(
     return ""
 
 
+def printed_url(href: str, label: str) -> str | None:
+    """What to print after a link to ``href`` labelled ``label``: the URL (an address
+    without ``mailto:``), or ``None`` when the label already says it."""
+    shown = href[len("mailto:") :] if _scheme(href) == "mailto" else href
+    text = label.replace(BREAK, "").strip()
+    return None if text in (href, shown) else shown
+
+
+def _url_html(url: str) -> str:
+    """`` (url)`` for after a link: muted, with break opportunities after the path's
+    ``/`` (not the scheme's ``//``), ``?`` and ``&`` and in long runs, so a long URL
+    wraps instead of overflowing the page."""
+    breakable = _Run().chop(_URL_BREAKS.sub(lambda match: match[0] + BREAK, url))
+    return f'<span class="link-url"> ({pieces(breakable)})</span>'
+
+
+def _label(
+    self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
+) -> str:
+    end = next(
+        (i for i in range(idx + 1, len(tokens)) if tokens[i].type == "link_close"), len(tokens)
+    )
+    return str(self.renderInlineAsText(list(tokens[idx + 1 : end]), options, env))
+
+
 def _link_open(
     self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
 ) -> str:
     href = safe_href(str(tokens[idx].attrGet("href") or ""))
     env.setdefault("_links", []).append(href is not None)
+    printed = None if href is None else printed_url(href, _label(self, tokens, idx, options, env))
+    env.setdefault("_printed", []).append(printed)
     return "" if href is None else f'<a href="{escapeHtml(href)}">'
 
 
@@ -174,7 +211,11 @@ def _link_close(
     self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
 ) -> str:
     links: list[bool] = env.get("_links") or [False]
-    return "</a>" if links.pop() else ""
+    printed: list[str | None] = env.get("_printed") or [None]
+    url = printed.pop()
+    if not links.pop():
+        return ""
+    return "</a>" if url is None else f"</a>{_url_html(url)}"
 
 
 def _image(
@@ -185,15 +226,23 @@ def _image(
     src = str(token.attrGet("src") or "")
     in_link = bool(env.get("_links")) and env["_links"][-1]
     if _scheme(src) in _WEB_SCHEMES and not in_link:
-        return f'<a class="image-link" href="{escapeHtml(src)}">{pieces(alt or "Image")}</a>'
+        url = printed_url(src, alt)
+        return f'<a class="image-link" href="{escapeHtml(src)}">{pieces(alt or "Image")}</a>' + (
+            "" if url is None else _url_html(url)
+        )
     return pieces(alt)
+
+
+def heading_level(level: int) -> int:
+    """A section's heading of Markdown ``level`` (1-6) in the exported document."""
+    return max(TOP_HEADING, min(level + HEADING_SHIFT, 6))
 
 
 def _heading(
     self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
 ) -> str:
     token = tokens[idx]
-    level = min(int(token.tag[1:]) + HEADING_SHIFT, 6)
+    level = heading_level(int(token.tag[1:]))
     return f"<h{level}>" if token.nesting == 1 else f"</h{level}>\n"
 
 
@@ -368,17 +417,20 @@ def _lines(content: str) -> int:
 
 def box_cost(token: Token) -> int:
     """The boxes WeasyPrint lays out for ``token`` (an inline token: for its children):
-    1 per element, 2 for a list item (its marker is a box) and a link (a box and a PDF
-    annotation), 2 for a hard line break (a line box), 1 per line of code; hidden
-    tokens (a tight list's paragraphs), closing tags and text cost nothing."""
+    1 per element, 2 for a list item (its marker is a box), 3 for a link (a box, a PDF
+    annotation and its printed URL), 2 for a hard line break (a line box), 1 per line
+    of code; hidden tokens (a tight list's paragraphs), closing tags and text cost
+    nothing."""
     if token.hidden or token.nesting == -1:
         return 0
     if token.nesting == 1:
-        return 2 if token.type in ("list_item_open", "link_open") else 1
+        return {"list_item_open": 2, "link_open": 3}.get(token.type, 1)
     if token.type in _LEAVES:
         return _lines(token.content)
     if token.type == "inline":
         return sum(box_cost(child) for child in token.children or ())
+    if token.type == "image":
+        return 3  # printed as a link with its URL
     if token.type in _INLINE_BOXES or token.type == "hr":
         return 1
     if token.type == "hardbreak":
@@ -576,8 +628,9 @@ def _demote_atx(line: str, markup: str, demoted: str) -> str | None:
 
 
 def demote_headings(text: str) -> str:
-    """The section's Markdown with every heading two levels down (``#`` -> ``###``,
-    capped at ``######``), found with the parser: ATX headings get two more ``#``,
+    """The section's Markdown with every heading one level down and below the section
+    titles (``#`` and ``##`` -> ``###``, ``###`` -> ``####``, capped at ``######``;
+    :func:`heading_level`), found with the parser: ATX headings get their new ``#``s,
     setext headings (``Title`` over ``===``) are rewritten as the demoted ATX heading,
     and ``#`` lines in code are untouched. Everything else is kept verbatim."""
     text = normalise_newlines(text)
@@ -588,7 +641,7 @@ def demote_headings(text: str) -> str:
         if token.type != "heading_open" or token.map is None:
             continue
         first, last = token.map
-        demoted = "#" * min(int(token.tag[1:]) + HEADING_SHIFT, 6)
+        demoted = "#" * heading_level(int(token.tag[1:]))
         if token.markup.startswith("#"):
             line = _demote_atx(lines[first], token.markup, demoted)
             if line is not None:

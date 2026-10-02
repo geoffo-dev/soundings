@@ -50,7 +50,7 @@ acceptance in §3.16 as e2e and API tests.
 | Additive only | New endpoints and schemas only. No existing response model gains a field and no enum the SPA maps exhaustively (`NotificationType`, `EmailType`, `AuditAction`, `ActivityItem` types) gains a value in this contract: that breaks the frontend's typecheck and mocks. Public ideas reuse `IdeaDetail.submitted_by = null` plus `GET /ideas/{idea}/submission`; project settings for the form and branding have their own endpoints instead of new `Project` fields; the four new audit actions and two `IdeaDetail` fields land at integration with the SPA's phrases and mocks (§3.14). |
 | Public routes | No session, no CSRF token: `get_public_project`, `get_altcha_challenge`, `submit_public_idea`, `track_submission`, `set_submission_updates`, `resend_verification_email`, `erase_tracked_submission`, `verify_submission_email`, `get_branding`, `get_brand_asset`. The project setting (`public.submit`, c8) or the token in the body (`public.track`, c9) is the authority. They never return people, comments, evaluations, scores, other submitters' details, anything the team wrote, or anything about a project beyond its name, intro and branding. |
 | Public writes are JSON only | Every `POST` / `PUT` under `/api/v1/public/` needs `Content-Type: application/json` (parameters such as `; charset=utf-8` allowed), else **415 `unsupported_media_type`** before the body is read. FastAPI would otherwise parse a body sent with no `Content-Type` as JSON, so another site could submit or confirm through its visitors' browsers with a `no-cors` request (spreading the per-IP limit over them); `application/json` makes a cross-site browser request need a CORS preflight, which the API never grants. Identity builds it (a dependency on the public router, or `app/auth/` helper the router uses). |
-| Tokens never in URLs | Tracking and confirmation tokens travel only in JSON request bodies. Links put them after `#` (`<base>/track#<token>`, `<base>/verify#<token>`), which browsers never send to a server, so no access log, proxy log, trace (spans carry URL paths) or `Referer` can hold one. The SPA reads `location.hash` and posts the token; it **keeps** the fragment (the tracking link is meant to be bookmarked and reloaded). `/verify` posts its token only when the person clicks **Confirm**, never on load (mail link scanners that run JavaScript must not confirm). `tests/test_contract_routes.py` checks no public path or query parameter carries a token. |
+| Tokens never in URLs | Tracking and confirmation tokens travel only in JSON request bodies. Links put them after `#` (`<base>/track#<token>`, `<base>/<slug>/verify#<token>`; the older `<base>/verify#<token>` still works), which browsers never send to a server, so no access log, proxy log, trace (spans carry URL paths) or `Referer` can hold one. The SPA reads `location.hash` and posts the token; it **keeps** the fragment (the tracking link is meant to be bookmarked and reloaded). `/verify` posts its token only when the person clicks **Confirm**, never on load (mail link scanners that run JavaScript must not confirm). `tests/test_contract_routes.py` checks no public path or query parameter carries a token. |
 | Held ideas | A public idea may be **held** (`ideas.held_for`): waiting for its submitter's email confirmation or for moderation. Held ideas are in no list, board, search, count, tag list, My work, inbox or notification for anyone; admins see those held for moderation in the moderation queue and on their own page (§3.6). |
 | Raw bodies | Image uploads are the file itself as the request body (`image/png` or `image/svg+xml`), not multipart (no `python-multipart` dependency) and not JSON. Exports and served images are binary responses (`application/pdf`, `text/markdown`, `image/png`, `image/svg+xml`). |
 | Branding scope | The signed-in app always uses the **global** branding. A project's override applies where the project faces outward: its public form, tracking page (`/track`) and address confirmation page (`/verify`), its emails to public submitters, and its exported proposals (§3.10). |
@@ -89,7 +89,7 @@ not repeated per row. "Session only" = never through an API key (role matrix §5
 | `PUT /public/track/updates` | `set_submission_updates` | `public.track` (c9) | `TrackingUpdatesRequest {token, wants_updates}` → `TrackedSubmission`; idempotent | 404; 409 `no_email`; 415; 429 |
 | `POST /public/track/verification-email` | `resend_verification_email` | `public.track` (c9) | `TrackingRequest {token}` → 202 `TrackedSubmission` | 404; 409 `no_email`, `already_verified`, `smtp_not_configured`; 415; 429 |
 | `POST /public/track/erase` | `erase_tracked_submission` | `public.track` (c9) | `TrackingRequest {token}` → 204; the submitter's own erase, same effect as `erase_submitter` (§3.9) | 404 (also a second call); 415; 429 |
-| `POST /public/verify-email` | `verify_submission_email` | `public.track` (c9: a valid confirmation token, instance switch on) | `VerificationRequest {token}` (from `/verify#<token>`, posted on the Confirm click) → `EmailVerified {project, title, held_for, branding}`; idempotent | 404 (invalid, expired or spent token); 415; 429 |
+| `POST /public/verify-email` | `verify_submission_email` | `public.track` (c9: a valid confirmation token, instance switch on) | `VerificationRequest {token}` (from `/<slug>/verify#<token>` or `/verify#<token>`, posted on the Confirm click) → `EmailVerified {project, title, held_for, branding}`; idempotent | 404 (invalid, expired or spent token); 415; 429 |
 
 ### Public form settings, moderation and submitters (`tags: submissions`)
 
@@ -233,21 +233,27 @@ or a plain link: the session cookie authenticates a same-origin `GET`).
   the exporter passes `score.view_aggregate`** (not a pending evaluator, role matrix §3)
   "Aggregate score 4.1 from 5 evaluations" (no per-criterion data); then the eight
   sections in template order as `## <title>` with their Markdown, an empty section as
-  "_Not written yet._". Headings inside a section are demoted below the section heading
-  (`#` → `###`, never deeper than `######`), **found with the parser** (markdown-it
-  tokens), never by matching text: setext headings (`Title` over `===`) are demoted
+  "_Not written yet._". Headings inside a section move **one level down and never above
+  the section headings** (`#` and `##` → `###`, `###` → `####`, never deeper than
+  `######`; the SPA's editor preview shows the same levels), **found with the parser**
+  (markdown-it tokens), never by matching text: setext headings (`Title` over `===`) are demoted
   too, and a `#` line inside a code fence is left alone. Comments are never exported.
 - **Markdown:** UTF-8, `\n` line endings, the section text verbatim apart from the
   heading demotion (each `heading_open` token's `map` gives its source lines: an ATX
-  heading gets two more `#`, capped at six; a setext heading is rewritten as the
+  heading gets its new level's `#`s; a setext heading is rewritten as the
   demoted ATX heading); `Content-Disposition: attachment;
   filename="<KEY>-proposal.md"` (the key is ASCII, so no injection through the
   filename).
 - **PDF** (WeasyPrint 70, ADR 0011): A4, the project's **effective branding** (§3.10):
   a cover with the logo (embedded from the database as a `data:` URI) or the app name as
   a wordmark, the title, project and metadata, a band or rule in the primary colour; the
-  chosen font for everything (bundled files served by name, §3.10); running header with
-  the app name and idea key, footer "Page X of Y"; PDF metadata title (the idea's title), author (the
+  contents (each section with its page, "· Not written yet." after an empty one) **on
+  the cover** when the document is short (title ≤ 90 characters and section text ≤
+  8,000 characters in all), else on a page of their own; the chosen font for everything
+  (bundled files served by name, §3.10); headings h3–h6 semibold, each with its own
+  size and spacing; links in the primary colour (darkened to 4.5:1 on white) with their
+  URL printed in brackets after the text (without `mailto:`; not when the text is the
+  URL); running header with the app name and idea key, footer "Page X of Y"; PDF metadata title (the idea's title), author (the
   owner), creator (the app name). Colours reach the stylesheet only as validated hex;
   text colour on a coloured band is chosen by contrast (white or ink, ≥ 4.5:1).
 - **Safety (tests first):**
@@ -384,9 +390,13 @@ off still goes through.
    `held_for`, `email_sent` = an address was kept and SMTP is configured.
 
 **Per-address limit:** at most **3** `submission_received` emails per address per 24
-hours, first sends and resends together, counted over `outbound_email`
-(`ix_outbound_email_submission_address`) on the address **lower-cased with any `+tag`
-removed** (`SUBMITTER_ADDRESS_KEY_SQL`: `Victim+1@x` and `victim+2@x` count as
+hours, first sends and resends together, counted in `confirmation_email_sends` (one row
+per email queued: `address_key` = HMAC-SHA256 of the **canonical address** with a key
+derived from the secret key, never the address; erasure, rejection and retention don't
+touch it, the hourly cleanup deletes rows after 24 hours). The canonical address is
+lower-cased with any `+tag` removed, Gmail's dots folded (`googlemail.com` =
+`gmail.com`) and Yahoo's `base-keyword` addresses folded to `base`
+(`app/public/emails.py` `canonical_address`: `Victim+1@x` and `victim+2@x` count as
 `victim@x`). Beyond it the submission is accepted without an email, **silently**:
 `email_sent` is still true (it can't reveal how often an address was used), and the
 tracking page offers a resend later. Together with the confirmation email's fixed
@@ -476,7 +486,10 @@ The widget must pass the challenge's `data` back unchanged (it is signed).
   (`submitted_title`, `submitted_summary`: never the idea's current text, which the
   team may have edited or added internal notes to), `submitted_at`, `held_for`, status,
   resolution and status label (the project's labels; closed: the resolution's),
-  `history` = its `status_changed` events after it reached the team (dates and labels
+  `reached_team_at` (when it reached the team: at submission when nothing held it,
+  else when the confirmation or the approval released it; null while held; stored as
+  `public_submissions.reached_team_at`, migration 0009), `history` = its
+  `status_changed` events after it reached the team (dates and labels
   only, no people), `email_hint` (masked: first character, `•••`, `@domain`),
   `email_verified`, `wants_updates`, `can_resend_verification`, and the project's
   effective branding. Never: people, owner, evaluators, comments, evaluations, scores,
@@ -490,7 +503,10 @@ The widget must pass the challenge's `data` back unchanged (it is signed).
   updates" + resend while unconfirmed. `false` stops them at once (queued status emails
   are cancelled at send time). This is the submitter's opt-out ("Stop these emails" in
   every status email links to the tracking page).
-- **Confirmation link:** `<base>/verify#<token>`, a **signed** token (no table, like
+- **Confirmation link:** `<base>/<slug>/verify#<token>` (the project's slug isn't
+  secret: the page shows the project's branding before the click; links sent as
+  `<base>/verify#<token>` before 2026-10-02 still work, in the global branding), a
+  **signed** token (no table, like
   Phase 3's unsubscribe tokens): `base64url(payload) "." base64url(HMAC-SHA256(key,
   base64url(payload)))`, payload compact JSON `{"v": 1, "s": "<submission id>", "e":
   "<first 16 hex of SHA-256(lower(email))>", "x": <expiry unix seconds>}`, key
@@ -504,8 +520,10 @@ The widget must pass the challenge's `data` back unchanged (it is signed).
   page offers "Open your tracking link to send a new one"). **The `/verify` page posts
   only when the person clicks "Confirm my email address"**, never on load: mail
   security scanners open links, and some run JavaScript. Before the click it shows the
-  global branding (it can't know the project yet) and fixed text; `EmailVerified`
-  then brings the project's name, branding and the title as submitted.
+  project's branding (from the slug in the path; the global branding for an unknown
+  or closed form and for `/verify#`) and fixed text; `EmailVerified` then brings the
+  project's name and branding (its `title` is no longer shown: the page must not show
+  whoever opens the link what a stranger typed).
 - **Resend** (`resend_verification_email`, c9): an unconfirmed address on file (409
   `no_email`, `already_verified`), SMTP configured (409 `smtp_not_configured`), at most
   **3** `submission_received` emails per submission per 24 hours, the first included
@@ -531,8 +549,8 @@ Two existing `EmailType`s, sent through the Phase 3 outbox and worker unchanged
 
 | Type | When | Content (rendered at send time from the idea and its submission) | Idempotency key |
 |---|---|---|---|
-| `submission_received` | on submission with an address; each resend (always to an unconfirmed address) | **Fixed text, nothing the submitter typed** (no title, name or description: anyone can put any address in the form, so this email must be useless for spam). Subject `Confirm your idea for <project's public name>`. Body: "Someone sent an idea to <project> and gave this email address." — the **confirmation link** (signed at send time, valid 3 days from then) as the main button, "Confirm my email address"; what confirming does (the team gets the idea, when the project holds ideas until confirmed; status emails, when asked for); the **tracking link** (unsealed at send time); "If this wasn't you, ignore this email: nothing more will be sent unless you confirm." | `submission_received:<submission id>:<n>` (n = 1, 2, 3) |
-| `submission_status_changed` | in the fan-out of every `status_changed` event of a public idea (also the move inside `create_proposal`) whose submission has `wants_updates`, a **confirmed** address and isn't erased | Subject `Your idea "<title as submitted>" is now <label>`. The new status label (closed: the resolution's), the tracking link, and "Stop these emails" (→ the tracking page). Only the submitter's own title (`submitted_title`), never the idea's current text; no people, comments or scores. | `submission_status:<event id>` |
+| `submission_received` | on submission with an address; each resend (always to an unconfirmed address) | **Fixed text, nothing the submitter typed** (no title, name or description: anyone can put any address in the form, so this email must be useless for spam). Subject `Confirm your idea for <project's public name>`. Body: "Someone sent an idea to <project> and gave this email address." — the **confirmation link** (signed at send time, valid 3 days from then) as the main button, "Confirm my email address"; what confirming does (the team gets the idea, when the project holds ideas until confirmed; status emails, when asked for); "If this wasn't you, ignore this email: nothing more will be sent unless you confirm." **No tracking link** (whoever opens it would read what a stranger typed; the receipt page gives the submitter their link). In the text part the confirmation link comes right after the first paragraph. | `submission_received:<submission id>:<n>` (n = 1, 2, 3) |
+| `submission_status_changed` | in the fan-out of every `status_changed` event of a public idea (also the move inside `create_proposal`) whose submission has `wants_updates`, a **confirmed** address and isn't erased | Subject `Your idea "<title as submitted>" is now <label>`. The new status label (closed: the resolution's), the tracking link as the button, and "Stop these emails" (→ the tracking page) in the footer, under the reason line (`EmailContent.stop_url`). Only the submitter's own title (`submitted_title`), never the idea's current text; no people, comments or scores. | `submission_status:<event id>` |
 
 - Rows: `to_address` = the submission's address at insert, `idea_id` = the idea
   (**required** for these two types and refused for every other:
@@ -603,6 +621,10 @@ Two existing `EmailType`s, sent through the Phase 3 outbox and worker unchanged
   `ibm_plex_sans`, `source_serif_4`, `atkinson_hyperlegible`), `email_footer` (plain
   text, ≤ 500 characters, ≤ 5 lines, no other control or bidi characters), `logo`,
   `favicon` (uploaded images, §3.11). Every field nullable.
+- **One identity per audience:** a project override with a **logo of its own and no
+  app name** takes the **project's name** as its app name (the wordmark in its emails,
+  the PDF's running header and creator, the public pages' title and screen-reader name):
+  the logo on the form and the name in the inbox are the same brand.
 - **Resolution, field by field:** project override → global → built-in default
   (`DEFAULT_BRANDING`: "Soundings", `#1d5fa8` for both colours, Inter, no logo (the app
   name is the wordmark), no footer, the bundled favicon). The global profile row is
@@ -1017,3 +1039,14 @@ The security and contract review's findings, applied before any builder started
 | `submission_received` no longer carries the tracking link (§3.8) | Review L2: anyone can put any address in the form; the recipient landed on our domain, in our branding, reading what a stranger typed. The receipt page gives the submitter the link. `EmailVerified.title` stays in the schema (no removal), but the `/verify` page shouldn't show it. |
 | PDF export (§3.4): at most `MAX_BOXES` (5,000) boxes per document (`app/proposals/markdown.py` `box_cost`: blocks, list items and links 2, inline elements, hard breaks 2, code lines); a section that goes over is cut there and ends with "The rest of this section is too long for a PDF. Export Markdown for the full text."; a zero-width space after every 32 characters of a run without a break opportunity; text over 1,000 characters prints in `<span>` pieces; sections use `overflow-wrap: normal` | Review H1: ordinary-looking text (5,000 list items, hard breaks, `a*b*` runs, one long word, narrow characters) took 9-25 s and up to 250 MB per section, so every export of it was a 503 and the child could be OOM-killed. The worst mixed document now takes about 6 s and 160 MB on one CPU. |
 | The PDF child limits its own `RLIMIT_DATA` to half the container's memory limit (cgroup v2 `memory.max` or v1, at most 1 GiB) and drops every environment variable but locale, fontconfig, `HOME`, `PATH`, `TMPDIR` and `PYTHON*` basics; the chart's default `api.resources.limits.memory` is 1Gi | Review H1 (a runaway render fails with a 500 instead of the pod being OOM-killed) and N4 (no database URL, secret key or OIDC secret in the renderer). |
+
+### 2026-10-02 · Final verification: lead decisions on the UX review
+
+| Change | Why |
+|---|---|
+| Confirmation links are `<base>/<slug>/verify#<token>` (`app/public/emails.py` `confirmation_url`); `<base>/verify#<token>` keeps working (the SPA has both routes) | UX M1: the page showed the global look before the Confirm click and the project's after it. The slug isn't secret; the token stays in the fragment. |
+| A project override with its own logo and no app name resolves its app name to the **project's name** (`app/services/branding.py` `resolve`, also `BrandingSettings.effective`; the project branding settings' email preview shows the same) | UX M3: one identity per audience (form, confirmation page, submitter emails, PDF running header and creator, screen-reader name). |
+| PDF and Markdown export: headings move one level down, never above h3 (`#`, `##` → h3; `###` → h4; …), as in the SPA's editor preview; h3–h6 semibold with their own sizes (13 / 11.5 / 10.5 / 9.5 pt, h6 muted); links in the primary colour darkened to 4.5:1 with the URL printed in brackets (3 boxes per link and image in the box budget); contents on the cover for short documents (title ≤ 90, sections ≤ 8,000 characters), "· Not written yet." after an empty section in the contents | UX M4, m4, m5. Supersedes "`#` → `###`" for `##` and deeper (the `#` → `###` example still holds). |
+| Emails: the confirmation email's text part has the Confirm link right after the first paragraph; status emails have "Stop these emails" in the footer (`EmailContent.stop_url`, both parts), not in the body | UX p6. |
+| **Additive:** `TrackedSubmission.reached_team_at` (`datetime \| null`), from the new nullable column `public_submissions.reached_team_at` (migration 0009, backfilled from the approval's audit entry, else the submission time); set at submission (no hold), by the confirmation that releases an unmoderated idea, and by approval | UX m3: the tracking page's "With the team" step shows its date. `make gen-api` run. |
+

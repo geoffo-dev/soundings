@@ -38,6 +38,7 @@ _COMMENT: Final = UUID("3e9d2c71-6b4a-4f1e-8d0c-5a7b9e2f1c46")
 def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailContent]:
     """One sample :class:`EmailContent` per template."""
     links = Links(base_url)
+    confirm_url = f"{base_url}/customer-innovation/verify#sample-confirmation-token"
     idea = IdeaInfo(
         key="CUST-12",
         title="Self-service refunds for orders under €50",
@@ -183,13 +184,11 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             preheader="Someone sent an idea to Customer Innovation and gave this email address.",
             context={
                 "project": "Customer Innovation",
-                "confirm_url": f"{base_url}/verify#sample-confirmation-token",
+                "confirm_url": confirm_url,
                 "held_until_confirmed": True,
                 "wants_updates": True,
             },
-            button=Button(
-                "Confirm my email address", f"{base_url}/verify#sample-confirmation-token"
-            ),
+            button=Button("Confirm my email address", confirm_url),
             reason="Someone gave this address on the public idea form of Customer Innovation.",
         ),
         "submission_status_changed": EmailContent(
@@ -204,6 +203,7 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             },
             button=Button("See where your idea stands", f"{base_url}/track#sample-tracking-token"),
             reason="You asked for updates on an idea you sent to Customer Innovation.",
+            stop_url=f"{base_url}/track#sample-tracking-token",
         ),
     }
 

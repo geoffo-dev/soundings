@@ -62,6 +62,7 @@ test('PT-01: the tracking page shows only what was sent, and its token stays in 
       'held_for',
       'history',
       'project',
+      'reached_team_at',
       'resolution',
       'status',
       'status_label',
@@ -76,6 +77,13 @@ test('PT-01: the tracking page shows only what was sent, and its token stays in 
     SENT_SUMMARY,
     'Evaluating',
   ])
+  // "With the team" is dated by the approval: after sending, before the first change.
+  expect(Date.parse(tracked.reached_team_at ?? '')).toBeGreaterThanOrEqual(
+    Date.parse(tracked.submitted_at),
+  )
+  expect(Date.parse(tracked.reached_team_at ?? '')).toBeLessThanOrEqual(
+    Date.parse(tracked.history[0]?.at ?? ''),
+  )
   const exposed = JSON.stringify(tracked)
   for (const internal of [
     key,

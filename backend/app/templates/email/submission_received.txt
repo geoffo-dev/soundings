@@ -1,10 +1,15 @@
 {% extends "_layout.txt" %}
+{#- The Confirm link comes right after the first paragraph (plain-text readers see the
+    action first), so the layout's button line is left out. -#}
 {% block content %}
 Confirm your idea for {{ project }}
 
 Someone sent an idea to {{ project }} and gave this email address.
 
+{{ button.label }}: {{ button.url }}
+
 {% if held_until_confirmed %}Confirm your address and the team gets your idea{% if wants_updates %}, and we'll email you when its status changes{% endif %}.{% elif wants_updates %}Confirm your address and we'll email you when the idea's status changes.{% else %}Confirm your address so the team knows it's really yours.{% endif %} The link works for 3 days.
 
 If this wasn't you, ignore this email: nothing more will be sent unless you confirm.
 {%- endblock %}
+{% block button %}{% endblock %}

@@ -152,10 +152,12 @@ test('BR-02: a project’s override: live preview, then its public form, never t
   await expect(toast(page, 'Project branding saved')).toBeVisible()
   expect(await rootVar(page, '--brand-primary')).toBe(global.primary_color)
   const settings = await alice.projectBranding(project.slug)
+  // A logo of its own and no app name: the project is its own brand, so its name is
+  // the wordmark (its emails, PDF header and public pages' name; UX review M3).
   expect(settings.effective).toMatchObject({
     primary_color: PROJECT_PRIMARY,
     font: 'source_serif_4',
-    app_name: global.app_name,
+    app_name: project.name,
   })
   const logoUrl = settings.logo?.url ?? ''
   expect(logoUrl).toMatch(/^\/api\/v1\/branding\/assets\//)
@@ -169,15 +171,22 @@ test('BR-02: a project’s override: live preview, then its public form, never t
   expect(await rootVar(form, '--brand-font')).toContain('Source Serif 4')
   await expect(form.locator('header img')).toHaveAttribute('src', logoUrl)
   await expect(form.locator('header svg')).toHaveCount(0)
-  // The logo stands alone (the app name is for screen readers only, K4-2)...
-  await expect(form.locator('header').getByText(global.app_name, { exact: true })).toHaveClass(
+  // The logo stands alone (its name is for screen readers only, K4-2): the project's...
+  await expect(form.locator('header').getByText(project.name, { exact: true })).toHaveClass(
     /sr-only/,
   )
-  // ...and in dark mode it sits on a light plate, so dark lettering stays readable.
+  // ...and in dark mode it sits on a light (softened, UX m8) plate, so dark lettering
+  // stays readable: its lightness, whatever colour syntax the browser reports.
   await form.evaluate(() => document.documentElement.classList.add('dark'))
-  expect(
-    await form.locator('header img').evaluate((image) => getComputedStyle(image).backgroundColor),
-  ).toBe('rgb(255, 255, 255)')
+  const plate = await form.locator('header img').evaluate((image) => {
+    const canvas = document.createElement('canvas').getContext('2d')
+    if (!canvas) return 0
+    canvas.fillStyle = getComputedStyle(image).backgroundColor
+    canvas.fillRect(0, 0, 1, 1)
+    const [red = 0, green = 0, blue = 0, alpha = 0] = canvas.getImageData(0, 0, 1, 1).data
+    return alpha === 255 ? (red + green + blue) / 3 : 0
+  })
+  expect(plate).toBeGreaterThan(200)
   await form.evaluate(() => document.documentElement.classList.remove('dark'))
   // The tracking page of a submission to it, too.
   const anonymous = await Visitor.open(baseURL ?? '')

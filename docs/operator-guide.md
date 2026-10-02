@@ -610,10 +610,13 @@ turn their form on.
 | `branding.maxUploadBytes` | `SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES` | `524288` | Largest logo or favicon (16 KiB to 900 KiB) |
 
 Everything else is fixed: tracking and confirmation pages share a limit of 60 requests a
-minute per address, challenges 30 a minute, confirmation emails 3 a day per address (an
-address is compared lower-cased with any `+tag` removed) and per submission, and the
-confirmation email contains no text the visitor typed, so the form can't be used to
-send anyone spam.
+minute per address, loading a form, its challenge and the submission together 120 a
+minute per address (counted before the form is looked up, so unknown names count too),
+challenges 30 a minute, confirmation emails 3 a day per address (an address is compared
+lower-cased with any `+tag` removed, Gmail's dots and Yahoo's `-keyword` folded;
+counted in the database by a keyed hash of the address, so erasing a submission doesn't
+reset it) and per submission, and the confirmation email contains no text the visitor
+typed and no tracking link, so the form can't be used to send anyone spam.
 
 ### Rate limits behind a proxy (trusted proxies)
 
@@ -631,7 +634,8 @@ before publishing a form:
 - If the app trusts too much (a wide `trustedProxies` with pods able to reach the API
   directly), a client can choose its own address. Keep `networkPolicy.ingressFrom` set
   to your ingress controller's namespace.
-- The per-address limit is in memory, per pod, and forgets on restart; the per-project
+- The per-address submission limit is in memory, per pod, and forgets on restart (the
+  confirmation-email limit above is in the database); the per-project
   limit (`perProjectPerHour`, counted in the database) is the real backstop against
   address rotation such as IPv6 /64s.
 - For an edge limit on anonymous traffic only, `ingress.publicApi.annotations` renders a
@@ -667,7 +671,10 @@ wait in a queue, invisible everywhere, until an admin approves or rejects them) 
 address; needs SMTP; ideas never confirmed are deleted after 3 days). Without SMTP the
 form asks for no address at all. Submitters' confirmation and status emails go through
 the normal outbox and worker ([Email](#email-phase-3)) in the project's branding; there
-is no unsubscribe header because the tracking page is where people stop them.
+is no unsubscribe header because the tracking page is where people stop them ("Stop
+these emails" in every status email's footer). Confirmation links have the form
+`<publicBaseUrl>/<project slug>/verify#<token>` (links sent before 2 October 2026 as
+`/verify#<token>` keep working); the token stays after `#`, so it never reaches a log.
 
 The hourly cleanup (the worker) deletes expired ALTCHA records, ideas held for
 confirmation for more than 3 days, unconfirmed addresses after 3 days, contact details
@@ -679,8 +686,10 @@ Platform admins set the instance's branding in Settings → Branding (app name, 
 favicon, primary and accent colours, one of the four bundled fonts, an email footer);
 project admins can override any of them for their project. The
 signed-in app always uses the global branding; a project's override applies to its
-public pages, the emails its public submitters get and its exported PDFs. Global changes
-are audited as `branding.update`, project ones as `project.update`.
+public pages, the emails its public submitters get and its exported PDFs. A project that
+uploads its own logo but leaves the app name empty is its own brand: its name is the
+wordmark in those emails, the PDF's running header and the public pages' title. Global
+changes are audited as `branding.update`, project ones as `project.update`.
 
 - **Applied at runtime**, no restart or rebuild: the SPA sets CSS variables, the page
   title and the favicon; emails and PDFs read the branding when they are produced.
@@ -703,9 +712,14 @@ are audited as `branding.update`, project ones as `project.update`.
   (a new image gets a new id), and the SPA shows them only as images. Emails carry no
   images. An image no profile uses is deleted 24 hours after upload.
 - **PDF export** renders in a child process of each API pod (about 100–190 MiB while
-  warm, one render at a time per pod, killed after 20 seconds with a 503; keep
-  `api.resources.limits.memory` at 512Mi or more) and fetches nothing: only the
-  embedded logo and the bundled fonts. No egress rule is needed.
+  warm, one render at a time per pod, killed after 20 seconds with a 503) and fetches
+  nothing: only the embedded logo and the bundled fonts. No egress rule is needed. The
+  layout is bounded (at most 5,000 layout boxes per document; a longer section is cut
+  in the PDF with a note pointing to the Markdown export), and the renderer limits its
+  own memory to half the container's limit (at most 1 GiB) and restarts when it grows
+  past that, so a hostile proposal can't get the pod OOM-killed. The chart's default
+  `api.resources.limits.memory` is **1Gi**; don't go below 768Mi. The renderer starts
+  with no secrets in its environment.
 
 ## API keys and MCP [Phase 5]
 

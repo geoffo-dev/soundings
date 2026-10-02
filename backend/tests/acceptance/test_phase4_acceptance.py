@@ -459,7 +459,7 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     assert PROJECT_PRIMARY in confirmation["HTML"].lower()  # the button in the project's colour
     assert "<img" not in confirmation["HTML"].lower()  # no images in email
     hrefs = links(confirmation)
-    [verify_link] = [href for href in hrefs if href.startswith(f"{BASE}/verify#")]
+    [verify_link] = [href for href in hrefs if href.startswith(f"{BASE}/{slug}/verify#")]
     assert verify_link in plain
     assert not [href for href in hrefs if "/track" in href]
     assert token not in confirmation["HTML"]
@@ -474,7 +474,7 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     # ... the click confirms.
     verified = ok(
         await visitor.post(
-            f"{PUBLIC}/verify-email", json={"token": fragment(verify_link, "/verify")}
+            f"{PUBLIC}/verify-email", json={"token": fragment(verify_link, f"/{slug}/verify")}
         )
     )
     assert verified["project"] == {"slug": slug, "name": PROJECT_NAME}
@@ -583,11 +583,14 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
         "Evaluating",
         "Shortlisted",
     ]
+    # "With the team": dated by the approval, before the status changes.
+    assert tracked["submitted_at"] < tracked["reached_team_at"] <= tracked["history"][0]["at"]
     assert set(tracked) == {
         "project",
         "title",
         "summary",
         "submitted_at",
+        "reached_team_at",
         "held_for",
         "status",
         "resolution",
@@ -744,5 +747,5 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     # no token, address, name or idea text in any record, its arguments or extras.
     logged = "\n".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records)
     assert "request" in logged  # the capture worked
-    for secret in (token, fragment(verify_link, "/verify"), jo, SUBMITTER, TITLE, SUMMARY):
+    for secret in (token, fragment(verify_link, f"/{slug}/verify"), jo, SUBMITTER, TITLE, SUMMARY):
         assert secret not in logged, secret

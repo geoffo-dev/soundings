@@ -242,6 +242,13 @@ class TrackedSubmission(ResponseModel):
     title: str = Field(description="As submitted.")
     summary: str = Field(description="As submitted.")
     submitted_at: datetime
+    reached_team_at: datetime | None = Field(
+        description=(
+            'When it reached the team (the "With the team" step): at submission when '
+            "nothing held it, else when the confirmation or the approval released it. "
+            "Null while held. Added after the contract (2026-10-02)."
+        )
+    )
     held_for: HoldReason | None = Field(
         description=(
             'email_verification: "Confirm your address to send it"; moderation: '

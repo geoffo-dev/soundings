@@ -259,15 +259,15 @@ function TrackedView({
 
 /**
  * Sent, then "With the team" once it is through (confirmed and, where the team
- * reviews new ideas, approved; the API keeps no date for that step), then every
- * status change since: dates and labels only.
+ * reviews new ideas, approved), then every status change since: dates and labels
+ * only.
  */
 function Timeline({ tracked }: { tracked: TrackedSubmission }) {
   const items: { key: string; label: string; at: string | null; tone: StatusTone | null }[] = [
     { key: 'sent', label: 'Sent', at: tracked.submitted_at, tone: null },
     ...(tracked.held_for
       ? []
-      : [{ key: 'with-team', label: 'With the team', at: null, tone: null }]),
+      : [{ key: 'with-team', label: 'With the team', at: tracked.reached_team_at, tone: null }]),
     ...tracked.history.map((change, index) => ({
       key: `${change.at}-${index}`,
       label: change.status_label,

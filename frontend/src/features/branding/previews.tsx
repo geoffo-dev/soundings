@@ -94,7 +94,7 @@ export function BrandingPreview({
               caption={
                 surfaces.includes('app')
                   ? 'An email to the team. Emails show no images, so the app name and its initial are the wordmark; mail apps in dark mode show the dark version.'
-                  : 'An email to someone who sent an idea through the public form. No images: the app name and its initial are the wordmark.'
+                  : 'An email to someone who sent an idea through the public form. No images: the name and its initial are the wordmark (the project’s name when it has its own logo but no app name).'
               }
             >
               <EmailPreview
@@ -318,8 +318,10 @@ function EmailPreview({
               ? 'You’re evaluating CUST-24.'
               : `You asked for updates on an idea you sent to ${projectName}.`}
           </span>
-          {staff && (
+          {staff ? (
             <span className="underline">Email preferences · Unsubscribe from status changes</span>
+          ) : (
+            <span className="underline">Stop these emails</span>
           )}
           <span className="pt-1">
             {footer.map((line, index) => (

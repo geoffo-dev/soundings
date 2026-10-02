@@ -5717,6 +5717,11 @@ export interface components {
              */
             history: components["schemas"]["TrackedStatusChange"][];
             project: components["schemas"]["PublicProjectRef"];
+            /**
+             * Reached Team At
+             * @description When it reached the team (the "With the team" step): at submission when nothing held it, else when the confirmation or the approval released it. Null while held. Added after the contract (2026-10-02).
+             */
+            reached_team_at: string | null;
             resolution: components["schemas"]["Resolution"] | null;
             status: components["schemas"]["IdeaStatus"];
             /** Status Label */

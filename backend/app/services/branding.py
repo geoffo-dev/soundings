@@ -3,7 +3,10 @@ cache, the global and project profiles, and the derived values for emails
 (contract-phase4 section 3.10, ADR 0012).
 
 **Resolution, field by field:** the project's override, else the global profile (the
-row with ``project_id`` null), else :data:`~app.schemas.branding.DEFAULT_BRANDING`.
+row with ``project_id`` null), else :data:`~app.schemas.branding.DEFAULT_BRANDING`;
+except that an override with a logo of its own and no app name takes the project's
+name as its app name (one identity per audience: the logo on the form, the project's
+name in its emails and PDF header).
 :func:`resolve` returns every field (the footer and the image ids too);
 :func:`effective_branding` the public shape (``EffectiveBranding``). Use these
 everywhere branding is shown: ``GET /branding`` (global), the public pages, emails
@@ -25,6 +28,7 @@ from a brand colour keep WCAG AA contrast (:func:`text_on`, :func:`readable_on`)
 
 from __future__ import annotations
 
+import dataclasses
 import time
 import weakref
 from collections.abc import Iterable, Mapping
@@ -298,17 +302,34 @@ async def _profiles(
     }
 
 
+def _owns_its_brand(own: BrandingProfile | None) -> bool:
+    """A project override with a logo of its own but no app name: the project is the
+    brand, so its name is the wordmark (emails, the PDF's running header, the public
+    pages' screen-reader name), not the instance's app name (UX review M3)."""
+    return own is not None and own.logo_asset_id is not None and own.app_name is None
+
+
+async def _project_named(
+    db: AsyncSession, resolved: ResolvedBranding, project_id: UUID
+) -> ResolvedBranding:
+    name = await db.scalar(select(Project.name).where(Project.id == project_id))
+    return resolved if not name else dataclasses.replace(resolved, app_name=name)
+
+
 async def resolve(
     db: AsyncSession, project_id: UUID | None = None, *, cached: bool = True
 ) -> ResolvedBranding:
     """The effective branding of ``project_id`` (``None``: the global branding); two
-    indexed rows at most. ``cached=False`` reads the database (in a transaction that
-    changed branding: never caches what isn't committed)."""
+    indexed rows at most (three when the project's name is its wordmark:
+    :func:`_owns_its_brand`). ``cached=False`` reads the database (in a transaction
+    that changed branding: never caches what isn't committed)."""
     if cached and (hit := _CACHE.get(db, project_id)) is not None:
         return hit
     profiles = await _profiles(db, project_id)
     layers = [profiles[key] for key in (project_id, None) if key in profiles]
     resolved = _layer(layers, DEFAULTS)
+    if project_id is not None and _owns_its_brand(profiles.get(project_id)):
+        resolved = await _project_named(db, resolved, project_id)
     if cached:
         _CACHE.put(db, project_id, resolved)
     return resolved
@@ -386,6 +407,8 @@ async def _settings(
     global_layers = [profiles[None]] if None in profiles else []
     base = DEFAULTS if scope == "global" else _layer(global_layers, DEFAULTS)
     effective = _layer([own] if own is not None else [], base)
+    if project_id is not None and _owns_its_brand(own):
+        effective = await _project_named(db, effective, project_id)
     assets = await _assets(
         db,
         [

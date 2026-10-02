@@ -54,11 +54,12 @@ describe('Markdown links', () => {
     expect(screen.getByText('a chart')).toBeInTheDocument()
   })
 
-  it('keeps nested section headings visibly headings at every level', () => {
-    render(<Markdown nested>{'# One\n\n## Two\n\n### Three\n\n#### Four'}</Markdown>)
+  it('keeps nested section headings one level down and visibly headings, as in the PDF', () => {
+    render(<Markdown nested>{'# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five'}</Markdown>)
     expect(screen.getByRole('heading', { level: 3, name: 'One' })).toHaveClass('font-semibold')
-    expect(screen.getByRole('heading', { level: 4, name: 'Two' })).toHaveClass('font-semibold')
-    expect(screen.getByRole('heading', { level: 5, name: 'Three' })).toHaveClass('font-semibold')
-    expect(screen.getByRole('heading', { level: 6, name: 'Four' })).toHaveClass('font-semibold')
+    expect(screen.getByRole('heading', { level: 3, name: 'Two' })).toHaveClass('font-semibold')
+    expect(screen.getByRole('heading', { level: 4, name: 'Three' })).toHaveClass('font-semibold')
+    expect(screen.getByRole('heading', { level: 5, name: 'Four' })).toHaveClass('font-semibold')
+    expect(screen.getByRole('heading', { level: 6, name: 'Five' })).toHaveClass('font-semibold')
   })
 })

@@ -3,8 +3,4 @@
 Your idea is now {{ status }}
 
 The idea you sent to {{ project }}, "{{ title }}", is now {{ status }}.
-{% if tracking_url %}
-
-Stop these emails on your private tracking page: {{ tracking_url }}
-{% endif %}
 {%- endblock %}

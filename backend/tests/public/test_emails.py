@@ -97,11 +97,20 @@ async def test_the_confirmation_email_is_fixed_text_with_the_confirmation_link_o
         assert typed.lower() not in text.lower()
     assert "Someone sent an idea to Customer Innovation" in text
     assert "If this wasn't you, ignore this email" in text
+    # The Confirm link comes right after the first paragraph (UX review p6).
+    paragraphs = text.split("\n-- \n", 1)[0].split("\n\n")
+    first = paragraphs.index(
+        "Someone sent an idea to Customer Innovation and gave this email address."
+    )
+    assert paragraphs[first + 1].startswith("Confirm my email address: http://testserver/")
+    assert sum("/verify#" in paragraph for paragraph in paragraphs) == 1
     # No tracking link: it would show whoever got this email what a stranger typed
     # (code review L2); the receipt page gives the submitter their link.
     assert "/track" not in text
     assert receipt["tracking_token"] not in text
-    confirm = re.search(r"http://testserver/verify#([A-Za-z0-9_.-]+)", text)
+    # The project's slug comes first, so the page can show its branding before the
+    # Confirm click (UX review M1); the token stays in the fragment.
+    confirm = re.search(rf"http://testserver/{team.slug}/verify#([A-Za-z0-9_.-]+)", text)
     assert confirm is not None
     # The link confirms the address (posted on the Confirm click).
     verified = ok(await anon.post(f"{PUBLIC}/verify-email", json={"token": confirm.group(1)}))
@@ -203,7 +212,11 @@ async def test_status_emails_go_to_an_opted_in_confirmed_submitter(
     assert "Team notes" not in text
     assert "Olive" not in text
     assert f"http://testserver/track#{token}" in text
-    assert "Stop these emails" in text
+    # "Stop these emails" is in the footer (after the signature line), not above the
+    # main button (UX review p6).
+    body, footer = text.split("\n-- \n", 1)
+    assert "Stop these emails" not in body
+    assert f"Stop these emails: http://testserver/track#{token}" in footer
     # No in-app notification row for the submitter (there is no user).
     assert all(n.user_id != idea.submitted_by_id for n in await outbox.notifications())
 

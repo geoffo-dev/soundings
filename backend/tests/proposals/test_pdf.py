@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import io
 import os
+import re
 import socket
 import time
 import warnings
@@ -25,7 +26,7 @@ from pypdf import PdfReader
 from app.proposals import pdf
 from app.proposals.document import ExportBranding, ExportDocument, ExportSection, build_html
 from app.proposals.fonts import FONT_FILES
-from app.proposals.markdown import TOO_LONG
+from app.proposals.markdown import BREAK, TOO_LONG
 from app.proposals.pdf import ExportBusy, Renderer, RenderFailed
 from app.schemas.proposals import PROPOSAL_TEMPLATE
 from tests.proposals import children
@@ -210,15 +211,19 @@ def test_a_hostile_proposal_fetches_nothing_and_renders_like_the_spa(
     assert "passwd" in text  # images and links as their labels
     assert "alert" not in text
     assert "<script" not in text
-    assert "169.254" not in text.replace("metadata", "")
+    # The image's target is only ever printed text, in brackets after its label.
+    printed = re.findall(r"\(([^()]*)\)", text.replace(BREAK, ""))
+    assert "169.254" not in re.sub(r"\([^()]*\)", "", text.replace(BREAK, ""))
+    assert any("169.254.169.254" in url.replace("\n", "") for url in printed)
 
 
 def test_the_pdf_has_cover_contents_sections_page_numbers_and_metadata(
     recorded: list[str],
 ) -> None:
+    long = "A plain sentence about the plan and what it changes for everyone. " * 140
     data = pdf_child.render_document(
         document(
-            bodies={"summary": "Refunds in two clicks.", "problem": "# Calls\n\nToo many."},
+            bodies={"summary": "Refunds in two clicks.", "problem": f"# Calls\n\n{long}"},
             score=Decimal("4.1"),
             score_count=5,
         )
@@ -235,8 +240,10 @@ def test_the_pdf_has_cover_contents_sections_page_numbers_and_metadata(
     assert "Exported 1 October 2026 by Ada Admin" in cover
     assert "Aggregate score 4.1 from 5 evaluations" in cover
     assert "Page" not in cover  # no header or footer on the cover
+    assert "CONTENTS" not in cover.upper()  # a long document: the contents have their own page
     assert "Contents" in contents
     assert "Next steps / the ask" in contents
+    assert "Solution · Not written yet." in contents  # empty sections say so
     assert f"Page 2 of {len(pages)}" in contents
     assert "Acme Ideas" in contents
     assert "CUST-12" in contents  # running header
@@ -252,6 +259,46 @@ def test_the_pdf_has_cover_contents_sections_page_numbers_and_metadata(
     sections = [item.title for item in reader.outline[1] if not isinstance(item, list)]
     assert sections[:2] == ["Summary", "Problem"]
     assert len(sections) == 8
+
+
+def test_a_short_documents_contents_are_on_the_cover() -> None:
+    """UX review m4: no page of contents in front of a two-page body."""
+    data = pdf_child.render_document(
+        document(bodies={"summary": "Refunds in two clicks.", "problem": "## Calls\n\nToo many."})
+    )
+
+    pages = [page.extract_text() for page in PdfReader(io.BytesIO(data)).pages]
+    cover = pages[0]
+    assert "CONTENTS" in cover.upper()
+    assert "Summary" in cover
+    assert "Next steps / the ask · Not written yet." in cover
+    assert "Page" not in cover
+    assert "Refunds in two clicks." in pages[1]  # the sections start on page 2
+    assert "Acme Ideas" in pages[1]  # with the running header
+    assert "CUST-12" in pages[1]
+    assert f"Page 2 of {len(pages)}" in pages[1]
+
+
+def test_headings_and_links_in_a_section_print_as_the_spa_shows_them() -> None:
+    """UX review M4/m5: every heading level is semibold and above body size or muted,
+    and a link prints its URL."""
+    html = build_html(
+        document(
+            bodies={
+                "summary": "### Who\n\nSee [the survey](https://example.com/s) or "
+                "[mail us](mailto:team@example.com)."
+            }
+        )
+    )
+    assert "<h4>Who</h4>" in html
+    style = html[html.index("<style>") : html.index("</style>")]
+    for level, size in (("h3", "13pt"), ("h4", "11.5pt"), ("h5", "10.5pt"), ("h6", "9.5pt")):
+        rule = style[style.index(f".section {level} {{") :]
+        assert f"font-size: {size};" in rule[: rule.index("}")]
+    assert "font-weight: 500" not in style  # no weight without a bundled face
+    text = "\n".join(text_of(pdf_child.render_html(html))).replace(BREAK, "")
+    assert "the survey (https://example.com/s)" in " ".join(text.split())
+    assert "mail us (team@example.com)" in text
 
 
 @pytest.mark.parametrize(

@@ -197,7 +197,8 @@ test(
       await expect(phone.getByRole('heading', { level: 1, name: TITLE })).toBeVisible()
       await expect(phone.getByText('Waiting for review', { exact: true })).toBeVisible()
 
-      // The confirmation email: fixed text (nothing the visitor typed) and both links.
+      // The confirmation email: fixed text (nothing the visitor typed) and only the
+      // confirmation link, through the project's own path (review L2, UX M1).
       const confirmation = await mailpit.waitForMessage(visitorEmail, {
         since,
         subject: `Confirm your idea for ${project.name}`,
@@ -209,9 +210,10 @@ test(
       expect(visibleText(confirmation.HTML)).toContain(appName)
       expect(confirmation.HTML.toLowerCase()).toContain(PROJECT_PRIMARY)
       const verifyLink = links(confirmation).find((href) => href.includes('/verify#'))
-      const trackLink = links(confirmation).find((href) => href.includes('/track#'))
-      expect(trackLink).toBe(privateLink)
+      expect(links(confirmation).filter((href) => href.includes('/track'))).toEqual([])
+      expect(confirmationText).not.toContain(token)
       if (!verifyLink) throw new Error('no confirmation link in the email')
+      expect(new URL(verifyLink).pathname).toBe(`/${slug}/verify`)
       // Opening it changes nothing; the click confirms.
       await phone.goto(verifyLink)
       await expect(
@@ -302,8 +304,10 @@ test(
       await expect(phone.getByText(SUMMARY)).toBeVisible()
       await expect(phone.getByText(EDITED)).toHaveCount(0)
       const history = phone.getByRole('list').filter({ hasText: 'Sent' })
+      // "With the team" is dated by the approval (reached_team_at).
       await expect(history.getByRole('listitem')).toHaveText([
         /^Sent/,
+        /^With the team.+/,
         /^Evaluating/,
         /^Shortlisted/,
       ])

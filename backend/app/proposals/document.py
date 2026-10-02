@@ -50,6 +50,8 @@ __all__ = [
     "EMPTY_SECTION",
     "INK",
     "LOGO_TYPES",
+    "SHORT_DOCUMENT",
+    "SHORT_TITLE",
     "TEMPLATE_DIR",
     "WHITE",
     "ExportBranding",
@@ -60,6 +62,7 @@ __all__ = [
     "contrast",
     "font_face_css",
     "logo_data_uri",
+    "readable_on_white",
     "safe_color",
     "text_color_on",
 ]
@@ -72,6 +75,11 @@ WHITE: Final = "#ffffff"
 MUTED: Final = "#57606a"
 """Secondary text: 6.4:1 on white."""
 EMPTY_SECTION: Final = "Not written yet."
+SHORT_DOCUMENT: Final = 8_000
+"""Section text (characters, all sections) up to which the contents go on the cover
+rather than a page of their own (about three pages of prose)..."""
+SHORT_TITLE: Final = 90
+"""... when the title is short enough to leave the cover room for them."""
 LOGO_TYPES: Final = frozenset({"image/png", "image/svg+xml"})
 BRAND_STACK: Final = f'"{BRAND_FAMILY}", "{BRAND_EXT_FAMILY}", "DejaVu Sans", sans-serif'
 MONO_STACK: Final = f'"{MONO_FAMILY}", "{MONO_EXT_FAMILY}", "DejaVu Sans Mono", monospace'
@@ -225,8 +233,16 @@ def text_color_on(background: str) -> str:
     return max((WHITE, INK), key=lambda color: contrast(color, background))
 
 
-def _readable_on_white(color: str) -> str:
-    return color if contrast(color, WHITE) >= 4.5 else INK
+def readable_on_white(color: str) -> str:
+    """``color``, darkened just enough to reach 4.5:1 on white (brand-coloured text and
+    links on the page), else ink."""
+    red, green, blue = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+    for step in range(21):
+        factor = 1 - step / 20
+        candidate = "#" + "".join(f"{round(value * factor):02x}" for value in (red, green, blue))
+        if contrast(candidate, WHITE) >= 4.5:
+            return candidate
+    return INK  # pragma: no cover - black always reaches it
 
 
 def font_face_css(font: str) -> str:
@@ -255,10 +271,10 @@ _jinja: Final = Environment(
 
 
 def build_html(document: ExportDocument) -> str:
-    """The PDF's HTML: a cover in the project's branding, the contents, the sections."""
+    """The PDF's HTML: a cover in the project's branding, the contents (on the cover
+    when the document is short), the sections."""
     branding = document.branding
     primary = safe_color(branding.primary_color)
-    accent = safe_color(branding.accent_color)
     budget = RenderBudget()
     sections = [
         {
@@ -270,16 +286,21 @@ def build_html(document: ExportDocument) -> str:
     ]
     colors = {
         "primary": primary,
-        "accent_text": _readable_on_white(accent),
-        "brand_text": _readable_on_white(primary),
+        "brand_text": readable_on_white(primary),
+        "link": readable_on_white(primary),
         "ink": INK,
         "muted": MUTED,
     }
+    contents_on_cover = (
+        len(document.title) <= SHORT_TITLE
+        and sum(len(section.body_md) for section in document.sections) <= SHORT_DOCUMENT
+    )
     return _jinja.get_template("proposal.html").render(
         document=document,
         app_name=branding.app_name,
         logo=logo_data_uri(branding),
         sections=sections,
+        contents_on_cover=contents_on_cover,
         colors=colors,
         font_faces=Markup(font_face_css(branding.font)),  # noqa: S704 - fixed table
         created=document.exported_at.replace(microsecond=0).isoformat(),

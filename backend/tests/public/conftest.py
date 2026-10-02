@@ -231,6 +231,7 @@ async def make_public_idea(
             tracking_token_sealed=seal_tracking_token(settings, token),
             submitted_title=title,
             submitted_summary="As sent.",
+            reached_team_at=None if held_for is not None else utcnow(),
         )
     )
     await db.commit()
