@@ -1,5 +1,5 @@
 import { Check, ChevronDown, CircleAlert, FileDown, FileText, GitCompareArrows } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef, useState, useSyncExternalStore } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
 import { useExportProposal, type ProposalExportFormat } from '@/api/proposals'
@@ -9,6 +9,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { RelativeTime } from '@/components/ui/relative-time'
@@ -19,15 +21,23 @@ import { formatTime } from '@/lib/dates'
 import { useProposalEditor } from './editor-context'
 import { SectionJump } from './outline'
 import { useEditorSaveSummary, type ProposalSaveStore } from './save-store'
+import { hasContent, MARKDOWN_HINT_ID } from './text'
 
 /**
  * The editor's bar, stuck to the top while scrolling: where saving is (or who
  * last edited, for readers), the section jump list below `xl`, and Export.
  */
 export function EditorBar({ proposal }: { proposal: Proposal }) {
+  const { permissions } = useProposalEditor()
   return (
     <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle bg-surface px-4 py-2.5 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
       <SaveState proposal={proposal} />
+      {permissions.can_edit && (
+        // Once for the whole editor (each section's text is described by it).
+        <span id={MARKDOWN_HINT_ID} className="hidden text-xs text-muted md:inline">
+          Markdown · saves as you type
+        </span>
+      )}
       <div className="ml-auto flex min-w-0 items-center gap-2">
         <SectionJump sections={proposal.sections} className="xl:hidden" />
         <ExportMenu />
@@ -171,7 +181,11 @@ export function useExportRunner(ideaKey: string, store: ProposalSaveStore) {
 
 /** Export (the view's primary action): PDF or Markdown. */
 function ExportMenu() {
-  const { permissions, exporting } = useProposalEditor()
+  const { permissions, exporting, store } = useProposalEditor()
+  useSyncExternalStore(store.subscribe, store.getVersion)
+  // Before exporting a half-written proposal: how much of it is still empty.
+  const sections = store.all()
+  const empty = sections.filter(([, state]) => !hasContent(state.draft)).length
   if (!permissions.can_export) return null
   const { run, format, announcement } = exporting
   const busy = format !== null
@@ -187,6 +201,16 @@ function ExportMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-56">
+          {empty > 0 && (
+            <>
+              <DropdownMenuLabel className="max-w-64 font-normal">
+                {empty === sections.length
+                  ? 'Nothing is written yet: every section exports empty.'
+                  : `${String(empty)} of ${String(sections.length)} sections are still empty.`}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem className="h-auto py-1.5 sm:h-auto" onSelect={() => run('pdf')}>
             <FileDown />
             <span className="flex flex-col">

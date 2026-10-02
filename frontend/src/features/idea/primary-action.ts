@@ -7,7 +7,9 @@ import type { IdeaDetail } from '@/api/types'
  * 1. a pending evaluator (you owe a score): **Evaluate** (or Continue for a draft);
  * 2. an unowned idea: **Assign owner** (admins) or **I'll own this** (volunteers);
  * 3. owner/admin, nobody invited yet: **Invite evaluators**;
- * 4. owner/admin, every evaluation in and evaluation still open: **Close evaluation**;
+ * 4. owner/admin, every evaluation in and evaluation still open: **Close evaluation**,
+ *    but only before the idea is Shortlisted: from there the proposal is the work
+ *    (its Export is the view's primary action) and closing stays in the sidebar;
  * 5. owner/admin, evaluation closed while the idea is still Evaluating: **Change status**
  *    (shortlist it or close it);
  * 6. otherwise none — commenting is always a secondary action.
@@ -38,7 +40,14 @@ export function primaryAction(idea: IdeaDetail, viewerId: string): PrimaryAction
   if (total === 0 && permissions.can_invite_evaluators) {
     return { kind: 'invite', label: 'Invite evaluators' }
   }
-  if (total > 0 && submitted >= total && idea.evaluation_open && permissions.can_close_evaluation) {
+  const proposalStage = idea.status === 'shortlisted' || idea.status === 'proposal'
+  if (
+    total > 0 &&
+    submitted >= total &&
+    idea.evaluation_open &&
+    !proposalStage &&
+    permissions.can_close_evaluation
+  ) {
     return { kind: 'close-evaluation', label: 'Close evaluation' }
   }
   if (

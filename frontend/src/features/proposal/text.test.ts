@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { countWords, diffLines, hasContent, wordLabel } from './text'
+import { countWords, diffLines, hasContent, markdownExcerpt, wordLabel } from './text'
 
 describe('countWords', () => {
   it('counts words, not Markdown punctuation', () => {
@@ -41,5 +41,22 @@ describe('diffLines', () => {
       { kind: 'yours', text: 'new' },
     ])
     expect(diffLines('same', 'same')).toEqual([{ kind: 'same', text: 'same' }])
+  })
+})
+
+describe('markdownExcerpt', () => {
+  it('reads as plain text', () => {
+    expect(markdownExcerpt('Is **2.4 million** right?')).toBe('Is 2.4 million right?')
+    expect(
+      markdownExcerpt('See [the report](https://example.org) and ![chart](https://x/y.png)'),
+    ).toBe('See the report and chart')
+    expect(markdownExcerpt('## Heading\n\n> quoted _text_\n- one\n- two\n1. three')).toBe(
+      'Heading quoted text one two three',
+    )
+    expect(markdownExcerpt('Use `code` and ~~old~~ new')).toBe('Use code and old new')
+    expect(markdownExcerpt('Ask @[Ada Lovelace](user:5f0c) about it')).toBe(
+      'Ask @Ada Lovelace about it',
+    )
+    expect(markdownExcerpt('2 * 3 * 4')).toBe('2 * 3 * 4')
   })
 })

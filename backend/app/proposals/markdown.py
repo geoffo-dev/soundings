@@ -16,7 +16,26 @@ the editor's preview is what the exports show (docs/api/contract-phase4.md 3.4):
   code fence);
 * **tables are bounded**: per document at most :data:`MAX_TABLE_CELLS` cells and
   :data:`MAX_TABLE_ROWS` rows per table render as tables (large tables are what makes
-  WeasyPrint slow); any other table prints as its Markdown source in a code block.
+  WeasyPrint slow); any other table prints as its Markdown source in a code block;
+* **the boxes are bounded**: WeasyPrint's time and memory grow with the boxes it lays
+  out, so a document renders at most :data:`MAX_BOXES` of them (:func:`box_cost`:
+  every block, two for a list item and its marker, every inline element, two for a
+  link or a hard line break, every line of code). Where a section goes over, it is cut
+  at that point (open elements closed, nothing left empty) and ends with
+  :data:`TOO_LONG`; later sections use what is left. 8 x 20,000 characters of prose
+  with formatting use about a fifth of it; 2,500 list items (the costliest boxes) take
+  about 5 s on the build machine;
+* **long runs get break opportunities**: a zero-width space (:data:`BREAK`) after
+  every :data:`RUN_LENGTH` characters without a space, a line break or one already,
+  across inline elements and in code too, never inside a character sequence. With
+  ``overflow-wrap: normal`` in the stylesheet, WeasyPrint never breaks inside a word
+  itself (it re-shapes the rest of the paragraph for every line it does that on, and
+  a run spanning many inline elements is quadratic too: 20,000 characters took 5-25 s);
+* **long text comes in pieces**: text (and code) longer than :data:`PIECE_LENGTH`
+  characters prints as ``<span>`` pieces split after a break opportunity. WeasyPrint
+  guesses a line's text from its width; for narrow characters (``iiii``) the guess is
+  short and it lays out the whole rest of the text for every line (9 s for a document
+  of them), so the rest of a text is never longer than a piece.
 
 Pure functions, no I/O: the PDF child process renders with them.
 """
@@ -24,6 +43,7 @@ Pure functions, no I/O: the PDF child process renders with them.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
@@ -35,14 +55,21 @@ from markdown_it.token import Token
 from markdown_it.utils import OptionsDict
 
 __all__ = [
+    "BREAK",
     "LINK_SCHEMES",
+    "MAX_BOXES",
     "MAX_NESTING",
     "MAX_TABLE_CELLS",
     "MAX_TABLE_ROWS",
-    "TableBudget",
+    "PIECE_LENGTH",
+    "RUN_LENGTH",
+    "TOO_LONG",
+    "RenderBudget",
+    "box_cost",
     "close_open_blocks",
     "demote_headings",
     "normalise_newlines",
+    "pieces",
     "render_html",
     "safe_href",
 ]
@@ -52,12 +79,25 @@ MAX_TABLE_CELLS: Final = 2_000
 """Table cells (header cells included) rendered as tables per document."""
 MAX_TABLE_ROWS: Final = 200
 """Rows (the header row included) of one table rendered as a table."""
+MAX_BOXES: Final = 5_000
+"""Boxes (:func:`box_cost`) rendered per document."""
+TOO_LONG: Final = (
+    "The rest of this section is too long for a PDF. Export Markdown for the full text."
+)
+"""Ends a section cut at the box budget (plain text, no HTML special characters)."""
+RUN_LENGTH: Final = 32
+"""Characters without a break opportunity after which one is added."""
+BREAK: Final = "\u200b"
+"""ZERO WIDTH SPACE: a break opportunity that prints nothing."""
+PIECE_LENGTH: Final = 1_000
+"""Text longer than this is printed in ``<span>`` pieces of about this length."""
 HEADING_SHIFT: Final = 2
 LINK_SCHEMES: Final = frozenset({"http", "https", "mailto"})
 _WEB_SCHEMES: Final = frozenset({"http", "https"})
 _SCHEME: Final = re.compile(r"([A-Za-z][A-Za-z0-9+.\-]*):")
 _TASK: Final = re.compile(r"\[([ xX])\][ \t]")
 _CONTAINER_PREFIX: Final = re.compile(r"[ \t>*+\-0-9.)]*")
+_PIECE_END: Final = re.compile("[ \t\n\u200b]")
 _CLOSING_SEQUENCE: Final = re.compile(r"(?:^|[ \t])#+$")
 _ALIGN: Final = {
     "text-align:left": "left",
@@ -109,6 +149,9 @@ def _parser() -> MarkdownIt:
     md.add_render_rule("td_open", _cell_open)
     md.add_render_rule("table_source", _table_source)
     md.add_render_rule("task_box", _task_box)
+    md.add_render_rule("too_long", _too_long)
+    md.add_render_rule("text", _text)
+    md.add_render_rule("code_inline", _code_inline)
     return md
 
 
@@ -142,8 +185,8 @@ def _image(
     src = str(token.attrGet("src") or "")
     in_link = bool(env.get("_links")) and env["_links"][-1]
     if _scheme(src) in _WEB_SCHEMES and not in_link:
-        return f'<a class="image-link" href="{escapeHtml(src)}">{escapeHtml(alt or "Image")}</a>'
-    return escapeHtml(alt)
+        return f'<a class="image-link" href="{escapeHtml(src)}">{pieces(alt or "Image")}</a>'
+    return pieces(alt)
 
 
 def _heading(
@@ -154,11 +197,39 @@ def _heading(
     return f"<h{level}>" if token.nesting == 1 else f"</h{level}>\n"
 
 
+def pieces(text: str) -> str:
+    """``text`` escaped, in ``<span>`` pieces of at least :data:`PIECE_LENGTH`
+    characters, each ending with a space, a line break or :data:`BREAK` (as is, when
+    shorter or without one)."""
+    if len(text) <= PIECE_LENGTH:
+        return escapeHtml(text)
+    out: list[str] = []
+    start = 0
+    while start < len(text):
+        match = _PIECE_END.search(text, start + PIECE_LENGTH - 1)
+        end = len(text) if match is None else match.end()
+        out.append(f"<span>{escapeHtml(text[start:end])}</span>")
+        start = end
+    return "".join(out)
+
+
+def _text(
+    self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
+) -> str:
+    return pieces(tokens[idx].content)
+
+
+def _code_inline(
+    self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
+) -> str:
+    return f"<code>{pieces(tokens[idx].content)}</code>"
+
+
 def _code_block(
     self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
 ) -> str:
     # No language class: the info string is the writer's text, not ours to reuse.
-    return f"<pre><code>{escapeHtml(tokens[idx].content)}</code></pre>\n"
+    return f"<pre><code>{pieces(tokens[idx].content)}</code></pre>\n"
 
 
 def _cell_open(
@@ -173,7 +244,7 @@ def _cell_open(
 def _table_source(
     self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
 ) -> str:
-    return f'<pre class="table-source"><code>{escapeHtml(tokens[idx].content)}</code></pre>\n'
+    return f'<pre class="table-source"><code>{pieces(tokens[idx].content)}</code></pre>\n'
 
 
 def _task_box(
@@ -184,19 +255,34 @@ def _task_box(
     return f'<span class="task{" task-done" if done else ""}" aria-label="{label}"></span>'
 
 
+def _too_long(
+    self: RendererHTML, tokens: Sequence[Token], idx: int, options: OptionsDict, env: Env
+) -> str:
+    return f'<p class="too-long">{escapeHtml(TOO_LONG)}</p>\n'
+
+
 _md: Final = _parser()
 
 
 @dataclass(slots=True)
-class TableBudget:
-    """Table cells a document may still render as tables (shared by its sections)."""
+class RenderBudget:
+    """What a document may still render (shared by its sections): table cells rendered
+    as tables, and boxes (:func:`box_cost`)."""
 
     cells: int = MAX_TABLE_CELLS
+    boxes: int = MAX_BOXES
 
     def take(self, cells: int) -> bool:
+        """Table cells."""
         if cells > self.cells:
             return False
         self.cells -= cells
+        return True
+
+    def take_boxes(self, boxes: int) -> bool:
+        if boxes > self.boxes:
+            return False
+        self.boxes -= boxes
         return True
 
 
@@ -208,7 +294,7 @@ def _closing(tokens: Sequence[Token], start: int, close_type: str) -> int:
     return len(tokens) - 1  # pragma: no cover - markdown-it always closes blocks
 
 
-def _bound_tables(tokens: list[Token], lines: Sequence[str], budget: TableBudget) -> list[Token]:
+def _bound_tables(tokens: list[Token], lines: Sequence[str], budget: RenderBudget) -> list[Token]:
     """Replace each table over the limits by its Markdown source."""
     result: list[Token] = []
     index = 0
@@ -271,14 +357,212 @@ def _hide_html_only_paragraphs(tokens: Sequence[Token]) -> None:
             tokens[index + 1].hidden = True
 
 
-def render_html(text: str, budget: TableBudget | None = None) -> str:
+# --- Bounding the layout ------------------------------------------------------------
+_LEAVES: Final = frozenset({"fence", "code_block", "table_source"})
+_INLINE_BOXES: Final = frozenset({"code_inline", "image", "task_box"})
+
+
+def _lines(content: str) -> int:
+    return content.count("\n") + (not content.endswith("\n"))
+
+
+def box_cost(token: Token) -> int:
+    """The boxes WeasyPrint lays out for ``token`` (an inline token: for its children):
+    1 per element, 2 for a list item (its marker is a box) and a link (a box and a PDF
+    annotation), 2 for a hard line break (a line box), 1 per line of code; hidden
+    tokens (a tight list's paragraphs), closing tags and text cost nothing."""
+    if token.hidden or token.nesting == -1:
+        return 0
+    if token.nesting == 1:
+        return 2 if token.type in ("list_item_open", "link_open") else 1
+    if token.type in _LEAVES:
+        return _lines(token.content)
+    if token.type == "inline":
+        return sum(box_cost(child) for child in token.children or ())
+    if token.type in _INLINE_BOXES or token.type == "hr":
+        return 1
+    if token.type == "hardbreak":
+        return 2
+    return 0
+
+
+def _closer(opener: Token) -> Token:
+    return Token(
+        opener.type.removesuffix("_open") + "_close",
+        opener.tag,
+        -1,
+        level=opener.level,
+        block=opener.block,
+        hidden=opener.hidden,
+    )
+
+
+def _visible(children: Sequence[Token]) -> bool:
+    return any(
+        (child.type == "text" and child.content.strip()) or child.type in _INLINE_BOXES
+        for child in children
+    )
+
+
+def _cut_inline(token: Token, budget: RenderBudget) -> Token | None:
+    """``token`` (an inline token) with the children that fit, open elements closed; or
+    ``None`` when nothing visible fits."""
+    kept: list[Token] = []
+    open_elements: list[Token] = []
+    for child in token.children or ():
+        if not budget.take_boxes(box_cost(child)):
+            break
+        kept.append(child)
+        if child.nesting == 1:
+            open_elements.append(child)
+        elif child.nesting == -1 and open_elements:
+            open_elements.pop()
+    if not _visible(kept):
+        return None
+    kept.extend(_closer(opener) for opener in reversed(open_elements))
+    cut = Token("inline", "", 0, level=token.level, children=kept, map=token.map)
+    return cut
+
+
+def _cut_leaf(token: Token, budget: RenderBudget) -> Token | None:
+    """The lines of a code block that fit (``None`` for none)."""
+    lines = token.content.split("\n")[: budget.boxes]
+    if not lines or budget.boxes <= 0:
+        return None
+    budget.boxes -= len(lines)
+    cut = Token(token.type, token.tag, 0, level=token.level, block=True, markup=token.markup)
+    cut.content = "\n".join(lines) + "\n"
+    return cut
+
+
+def _bound_boxes(tokens: list[Token], budget: RenderBudget) -> list[Token]:
+    """``tokens`` up to the box budget: where it runs out, what fits of that paragraph
+    or code block, its open blocks closed (empty ones dropped), then a ``too_long``
+    note; the rest of the section is dropped."""
+    result: list[Token] = []
+    open_blocks: list[Token] = []
+    for token in tokens:
+        if budget.take_boxes(box_cost(token)):
+            result.append(token)
+            if token.nesting == 1:
+                open_blocks.append(token)
+            elif token.nesting == -1:
+                open_blocks.pop()
+            continue
+        part = (
+            _cut_inline(token, budget)
+            if token.type == "inline"
+            else _cut_leaf(token, budget)
+            if token.type in _LEAVES
+            else None
+        )
+        if part is not None:
+            result.append(part)
+        else:
+            while open_blocks and result and result[-1] is open_blocks[-1]:
+                result.pop()  # opened, nothing in it yet
+                open_blocks.pop()
+        result.extend(_closer(opener) for opener in reversed(open_blocks))
+        result.append(Token("too_long", "p", 0, block=True))
+        break
+    return result
+
+
+# Characters a break must never come before (they attach to the one before), and the
+# regional indicators that pair into flags.
+_ZWJ: Final = "\u200d"
+_BREAKING: Final = frozenset(
+    " \t\n\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2008\u2009\u200a\u205f\u3000" + BREAK
+)
+"""Break opportunities that end a run (not the no-break spaces)."""
+
+
+def _attaches(char: str) -> bool:
+    code = ord(char)
+    return (
+        char == _ZWJ
+        or unicodedata.category(char) in ("Mn", "Mc", "Me")
+        or 0xFE00 <= code <= 0xFE0F  # variation selectors
+        or 0xE0100 <= code <= 0xE01EF
+        or 0x1F3FB <= code <= 0x1F3FF  # emoji skin tones
+        or 0xE0020 <= code <= 0xE007F  # emoji tags
+        or 0x1160 <= code <= 0x11FF  # Hangul medial vowels and final consonants
+        or 0xD7B0 <= code <= 0xD7FF
+    )
+
+
+def _regional(char: str) -> bool:
+    return 0x1F1E6 <= ord(char) <= 0x1F1FF
+
+
+@dataclass(slots=True)
+class _Run:
+    """Characters since the last break opportunity, and regional indicators in a row."""
+
+    length: int = 0
+    regional: int = 0
+
+    def chop(self, text: str) -> str:
+        """``text`` with :data:`BREAK` after every :data:`RUN_LENGTH` characters of a
+        run, where it splits no character sequence."""
+        if len(text) + self.length < RUN_LENGTH and not any(
+            c in _BREAKING or _regional(c) for c in text
+        ):
+            self.length += len(text)  # the usual case: short text, nothing to do
+            self.regional = 0
+            return text
+        out: list[str] = []
+        for index, char in enumerate(text):
+            out.append(char)
+            self.regional = self.regional + 1 if _regional(char) else 0
+            if char in _BREAKING:
+                self.length = 0
+                continue
+            self.length += 1
+            following = text[index + 1] if index + 1 < len(text) else ""
+            if (
+                self.length >= RUN_LENGTH
+                and char != _ZWJ
+                and not (following and _attaches(following))
+                and not (self.regional % 2 and following and _regional(following))
+            ):
+                out.append(BREAK)
+                self.length = 0
+        return "".join(out)
+
+
+def _add_breaks(tokens: Sequence[Token]) -> None:
+    """Break opportunities in long runs (see the module docstring), in place."""
+    for token in tokens:
+        if token.type in _LEAVES:
+            token.content = _Run().chop(token.content)
+        elif token.type == "inline":
+            run = _Run()
+            for child in token.children or ():
+                _chop_inline(child, run)
+
+
+def _chop_inline(token: Token, run: _Run) -> None:
+    if token.type in ("text", "code_inline"):
+        token.content = run.chop(token.content)
+    elif token.type in ("softbreak", "hardbreak"):
+        run.length = 0
+    elif token.type == "image":
+        for child in token.children or ():
+            _chop_inline(child, run)
+
+
+def render_html(text: str, budget: RenderBudget | None = None) -> str:
     """One section's Markdown as safe HTML (see the module docstring)."""
     text = normalise_newlines(text)
+    budget = budget or RenderBudget()
     env: Env = {}
     tokens = _md.parse(text, env)
-    tokens = _bound_tables(tokens, text.split("\n"), budget or TableBudget())
+    tokens = _bound_tables(tokens, text.split("\n"), budget)
     _mark_tasks(tokens)
     _hide_html_only_paragraphs(tokens)
+    tokens = _bound_boxes(tokens, budget)
+    _add_breaks(tokens)
     return str(_md.renderer.render(tokens, _md.options, env))
 
 

@@ -13,6 +13,8 @@
  *   Feedback     bg-danger · bg-danger-subtle · text-danger · (same for warning / success / info)
  *   Status       bg-status-new|evaluating|shortlisted|proposal|accepted|rejected|parked
  *   Scores       bg-score-1 … bg-score-5 (also text-/fill-/border-)
+ *   Fonts        font-sans (Inter: all UI text) · font-brand (branding's font: page titles,
+ *                the wordmark, public pages)
  *   Type         text-xs 12/16 · text-sm 13/20 · text-base 14/22 · text-lg 16/24 · text-xl 20/28 · text-2xl 24/32 · text-3xl 30/36
  *   Radii        rounded-sm 4 · rounded-md 6 (controls) · rounded-lg 8 (cards) · rounded-xl 12 (dialogs)
  *   Elevation    shadow-overlay (menus, popovers) · shadow-dialog (dialogs, sheets) · shadow-raised (dragging)
@@ -26,7 +28,11 @@
   --color-black: #000000;
 
   --font-*: initial;
+  /* The signed-in app's dense UI text is always Inter (calm, compact, tabular figures);
+     the brand font (`font-brand`) is for page titles, the wordmark and the public pages. */
   --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-brand:
     var(--brand-font), 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
     Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
@@ -180,14 +186,18 @@
 }
 
 /*
- * An uploaded logo is drawn for a light page (emails and exported PDFs are always
- * light), so in dark mode it sits on a small light plate: dark lettering stays
- * readable and the logo looks the same everywhere.
+ * An uploaded logo is drawn for a light page (exported PDFs are always light), so
+ * in dark mode it sits on a small light plate: dark lettering stays readable and
+ * the logo looks the same everywhere. The plate is a soft, slightly dimmed light
+ * grey with rounded corners rather than pure white, so it doesn't glare against
+ * the dark canvas; the logo is dimmed a touch with it.
  */
 @utility logo-plate {
   border-radius: var(--radius-sm);
   &:where(.dark, .dark *) {
-    background-color: var(--color-white);
-    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-md);
+    background-color: color-mix(in oklch, var(--color-white) 86%, var(--background));
+    padding: 0.1875rem 0.375rem;
+    filter: brightness(0.94);
   }
 }

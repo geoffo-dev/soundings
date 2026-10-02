@@ -53,6 +53,8 @@ test('the owner starts a proposal: the idea moves to Proposal and the editor ope
   await expect(page.getByRole('textbox', { name: 'Summary' })).toHaveValue(
     'Open a documented API so marketplace sellers can sync stock and orders.',
   )
+  // The button is gone: writing starts in Summary (focus never drops to the page).
+  await expect(page.getByRole('textbox', { name: 'Summary' })).toBeFocused()
   // The status moved with it.
   await expect
     .poll(() =>
@@ -109,7 +111,7 @@ test('Write and Preview: the toolbar and keyboard', async ({ page }) => {
   await expect(field).toBeFocused()
 })
 
-test('a conflicting save asks which version to keep: Keep mine', async ({ page }) => {
+test('a conflicting save asks which version to keep: Keep this version', async ({ page }) => {
   await openProposal(page)
   await expect(page.getByRole('textbox', { name: 'Summary' })).toBeVisible()
   await saveElsewhere(page, 'summary', 'Their summary.', 3)
@@ -120,20 +122,22 @@ test('a conflicting save asks which version to keep: Keep mine', async ({ page }
   await expect(prompt).toContainText('Their summary.')
   await expect(prompt).toContainText('My summary.')
   await expect(status(page)).toContainText('A section changed while you were editing')
-  await prompt.getByRole('button', { name: 'Keep mine' }).click()
+  await prompt.getByRole('button', { name: 'Keep this version' }).click()
   await expect(prompt).toBeHidden()
+  await expect(summary).toBeFocused()
   await expect.poll(() => storedSection(page, 'summary')).toBe('My summary.')
 })
 
-test('a conflicting save: Use theirs replaces the draft', async ({ page }) => {
+test('a conflicting save: Use the saved version replaces the draft', async ({ page }) => {
   await openProposal(page)
   await expect(page.getByRole('textbox', { name: 'Problem' })).toBeVisible()
   await saveElsewhere(page, 'problem', 'Their problem.', 3)
   const problem = page.getByRole('textbox', { name: 'Problem' })
   await problem.fill('My problem.')
   const prompt = page.getByRole('alert').filter({ hasText: 'changed this section' })
-  await prompt.getByRole('button', { name: 'Use theirs' }).click()
+  await prompt.getByRole('button', { name: 'Use the saved version' }).click()
   await expect(problem).toHaveValue('Their problem.')
+  await expect(problem).toBeFocused()
   await expect(status(page)).toHaveText(/Saved/)
 })
 
@@ -156,6 +160,8 @@ test('exports Markdown and PDF as downloads', async ({ page }) => {
   await openProposal(page)
   const exportButton = page.getByRole('button', { name: 'Export' })
   await exportButton.click()
+  // A half-written proposal says so before it is exported.
+  await expect(page.getByRole('menu')).toContainText(/\d of 8 sections are still empty\./)
   const markdown = page.waitForEvent('download')
   await page.getByRole('menuitem', { name: /Markdown/ }).click()
   expect((await markdown).suggestedFilename()).toBe('CUST-3-proposal.md')
@@ -214,22 +220,38 @@ test.describe('as a member (Bob): margin comments', () => {
     const thread = margin.getByRole('article', { name: 'Thread by Bob Chen on Risks' })
     await expect(thread).toContainText('What about supplier risk?')
     await expect(thread.locator('strong')).toHaveText('supplier')
+    // Focus follows each action instead of falling to the page (WCAG 2.4.3).
+    await expect(thread).toBeFocused()
 
     await thread.getByRole('button', { name: 'Reply' }).click()
     const reply = thread.getByRole('textbox', { name: 'Reply to Bob Chen’s thread' })
+    await reply.press('Escape')
+    await expect(thread.getByRole('button', { name: 'Reply' })).toBeFocused()
+    await thread.getByRole('button', { name: 'Reply' }).click()
     await reply.fill('And currency risk.')
     await reply.press('ControlOrMeta+Enter')
     await expect(thread).toContainText('And currency risk.')
+    await expect(thread).toBeFocused()
 
     await thread.getByRole('button', { name: 'Resolve' }).click()
     const collapsed = margin.getByRole('button', { name: /Resolved · Bob Chen/ })
     await expect(collapsed).toHaveAttribute('aria-expanded', 'false')
+    // The excerpt is plain text, not Markdown.
+    await expect(collapsed).toContainText('What about supplier risk?')
+    await expect(collapsed).toBeFocused()
     await collapsed.click()
     await margin
       .getByRole('article', { name: 'Resolved thread by Bob Chen on Risks' })
       .getByRole('button', { name: 'Reopen' })
       .click()
-    await expect(margin.getByRole('article', { name: 'Thread by Bob Chen on Risks' })).toBeVisible()
+    const reopened = margin.getByRole('article', { name: 'Thread by Bob Chen on Risks' })
+    await expect(reopened).toBeVisible()
+    await expect(reopened).toBeFocused()
+
+    // Cancelling a new comment goes back to "Comment".
+    await margin.getByRole('button', { name: 'Comment on Risks' }).click()
+    await margin.getByRole('textbox', { name: 'Comment on Risks' }).press('Escape')
+    await expect(margin.getByRole('button', { name: 'Comment on Risks' })).toBeFocused()
   })
 
   test('deletes their own comment with Undo, but not someone else’s', async ({ page }) => {
@@ -318,7 +340,9 @@ test.describe('accessibility', () => {
     await expect(page.getByRole('textbox', { name: 'Summary' })).toBeVisible()
     await saveElsewhere(page, 'summary', 'Theirs', 3)
     await page.getByRole('textbox', { name: 'Summary' }).fill('Mine')
-    await expect(page.getByRole('button', { name: 'Keep mine' })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('button', { name: 'Keep this version' })).toBeVisible({
+      timeout: 5000,
+    })
     expect(await seriousViolations(page)).toEqual([])
   })
 })

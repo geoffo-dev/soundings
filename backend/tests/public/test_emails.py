@@ -1,6 +1,6 @@
 """The two submitter emails (contract-phase4 section 3.8), through the Phase 3 outbox
-and worker: the confirmation email is fixed text with the confirmation and tracking
-links; status emails go only to an opted-in, confirmed submitter and show only what
+and worker: the confirmation email is fixed text with the confirmation link (and no
+tracking link); status emails go only to an opted-in, confirmed submitter and show only what
 they sent; both are re-checked when sent."""
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,7 @@ from app.models.enums import EmailStatus, EmailType, HoldReason
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
 from app.models.public import PublicSubmission
+from app.public.emails import canonical_address
 from tests.public.conftest import (
     PUBLIC,
     AsUser,
@@ -61,7 +63,7 @@ async def emails_of(db: AsyncSession, type_: EmailType) -> list[OutboundEmail]:
     )
 
 
-async def test_the_confirmation_email_is_fixed_text_with_both_links(
+async def test_the_confirmation_email_is_fixed_text_with_the_confirmation_link_only(
     anon: httpx.AsyncClient,
     team: Team,
     db_session: AsyncSession,
@@ -95,7 +97,10 @@ async def test_the_confirmation_email_is_fixed_text_with_both_links(
         assert typed.lower() not in text.lower()
     assert "Someone sent an idea to Customer Innovation" in text
     assert "If this wasn't you, ignore this email" in text
-    assert f"http://testserver/track#{receipt['tracking_token']}" in text
+    # No tracking link: it would show whoever got this email what a stranger typed
+    # (code review L2); the receipt page gives the submitter their link.
+    assert "/track" not in text
+    assert receipt["tracking_token"] not in text
     confirm = re.search(r"http://testserver/verify#([A-Za-z0-9_.-]+)", text)
     assert confirm is not None
     # The link confirms the address (posted on the Confirm click).
@@ -291,3 +296,30 @@ async def test_a_status_email_for_an_idea_held_again_is_cancelled(
     [email] = await emails_of(db_session, EmailType.SUBMISSION_STATUS_CHANGED)
 
     assert await delivery.send_email(runtime, email.id) == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("address", "canonical"),
+    [
+        ("Jo@Example.org", "jo@example.org"),
+        ("jo+news@example.org", "jo@example.org"),
+        ("j.o+x@example.org", "j.o@example.org"),  # dots count elsewhere
+        ("jo-x@example.org", "jo-x@example.org"),  # so do hyphens
+        ("J.O.Smith+tag@GMail.com", "josmith@gmail.com"),
+        ("jo.smith@googlemail.com", "josmith@gmail.com"),
+        ("jo-news@yahoo.com", "jo@yahoo.com"),
+        ("jo-news@ymail.com", "jo@ymail.com"),
+    ],
+)
+def test_canonical_address(address: str, canonical: str) -> None:
+    assert canonical_address(address) == canonical
+
+
+def test_the_address_key_is_keyed_and_canonical(settings: Any) -> None:
+    from app.public.emails import address_key
+
+    key = address_key(settings, "Jo.Smith+1@gmail.com")
+    assert key == address_key(settings, "josmith@googlemail.com")
+    other_secret = settings.model_copy(update={"secret_key": SecretStr("x" * 64)})
+    assert key != address_key(other_secret, "josmith@gmail.com")
+    assert key != address_key(settings, "jo@example.org")

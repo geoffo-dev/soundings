@@ -89,6 +89,54 @@ test.describe('as a platform admin', () => {
     expect(await rootVar(page, '--brand-font')).toBe('"IBM Plex Sans"')
     await expect(page.getByRole('complementary').first().getByText('Acme Ideas')).toBeVisible()
     await expect(page).toHaveTitle(/Acme Ideas$/)
+    // The brand font is for page titles and the wordmark; the dense UI text stays Inter.
+    const fontOf = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((element) => getComputedStyle(element).fontFamily)
+    expect(await fontOf('body')).toMatch(/^"Inter Variable"/)
+    expect(await fontOf('h1')).toMatch(/^"IBM Plex Sans"/)
+  })
+
+  test('the email preview is laid out like the real email, in light and dark', async ({ page }) => {
+    await page.goto('/settings/branding')
+    await page.getByLabel('Email footer').fill('Acme Retail Ltd\n1 High Street')
+    await page.getByRole('tab', { name: 'Email' }).click()
+    const preview = page.getByTestId('branding-preview').first()
+    // The wordmark is the initial and the name; the footer sits under the card.
+    await expect(preview).toContainText('SSoundings')
+    await expect(preview).toContainText('Moved to Shortlisted')
+    await expect(preview).toContainText('Open the idea')
+    await expect(preview).toContainText('Acme Retail Ltd1 High Street')
+    await expect(page.getByText(/mail apps in dark mode show the dark version/)).toBeVisible()
+    await page.getByRole('radio', { name: 'Dark' }).click()
+    await expect(preview).toHaveClass(/dark/)
+  })
+
+  test('a colour that isn’t hex says so when you leave the field', async ({ page }) => {
+    await page.goto('/settings/branding')
+    const primary = page.getByRole('textbox', { name: 'Primary colour', exact: true })
+    await primary.fill('#12')
+    await expect(primary).not.toHaveAccessibleDescription(/Use a hex colour/)
+    await primary.press('Tab')
+    await expect(primary).toHaveAccessibleDescription(/Use a hex colour/)
+    await expect(primary).toHaveAttribute('aria-invalid', 'true')
+    await primary.fill('#123456')
+    await expect(primary).not.toHaveAccessibleDescription(/Use a hex colour/)
+  })
+
+  test('on a phone, Preview in the save bar opens the preview beside your edits', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/settings/branding')
+    await page.getByLabel('App name').fill('Acme Ideas')
+    await page.getByRole('button', { name: 'Preview', exact: true }).click()
+    const sheet = page.getByRole('dialog', { name: 'Preview' })
+    await expect(sheet.getByTestId('branding-preview')).toContainText('Acme Ideas')
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeFocused()
   })
 
   test('leaving with unsaved changes asks first', async ({ page }) => {

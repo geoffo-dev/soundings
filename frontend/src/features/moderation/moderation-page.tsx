@@ -11,20 +11,35 @@ import {
   Settings,
   Trash2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { isApiError } from '@/api/errors'
 import { useProject } from '@/api/projects'
 import { useModerate, useModerationQueue } from '@/api/submissions'
 import type { ModerationItem, Project } from '@/api/types'
 import { Page, PageHeader } from '@/components/layout/page'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Markdown } from '@/components/ui/markdown'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { byId, focusWhenRendered } from '@/lib/focus'
 import { useListNavigation } from '@/lib/list-navigation'
+
+const EMPTY_ID = 'moderation-queue-empty'
+const titleLinkId = (ideaId: string) => `queue-${ideaId}-link`
+
+/**
+ * Where focus goes when a card leaves the queue (WCAG 2.4.3): the next card's
+ * title, else the one before, else the "Nothing waiting" state.
+ */
+function focusAfterLeaving(card: HTMLElement | null) {
+  const cards = [...(card?.closest('ul')?.querySelectorAll<HTMLElement>('[data-queue-item]') ?? [])]
+  const index = card ? cards.indexOf(card) : -1
+  const neighbour = cards[index + 1] ?? cards[index - 1]
+  const link = neighbour?.querySelector<HTMLElement>('[data-nav-item]')
+  focusWhenRendered(link ? () => link : byId(EMPTY_ID))
+}
 
 /**
  * /p/$slug/review — the moderation queue (contract-phase4 §3.6; project and
@@ -74,6 +89,9 @@ function ModerationContent({ project }: { project: Project }) {
   } else if (queue.data.items.length === 0) {
     content = (
       <EmptyState
+        id={EMPTY_ID}
+        tabIndex={-1}
+        className="rounded-lg focus-visible:outline-offset-0"
         headingLevel={2}
         icon={<Inbox />}
         title="Nothing waiting for review"
@@ -152,15 +170,25 @@ function QueueItem({ item, archived }: { item: ModerationItem; archived: boolean
   const long = item.description_md.length > COLLAPSED_LENGTH
   const canModerate = submission.permissions.can_moderate && !archived
   const target = { id: item.id, key: item.key, title: item.title, project: item.project }
+  const card = useRef<HTMLElement>(null)
+  // The card leaves the queue at once (Undo in the toast): focus moves on. After Undo the
+  // toaster returns focus to where it was (the next card); only if that was lost does it
+  // go to the card that came back.
+  const callbacks = {
+    onHide: () => focusAfterLeaving(card.current),
+    onRestore: () => focusWhenRendered(byId(titleLinkId(item.id))),
+  }
 
   return (
     <article
+      ref={card}
+      data-queue-item=""
       aria-labelledby={`queue-${item.id}-title`}
       className="flex flex-col gap-3 rounded-lg border bg-surface p-4"
     >
       <div className="flex flex-col gap-1">
+        {/* The page says these are waiting for review: no badge on every card. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <Badge variant="warning">Waiting for review</Badge>
           <span className="tabular-nums">{item.key}</span>
           <span aria-hidden="true">·</span>
           <span>
@@ -172,6 +200,7 @@ function QueueItem({ item, archived }: { item: ModerationItem; archived: boolean
           className="text-lg font-semibold break-words text-primary"
         >
           <Link
+            id={titleLinkId(item.id)}
             to="/ideas/$ideaKey"
             params={{ ideaKey: item.key }}
             data-nav-item
@@ -180,16 +209,12 @@ function QueueItem({ item, archived }: { item: ModerationItem; archived: boolean
             {item.title}
           </Link>
         </h2>
-        <p className="text-base break-words text-secondary">{item.summary}</p>
+        <p className="text-base break-words text-primary">{item.summary}</p>
       </div>
       {item.description_md && (
         <div className="flex flex-col gap-1">
-          <div
-            className={
-              expanded || !long ? 'text-sm text-primary' : 'line-clamp-3 text-sm text-primary'
-            }
-          >
-            <Markdown>{item.description_md}</Markdown>
+          <div className={expanded || !long ? undefined : 'line-clamp-3'}>
+            <Markdown className="text-sm text-secondary">{item.description_md}</Markdown>
           </div>
           {long && (
             <Button
@@ -228,7 +253,7 @@ function QueueItem({ item, archived }: { item: ModerationItem; archived: boolean
               variant="ghost"
               className="flex-1 sm:flex-none"
               aria-label={`Reject and delete ${item.key}`}
-              onClick={() => moderate.reject(target)}
+              onClick={() => moderate.reject(target, callbacks)}
             >
               <Trash2 aria-hidden="true" /> Reject
             </Button>
@@ -236,7 +261,7 @@ function QueueItem({ item, archived }: { item: ModerationItem; archived: boolean
               variant="outline"
               className="flex-1 sm:flex-none"
               aria-label={`Approve ${item.key}`}
-              onClick={() => moderate.approve(target)}
+              onClick={() => moderate.approve(target, callbacks)}
             >
               <Check aria-hidden="true" /> Approve
             </Button>

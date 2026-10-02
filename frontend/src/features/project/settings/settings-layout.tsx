@@ -114,6 +114,7 @@ export function FormActions({
   notice,
   onDiscard,
   saveLabel = 'Save changes',
+  extra,
 }: {
   /** What this form is called in "Your changes to … haven’t been saved" (lower case). */
   form: string
@@ -122,6 +123,8 @@ export function FormActions({
   notice?: string | null
   onDiscard: () => void
   saveLabel?: string
+  /** A secondary control before Discard / Save (e.g. branding's "Preview" on small screens). */
+  extra?: ReactNode
 }) {
   const report = use(UnsavedChangesContext)
   const id = useId()
@@ -141,6 +144,7 @@ export function FormActions({
       <p aria-live="polite" className="mr-auto text-sm text-muted">
         {notice ?? (dirty ? 'Unsaved changes' : '')}
       </p>
+      {extra}
       {dirty && (
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>
           Discard

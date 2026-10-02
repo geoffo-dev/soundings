@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { BRAND_FONT_KEYS, BRAND_FONTS, loadBrandFont, setElementProperties } from '@/lib/branding'
 import { cn } from '@/lib/utils'
 
-import { normaliseHex, uploadErrorMessage } from './branding-form'
+import { HEX_COLOUR_ERROR, normaliseHex, uploadErrorMessage } from './branding-form'
 import type { ColourAdvice } from './contrast'
 
 /** A colour chip painted from a validated hex value (set as a style property, never as CSS text). */
@@ -75,10 +75,18 @@ export function ColorField({
   const effective = normaliseHex(value) ?? inherited
   const inheriting = !value.trim()
   const tip = advice(effective)
+  // Checked when you leave the field (not while typing "#1d5f…"): until then the
+  // preview shows the inherited colour, and this says why.
+  const [checked, setChecked] = useState(false)
+  const invalid = checked && !inheriting && !normaliseHex(value)
+  const change = (next: string) => {
+    setChecked(false)
+    onChange(next)
+  }
   return (
     <Field
       label={label}
-      error={error}
+      error={error ?? (invalid ? HEX_COLOUR_ERROR : undefined)}
       id={id}
       description={
         <span className="flex flex-col gap-1">
@@ -101,7 +109,7 @@ export function ColorField({
             type="color"
             aria-label={`${label}: open the colour picker`}
             value={effective}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => change(event.target.value)}
             className="size-9 shrink-0 cursor-pointer rounded-md border border-input bg-surface p-0.5 sm:size-8"
           />
           <Input
@@ -111,16 +119,17 @@ export function ColorField({
             autoComplete="off"
             spellCheck={false}
             className="w-32 font-mono"
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => change(event.target.value)}
             onBlur={() => {
               const hex = normaliseHex(value)
               if (hex && hex !== value) onChange(hex)
+              setChecked(true)
             }}
           />
           {inheriting ? (
             <span className="text-sm text-muted">{inheritedLabel}</span>
           ) : (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onChange('')}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => change('')}>
               {resetLabel}
             </Button>
           )}
@@ -135,7 +144,7 @@ export function ColorField({
                 aria-label={`${preset.name} (${preset.hex})`}
                 aria-pressed={selected}
                 title={preset.name}
-                onClick={() => onChange(preset.hex)}
+                onClick={() => change(preset.hex)}
                 className={cn(
                   'flex size-8 items-center justify-center rounded-md border border-transparent transition-colors hover:border-strong pointer-coarse:size-10',
                   selected && 'border-control bg-subtle',

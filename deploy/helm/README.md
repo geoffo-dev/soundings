@@ -68,7 +68,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics` (`metrics.port`). |
 | `extraEnv` / `extraEnvFrom` | `[]` | Extra env for api, worker and migration containers. |
 | `extraVolumes` / `extraVolumeMounts` | `[]` | Extra volumes, e.g. a DB CA for `sslmode=verify-full` (+ `PGSSLROOTCERT`). |
-| `api.replicas` / `.resources` | `1` / 100m, 256Mi-512Mi | API size (replicas ignored with autoscaling). |
+| `api.replicas` / `.resources` | `1` / 100m, 256Mi-1Gi | API size (replicas ignored with autoscaling); the PDF renderer may use half the memory limit. |
 | `api.startupProbe` / `.livenessProbe` / `.readinessProbe` | `/healthz` / `/healthz` / `/readyz` | Full Probe objects; `{}` disables one. |
 | `api.podAnnotations` / `.topologySpreadConstraints` | `{}` / `[]` | |
 | `worker.enabled` / `.replicas` / `.concurrency` | `true` / `1` / `4` | Background worker; jobs per pod. |
@@ -423,11 +423,15 @@ per-project settings.
 Proposals export to PDF with WeasyPrint inside the API pods: the image (Ubuntu 24.04)
 carries Pango, HarfBuzz, fontconfig, the four branding fonts and DejaVu as the fallback.
 Nothing is fetched (the renderer only answers `data:` URIs and the bundled fonts), so no
-egress rule is needed. Each render runs in a child process of the API (about 100 MiB at
-its peak for the largest proposal, one at a time per pod, killed after 20 s with a 503
-`export_busy`); the default `api.resources.limits.memory` (512Mi) has room for it, so
-keep at least that. With a read-only root filesystem, fontconfig caches under
-`/tmp/cache` (the `/tmp` emptyDir; `XDG_CACHE_HOME` is set in the image).
+egress rule is needed. Each render runs in a child process of the API (one at a time
+per pod, killed after 20 s with a 503 `export_busy`). What a document may lay out is
+bounded (about 7 s and 160 MB at most for the largest hostile proposal on one CPU), and
+the child may use at most half of `api.resources.limits.memory` (it reads the
+container's cgroup limit): beyond it, the export fails with a 500 and the API carries
+on, instead of the container being OOM-killed. Keep the default 1Gi; below 512Mi the
+largest proposals fail to export. The child gets no secrets in its environment. With a
+read-only root filesystem, fontconfig caches under `/tmp/cache` (the `/tmp` emptyDir;
+`XDG_CACHE_HOME` is set in the image).
 
 ## Air-gapped installs
 

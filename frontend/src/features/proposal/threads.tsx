@@ -27,12 +27,28 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MarkdownEditor } from '@/features/idea/markdown-editor'
+import { byId, focusWhenRendered } from '@/lib/focus'
 import { cn } from '@/lib/utils'
 
 import { useProposalEditor } from './editor-context'
-import { PROPOSAL_COMMENT_LIMIT } from './text'
+import { markdownExcerpt, PROPOSAL_COMMENT_LIMIT } from './text'
 
 type Variant = 'margin' | 'sheet'
+
+/**
+ * DOM ids for focus to follow actions (WCAG 2.4.3): a posted thread, a resolved
+ * thread's line, the margin's "Comment" button. Per variant: the margin stays in
+ * the DOM (hidden below `lg`) while the sheet shows the same threads.
+ */
+const threadDomId = (variant: Variant, threadId: string) => `proposal-thread-${variant}-${threadId}`
+const resolvedToggleId = (variant: Variant, threadId: string) =>
+  `${threadDomId(variant, threadId)}-toggle`
+const commentButtonId = (sectionKey: ProposalSectionKey) => `proposal-comment-${sectionKey}`
+/** The open thread's card (not the copy inside a resolved thread's line, about to move). */
+const openThreadCard = (variant: Variant, threadId: string) => () => {
+  const card = document.getElementById(threadDomId(variant, threadId))
+  return card?.closest('[data-resolved-thread]') ? null : card
+}
 
 /**
  * A section's margin threads: open ones first, resolved ones collapsed to a
@@ -87,11 +103,13 @@ export function SectionThreads({
           <NewThread
             sectionKey={sectionKey}
             sectionTitle={sectionTitle}
+            variant={variant}
             onDone={variant === 'margin' ? () => setComposingIn(null) : undefined}
             focusOnMount={variant === 'margin'}
           />
         ) : (
           <Button
+            id={commentButtonId(sectionKey)}
             variant="ghost"
             size="sm"
             className="self-start text-muted"
@@ -126,11 +144,13 @@ export function SectionThreads({
 function NewThread({
   sectionKey,
   sectionTitle,
+  variant,
   onDone,
   focusOnMount,
 }: {
   sectionKey: ProposalSectionKey
   sectionTitle: string
+  variant: Variant
   onDone?: () => void
   focusOnMount: boolean
 }) {
@@ -143,13 +163,22 @@ function NewThread({
     create.mutate(
       { sectionKey, bodyMd: text },
       {
-        onSuccess: () => {
+        onSuccess: (thread) => {
           setBody('')
-          onDone?.()
+          if (!onDone) return
+          // The margin composer closes: focus goes to the thread just posted.
+          onDone()
+          focusWhenRendered(byId(threadDomId(variant, thread.id)))
         },
       },
     )
   }
+  const cancel = onDone
+    ? () => {
+        onDone()
+        focusWhenRendered(byId(commentButtonId(sectionKey)))
+      }
+    : undefined
   return (
     <MarkdownEditor
       label={`Comment on ${sectionTitle}`}
@@ -157,14 +186,14 @@ function NewThread({
       value={body}
       onValueChange={setBody}
       onSubmit={post}
-      onCancel={onDone}
+      onCancel={cancel}
       maxLength={PROPOSAL_COMMENT_LIMIT}
       minRows={2}
       focusOnMount={focusOnMount}
       actions={
         <>
-          {onDone && (
-            <Button size="sm" variant="ghost" onClick={onDone}>
+          {cancel && (
+            <Button size="sm" variant="ghost" onClick={cancel}>
               Cancel
             </Button>
           )}
@@ -200,11 +229,23 @@ function ThreadCard({
   const first = thread.comments.find((comment) => !comment.deleted) ?? thread.comments[0]
   const starter = first?.author?.display_name ?? 'Someone'
   const resolved = Boolean(thread.resolved_at)
+  const id = threadDomId(variant, thread.id)
+  const replyButtonId = `${id}-reply`
+
+  const toggleResolved = () => {
+    setResolved.mutate({ threadId: thread.id, resolved: !resolved })
+    // Resolved: the thread collapses to its line; reopened: it is a card among the open ones.
+    focusWhenRendered(
+      resolved ? openThreadCard(variant, thread.id) : byId(resolvedToggleId(variant, thread.id)),
+    )
+  }
 
   return (
     <article
+      id={id}
+      tabIndex={-1}
       aria-labelledby={headingId}
-      className="flex flex-col rounded-lg border bg-surface text-sm"
+      className="flex scroll-mt-16 flex-col rounded-lg border bg-surface text-sm"
     >
       <h3 id={headingId} className="sr-only">
         {resolved ? 'Resolved thread' : 'Thread'} by {starter} on {sectionTitle}
@@ -229,18 +270,30 @@ function ThreadCard({
       {permissions.can_comment && (
         <div className="border-t border-subtle p-2">
           {replying ? (
-            <Reply threadId={thread.id} onDone={() => setReplying(false)} starter={starter} />
+            <Reply
+              threadId={thread.id}
+              starter={starter}
+              onPosted={() => {
+                setReplying(false)
+                // A reply reopens a resolved thread, so the card may move: follow it.
+                focusWhenRendered(openThreadCard(variant, thread.id))
+              }}
+              onCancel={() => {
+                setReplying(false)
+                focusWhenRendered(byId(replyButtonId))
+              }}
+            />
           ) : (
             <div className="flex items-center gap-1">
-              <Button size="sm" variant="ghost" onClick={() => setReplying(true)}>
-                Reply
-              </Button>
               <Button
+                id={replyButtonId}
                 size="sm"
                 variant="ghost"
-                className="ml-auto"
-                onClick={() => setResolved.mutate({ threadId: thread.id, resolved: !resolved })}
+                onClick={() => setReplying(true)}
               >
+                Reply
+              </Button>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={toggleResolved}>
                 {resolved ? <RotateCcw aria-hidden="true" /> : <Check aria-hidden="true" />}
                 {resolved ? 'Reopen' : 'Resolve'}
               </Button>
@@ -267,8 +320,9 @@ function ResolvedThread({
   const first = thread.comments.find((comment) => !comment.deleted)
   const count = thread.comments.filter((comment) => !comment.deleted).length
   return (
-    <div className="flex flex-col gap-2">
+    <div data-resolved-thread="" className="flex flex-col gap-2">
       <button
+        id={resolvedToggleId(variant, thread.id)}
         type="button"
         aria-expanded={expanded}
         aria-controls={contentId}
@@ -281,7 +335,8 @@ function ResolvedThread({
         />
         <Check aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span className="min-w-0 truncate">
-          Resolved · {first?.author?.display_name ?? 'Someone'}: {first?.body_md ?? ''}
+          Resolved · {first?.author?.display_name ?? 'Someone'}:{' '}
+          {markdownExcerpt(first?.body_md ?? '')}
         </span>
         <span className="ml-auto shrink-0 tabular-nums">
           {count}
@@ -376,11 +431,13 @@ function CommentItem({
 function Reply({
   threadId,
   starter,
-  onDone,
+  onPosted,
+  onCancel,
 }: {
   threadId: string
   starter: string
-  onDone: () => void
+  onPosted: () => void
+  onCancel: () => void
 }) {
   const { ideaKey } = useProposalEditor()
   const reply = useReplyToProposalThread(ideaKey)
@@ -388,7 +445,7 @@ function Reply({
   const post = () => {
     const text = body.trim()
     if (!text) return
-    onDone()
+    onPosted()
     reply.mutate({ threadId, bodyMd: text })
   }
   return (
@@ -398,13 +455,13 @@ function Reply({
       value={body}
       onValueChange={setBody}
       onSubmit={post}
-      onCancel={onDone}
+      onCancel={onCancel}
       maxLength={PROPOSAL_COMMENT_LIMIT}
       minRows={2}
       focusOnMount
       actions={
         <>
-          <Button size="sm" variant="ghost" onClick={onDone}>
+          <Button size="sm" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
           <Button size="sm" variant="secondary" onClick={post} disabled={!body.trim()}>

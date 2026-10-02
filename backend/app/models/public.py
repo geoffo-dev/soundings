@@ -15,6 +15,10 @@ idea's last activity. See docs/api/contract-phase4.md sections 3.5-3.9.
 ALTCHA (proof of work, research R1 section 7) has no replay protection of its own:
 ``altcha_used_challenges`` remembers each solved challenge's signature until the
 challenge expires, so a solution is accepted once.
+
+``confirmation_email_sends`` counts confirmation emails per address for the limit of
+3 a day, by a keyed hash of the address (never the address), so erasing, rejecting or
+forgetting a submission (which delete its outbox rows) can't reset the count.
 """
 
 from __future__ import annotations
@@ -29,13 +33,14 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 
-__all__ = ["AltchaUsedChallenge", "PublicSubmission"]
+__all__ = ["AltchaUsedChallenge", "ConfirmationEmailSend", "PublicSubmission"]
 
 TRACKING_TOKEN_HASH_LENGTH = 64
 """Hex SHA-256 of the tracking token."""
@@ -55,8 +60,8 @@ class PublicSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
       their tracking page and in their status emails. Null once erased.
     * ``project_id`` repeats the idea's project for the per-project rate limit.
 
-    The per-address limit on confirmation emails counts ``outbound_email`` rows (first
-    sends and resends alike; ``ix_outbound_email_submission_address``), not this table.
+    The per-address limit on confirmation emails counts ``confirmation_email_sends``,
+    not this table.
     """
 
     __tablename__ = "public_submissions"
@@ -121,3 +126,24 @@ class AltchaUsedChallenge(Base):
 
     signature: Mapped[str] = mapped_column(String(128), primary_key=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ConfirmationEmailSend(UUIDPrimaryKeyMixin, Base):
+    """One confirmation email (``submission_received``) queued to an address, first
+    sends and resends alike, for the limit of 3 per address per 24 hours
+    (contract-phase4 section 3.5). ``address_key`` is HMAC-SHA256 of the canonical
+    address (:func:`app.public.emails.canonical_address`: lower-cased, ``+tag``
+    removed, provider variants folded) with a key derived from the secret key: no
+    address is stored. Nothing deletes these rows but the hourly cleanup, a day later:
+    erasure, rejection and the retention rules delete outbox rows, which is why the
+    limit no longer counts those."""
+
+    __tablename__ = "confirmation_email_sends"
+    __table_args__ = (
+        Index("ix_confirmation_email_sends_address_key_created_at", "address_key", "created_at"),
+    )
+
+    address_key: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True
+    )

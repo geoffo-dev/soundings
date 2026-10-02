@@ -26,7 +26,7 @@ import { StatusBadge, StatusDot } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { formatDate } from '@/lib/dates'
-import { statusTone } from '@/lib/status'
+import { statusTone, type StatusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { TRACKING_TOKEN, useFragmentToken } from './fragment-token'
@@ -166,6 +166,29 @@ function TrackSkeleton() {
   )
 }
 
+/** What a status means for the person who sent the idea, in plain words. */
+export function statusMeaning(
+  status: TrackedSubmission['status'],
+  resolution: TrackedSubmission['resolution'],
+): string {
+  switch (status) {
+    case 'new':
+      return 'The team has your idea and will look at it soon.'
+    case 'evaluating':
+      return 'The team is weighing it up: a few people are looking at it closely.'
+    case 'shortlisted':
+      return 'Good news: the team thinks it’s worth taking further.'
+    case 'proposal':
+      return 'The team is writing a proposal to take it forward.'
+    case 'closed':
+      return resolution === 'accepted'
+        ? 'The team has decided to go ahead with it.'
+        : resolution === 'rejected'
+          ? 'The team has decided not to take it forward. Thank you for sending it.'
+          : 'The team has put it aside for now. It may come back later.'
+  }
+}
+
 const HELD_COPY = {
   email_verification: {
     label: 'Waiting for you to confirm your email address',
@@ -188,7 +211,7 @@ function TrackedView({
 }) {
   const held = tracked.held_for ? HELD_COPY[tracked.held_for] : null
   return (
-    <PublicLayout branding={tracked.branding}>
+    <PublicLayout branding={tracked.branding} projectName={tracked.project.name}>
       <div className="flex flex-col gap-1 px-1">
         <p className="text-sm text-muted">
           Your idea for {tracked.project.name} · sent {formatDate(tracked.submitted_at)}
@@ -213,12 +236,15 @@ function TrackedView({
               <p className="text-sm text-muted">{held.text}</p>
             </div>
           ) : (
-            <div>
+            <div className="flex flex-col items-start gap-1.5">
               <StatusBadge
                 status={tracked.status}
                 resolution={tracked.resolution}
                 label={tracked.status_label}
               />
+              <p className="text-sm text-secondary">
+                {statusMeaning(tracked.status, tracked.resolution)}
+              </p>
             </div>
           )}
         </div>
@@ -231,10 +257,17 @@ function TrackedView({
   )
 }
 
-/** Sent, then every status change since it reached the team: dates and labels only. */
+/**
+ * Sent, then "With the team" once it is through (confirmed and, where the team
+ * reviews new ideas, approved; the API keeps no date for that step), then every
+ * status change since: dates and labels only.
+ */
 function Timeline({ tracked }: { tracked: TrackedSubmission }) {
-  const items = [
+  const items: { key: string; label: string; at: string | null; tone: StatusTone | null }[] = [
     { key: 'sent', label: 'Sent', at: tracked.submitted_at, tone: null },
+    ...(tracked.held_for
+      ? []
+      : [{ key: 'with-team', label: 'With the team', at: null, tone: null }]),
     ...tracked.history.map((change, index) => ({
       key: `${change.at}-${index}`,
       label: change.status_label,
@@ -263,9 +296,11 @@ function Timeline({ tracked }: { tracked: TrackedSubmission }) {
             </span>
             <span className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-3 text-sm">
               <span className="font-medium text-primary">{item.label}</span>
-              <time dateTime={item.at} className="text-muted tabular-nums">
-                {formatDate(item.at)}
-              </time>
+              {item.at && (
+                <time dateTime={item.at} className="text-muted tabular-nums">
+                  {formatDate(item.at)}
+                </time>
+              )}
             </span>
           </li>
         ))}

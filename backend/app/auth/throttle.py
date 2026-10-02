@@ -29,6 +29,7 @@ __all__ = [
     "ALTCHA_THROTTLE",
     "BREAK_GLASS_THROTTLE",
     "LOGIN_THROTTLE",
+    "PUBLIC_FORM_THROTTLE",
     "PUBLIC_TOKEN_THROTTLE",
     "Throttle",
     "client_key",
@@ -44,6 +45,13 @@ BREAK_GLASS_THROTTLE: Final = ("break_glass", 5, 15 * 60.0)
 
 ALTCHA_THROTTLE: Final = ("public_altcha", 30, 60.0)
 """``GET /public/projects/{slug}/altcha``: 30 challenges per client per minute."""
+
+PUBLIC_FORM_THROTTLE: Final = ("public_form", 120, 60.0)
+"""Public form requests (``GET /public/projects/{slug}``, its ``/altcha`` and ``POST
+.../submissions``): 120 per client per minute, shared, counted before the form is looked
+up, so which projects have an open form (and their names) can't be probed at speed.
+A visitor makes about three per idea; the challenge and submission limits stay the
+tighter ones."""
 
 PUBLIC_TOKEN_THROTTLE: Final = ("public_token", 60, 60.0)
 """Tracking and confirmation links (track, updates, resend, erase, verify): 60

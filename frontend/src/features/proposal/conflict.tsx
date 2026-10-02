@@ -4,16 +4,30 @@ import { useId, useMemo } from 'react'
 import type { ProposalSection, ProposalSectionKey } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { RelativeTime } from '@/components/ui/relative-time'
+import { focusWhenRendered } from '@/lib/focus'
 import { cn } from '@/lib/utils'
 
 import { useProposalEditor } from './editor-context'
-import { diffLines, type DiffLine } from './text'
+import { diffLines, sectionDomId, type DiffLine } from './text'
+
+/** Back to the section's text once the prompt has gone (its textarea, or the preview). */
+function focusSectionText(key: ProposalSectionKey) {
+  focusWhenRendered(() => {
+    const section = document.getElementById(sectionDomId(key))
+    return (
+      section?.querySelector<HTMLElement>('textarea[data-section-text]') ??
+      document.getElementById(`${sectionDomId(key)}-preview`)
+    )
+  })
+}
 
 /**
  * Someone else saved this section after you started (409 `proposal_conflict`):
  * their version and yours side by side, changed lines marked, and a choice.
- * "Keep mine" saves yours over theirs; "Use theirs" replaces yours. Until then
- * your text stays in the editor and nothing is saved for this section.
+ * "Keep your version" saves yours over theirs; "Use {name}'s version" replaces
+ * yours (when the other version is your own, from another tab: "Keep this
+ * version" / "Use the saved version"). Until then your text stays in the editor
+ * and nothing is saved for this section. Either way focus goes back to the text.
  */
 export function ConflictPrompt({
   sectionKey,
@@ -59,11 +73,25 @@ export function ConflictPrompt({
         <Version title={byYou ? 'This version' : 'Your version'} lines={lines} side="yours" />
       </div>
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => store.takeTheirs(sectionKey)}>
-          Use theirs
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            store.takeTheirs(sectionKey)
+            focusSectionText(sectionKey)
+          }}
+        >
+          {byYou ? 'Use the saved version' : `Use ${who}’s version`}
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => void store.keepMine(sectionKey)}>
-          Keep mine
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            void store.keepMine(sectionKey)
+            focusSectionText(sectionKey)
+          }}
+        >
+          {byYou ? 'Keep this version' : 'Keep your version'}
         </Button>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { CircleAlert, RotateCcw } from 'lucide-react'
+import { CircleAlert, Eye, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 
 import { useUpdateBranding, type BrandingScope } from '@/api/branding'
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { RelativeTime } from '@/components/ui/relative-time'
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
 import { FormActions } from '@/features/project/settings/settings-layout'
@@ -57,6 +58,7 @@ export function BrandingSettingsForm({
   const [form, setForm] = useState(saved)
   const [errors, setErrors] = useState<BrandingErrors>({})
   const [notice, setNotice] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const dirty = !sameProfile(form, saved)
 
   // Saved elsewhere (another tab, a refetch): follow the server unless there are edits here.
@@ -228,7 +230,7 @@ export function BrandingSettingsForm({
             onChange={(font) => set({ font })}
             description={
               global
-                ? 'For the whole app, emails and exported proposals. Every font is bundled: nothing is downloaded from elsewhere.'
+                ? 'Page titles and the app name in the app (its other text stays Inter, for dense lists), and all the text of public pages, emails and exported proposals. Every font is bundled: nothing is downloaded from elsewhere.'
                 : 'For the public form, emails to submitters and exported proposals.'
             }
           />
@@ -287,6 +289,19 @@ export function BrandingSettingsForm({
               saving={update.isPending}
               notice={notice}
               saveLabel="Save branding"
+              extra={
+                // Below `xl` the preview sits under the whole form: open it beside your edits.
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="xl:hidden"
+                  aria-label="Preview"
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  <Eye aria-hidden="true" />
+                  <span className="max-sm:sr-only">Preview</span>
+                </Button>
+              }
               onDiscard={() => {
                 setForm(saved)
                 setErrors({})
@@ -309,6 +324,21 @@ export function BrandingSettingsForm({
           projectName={projectName}
         />
       </aside>
+      <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
+        <SheetContent size="lg" aria-describedby={undefined}>
+          <SheetHeader>
+            <SheetTitle>Preview</SheetTitle>
+          </SheetHeader>
+          <SheetBody>
+            <BrandingPreview
+              branding={preview}
+              surfaces={global ? ['app', 'public', 'email'] : ['public', 'email']}
+              projectName={projectName}
+              titled={false}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

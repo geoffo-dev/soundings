@@ -241,12 +241,14 @@ extraVolumeMounts: []
 api:
   # -- Ignored when autoscaling.enabled is true.
   replicas: 1
+  # -- The API's PDF renderer (a child process, one render at a time) may use half
+  # of the memory limit and fails on its own beyond it; keep the limit at 1Gi or more.
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
-      memory: 512Mi
+      memory: 1Gi
   startupProbe:
     httpGet:
       path: /healthz

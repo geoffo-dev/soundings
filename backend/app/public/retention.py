@@ -3,7 +3,8 @@ run after Phase 3's (:func:`app.notifications.schedule.run_schedule`). Idempoten
 indexed and batched; constants, not settings:
 
 1. solved ALTCHA challenges past their expiry are forgotten (replay protection only
-   needs them until then);
+   needs them until then), and so are confirmation sends older than 24 hours (the
+   per-address limit only needs them for that long);
 2. ideas still held for email confirmation 3 days after they were sent are deleted
    (with their submission and emails: they never reached the team);
 3. unconfirmed addresses are forgotten 3 days after the submission (address and
@@ -29,8 +30,9 @@ from app.models.enums import EmailType, HoldReason, IdeaStatus
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
 from app.models.project import Project
-from app.models.public import AltchaUsedChallenge, PublicSubmission
+from app.models.public import AltchaUsedChallenge, ConfirmationEmailSend, PublicSubmission
 from app.public import erasure
+from app.public.emails import CONFIRMATION_WINDOW
 
 __all__ = [
     "BATCH",
@@ -58,6 +60,7 @@ class RetentionResult:
     unconfirmed_ideas: int = 0
     addresses: int = 0
     erased: int = 0
+    sends: int = 0
 
 
 async def _forget_challenges(db: AsyncSession, now: datetime) -> int:
@@ -65,6 +68,16 @@ async def _forget_challenges(db: AsyncSession, now: datetime) -> int:
         delete(AltchaUsedChallenge)
         .where(AltchaUsedChallenge.expires_at < now)
         .returning(AltchaUsedChallenge.signature)
+    )
+    return len(result.all())
+
+
+async def _forget_sends(db: AsyncSession, now: datetime) -> int:
+    """``ix_confirmation_email_sends_created_at``."""
+    result = await db.execute(
+        delete(ConfirmationEmailSend)
+        .where(ConfirmationEmailSend.created_at <= now - CONFIRMATION_WINDOW)
+        .returning(ConfirmationEmailSend.id)
     )
     return len(result.all())
 
@@ -178,6 +191,7 @@ async def cleanup(db: AsyncSession, now: datetime) -> RetentionResult:
         unconfirmed_ideas=await _delete_unconfirmed_ideas(db, now),
         addresses=await _forget_unconfirmed_addresses(db, now),
         erased=await _erase_closed(db, now),
+        sends=await _forget_sends(db, now),
     )
     if result.unconfirmed_ideas or result.addresses or result.erased:
         logger.info(

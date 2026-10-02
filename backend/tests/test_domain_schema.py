@@ -20,7 +20,6 @@ import app.models
 from app.migrate import alembic_config
 from app.models import ProjectRole, project_effective_roles
 from app.models.base import Base
-from app.models.notification import SUBMITTER_ADDRESS_KEY_SQL
 from tests.conftest import make_settings
 
 DOMAIN_TABLES = {
@@ -30,6 +29,7 @@ DOMAIN_TABLES = {
     "brand_assets",
     "branding_profiles",
     "comments",
+    "confirmation_email_sends",
     "evaluation_scores",
     "evaluations",
     "group_idp_values",
@@ -942,32 +942,25 @@ async def test_ideas_are_held_for_a_known_reason_and_submitter_emails_name_their
     await db_session.rollback()
 
 
-async def test_the_per_address_limit_folds_case_and_sub_addresses(
-    db_session: AsyncSession,
-) -> None:
-    """Confirmation emails count against the address without its +tag, whatever the
-    case (contract-phase4 section 3.5): victim+1@ and Victim+2@ share victim@'s 3."""
-    idea_id, _ = await _idea_and_user(db_session)
-    addresses = ["victim@example.org", "Victim+1@Example.org", "victim+2@EXAMPLE.ORG"]
-    for address in [*addresses, "other@example.org", "victim@example.com"]:
-        email_id = uuid.uuid4()
-        await db_session.execute(
-            text(
-                "INSERT INTO outbound_email (id, type, to_address, idea_id, message_id)"
-                " VALUES (:id, 'submission_received', :address, :idea, :mid)"
-            ),
-            {"id": email_id, "address": address, "idea": idea_id, "mid": f"<{email_id}@x>"},
-        )
-    key = SUBMITTER_ADDRESS_KEY_SQL
-    count = text(
-        f"SELECT count(*) FROM outbound_email WHERE type = 'submission_received'"  # noqa: S608
-        f" AND {key} = {key.replace('to_address', 'CAST(:address AS text)')}"
-        " AND created_at > now() - interval '24 hours'"
+async def test_confirmation_sends_keep_a_key_and_a_time_only(db_session: AsyncSession) -> None:
+    """The per-address limit's rows (code review M1): no address, no idea to cascade
+    from, so erasing or deleting an idea leaves them; at most a 64-character key."""
+    columns: list[str] = list(
+        (
+            await db_session.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns"
+                    " WHERE table_name = 'confirmation_email_sends' ORDER BY ordinal_position"
+                )
+            )
+        ).scalars()
     )
-
-    for address in [*addresses, "VICTIM+new@example.org"]:
-        assert await db_session.scalar(count, {"address": address}) == 3
-    assert await db_session.scalar(count, {"address": "victim@example.net"}) == 0
+    assert columns == ["id", "address_key", "created_at"]
+    insert = text("INSERT INTO confirmation_email_sends (id, address_key) VALUES (:id, :key)")
+    await db_session.execute(insert, {"id": uuid.uuid4(), "key": "a" * 64})
+    with pytest.raises(Exception, match="too long"):
+        async with db_session.begin_nested():
+            await db_session.execute(insert, {"id": uuid.uuid4(), "key": "a" * 65})
     await db_session.rollback()
 
 

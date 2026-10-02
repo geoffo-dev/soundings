@@ -42,7 +42,7 @@ from app.proposals.fonts import (
     MONO_FONT,
     faces_for,
 )
-from app.proposals.markdown import TableBudget, close_open_blocks, demote_headings, render_html
+from app.proposals.markdown import RenderBudget, close_open_blocks, demote_headings, render_html
 
 __all__ = [
     "DEFAULT_COLOR",
@@ -259,7 +259,7 @@ def build_html(document: ExportDocument) -> str:
     branding = document.branding
     primary = safe_color(branding.primary_color)
     accent = safe_color(branding.accent_color)
-    budget = TableBudget()
+    budget = RenderBudget()
     sections = [
         {
             "key": section.key,

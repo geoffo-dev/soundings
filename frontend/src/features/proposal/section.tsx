@@ -18,7 +18,7 @@ import { ConflictPrompt } from './conflict'
 import { openThreadCount, useProposalEditor } from './editor-context'
 import { applyFormat, type FormatKind } from './format'
 import { useSectionSave, type SectionSaveState } from './save-store'
-import { countWords, SECTION_LIMIT, sectionDomId, wordLabel } from './text'
+import { countWords, MARKDOWN_HINT_ID, SECTION_LIMIT, sectionDomId, wordLabel } from './text'
 import { SectionThreads } from './threads'
 
 const isMod = (event: KeyboardEvent) => event.metaKey || event.ctrlKey
@@ -216,7 +216,6 @@ function SectionWriter({
   onChange: (value: string) => void
   fieldRef: RefObject<HTMLTextAreaElement | null>
 }) {
-  const hintId = useId()
   const near = value.length > SECTION_LIMIT * 0.9
   const format = (kind: FormatKind) => {
     const field = fieldRef.current
@@ -249,9 +248,6 @@ function SectionWriter({
             </Button>
           </WithTooltip>
         ))}
-        <span id={hintId} className="ml-auto hidden px-1.5 text-xs text-muted sm:inline">
-          Markdown · saves as you type
-        </span>
       </div>
       <Textarea
         id={`${sectionDomId(section.key)}-text`}
@@ -259,7 +255,8 @@ function SectionWriter({
         data-section-text=""
         value={value}
         aria-label={section.title}
-        aria-describedby={hintId}
+        // "Markdown · saves as you type", once in the editor's bar.
+        aria-describedby={MARKDOWN_HINT_ID}
         placeholder={section.prompt}
         spellCheck
         minRows={4}

@@ -6,12 +6,30 @@ import remarkGfm from 'remark-gfm'
 import { exactMention, MENTION_HREF } from '@/lib/mentions'
 import { cn } from '@/lib/utils'
 
-const isExternal = (href: string | undefined) => !!href && /^https?:\/\//i.test(href)
+const isExternal = (href: string | undefined) => !!href && /^https?:/i.test(href)
+
+const URL_SCHEME = /^([A-Za-z][A-Za-z0-9+.-]*):/
+const LINK_SCHEMES = new Set(['http', 'https', 'mailto'])
+
+/**
+ * The links Markdown may keep: absolute `http`, `https` and `mailto` URLs only,
+ * the same allow-list as the exported PDF (backend `safe_href`), so the preview
+ * never shows a link the document drops. Relative and protocol-relative
+ * (`//host`) URLs, fragments and every other scheme (`javascript:`, `data:`,
+ * `tel:`, `irc:`, `xmpp:`…) lose their link and stay as text.
+ */
+export function safeMarkdownUrl(url: string): string | null {
+  const scheme = URL_SCHEME.exec(url)?.[1]?.toLowerCase()
+  return scheme && LINK_SCHEMES.has(scheme) ? url : null
+}
+
+const linkClass =
+  'font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent'
 
 /**
  * Element styles for rendered Markdown. Raw HTML is never rendered (skipHtml)
- * and unsafe URLs (javascript:, data:) are stripped by react-markdown's default
- * urlTransform. Images are shown as links so nothing is fetched from elsewhere.
+ * and only safe URLs survive (`safeMarkdownUrl`): a link without one is plain
+ * text. Images are shown as links so nothing is fetched from elsewhere.
  */
 const components: Components = {
   // Headings shift down one level: the page already owns the h1.
@@ -31,21 +49,35 @@ const components: Components = {
     </h4>
   ),
   h4: ({ node: _node, children, ...props }) => (
-    <h5 className="mt-4 mb-1 text-base font-medium first:mt-0" {...props}>
+    <h5 className="mt-4 mb-1 text-base font-semibold text-secondary first:mt-0" {...props}>
       {children}
     </h5>
   ),
-  p: ({ node: _node, ...props }) => <p className="my-3 first:mt-0 last:mb-0" {...props} />,
-  a: ({ node: _node, href, children, ...props }) => (
-    <a
-      href={href}
-      className="font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
-      {...(isExternal(href) ? { target: '_blank', rel: 'noopener noreferrer nofollow' } : {})}
-      {...props}
-    >
+  h5: ({ node: _node, children, ...props }) => (
+    <h6 className="mt-4 mb-1 text-sm font-semibold text-secondary first:mt-0" {...props}>
       {children}
-    </a>
+    </h6>
   ),
+  h6: ({ node: _node, children, ...props }) => (
+    <h6 className="mt-4 mb-1 text-sm font-semibold text-secondary first:mt-0" {...props}>
+      {children}
+    </h6>
+  ),
+  p: ({ node: _node, ...props }) => <p className="my-3 first:mt-0 last:mb-0" {...props} />,
+  a: ({ node: _node, href, children, ...props }) =>
+    href ? (
+      <a
+        href={href}
+        className={linkClass}
+        {...(isExternal(href) ? { target: '_blank', rel: 'noopener noreferrer nofollow' } : {})}
+        {...props}
+      >
+        {children}
+      </a>
+    ) : (
+      // A link whose URL was dropped: its text only.
+      <span>{children}</span>
+    ),
   ul: ({ node: _node, className, ...props }) => (
     <ul
       className={cn(
@@ -109,7 +141,11 @@ const components: Components = {
       </span>
     ) : null,
   img: ({ src, alt }) =>
-    typeof src !== 'string' ? null : (
+    typeof src !== 'string' || !src ? (
+      alt ? (
+        <span>{alt}</span>
+      ) : null
+    ) : (
       <a
         href={src}
         target="_blank"
@@ -124,41 +160,44 @@ const components: Components = {
 
 /**
  * Headings inside one section of a longer document whose section titles are
- * already h2 (the proposal editor): `#` starts at h3, as the exported PDF
- * demotes them (contract-phase4 §3.4), and no deeper than h6.
+ * already h2 (the proposal editor): `#` starts at h3 and none goes deeper than
+ * h6. Every level stays visibly a heading (semibold, with its own size and
+ * spacing step), never body text with a different weight.
  */
 const nestedHeadingClass = {
-  strong: 'mt-5 mb-1.5 text-base font-semibold first:mt-0',
-  quiet: 'mt-4 mb-1 text-base font-medium first:mt-0',
+  h3: 'mt-6 mb-2 text-lg font-semibold first:mt-0',
+  h4: 'mt-5 mb-1.5 text-base font-semibold first:mt-0',
+  h5: 'mt-4 mb-1 text-base font-semibold text-secondary first:mt-0',
+  h6: 'mt-4 mb-1 text-sm font-semibold text-secondary first:mt-0',
 }
 const nestedHeadings: Components = {
   h1: ({ node: _node, children, ...props }) => (
-    <h3 className={nestedHeadingClass.strong} {...props}>
+    <h3 className={nestedHeadingClass.h3} {...props}>
       {children}
     </h3>
   ),
   h2: ({ node: _node, children, ...props }) => (
-    <h4 className={nestedHeadingClass.strong} {...props}>
+    <h4 className={nestedHeadingClass.h4} {...props}>
       {children}
     </h4>
   ),
   h3: ({ node: _node, children, ...props }) => (
-    <h5 className={nestedHeadingClass.quiet} {...props}>
+    <h5 className={nestedHeadingClass.h5} {...props}>
       {children}
     </h5>
   ),
   h4: ({ node: _node, children, ...props }) => (
-    <h6 className={nestedHeadingClass.quiet} {...props}>
+    <h6 className={nestedHeadingClass.h6} {...props}>
       {children}
     </h6>
   ),
   h5: ({ node: _node, children, ...props }) => (
-    <h6 className={nestedHeadingClass.quiet} {...props}>
+    <h6 className={nestedHeadingClass.h6} {...props}>
       {children}
     </h6>
   ),
   h6: ({ node: _node, children, ...props }) => (
-    <h6 className={nestedHeadingClass.quiet} {...props}>
+    <h6 className={nestedHeadingClass.h6} {...props}>
       {children}
     </h6>
   ),
@@ -274,7 +313,12 @@ export function Markdown({ children, className, mentionSelfId, nested = false }:
       data-slot="markdown"
       className={cn('text-base [overflow-wrap:anywhere] text-primary', className)}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMentions]} skipHtml components={withMentions}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMentions]}
+        skipHtml
+        urlTransform={safeMarkdownUrl}
+        components={withMentions}
+      >
         {children}
       </ReactMarkdown>
     </div>

@@ -25,6 +25,11 @@
     line-height: var(--text-base--line-height);
   }
 
+  /* Page titles carry the brand's font; everything else stays Inter (theme.css). */
+  h1 {
+    font-family: var(--font-brand);
+  }
+
   ::selection {
     background-color: color-mix(in oklch, var(--accent) 22%, transparent);
   }

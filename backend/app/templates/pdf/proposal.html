@@ -58,7 +58,10 @@ html {
 }
 body { margin: 0; }
 h1, h2, h3, h4, h5, h6 { line-height: 1.25; font-weight: 600; break-after: avoid; }
-p, li, td, th { overflow-wrap: break-word; }
+/* Section text never breaks inside a word: WeasyPrint re-lays out the rest of the
+   paragraph for every line it does that on. Long runs carry zero-width spaces instead
+   (app/proposals/markdown.py). The cover's short values may break anywhere. */
+.cover { overflow-wrap: break-word; }
 a { color: {{ colors.accent_text }}; text-decoration: underline; }
 
 /* Cover ------------------------------------------------------------------ */
@@ -138,7 +141,7 @@ a { color: {{ colors.accent_text }}; text-decoration: underline; }
 }
 .section hr { border: 0; border-top: 0.5pt solid #d0d7de; margin: 5mm 0; }
 .section strong { font-weight: 600; }
-.empty { color: {{ colors.muted }}; font-style: italic; }
+.empty, .too-long { color: {{ colors.muted }}; font-style: italic; }
 code, pre { font-family: {{ mono_stack }}; font-size: 8.8pt; }
 code { background: #f3f4f6; padding: 0.2mm 0.8mm; border-radius: 1mm; }
 pre {
@@ -148,7 +151,6 @@ pre {
   padding: 3mm;
   margin: 0 0 3mm 0;
   white-space: pre-wrap;
-  overflow-wrap: break-word;
   line-height: 1.4;
 }
 pre code { background: none; padding: 0; }

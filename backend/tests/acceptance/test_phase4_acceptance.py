@@ -441,7 +441,8 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     )
     assert submissions == 1
 
-    # The confirmation email: fixed text, nothing the visitor typed, both links.
+    # The confirmation email: fixed text, nothing the visitor typed, the confirmation
+    # link and no tracking link (it would show a stranger what the visitor typed).
     await run_worker_once(jobs, runtime)
     jo = f"jo.{run}@example.com"
     [summary] = await inbox.wait_for(jo)
@@ -459,10 +460,10 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     assert "<img" not in confirmation["HTML"].lower()  # no images in email
     hrefs = links(confirmation)
     [verify_link] = [href for href in hrefs if href.startswith(f"{BASE}/verify#")]
-    [track_link] = [href for href in hrefs if href.startswith(f"{BASE}/track#")]
-    assert fragment(track_link, "/track") == token
     assert verify_link in plain
-    assert track_link in plain
+    assert not [href for href in hrefs if "/track" in href]
+    assert token not in confirmation["HTML"]
+    assert token not in plain
     headers = await inbox.headers(summary["ID"])
     assert "List-Unsubscribe" not in headers  # the tracking page is the opt-out
     assert headers["Auto-Submitted"] == ["auto-generated"]

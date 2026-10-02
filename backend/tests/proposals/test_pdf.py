@@ -25,6 +25,7 @@ from pypdf import PdfReader
 from app.proposals import pdf
 from app.proposals.document import ExportBranding, ExportDocument, ExportSection, build_html
 from app.proposals.fonts import FONT_FILES
+from app.proposals.markdown import TOO_LONG
 from app.proposals.pdf import ExportBusy, Renderer, RenderFailed
 from app.schemas.proposals import PROPOSAL_TEMPLATE
 from tests.proposals import children
@@ -496,6 +497,104 @@ def test_the_longest_prose_proposal_renders_well_within_the_limit(
 
     assert len(PdfReader(io.BytesIO(data)).pages) > 20
     assert took < 10, f"8 x 20,000 characters took {took:.1f} s"
+
+
+HOSTILE_LAYOUTS = (
+    "- a\n" * 5_000,  # list items: the costliest boxes
+    "a\\\n" * 6_666,  # hard line breaks
+    "a\n\n" * 6_666,  # paragraphs
+    "*a*," * 5_000,  # inline elements
+    "a*b*" * 5_000,  # one run across 5,000 inline elements
+    "```\n" + "a\n" * 9_990 + "```\n",  # code lines
+    "i" * 20_000,  # one narrow 20,000-character word
+    "| " + "i" * 19_980 + " |\n|-|\n| b |",  # ... in a table cell
+)
+
+
+def test_hostile_layouts_render_well_within_the_limit(fresh_renderer: Renderer) -> None:
+    """One section each of what made WeasyPrint slow or large (code review H1: 9-25 s
+    and up to 250 MB per section before the box budget and break opportunities):
+    about 6 s for all eight on one CPU of the build machine, and cut with a note."""
+    hostile = document(
+        bodies={
+            t.key.value: body for t, body in zip(PROPOSAL_TEMPLATE, HOSTILE_LAYOUTS, strict=True)
+        }
+    )
+    assert all(len(body) <= 20_000 for body in HOSTILE_LAYOUTS)
+    fresh_renderer.render(document(), timeout=20, wait=1)  # warm
+
+    started = time.monotonic()
+    data = fresh_renderer.render(hostile, timeout=20, wait=1)
+    took = time.monotonic() - started
+
+    text = " ".join(" ".join(text_of(data)).split())
+    assert TOO_LONG in text
+    assert took < 15, f"the hostile layouts took {took:.1f} s"
+
+
+def test_the_child_memory_limit_is_half_the_containers(tmp_path: Any) -> None:
+    v2 = tmp_path / "v2"
+    v2.mkdir()
+    (v2 / "memory.max").write_text("536870912\n")  # 512 MiB
+    v1 = tmp_path / "v1"
+    (v1 / "memory").mkdir(parents=True)
+    (v1 / "memory" / "memory.limit_in_bytes").write_text("1073741824\n")
+    unlimited_v1 = tmp_path / "unlimited-v1"
+    (unlimited_v1 / "memory").mkdir(parents=True)
+    (unlimited_v1 / "memory" / "memory.limit_in_bytes").write_text("9223372036854771712\n")
+    unlimited_v2 = tmp_path / "unlimited-v2"
+    unlimited_v2.mkdir()
+    (unlimited_v2 / "memory.max").write_text("max\n")
+    large = tmp_path / "large"
+    large.mkdir()
+    (large / "memory.max").write_text(str(8 * 1024**3))
+
+    assert pdf_child.memory_limit(v2) == 256 * 1024**2
+    assert pdf_child.memory_limit(v1) == 512 * 1024**2
+    assert pdf_child.memory_limit(unlimited_v1) == pdf_child.MEMORY_CAP
+    assert pdf_child.memory_limit(unlimited_v2) == pdf_child.MEMORY_CAP
+    assert pdf_child.memory_limit(large) == pdf_child.MEMORY_CAP
+    assert pdf_child.memory_limit(tmp_path / "missing") == pdf_child.MEMORY_CAP
+
+
+def test_the_child_runs_with_its_memory_limit(fresh_renderer: Renderer) -> None:
+    fresh_renderer.render(document(), timeout=20, wait=1)
+
+    with open(f"/proc/{fresh_renderer.pid}/limits") as limits:
+        [line] = [line for line in limits if line.startswith("Max data size")]
+    assert line.split()[3] == str(pdf_child.memory_limit())
+
+
+def test_a_child_that_grew_large_is_replaced_by_a_fresh_one() -> None:
+    """Python keeps what a large render grew (a warm child crept from 185 to 197 MB
+    over six hostile exports): past half its limit, the child exits after replying."""
+    renderer = Renderer(target=children.serve_and_retire)
+    try:
+        assert renderer.render(document(), timeout=20, wait=1).startswith(b"%PDF-")
+        first = renderer.pid
+        assert renderer.render(document(), timeout=20, wait=1).startswith(b"%PDF-")
+        assert renderer.pid != first
+    finally:
+        renderer.stop()
+
+
+def test_the_child_gets_no_secrets_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    monkeypatch.setenv("SOUNDINGS_SECRET_KEY", "s3cret")
+    monkeypatch.setenv("SOUNDINGS_DATABASE_URL", "postgresql+psycopg://u:p@db/x")
+    monkeypatch.setenv("SOUNDINGS_OIDC_CLIENT_SECRET", "oidc")
+    monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/var/cache/soundings")
+    renderer = Renderer(target=children.report_environment)
+    try:
+        names = set(json.loads(renderer.render(document(), timeout=20, wait=1)))
+    finally:
+        renderer.stop()
+
+    assert not any(name.startswith("SOUNDINGS_") for name in names), names
+    assert {"LC_ALL", "XDG_CACHE_HOME", "TMPDIR"} <= names
+    assert names <= pdf.CHILD_ENVIRONMENT | {"LC_ALL"} | {n for n in names if n.startswith("LC_")}
 
 
 def test_the_most_table_cells_render_well_within_the_limit(fresh_renderer: Renderer) -> None:

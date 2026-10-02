@@ -72,7 +72,10 @@ RUN --mount=type=secret,id=build_ca,required=false \
     userdel --remove ubuntu 2>/dev/null || true; \
     groupadd --gid 10001 soundings; \
     useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \
-            --shell /usr/sbin/nologin soundings
+            --shell /usr/sbin/nologin soundings; \
+    # No setuid or setgid programs (su, passwd, mount, ...): nothing here needs them, and
+    # a plain `docker run` doesn't set no-new-privileges as the chart and demo.sh do.
+    find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 
 # ---------------------------------------------------------------------------------
 # 3. Backend: a self-contained virtualenv at /app/venv (non-editable, no dev deps),

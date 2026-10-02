@@ -1,9 +1,10 @@
+import { useQuery } from '@tanstack/react-query'
 import { CircleCheck, LinkIcon, MailQuestion } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 import { isApiError } from '@/api/errors'
-import { useVerifySubmissionEmail } from '@/api/public'
-import type { EmailVerified } from '@/api/types'
+import { publicProjectQueryOptions, useVerifySubmissionEmail } from '@/api/public'
+import type { EffectiveBranding, EmailVerified } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 
@@ -11,19 +12,37 @@ import { useFragmentToken, VERIFICATION_TOKEN } from './fragment-token'
 import { PublicCard, PublicLayout } from './public-layout'
 
 /**
- * /verify#<token> (contract-phase4 §3.7): confirm a public submitter's email
- * address. Opening the page changes nothing: mail security scanners open links
- * (some run JavaScript), so the token is posted only when the person clicks
- * "Confirm my email address". Before that the page can't know the project, so
- * it shows the global branding and fixed text; afterwards the project's.
+ * /{slug}/verify#<token> (and the older /verify#<token>; contract-phase4 §3.7):
+ * confirm a public submitter's email address. Opening the page changes
+ * nothing: mail security scanners open links (some run JavaScript), so the
+ * token is posted only when the person clicks "Confirm my email address".
+ *
+ * With the project's slug in the path (it isn't secret) the page loads the
+ * project's branding first, so someone arriving from the project's email sees
+ * the same name, logo and colours before and after the click; a form that has
+ * since been turned off (404) falls back to the global branding. Without a
+ * slug it shows the global branding until the confirmation says whose it is.
+ * Only fixed text is shown, never what was submitted (an address anyone typed
+ * into the form must not show its owner someone else's words).
  */
-export function VerifyPage() {
+export function VerifyPage({ slug }: { slug?: string }) {
   const token = useFragmentToken(VERIFICATION_TOKEN)
   const verify = useVerifySubmissionEmail()
+  const project = useQuery({ ...publicProjectQueryOptions(slug ?? ''), enabled: Boolean(slug) })
+  // undefined while the project's branding loads (a neutral header, no flash of the wrong one).
+  const before: EffectiveBranding | null | undefined = !slug
+    ? null
+    : project.isError
+      ? null
+      : project.data?.branding
 
   if (verify.data) {
     return (
-      <PublicLayout branding={verify.data.branding} width="narrow">
+      <PublicLayout
+        branding={verify.data.branding}
+        projectName={verify.data.project.name}
+        width="narrow"
+      >
         <Confirmed result={verify.data} />
       </PublicLayout>
     )
@@ -34,7 +53,7 @@ export function VerifyPage() {
     (verify.isError && isApiError(verify.error) && [404, 422].includes(verify.error.status))
 
   return (
-    <PublicLayout branding={null} width="narrow">
+    <PublicLayout branding={before} projectName={project.data?.name} width="narrow">
       <PublicCard>
         {invalid ? (
           <div role={token ? 'alert' : undefined} className="flex flex-col gap-2">
@@ -45,8 +64,8 @@ export function VerifyPage() {
               This link has expired or isn’t valid
             </h1>
             <p className="text-base text-secondary">
-              Confirmation links work for 3 days. Open your private tracking link (it’s in the same
-              email) to send a new one.
+              Confirmation links work for 3 days. Open your private tracking link (shown when you
+              sent the idea) to get a new one, or send the idea again.
             </p>
           </div>
         ) : (
@@ -117,9 +136,8 @@ function Confirmed({ result }: { result: EmailVerified }) {
         >
           Thanks, your address is confirmed
         </h1>
-        <p className="text-base break-words text-secondary">
-          “{result.title}” for {result.project.name}
-        </p>
+        {/* The project only: never the submitted title (see VerifyPage). */}
+        <p className="text-base break-words text-secondary">Your idea for {result.project.name}</p>
       </div>
       <Callout
         tone="neutral"
@@ -129,7 +147,7 @@ function Confirmed({ result }: { result: EmailVerified }) {
             : 'The team has your idea now'
         }
       >
-        Your private tracking link is in the email we sent: it shows what happens next.
+        Your private tracking link (shown when you sent the idea) says what happens next.
       </Callout>
     </PublicCard>
   )

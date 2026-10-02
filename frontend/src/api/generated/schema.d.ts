@@ -1774,7 +1774,7 @@ export interface paths {
         };
         /**
          * The public form's project
-         * @description Public (public.submit, c8). The project's name, intro, what the form asks for and its effective branding. 404 when the form is off, the project is archived or unknown, or public submission is off for the instance (no hint which).
+         * @description Public (public.submit, c8). The project's name, intro, what the form asks for and its effective branding. 404 when the form is off, the project is archived or unknown, or public submission is off for the instance (no hint which). Throttled per client IP with the challenge and submission routes, before the form is looked up (429 too_many_attempts with Retry-After).
          */
         get: operations["get_public_project"];
         put?: never;
@@ -1794,7 +1794,7 @@ export interface paths {
         };
         /**
          * An ALTCHA challenge
-         * @description Public (c8). A fresh proof-of-work challenge for the ALTCHA widget (expires after SOUNDINGS_ALTCHA_EXPIRY; a solution is accepted once). Throttled per client IP (429 too_many_attempts with Retry-After).
+         * @description Public (c8). A fresh proof-of-work challenge for the ALTCHA widget (expires after SOUNDINGS_ALTCHA_EXPIRY; a solution is accepted once). Throttled per client IP (429 too_many_attempts with Retry-After): with the form and submission routes before the form is looked up, and challenges on their own after.
          */
         get: operations["get_altcha_challenge"];
         put?: never;
@@ -1816,7 +1816,7 @@ export interface paths {
         put?: never;
         /**
          * Send an idea through the public form
-         * @description Public (c8). Checks in order: content type (415) -> body (422) -> form available (404) -> per-IP limit (429) -> email required (422 email_required) -> ALTCHA (422 challenge_failed: invalid, expired, for another form or already used) -> per-project limit (429). Creates the idea in New (held while it waits for email confirmation or moderation), the private tracking link (shown once, here) and, with an address, an email asking to confirm it.
+         * @description Public (c8). Checks in order: content type (415) -> body (422) -> per-IP form requests, shared with the form and challenge routes (429) -> form available (404) -> per-IP limit (429) -> email required (422 email_required) -> ALTCHA (422 challenge_failed: invalid, expired, for another form or already used) -> per-project limit (429). Creates the idea in New (held while it waits for email confirmation or moderation), the private tracking link (shown once, here) and, with an address, an email asking to confirm it.
          */
         post: operations["submit_public_idea"];
         delete?: never;
@@ -13462,6 +13462,15 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Problem */

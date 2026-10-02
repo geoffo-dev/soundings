@@ -88,6 +88,28 @@ test('⌘Enter sends the idea from any field', async ({ page }) => {
   })
 })
 
+test('when the browser check fails, the problem shows by Send and takes focus', async ({
+  page,
+}) => {
+  await page.goto('/customer-innovation/submit')
+  await page.evaluate(() => localStorage.setItem('soundings-mock-fail', '/altcha'))
+  await fillIdea(page)
+  await expect(page.getByRole('status').filter({ hasText: 'couldn’t verify' })).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.getByRole('button', { name: /Send idea/ }).click()
+  const alert = page.getByRole('alert').filter({ hasText: 'Your idea wasn’t sent' })
+  await expect(alert).toBeVisible({ timeout: 10_000 })
+  // Focus is on the problem (announced), right above the button, not at the top of the form.
+  await expect(alert.locator('xpath=..')).toBeFocused()
+  const [alertBox, sendBox] = await Promise.all([
+    alert.boundingBox(),
+    page.getByRole('button', { name: /Send idea/ }).boundingBox(),
+  ])
+  expect((sendBox?.y ?? 0) - ((alertBox?.y ?? 0) + (alertBox?.height ?? 0))).toBeLessThan(40)
+  await page.evaluate(() => localStorage.removeItem('soundings-mock-fail'))
+})
+
 test('field problems are inline and focus moves to the first one', async ({ page }) => {
   await page.goto('/customer-innovation/submit')
   await page.getByRole('textbox', { name: /^Summary/ }).fill('Only a summary')
@@ -157,6 +179,9 @@ test('the tracking page shows status and history, and only what was sent', async
   ).toBeVisible()
   await expect(page.getByText(/Your idea for Sustainability/)).toBeVisible()
   await expect(page.getByText('Triage')).toBeVisible()
+  // The status in plain words, and the step where it reached the team.
+  await expect(page.getByText('The team has your idea and will look at it soon.')).toBeVisible()
+  await expect(page.getByRole('listitem').filter({ hasText: 'With the team' })).toBeVisible()
   await expect(page.getByText('j•••@example.org')).toBeVisible()
   // The fragment stays (the link is meant to be bookmarked).
   await expect(page).toHaveURL(new RegExp(`#${JO}$`))
@@ -219,8 +244,30 @@ test('/verify posts its token only on the Confirm click (link scanners confirm n
   await expect(
     page.getByRole('heading', { name: 'Thanks, your address is confirmed' }),
   ).toBeVisible()
-  await expect(page.getByText(/Switch the canteen to oat milk by default/)).toBeVisible()
+  await expect(page.getByText('Your idea for Sustainability')).toBeVisible()
+  // Never the submitted text: anyone can type someone else's address into the form.
+  await expect(page.getByText(/Switch the canteen to oat milk by default/)).toHaveCount(0)
   expect(verifies).toEqual(['POST'])
+})
+
+test('/{slug}/verify shows the project’s branding before the click, as its email does', async ({
+  page,
+}) => {
+  await page.goto(`/sustainability/verify#${CONFIRM_LINK}`)
+  await expect(page.getByRole('heading', { name: 'Confirm your email address' })).toBeVisible()
+  const primary = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--brand-primary').trim(),
+    )
+  await expect.poll(primary).toBe('#2e7d4f')
+  await page.getByRole('button', { name: 'Confirm my email address' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Thanks, your address is confirmed' }),
+  ).toBeVisible()
+  expect(await primary()).toBe('#2e7d4f')
+  // A form turned off since (or a mistyped slug): the global branding, and the link still works.
+  await page.goto(`/no-such-project/verify#${CONFIRM_LINK}`)
+  await expect(page.getByRole('button', { name: 'Confirm my email address' })).toBeVisible()
 })
 
 test('an expired or broken confirmation link says how to get a new one', async ({ page }) => {

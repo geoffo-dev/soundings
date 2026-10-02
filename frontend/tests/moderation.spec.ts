@@ -28,7 +28,7 @@ test.describe('as a project admin', () => {
       page.getByText('2 ideas from the public form are waiting for review.'),
     ).toBeVisible()
     await expect(page.getByText('Plant a wildflower strip by the car park')).toHaveCount(0)
-    await page.getByRole('link', { name: 'Review' }).click()
+    await page.getByRole('main').getByRole('link', { name: 'Review', exact: true }).click()
     await expect(page).toHaveURL(/\/p\/sustainability\/review$/)
     await expect(page.getByRole('heading', { level: 1, name: 'Review new ideas' })).toBeVisible()
     await expect(queue(page).getByRole('article')).toHaveCount(2)
@@ -48,8 +48,12 @@ test.describe('as a project admin', () => {
     await expect(page.getByText('GREEN-10 approved: it’s in New now')).toBeVisible()
     await expect(queue(page).getByRole('article')).toHaveCount(1)
     await expect(page.getByText(/1 waiting, oldest first/)).toBeVisible()
+    // Focus moves on to the next card instead of dropping to the page.
+    await expect(queue(page).getByRole('link').first()).toBeFocused()
     await page.getByRole('button', { name: 'Undo' }).click()
     await expect(queue(page).getByRole('article')).toHaveCount(2)
+    // Undo brings the card back; focus goes back to where it was (a card), never the page.
+    await expect(queue(page).getByRole('link').last()).toBeFocused()
     expect(posts).toEqual([])
 
     // Again, and let the toast close: now it is sent, and the idea is on the board.
@@ -65,10 +69,33 @@ test.describe('as a project admin', () => {
     await page.goto('/p/sustainability/review')
     await page.getByRole('button', { name: 'Reject and delete GREEN-11' }).click()
     await expect(page.getByText('GREEN-11 rejected and deleted')).toBeVisible()
+    // The last card gone: focus goes to the one before it.
+    await expect(queue(page).getByRole('link').first()).toBeFocused()
     await toastGone(page)
     await expect(queue(page).getByRole('article')).toHaveCount(1)
     // The mock's data lives in the page (a reload starts afresh), so ask it from here.
     expect(await status(page, '/api/v1/ideas/GREEN-11')).toBe(404)
+  })
+
+  test('the sidebar and My work show what is waiting; the queue empties into its empty state', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const review = page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'Review new ideas, 2 waiting' })
+    await expect(review).toBeVisible()
+    const waiting = page.getByRole('region', { name: /Waiting for review/ })
+    await expect(waiting).toContainText('Sustainability')
+    await expect(waiting).toContainText('2 ideas waiting')
+    await waiting.getByRole('link', { name: /Sustainability/ }).click()
+    await expect(page).toHaveURL(/\/p\/sustainability\/review$/)
+    await page.getByRole('button', { name: 'Approve GREEN-10' }).click()
+    await page.getByRole('button', { name: 'Approve GREEN-11' }).click()
+    await expect(page.getByRole('heading', { name: 'Nothing waiting for review' })).toBeVisible()
+    // The last card gone: focus lands on the empty state, not the page.
+    await expect(page.locator('#moderation-queue-empty')).toBeFocused()
+    await expect(review).toHaveCount(0)
   })
 
   test('an empty queue says what it is for', async ({ page }) => {

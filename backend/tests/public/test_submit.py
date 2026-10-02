@@ -15,6 +15,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.submission_tokens import tracking_token_hash, unseal_tracking_token
+from app.auth.throttle import PUBLIC_FORM_THROTTLE
 from app.config import Settings
 from app.main import create_app
 from app.models.activity import ActivityEvent
@@ -498,6 +499,61 @@ async def test_an_unavailable_form_does_not_count_against_the_address(
         assert response.status_code == 404
 
     assert (await send(client, team.slug)).status_code == 201
+
+
+async def test_form_lookups_are_throttled_per_address_before_the_form_is_loaded(
+    visitor: Visitor, team: Team, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Code review L3: which projects have an open form, and their names, could be
+    probed at full speed. Loading a form, its challenge and posting to it share one
+    per-address budget, counted before the form is looked up (unknown ones too)."""
+    client = await visitor()
+    name, limit, _ = PUBLIC_FORM_THROTTLE
+    for n in range(limit):
+        assert (await client.get(f"{PUBLIC}/projects/no-such-form-{n}")).status_code == 404
+    caplog.set_level(logging.INFO)
+
+    refused = [
+        await client.get(f"{PUBLIC}/projects/{team.slug}"),
+        await client.get(f"{PUBLIC}/projects/{team.slug}/altcha"),
+        await client.post(
+            f"{PUBLIC}/projects/{team.slug}/submissions", json=submission(altcha="AAAA")
+        ),
+        await client.post(
+            f"{PUBLIC}/projects/no-such-form/submissions", json=submission(altcha="AAAA")
+        ),
+    ]
+
+    for response in refused:
+        assert_problem(response, 429, "too_many_attempts")
+        assert 0 < int(response.headers["retry-after"]) <= 60
+    assert [r.getMessage() for r in caplog.records].count("public form request refused") == 4
+    assert VISITOR_IP not in caplog.text
+    other = await visitor("198.51.100.30")
+    assert (await other.get(f"{PUBLIC}/projects/{team.slug}")).status_code == 200
+    assert name == "public_form"
+
+
+async def test_the_proof_of_work_is_checked_off_the_event_loop(
+    anon: httpx.AsyncClient, team: Team, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Code review N2: PBKDF2 at the highest allowed cost takes about 235 ms."""
+    import threading
+
+    from app.auth import altcha
+
+    threads: list[threading.Thread] = []
+    original = altcha.verify
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        threads.append(threading.current_thread())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(altcha, "verify", recording)
+
+    assert (await send(anon, team.slug)).status_code == 201
+    assert threads
+    assert threads[0] is not threading.main_thread()
 
 
 # --- Per-project limit (in the database, across replicas) ----------------------------------

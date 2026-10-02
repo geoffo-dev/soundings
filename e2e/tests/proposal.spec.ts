@@ -5,7 +5,7 @@ import { expect, signIn, test, toast } from './support/fixtures'
 
 /**
  * The proposal editor against the real API (contract-phase4 §3.1–3.3, role matrix E):
- * two people saving the same section (409 → the conflict prompt, Keep mine / Use theirs),
+ * two people saving the same section (409 → the conflict prompt, Keep your version / Use {name}’s version),
  * different sections side by side, margin threads (comment, reply, resolve, reopen,
  * delete), who may write, comment and export, and the editor at 390 px. Test plan: PR4-*.
  */
@@ -44,7 +44,7 @@ const section = (page: Page, title: string) =>
 const saved = (page: Page) => page.getByRole('status').filter({ hasText: /^Saved/ })
 
 test.describe('PR4-01: two people, one section', () => {
-  test('a stale save gets the conflict prompt; Keep mine saves over theirs', async ({
+  test('a stale save gets the conflict prompt; Keep your version saves over theirs', async ({
     browser,
     api,
     baseURL,
@@ -74,7 +74,7 @@ test.describe('PR4-01: two people, one section', () => {
     expect((await alice.proposal(key)).proposal?.sections[1]?.body_md).toBe(
       'Customers wait three days for a parcel.',
     )
-    await prompt.getByRole('button', { name: 'Keep mine' }).click()
+    await prompt.getByRole('button', { name: 'Keep your version' }).click()
     await expect(prompt).toHaveCount(0)
     await expect(saved(admin)).toBeVisible()
     await expect
@@ -85,7 +85,7 @@ test.describe('PR4-01: two people, one section', () => {
     await section(bob, 'Problem').fill('Customers wait three days. Really.')
     const bobPrompt = bob.getByRole('alert').filter({ hasText: 'changed this section' })
     await expect(bobPrompt).toContainText('Alice Anders changed this section')
-    await bobPrompt.getByRole('button', { name: 'Use theirs' }).click()
+    await bobPrompt.getByRole('button', { name: 'Use Alice Anders’s version' }).click()
     await expect(bobPrompt).toHaveCount(0)
     await expect(section(bob, 'Problem')).toHaveValue('Orders after noon miss the van.')
     expect((await alice.proposal(key)).proposal?.sections[1]?.version).toBe(3)

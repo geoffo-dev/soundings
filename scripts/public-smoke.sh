@@ -15,8 +15,9 @@
 #   2. An anonymous submission with a solved ALTCHA (201, the tracking link once); the
 #      same ALTCHA again is refused; the tracking link shows it waiting for review.
 #   3. As a platform admin: approve it, shortlist it, start the proposal, write a section,
-#      export it as PDF (branded, rendered in the API pod's child process) and Markdown;
-#      the tracking link follows the status. Clean-up (also on failure): the idea is
+#      export it as PDF (branded, rendered in the API pod's child process) and Markdown,
+#      then a PDF with a 5,000-item list (bounded: 200 in time, no OOM kill); the
+#      tracking link follows the status. Clean-up (also on failure): the idea is
 #      deleted, and its tracking link then answers 404.
 #
 #   PUBLIC_SLUG    the project with the public form (default customer-innovation)
@@ -224,6 +225,7 @@ status="$(write POST "/ideas/$idea_id/status" '{"status": "shortlisted"}')"
 status="$(write POST "/ideas/$idea_id/proposal")"
 [ "$status" = "201" ] || die "start the proposal: $status $(head -c 300 "$work/body")"
 version="$(jq -r '.proposal.sections[] | select(.key == "problem") | .version' "$work/body")"
+risks_version="$(jq -r '.proposal.sections[] | select(.key == "risks") | .version' "$work/body")"
 ok "proposal started: $(jq -r '.proposal.sections | length' "$work/body") sections, idea now $(jq -r '.proposal.idea.status' "$work/body")"
 section="$(jq -n --argjson v "$version" '{base_version: $v,
   body_md: "Customers ask for **refills** in 3 of 10 store surveys.\n\n| Store | Requests |\n|---|---|\n| Leeds | 120 |\n| Ελληνικά | 7 |\n"}')"
@@ -249,6 +251,20 @@ if [[ "$out" == "200 text/markdown"* ]] && grep -q "Refill\|refill" "$work/propo
   ok "Markdown export: $(wc -l <"$work/proposal.md" | tr -d ' ') lines ($(header content-disposition))"
 else
   fail "Markdown export: $out"
+fi
+
+# A section of 5,000 list items (20,000 characters: what used to take the renderer past its
+# 20 s limit and out of memory) prints its first part and a "too long" note, in time.
+hostile="$(jq -n --argjson v "$risks_version" '{base_version: $v, body_md: ("- a\n" * 5000)}')"
+status="$(write PUT "/ideas/$idea_id/proposal/sections/risks" "$hostile")"
+[ "$status" = "200" ] || fail "save a 5,000-item list: $status $(head -c 200 "$work/body")"
+started=$SECONDS
+out="$(app -o "$work/hostile.pdf" -w '%{http_code} %{content_type}' \
+  "$API/ideas/$idea_id/proposal/pdf" || true)"
+if [[ "$out" == "200 application/pdf"* ]] && [ "$(head -c 5 "$work/hostile.pdf")" = "%PDF-" ]; then
+  ok "PDF export with a 5,000-item list: $(wc -c <"$work/hostile.pdf" | tr -d ' ') bytes in $((SECONDS - started)) s"
+else
+  fail "PDF export with a 5,000-item list: $out after $((SECONDS - started)) s (want 200, the layout is bounded)"
 fi
 
 state="$(track)"

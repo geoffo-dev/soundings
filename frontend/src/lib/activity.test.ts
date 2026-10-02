@@ -77,4 +77,19 @@ describe('public submissions', () => {
     )
     expect(describeActivity({ ...item, actor: alice })).toBe('submitted the idea')
   })
+
+  it('names the sender when they gave a name, as the idea header does', () => {
+    const item: ActivityItem = {
+      id: 'e-public',
+      idea_id: 'i-1',
+      type: 'idea_created',
+      actor: null,
+      created_at: '2026-10-01T09:00:00Z',
+    }
+    expect(activityActor(item, 'Jo Public')).toBe('Jo Public')
+    expect(activityActor(item, '  ')).toBe('A visitor')
+    expect(activityActor({ ...item, type: 'idea_edited', fields: ['title'] }, 'Jo Public')).toBe(
+      'Someone',
+    )
+  })
 })

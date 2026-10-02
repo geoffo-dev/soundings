@@ -14,6 +14,7 @@ import { Markdown } from '@/components/ui/markdown'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { ariaKeys } from '@/components/ui/kbd'
+import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import { HumanCheck } from './human-check'
@@ -133,6 +134,12 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
     }
   }
 
+  // The problem shows by the Send button (where the visitor is) and takes focus, so it is read out.
+  const showProblem = (found: SubmitProblem) => {
+    setProblem(found)
+    focusWhenRendered(() => problemRef.current, { force: true })
+  }
+
   const focusFirst = (found: PublicErrors) => {
     const first = PUBLIC_FIELDS.find((field) => found[field])
     if (first) document.getElementById(`public-${first}`)?.focus()
@@ -153,7 +160,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
       for (let attempt = 0; attempt < 2; attempt++) {
         const payload = await altcha.getPayload()
         if (!payload) {
-          setProblem({ kind: 'challenge' })
+          showProblem({ kind: 'challenge' })
           return
         }
         try {
@@ -170,8 +177,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
             setErrors(found.errors)
             focusFirst(found.errors)
           } else {
-            setProblem(found)
-            requestAnimationFrame(() => problemRef.current?.focus())
+            showProblem(found)
           }
           return
         }
@@ -185,7 +191,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
 
   if (problem?.kind === 'unavailable') {
     return (
-      <PublicLayout branding={project.branding} width="narrow">
+      <PublicLayout branding={project.branding} projectName={project.name} width="narrow">
         <PublicCard>
           <FormUnavailable />
         </PublicCard>
@@ -195,7 +201,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
 
   if (receipt) {
     return (
-      <PublicLayout branding={project.branding} width="narrow">
+      <PublicLayout branding={project.branding} projectName={project.name} width="narrow">
         <SubmissionReceipt
           receipt={receipt}
           title={sentTitle}
@@ -213,7 +219,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
   const fieldClass = 'h-11 sm:h-9'
 
   return (
-    <PublicLayout branding={project.branding} footer={<PrivacyNotice />}>
+    <PublicLayout branding={project.branding} projectName={project.name} footer={<PrivacyNotice />}>
       <div className="flex flex-col gap-2 px-1">
         <h1 className="text-2xl font-semibold text-balance text-primary">
           Share an idea with {project.name}
@@ -241,10 +247,10 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
           }}
           onFocus={() => altcha.start()}
         >
-          {problem && <ProblemCallout problem={problem} ref={problemRef} />}
           <Field
             label="Title"
             required
+            requiredMark={false}
             id="public-title"
             error={errors.title}
             description={
@@ -263,6 +269,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
           <Field
             label="Summary"
             required
+            requiredMark={false}
             id="public-summary"
             error={errors.summary}
             description={
@@ -322,12 +329,13 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
                 <Field
                   label={project.email_required ? 'Your email' : 'Your email (optional)'}
                   required={project.email_required}
+                  requiredMark={false}
                   id="public-email"
                   error={errors.email}
                   description={
                     project.email_required
                       ? 'We email you a link to confirm your idea; it reaches the team once you do.'
-                      : 'For your private link and, if you like, status updates.'
+                      : 'Only to email you about this idea.'
                   }
                 >
                   <Input
@@ -358,6 +366,8 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
           <Honeypot value={form.honeypot} onChange={(honeypot) => set({ honeypot })} />
 
           <HumanCheck state={altcha.state} onRetry={() => void altcha.retry()} />
+
+          {problem && <ProblemCallout problem={problem} ref={problemRef} />}
 
           <Button
             type="submit"
@@ -425,8 +435,8 @@ function ProblemCallout({
         }
       : problem.kind === 'challenge'
         ? {
-            title: 'We couldn’t verify this browser',
-            text: 'Press Retry below, then send again. Nothing you wrote is lost.',
+            title: 'Your idea wasn’t sent',
+            text: 'We couldn’t verify this browser. Press Retry above, then send again. Nothing you wrote is lost.',
           }
         : problem.kind === 'network'
           ? {

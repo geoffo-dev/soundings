@@ -40,7 +40,7 @@ export function Logo({ name, className }: { name?: string; className?: string })
   return (
     <span className={cn('inline-flex min-w-0 items-center gap-2', className)}>
       <LogoMark />
-      <span className="truncate text-base font-semibold tracking-tight text-primary">
+      <span className="truncate font-brand text-base font-semibold tracking-tight text-primary">
         {name ?? branding.app_name}
       </span>
     </span>

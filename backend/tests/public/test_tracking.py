@@ -4,7 +4,9 @@ email again, the submitter erasing their details, and confirming the address."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
@@ -21,7 +23,8 @@ from app.models.base import utcnow
 from app.models.enums import EmailType, HoldReason
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
-from app.models.public import PublicSubmission
+from app.models.public import ConfirmationEmailSend, PublicSubmission
+from app.public import retention
 from tests.public.conftest import (
     PUBLIC,
     AsUser,
@@ -356,6 +359,66 @@ async def test_the_per_address_limit_counts_sub_addresses_and_resends_silently(
     )
     assert other["email_sent"] is True
     assert len(await confirmation_emails(db_session)) == 4
+
+
+async def test_erasing_or_rejecting_does_not_reset_the_per_address_limit(
+    visitor: Visitor, team: Team, db_session: AsyncSession, api: AsUser
+) -> None:
+    """Code review M1: submit, then erase the details (or have the idea rejected), five
+    times: the same address got five confirmation emails in a minute, because both
+    delete the outbox rows the limit counted. It counts its own rows now."""
+    admin = await api(team.platform)
+    queued = 0
+    for n in range(5):
+        client = await visitor(f"198.51.100.{n + 1}")
+        sent = await receipt(client, team.slug, email="victim@example.org", title=f"T{n}")
+        queued += len(await confirmation_emails(db_session))
+        if n % 2:
+            erased = await client.post(
+                f"{PUBLIC}/track/erase", json={"token": sent["tracking_token"]}
+            )
+            assert erased.status_code == 204
+        else:
+            _, idea = await submitted(db_session, sent["tracking_token"])
+            rejected = await admin.post(f"/ideas/{idea.id}/submission/reject")
+            assert rejected.status_code == 204
+        assert await confirmation_emails(db_session) == []
+
+    assert queued == 3
+
+
+@pytest.mark.parametrize(
+    "addresses",
+    [
+        ["v.ictim@gmail.com", "Victim+1@googlemail.com", "vic.tim@GMAIL.com", "victim@gmail.com"],
+        ["jo-a@yahoo.com", "jo@yahoo.com", "JO-b@yahoo.com", "jo-c@yahoo.com"],
+    ],
+    ids=["gmail-dots", "yahoo-keywords"],
+)
+async def test_the_per_address_limit_folds_provider_variants(
+    visitor: Visitor, team: Team, db_session: AsyncSession, addresses: list[str]
+) -> None:
+    """Code review L1: Gmail ignores dots (and googlemail.com is gmail.com); Yahoo's
+    disposable base-keyword addresses reach one inbox."""
+    for n, address in enumerate(addresses):
+        client = await visitor(f"198.51.100.{n + 1}")
+        assert (await receipt(client, team.slug, email=address, title=f"T{n}"))["email_sent"]
+
+    assert len(await confirmation_emails(db_session)) == 3
+
+
+async def test_the_limit_keeps_a_keyed_hash_not_the_address_and_forgets_it_after_a_day(
+    anon: httpx.AsyncClient, team: Team, db_session: AsyncSession
+) -> None:
+    await receipt(anon, team.slug, email="Victim+news@Example.org")
+    [send] = list(await db_session.scalars(select(ConfirmationEmailSend)))
+
+    assert re.fullmatch(r"[0-9a-f]{64}", send.address_key)
+    assert send.address_key != hashlib.sha256(b"victim@example.org").hexdigest()
+    assert await retention.cleanup(db_session, utcnow() + timedelta(hours=23)) is not None
+    assert await db_session.scalar(select(func.count()).select_from(ConfirmationEmailSend)) == 1
+    await retention.cleanup(db_session, utcnow() + timedelta(hours=25))
+    assert await db_session.scalar(select(func.count()).select_from(ConfirmationEmailSend)) == 0
 
 
 # --- Erasing my details ----------------------------------------------------------------------

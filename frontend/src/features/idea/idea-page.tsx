@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/components/ui/toaster'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
+import { useTyping } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -177,6 +178,7 @@ function LoadedIdeaPage({
   const volunteer = useVolunteerAsOwner(ideaKey)
   const setClosed = useSetEvaluationClosed(ideaKey)
   const action = primaryAction(idea, me.id)
+  const typing = useTyping()
   const runPrimary = (kind: PrimaryAction['kind']) => {
     if (kind === 'evaluate') openEvaluate()
     else if (kind === 'assign-owner') openDialog('owner')
@@ -273,8 +275,9 @@ function LoadedIdeaPage({
         </div>
       </div>
 
-      {action && (
-        // Phones: the primary action stays within thumb reach.
+      {action && !typing && (
+        // Phones: the primary action stays within thumb reach, and steps aside while
+        // you type (a comment, the proposal) so the keyboard and the text get the room.
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-subtle bg-surface px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:hidden">
           {primaryButton('h-11 w-full text-base')}
         </div>

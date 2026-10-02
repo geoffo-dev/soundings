@@ -20,6 +20,15 @@ HTML (Markdown included) and returns the PDF bytes.
 * **Its own temporary folder:** each child writes temporary files (WeasyPrint's font
   folder, about 700 KB) in a folder the parent made for it and deletes once the child
   is gone, so a killed render leaves nothing behind in ``/tmp``.
+* **No secrets:** the child drops every environment variable but
+  :data:`CHILD_ENVIRONMENT` (and ``LC_*``) before it imports WeasyPrint: it needs no
+  database URL, secret key or OIDC secret. (Defence in depth: the child runs as the
+  same user, and the environment it was started with stays in ``/proc``.)
+* **Bounded memory:** the child limits its own data segment
+  (:func:`app.proposals.pdf_child.memory_limit`, half the container's memory limit), so
+  a render that runs out of memory fails on its own (500) instead of getting the API
+  container OOM-killed. What a document may render is bounded too
+  (:mod:`app.proposals.markdown`).
 
 The parent imports nothing heavy: ``weasyprint`` is imported only in the child
 (:mod:`app.proposals.pdf_child`), so the API starts where Pango is missing.
@@ -44,6 +53,7 @@ from typing import Any, Final
 from app.proposals.document import ExportDocument
 
 __all__ = [
+    "CHILD_ENVIRONMENT",
     "IDLE_EXIT",
     "RENDER_TIMEOUT",
     "RETRY_AFTER",
@@ -65,6 +75,27 @@ RETRY_AFTER: Final = 10
 """``Retry-After`` of a 503 ``export_busy``."""
 IDLE_EXIT: Final = 300.0
 """Seconds the child waits for another render before it exits."""
+CHILD_ENVIRONMENT: Final = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "LANG",
+        "LANGUAGE",
+        "TZ",
+        "TMPDIR",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_DATA_DIRS",
+        "FONTCONFIG_FILE",
+        "FONTCONFIG_PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHONHASHSEED",
+    }
+)
+"""The environment variables the child keeps (with ``LC_*``): locale, time zone,
+fontconfig's cache and configuration, temporary files."""
 
 
 class ExportBusy(Exception):
@@ -87,8 +118,16 @@ def _serve(connection: Connection) -> None:
     serve(connection)
 
 
+def _scrub_environment() -> None:
+    for name in list(os.environ):
+        if name not in CHILD_ENVIRONMENT and not name.startswith("LC_"):
+            del os.environ[name]
+
+
 def _child_main(target: Callable[[Connection], None], connection: Connection, scratch: str) -> None:
-    """Runs in the child: its temporary files go to ``scratch`` (deleted by the parent)."""
+    """Runs in the child: no secrets in its environment; its temporary files go to
+    ``scratch`` (deleted by the parent)."""
+    _scrub_environment()
     tempfile.tempdir = scratch
     os.environ["TMPDIR"] = scratch
     target(connection)

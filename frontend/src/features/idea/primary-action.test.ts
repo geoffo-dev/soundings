@@ -134,6 +134,13 @@ describe('primaryAction', () => {
     expect(primaryAction(closed, ME)?.kind).toBe('change-status')
   })
 
+  it('leaves Close evaluation to the sidebar once the idea is Shortlisted or in Proposal', () => {
+    const evaluators = [evaluator('bob', 'submitted'), evaluator('cy', 'submitted')]
+    for (const status of ['shortlisted', 'proposal'] as const) {
+      expect(primaryAction(idea({ evaluators, status, status_label: status }), ME)).toBeNull()
+    }
+  })
+
   it('has nothing for viewers or closed ideas', () => {
     expect(primaryAction(idea({ owner: person('bob'), permissions: NONE }), ME)).toBeNull()
     expect(

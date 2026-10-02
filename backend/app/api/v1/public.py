@@ -19,7 +19,7 @@ from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
 from app.auth import altcha
 from app.auth.public_form import JsonOnlyRoute, check_throttle
-from app.auth.throttle import ALTCHA_THROTTLE, PUBLIC_TOKEN_THROTTLE
+from app.auth.throttle import ALTCHA_THROTTLE, PUBLIC_FORM_THROTTLE, PUBLIC_TOKEN_THROTTLE
 from app.config import Settings
 from app.db import SessionDep
 from app.models.base import utcnow
@@ -41,11 +41,24 @@ router = APIRouter(prefix="/public", tags=["public"], route_class=JsonOnlyRoute)
 
 _TOO_MANY_CHALLENGES = "Too many requests from your network. Wait a minute and try again."
 _TOO_MANY_LINK_REQUESTS = "Too many requests from your network. Wait a minute and try again."
+_TOO_MANY_FORM_REQUESTS = "Too many requests from your network. Wait a minute and try again."
 
 
 def _settings(request: Request) -> Settings:
     settings: Settings = request.app.state.settings
     return settings
+
+
+def _form_throttle(request: Request) -> None:
+    """The form, challenge and submission routes share one per-IP throttle, counted
+    before the form is looked up: an unknown or closed form counts too, so open forms
+    can't be probed at speed (only the form's own limits come after the lookup)."""
+    check_throttle(
+        request,
+        PUBLIC_FORM_THROTTLE,
+        detail=_TOO_MANY_FORM_REQUESTS,
+        event="public form request refused",
+    )
 
 
 def _link_throttle(request: Request) -> None:
@@ -66,13 +79,16 @@ def _link_throttle(request: Request) -> None:
     description=(
         "Public (public.submit, c8). The project's name, intro, what the form asks for "
         "and its effective branding. 404 when the form is off, the project is archived or "
-        "unknown, or public submission is off for the instance (no hint which)."
+        "unknown, or public submission is off for the instance (no hint which). "
+        "Throttled per client IP with the challenge and submission routes, before the "
+        "form is looked up (429 too_many_attempts with Retry-After)."
     ),
-    responses=problems(404),
+    responses=problems(404, 429),
 )
 async def get_public_project(
     request: Request, session: SessionDep, slug: ProjectSlug
 ) -> PublicProject:
+    _form_throttle(request)
     settings = _settings(request)
     project = await forms.load_form(session, settings, slug)
     return await forms.public_project(session, settings, project)
@@ -85,13 +101,15 @@ async def get_public_project(
     description=(
         "Public (c8). A fresh proof-of-work challenge for the ALTCHA widget (expires after "
         "SOUNDINGS_ALTCHA_EXPIRY; a solution is accepted once). Throttled per client IP "
-        "(429 too_many_attempts with Retry-After)."
+        "(429 too_many_attempts with Retry-After): with the form and submission routes "
+        "before the form is looked up, and challenges on their own after."
     ),
     responses=problems(404, 429),
 )
 async def get_altcha_challenge(
     request: Request, session: SessionDep, slug: ProjectSlug
 ) -> AltchaChallenge:
+    _form_throttle(request)
     settings = _settings(request)
     project = await forms.load_form(session, settings, slug)
     check_throttle(
@@ -112,7 +130,8 @@ async def get_altcha_challenge(
     status_code=status.HTTP_201_CREATED,
     summary="Send an idea through the public form",
     description=(
-        "Public (c8). Checks in order: content type (415) -> body (422) -> form available "
+        "Public (c8). Checks in order: content type (415) -> body (422) -> per-IP form "
+        "requests, shared with the form and challenge routes (429) -> form available "
         "(404) -> per-IP limit (429) -> email required (422 email_required) -> ALTCHA "
         "(422 challenge_failed: invalid, expired, for another form or already used) -> "
         "per-project limit (429). Creates the idea in New (held while it waits for email "
@@ -124,6 +143,7 @@ async def get_altcha_challenge(
 async def submit_public_idea(
     request: Request, session: SessionDep, slug: ProjectSlug, body: PublicSubmissionCreate
 ) -> PublicSubmissionReceipt:
+    _form_throttle(request)
     return await submit.submit(session, _settings(request), request, slug, body, now=utcnow())
 
 

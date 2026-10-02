@@ -1,17 +1,25 @@
 """Proposal Markdown as the SPA renders it (contract-phase4 3.4, tests first): raw HTML
 dropped, images as links, safe link targets, headings demoted through the parser,
-bounded tables. Pure functions: no database."""
+bounded tables, a bounded number of boxes per document and break opportunities in
+long runs (what keeps WeasyPrint's time and memory bounded). Pure functions: no
+database."""
 
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 
 import pytest
 
 from app.proposals.markdown import (
+    BREAK,
+    MAX_BOXES,
     MAX_TABLE_CELLS,
     MAX_TABLE_ROWS,
-    TableBudget,
+    PIECE_LENGTH,
+    RUN_LENGTH,
+    TOO_LONG,
+    RenderBudget,
     close_open_blocks,
     demote_headings,
     render_html,
@@ -247,12 +255,12 @@ def test_a_table_over_the_row_limit_prints_as_source() -> None:
     large = render_html(_table(MAX_TABLE_ROWS))  # + the header row
 
     assert small.startswith("<table>")
-    assert large.startswith('<pre class="table-source"><code>| h0 | h1 |')
+    assert large.startswith('<pre class="table-source"><code><span>| h0 | h1 |')
     assert "<table>" not in large
 
 
 def test_the_cell_budget_is_shared_by_the_document() -> None:
-    budget = TableBudget()
+    budget = RenderBudget()
     first = render_html(_table(99, 10), budget)  # 100 rows x 10 = 1,000 cells
     second = render_html(_table(99, 10), budget)  # 2,000 cells: still fits
     third = render_html(_table(1, 2), budget)  # one more cell is too many
@@ -281,3 +289,207 @@ def test_deep_nesting_is_bounded() -> None:
 def test_code_has_no_language_class() -> None:
     rendered = render_html('```js" onload="x\ncode\n```')
     assert rendered == "<pre><code>code\n</code></pre>\n"
+
+
+# --- Bounded layout (WeasyPrint's cost grows with boxes and unbreakable runs) ---------
+class _Balanced(HTMLParser):
+    """Checks that every element is closed in order and counts start tags."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[str] = []
+        self.counts: dict[str, int] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.counts[tag] = self.counts.get(tag, 0) + 1
+        if tag not in ("br", "hr"):
+            self.stack.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        assert self.stack, tag
+        assert self.stack[-1] == tag, (self.stack, tag)
+        self.stack.pop()
+
+
+def balanced(html: str) -> dict[str, int]:
+    parser = _Balanced()
+    parser.feed(html)
+    parser.close()
+    assert parser.stack == [], parser.stack
+    return parser.counts
+
+
+NOTE = f'<p class="too-long">{TOO_LONG}</p>'
+
+
+@pytest.mark.parametrize(
+    ("markdown", "tag"),
+    [
+        ("- a\n" * 6_000, "li"),  # list items (each with its marker box)
+        ("1. a\n\n" * 3_000, "li"),
+        ("a\n\n" * 6_000, "p"),
+        ("# a\n" * 6_000, "h3"),
+        ("a\\\n" * 6_000, "br"),  # hard line breaks, in one paragraph
+        ("*a*," * 6_000, "em"),  # inline elements, in one paragraph
+        ("a*b*" * 8_000, "em"),
+        ("`a`," * 6_000, "code"),
+        ("\n\n".join(["[a](https://x.io)" * 1_000] * 3), "a"),  # links weigh 2
+        ("---\n" * 6_000, "hr"),
+    ],
+    ids=[
+        "list",
+        "loose-list",
+        "paragraphs",
+        "headings",
+        "hard-breaks",
+        "emphasis",
+        "intraword-emphasis",
+        "code",
+        "links",
+        "rules",
+    ],
+)
+def test_a_document_renders_a_bounded_number_of_boxes(markdown: str, tag: str) -> None:
+    rendered = render_html(markdown)
+
+    counts = balanced(rendered)
+    assert 0 < counts.get(tag, 0) - (tag == "p") <= MAX_BOXES  # the note is a <p>
+    assert rendered.endswith(NOTE + "\n")
+    assert rendered.count(NOTE) == 1
+
+
+def test_code_lines_count_as_boxes_and_long_code_is_cut() -> None:
+    code = "```\n" + "x\n" * (MAX_BOXES + 10) + "```"
+
+    rendered = render_html(f"Before\n\n{code}\n\nAfter")
+
+    text = re.sub("</?span>", "", rendered)  # long text prints in pieces
+    assert text.startswith("<p>Before</p>\n<pre><code>x\n")
+    assert text.endswith(f"x\n</code></pre>\n{NOTE}\n")
+    assert text.count("x\n") == MAX_BOXES - 1  # the paragraph took one box
+    assert "After" not in text
+
+
+def test_a_long_paragraph_is_cut_inside_and_its_elements_closed() -> None:
+    budget = RenderBudget(boxes=5)  # the paragraph, then 2 links of 2
+
+    rendered = render_html(
+        "Read [one](https://a.io) and [two **b**](https://b.io) and [3](https://c.io)", budget
+    )
+
+    assert rendered == (
+        f'<p>Read <a href="https://a.io">one</a> and <a href="https://b.io">two </a></p>\n{NOTE}\n'
+    )
+    balanced(rendered)
+
+
+def test_ordinary_documents_are_far_from_the_budget() -> None:
+    """Long prose in every section (15,000 characters, bold and a link per paragraph)
+    plus a 50-item list with bold and code in each item use under half the budget."""
+    paragraph = (
+        "We would let customers **refund** orders themselves. "
+        + "A plain sentence about the plan and what it changes for everyone. " * 10
+        + "See [the spec](https://example.com)."
+    )
+    prose = "\n\n".join([paragraph] * 40)[:20_000]
+    items = "\n".join(f"- Step {n}: do **this** and `that`" for n in range(50))
+    budget = RenderBudget()
+    for _ in range(8):
+        rendered = render_html(f"{prose[:15_000]}\n\n{items}", budget)
+        assert TOO_LONG not in rendered
+    assert budget.boxes > MAX_BOXES // 2
+
+
+def test_the_box_budget_is_shared_by_the_document_and_only_cuts_what_is_over() -> None:
+    budget = RenderBudget()
+    first = render_html("- a\n" * (MAX_BOXES // 2 - 10), budget)  # 2 boxes per item
+    second = render_html("Short.\n\n" + "- b\n" * 100 + "\nAfter the list.", budget)
+    third = render_html("Still room for this.", budget)
+
+    assert TOO_LONG not in first
+    assert second.startswith("<p>Short.</p>\n<ul>\n<li>b</li>\n")
+    assert second.endswith(f"</ul>\n{NOTE}\n")  # the list is cut, the rest is dropped
+    assert "After the list" not in second
+    assert third == "<p>Still room for this.</p>\n"
+
+
+def test_a_cut_leaves_no_empty_blocks_behind() -> None:
+    budget = RenderBudget(boxes=7)  # the list, three items of 2: nothing left for "bold"
+
+    rendered = render_html("- one\n- two\n- **bold** three\n- four", budget)
+
+    assert rendered == f"<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n{NOTE}\n"
+
+
+def test_long_runs_get_a_break_opportunity_every_run_length_characters() -> None:
+    rendered = render_html("a" * (RUN_LENGTH * 3 + 5))
+
+    assert rendered == "<p>" + ("a" * RUN_LENGTH + BREAK) * 3 + "aaaaa</p>\n"
+
+
+def test_words_shorter_than_the_run_length_are_untouched() -> None:
+    text = " ".join(["internationalisation"] * 50) + " " + "x" * (RUN_LENGTH - 1)
+
+    assert BREAK not in render_html(text)
+    assert BREAK not in render_html(f"```\n{text}\n```")
+
+
+def test_runs_continue_across_inline_elements() -> None:
+    rendered = render_html("ab*cd*" * 20)  # 80 letters, no break opportunity
+
+    assert rendered.count(BREAK) == 80 // RUN_LENGTH
+    assert rendered.replace(BREAK, "") == "<p>" + "ab<em>cd</em>" * 20 + "</p>\n"
+
+
+def test_long_runs_in_code_links_and_tables_get_break_opportunities() -> None:
+    long = "x" * (RUN_LENGTH + 1)
+    for markdown in (
+        f"`{long}`",
+        f"```\n{long}\n```",
+        f"[{long}](https://example.com/{long})",
+        f"| h |\n|---|\n| {long} |",
+    ):
+        rendered = render_html(markdown)
+        assert rendered.count(BREAK) == 1, markdown
+    link = render_html(f"[{long}](https://example.com/{long})")
+    assert f'href="https://example.com/{long}"' in link  # targets are never changed
+
+
+def test_breaks_never_split_a_character_sequence() -> None:
+    accented = "e\u0301" * RUN_LENGTH  # e + combining acute
+    family = "\U0001f468\u200d\U0001f469\u200d\U0001f467" * 20  # emoji ZWJ sequences
+    flags = "\U0001f1ec\U0001f1e7" * 40  # regional indicator pairs
+
+    for text in (accented, family, flags):
+        rendered = render_html(text)
+        assert BREAK in rendered
+        assert BREAK + "\u0301" not in rendered
+        assert BREAK + "\u200d" not in rendered
+        assert "\u200d" + BREAK not in rendered
+    chunks = render_html(flags)[3:-5].split(BREAK)
+    assert all(len(chunk) % 2 == 0 for chunk in chunks)
+
+
+def test_spaces_and_line_breaks_end_a_run_but_no_break_spaces_do_not() -> None:
+    almost = "x" * (RUN_LENGTH - 1)
+
+    assert BREAK not in render_html(f"{almost} {almost}\n{almost}\\\n{almost}")
+    assert BREAK in render_html(f"{almost}\u00a0{almost}")
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    ["{}", "`{}`", "```\n{}\n```", "![{}](https://x.io/i.png)", "![{}](i.png)"],
+    ids=["text", "code", "fence", "image-link", "image-text"],
+)
+def test_long_text_prints_in_pieces_that_end_at_a_break_opportunity(wrap: str) -> None:
+    text = "i" * 3_100
+
+    rendered = render_html(wrap.format(text))
+
+    pieces = re.findall(r"<span>(.*?)</span>", rendered, flags=re.DOTALL)
+    assert len(pieces) == 4
+    assert all(PIECE_LENGTH <= len(piece) <= PIECE_LENGTH + RUN_LENGTH for piece in pieces[:-1])
+    assert all(piece.endswith((BREAK, "\n")) for piece in pieces[:-1])
+    assert "".join(pieces).replace(BREAK, "").strip() == text
+    assert "<span>" not in render_html(wrap.format("i" * (PIECE_LENGTH - 40)))

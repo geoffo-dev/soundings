@@ -62,10 +62,16 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
   }
 }
 
-/** Actor name for an event ("A visitor" for a public submission, else "Someone"). */
-export function activityActor(item: ActivityItem): string {
+/**
+ * Actor name for an event. A public submission has no actor: the name its
+ * sender gave (as the idea's header shows it), else "A visitor"; anything else
+ * without an actor is "Someone".
+ */
+export function activityActor(item: ActivityItem, submitterName?: string | null): string {
   if (item.actor) return item.actor.display_name
-  return item.type === 'idea_created' ? 'A visitor' : 'Someone'
+  if (item.type !== 'idea_created') return 'Someone'
+  const name = submitterName?.trim()
+  return name === undefined || name === '' ? 'A visitor' : name
 }
 
 /** Invitations this close together read as one: "invited Bob, Carol and Dave to evaluate". */

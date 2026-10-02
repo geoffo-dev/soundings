@@ -3,6 +3,7 @@ import {
   queryOptions,
   useInfiniteQuery,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
   type InfiniteData,
@@ -104,10 +105,8 @@ export function useModerationQueue(slug: string, options: { enabled?: boolean } 
   })
 }
 
-/** "N ideas waiting for review" (project admins only: others get 403, so don't ask). */
-export function useModerationCount(slug: string, options: { enabled?: boolean } = {}) {
-  const hidden = useHiddenItems()
-  return useQuery({
+const moderationCountOptions = (slug: string) =>
+  queryOptions({
     queryKey: [...queryKeys.submissions.moderation(slug), 'count'] as const,
     queryFn: ({ signal }) =>
       unwrap(
@@ -116,14 +115,60 @@ export function useModerationCount(slug: string, options: { enabled?: boolean } 
           signal,
         }),
       ),
-    enabled: options.enabled ?? true,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
-    select: (page) => {
-      const prefix = hiddenSubmission(slug, '')
-      const pending = [...hidden].filter((key) => key.startsWith(prefix)).length
-      return Math.max(0, page.total - pending)
-    },
+  })
+
+/** The queue's total less the ideas approved or rejected a moment ago (Undo still open). */
+function waiting(page: ModerationPage, slug: string, hidden: ReadonlySet<string>): number {
+  const prefix = hiddenSubmission(slug, '')
+  const pending = [...hidden].filter((key) => key.startsWith(prefix)).length
+  return Math.max(0, page.total - pending)
+}
+
+/** "N ideas waiting for review" (project admins only: others get 403, so don't ask). */
+export function useModerationCount(slug: string, options: { enabled?: boolean } = {}) {
+  const hidden = useHiddenItems()
+  return useQuery({
+    ...moderationCountOptions(slug),
+    enabled: options.enabled ?? true,
+    select: (page) => waiting(page, slug, hidden),
+  })
+}
+
+/** What a project list row needs for review counts (the sidebar's list or full projects). */
+interface ReviewableProject {
+  id: string
+  slug: string
+  name: string
+  archived_at: string | null
+  permissions: { can_manage: boolean }
+}
+
+export interface ReviewCount<P extends ReviewableProject = ReviewableProject> {
+  project: P
+  count: number
+}
+
+/**
+ * Projects with ideas waiting for review that you can moderate (the sidebar's
+ * "Review" and My work's "Waiting for review"): held ideas are on no board,
+ * list or inbox, so this is how admins notice them. One small request per
+ * project you administer (shared with the board's notice); archived projects
+ * can't be moderated, so they're skipped.
+ */
+export function useReviewCounts<P extends ReviewableProject>(
+  projects: readonly P[] | undefined,
+): ReviewCount<P>[] {
+  const hidden = useHiddenItems()
+  const reviewable = (projects ?? []).filter(
+    (project) => project.permissions.can_manage && !project.archived_at,
+  )
+  const pages = useQueries({ queries: reviewable.map((p) => moderationCountOptions(p.slug)) })
+  return reviewable.flatMap((project, index) => {
+    const page = pages[index]?.data
+    const count = page ? waiting(page, project.slug, hidden) : 0
+    return count > 0 ? [{ project, count }] : []
   })
 }
 

@@ -26,11 +26,14 @@ export function BrandingPreview({
   branding,
   surfaces,
   projectName,
+  titled = true,
 }: {
   branding: PreviewBranding
   /** Which previews to show: the app shell only for the global branding. */
   surfaces: ('app' | 'public' | 'email')[]
   projectName: string
+  /** Show the "Preview" heading (off inside the preview sheet, whose title says it). */
+  titled?: boolean
 }) {
   const { resolvedTheme } = useTheme()
   const [theme, setTheme] = useState<ResolvedTheme>(resolvedTheme)
@@ -41,11 +44,13 @@ export function BrandingPreview({
   }, [branding.font])
 
   return (
-    <section aria-labelledby="branding-preview-heading" className="flex flex-col gap-3">
+    <section aria-label="Preview" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="branding-preview-heading" className="text-base font-semibold text-primary">
-          Preview
-        </h3>
+        {titled ? (
+          <h3 className="text-base font-semibold text-primary">Preview</h3>
+        ) : (
+          <span className="text-sm text-muted">Before you save</span>
+        )}
         <SegmentedControl
           aria-label="Preview theme"
           size="sm"
@@ -85,10 +90,18 @@ export function BrandingPreview({
           <TabsContent value="email" className="pt-3">
             <PreviewFrame
               branding={branding}
-              theme="light"
-              caption="Emails (always light; no images, so the app name is the wordmark)"
+              theme={theme}
+              caption={
+                surfaces.includes('app')
+                  ? 'An email to the team. Emails show no images, so the app name and its initial are the wordmark; mail apps in dark mode show the dark version.'
+                  : 'An email to someone who sent an idea through the public form. No images: the app name and its initial are the wordmark.'
+              }
             >
-              <EmailPreview branding={branding} projectName={projectName} />
+              <EmailPreview
+                branding={branding}
+                projectName={projectName}
+                audience={surfaces.includes('app') ? 'staff' : 'submitter'}
+              />
             </PreviewFrame>
           </TabsContent>
         )}
@@ -163,7 +176,7 @@ function AppPreview({ branding }: { branding: PreviewBranding }) {
       <div className="flex w-40 shrink-0 flex-col gap-1 border-r bg-background p-2 max-sm:w-32">
         <span className="flex min-w-0 items-center gap-1.5 px-1.5 py-1">
           <PreviewLogo url={branding.logo_url} />
-          <span className="truncate text-sm font-semibold">{branding.app_name}</span>
+          <span className="truncate font-brand text-sm font-semibold">{branding.app_name}</span>
         </span>
         {nav.map((item) => (
           <span
@@ -179,7 +192,8 @@ function AppPreview({ branding }: { branding: PreviewBranding }) {
         ))}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2 bg-surface p-3">
-        <span className="text-base font-semibold">My work</span>
+        {/* Page titles and the wordmark take the brand font; UI text stays Inter. */}
+        <span className="font-brand text-base font-semibold">My work</span>
         <span className="text-xs text-secondary">
           3 evaluations due. <span className="font-medium text-accent">See all</span>
         </span>
@@ -203,7 +217,7 @@ function PublicFormPreview({
   projectName: string
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-4 py-4">
+    <div className="flex flex-col items-center gap-3 px-4 py-4 font-brand">
       {/* Like the real form: a logo stands alone; without one, the mark and the name. */}
       <span className="flex min-w-0 items-center gap-1.5">
         <PreviewLogo url={branding.logo_url} />
@@ -224,49 +238,96 @@ function PublicFormPreview({
   )
 }
 
-/** Emails: the primary colour as a band with contrast-checked text, the footer below. */
+/**
+ * An email, laid out as the real template is (backend `templates/email/_layout.html`):
+ * no images, so the wordmark is the app name beside its initial on the primary
+ * colour; a white card with the heading, text and the button in the primary
+ * colour (text colour picked for contrast); the reason, links and footer lines
+ * under the card. Mail apps in dark mode show the dark version (the theme toggle).
+ * `audience`: staff get the instance's emails (global branding); a project's
+ * branding reaches the people who sent it ideas through its public form.
+ */
 function EmailPreview({
   branding,
   projectName,
+  audience,
 }: {
   branding: PreviewBranding
   projectName: string
+  audience: 'staff' | 'submitter'
 }) {
-  const band = useRef<HTMLDivElement>(null)
+  const tile = useRef<HTMLSpanElement>(null)
   const button = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     const { color } = readableOn(branding.primary_color)
-    const undo = [band.current, button.current].map((element) =>
+    const undo = [tile.current, button.current].map((element) =>
       element
-        ? setElementProperties(element, {
-            'background-color': branding.primary_color,
-            color,
-          })
+        ? setElementProperties(element, { 'background-color': branding.primary_color, color })
         : () => undefined,
     )
     return () => undo.forEach((fn) => fn())
   }, [branding.primary_color])
+  const initial = (branding.app_name.trim()[0] ?? 'S').toUpperCase()
+  const footer = branding.email_footer
+    ? branding.email_footer.split('\n').filter((line) => line.trim())
+    : [`Sent by ${branding.app_name}.`]
+  const staff = audience === 'staff'
   return (
-    <div className="p-3">
-      <div className="mx-auto flex max-w-sm flex-col overflow-hidden rounded-md border bg-surface">
-        <div ref={band} className="px-4 py-2.5 text-sm font-semibold">
-          {branding.app_name}
-        </div>
-        <div className="flex flex-col gap-2 px-4 py-3 text-xs">
-          <span className="text-sm font-semibold">Your idea is now Shortlisted</span>
-          <span className="text-secondary">
-            “Print-free returns” moved forward in {projectName}. Follow it on your tracking page.
+    <div className="px-3 py-4 font-brand">
+      <div className="mx-auto flex max-w-sm flex-col">
+        <span className="flex min-w-0 items-center gap-2 px-1 pb-2.5">
+          <span
+            ref={tile}
+            className="font-bold flex size-5 shrink-0 items-center justify-center rounded-md text-xs"
+          >
+            {initial}
           </span>
-          <span>
-            <span ref={button} className="inline-flex rounded-md px-2.5 py-1 font-medium">
-              Open the tracking page
-            </span>
+          <span className="truncate text-sm font-semibold">{branding.app_name}</span>
+        </span>
+        <div className="flex flex-col gap-2 rounded-lg border bg-surface px-4 py-3.5 text-xs">
+          <span className="text-sm font-semibold">
+            {staff ? 'Moved to Shortlisted' : 'Your idea is now Shortlisted'}
           </span>
-          {branding.email_footer && (
-            <span className="border-t border-subtle pt-2 whitespace-pre-line text-muted">
-              {branding.email_footer}
+          {staff ? (
+            <>
+              <span>
+                Alice Anders moved this idea from <strong>Evaluating</strong> to{' '}
+                <strong>Shortlisted</strong>:
+              </span>
+              <span className="flex flex-col gap-0.5 rounded-md border bg-subtle px-2.5 py-2">
+                <span className="text-muted">CUST-24 · {projectName}</span>
+                <span className="font-semibold">Print-free returns</span>
+                <span className="text-muted">Status: Shortlisted</span>
+              </span>
+            </>
+          ) : (
+            <span>
+              The idea you sent to {projectName}, <strong>Print-free returns</strong>, is now{' '}
+              <strong>Shortlisted</strong>.
             </span>
           )}
+          <span className="pt-1">
+            <span ref={button} className="inline-flex rounded-md px-3 py-1.5 font-semibold">
+              {staff ? 'Open the idea' : 'See where your idea stands'}
+            </span>
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 px-1 pt-2.5 text-xs text-muted">
+          <span>
+            {staff
+              ? 'You’re evaluating CUST-24.'
+              : `You asked for updates on an idea you sent to ${projectName}.`}
+          </span>
+          {staff && (
+            <span className="underline">Email preferences · Unsubscribe from status changes</span>
+          )}
+          <span className="pt-1">
+            {footer.map((line, index) => (
+              <span key={index} className="block">
+                {line}
+              </span>
+            ))}
+          </span>
         </div>
       </div>
     </div>

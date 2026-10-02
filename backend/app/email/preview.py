@@ -184,7 +184,6 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             context={
                 "project": "Customer Innovation",
                 "confirm_url": f"{base_url}/verify#sample-confirmation-token",
-                "tracking_url": f"{base_url}/track#sample-tracking-token",
                 "held_until_confirmed": True,
                 "wants_updates": True,
             },

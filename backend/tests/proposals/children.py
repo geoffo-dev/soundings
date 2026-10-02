@@ -41,3 +41,19 @@ def answer_error(connection: Connection) -> None:
 def never_read(connection: Connection) -> None:
     """A child that stops reading: sending it a large document blocks."""
     time.sleep(3600)
+
+
+def report_environment(connection: Connection) -> None:
+    """Answers each render with the names in its environment (as the PDF bytes)."""
+    import json
+
+    while True:
+        connection.recv()
+        connection.send(("ok", json.dumps(sorted(os.environ)).encode()))
+
+
+def serve_and_retire(connection: Connection) -> None:
+    """The real renderer, retiring after every render (as after a large one)."""
+    from app.proposals.pdf_child import serve
+
+    serve(connection, retire_above=0)

@@ -6,15 +6,11 @@ import { cn } from '@/lib/utils'
 
 import type { AltchaState } from './use-altcha'
 
+const HINT = 'No puzzle to solve: your browser does a quick check by itself.'
+
 const COPY: Record<AltchaState, { text: string; hint?: string }> = {
-  idle: {
-    text: 'We check that you’re human when you start typing',
-    hint: 'No puzzle: your browser does a little work, here, even offline.',
-  },
-  verifying: {
-    text: 'Checking this browser…',
-    hint: 'No puzzle: your browser does a little work, here, even offline.',
-  },
+  idle: { text: 'We check that you’re human when you start typing', hint: HINT },
+  verifying: { text: 'Checking this browser…', hint: HINT },
   verified: { text: 'Verified you’re human' },
   error: { text: 'We couldn’t verify this browser', hint: 'Try again: it takes a few seconds.' },
 }
@@ -22,15 +18,18 @@ const COPY: Record<AltchaState, { text: string; hint?: string }> = {
 /**
  * The ALTCHA proof of work's state in words (contract-phase4 §3.5, wireframe
  * 06): it solves itself in the background, so this is a calm status line, not
- * a control; only a failure offers Retry. Announced politely as it changes.
+ * a control; only a failure offers Retry. Once verified it shrinks to one muted
+ * line. Announced politely as it changes (the same status element throughout).
  */
 export function HumanCheck({ state, onRetry }: { state: AltchaState; onRetry: () => void }) {
   const copy = COPY[state]
+  const done = state === 'verified'
   return (
     <div
       data-state={state}
       className={cn(
-        'flex items-center gap-3 rounded-lg border px-3 py-2.5',
+        'flex items-center gap-3 rounded-lg border',
+        done ? 'gap-2 border-transparent px-0 py-0' : 'px-3 py-2.5',
         state === 'error' && 'border-danger/40 bg-danger-subtle',
       )}
     >
@@ -52,7 +51,7 @@ export function HumanCheck({ state, onRetry }: { state: AltchaState; onRetry: ()
         )}
       </span>
       <p role="status" className="flex min-w-0 flex-1 flex-col text-sm">
-        <span className="font-medium text-primary">{copy.text}</span>
+        <span className={done ? 'text-muted' : 'font-medium text-primary'}>{copy.text}</span>
         {copy.hint && <span className="text-muted">{copy.hint}</span>}
       </p>
       {state === 'error' && (

@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Check, Globe, Hourglass, Mail, MailCheck, Trash2, UserRoundX } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { describeError } from '@/api/errors'
 import {
@@ -16,6 +16,7 @@ import { RelativeTime } from '@/components/ui/relative-time'
 import { toast } from '@/components/ui/toaster'
 import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { formatDate } from '@/lib/dates'
+import { focusWhenRendered } from '@/lib/focus'
 
 /*
  * Public submissions on the idea page (contract-phase4 §3.6, §3.9): a banner
@@ -54,12 +55,22 @@ export function HeldIdeaBanner({ idea, ideaKey }: { idea: IdeaDetail; ideaKey: s
   const moderate = useModerate()
   const navigate = useNavigate()
   const pending = useModerationPending(idea)
+  const banner = useRef<HTMLDivElement>(null)
   if (idea.held_for !== 'moderation') return null
   const canModerate = submission?.permissions.can_moderate ?? false
+  // The buttons go while the Undo toast is open: focus stays on the banner (it says
+  // what is happening), then, once approved, moves to the idea's tabs below it.
+  const onHide = () => focusWhenRendered(() => banner.current)
+  const afterApproval = () =>
+    focusWhenRendered(() =>
+      document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'),
+    )
   const target = { id: idea.id, key: idea.key, title: idea.title, project: idea.project }
 
   return (
     <div
+      ref={banner}
+      tabIndex={-1}
       role="region"
       aria-label="Waiting for review"
       className="mb-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning-subtle px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -83,6 +94,7 @@ export function HeldIdeaBanner({ idea, ideaKey }: { idea: IdeaDetail; ideaKey: s
             className="flex-1 sm:flex-none"
             onClick={() =>
               moderate.reject(target, {
+                onHide,
                 onDone: () =>
                   void navigate({ to: '/p/$slug/review', params: { slug: idea.project.slug } }),
               })
@@ -93,7 +105,7 @@ export function HeldIdeaBanner({ idea, ideaKey }: { idea: IdeaDetail; ideaKey: s
           <Button
             variant="primary"
             className="flex-1 sm:flex-none"
-            onClick={() => moderate.approve(target)}
+            onClick={() => moderate.approve(target, { onHide, onDone: afterApproval })}
           >
             <Check aria-hidden="true" /> Approve
           </Button>

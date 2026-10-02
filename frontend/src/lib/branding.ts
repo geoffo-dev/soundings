@@ -316,7 +316,9 @@ export function brandingOf(branding: EffectiveBranding): Branding {
 
 /**
  * CSS custom properties that re-theme one subtree (the settings' live
- * previews): the derived accent tokens for `theme` and the font. Applied with
+ * previews): the derived accent tokens for `theme` and the brand font (for
+ * `font-brand`, as in the app: page titles and the wordmark; a preview of a
+ * public page or an email uses it for all its text). Applied with
  * `style.setProperty`, so only validated hex colours and fixed family names
  * ever reach CSS.
  */
@@ -341,8 +343,7 @@ export function brandPreviewProperties(
     '--accent-subtle': tokens.accentSubtle,
     '--fg-accent': tokens.accentText,
     '--focus': tokens.focus,
-    '--font-sans': fontStack,
-    'font-family': fontStack,
+    '--font-brand': fontStack,
   }
 }
 

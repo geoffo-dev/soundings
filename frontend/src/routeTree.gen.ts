@@ -16,6 +16,7 @@ import { Route as TrackRouteImport } from './routes/track'
 import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as SlugSubmitRouteImport } from './routes/$slug.submit'
+import { Route as SlugVerifyRouteImport } from './routes/$slug.verify'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
@@ -69,6 +70,11 @@ const VerifyRoute = VerifyRouteImport.update({
 const SlugSubmitRoute = SlugSubmitRouteImport.update({
   id: '/$slug/submit',
   path: '/$slug/submit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SlugVerifyRoute = SlugVerifyRouteImport.update({
+  id: '/$slug/verify',
+  path: '/$slug/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/unsubscribe': typeof UnsubscribeRoute
   '/verify': typeof VerifyRoute
   '/$slug/submit': typeof SlugSubmitRoute
+  '/$slug/verify': typeof SlugVerifyRoute
   '/$': typeof AppSplatRoute
   '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRouteWithChildren
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/unsubscribe': typeof UnsubscribeRoute
   '/verify': typeof VerifyRoute
   '/$slug/submit': typeof SlugSubmitRoute
+  '/$slug/verify': typeof SlugVerifyRoute
   '/$': typeof AppSplatRoute
   '/notifications': typeof AppNotificationsRoute
   '/': typeof AppIndexRoute
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/verify': typeof VerifyRoute
   '/$slug/submit': typeof SlugSubmitRoute
+  '/$slug/verify': typeof SlugVerifyRoute
   '/_app/$': typeof AppSplatRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
@@ -268,6 +277,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/verify'
     | '/$slug/submit'
+    | '/$slug/verify'
     | '/$'
     | '/notifications'
     | '/settings'
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/verify'
     | '/$slug/submit'
+    | '/$slug/verify'
     | '/$'
     | '/notifications'
     | '/'
@@ -320,6 +331,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/verify'
     | '/$slug/submit'
+    | '/$slug/verify'
     | '/_app/$'
     | '/_app/notifications'
     | '/_app/settings'
@@ -350,6 +362,7 @@ export interface RootRouteChildren {
   UnsubscribeRoute: typeof UnsubscribeRoute
   VerifyRoute: typeof VerifyRoute
   SlugSubmitRoute: typeof SlugSubmitRoute
+  SlugVerifyRoute: typeof SlugVerifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -401,6 +414,13 @@ declare module '@tanstack/react-router' {
       path: '/$slug/submit'
       fullPath: '/$slug/submit'
       preLoaderRoute: typeof SlugSubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$slug/verify': {
+      id: '/$slug/verify'
+      path: '/$slug/verify'
+      fullPath: '/$slug/verify'
+      preLoaderRoute: typeof SlugVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -642,6 +662,7 @@ const rootRouteChildren: RootRouteChildren = {
   UnsubscribeRoute: UnsubscribeRoute,
   VerifyRoute: VerifyRoute,
   SlugSubmitRoute: SlugSubmitRoute,
+  SlugVerifyRoute: SlugVerifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

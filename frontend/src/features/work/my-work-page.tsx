@@ -15,6 +15,7 @@ import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 import { EvaluationsDueSection } from './evaluations-due'
 import { OwnedIdeasSection } from './owned-ideas'
 import { RecentIdeasSection } from './recent-ideas'
+import { WaitingForReviewSection } from './waiting-for-review'
 
 /**
  * My work (SPEC §5 screen 1, wireframe 01): evaluations due, ideas I own by
@@ -93,6 +94,7 @@ export function MyWorkPage() {
       ) : (
         <div ref={listRef} className="flex flex-col gap-10">
           <EvaluationsDueSection items={due} />
+          <WaitingForReviewSection />
           <OwnedIdeasSection groups={work.data?.owned} openCount={work.data?.counts.owned_open} />
           <RecentIdeasSection recent={work.data?.recent} />
         </div>

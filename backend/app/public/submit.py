@@ -1,8 +1,9 @@
 """``POST /public/projects/{slug}/submissions``: an idea through the public form
 (contract-phase4 section 3.5).
 
-Checks, in order, each failure being the response (415 and the body's shape come
-first, in the router): the form is available (c8, 404) -> the per-IP limit (429,
+Checks, in order, each failure being the response (415, the body's shape and the
+per-IP throttle on form requests come first, in the router): the form is available
+(c8, 404) -> the per-IP limit (429,
 every attempt counted) -> email required (422 ``email_required``) -> ALTCHA, spent in
 this transaction (422 ``challenge_failed``) -> the per-project limit (429) -> the
 honeypot (a normal-looking receipt, nothing kept but the spent challenge) -> create.
@@ -17,6 +18,7 @@ notifications. Logs and audit carry ids and outcome codes only.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Final
@@ -148,7 +150,8 @@ async def submit(
             detail="Give your email address: we'll send a link to confirm it.",
         )
 
-    challenge = altcha.verify(settings, body.altcha, project.slug, now=now)
+    # PBKDF2 at the configured cost (up to about 235 ms at the highest): off the loop.
+    challenge = await asyncio.to_thread(altcha.verify, settings, body.altcha, project.slug, now=now)
     if challenge is None or not await altcha.spend(db, challenge):
         logger.info(_REFUSED, extra={"reason": "challenge_failed", **log})
         raise _challenge_failed()

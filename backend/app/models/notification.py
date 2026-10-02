@@ -49,13 +49,6 @@ MAX_EMAIL_ATTEMPTS = 12
 """Attempts before a notification email fails for good (contract-phase3 section 3.9).
 A test email gets one attempt."""
 
-SUBMITTER_ADDRESS_KEY_SQL = r"lower(regexp_replace(to_address, '\+[^@]*@', '@'))"
-"""The address a confirmation email counts against (contract-phase4 section 3.5):
-lower-cased with any ``+tag`` sub-address removed, so ``Jo+1@x`` and ``jo+2@x`` share
-``jo@x``'s limit. Indexed (``ix_outbound_email_submission_address``); compare it with
-the same expression applied to the new address (``to_address`` replaced by the bound
-parameter)."""
-
 
 class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """The transactional outbox: one row per email, written in the same transaction
@@ -78,8 +71,8 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     idea (``idea_id``, required for them, so erasure finds every one): they are rendered
     from the idea and its ``public_submissions`` row at send time, deleted with the
     idea, and deleted when the submitter's details are erased (contract-phase4 section
-    3.8). The per-address limit on confirmation emails counts ``submission_received``
-    rows by :data:`SUBMITTER_ADDRESS_KEY_SQL`.
+    3.8). The per-address limit on confirmation emails doesn't count these rows
+    (erasure deletes them) but ``confirmation_email_sends``.
     """
 
     __tablename__ = "outbound_email"
@@ -120,14 +113,6 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idea_id",
             "created_at",
             postgresql_where=text("idea_id IS NOT NULL"),
-        ),
-        # Phase 4: at most 3 confirmation emails per address (sub-addresses folded) per
-        # 24 hours, first sends and resends together (contract-phase4 section 3.5).
-        Index(
-            "ix_outbound_email_submission_address",
-            text(SUBMITTER_ADDRESS_KEY_SQL),
-            "created_at",
-            postgresql_where=text("type = 'submission_received'"),
         ),
     )
 
@@ -277,7 +262,6 @@ class NotificationPreference(Base):
 
 __all__ = [
     "MAX_EMAIL_ATTEMPTS",
-    "SUBMITTER_ADDRESS_KEY_SQL",
     "Notification",
     "NotificationPreference",
     "OutboundEmail",

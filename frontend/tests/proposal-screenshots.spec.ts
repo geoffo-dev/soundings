@@ -45,7 +45,7 @@ async function conflict(page: Page) {
   await box.click()
   await box.press('End')
   await page.keyboard.type(' Boxes ship on the first Monday.')
-  await page.getByRole('button', { name: 'Keep mine' }).waitFor()
+  await page.getByRole('button', { name: 'Keep this version' }).waitFor()
 }
 
 const shots: Shot[] = [

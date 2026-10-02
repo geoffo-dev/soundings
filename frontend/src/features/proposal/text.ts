@@ -21,6 +21,9 @@ export const SECTION_LIMIT = 20_000
 /** Characters per margin comment (`COMMENT_MAX_LENGTH`). */
 export const PROPOSAL_COMMENT_LIMIT = 5_000
 
+/** The editor bar's "Markdown · saves as you type" (every section's text points to it). */
+export const MARKDOWN_HINT_ID = 'proposal-markdown-hint'
+
 /** The DOM id of a section (outline links and "jump to" move focus here). */
 export function sectionDomId(key: ProposalSectionKey): string {
   return `proposal-section-${key}`
@@ -91,4 +94,19 @@ export function diffLines(theirs: string, yours: string): DiffLine[] {
   while (i < a.length) out.push({ kind: 'theirs', text: a[i++] ?? '' })
   while (j < b.length) out.push({ kind: 'yours', text: b[j++] ?? '' })
   return out
+}
+
+/**
+ * One line of plain text from Markdown, for excerpts (a resolved thread's
+ * line): links and images become their text, and emphasis, code, heading,
+ * quote and list markers go, so `**2.4 million**` reads "2.4 million".
+ */
+export function markdownExcerpt(markdown: string): string {
+  return markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, '')
+    .replace(/(`{1,3}|\*{1,3}|_{1,3}|~~)(\S(?:.*?\S)?)\1/g, '$2')
+    .replace(/`+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }

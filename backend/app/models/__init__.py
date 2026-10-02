@@ -38,7 +38,7 @@ from app.models.project import (
     project_effective_roles,
 )
 from app.models.proposal import Proposal, ProposalComment, ProposalSection, ProposalThread
-from app.models.public import AltchaUsedChallenge, PublicSubmission
+from app.models.public import AltchaUsedChallenge, ConfirmationEmailSend, PublicSubmission
 from app.models.user import User, UserExternalId, UserIdentity, UserSession
 
 __all__ = [
@@ -52,6 +52,7 @@ __all__ = [
     "BrandFont",
     "BrandingProfile",
     "Comment",
+    "ConfirmationEmailSend",
     "EmailStatus",
     "EmailType",
     "Evaluation",

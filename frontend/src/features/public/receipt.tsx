@@ -1,11 +1,11 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Check, CircleCheck, Copy, MailCheck } from 'lucide-react'
+import { ArrowRight, Check, CircleCheck, Copy, MailCheck, Share } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import type { PublicSubmissionReceipt } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { copyText } from '@/features/admin/copy-button'
 
 import { PublicCard } from './public-layout'
@@ -64,6 +64,8 @@ export function SubmissionReceipt({
   const step = nextStep(receipt)
   // Held until the address is confirmed: that is the one thing to do now.
   const confirming = receipt.held_for === 'email_verification'
+  // Phones (and some desktops) can hand the link to another app: notes, a message to yourself.
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
   return (
     <PublicCard>
@@ -96,19 +98,23 @@ export function SubmissionReceipt({
         <label htmlFor={linkId} className="text-sm font-medium text-primary">
           Your private link
         </label>
+        {/* The whole link, wrapped: a one-line field would cut it off on a phone. */}
+        <Textarea
+          id={linkId}
+          readOnly
+          value={receipt.tracking_url}
+          aria-describedby={`${linkId}-help`}
+          minRows={1}
+          maxRows={4}
+          spellCheck={false}
+          className="font-mono text-sm break-all"
+          onFocus={(event) => event.currentTarget.select()}
+        />
         <div className="flex gap-2">
-          <Input
-            id={linkId}
-            readOnly
-            value={receipt.tracking_url}
-            aria-describedby={`${linkId}-help`}
-            className="h-11 font-mono text-sm sm:h-9"
-            onFocus={(event) => event.currentTarget.select()}
-          />
           <Button
             type="button"
             variant="primary"
-            className="h-11 shrink-0 sm:h-9"
+            className="h-11 flex-1 sm:h-9 sm:flex-none"
             onClick={() => {
               void copyText(receipt.tracking_url).then((ok) => {
                 setCopied(ok)
@@ -118,8 +124,30 @@ export function SubmissionReceipt({
             }}
           >
             {copied ? <Check /> : <Copy />}
-            {copied ? 'Copied' : 'Copy link'}
+            {/* Both labels take the same room, so the button keeps its width. */}
+            <span className="grid">
+              <span className="col-start-1 row-start-1">{copied ? 'Copied' : 'Copy link'}</span>
+              <span aria-hidden="true" className="invisible col-start-1 row-start-1">
+                Copy link
+              </span>
+            </span>
           </Button>
+          {canShare && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 flex-1 sm:h-9 sm:flex-none"
+              onClick={() => {
+                // Cancelling the share sheet rejects: nothing to do.
+                navigator
+                  .share({ title: `Your idea for ${projectName}`, url: receipt.tracking_url })
+                  .catch(() => undefined)
+              }}
+            >
+              <Share />
+              Share…
+            </Button>
+          )}
         </div>
         <p id={`${linkId}-help`} className="text-sm text-muted">
           Keep it somewhere safe: it’s the only way to follow your idea, and we can’t show it again.

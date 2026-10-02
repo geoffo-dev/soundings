@@ -23,6 +23,7 @@ import resource
 import signal
 from dataclasses import replace
 from multiprocessing.connection import Connection
+from pathlib import Path
 from typing import Any, Final
 from xml.parsers import expat
 
@@ -38,11 +39,12 @@ from app.proposals.pdf import IDLE_EXIT
 __all__ = [
     "FONTS",
     "MAX_DATA_URI_BYTES",
-    "MEMORY_LIMIT",
+    "MEMORY_CAP",
     "BlockedURL",
     "LocalOnlyFetcher",
     "decode_data_uri",
     "logo_readable",
+    "memory_limit",
     "render_document",
     "render_html",
     "serve",
@@ -55,8 +57,12 @@ FONTS: Final[dict[str, bytes]] = {
 
 MAX_DATA_URI_BYTES: Final = 2 * 1024 * 1024
 MAX_LOGO_PIXELS: Final = 4096 * 4096
-MEMORY_LIMIT: Final = 2 * 1024 * 1024 * 1024
-"""Address space of the child: a runaway render fails instead of starving the node."""
+MEMORY_CAP: Final = 1024 * 1024 * 1024
+"""The most private memory (``RLIMIT_DATA``) the child may use. The largest documents
+use about 160 MB; the child itself about 65 MB before it renders."""
+CGROUP: Final = Path("/sys/fs/cgroup")
+_UNLIMITED: Final = 1 << 60
+"""cgroup v1 reports "no limit" as about 2**63."""
 
 
 class BlockedURL(ValueError):
@@ -157,21 +163,55 @@ def render_document(document: ExportDocument) -> bytes:
     return render_html(build_html(without_logo))
 
 
-def _limit_memory() -> None:
+def memory_limit(cgroup: Path = CGROUP) -> int:
+    """Bytes of private memory the child may use: half the container's memory limit
+    (cgroup v2 ``memory.max``, else v1 ``memory/memory.limit_in_bytes``), so the API
+    process keeps the other half, and at most :data:`MEMORY_CAP`. A render beyond it
+    fails in the child (500) instead of getting the whole container OOM-killed (on
+    cgroup v2 with ``memory.oom.group``, as kubelet sets it, the API would go too)."""
+    for name in ("memory.max", "memory/memory.limit_in_bytes"):
+        try:
+            raw = (cgroup / name).read_text().strip()
+        except OSError:
+            continue
+        if raw.isdigit() and 0 < int(raw) < _UNLIMITED:
+            return min(MEMORY_CAP, int(raw) // 2)
+        return MEMORY_CAP  # "max": no limit
+    return MEMORY_CAP
+
+
+def _limit_memory() -> int:
+    """``RLIMIT_DATA`` (heap and private mappings: what a render grows) to
+    :func:`memory_limit`; malloc then fails in the child, which reports the error or
+    dies, and the API answers 500. Returns the limit."""
+    limit = memory_limit()
     try:
-        _, hard = resource.getrlimit(resource.RLIMIT_AS)
-        limit = MEMORY_LIMIT if hard == resource.RLIM_INFINITY else min(MEMORY_LIMIT, hard)
-        resource.setrlimit(resource.RLIMIT_AS, (limit, hard))
+        _, hard = resource.getrlimit(resource.RLIMIT_DATA)
+        if hard != resource.RLIM_INFINITY:
+            limit = min(limit, hard)
+        resource.setrlimit(resource.RLIMIT_DATA, (limit, hard))
     except (ValueError, OSError):  # pragma: no cover - platform without the limit
         pass
+    return limit
 
 
-def serve(connection: Connection) -> None:
+def _peak_memory() -> int:
+    """The child's largest resident size so far, in bytes (Linux reports KiB)."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+
+
+def serve(connection: Connection, *, retire_above: int | None = None) -> None:
     """Render each :class:`ExportDocument` received; exit after :data:`IDLE_EXIT`
     seconds without one, or when the API process closes the pipe. Replies
-    ``("ok", pdf)`` or ``("error", <exception class name>)``: never document text."""
+    ``("ok", pdf)`` or ``("error", <exception class name>)``: never document text.
+
+    The child also exits right after replying once it ran out of memory or its peak
+    resident size passed ``retire_above`` (default: half its memory limit). Python
+    keeps the memory a large render grew, so a warm child would otherwise creep
+    towards the limit; the next export starts a fresh one (about a second more)."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is for the API process
-    _limit_memory()
+    limit = _limit_memory()
+    retire_above = limit // 2 if retire_above is None else retire_above
     # WeasyPrint logs refused URLs and CSS it skips; nothing to report from here.
     logging.getLogger("weasyprint").setLevel(logging.CRITICAL)
     while connection.poll(IDLE_EXIT):
@@ -179,13 +219,18 @@ def serve(connection: Connection) -> None:
             document = connection.recv()
         except (EOFError, OSError):
             return
+        exhausted = False
         try:
             if not isinstance(document, ExportDocument):
                 raise TypeError("not an ExportDocument")
             reply: tuple[str, object] = ("ok", render_document(document))
+        except MemoryError:
+            reply, exhausted = ("error", "MemoryError"), True
         except Exception as error:  # noqa: BLE001 - reported to the parent by class name
             reply = ("error", type(error).__name__)
         try:
             connection.send(reply)
         except (EOFError, OSError):
+            return
+        if exhausted or _peak_memory() > retire_above:
             return

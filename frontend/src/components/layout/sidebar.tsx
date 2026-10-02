@@ -19,6 +19,7 @@ import type { ReactNode } from 'react'
 
 import { findCachedIdea } from '@/api/cache'
 import { useProjects } from '@/api/projects'
+import { useReviewCounts } from '@/api/submissions'
 import type { CurrentUser } from '@/api/types'
 import { useWorkCounts } from '@/api/work'
 import { useAppCommands } from '@/components/layout/app-commands'
@@ -166,6 +167,9 @@ function MyWorkNav({ onNavigate }: { onNavigate?: () => void }) {
 
 function ProjectsNav({ onNavigate, canCreate }: { onNavigate?: () => void; canCreate: boolean }) {
   const projects = useProjects()
+  const reviews = new Map(
+    useReviewCounts(projects.data).map(({ project, count }) => [project.id, count]),
+  )
   const queryClient = useQueryClient()
   const params: { slug?: string; ideaKey?: string } = useParams({ strict: false })
   // On an idea page, highlight the idea's project.
@@ -199,20 +203,40 @@ function ProjectsNav({ onNavigate, canCreate }: { onNavigate?: () => void; canCr
           {canCreate ? 'No projects yet' : 'No projects yet — ask an admin to add you'}
         </li>
       ) : (
-        projects.data.map((project) => (
-          <li key={project.id}>
-            <Link
-              to="/p/$slug"
-              params={{ slug: project.slug }}
-              onClick={onNavigate}
-              className={navItem}
-              data-current={project.slug === activeSlug || undefined}
-            >
-              <ProjectTile name={project.name} />
-              <span className="truncate">{project.name}</span>
-            </Link>
-          </li>
-        ))
+        projects.data.map((project) => {
+          const waiting = reviews.get(project.id) ?? 0
+          return (
+            <li key={project.id}>
+              <Link
+                to="/p/$slug"
+                params={{ slug: project.slug }}
+                onClick={onNavigate}
+                className={navItem}
+                data-current={project.slug === activeSlug || undefined}
+              >
+                <ProjectTile name={project.name} />
+                <span className="truncate">{project.name}</span>
+              </Link>
+              {waiting > 0 && (
+                // Public ideas held for review are on no board: admins see them here.
+                <Link
+                  to="/p/$slug/review"
+                  params={{ slug: project.slug }}
+                  onClick={onNavigate}
+                  className={cn(
+                    subItem,
+                    'data-[status=active]:bg-subtle-hover data-[status=active]:text-primary',
+                  )}
+                  // In context: it sits right under its project's link (WCAG 2.4.4).
+                  aria-label={`Review new ideas, ${String(waiting)} waiting`}
+                >
+                  <span className="flex-1 truncate">Review</span>
+                  <CountBadge aria-hidden="true">{waiting}</CountBadge>
+                </Link>
+              )}
+            </li>
+          )
+        })
       )}
       {canCreate && (
         <li>

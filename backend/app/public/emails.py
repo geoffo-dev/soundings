@@ -4,10 +4,14 @@ Phase 3 outbox and worker unchanged.
 * ``submission_received``: **fixed text**, nothing the submitter typed (anyone can put
   any address in the form, so it must be useless for spam): "Confirm your idea for
   <project>", the confirmation link (signed when the email is rendered, valid 3 days
-  from then), what confirming does, and the tracking link. On submission with an
-  address and on each resend. At most 3 per address (lower-cased, ``+tag`` removed)
-  per 24 hours, first sends and resends together, counted over ``outbound_email``;
-  beyond it nothing is queued, silently (the caller can't tell).
+  from then) and what confirming does. No tracking link: whoever opens it on the
+  strength of this email would read what a stranger typed, on our domain and in our
+  branding (the receipt page gives the submitter their link). On submission with an
+  address and on each resend. At most 3 per address per 24 hours, first sends and
+  resends together, counted in ``confirmation_email_sends`` by a keyed hash of the
+  :func:`canonical_address` (lower-cased, ``+tag`` removed, Gmail's dots and Yahoo's
+  ``-keyword`` folded), which nothing but the hourly cleanup deletes; beyond it
+  nothing is queued, silently (the caller can't tell).
 * ``submission_status_changed``: in the fan-out of each ``status_changed`` event of a
   public idea whose submitter asked for updates and confirmed their address: the new
   status label, the title *as they sent it*, the tracking link and "Stop these emails".
@@ -20,13 +24,18 @@ its queued emails.
 
 from __future__ import annotations
 
+import functools
+import hashlib
+import hmac
 import logging
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
-from sqlalchemy import ColumnClause, func, literal_column, select
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.submission_tokens import make_confirmation_token, unseal_tracking_token
@@ -37,9 +46,9 @@ from app.email.model import Button, EmailContent, subject_title
 from app.models.activity import ActivityEvent
 from app.models.enums import EmailType, HoldReason, IdeaStatus, Resolution
 from app.models.idea import Idea
-from app.models.notification import SUBMITTER_ADDRESS_KEY_SQL, OutboundEmail
+from app.models.notification import OutboundEmail
 from app.models.project import Project
-from app.models.public import PublicSubmission
+from app.models.public import ConfirmationEmailSend, PublicSubmission
 
 if TYPE_CHECKING:
     from app.email.content import OutboxRow
@@ -48,6 +57,8 @@ __all__ = [
     "CONFIRMATIONS_PER_ADDRESS",
     "CONFIRMATIONS_PER_SUBMISSION",
     "CONFIRMATION_WINDOW",
+    "address_key",
+    "canonical_address",
     "confirmations_sent",
     "queue_confirmation",
     "queue_status_email",
@@ -59,11 +70,14 @@ logger = logging.getLogger(__name__)
 
 CONFIRMATION_WINDOW: Final = timedelta(hours=24)
 CONFIRMATIONS_PER_ADDRESS: Final = 3
-"""``submission_received`` emails per address (``+tags`` folded) per 24 hours."""
+"""``submission_received`` emails per address (:func:`canonical_address`) per 24 hours."""
 CONFIRMATIONS_PER_SUBMISSION: Final = 3
 """``submission_received`` emails per submission per 24 hours (the first included)."""
 
-_ADDRESS_KEY: Final[ColumnClause[str]] = literal_column(SUBMITTER_ADDRESS_KEY_SQL)
+_ADDRESS_INFO: Final = b"soundings/submitter-address/v1"
+_GMAIL: Final = {"gmail.com": "gmail.com", "googlemail.com": "gmail.com"}
+_KEYWORD_DOMAINS: Final = frozenset({"yahoo.com", "ymail.com", "rocketmail.com"})
+"""Yahoo's disposable addresses: ``base-keyword@`` reaches the owner of ``base``."""
 _ADDRESS_LOCK_SALT: Final = 0x5355_424D
 """First key of the advisory lock that serialises one address's confirmation emails
 (the second is a hash of the address key), so concurrent submissions can't all count
@@ -78,6 +92,36 @@ def tracking_url(settings: Settings, token: str) -> str:
 
 def _confirmation_url(settings: Settings, token: str) -> str:
     return f"{settings.public_base_url.rstrip('/')}/verify#{token}"
+
+
+# --- The per-address limit --------------------------------------------------------------------
+def canonical_address(address: str) -> str:
+    """The inbox ``address`` reaches, as far as the limit is concerned: lower-cased,
+    any ``+tag`` removed; Gmail ignores dots (and googlemail.com is gmail.com); Yahoo's
+    ``base-keyword`` addresses fold to ``base``. Folding too much only makes two
+    addresses share a limit."""
+    local, _, domain = address.strip().lower().rpartition("@")
+    local = local.split("+", 1)[0]
+    domain = _GMAIL.get(domain, domain)
+    if domain == "gmail.com":
+        local = local.replace(".", "")
+    elif domain in _KEYWORD_DOMAINS:
+        local = local.split("-", 1)[0]
+    return f"{local}@{domain}"
+
+
+@functools.lru_cache(maxsize=4)
+def _address_hmac_key(secret: str) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=_ADDRESS_INFO).derive(
+        secret.encode("utf-8")
+    )
+
+
+def address_key(settings: Settings, address: str) -> str:
+    """HMAC-SHA256 (hex) of the :func:`canonical_address` with a key derived from the
+    secret key: what ``confirmation_email_sends`` stores instead of the address."""
+    key = _address_hmac_key(settings.secret_key.get_secret_value())
+    return hmac.new(key, canonical_address(address).encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 # --- Queueing ---------------------------------------------------------------------------------
@@ -98,19 +142,17 @@ async def confirmations_sent(
     return int(row[0] or 0), row[1]
 
 
-async def _address_allows(db: AsyncSession, address: str, *, now: datetime) -> bool:
-    """Fewer than :data:`CONFIRMATIONS_PER_ADDRESS` confirmation emails to this address
-    (lower-cased, ``+tag`` removed) in the last 24 hours
-    (``ix_outbound_email_submission_address``)."""
-    key = func.lower(func.regexp_replace(address, r"\+[^@]*@", "@"))
+async def _address_allows(db: AsyncSession, key: str, *, now: datetime) -> bool:
+    """Fewer than :data:`CONFIRMATIONS_PER_ADDRESS` confirmation emails to the address
+    with this :func:`address_key` in the last 24 hours. Takes the address's advisory
+    lock first, so concurrent submissions can't all count the same rows."""
     await db.execute(select(func.pg_advisory_xact_lock(_ADDRESS_LOCK_SALT, func.hashtext(key))))
     count = await db.scalar(
         select(func.count())
-        .select_from(OutboundEmail)
+        .select_from(ConfirmationEmailSend)
         .where(
-            OutboundEmail.type == EmailType.SUBMISSION_RECEIVED,
-            key == _ADDRESS_KEY,
-            OutboundEmail.created_at > now - CONFIRMATION_WINDOW,
+            ConfirmationEmailSend.address_key == key,
+            ConfirmationEmailSend.created_at > now - CONFIRMATION_WINDOW,
         )
     )
     return int(count or 0) < CONFIRMATIONS_PER_ADDRESS
@@ -123,7 +165,8 @@ async def queue_confirmation(
     is off or the address had its 3 for the day (silently). ``True`` if queued."""
     if not settings.smtp_configured or submission.email is None:
         return False
-    if not await _address_allows(db, submission.email, now=now):
+    key = address_key(settings, submission.email)
+    if not await _address_allows(db, key, now=now):
         logger.info(
             "submission email held back",
             extra={"reason": "address_limit", "idea_id": str(submission.idea_id)},
@@ -150,6 +193,9 @@ async def queue_confirmation(
         ],
         now=now,
     )
+    if queued:
+        db.add(ConfirmationEmailSend(address_key=key, created_at=now))
+        await db.flush()
     return bool(queued)
 
 
@@ -232,9 +278,6 @@ async def submitter_email(
         or submission.email != email.to_address
     ):
         return NO_LONGER_APPLIES
-    sealed = submission.tracking_token_sealed
-    token = None if sealed is None else unseal_tracking_token(settings, sealed)
-    tracking = None if token is None else tracking_url(settings, token)
     project_name = project.name
 
     if email.type is EmailType.SUBMISSION_RECEIVED:
@@ -250,7 +293,6 @@ async def submitter_email(
             context={
                 "project": project_name,
                 "confirm_url": confirm,
-                "tracking_url": tracking,
                 "held_until_confirmed": idea.held_for is HoldReason.EMAIL_VERIFICATION,
                 "wants_updates": submission.wants_updates,
             },
@@ -266,6 +308,9 @@ async def submitter_email(
     if label is None or submission.submitted_title is None:
         return NO_LONGER_APPLIES
     title = submission.submitted_title
+    sealed = submission.tracking_token_sealed
+    token = None if sealed is None else unseal_tracking_token(settings, sealed)
+    tracking = None if token is None else tracking_url(settings, token)
     return EmailContent(
         template="submission_status_changed",
         subject=f'Your idea "{subject_title(title)}" is now {label}',

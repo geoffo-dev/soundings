@@ -204,7 +204,9 @@ describe('brandPreviewProperties', () => {
     )
     expect(props['--brand-primary']).toBe(DEFAULT_BRANDING.primary)
     expect(props['--brand-accent']).toBe('#2e7d4f')
-    expect(props['--font-sans']).toMatch(/^"Source Serif 4", /)
+    expect(props['--font-brand']).toMatch(/^"Source Serif 4", /)
+    // The app's UI text stays Inter: only `font-brand` follows the branding.
+    expect(props['--font-sans']).toBeUndefined()
     for (const [name, value] of Object.entries(props)) {
       if (name.includes('font')) continue
       expect(value).toMatch(/^#[0-9a-f]{6}$/)

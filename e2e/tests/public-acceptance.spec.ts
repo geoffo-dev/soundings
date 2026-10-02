@@ -223,7 +223,9 @@ test(
       await expect(
         phone.getByRole('heading', { level: 1, name: 'Thanks, your address is confirmed' }),
       ).toBeVisible()
-      await expect(phone.getByText(`“${TITLE}” for ${project.name}`)).toBeVisible()
+      // Only the project, never the submitted title (anyone can type in someone's address).
+      await expect(phone.getByText(`Your idea for ${project.name}`)).toBeVisible()
+      await expect(phone.getByText(TITLE)).toHaveCount(0)
       expect((await visitor.tracked(token)).email_verified).toBe(true)
 
       // --- 3. Held: nowhere for members; reviewed and approved ----------------------------
@@ -248,7 +250,8 @@ test(
       await expect(
         page.getByText('1 idea from the public form is waiting for review.'),
       ).toBeVisible()
-      await page.getByRole('link', { name: 'Review' }).click()
+      // The board's notice (the sidebar has a "Review new ideas" link too).
+      await page.getByRole('main').getByRole('link', { name: 'Review', exact: true }).click()
       await expect(page).toHaveURL(new RegExp(`/p/${slug}/review$`))
       const item = page.getByRole('article').filter({ hasText: TITLE })
       await expect(item).toContainText(SUMMARY)

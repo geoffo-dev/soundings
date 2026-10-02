@@ -22,6 +22,12 @@ export interface FieldProps {
   /** Validation message. Marks the control aria-invalid and is announced. */
   error?: ReactNode
   required?: boolean
+  /**
+   * Show the red asterisk on a required field (default). Off for forms that
+   * mark the optional fields instead ("(optional)"): one convention per form.
+   * The control stays `required` for assistive technology either way.
+   */
+  requiredMark?: boolean
   disabled?: boolean
   /** Keep the label for screen readers only. */
   hideLabel?: boolean
@@ -43,6 +49,7 @@ export function Field({
   description,
   error,
   required = false,
+  requiredMark = true,
   disabled = false,
   hideLabel = false,
   inline = false,
@@ -71,7 +78,7 @@ export function Field({
       className={cn(hideLabel && 'sr-only', inline && 'font-normal')}
     >
       {label}
-      {required && (
+      {required && requiredMark && (
         <span aria-hidden="true" className="text-danger">
           *
         </span>

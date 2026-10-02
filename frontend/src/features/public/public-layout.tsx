@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { useEffectiveBranding } from '@/api/branding'
 import type { EffectiveBranding } from '@/api/types'
 import { LogoMark } from '@/components/layout/logo'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,21 +13,25 @@ import { cn } from '@/lib/utils'
  * and no sign-in, just the project's branding (logo or mark, app name) above
  * one calm column. `branding` undefined = still loading (a neutral header, so
  * nothing flashes in the wrong colours); null = use the global branding.
+ * `projectName` names a project's own logo for screen readers (below).
  */
 export function PublicLayout({
   branding,
+  projectName,
   children,
   footer,
   width = 'form',
 }: {
   branding: EffectiveBranding | null | undefined
+  projectName?: string
   children: ReactNode
   footer?: ReactNode
   width?: 'form' | 'narrow'
 }) {
   useBrandingOverride(branding)
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    // Public pages are the project's own: all their text is in its brand font.
+    <div className="flex min-h-dvh flex-col bg-background font-brand">
       <header className="px-4 pt-6 pb-4 sm:pt-12 sm:pb-6">
         <div className="mx-auto flex h-8 max-w-xl items-center justify-center">
           {branding === undefined ? (
@@ -35,7 +40,7 @@ export function PublicLayout({
               <Skeleton className="h-4 w-28" />
             </span>
           ) : (
-            <PublicBrand />
+            <PublicBrand projectName={projectName} />
           )}
         </div>
       </header>
@@ -58,14 +63,22 @@ export function PublicLayout({
 /**
  * The applied (project or global) logo, or the mark and app name: the store follows the
  * override above. A logo stands alone (it is the brand; the PDF cover shows it alone too).
+ * A project's own logo with no app name of its own is the project's brand, so screen
+ * readers hear the project's name, not the instance's (as its emails and PDF name it).
  */
-function PublicBrand() {
+export function PublicBrand({ projectName }: { projectName?: string }) {
   const { app_name, logo_url } = useAppBranding()
+  const global = useEffectiveBranding().data
   if (logo_url) {
+    const projectLogo =
+      Boolean(projectName) &&
+      global !== undefined &&
+      logo_url !== global.logo_url &&
+      app_name === global.app_name
     return (
       <span className="inline-flex min-w-0 items-center">
         <LogoMark className="h-8 max-w-60" />
-        <span className="sr-only">{app_name}</span>
+        <span className="sr-only">{projectLogo ? projectName : app_name}</span>
       </span>
     )
   }

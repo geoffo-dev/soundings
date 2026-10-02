@@ -8,6 +8,7 @@ import type { CurrentUser, IdeaDetail, ProposalPermissions } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useCommands } from '@/lib/command-registry'
+import { focusWhenRendered } from '@/lib/focus'
 
 import { ProposalEditor } from './proposal-editor'
 import { ProposalSkeleton } from './proposal-skeleton'
@@ -92,6 +93,18 @@ function NoProposal({
 }) {
   const create = useCreateProposal(ideaKey)
   const ready = idea.status === 'shortlisted' || idea.status === 'proposal'
+  // The button (or palette entry) is gone once the editor renders: start writing in Summary.
+  const start = () =>
+    create.mutate(undefined, {
+      onSuccess: () =>
+        focusWhenRendered(
+          () =>
+            document.querySelector<HTMLElement>(
+              '[data-testid="proposal-editor"] textarea[data-section-text]',
+            ),
+          { force: true },
+        ),
+    })
   useCommands({
     id: 'proposal',
     heading: 'Proposal',
@@ -102,7 +115,7 @@ function NoProposal({
             label: 'Start proposal',
             icon: <FilePlus2 />,
             keywords: ['proposal', 'write', 'business case'],
-            onSelect: () => create.mutate(),
+            onSelect: start,
           },
         ]
       : [],
@@ -126,7 +139,7 @@ function NoProposal({
             <Button
               variant="primary"
               loading={create.isPending}
-              onClick={() => create.mutate()}
+              onClick={start}
               data-primary-action=""
             >
               Start proposal

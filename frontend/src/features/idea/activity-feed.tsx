@@ -23,6 +23,7 @@ import {
   useIdeaActivity,
   useUpdateComment,
 } from '@/api/activity'
+import { useIdeaSubmission } from '@/api/submissions'
 import type { ActivityItem, CommentActivity } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -193,8 +194,12 @@ const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> =
 
 /** One quiet line: icon, "Alice moved it from New to Evaluating", time. */
 function EventItem({ entry }: { entry: ActivityEntry }) {
-  const { statusLabel } = useIdeaPage()
+  const { statusLabel, idea, ideaKey } = useIdeaPage()
   const { item } = entry
+  // A public idea's "sent it through the public form" names its sender, like the header.
+  const submitter = useIdeaSubmission(ideaKey, {
+    enabled: idea.via_public_form && item.type === 'idea_created' && !item.actor,
+  }).data?.name
   const icon = item.type === 'comment' ? <MessageSquare /> : EVENT_ICONS[item.type]
   return (
     <li className="relative flex items-start gap-2.5 py-1.5 text-sm">
@@ -205,7 +210,7 @@ function EventItem({ entry }: { entry: ActivityEntry }) {
         {icon}
       </span>
       <p className="min-w-0 pt-0.5 text-secondary">
-        <span className="font-medium text-primary">{activityActor(item)}</span>{' '}
+        <span className="font-medium text-primary">{activityActor(item, submitter)}</span>{' '}
         {describeEntry(entry, statusLabel)}
         <span aria-hidden="true" className="text-muted">
           {' '}

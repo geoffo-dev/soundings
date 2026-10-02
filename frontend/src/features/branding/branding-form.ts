@@ -52,6 +52,8 @@ export function fromSettings(settings: BrandingSettings): BrandingForm {
   }
 }
 
+export const HEX_COLOUR_ERROR = 'Use a hex colour such as #1d5fa8.'
+
 /** `#1d5fa8` from "1D5FA8", "#1d5" or "1d5fa8"; null if it isn't a hex colour. */
 export function normaliseHex(value: string): string | null {
   const trimmed = value.trim()
@@ -75,7 +77,7 @@ export function validateBranding(form: BrandingForm): BrandingErrors {
   }
   for (const field of ['primary_color', 'accent_color'] as const) {
     if (form[field].trim() && !normaliseHex(form[field])) {
-      errors[field] = 'Use a hex colour such as #1d5fa8.'
+      errors[field] = HEX_COLOUR_ERROR
     }
   }
   const footer = form.email_footer.trim()
