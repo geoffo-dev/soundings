@@ -4,6 +4,46 @@
  */
 
 export interface paths {
+    "/api/v1/admin/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every API key
+         * @description Platform admins (api_key.manage_any, session only). Keys that aren't revoked, of every user (service accounts included), newest first, with their owner and when they were last used. q matches part of the key's name or its owner's name or email (any case), or exactly a key's prefix (sdg_ + lookup id) or lookup id, so a leaked key can be found; the filters combine.
+         */
+        get: operations["list_admin_api_keys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/api-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke any API key
+         * @description Platform admins (api_key.manage_any, session only). The key stops working at once. Idempotent for a key already revoked; 404 for an unknown key. Audited as api_key.revoke (target: the key's owner).
+         */
+        delete: operations["revoke_admin_api_key"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/audit": {
         parameters: {
             query?: never;
@@ -1029,6 +1069,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/proposal/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending suggestions
+         * @description proposal.view: the proposal's pending suggestions in template-section order, then oldest first, with what you may do (suggest, decide). 404 when the idea has no proposal.
+         */
+        get: operations["list_proposal_suggestions"];
+        put?: never;
+        /**
+         * Suggest text for a section
+         * @description proposal.suggest_section (members and admins; c7: the idea is Shortlisted or in Proposal). The whole new text of one section; your earlier pending suggestion for the same section is discarded. source is ai for a service account, else api. 404 when the idea has no proposal; 422 validation_error for a base_version above the section's; 409 proposal_not_available, too_many_suggestions (50 pending), project_archived, awaiting_moderation.
+         */
+        post: operations["create_proposal_suggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a suggestion
+         * @description proposal.write (the owner and admins, c7). The section's text becomes the suggestion's, saved like update_proposal_section with base_version (the section version you are looking at): 409 proposal_conflict with current when someone saved it since; suggestion_not_pending when it was already accepted or discarded.
+         */
+        post: operations["accept_proposal_suggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard a suggestion
+         * @description proposal.write (the owner and admins, c7), under the same locks as accept. Idempotent for a discarded suggestion; 409 suggestion_not_pending for an accepted one, proposal_not_available, project_archived, awaiting_moderation.
+         */
+        post: operations["discard_proposal_suggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/proposal/threads": {
         parameters: {
             query?: never;
@@ -1280,6 +1384,50 @@ export interface paths {
          * @description Idempotent.
          */
         delete: operations["unwatch_idea"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List my API keys
+         * @description api_key.manage_own (session only; an API key gets 403 insufficient_scope). Your keys that aren't revoked (active and expired), newest first, with whether you may create another. Never returns a secret.
+         */
+        get: operations["list_my_api_keys"];
+        put?: never;
+        /**
+         * Create an API key
+         * @description api_key.manage_own (session only; an API key gets 403 insufficient_scope). Returns the full key once, in secret (Cache-Control: no-store); only its hash is stored. write and evaluate include read (added). 403 break_glass_account (c20); 409 too_many_api_keys (25 that aren't revoked), api_key_name_taken; 422 invalid_project (a project you can't view, or unknown). Audited as api_key.create.
+         */
+        post: operations["create_my_api_key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/api-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an API key
+         * @description api_key.manage_own (session only; an API key gets 403 insufficient_scope). The key stops working at once: the next request with it is 401, on REST and /mcp alike. Idempotent for a key already revoked; 404 for someone else's or an unknown key. Audited as api_key.revoke.
+         */
+        delete: operations["revoke_my_api_key"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1994,6 +2142,15 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AcceptedProposalSuggestion
+         * @description The accepted suggestion and the section as saved (keep editing from
+         *     ``section.version``).
+         */
+        AcceptedProposalSuggestion: {
+            section: components["schemas"]["ProposalSection"];
+            suggestion: components["schemas"]["ProposalSuggestion"];
+        };
+        /**
          * ActivityPage
          * @description Newest first. Reverse client-side to show oldest-to-newest.
          */
@@ -2002,6 +2159,81 @@ export interface components {
             items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"])[];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /**
+         * AdminApiKey
+         * @description A key in Admin settings -> API keys, with its owner. ``projects`` lists every
+         *     restricted project that still exists.
+         */
+        AdminApiKey: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** @description Who created it: the owner, or the platform admin who registered the agent (Phase 6); null if that user no longer exists. */
+            created_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Expires At
+             * @description Null: never expires.
+             */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description Last successful authentication (updated at most once a minute).
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            owner: components["schemas"]["UserRef"];
+            /** Owner Email */
+            owner_email: string;
+            /**
+             * Owner Is Service Account
+             * @description An AI agent's service account (Phase 6): show the AI badge.
+             */
+            owner_is_service_account: boolean;
+            /**
+             * Prefix
+             * @description The start of the key, "sdg_" and its 12-character lookup id, so you can recognise it; the rest is never shown again.
+             */
+            prefix: string;
+            /**
+             * Projects
+             * @description The projects it is restricted to that still exist and you can still view, by name. Empty when not restricted (or when you can view none of them: then the key reaches nothing).
+             */
+            projects: components["schemas"]["ProjectRef"][];
+            /**
+             * Restricted
+             * @description Only the projects below (true), or every project you can access.
+             */
+            restricted: boolean;
+            /**
+             * Scopes
+             * @description Canonical order: read, write, evaluate, mcp (write and evaluate include read).
+             */
+            scopes: components["schemas"]["ApiKeyScope"][];
+            state: components["schemas"]["ApiKeyState"];
+        };
+        /**
+         * AdminApiKeyPage
+         * @description Keys that aren't revoked, of every user, newest first.
+         */
+        AdminApiKeyPage: {
+            /** Items */
+            items: components["schemas"]["AdminApiKey"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Total
+             * @description Keys matching the filters, all pages.
+             */
+            total: number;
         };
         /**
          * AdminUser
@@ -2252,6 +2484,115 @@ export interface components {
             /** Salt */
             salt: string;
         };
+        /**
+         * ApiKey
+         * @description One of your keys (Settings -> API keys). Never carries the secret.
+         */
+        ApiKey: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * @description Null: never expires.
+             */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description Last successful authentication (updated at most once a minute).
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Prefix
+             * @description The start of the key, "sdg_" and its 12-character lookup id, so you can recognise it; the rest is never shown again.
+             */
+            prefix: string;
+            /**
+             * Projects
+             * @description The projects it is restricted to that still exist and you can still view, by name. Empty when not restricted (or when you can view none of them: then the key reaches nothing).
+             */
+            projects: components["schemas"]["ProjectRef"][];
+            /**
+             * Restricted
+             * @description Only the projects below (true), or every project you can access.
+             */
+            restricted: boolean;
+            /**
+             * Scopes
+             * @description Canonical order: read, write, evaluate, mcp (write and evaluate include read).
+             */
+            scopes: components["schemas"]["ApiKeyScope"][];
+            state: components["schemas"]["ApiKeyState"];
+        };
+        /**
+         * ApiKeyCreate
+         * @description Create a key for yourself (session only). Scopes and the project restriction
+         *     can't be changed later: create another key and revoke this one.
+         */
+        ApiKeyCreate: {
+            /**
+             * Expires At
+             * @description When it stops working: 1 hour to 366 days ahead, or null for never.
+             */
+            expires_at?: string | null;
+            /**
+             * Name
+             * @description What it is for, e.g. "Claude Desktop" or "Weekly report script": unique among your keys (any case) that aren't revoked.
+             */
+            name: string;
+            /**
+             * Project Ids
+             * @description Restrict the key to these projects (1-50, each one you can view: else 422 invalid_project); null for every project you can access, now and later.
+             */
+            project_ids?: string[] | null;
+            /**
+             * Scopes
+             * @description read: view projects, ideas, evaluations, scores and proposals (as you can). write: create and change ideas, comments, votes, owners, evaluators, statuses, proposals (deleting and moderating ideas need a session); includes read. evaluate: save and submit your own evaluations; includes read. mcp: connect an MCP client to /mcp (its tools also need read, write or evaluate). Duplicates are merged and read is added to write and evaluate.
+             */
+            scopes: components["schemas"]["ApiKeyScope"][];
+        };
+        /**
+         * ApiKeyList
+         * @description Your keys that aren't revoked, newest first (at most ``max_keys``: no paging).
+         */
+        ApiKeyList: {
+            /**
+             * Can Create
+             * @description api_key.manage_own allows a new key now: you hold fewer than max_keys and are not the break-glass account (c20).
+             */
+            can_create: boolean;
+            /** Items */
+            items: components["schemas"]["ApiKey"][];
+            /**
+             * Max Keys
+             * @description How many keys you may hold (25).
+             */
+            max_keys: number;
+        };
+        /**
+         * ApiKeyScope
+         * @description What an API key may be used for (role matrix section 5). A key acts as its owner,
+         *     live, narrowed to the rules its scopes grant; ``mcp`` only opens ``/mcp``, where each
+         *     tool also needs the scope of its own rule. Same values as
+         *     :data:`app.domain.principal.ApiKeyScope`, in this canonical order.
+         * @enum {string}
+         */
+        ApiKeyScope: "read" | "write" | "evaluate" | "mcp";
+        /**
+         * ApiKeyState
+         * @description A listed key's state. Revoked keys are never listed.
+         * @enum {string}
+         */
+        ApiKeyState: "active" | "expired" | "dormant";
         /**
          * AuditAction
          * @description Every action the audit log records (``audit_log.action``).
@@ -2630,6 +2971,19 @@ export interface components {
              * @description Markdown. Newly mentioned people are notified. Mention someone with @[Display Name](user:<user id>): people with a role in the idea's project who can view it are notified (labels are rewritten to the user's current name, and the result must still fit 10,000 characters; at most 20 people per comment).
              */
             body_md: string;
+        };
+        /**
+         * CreatedApiKey
+         * @description The new key. ``secret`` is the only time the full key is ever returned
+         *     (``Cache-Control: no-store``).
+         */
+        CreatedApiKey: {
+            key: components["schemas"]["ApiKey"];
+            /**
+             * Secret
+             * @description The full key (sdg_<lookup id>_<secret>). Copy it now: it can't be shown again. Send it as Authorization: Bearer <key>.
+             */
+            secret: string;
         };
         /**
          * CriterionAggregate
@@ -5059,6 +5413,102 @@ export interface components {
             body_md: string;
         };
         /**
+         * ProposalSuggestion
+         * @description Suggested text for a whole section, from a member or an agent. Accepting it saves
+         *     it as the section's text (a normal versioned save); discarding dismisses it.
+         */
+        ProposalSuggestion: {
+            /** @description Null if the user no longer exists. */
+            author: components["schemas"]["UserRef"] | null;
+            /**
+             * Base Version
+             * @description The section version its author read.
+             */
+            base_version: number;
+            /**
+             * Body Md
+             * @description The proposed text of the whole section (Markdown).
+             */
+            body_md: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** @description Who accepted or discarded it (the author when a newer one replaced it). */
+            decided_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Section Changed
+             * @description The section has been saved since base_version: say so next to the suggestion ("The section has changed since this was suggested").
+             */
+            section_changed: boolean;
+            section_key: components["schemas"]["ProposalSectionKey"];
+            /** @description ai whenever the author is an AI agent's service account (show the AI badge), whatever the channel; otherwise mcp (an MCP client) or api (the app or an API client). */
+            source: components["schemas"]["SuggestionSource"];
+            status: components["schemas"]["SuggestionStatus"];
+        };
+        /**
+         * ProposalSuggestionAccept
+         * @description Accept: the section's text becomes the suggestion's. ``base_version`` is the
+         *     section version you are looking at (as for a section save): 409
+         *     ``proposal_conflict`` with ``current`` if someone saved it since.
+         */
+        ProposalSuggestionAccept: {
+            /** Base Version */
+            base_version: number;
+        };
+        /**
+         * ProposalSuggestionCreate
+         * @description Suggest the whole text of one section. Your earlier pending suggestion for the
+         *     same section, if any, is replaced (discarded).
+         */
+        ProposalSuggestionCreate: {
+            /**
+             * Base Version
+             * @description The section version you read (from get_proposal); default the current one. Above the current version: 422 validation_error.
+             */
+            base_version?: number | null;
+            /**
+             * Body Md
+             * @description Markdown, kept verbatim; not only whitespace.
+             */
+            body_md: string;
+            section_key: components["schemas"]["ProposalSectionKey"];
+        };
+        /**
+         * ProposalSuggestionList
+         * @description Pending suggestions in template-section order, then oldest first (at most 50: no
+         *     paging).
+         */
+        ProposalSuggestionList: {
+            /** Items */
+            items: components["schemas"]["ProposalSuggestion"][];
+            permissions: components["schemas"]["ProposalSuggestionPermissions"];
+        };
+        /**
+         * ProposalSuggestionPermissions
+         * @description What you may do with suggestions on this proposal (the API enforces the same).
+         */
+        ProposalSuggestionPermissions: {
+            /**
+             * Can Decide
+             * @description proposal.write: accept or discard (the owner and admins, while c7 holds).
+             */
+            can_decide: boolean;
+            /**
+             * Can Suggest
+             * @description proposal.suggest_section: members and admins while c7 holds.
+             */
+            can_suggest: boolean;
+        };
+        /**
          * ProposalThread
          * @description A margin thread on one section; resolved threads collapse.
          */
@@ -5653,6 +6103,20 @@ export interface components {
             wants_updates: boolean;
         };
         /**
+         * SuggestionSource
+         * @description Who or what wrote a proposal suggestion (``proposal_suggestions.source``). It
+         *     follows the **author**: ``ai`` for a service account whatever the channel, else the
+         *     channel a person used.
+         * @enum {string}
+         */
+        SuggestionSource: "api" | "mcp" | "ai";
+        /**
+         * SuggestionStatus
+         * @description Where a proposal suggestion is (``proposal_suggestions.status``).
+         * @enum {string}
+         */
+        SuggestionStatus: "pending" | "accepted" | "discarded";
+        /**
          * TagInfo
          * @description A tag in use in the project (filter chips, tag autocomplete).
          *
@@ -6049,6 +6513,148 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_admin_api_keys: {
+        parameters: {
+            query?: {
+                /** @description Part of a key name, owner name or email, or a key's prefix (sdg_ + lookup id) or lookup id, matched exactly. Never send a whole key: the SPA cuts a pasted key to its prefix. */
+                q?: string | null;
+                /** @description Only this user's keys. */
+                user_id?: string | null;
+                /** @description Only active, expired or dormant keys. */
+                state?: components["schemas"]["ApiKeyState"] | null;
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApiKeyPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke_admin_api_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An API key's id. */
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_audit_entries: {
         parameters: {
             query?: {
@@ -10073,6 +10679,308 @@ export interface operations {
             };
         };
     };
+    list_proposal_suggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalSuggestionList"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_proposal_suggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalSuggestionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalSuggestion"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    accept_proposal_suggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A suggestion's id (on this proposal). */
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalSuggestionAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedProposalSuggestion"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state: proposal_conflict (with current: the section as saved now), suggestion_not_pending, proposal_not_available, project_archived, awaiting_moderation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProposalConflictProblem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    discard_proposal_suggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A suggestion's id (on this proposal). */
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalSuggestion"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_proposal_threads: {
         parameters: {
             query?: never;
@@ -11188,6 +12096,188 @@ export interface operations {
             };
             /** @description Not signed in (unauthorized) */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_my_api_keys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyList"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_my_api_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedApiKey"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke_my_api_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An API key's id. */
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

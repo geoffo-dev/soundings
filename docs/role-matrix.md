@@ -44,7 +44,13 @@ it immediately.
 
 **Other principals**
 
-- **API key:** acts as its owner, narrowed by scopes and project restriction (section 5).
+- **API key:** acts as its owner, **live** (their roles, platform-admin flag and active
+  state at each request), narrowed by its scopes and optional project restriction
+  (section 5). Keys are created, listed and revoked in a session only; the break-glass
+  account has none (c20); deactivating the owner revokes them; a key works only while
+  the sign-in method that created it is available and, for a person, while they have
+  used the app in the last 30 days
+  ([contract-phase5 §3.1](api/contract-phase5.md#31-keys-format-storage-and-lifecycle)).
 - **Tracking token:** the private link given to a public submitter
   (`<base>/track#<token>`). It grants `public.track` for one idea (see its public status
   and what was submitted, turn status emails on or off, resend the confirmation email,
@@ -56,8 +62,14 @@ it immediately.
   held for it), nothing else. Signed, valid 3 days
   ([contract-phase4 §3.7](api/contract-phase4.md#37-tracking-and-confirmation-links)).
 - **Service account:** a user of kind `service` used by kagent agents via an API key.
-  It needs a real project role like any user and follows every rule here, including
-  blind evaluation.
+  It needs a real project role like any user (member or viewer; **never admin**: 409
+  `system_account`) and follows every rule here, including blind evaluation. It **never
+  owns an idea** (c4 refuses it as owner, c21 as a volunteer), so it can't accept its own
+  suggestions or include its own evaluation. It never signs in: platform admins create
+  its keys (Phase 6, `platform.manage_agents`;
+  [contract-phase5 §3.7](api/contract-phase5.md#37-service-accounts-minimum-now-phase-6-builds-the-ui)),
+  restricted to the projects it serves, and its evaluations are left out of the
+  aggregate by default (section 3 rule 10).
 - **Break-glass admin:** the one local account whose credentials come from a K8s
   Secret, a platform admin (column PA). Usable only while SSO is not configured; every
   action in its sessions is audited with `auth_method: break_glass`. It never holds
@@ -185,8 +197,9 @@ needs the idea held for moderation (409 `not_awaiting_moderation`, a domain rule
 `evaluation.submit_own` is `403` in the PA and PAd columns because only the
 evaluator overlay grants it; an admin who is also an assigned evaluator gets it through
 +Evl. Admins bypass c3 because they could assign themselves anyway; a platform admin
-still needs a real project role to become owner (c4). Which status transitions are
-valid is a domain rule (backend), not authorisation.
+still needs a real project role to become owner (c4). c21 (a service account can't
+volunteer) is not written in the cells: like c20 it is a property of the principal.
+Which status transitions are valid is a domain rule (backend), not authorisation.
 
 ### D. Evaluation visibility (blind evaluation, section 3)
 
@@ -224,6 +237,10 @@ Notes ([contract-phase4 §3.1–3.4](api/contract-phase4.md#31-proposal-lifecycl
 - Proposals hold no score data; every proposal surface is safe for pending evaluators.
 - In an archived project every proposal write is 409 `project_archived`; on an idea held
   for moderation there is no proposal (c7 needs Shortlisted).
+- Phase 5 suggestions ([contract-phase5 §3.4](api/contract-phase5.md#34-proposal-suggestions)):
+  `proposal.suggest_section` creates one (REST, or MCP `propose_proposal_section`; the
+  whole text of one section), `proposal.view` lists the pending ones, `proposal.write`
+  accepts (a normal versioned section save) or discards. Suggestions hold no score data.
 
 ### F. Project administration
 
@@ -282,7 +299,7 @@ platform admin".
 | `platform.edit_branding` | Global branding: app name, logo, favicon, primary and accent colours, font, email footer; upload its images | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.manage_agents` | Register kagent agents and their service accounts | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 | `platform.view_audit_log` | Read the audit log (filters, newest first) | Y | 403 | 403 | 403 | 403 | 403 | 401 |
-| `api_key.manage_any` | List and revoke any user's API keys, including service accounts' | Y | 403 | 403 | 403 | 403 | 403 | 401 |
+| `api_key.manage_any` | List and revoke any user's API keys, including service accounts' (session only) | Y | 403 | 403 | 403 | 403 | 403 | 401 |
 
 Notes: c17 applies to `platform.manage_users`: a platform admin can't deactivate
 themselves or remove their own platform-admin flag (403 `cannot_change_self`), and c18
@@ -297,8 +314,13 @@ IDs (409 `system_account`; contract-phase2 §3.4).
 | `self.manage_profile` | Own profile and email notification preferences (immediate / daily digest / off, per notification type) | Y | Y | Y | Y | Y | Y | 401 |
 | `self.unsubscribe` | One-click unsubscribe from an email link (turns email off for that type, the digest's types, or, with the footer's "all email" link, every type), no sign-in needed | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) | Y (c14) |
 | `user.search` | Find users by name or email, and groups by name (member, group-grant, owner and evaluator pickers, @mentions) | Y | Y | Y | Y | Y | Y | 401 |
-| `api_key.manage_own` | Create, list and revoke your own API keys | Y | Y | Y | Y | Y | Y | 401 |
+| `api_key.manage_own` | Create, list and revoke your own API keys (session only) | Y | Y | Y | Y | Y | Y | 401 |
 | `mcp.connect` | Call `/mcp`; each tool then checks its own rule (section 6) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | Y (c15) | 401 |
+
+Notes: c20 is not written in the cells: like c19 it is a property of the principal, not
+of a column. It applies to `api_key.manage_own` when **creating** a key: the break-glass
+account (a PA) gets 403 `break_glass_account`; listing shows it no keys and revoking
+finds none (404). `api_key.*` are session-only rules (section 5).
 
 ### J. AI assistance (kagent)
 
@@ -376,7 +398,7 @@ evaluations and one AI evaluation present.
 | c1 | The principal submitted the idea, and its status is `new` | not submitter → 403 `not_submitter`; status ≠ new → 409 `idea_not_new` |
 | c2 | The principal wrote the comment | 403 `not_author` |
 | c3 | The project allows volunteer owners (`allow_volunteer_owners`, default true) | 403 `volunteering_disabled` |
-| c4 | The user being assigned (owner or evaluator) has effective role `member` or `admin` in the project | 422 `assignee_not_eligible` |
+| c4 | The user being assigned (owner or evaluator) has effective role `member` or `admin` in the project; an **owner** is also a person, not a service account (an AI agent can be an evaluator, never an owner) | 422 `assignee_not_eligible` |
 | c5 | The idea's status is not `closed` | 409 `idea_closed` |
 | c6 | Evaluation is open: idea not `closed` and evaluation not closed | 409 `evaluation_closed` |
 | c7 | The idea's status is `shortlisted` or `proposal` | 409 `proposal_not_available` |
@@ -392,46 +414,89 @@ evaluations and one AI evaluation present.
 | c17 | Changing a user's `is_active` or `is_platform_admin`: the user is not the principal (contract-phase2 §3.4) | 403 `cannot_change_self` |
 | c18 | Demoting or deactivating a platform admin: another active platform admin (not the break-glass account) remains, counted under a lock (contract-phase2 §3.4) | 409 `last_platform_admin` |
 | c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, and to `idea.watch`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
+| c20 | The principal is not the break-glass account (a key would outlive the emergency and keep working after SSO is configured; contract-phase5 §3.1). Covers agents' keys too (Phase 6) | 403 `break_glass_account` |
+| c21 | The principal is a person, not a service account. Not written in the cells (a property of the principal, like c20); applies to `idea.volunteer_owner` (contract-phase5 §3.7) | 403 `forbidden` |
 
 ## 5. API keys
 
 A request authenticated by API key is evaluated as the key's owner, **live** (a
-demoted owner's key loses access immediately), then narrowed:
+demoted owner's key loses access immediately), then narrowed
+([contract-phase5 §3.3](api/contract-phase5.md#33-what-a-key-may-do-role-matrix-5-exactly)):
+**effective permission = the owner's live permission ∩ the key's scopes ∩ the key's
+projects.**
 
 | Scope | Grants the rules |
 |---|---|
 | `read` | `project.view`, `idea.view`, `user.search`, `evaluation.view_own`, `evaluation.view_others`, `score.view_aggregate`, `proposal.view`, `proposal.export` |
-| `write` | `idea.create`, `idea.edit_own`, `idea.edit_any`, `idea.delete`, `comment.*`, `idea.vote`, `idea.watch`, `idea.volunteer_owner`, `idea.release_owner`, `idea.assign_owner`, `evaluator.manage`, `idea.set_due_date`, `evaluation.close`, `evaluation.include_ai`, `idea.change_status`, `idea.moderate`, `proposal.write`, `proposal.comment`, `proposal.suggest_section`, `ai.*` |
-| `evaluate` | `evaluation.submit_own` |
+| `write` | `idea.create`, `idea.edit_own`, `idea.edit_any`, `comment.*`, `idea.vote`, `idea.watch`, `idea.volunteer_owner`, `idea.release_owner`, `idea.assign_owner`, `evaluator.manage`, `idea.set_due_date`, `evaluation.close`, `evaluation.include_ai`, `idea.change_status`, `proposal.write`, `proposal.comment`, `proposal.suggest_section`, `ai.*` (not `idea.delete` or `idea.moderate`: session only); a `write` key always has `read` too |
+| `evaluate` | `evaluation.submit_own`; an `evaluate` key always has `read` too |
 | `mcp` | `mcp.connect` only; tools also need the scope of their own rule |
 
-- A rule the key's scopes don't grant → 403 `insufficient_scope`.
-- A key restricted to projects *S*: any resource outside *S* → 404, and lists only
-  contain projects in *S*.
-- **Session only** (never through an API key, whatever its scopes):
-  `project.create`, `project.manage_members`, `project.edit_rubric`,
-  `project.rename_status_labels`, `project.edit_settings`, `public.erase_submitter`,
-  `platform.*`, `api_key.*`, `self.manage_profile`.
-- Expired or revoked keys → 401. Requests with a key are exempt from CSRF checks.
+- A rule the key's scopes don't grant → 403 `insufficient_scope` (after the 404s, so a
+  scope error never reveals a hidden resource). `write` and `evaluate` include `read`
+  (their responses return readable data; the API adds it when the key is created);
+  otherwise scopes don't imply each other.
+- The implied view rule (`project.view` / `idea.view` before an idea or project rule)
+  is the owner's, not a scope check. Blind evaluation (✱) depends on the owner, never on
+  scopes.
+- A key restricted to projects *S*: any resource outside *S* → 404, and lists, boards,
+  counts, search and My work only contain projects in *S* (`app.authz.queries`
+  `visible_projects` / `listed_ideas`). Rules that aren't about a project
+  (`user.search` without a project: the people directory every signed-in person sees)
+  are unaffected. A platform admin's key is narrowed the same way.
+- **Session only** (never through an API key, whatever its scopes; 403
+  `insufficient_scope`): `project.create`, `project.manage_members`,
+  `project.edit_rubric`, `project.rename_status_labels`, `project.edit_settings`,
+  `public.erase_submitter`, `idea.delete` and `idea.moderate` (irreversible: a hard
+  delete, a rejection that deletes), `platform.*`, `api_key.*`, `self.manage_profile`,
+  and the inbox routes (list, unread count, mark read: a person's reading state).
+- **Signed-in routes without a rule of their own** (`get_me`, My work, owned ideas,
+  global search) need `read` with a key.
+- Missing, malformed, unknown, expired or revoked keys, keys whose owner is
+  deactivated or the break-glass account, keys whose creating sign-in method is no
+  longer available, and a person's keys while they haven't used the app for 30 days
+  (`dormant`; signing in reactivates them) → 401 (one response for all). Revocation and
+  expiry apply to the very next request (no cache). Deactivating a user revokes their
+  keys. Requests with a key are exempt from CSRF checks; a request with a key and a
+  session cookie is decided by the key.
+- Failed key authentications are counted per client address (30 a minute; beyond it a
+  failing key gets 429 while a valid key still works), and each key may make 300
+  requests and 30 writes a minute (429 `too_many_attempts`).
 - Public routes (`public.submit`, `public.track`, `self.unsubscribe`, branding reads)
   ignore keys and sessions alike: the setting or token decides.
 
 ## 6. MCP tools
 
-Every tool call is authorised with the rule below (after `mcp.connect`) and audited
-with the rule name, decision, user and key id.
+`/mcp` needs `mcp.connect` (a key with the `mcp` scope, c15). Every tool call is then
+authorised with the rule below, through the same policy and services as the REST API,
+and audited (`mcp.call`) with the tool, rule name, decision, error code, user and key
+id, whatever the outcome; never the arguments
+([contract-phase5 §3.6 and §4](api/contract-phase5.md#4-mcp-server-and-tool-catalogue)).
 
 | Tool | Rule | Scope |
 |---|---|---|
 | `list_projects` | `project.view` (as a filter) | `read` |
 | `search_ideas` | `idea.view` (as a filter); score fields per `score.view_aggregate` | `read` |
-| `get_idea` | `idea.view`; evaluations and aggregate per `evaluation.view_others` / `score.view_aggregate` | `read` |
+| `get_idea` | `idea.view`; evaluations and aggregate per `evaluation.view_others` / `score.view_aggregate`; your own per `evaluation.view_own` | `read` |
 | `get_rubric` | `project.view` | `read` |
 | `get_proposal` | `proposal.view` | `read` |
 | `create_idea` | `idea.create` | `write` |
 | `add_comment` | `comment.create` | `write` |
 | `propose_proposal_section` | `proposal.suggest_section` | `write` |
 | `submit_evaluation` | `evaluation.submit_own` | `evaluate` |
+
+- Tools that filter (`list_projects`, `search_ideas`) check their scope first
+  (`insufficient_scope`), then list only what the owner can view inside the key's
+  projects.
+- **Held ideas are not found through MCP, for everyone** (stricter than REST, where
+  project and platform admins can open an idea held for moderation by its link: no
+  tool moderates, and text waiting for moderation doesn't reach an agent). Public ideas
+  in projects without moderation are visible, flagged `via_public_form`, and every
+  people-written field in tool results is described as untrusted.
+- Section 3 applies to every tool: a pending evaluator's key gets no score data
+  (`score_hidden`), whatever its scopes or role; service accounts evaluate blind.
+- Tool errors carry the REST problem code (`not_found`, `forbidden`,
+  `insufficient_scope`, `evaluation_closed`, …).
 
 ## 7. Writing the tests
 
@@ -452,6 +517,15 @@ with the rule name, decision, user and key id.
   concurrent demotions (one gets 409).
 - Cover API keys: each scope alone, a project-restricted key, an expired key, a
   revoked key, and a key whose owner was demoted after it was created.
+- Phase 5 ([contract-phase5 §3.8 and §4.6](api/contract-phase5.md#38-minimum-tests-tests-first)):
+  every rule × each scope alone × restricted or not × the owner's column and overlays,
+  through a key, equals the session decision narrowed by section 5; every session-only
+  rule and route is 403 for a key with all four scopes; revocation, expiry and demotion
+  take effect on the next request, and so do a dormant owner (30 days) and an
+  unavailable creating method; c20; c21 and c4 for service accounts, and the admin role
+  refused to them; `idea.delete` / `idea.moderate` refused to every key; every MCP
+  tool's rule and scope, its blind filtering and holds for every column; one `mcp.call`
+  audit entry per tool call.
 - A meta-test fails if any route or MCP tool has no rule, or if a rule name used in
   code is missing from this file.
 - Phase 4: table E for every column and overlay (a demoted owner can't write; c7 on

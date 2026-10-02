@@ -25,6 +25,7 @@ from tests.conftest import make_settings
 DOMAIN_TABLES = {
     "activity_events",
     "altcha_used_challenges",
+    "api_keys",
     "audit_log",
     "brand_assets",
     "branding_profiles",
@@ -48,6 +49,7 @@ DOMAIN_TABLES = {
     "projects",
     "proposal_comments",
     "proposal_sections",
+    "proposal_suggestions",
     "proposal_threads",
     "proposals",
     "public_submissions",

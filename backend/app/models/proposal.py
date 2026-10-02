@@ -9,6 +9,8 @@ sections never conflict, and a save based on an older version of the same sectio
 refused (409 ``proposal_conflict``). Margin comments are threads anchored to one
 section (``proposal_threads``), with flat replies (``proposal_comments``); a thread
 can be resolved and reopened. See docs/api/contract-phase4.md section 3.1-3.3.
+Suggested text for a section (Phase 5, ``proposal_suggestions``) waits for the owner to
+accept or discard it (docs/api/contract-phase5.md section 3.4).
 
 Nothing here ever holds a score: exports add the aggregate only for people who may
 see it (role matrix section E).
@@ -32,10 +34,16 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
-from app.models.enums import ProposalSectionKey
+from app.models.enums import ProposalSectionKey, SuggestionSource, SuggestionStatus
 from app.models.types import str_enum
 
-__all__ = ["Proposal", "ProposalComment", "ProposalSection", "ProposalThread"]
+__all__ = [
+    "Proposal",
+    "ProposalComment",
+    "ProposalSection",
+    "ProposalSuggestion",
+    "ProposalThread",
+]
 
 
 class Proposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -115,3 +123,66 @@ class ProposalComment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     body_md: Mapped[str] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProposalSuggestion(UUIDPrimaryKeyMixin, Base):
+    """Suggested text for one section (``proposal.suggest_section``): the whole new
+    text of the section, which the owner or an admin accepts (a normal versioned section
+    save, ``proposal.write``) or discards (contract-phase5 section 3.4).
+
+    ``base_version`` is the section version the author read: when the section has
+    changed since, the editor says so. One author has at most one pending suggestion
+    per section (a newer one replaces it: the older is discarded with ``decided_by``
+    the author). Suggestions hold no score data; deleting the idea deletes them.
+    """
+
+    __tablename__ = "proposal_suggestions"
+    __table_args__ = (
+        CheckConstraint("base_version >= 1", name="base_version_positive"),
+        CheckConstraint("length(body_md) > 0", name="body_not_empty"),
+        CheckConstraint(
+            "(status = 'pending') = (decided_at IS NULL)", name="decided_iff_not_pending"
+        ),
+        Index(
+            "uq_proposal_suggestions_pending_author_section",
+            "proposal_id",
+            "section_key",
+            "author_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+        # The pending list (template order is applied in Python) and the per-proposal cap.
+        Index(
+            "ix_proposal_suggestions_proposal_id_created_at_pending",
+            "proposal_id",
+            "created_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("proposals.id", ondelete="CASCADE"), index=True
+    )
+    section_key: Mapped[ProposalSectionKey] = mapped_column(
+        str_enum(ProposalSectionKey, "section_key")
+    )
+    # The proposed text of the whole section, kept verbatim (like section saves).
+    body_md: Mapped[str] = mapped_column(Text)
+    base_version: Mapped[int] = mapped_column(Integer)
+    # A person or a service account; null if the user no longer exists.
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    source: Mapped[SuggestionSource] = mapped_column(str_enum(SuggestionSource, "source"))
+    status: Mapped[SuggestionStatus] = mapped_column(
+        str_enum(SuggestionStatus, "status"),
+        default=SuggestionStatus.PENDING,
+        server_default=SuggestionStatus.PENDING.value,
+    )
+    decided_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now()
+    )

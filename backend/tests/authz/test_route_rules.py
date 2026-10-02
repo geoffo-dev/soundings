@@ -136,6 +136,20 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "get_project_branding": ("project.edit_settings",),
     "update_project_branding": ("project.edit_settings",),
     "upload_project_brand_asset": ("project.edit_settings",),
+    # Phase 5 (docs/api/contract-phase5.md section 2)
+    "list_my_api_keys": ("api_key.manage_own",),
+    "create_my_api_key": ("api_key.manage_own", "project.view"),
+    "revoke_my_api_key": ("api_key.manage_own",),
+    "list_admin_api_keys": ("api_key.manage_any",),
+    "revoke_admin_api_key": ("api_key.manage_any",),
+    "list_proposal_suggestions": (
+        "proposal.view",
+        "proposal.suggest_section",
+        "proposal.write",
+    ),
+    "create_proposal_suggestion": ("proposal.suggest_section",),
+    "accept_proposal_suggestion": ("proposal.write",),
+    "discard_proposal_suggestion": ("proposal.write",),
 }
 
 

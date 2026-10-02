@@ -1,6 +1,6 @@
 # Data model (ERD)
 
-Schema after Phase 4: `backend/app/models/` (SQLAlchemy 2, typed), created by the
+Schema after Phase 5: `backend/app/models/` (SQLAlchemy 2, typed), created by the
 Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
 (Phase 1), `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external IDs,
 groups, group grants, the group-aware effective-roles view, audit indexes),
@@ -15,11 +15,10 @@ public submitters, held ideas, ALTCHA replay protection, submitter emails, brand
 profiles and images), `20261002_0008_confirmation_email_sends.py` (Phase 4 review: the
 per-address confirmation-email limit counts its own keyed rows) and
 `20261002_0009_submission_reached_team_at.py` (Phase 4 UX review: when a public idea
-reached the team). The procrastinate job-queue tables (revision `0001`) are not
-shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md),
-[api/contract-phase2.md](api/contract-phase2.md),
-[api/contract-phase3.md](api/contract-phase3.md) and
-[api/contract-phase4.md](api/contract-phase4.md).
+reached the team) and `20261002_0010_api_keys_and_suggestions.py` (Phase 5: API keys
+and proposal suggestions). The procrastinate job-queue tables (revision `0001`) are not
+shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md) to
+[api/contract-phase5.md](api/contract-phase5.md).
 
 **Operators:** the migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. `pg_trgm`
 is a trusted extension, so the application's database user needs `CREATE` on the
@@ -75,6 +74,10 @@ erDiagram
     projects |o--o| branding_profiles : "overrides (null: global)"
     projects |o--o{ brand_assets : "owns (null: global)"
     brand_assets |o--o{ branding_profiles : "logo or favicon of"
+    users ||--o{ api_keys : "owns (Phase 5)"
+    users |o--o{ api_keys : "created or revoked"
+    proposals ||--o{ proposal_suggestions : "is suggested text for"
+    users |o--o{ proposal_suggestions : "suggested or decided"
 
     users {
         uuid id PK
@@ -370,6 +373,33 @@ erDiagram
         int height
         uuid created_by_id FK
     }
+    api_keys {
+        uuid id PK
+        uuid user_id FK "owner"
+        varchar name "unique per owner, any case, until revoked"
+        varchar lookup_id UK "12 base62 characters, public"
+        varchar secret_hash "sha256 hex of the whole key"
+        varchar_array scopes "read, write, evaluate, mcp"
+        uuid_array project_ids "null = every project"
+        timestamptz expires_at "null = never"
+        timestamptz last_used_at "at most once a minute"
+        timestamptz revoked_at
+        uuid revoked_by_id FK
+        uuid created_by_id FK "owner, or an admin (agents)"
+        varchar created_auth_method "dev_login, sso, break_glass"
+    }
+    proposal_suggestions {
+        uuid id PK
+        uuid proposal_id FK
+        varchar section_key
+        text body_md "whole section, verbatim"
+        int base_version "the version its author read"
+        uuid author_id FK "nullable"
+        varchar source "api, mcp, ai"
+        varchar status "pending, accepted, discarded"
+        uuid decided_by_id FK
+        timestamptz decided_at "set iff not pending"
+    }
 ```
 
 Every table with a `uuid id` also has `created_at`, and most have `updated_at`
@@ -445,7 +475,9 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `altcha_used_challenges` | ALTCHA replay protection: the signature of every solved challenge, kept until `expires_at` (indexed; the hourly cleanup deletes expired rows). Inserting a signature twice fails: a solution is accepted once. |
 | `branding_profiles` | The global branding (`project_id` null) and per-project overrides; `uq_branding_profiles_project_id` is `UNIQUE NULLS NOT DISTINCT`, so there is at most one global row (created on its first save) and one per project. Every field nullable = inherit (project → global → built-in default). `primary_color`, `accent_color` match `^#[0-9a-f]{6}$` (`ck_branding_profiles_*_color_hex`), `font` is a `BrandFont` key (`ck_branding_profiles_font`), `app_name` 1–40 characters, `email_footer` ≤ 500 (plain text, ≤ 5 lines: API validation). `logo_asset_id`, `favicon_asset_id` reference `brand_assets` (`ON DELETE SET NULL`). |
 | `brand_assets` | Uploaded logos and favicons ([ADR 0012](adr/0012-branding-and-uploaded-images.md)): the bytes in the database (`bytea`, `byte_size` = `octet_length(data)`, 1 byte to 1 MiB), `content_type` only `image/png` (re-encoded PNG uploads) or `image/svg+xml` (allow-listed, re-serialised SVG), `sha256` (the ETag), pixel `width`/`height` (≤ 4096; null for an SVG without a size). `project_id` null = a global image. Immutable: a new image is a new row, so URLs cache for ever. Unreferenced rows are deleted by the hourly cleanup 24 hours after upload. Index `(project_id, created_at)` (upload quota, cleanup). |
-| `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. |
+| `api_keys` | Personal API keys ([contract-phase5 §3.1](api/contract-phase5.md#31-keys-format-storage-and-lifecycle), [ADR 0013](adr/0013-api-keys-and-mcp-server.md)). A key is `sdg_<lookup_id>_<secret>`; only `lookup_id` (12 base62 characters, `ck_api_keys_lookup_id_format`, unique: the lookup) and `secret_hash` (SHA-256 hex of the whole key, `ck_api_keys_secret_hash_format`, compared in constant time) are stored, never the key. `scopes` is a `varchar[]` of 1–4 `ApiKeyScope` values (`ck_api_keys_scopes`, no NULL element), distinct and in canonical order (application); `write` or `evaluate` always comes with `read` (`ck_api_keys_scopes_include_read`). `project_ids` is a `uuid[]` restriction (null = every project the owner can access; else 1–50 ids and no NULL element, `ck_api_keys_project_ids_not_empty`, so a restriction can never read as "every project"; no foreign key: a deleted project's id matches nothing, so a restriction never widens). `created_auth_method` is the creating session's sign-in method (`ck_api_keys_created_auth_method`): the key works only while that method is available. `name` 1–80 characters, unique per owner case-insensitively among keys that aren't revoked (`uq_api_keys_user_id_name_lower`, partial on `revoked_at IS NULL`). `expires_at` null = never. `last_used_at` moves at most once a minute. Revoking sets `revoked_at` and `revoked_by_id` (`ck_api_keys_revoked_by_needs_revoked`); the row stays, never listed again, so audit entries can name the key. `created_by_id` is the owner, or from Phase 6 the platform admin who registered an agent. A person's key also stops working (state `dormant`, no column) while the owner's `users.last_seen_at` is older than 30 days. Indexes: `user_id`, and `ix_api_keys_created_at_id_unrevoked (created_at, id) WHERE revoked_at IS NULL` (Admin → API keys, newest first). At most 25 per user that aren't revoked (application, under the owner's row lock). |
+| `proposal_suggestions` | Suggested text for one proposal section ([contract-phase5 §3.4](api/contract-phase5.md#34-proposal-suggestions)): `body_md` is the whole section, verbatim (`ck_proposal_suggestions_body_not_empty`); `base_version` (≥ 1) the section version its author read; `source` `api` (REST), `mcp` (a person's key) or `ai` (a service account through MCP); `status` `pending` until the owner or an admin accepts (a normal versioned section save) or discards it, with `decided_by_id` / `decided_at` set exactly when not pending (`ck_proposal_suggestions_decided_iff_not_pending`). One pending suggestion per author per section (`uq_proposal_suggestions_pending_author_section`, partial on `status = 'pending'`: a newer one discards the older, decided by its author); at most 50 pending per proposal (application). Indexes: `proposal_id`, `author_id`, and `(proposal_id, created_at) WHERE status = 'pending'` (the editor's list and the cap). No score data. |
+| `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. Phase 5: `api_key.create`, `api_key.revoke` and `mcp.call` (one per MCP tool call, with the tool, rule, decision and code; deleted after 90 days by the hourly cleanup on `(action, created_at)`; every other entry is kept). Entries made through a key carry `details.auth = "api_key"` and `details.api_key_id`. |
 
 ## Delete behaviour
 
@@ -466,6 +498,10 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | a project (Phase 4) | Also cascades to its public submissions, branding override and uploaded images. |
 | a brand asset (cleanup, unreferenced) | A profile still naming it (it can't: the cleanup only deletes unreferenced rows) would get `null`. |
 | a user (Phase 4) | Proposal authorship, section editors, thread creators and resolvers, comment authors, erasers, uploaders and branding editors become null. |
+| a user (Phase 5) | Also cascades to their API keys; keys they created or revoked keep `created_by_id` / `revoked_by_id` null; their suggestions stay with `author_id` / `decided_by_id` null. |
+| a proposal (with its idea) | Also cascades to its suggestions. |
+| a project (Phase 5) | Nothing changes in `api_keys`: the id stays in restrictions and matches nothing. |
+| downgrading 0010 | Drops `api_keys` (every key stops working) and `proposal_suggestions`. |
 | downgrading 0009 / 0008 | 0009 drops `reached_team_at`; 0008 drops `confirmation_email_sends` (the limit then counts `outbound_email` again, by the old index it recreates). |
 | downgrading 0007 | Deletes ideas still held and every submitter email, then drops the Phase 4 tables and columns: proposals, submitter details, branding and images are lost; public ideas stay as anonymous ideas. |
 
@@ -480,8 +516,10 @@ same transaction and tests them:
 - A submitted evaluation has a non-null score for every active criterion (422
   `evaluation_incomplete`).
 - `ideas.vote_count` and the aggregate cache match their source rows.
-- Service and break-glass accounts have no identities, external IDs, project roles or
-  group memberships (the break-glass admin acts as platform admin only).
+- Service and break-glass accounts have no identities or external IDs; the break-glass
+  admin also has no project roles or group memberships (it acts as platform admin only)
+  and no API keys. From Phase 6 a service account may hold a direct project role
+  (member or viewer, never admin) and has keys created by a platform admin.
 - `group_idp_values.value` is already normalised
   (`app.schemas.groups.normalise_idp_value`).
 - A notification's recipient passed `idea.view` when it was created; an email goes out
@@ -500,3 +538,10 @@ same transaction and tests them:
   and of the right kind (logo / favicon).
 - (Phase 4) No column stores a tracking token in clear, and no log or audit entry holds
   a submitter's name, address or token.
+- (Phase 5) No column, log, trace or audit entry holds an API key or its hash outside
+  `api_keys.secret_hash`; a key's `scopes` and `project_ids` are distinct; a key
+  authenticates only while it isn't revoked or expired and its owner is active and not
+  the break-glass account.
+- (Phase 5) A suggestion's `section_key` is a template section of its proposal; its
+  text never holds score data; an accepted suggestion's text was saved as the section's
+  text (one versioned save) in the same transaction.

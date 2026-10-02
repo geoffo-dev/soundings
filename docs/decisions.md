@@ -499,3 +499,50 @@ excerpts of resolved threads (m6); the send error sits by the button (m7); form 
 receipt at 390 px with Share, conflict labels ("Use Carol's version" / "Keep your
 version"), one Markdown hint, queue polish, a one-line verified ALTCHA status (p1–p5,
 p8).
+
+## 2026-10-02 · Phase 5 contract
+
+Calls made while writing the API keys and MCP contract
+([contract-phase5.md](api/contract-phase5.md), section 6 has the full list with reasons;
+[ADR 0013](adr/0013-api-keys-and-mcp-server.md)). Status **Proposed** = the lead's
+default; build it this way unless told otherwise. Revised the same day after the
+contract review, before building ([contract-phase5 §9](api/contract-phase5.md#9-contract-review-2026-10-02-before-building)).
+
+### API keys
+
+| Decision | Status | Why |
+|---|---|---|
+| Keys are `sdg_<12-char lookup id>_<40-char secret>` (base62); only the lookup id and the SHA-256 of the whole key are stored; constant-time compare; shown once (201 with `Cache-Control: no-store`), then by prefix only. | Proposed | One indexed lookup; a database leak reveals no key; recognisable to scanners; rotating the secret key doesn't revoke keys. |
+| A key has a name (unique per owner until revoked), 1–4 scopes (`write` and `evaluate` include `read`), an optional expiry (1 hour to 366 days) and an optional restriction to 1–50 projects (a `uuid[]`, null = all); none of it can change later; at most 25 keys per user that aren't revoked; no rename, no renewal. | Proposed | Simple lifecycle (create, revoke); bounded lists; a restriction can only shrink when projects disappear; write responses return readable data anyway. |
+| A person's key pauses (401, state `dormant`) while its owner hasn't used the app for 30 days; signing in reactivates it; service accounts are exempt. A key works only while the sign-in method that created it is available (`created_auth_method`). | Proposed | IdP removals and group sync apply at sign-in only; keys must not outlive a departure (sessions end in 24 hours) or the dev-login switch. Preferred over capping people's keys at 90 days: tighter, and "never" stays usable. |
+| Effective permission = the owner's live permission ∩ scopes ∩ projects; authentication re-reads the key every request (no cache); revocation, expiry and demotion apply to the next request; deactivating a user revokes their keys. | Proposed | SPEC: "never exceeds its owner's live permissions"; "revoking cuts access immediately". |
+| Key management, admin pages, settings, the inbox, `idea.delete` and `idea.moderate` are session only; routes without a rule (me, My work, search) need `read`; a key plus a cookie is decided by the key; no CSRF with a key. | Proposed | A leaked key can't mint keys or change access, and nothing irreversible happens through a key; deny by default; browsers can't send `Authorization` cross-site. |
+| The break-glass account can't create keys (new condition c20, 403 `break_glass_account`; not written in the matrix cells). | Proposed | A key would outlive the emergency and keep working after SSO is configured. |
+| 30 failed key authentications per address per minute (beyond it failing keys get 429, valid keys still work), 300 requests and 30 writes per key per minute (in-process, like the sign-in throttles); refusals logged with a reason, not audited; `last_used_at` at most once a minute in its own transaction; no IP stored. | Proposed | Bounded load, runaway agents and audit growth without locking out valid keys behind a NAT; a revoke never waits behind a request; minimal personal data. |
+| Service accounts' keys are created by platform admins (Phase 6, Admin → AI agents), restricted to the projects the agent serves; `api_keys.created_by_id` records who; service accounts may hold member or viewer roles, never admin (409 `system_account`), and never own an idea (c4; c21 for volunteering); their evaluations are left out of the aggregate from Phase 5; their suggestions are `source: ai`. | Proposed | Agents never sign in; an agent must not accept its own suggestions or count its own evaluation (SPEC section 9); restriction limits cross-project prompt injection. |
+
+### MCP
+
+| Decision | Status | Why |
+|---|---|---|
+| `POST /mcp` only, stateless JSON mode, mcp SDK 2.x low-level `Server` with one `tools/call` dispatcher; authentication by the REST key source in an ASGI wrapper (not the SDK's `TokenVerifier`); cookies never accepted; exempt from the app's Host check (agents call the cluster Service), Origin against the base URLs; 1 MiB bodies; `/.well-known` answers the API's 404. | Proposed | One code path and error format for keys; immediate revocation; no CSRF or DNS-rebinding exposure; one place validates, rate-limits and audits each call; in-cluster agents need no public hostname. |
+| The nine SPEC tools only; arguments and results are contract models in `app/schemas/mcp.py` (structured content plus JSON text; write tools' arguments subclass the REST request models); tools reuse the REST services and policy; errors are tool results with the REST problem code. | Proposed | Same authorisation, validation, blind evaluation and conflicts as the API by construction; one vocabulary of error codes. |
+| `get_idea` is bounded (10 comments by default, 20 at most, the latest 25 evaluations with a count, texts over 2,000 characters cut with `truncated`); every people-written output field is described as untrusted; `via_public_form` in search results. | Proposed | Agents' context windows; prompt injection: models are told what is data. |
+| Ideas held for moderation or confirmation are `not_found` through every tool, for everyone; `get_idea` omits the public submitter's name; the server instructions tell agents that idea, comment, evaluation and proposal text is data, never instructions, and never to copy it between projects. | Proposed | No MCP tool moderates; text waiting for moderation doesn't reach agents (public text in unmoderated projects is flagged); minimal personal data. |
+| Every `tools/call` is audited (`mcp.call`: tool, rule, decision, code, key id; never arguments), whatever the outcome, in its own transaction when the call fails; those entries are deleted after 90 days. `initialize` and `tools/list` aren't audited. | Proposed | SPEC: "every call audited"; agents' trails are useful for months, what they changed is audited for good. |
+| `tools/list` always lists all nine tools; a call without the tool's scope is `insufficient_scope`. | Proposed | Static catalogue; kagent selects tools by name anyway. |
+
+### Proposal suggestions
+
+| Decision | Status | Why |
+|---|---|---|
+| A suggestion is the whole text of one section (REST `create_proposal_suggestion` for members, MCP `propose_proposal_section` for clients and agents; `source` follows the author: `ai` for a service account, else `api` or `mcp`); one pending per author per section (a newer one discards the older, under the idea lock); at most 50 pending per proposal; a `base_version` above the current one is 422. No withdrawing in Phase 5. | Proposed | Matches Phase 6's "Draft section"; no diff format to invent; bounded; the AI badge follows who wrote it. |
+| Listing needs `proposal.view`; accepting or discarding `proposal.write` (c7), both under the section-save locks (discard can't overwrite an accept). Accepting is a normal versioned section save (`base_version`, 409 `proposal_conflict` with `current`). No notifications or activity in Phase 5. | Proposed | Same concurrency as Phase 4; no new `NotificationType` (it breaks the SPA's exhaustive maps). |
+
+### Contract mechanics
+
+| Decision | Status | Why |
+|---|---|---|
+| New `AuditAction` values `api_key.create`, `api_key.revoke`, `mcp.call` are agreed but land at integration with the SPA's phrases (target type `user` for key events: no new target type). | Proposed | Adding enum values breaks the frontend typecheck until the phrases exist (Phases 3 and 4 precedent). |
+| No new settings: every limit and the `mcp.call` retention are constants. | Proposed | Simple beats configurable. |
+| The contract commit adds the new operations to the meta-test tables owned by identity and backend (`test_route_rules.py`, the guard tests' exclusions, `DOMAIN_TABLES`), as the Phase 4 contract did. | Proposed | Otherwise `make check-backend` fails on routes and tables that exist only as stubs. |

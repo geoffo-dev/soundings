@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 4): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 5): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -22,11 +23,13 @@ from fastapi.routing import APIRoute
 from app.api.deps import get_current_user
 from app.api.v1 import (
     activity,
+    admin_api_keys,
     admin_audit,
     admin_email,
     admin_groups,
     admin_sso,
     admin_users,
+    api_keys,
     auth,
     auth_sso,
     branding,
@@ -36,6 +39,7 @@ from app.api.v1 import (
     notifications,
     project_groups,
     projects,
+    proposal_suggestions,
     proposals,
     public,
     search,
@@ -196,6 +200,24 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/projects/{slug}/branding", "get_project_branding"),
     ("PUT", "/api/v1/projects/{slug}/branding", "update_project_branding"),
     ("POST", "/api/v1/projects/{slug}/branding/assets", "upload_project_brand_asset"),
+    # --- Phase 5: API keys and proposal suggestions (docs/api/contract-phase5.md) -------
+    ("GET", "/api/v1/me/api-keys", "list_my_api_keys"),
+    ("POST", "/api/v1/me/api-keys", "create_my_api_key"),
+    ("DELETE", "/api/v1/me/api-keys/{key_id}", "revoke_my_api_key"),
+    ("GET", "/api/v1/admin/api-keys", "list_admin_api_keys"),
+    ("DELETE", "/api/v1/admin/api-keys/{key_id}", "revoke_admin_api_key"),
+    ("GET", "/api/v1/ideas/{idea}/proposal/suggestions", "list_proposal_suggestions"),
+    ("POST", "/api/v1/ideas/{idea}/proposal/suggestions", "create_proposal_suggestion"),
+    (
+        "POST",
+        "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/accept",
+        "accept_proposal_suggestion",
+    ),
+    (
+        "POST",
+        "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/discard",
+        "discard_proposal_suggestion",
+    ),
 ]
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the
@@ -294,11 +316,42 @@ TRACKING_TOKEN = "Zq3v9Xb2Lk7Wm4Np8Rt6Yc1Hd5Gf0Js_Ua-Ee2Oo4Ii"  # 43 characters
 VERIFICATION_TOKEN = "eyJ2IjoxLCJzIjoiNWYwZThhNTIifQ.c2lnbmF0dXJlLXNpZ25hdHVyZQ"
 _PROPOSAL = "/api/v1/ideas/CUST-12/proposal"
 
+API_KEY = "7e1d3c5b-9a2f-4b6e-8d0c-1f3a5b7c9e2d"
+SUGGESTION = "c4b2a0e8-6d4f-4e2a-9c8b-7a6f5e4d3c2b"
+_SUGGESTIONS = f"{_PROPOSAL}/suggestions"
+
 # operation_id -> a valid request for every operation still answered with 501. Every
 # Phase 1-4 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
 # tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
 # tests/moderation). Add a row per stub of a later phase; delete it when you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Phase 5: your API keys (session only) -----------------------------------------
+    "list_my_api_keys": ("/api/v1/me/api-keys", None),
+    "create_my_api_key": (
+        "/api/v1/me/api-keys",
+        {
+            "name": "Claude Desktop",
+            "scopes": ["read", "mcp", "evaluate"],
+            "expires_at": None,
+            "project_ids": [IDEA],
+        },
+    ),
+    "revoke_my_api_key": (f"/api/v1/me/api-keys/{API_KEY}", None),
+    # --- Phase 5: Admin settings -> API keys ------------------------------------------
+    "list_admin_api_keys": (
+        f"/api/v1/admin/api-keys?q=claude&user_id={USER}&state=active&limit=20",
+        None,
+    ),
+    "revoke_admin_api_key": (f"/api/v1/admin/api-keys/{API_KEY}", None),
+    # --- Phase 5: proposal suggestions --------------------------------------------------
+    "list_proposal_suggestions": (_SUGGESTIONS, None),
+    "create_proposal_suggestion": (
+        _SUGGESTIONS,
+        {"section_key": "risks", "body_md": "- Supplier lock-in\n", "base_version": 2},
+    ),
+    "accept_proposal_suggestion": (f"{_SUGGESTIONS}/{SUGGESTION}/accept", {"base_version": 3}),
+    "discard_proposal_suggestion": (f"{_SUGGESTIONS}/{SUGGESTION}/discard", None),
+}
 
 # Phase 4 operations already implemented (their behaviour is tested in tests/public and
 # elsewhere): a valid request each, for the shape and session checks below. Move a row
@@ -424,11 +477,13 @@ def _feature_routes() -> list[APIRoute]:
         route
         for module in (
             activity,
+            admin_api_keys,
             admin_audit,
             admin_email,
             admin_groups,
             admin_sso,
             admin_users,
+            api_keys,
             auth,
             auth_sso,
             branding,
@@ -438,6 +493,7 @@ def _feature_routes() -> list[APIRoute]:
             notifications,
             project_groups,
             projects,
+            proposal_suggestions,
             proposals,
             public,
             search,
@@ -884,3 +940,135 @@ async def test_whitespace_only_section_text_is_a_valid_body(client: httpx.AsyncC
         response = await client.put(url, json={"body_md": text, "base_version": 1})
 
         assert response.status_code == 404, response.text  # past the shape check: no idea
+
+
+# --- Phase 5 ---------------------------------------------------------------------------
+_NEW_KEY = STUBS["create_my_api_key"][1] or {}
+
+
+def _in_days(days: int) -> str:
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        # API keys: 1-4 known scopes, a one-line name, an expiry 1 hour to 366 days ahead
+        # (with an offset), a non-empty restriction of at most 50 project ids.
+        ("create_my_api_key", None, _NEW_KEY | {"scopes": []}),
+        ("create_my_api_key", None, _NEW_KEY | {"scopes": ["admin"]}),
+        ("create_my_api_key", None, _NEW_KEY | {"scopes": ["read"] * 5}),
+        ("create_my_api_key", None, _NEW_KEY | {"name": ""}),
+        ("create_my_api_key", None, _NEW_KEY | {"name": "   "}),
+        ("create_my_api_key", None, _NEW_KEY | {"name": "Claude\nDesktop"}),
+        ("create_my_api_key", None, _NEW_KEY | {"name": "Claude\u202eDesktop"}),
+        ("create_my_api_key", None, _NEW_KEY | {"name": "x" * 81}),
+        ("create_my_api_key", None, _NEW_KEY | {"expires_at": "2020-01-01T00:00:00Z"}),
+        ("create_my_api_key", None, _NEW_KEY | {"expires_at": _in_days(400)}),
+        ("create_my_api_key", None, _NEW_KEY | {"expires_at": "2027-01-01T00:00:00"}),
+        ("create_my_api_key", None, _NEW_KEY | {"project_ids": []}),
+        ("create_my_api_key", None, _NEW_KEY | {"project_ids": ["cust"]}),
+        ("create_my_api_key", None, _NEW_KEY | {"project_ids": [str(uuid4()) for _ in range(51)]}),
+        ("create_my_api_key", None, _NEW_KEY | {"secret": "sdg_" + "a" * 12 + "_" + "b" * 40}),
+        ("create_my_api_key", None, {k: v for k, v in _NEW_KEY.items() if k != "scopes"}),
+        ("revoke_my_api_key", "/api/v1/me/api-keys/not-a-uuid", None),
+        ("list_admin_api_keys", "/api/v1/admin/api-keys?state=revoked", None),
+        ("list_admin_api_keys", "/api/v1/admin/api-keys?q=", None),
+        ("list_admin_api_keys", "/api/v1/admin/api-keys?user_id=me", None),
+        ("revoke_admin_api_key", "/api/v1/admin/api-keys/sdg_abc", None),
+        # Suggestions: a template section, some text (not only whitespace) within the
+        # section limit, a positive version.
+        ("create_proposal_suggestion", None, {"section_key": "appendix", "body_md": "x"}),
+        ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": ""}),
+        ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": " \n\t"}),
+        ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": _LONG}),
+        ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": "a\u0000b"}),
+        (
+            "create_proposal_suggestion",
+            None,
+            {"section_key": "risks", "body_md": "x", "base_version": 0},
+        ),
+        ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": "x", "x": 1}),
+        ("accept_proposal_suggestion", None, {}),
+        ("accept_proposal_suggestion", None, {"base_version": 0}),
+        ("accept_proposal_suggestion", f"{_SUGGESTIONS}/not-a-uuid/accept", None),
+        (
+            "discard_proposal_suggestion",
+            "/api/v1/ideas/CUST12/proposal/suggestions/x/discard",
+            None,
+        ),
+    ],
+)
+async def test_invalid_phase5_requests_are_rejected_before_the_endpoint(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS[operation_id]
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    "body",
+    [
+        _NEW_KEY | {"scopes": ["mcp", "read", "read"], "expires_at": _in_days(30)},
+        _NEW_KEY | {"project_ids": None, "expires_at": _in_days(366)},
+        {"name": "Weekly report", "scopes": ["write"]},
+    ],
+)
+async def test_valid_api_key_bodies_reach_the_endpoint(
+    client: httpx.AsyncClient, body: dict[str, Any]
+) -> None:
+    url, _ = STUBS["create_my_api_key"]
+
+    response = await client.post(url, json=body)
+
+    assert response.status_code == 501, response.text
+
+
+def test_only_the_creation_response_carries_a_secret(app: FastAPI) -> None:
+    """The full key is returned once (contract-phase5 section 3.1): ``secret`` exists only
+    in ``CreatedApiKey``, and no schema exposes a hash or the lookup id by that name."""
+    document = app.openapi()
+    schemas = document["components"]["schemas"]
+    carrying = {
+        name for name, schema in schemas.items() if "secret" in schema.get("properties", {})
+    }
+    created = document["paths"]["/api/v1/me/api-keys"]["post"]["responses"]["201"]
+
+    assert carrying == {"CreatedApiKey"}
+    assert created["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/CreatedApiKey"
+    }
+    for name, schema in schemas.items():
+        if "ApiKey" in name:
+            fields = set(schema.get("properties", {}))
+            assert not {"secret_hash", "lookup_id", "token"} & fields, name
+
+
+def test_accepting_a_suggestion_can_conflict_like_a_section_save(app: FastAPI) -> None:
+    """409 proposal_conflict on accept carries the section as saved now, like
+    update_proposal_section (contract-phase5 section 3.4)."""
+    document = app.openapi()
+    path = "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/accept"
+    conflict = document["paths"][path]["post"]["responses"]["409"]["content"]
+
+    assert conflict == {
+        "application/problem+json": {
+            "schema": {"$ref": "#/components/schemas/ProposalConflictProblem"}
+        }
+    }
+
+
+def test_mcp_is_not_part_of_the_rest_api(app: FastAPI) -> None:
+    """/mcp is JSON-RPC (contract-phase5 section 4), mounted outside /api/v1 and out of
+    the OpenAPI document."""
+    document = app.openapi()
+
+    assert not [path for path in document["paths"] if "mcp" in path]

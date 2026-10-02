@@ -7,6 +7,10 @@ A proposal is one Markdown text per template section. Each section has its own
 with 409 ``proposal_conflict`` if someone saved that section since, so two people can
 edit different sections at once and nobody overwrites anyone silently. Proposals carry
 no score data; exports add the aggregate only for people who may see it.
+
+Phase 5 adds **suggestions** (contract-phase5 section 3.4): suggested text for a whole
+section, from a member (REST) or an agent (MCP ``propose_proposal_section``), which the
+owner or an admin accepts (a normal versioned section save) or discards.
 """
 
 from __future__ import annotations
@@ -16,9 +20,9 @@ from datetime import datetime
 from typing import Annotated, Final
 from uuid import UUID
 
-from pydantic import Field, StringConstraints
+from pydantic import Field, StringConstraints, field_validator
 
-from app.models.enums import ProposalSectionKey
+from app.models.enums import ProposalSectionKey, SuggestionSource, SuggestionStatus
 from app.schemas.base import RequestModel, ResponseModel
 from app.schemas.common import Problem
 from app.schemas.ideas import IdeaRef
@@ -27,9 +31,11 @@ from app.schemas.users import UserRef
 __all__ = [
     "COMMENT_MAX_LENGTH",
     "MAX_COMMENTS_PER_THREAD",
+    "MAX_PENDING_SUGGESTIONS",
     "MAX_THREADS_PER_PROPOSAL",
     "PROPOSAL_TEMPLATE",
     "SECTION_MAX_LENGTH",
+    "AcceptedProposalSuggestion",
     "Proposal",
     "ProposalComment",
     "ProposalCommentCreate",
@@ -38,10 +44,18 @@ __all__ = [
     "ProposalSection",
     "ProposalSectionKey",
     "ProposalSectionUpdate",
+    "ProposalSuggestion",
+    "ProposalSuggestionAccept",
+    "ProposalSuggestionCreate",
+    "ProposalSuggestionList",
+    "ProposalSuggestionPermissions",
     "ProposalThread",
     "ProposalThreadCreate",
     "ProposalThreadList",
     "ProposalView",
+    "SectionText",
+    "SuggestionSource",
+    "SuggestionStatus",
     "TemplateSection",
 ]
 
@@ -230,3 +244,98 @@ class ProposalCommentCreate(RequestModel):
     """Reply in a thread (replies are flat)."""
 
     body_md: str = Field(min_length=1, max_length=COMMENT_MAX_LENGTH, description="Markdown.")
+
+
+# --- Phase 5: suggestions (contract-phase5 section 3.4) ---------------------------------
+MAX_PENDING_SUGGESTIONS: Final = 50
+"""Pending suggestions one proposal may hold; more: 409 ``too_many_suggestions``."""
+
+
+class ProposalSuggestion(ResponseModel):
+    """Suggested text for a whole section, from a member or an agent. Accepting it saves
+    it as the section's text (a normal versioned save); discarding dismisses it."""
+
+    id: UUID
+    section_key: ProposalSectionKey
+    body_md: str = Field(description="The proposed text of the whole section (Markdown).")
+    base_version: int = Field(ge=1, description="The section version its author read.")
+    section_changed: bool = Field(
+        description=(
+            "The section has been saved since base_version: say so next to the suggestion "
+            '("The section has changed since this was suggested").'
+        )
+    )
+    author: UserRef | None = Field(description="Null if the user no longer exists.")
+    source: SuggestionSource = Field(
+        description=(
+            "ai whenever the author is an AI agent's service account (show the AI badge), "
+            "whatever the channel; otherwise mcp (an MCP client) or api (the app or an API "
+            "client)."
+        )
+    )
+    status: SuggestionStatus
+    created_at: datetime
+    decided_at: datetime | None
+    decided_by: UserRef | None = Field(
+        description="Who accepted or discarded it (the author when a newer one replaced it)."
+    )
+
+
+class ProposalSuggestionPermissions(ResponseModel):
+    """What you may do with suggestions on this proposal (the API enforces the same)."""
+
+    can_suggest: bool = Field(
+        description="proposal.suggest_section: members and admins while c7 holds."
+    )
+    can_decide: bool = Field(
+        description="proposal.write: accept or discard (the owner and admins, while c7 holds)."
+    )
+
+
+class ProposalSuggestionList(ResponseModel):
+    """Pending suggestions in template-section order, then oldest first (at most 50: no
+    paging)."""
+
+    items: list[ProposalSuggestion]
+    permissions: ProposalSuggestionPermissions
+
+
+class AcceptedProposalSuggestion(ResponseModel):
+    """The accepted suggestion and the section as saved (keep editing from
+    ``section.version``)."""
+
+    suggestion: ProposalSuggestion
+    section: ProposalSection
+
+
+class ProposalSuggestionCreate(RequestModel):
+    """Suggest the whole text of one section. Your earlier pending suggestion for the
+    same section, if any, is replaced (discarded)."""
+
+    section_key: ProposalSectionKey
+    body_md: SectionText = Field(
+        min_length=1, description="Markdown, kept verbatim; not only whitespace."
+    )
+    base_version: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "The section version you read (from get_proposal); default the current one. "
+            "Above the current version: 422 validation_error."
+        ),
+    )
+
+    @field_validator("body_md")
+    @classmethod
+    def _not_blank(cls, body_md: str) -> str:
+        if not body_md.strip():
+            raise ValueError("the suggested text is empty")
+        return body_md
+
+
+class ProposalSuggestionAccept(RequestModel):
+    """Accept: the section's text becomes the suggestion's. ``base_version`` is the
+    section version you are looking at (as for a section save): 409
+    ``proposal_conflict`` with ``current`` if someone saved it since."""
+
+    base_version: int = Field(ge=1)

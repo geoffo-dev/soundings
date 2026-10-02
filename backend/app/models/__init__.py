@@ -5,9 +5,11 @@ autogenerate and for the test-suite's table truncation. See docs/erd.md.
 """
 
 from app.models.activity import ActivityEvent, AuditLog, Comment
+from app.models.api_key import ApiKey
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.branding import BrandAsset, BrandingProfile
 from app.models.enums import (
+    ApiKeyScope,
     AuthMethod,
     BrandAssetKind,
     BrandFont,
@@ -25,6 +27,8 @@ from app.models.enums import (
     ProposalSectionKey,
     Recommendation,
     Resolution,
+    SuggestionSource,
+    SuggestionStatus,
 )
 from app.models.evaluation import Evaluation, EvaluationScore
 from app.models.group import Group, GroupIdpValue, GroupMembership, ProjectGroupGrant
@@ -37,13 +41,21 @@ from app.models.project import (
     Tag,
     project_effective_roles,
 )
-from app.models.proposal import Proposal, ProposalComment, ProposalSection, ProposalThread
+from app.models.proposal import (
+    Proposal,
+    ProposalComment,
+    ProposalSection,
+    ProposalSuggestion,
+    ProposalThread,
+)
 from app.models.public import AltchaUsedChallenge, ConfirmationEmailSend, PublicSubmission
 from app.models.user import User, UserExternalId, UserIdentity, UserSession
 
 __all__ = [
     "ActivityEvent",
     "AltchaUsedChallenge",
+    "ApiKey",
+    "ApiKeyScope",
     "AuditLog",
     "AuthMethod",
     "Base",
@@ -84,11 +96,14 @@ __all__ = [
     "ProposalComment",
     "ProposalSection",
     "ProposalSectionKey",
+    "ProposalSuggestion",
     "ProposalThread",
     "PublicSubmission",
     "Recommendation",
     "Resolution",
     "RubricCriterion",
+    "SuggestionSource",
+    "SuggestionStatus",
     "Tag",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",

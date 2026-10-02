@@ -1,6 +1,23 @@
 {
   "components": {
     "schemas": {
+      "AcceptedProposalSuggestion": {
+        "description": "The accepted suggestion and the section as saved (keep editing from\n``section.version``).",
+        "properties": {
+          "section": {
+            "$ref": "#/components/schemas/ProposalSection"
+          },
+          "suggestion": {
+            "$ref": "#/components/schemas/ProposalSuggestion"
+          }
+        },
+        "required": [
+          "suggestion",
+          "section"
+        ],
+        "title": "AcceptedProposalSuggestion",
+        "type": "object"
+      },
       "ActivityPage": {
         "description": "Newest first. Reverse client-side to show oldest-to-newest.",
         "properties": {
@@ -78,6 +95,156 @@
           "next_cursor"
         ],
         "title": "ActivityPage",
+        "type": "object"
+      },
+      "AdminApiKey": {
+        "description": "A key in Admin settings -> API keys, with its owner. ``projects`` lists every\nrestricted project that still exists.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who created it: the owner, or the platform admin who registered the agent (Phase 6); null if that user no longer exists."
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: never expires.",
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last successful authentication (updated at most once a minute).",
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_is_service_account": {
+            "description": "An AI agent's service account (Phase 6): show the AI badge.",
+            "title": "Owner Is Service Account",
+            "type": "boolean"
+          },
+          "prefix": {
+            "description": "The start of the key, \"sdg_\" and its 12-character lookup id, so you can recognise it; the rest is never shown again.",
+            "title": "Prefix",
+            "type": "string"
+          },
+          "projects": {
+            "description": "The projects it is restricted to that still exist and you can still view, by name. Empty when not restricted (or when you can view none of them: then the key reaches nothing).",
+            "items": {
+              "$ref": "#/components/schemas/ProjectRef"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "restricted": {
+            "description": "Only the projects below (true), or every project you can access.",
+            "title": "Restricted",
+            "type": "boolean"
+          },
+          "scopes": {
+            "description": "Canonical order: read, write, evaluate, mcp (write and evaluate include read).",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ApiKeyState"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "restricted",
+          "projects",
+          "expires_at",
+          "state",
+          "created_at",
+          "last_used_at",
+          "owner",
+          "owner_email",
+          "owner_is_service_account",
+          "created_by"
+        ],
+        "title": "AdminApiKey",
+        "type": "object"
+      },
+      "AdminApiKeyPage": {
+        "description": "Keys that aren't revoked, of every user, newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKey"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "description": "Keys matching the filters, all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "total"
+        ],
+        "title": "AdminApiKeyPage",
         "type": "object"
       },
       "AdminUser": {
@@ -564,6 +731,204 @@
         ],
         "title": "AltchaParameters",
         "type": "object"
+      },
+      "ApiKey": {
+        "description": "One of your keys (Settings -> API keys). Never carries the secret.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: never expires.",
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last successful authentication (updated at most once a minute).",
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefix": {
+            "description": "The start of the key, \"sdg_\" and its 12-character lookup id, so you can recognise it; the rest is never shown again.",
+            "title": "Prefix",
+            "type": "string"
+          },
+          "projects": {
+            "description": "The projects it is restricted to that still exist and you can still view, by name. Empty when not restricted (or when you can view none of them: then the key reaches nothing).",
+            "items": {
+              "$ref": "#/components/schemas/ProjectRef"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "restricted": {
+            "description": "Only the projects below (true), or every project you can access.",
+            "title": "Restricted",
+            "type": "boolean"
+          },
+          "scopes": {
+            "description": "Canonical order: read, write, evaluate, mcp (write and evaluate include read).",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ApiKeyState"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "restricted",
+          "projects",
+          "expires_at",
+          "state",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "ApiKey",
+        "type": "object"
+      },
+      "ApiKeyCreate": {
+        "additionalProperties": false,
+        "description": "Create a key for yourself (session only). Scopes and the project restriction\ncan't be changed later: create another key and revoke this one.",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it stops working: 1 hour to 366 days ahead, or null for never.",
+            "title": "Expires At"
+          },
+          "name": {
+            "description": "What it is for, e.g. \"Claude Desktop\" or \"Weekly report script\": unique among your keys (any case) that aren't revoked.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Restrict the key to these projects (1-50, each one you can view: else 422 invalid_project); null for every project you can access, now and later.",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "description": "read: view projects, ideas, evaluations, scores and proposals (as you can). write: create and change ideas, comments, votes, owners, evaluators, statuses, proposals (deleting and moderating ideas need a session); includes read. evaluate: save and submit your own evaluations; includes read. mcp: connect an MCP client to /mcp (its tools also need read, write or evaluate). Duplicates are merged and read is added to write and evaluate.",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "title": "ApiKeyCreate",
+        "type": "object"
+      },
+      "ApiKeyList": {
+        "description": "Your keys that aren't revoked, newest first (at most ``max_keys``: no paging).",
+        "properties": {
+          "can_create": {
+            "description": "api_key.manage_own allows a new key now: you hold fewer than max_keys and are not the break-glass account (c20).",
+            "title": "Can Create",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKey"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "max_keys": {
+            "description": "How many keys you may hold (25).",
+            "title": "Max Keys",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "max_keys",
+          "can_create"
+        ],
+        "title": "ApiKeyList",
+        "type": "object"
+      },
+      "ApiKeyScope": {
+        "description": "What an API key may be used for (role matrix section 5). A key acts as its owner,\nlive, narrowed to the rules its scopes grant; ``mcp`` only opens ``/mcp``, where each\ntool also needs the scope of its own rule. Same values as\n:data:`app.domain.principal.ApiKeyScope`, in this canonical order.",
+        "enum": [
+          "read",
+          "write",
+          "evaluate",
+          "mcp"
+        ],
+        "title": "ApiKeyScope",
+        "type": "string"
+      },
+      "ApiKeyState": {
+        "description": "A listed key's state. Revoked keys are never listed.",
+        "enum": [
+          "active",
+          "expired",
+          "dormant"
+        ],
+        "title": "ApiKeyState",
+        "type": "string"
       },
       "AuditAction": {
         "description": "Every action the audit log records (``audit_log.action``).\n\n``app.services.audit.AUDIT_ACTIONS`` must be exactly this set. Names are\n``<area>.<what happened>``; ``details.rule`` names the role-matrix rule that\nallowed an admin action.",
@@ -1455,6 +1820,25 @@
           "body_md"
         ],
         "title": "CommentUpdate",
+        "type": "object"
+      },
+      "CreatedApiKey": {
+        "description": "The new key. ``secret`` is the only time the full key is ever returned\n(``Cache-Control: no-store``).",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/ApiKey"
+          },
+          "secret": {
+            "description": "The full key (sdg_<lookup id>_<secret>). Copy it now: it can't be shown again. Send it as Authorization: Bearer <key>.",
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "secret"
+        ],
+        "title": "CreatedApiKey",
         "type": "object"
       },
       "CriterionAggregate": {
@@ -6336,6 +6720,189 @@
         "title": "ProposalSectionUpdate",
         "type": "object"
       },
+      "ProposalSuggestion": {
+        "description": "Suggested text for a whole section, from a member or an agent. Accepting it saves\nit as the section's text (a normal versioned save); discarding dismisses it.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if the user no longer exists."
+          },
+          "base_version": {
+            "description": "The section version its author read.",
+            "minimum": 1.0,
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "body_md": {
+            "description": "The proposed text of the whole section (Markdown).",
+            "title": "Body Md",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who accepted or discarded it (the author when a newer one replaced it)."
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "section_changed": {
+            "description": "The section has been saved since base_version: say so next to the suggestion (\"The section has changed since this was suggested\").",
+            "title": "Section Changed",
+            "type": "boolean"
+          },
+          "section_key": {
+            "$ref": "#/components/schemas/ProposalSectionKey"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SuggestionSource",
+            "description": "ai whenever the author is an AI agent's service account (show the AI badge), whatever the channel; otherwise mcp (an MCP client) or api (the app or an API client)."
+          },
+          "status": {
+            "$ref": "#/components/schemas/SuggestionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "section_key",
+          "body_md",
+          "base_version",
+          "section_changed",
+          "author",
+          "source",
+          "status",
+          "created_at",
+          "decided_at",
+          "decided_by"
+        ],
+        "title": "ProposalSuggestion",
+        "type": "object"
+      },
+      "ProposalSuggestionAccept": {
+        "additionalProperties": false,
+        "description": "Accept: the section's text becomes the suggestion's. ``base_version`` is the\nsection version you are looking at (as for a section save): 409\n``proposal_conflict`` with ``current`` if someone saved it since.",
+        "properties": {
+          "base_version": {
+            "minimum": 1.0,
+            "title": "Base Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_version"
+        ],
+        "title": "ProposalSuggestionAccept",
+        "type": "object"
+      },
+      "ProposalSuggestionCreate": {
+        "additionalProperties": false,
+        "description": "Suggest the whole text of one section. Your earlier pending suggestion for the\nsame section, if any, is replaced (discarded).",
+        "properties": {
+          "base_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The section version you read (from get_proposal); default the current one. Above the current version: 422 validation_error.",
+            "title": "Base Version"
+          },
+          "body_md": {
+            "description": "Markdown, kept verbatim; not only whitespace.",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "section_key": {
+            "$ref": "#/components/schemas/ProposalSectionKey"
+          }
+        },
+        "required": [
+          "section_key",
+          "body_md"
+        ],
+        "title": "ProposalSuggestionCreate",
+        "type": "object"
+      },
+      "ProposalSuggestionList": {
+        "description": "Pending suggestions in template-section order, then oldest first (at most 50: no\npaging).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalSuggestion"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/ProposalSuggestionPermissions"
+          }
+        },
+        "required": [
+          "items",
+          "permissions"
+        ],
+        "title": "ProposalSuggestionList",
+        "type": "object"
+      },
+      "ProposalSuggestionPermissions": {
+        "description": "What you may do with suggestions on this proposal (the API enforces the same).",
+        "properties": {
+          "can_decide": {
+            "description": "proposal.write: accept or discard (the owner and admins, while c7 holds).",
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "can_suggest": {
+            "description": "proposal.suggest_section: members and admins while c7 holds.",
+            "title": "Can Suggest",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_suggest",
+          "can_decide"
+        ],
+        "title": "ProposalSuggestionPermissions",
+        "type": "object"
+      },
       "ProposalThread": {
         "description": "A margin thread on one section; resolved threads collapse.",
         "properties": {
@@ -7618,6 +8185,26 @@
         "title": "SubmitterContact",
         "type": "object"
       },
+      "SuggestionSource": {
+        "description": "Who or what wrote a proposal suggestion (``proposal_suggestions.source``). It\nfollows the **author**: ``ai`` for a service account whatever the channel, else the\nchannel a person used.",
+        "enum": [
+          "api",
+          "mcp",
+          "ai"
+        ],
+        "title": "SuggestionSource",
+        "type": "string"
+      },
+      "SuggestionStatus": {
+        "description": "Where a proposal suggestion is (``proposal_suggestions.status``).",
+        "enum": [
+          "pending",
+          "accepted",
+          "discarded"
+        ],
+        "title": "SuggestionStatus",
+        "type": "string"
+      },
       "TagInfo": {
         "description": "A tag in use in the project (filter chips, tag autocomplete).\n\nTags no idea uses any more are not listed (they stay stored, so re-adding one\nkeeps its first spelling).",
         "properties": {
@@ -8454,6 +9041,259 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/api-keys": {
+      "get": {
+        "description": "Platform admins (api_key.manage_any, session only). Keys that aren't revoked, of every user (service accounts included), newest first, with their owner and when they were last used. q matches part of the key's name or its owner's name or email (any case), or exactly a key's prefix (sdg_ + lookup id) or lookup id, so a leaked key can be found; the filters combine.",
+        "operationId": "list_admin_api_keys",
+        "parameters": [
+          {
+            "description": "Part of a key name, owner name or email, or a key's prefix (sdg_ + lookup id) or lookup id, matched exactly. Never send a whole key: the SPA cuts a pasted key to its prefix.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a key name, owner name or email, or a key's prefix (sdg_ + lookup id) or lookup id, matched exactly. Never send a whole key: the SPA cuts a pasted key to its prefix.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Only this user's keys.",
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this user's keys.",
+              "title": "User Id"
+            }
+          },
+          {
+            "description": "Only active, expired or dormant keys.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApiKeyState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only active, expired or dormant keys.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminApiKeyPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List every API key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/api-keys/{key_id}": {
+      "delete": {
+        "description": "Platform admins (api_key.manage_any, session only). The key stops working at once. Idempotent for a key already revoked; 404 for an unknown key. Audited as api_key.revoke (target: the key's owner).",
+        "operationId": "revoke_admin_api_key",
+        "parameters": [
+          {
+            "description": "An API key's id.",
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "description": "An API key's id.",
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Revoke any API key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/audit": {
       "get": {
         "description": "Platform admins (platform.view_audit_log). Newest first; filters combine with AND, several action values with OR. since is inclusive, until exclusive.",
@@ -14278,6 +15118,436 @@
         ]
       }
     },
+    "/api/v1/ideas/{idea}/proposal/suggestions": {
+      "get": {
+        "description": "proposal.view: the proposal's pending suggestions in template-section order, then oldest first, with what you may do (suggest, decide). 404 when the idea has no proposal.",
+        "operationId": "list_proposal_suggestions",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalSuggestionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Pending suggestions",
+        "tags": [
+          "proposals"
+        ]
+      },
+      "post": {
+        "description": "proposal.suggest_section (members and admins; c7: the idea is Shortlisted or in Proposal). The whole new text of one section; your earlier pending suggestion for the same section is discarded. source is ai for a service account, else api. 404 when the idea has no proposal; 422 validation_error for a base_version above the section's; 409 proposal_not_available, too_many_suggestions (50 pending), project_archived, awaiting_moderation.",
+        "operationId": "create_proposal_suggestion",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalSuggestionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalSuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Suggest text for a section",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/accept": {
+      "post": {
+        "description": "proposal.write (the owner and admins, c7). The section's text becomes the suggestion's, saved like update_proposal_section with base_version (the section version you are looking at): 409 proposal_conflict with current when someone saved it since; suggestion_not_pending when it was already accepted or discarded.",
+        "operationId": "accept_proposal_suggestion",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A suggestion's id (on this proposal).",
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "description": "A suggestion's id (on this proposal).",
+              "format": "uuid",
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalSuggestionAccept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedProposalSuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalConflictProblem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state: proposal_conflict (with current: the section as saved now), suggestion_not_pending, proposal_not_available, project_archived, awaiting_moderation"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Accept a suggestion",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/discard": {
+      "post": {
+        "description": "proposal.write (the owner and admins, c7), under the same locks as accept. Idempotent for a discarded suggestion; 409 suggestion_not_pending for an accepted one, proposal_not_available, project_archived, awaiting_moderation.",
+        "operationId": "discard_proposal_suggestion",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A suggestion's id (on this proposal).",
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "description": "A suggestion's id (on this proposal).",
+              "format": "uuid",
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalSuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Discard a suggestion",
+        "tags": [
+          "proposals"
+        ]
+      }
+    },
     "/api/v1/ideas/{idea}/proposal/threads": {
       "get": {
         "description": "proposal.view: every thread with at least one comment that isn't deleted, by section in template order, then oldest first. 404 when there is no proposal.",
@@ -15865,6 +17135,232 @@
         "summary": "Watch",
         "tags": [
           "ideas"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys": {
+      "get": {
+        "description": "api_key.manage_own (session only; an API key gets 403 insufficient_scope). Your keys that aren't revoked (active and expired), newest first, with whether you may create another. Never returns a secret.",
+        "operationId": "list_my_api_keys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List my API keys",
+        "tags": [
+          "api-keys"
+        ]
+      },
+      "post": {
+        "description": "api_key.manage_own (session only; an API key gets 403 insufficient_scope). Returns the full key once, in secret (Cache-Control: no-store); only its hash is stored. write and evaluate include read (added). 403 break_glass_account (c20); 409 too_many_api_keys (25 that aren't revoked), api_key_name_taken; 422 invalid_project (a project you can't view, or unknown). Audited as api_key.create.",
+        "operationId": "create_my_api_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedApiKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create an API key",
+        "tags": [
+          "api-keys"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys/{key_id}": {
+      "delete": {
+        "description": "api_key.manage_own (session only; an API key gets 403 insufficient_scope). The key stops working at once: the next request with it is 401, on REST and /mcp alike. Idempotent for a key already revoked; 404 for someone else's or an unknown key. Audited as api_key.revoke.",
+        "operationId": "revoke_my_api_key",
+        "parameters": [
+          {
+            "description": "An API key's id.",
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "description": "An API key's id.",
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Revoke an API key",
+        "tags": [
+          "api-keys"
         ]
       }
     },

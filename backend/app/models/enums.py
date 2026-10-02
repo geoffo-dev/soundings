@@ -203,3 +203,42 @@ class BrandAssetKind(StrEnum):
 
     LOGO = "logo"
     FAVICON = "favicon"
+
+
+# --- Phase 5: API keys and MCP (contract-phase5) ---------------------------------------
+class ApiKeyScope(StrEnum):
+    """What an API key may be used for (role matrix section 5). A key acts as its owner,
+    live, narrowed to the rules its scopes grant; ``mcp`` only opens ``/mcp``, where each
+    tool also needs the scope of its own rule. Same values as
+    :data:`app.domain.principal.ApiKeyScope`, in this canonical order."""
+
+    READ = "read"
+    WRITE = "write"
+    EVALUATE = "evaluate"
+    MCP = "mcp"
+
+
+class SuggestionStatus(StrEnum):
+    """Where a proposal suggestion is (``proposal_suggestions.status``)."""
+
+    PENDING = "pending"
+    """Waiting for the owner (or an admin) to accept or discard it."""
+    ACCEPTED = "accepted"
+    """Its text became the section's text (a normal, versioned section save)."""
+    DISCARDED = "discarded"
+    """Dismissed by the owner or an admin, or replaced by a newer suggestion from the same
+    author for the same section (then ``decided_by`` is the author)."""
+
+
+class SuggestionSource(StrEnum):
+    """Who or what wrote a proposal suggestion (``proposal_suggestions.source``). It
+    follows the **author**: ``ai`` for a service account whatever the channel, else the
+    channel a person used."""
+
+    API = "api"
+    """A person through REST (``create_proposal_suggestion``): the SPA or an API client."""
+    MCP = "mcp"
+    """A person through the MCP tool ``propose_proposal_section`` (their key)."""
+    AI = "ai"
+    """An AI agent's service account, through MCP or REST (shown with an AI badge;
+    Phase 6's "Draft section" arrives this way)."""
