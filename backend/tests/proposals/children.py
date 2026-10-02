@@ -4,8 +4,19 @@ child, so they live in a module, not in a test function)."""
 from __future__ import annotations
 
 import os
+import tempfile
 import time
 from multiprocessing.connection import Connection
+
+
+def sleep_forever_with_temp_files(connection: Connection) -> None:
+    """A render that writes a temporary folder (as WeasyPrint does), then never ends."""
+    while True:
+        connection.recv()
+        folder = tempfile.mkdtemp(prefix="weasyprint-")
+        with open(os.path.join(folder, "font"), "wb") as file:
+            file.write(b"\0" * 4096)
+        time.sleep(3600)
 
 
 def sleep_forever(connection: Connection) -> None:

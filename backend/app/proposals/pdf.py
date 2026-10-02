@@ -17,6 +17,9 @@ HTML (Markdown included) and returns the PDF bytes.
   after :data:`IDLE_EXIT` seconds without work (or when the API process goes away),
   so most exports skip the second of interpreter and WeasyPrint start-up and an idle
   API process holds no renderer memory.
+* **Its own temporary folder:** each child writes temporary files (WeasyPrint's font
+  folder, about 700 KB) in a folder the parent made for it and deletes once the child
+  is gone, so a killed render leaves nothing behind in ``/tmp``.
 
 The parent imports nothing heavy: ``weasyprint`` is imported only in the child
 (:mod:`app.proposals.pdf_child`), so the API starts where Pango is missing.
@@ -25,8 +28,12 @@ The parent imports nothing heavy: ``weasyprint`` is imported only in the child
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import multiprocessing
+import os
+import shutil
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -80,6 +87,13 @@ def _serve(connection: Connection) -> None:
     serve(connection)
 
 
+def _child_main(target: Callable[[Connection], None], connection: Connection, scratch: str) -> None:
+    """Runs in the child: its temporary files go to ``scratch`` (deleted by the parent)."""
+    tempfile.tempdir = scratch
+    os.environ["TMPDIR"] = scratch
+    target(connection)
+
+
 class Renderer:
     """A child process that renders one document at a time. Blocking: call
     :meth:`render` from a worker thread (:func:`render_pdf` does)."""
@@ -89,6 +103,7 @@ class Renderer:
         self._lock = threading.Lock()
         self._process: BaseProcess | None = None
         self._connection: Connection | None = None
+        self._scratch: str | None = None
 
     @property
     def pid(self) -> int | None:
@@ -96,14 +111,31 @@ class Renderer:
 
     def _start(self) -> Connection:
         context = multiprocessing.get_context("spawn")
+        scratch = tempfile.mkdtemp(prefix="soundings-pdf-")
         ours, theirs = context.Pipe(duplex=True)
         process = context.Process(
-            target=self._target, args=(theirs,), name="soundings-pdf", daemon=True
+            target=_child_main,
+            args=(self._target, theirs, scratch),
+            name="soundings-pdf",
+            daemon=True,
         )
-        process.start()
-        theirs.close()
+        self._scratch = scratch
+        try:
+            process.start()
+        except BaseException:
+            ours.close()
+            shutil.rmtree(scratch, ignore_errors=True)
+            self._scratch = None
+            raise
+        finally:
+            theirs.close()
         self._process, self._connection = process, ours
         return ours
+
+    @property
+    def scratch(self) -> str | None:
+        """The current child's temporary folder (None without a child)."""
+        return self._scratch
 
     def _ensure(self) -> tuple[Connection, bool]:
         """The child's pipe, and whether the child is new."""
@@ -113,9 +145,9 @@ class Renderer:
         return self._start(), True
 
     def stop(self) -> None:
-        """Kill the child (if any) and forget it."""
-        process, connection = self._process, self._connection
-        self._process = self._connection = None
+        """Kill the child (if any), delete its temporary folder and forget it."""
+        process, connection, scratch = self._process, self._connection, self._scratch
+        self._process = self._connection = self._scratch = None
         if connection is not None:
             connection.close()
         if process is not None:
@@ -124,6 +156,8 @@ class Renderer:
             process.join(timeout=5)
             if process.exitcode is not None:
                 process.close()
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
 
     def render(self, document: Any, *, timeout: float, wait: float) -> bytes:
         """The child's PDF for ``document``, within ``timeout`` seconds in all (sending
@@ -186,6 +220,7 @@ def renderer() -> Renderer:
     with _renderer_lock:
         if _renderer is None:
             _renderer = Renderer()
+            atexit.register(_renderer.stop)  # its temporary folder goes with the process
         return _renderer
 
 

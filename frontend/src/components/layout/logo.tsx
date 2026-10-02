@@ -5,7 +5,8 @@ import { cn } from '@/lib/utils'
  * Soundings mark: a sounding line — depth readings narrowing as they go down.
  * Coloured with --brand-accent so runtime branding recolours it. With an
  * uploaded logo (contract-phase4 §3.10) the image takes its place, always
- * through `<img src>` (never inline SVG: an image can't run script).
+ * through `<img src>` (never inline SVG: an image can't run script), on a light
+ * plate in dark mode (`logo-plate`).
  */
 export function LogoMark({ className, src }: { className?: string; src?: string | null }) {
   const branding = useAppBranding()
@@ -16,7 +17,7 @@ export function LogoMark({ className, src }: { className?: string; src?: string 
         src={logo}
         alt=""
         aria-hidden="true"
-        className={cn('h-6 w-auto max-w-24 shrink-0 rounded-sm object-contain', className)}
+        className={cn('h-6 w-auto max-w-24 shrink-0 logo-plate object-contain', className)}
       />
     )
   }

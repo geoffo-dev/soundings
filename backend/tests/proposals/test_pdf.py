@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import os
 import socket
 import time
 import warnings
@@ -363,6 +364,27 @@ def test_the_killed_child_is_gone() -> None:
     with pytest.raises(ExportBusy):
         slow.render(document(), timeout=0.5, wait=1)
     assert not _alive(pid)
+
+
+def test_a_killed_render_leaves_no_temporary_files() -> None:
+    slow = Renderer(target=children.sleep_forever_with_temp_files)
+    slow._start()
+    scratch = slow.scratch
+    assert scratch is not None
+    assert os.path.isdir(scratch)
+    with pytest.raises(ExportBusy):
+        slow.render(document(), timeout=1.0, wait=1)
+    assert not os.path.exists(scratch)
+    assert slow.scratch is None
+
+
+def test_the_child_writes_temporary_files_in_its_own_folder(fresh_renderer: Renderer) -> None:
+    fresh_renderer.render(document(), timeout=20, wait=1)
+    scratch = fresh_renderer.scratch
+    assert scratch is not None
+    assert os.listdir(scratch)  # WeasyPrint's font folder is in it, not in /tmp
+    fresh_renderer.stop()
+    assert not os.path.exists(scratch)
 
 
 def test_a_crashing_child_is_a_render_failure() -> None:

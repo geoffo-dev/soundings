@@ -15,6 +15,7 @@ import { describeError } from '@/api/errors'
 import { queryKeys } from '@/api/keys'
 import { deferUntilToastCloses, hideItem, unhideItem, useHiddenItems } from '@/api/undo'
 import type {
+  IdeaDetail,
   IdeaSubmission,
   ModerationPage,
   PublicFormSettings,
@@ -76,7 +77,9 @@ export const moderationQueueOptions = (slug: string, limit = PAGE_SIZE) =>
 
 type ModerationData = InfiniteData<ModerationPage, string | null>
 
-const hiddenSubmission = (ideaId: string) => `moderation:${ideaId}`
+/** An idea approved or rejected a moment ago (its Undo toast is open), per project. */
+const hiddenSubmission = (slug: string, ideaId: string) =>
+  `moderation:${slug.toLowerCase()}:${ideaId}`
 
 /**
  * The queue, oldest first. Ideas approved or rejected while their Undo toast is
@@ -88,11 +91,11 @@ export function useModerationQueue(slug: string, options: { enabled?: boolean } 
   const select = useCallback(
     (data: ModerationData) => {
       const all = data.pages.flatMap((page) => page.items)
-      const items = all.filter((item) => !hidden.has(hiddenSubmission(item.id)))
+      const items = all.filter((item) => !hidden.has(hiddenSubmission(slug, item.id)))
       const total = (data.pages[0]?.total ?? 0) - (all.length - items.length)
       return { ...data, items, total: Math.max(0, total) }
     },
-    [hidden],
+    [hidden, slug],
   )
   return useInfiniteQuery({
     ...moderationQueueOptions(slug),
@@ -117,7 +120,8 @@ export function useModerationCount(slug: string, options: { enabled?: boolean } 
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     select: (page) => {
-      const pending = [...hidden].filter((key) => key.startsWith('moderation:')).length
+      const prefix = hiddenSubmission(slug, '')
+      const pending = [...hidden].filter((key) => key.startsWith(prefix)).length
       return Math.max(0, page.total - pending)
     },
   })
@@ -133,6 +137,37 @@ export const ideaSubmissionQueryOptions = (idea: string) =>
 /** How a public idea came in (name, and contact details for admins). Only for public ideas. */
 export function useIdeaSubmission(idea: string, options: { enabled?: boolean } = {}) {
   return useQuery({ ...ideaSubmissionQueryOptions(idea), enabled: options.enabled ?? true })
+}
+
+/**
+ * Takes a moderated idea out of the cached queue and count (both shapes: the
+ * infinite queue and the count's single page), so nothing flickers back in
+ * between unhiding it and the refetch.
+ */
+function dropFromQueue(queryClient: QueryClient, slug: string, ideaId: string) {
+  queryClient.setQueriesData<ModerationData | ModerationPage>(
+    { queryKey: queryKeys.submissions.moderation(slug) },
+    (data) => {
+      if (!data) return data
+      const drop = (page: ModerationPage): ModerationPage => {
+        const items = page.items.filter((item) => item.id !== ideaId)
+        return items.length === page.items.length ? page : { ...page, items }
+      }
+      if ('pages' in data) {
+        const found = data.pages.some((page) => page.items.some((item) => item.id === ideaId))
+        if (!found) return data
+        return {
+          ...data,
+          pages: data.pages.map((page, index) => {
+            const next = drop(page)
+            return index === 0 ? { ...next, total: Math.max(0, page.total - 1) } : next
+          }),
+        }
+      }
+      // The count (limit 1): the idea may be on no page it holds, but it was counted.
+      return { ...drop(data), total: Math.max(0, data.total - 1) }
+    },
+  )
 }
 
 function afterModeration(queryClient: QueryClient, slug: string, ideaKey: string) {
@@ -165,7 +200,7 @@ export function useModerate() {
       idea: ModerationTarget,
       callbacks: { onHide?: () => void; onRestore?: () => void; onDone?: () => void } = {},
     ) => {
-      const key = hiddenSubmission(idea.id)
+      const key = hiddenSubmission(idea.project.slug, idea.id)
       deferUntilToastCloses({
         title:
           action === 'approve'
@@ -199,6 +234,13 @@ export function useModerate() {
           }
         },
         onCommitted: () => {
+          dropFromQueue(queryClient, idea.project.slug, idea.id)
+          if (action === 'approve') {
+            // The idea page's banner goes at once; the refetch brings its permissions.
+            queryClient.setQueryData<IdeaDetail>(queryKeys.ideas.detail(idea.key), (detail) =>
+              detail ? { ...detail, held_for: null } : detail,
+            )
+          }
           unhideItem(key)
           afterModeration(queryClient, idea.project.slug, idea.key)
           if (action === 'reject') {
@@ -221,9 +263,9 @@ export function useModerate() {
 }
 
 /** Is this idea waiting for its Undo toast (approved or rejected a moment ago)? */
-export function useModerationPending(ideaId: string | undefined): boolean {
+export function useModerationPending(idea: Pick<ModerationTarget, 'id' | 'project'>): boolean {
   const hidden = useHiddenItems()
-  return ideaId ? hidden.has(hiddenSubmission(ideaId)) : false
+  return hidden.has(hiddenSubmission(idea.project.slug, idea.id))
 }
 
 /** Erase the submitter's details (cannot be undone: the caller confirms first). */

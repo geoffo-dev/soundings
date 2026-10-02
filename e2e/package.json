@@ -12,6 +12,7 @@
     "screenshots": "SCREENSHOTS=phase-1 playwright test --project=screenshots",
     "screenshots:phase2": "SCREENSHOTS=phase-2 E2E_SSO=1 playwright test --project=screenshots && SCREENSHOTS=phase-2 E2E_SSO=0 playwright test --project=screenshots --grep @break-glass",
     "screenshots:phase3": "SCREENSHOTS=phase-3 playwright test --project=screenshots && SCREENSHOTS=phase-3 E2E_SMTP=0 playwright test --project=screenshots --grep @no-smtp",
+    "screenshots:phase4": "SCREENSHOTS=phase-4 playwright test --project=screenshots",
     "stack:start": "scripts/start-stack.sh",
     "stack:stop": "scripts/stop-stack.sh",
     "stack:reseed": "scripts/reseed.sh",
@@ -23,6 +24,7 @@
     "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.56.1",
     "@types/node": "^22.20.4",
+    "pdfjs-dist": "5.6.205",
     "prettier": "^3.9.9",
     "typescript": "~5.9.3"
   },

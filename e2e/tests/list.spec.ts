@@ -50,16 +50,17 @@ test.describe('as Alice (admin of Customer Innovation)', () => {
     api,
   }) => {
     await openList(page)
-    await expect(countText(page)).toHaveText('20 ideas')
+    await expect(countText(page)).toHaveText('21 ideas')
     await page.getByRole('button', { name: 'Needs evaluators' }).click()
     await expect(page).toHaveURL(/needs_evaluators=1/)
     await expect(page.getByRole('button', { name: 'Needs evaluators' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    await expect(countText(page)).toHaveText('5 of 20 ideas')
+    await expect(countText(page)).toHaveText('6 of 21 ideas')
     const keys = await rowKeys(page)
-    expect(sorted(keys)).toEqual(['CUST-16', 'CUST-17', 'CUST-18', 'CUST-19', 'CUST-20'])
+    // CUST-21 came in through the public form (Phase 4 seed) and was approved: new, nobody invited.
+    expect(sorted(keys)).toEqual(['CUST-16', 'CUST-17', 'CUST-18', 'CUST-19', 'CUST-20', 'CUST-21'])
     expect(sorted(keys)).toEqual(sorted(await apiKeys(await api('alice'), 'needs_evaluators=true')))
     for (const row of await rows(page).all()) await expect(row).toContainText('New')
   })
@@ -87,7 +88,7 @@ test.describe('as Alice (admin of Customer Innovation)', () => {
     await page.getByRole('option', { name: 'Me' }).click()
     await page.keyboard.press('Escape')
     await expect(page).toHaveURL(/owner=me/)
-    await expect(countText(page)).toHaveText('5 of 20 ideas')
+    await expect(countText(page)).toHaveText('5 of 21 ideas')
     const mine = await rowKeys(page)
     expect(sorted(mine)).toEqual(['CUST-12', 'CUST-17', 'CUST-2', 'CUST-6', 'CUST-8'])
     expect(sorted(mine)).toEqual(sorted(await apiKeys(await api('alice'), 'owner=me')))
@@ -97,18 +98,18 @@ test.describe('as Alice (admin of Customer Innovation)', () => {
 
     // Filters combine with AND.
     await page.getByRole('button', { name: 'Needs evaluators' }).click()
-    await expect(countText(page)).toHaveText('1 of 20 ideas')
+    await expect(countText(page)).toHaveText('1 of 21 ideas')
     expect(await rowKeys(page)).toEqual(['CUST-17'])
 
     // The filtered view is a link: it opens the same way for someone else…
     const shared = page.url()
     await page.goto(shared)
     await expect(page.getByRole('button', { name: /^Owner Me/ })).toBeVisible()
-    await expect(countText(page)).toHaveText('1 of 20 ideas')
+    await expect(countText(page)).toHaveText('1 of 21 ideas')
     // …and Clear removes every filter.
     await page.getByRole('button', { name: 'Clear', exact: true }).click()
     await expect(page).not.toHaveURL(/owner=|needs_evaluators/)
-    await expect(countText(page)).toHaveText('20 ideas')
+    await expect(countText(page)).toHaveText('21 ideas')
   })
 
   test('LF-04: sorting by score ranks ideas as the API does; hidden and unscored last', async ({

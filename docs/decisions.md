@@ -409,3 +409,52 @@ otherwise.
 | Section text is the one request string that isn't whitespace-trimmed; a section save locks the idea `FOR SHARE`; 409 `proposal_conflict` carries the current section. | Proposed | Markdown indentation and autosave keep what was typed; saves to different sections don't block each other but can't race a status change; "Keep mine" can't race a refetch. |
 | While an idea is held for moderation every permission flag but `can_delete` is false; `IdeaDetail.held_for` / `via_public_form` land at integration with the audit actions. | Proposed | The SPA shows a read-only page with Approve / Reject; no new required response fields before the SPA's mocks have them. |
 | Declined from the contract review: idea numbers assigned on approval, the submitter's name for members only, a branding `updated_at` precondition, cutting the upload quota or the resend endpoint, bulk reject (later). | Proposed | Reasons in [contract-phase4 §7](api/contract-phase4.md#7-changes-after-the-contract). |
+
+## 2026-10-02 · Phase 4 build and integration
+
+Calls made while building and integrating proposals, public submission and branding.
+Contract changes are listed in [contract-phase4.md §7](api/contract-phase4.md#7-changes-after-the-contract);
+QA's known issues K4-1 to K4-5 and the PDF nits are fixed below.
+
+### Proposals and export
+
+| Decision | Status | Why |
+|---|---|---|
+| The editor is one auto-growing native textarea per section with Write / Preview, a four-button toolbar and an outline; no editor dependency. Each section autosaves 800 ms after typing stops, one request at a time; a conflict shows both versions with **Use theirs** / **Keep mine**. Written sections open in Preview on phones. The Proposal tab widens the idea page (`max-w-7xl`) and folds the sidebar into the Details sheet. | Decided | docs/research recommendation and wireframe 05; editing long text is not a phone task. |
+| Margin comments reuse the Phase 3 composer without the mention picker, notify nobody and are not audited; exports are not audited. | Decided | Contract §3.1, §3.3, §3.14: no new `NotificationType` or `AuditAction` this phase. |
+| PDFs render in a warm `spawn`ed child per API process (exits after 5 minutes idle), with its own temporary folder that the API deletes when the child goes. | Decided | First export 2.7 s, then 0.7 s; a killed render must not leave WeasyPrint's font folder in a pod's `/tmp` (platform's finding). |
+| Fonts: `@fontsource` 5.3.0 `woff2`, latin and latin-ext as separate CSS families, plus 400 italics and IBM Plex Mono; URLs `soundings-font:<font>-<weight>[-italic][-ext]`. | Decided | One family per subset kept PDF text extraction intact; code and emphasis render in the bundled fonts too. |
+| The PDF cover: a text-less band in the primary colour, the logo (or the app name), "Proposal", the title and the details table; tables print at the body size. | Decided | QA: the cover named the project three times and table cells were smaller than the text. |
+| While a smooth scroll to a section runs (outline, `j`/`k`), the scroll spy waits for it to end (`scrollend`, or 1 s), so the current section stays the one asked for. | Decided | Integration: under load, `j` right after an outline jump stepped from a section scrolled past (a flaky page test). |
+| The SPA loads the proposal editor with the tab (`React.lazy`) and React in a chunk of its own. | Decided | Phase 4 pushed the entry chunk from 499 kB to 575 kB (Vite's 500 kB warning); now 310 kB + 219 kB React, which stays cached across releases. |
+| No proposal in the demo seed; the screenshot run and the smoke tests start one through the API. | Proposed | Seeding one would change Phase 1–3 expectations late in the phase; worth doing with the next seed change. |
+
+### Public submission and moderation
+
+| Decision | Status | Why |
+|---|---|---|
+| The SPA uses altcha@3's solver library and its PBKDF2 worker, bundled as a same-origin file, with its own accessible status line instead of `<altcha-widget>`. No WebAssembly, so the CSP is unchanged. | Decided | The widget's styles and strings don't fit the design system; verified under the production CSP and at 6× CPU throttling (0.15–0.65 s). |
+| `viewable_ideas` now equals `listed_ideas` (no held idea in any list for anyone); single ideas go through the policy (c12). c19 also blocks watching. | Decided | Every caller of `viewable_ideas` was a list; an admin opens a held idea by link or from the queue. |
+| Tracking and confirmation routes count their per-IP throttle before the token lookup. | Decided | Unknown tokens are rate-limited too. |
+| Approve and Reject in the queue wait for their Undo toast; the board shows "N ideas waiting for review" per project; Watch is hidden on a held idea. | Decided | Reject deletes the idea; a misclick must be recoverable. |
+| A public idea's first activity reads "A visitor sent it through the public form". | Decided | QA K4-5: "Someone submitted the idea" read like a deleted account. |
+| The form's Send button is 44 px tall on phones, like its fields. | Decided | QA K4-4. |
+| Demo seed: Customer Innovation has a branding override (SVG logo and favicon uploaded through the same checks), a moderated public form with an intro and three public ideas (CUST-21 approved, CUST-22/23 waiting); the global profile has an email footer. 48 ideas in all. | Decided | Screenshots, e2e and `make public-smoke` need a live form; existing demo keys stay the same. |
+
+### Branding
+
+| Decision | Status | Why |
+|---|---|---|
+| One resolver, `app.services.branding`, cached 5 s per process and engine, cleared on save and again at commit; public pages, `GET /branding`, emails and PDFs all use it. | Decided | Two resolvers had been built in parallel; other replicas follow a save within 5 s. |
+| Emails carry no logo: the app name is the wordmark, with the primary colour, a contrast-checked text colour and the footer. | Decided | Contract §3.8 / §3.10: no remote resources or images in emails. |
+| In dark mode the SPA shows uploaded logos on a light plate (`logo-plate`), and a public page's header shows the logo alone (the app name only for screen readers) when one is set. | Decided | QA K4-2: dark lettering vanished on dark backgrounds and logo plus "Soundings" read as two brands; emails and PDFs are always light, so logos are designed for light. |
+| `<main>` is the positioning context of the app shell (`relative`). | Decided | QA K4-1 / K4-3: absolutely positioned `sr-only` text and hidden inputs inside the scroller made the whole document scroll, so moving around the proposal editor scrolled the shell off-screen. One fix for every page. |
+
+### Platform and testing
+
+| Decision | Status | Why |
+|---|---|---|
+| The image is built on `ubuntu:24.04` with Ubuntu's Python 3.12 (ADR 0011, now Accepted): 504 MB (+43 MB over the same dependencies on Debian). `RUNTIME_APT_PACKAGES` only adds packages; `UBUNTU_MIRROR` / `UBUNTU_IMAGE` replace the Debian arguments; the build fails if WeasyPrint can't render. | Decided | PDF export works in the shipped image; verified in a hardened container, `make demo` and k3s. |
+| Chart: `features.publicSubmission` now reaches the app (`SOUNDINGS_PUBLIC_SUBMISSION_ENABLED`; it set an unused variable before); session durations given in seconds become `PT<n>S`; new `publicSubmission.*` and `branding.maxUploadBytes` values; optional `ingress.publicApi.annotations` for an edge rate limit on `/api/v1/public`. | Decided | Two pre-existing chart bugs; edge limits apply to anonymous traffic only. |
+| `scripts/public-smoke.sh` (`make public-smoke`, also in `k3s-smoke`) runs the acceptance through HTTP; `make demo` containers run read-only with a `/tmp` tmpfs and no capabilities; k3s's kubelet evicts at 1 GiB free (`K3S_EVICTION_HARD`). | Decided | The demo behaves like a cluster pod; the percentage defaults evicted every pod on this machine. |
+| e2e: specs that change the global branding run in a `serial` project; per-address throttle specs claim their own address with `X-Forwarded-For` (the stack trusts loopback), and skip against `E2E_BASE_URL` unless `E2E_TRUSTS_FORWARDED=1`; the stack allows 1,000 public submissions per address per hour (`E2E_PUBLIC_PER_IP`); PDFs are read with `pdfjs-dist` (no poppler). | Decided | Every spec submits from 127.0.0.1; global branding is shared state. |

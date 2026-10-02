@@ -80,10 +80,12 @@ function ShellLayout({ children, topBar, banner, className }: AppShellProps) {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface md:rounded-lg md:border">
           {banner}
           <TopBar {...topBar} />
+          {/* `relative`: absolutely positioned descendants (sr-only text, hidden inputs)
+              belong to this scroller; without it they overflow the document instead. */}
           <main
             id="main"
             tabIndex={-1}
-            className="min-h-0 flex-1 overflow-y-auto focus:outline-none"
+            className="relative min-h-0 flex-1 overflow-y-auto focus:outline-none"
           >
             {children}
           </main>

@@ -58,10 +58,12 @@ describe('normaliseHex', () => {
 
 describe('validateBranding', () => {
   it('refuses anything but hex colours (no CSS injection)', () => {
-    expect(validateBranding(form({ primary_color: 'red; } * { color: red' }))).toEqual({
-      primary_color: expect.stringMatching(/hex colour/),
-    })
-    expect(validateBranding(form({ accent_color: 'expression(alert(1))' })).accent_color).toBeDefined()
+    const errors = validateBranding(form({ primary_color: 'red; } * { color: red' }))
+    expect(Object.keys(errors)).toEqual(['primary_color'])
+    expect(errors.primary_color).toMatch(/hex colour/)
+    expect(
+      validateBranding(form({ accent_color: 'expression(alert(1))' })).accent_color,
+    ).toBeDefined()
     expect(validateBranding(form({ primary_color: '#2e7d4f' }))).toEqual({})
   })
 
@@ -162,9 +164,9 @@ describe('errors', () => {
   it('explains upload failures', () => {
     expect(uploadErrorMessage(error(413, 'content_too_large'), 512)).toMatch(/512 KB/)
     expect(uploadErrorMessage(error(429, 'too_many_attempts'), 512)).toMatch(/tomorrow/)
-    expect(uploadErrorMessage(error(422, 'invalid_image', 'body', 'SVG element <script>'), 512)).toBe(
-      'That image can’t be used: SVG element <script>',
-    )
+    expect(
+      uploadErrorMessage(error(422, 'invalid_image', 'body', 'SVG element <script>'), 512),
+    ).toBe('That image can’t be used: SVG element <script>')
   })
 })
 

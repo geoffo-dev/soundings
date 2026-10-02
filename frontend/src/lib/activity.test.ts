@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ActivityItem } from '@/api/types'
-import { describeEntry, groupActivity } from '@/lib/activity'
+import { activityActor, describeActivity, describeEntry, groupActivity } from '@/lib/activity'
 
 const person = (id: string, display_name: string) => ({
   id,
@@ -60,5 +60,21 @@ describe('groupActivity', () => {
       invited('Dave', '2026-09-21T12:00:00Z', bob),
     ])
     expect(entries).toHaveLength(3)
+  })
+})
+
+describe('public submissions', () => {
+  it('reads "A visitor sent it through the public form", not "Someone submitted the idea"', () => {
+    const item: ActivityItem = {
+      id: 'e-public',
+      idea_id: 'i-1',
+      type: 'idea_created',
+      actor: null,
+      created_at: '2026-10-01T09:00:00Z',
+    }
+    expect(`${activityActor(item)} ${describeActivity(item)}`).toBe(
+      'A visitor sent it through the public form',
+    )
+    expect(describeActivity({ ...item, actor: alice })).toBe('submitted the idea')
   })
 })

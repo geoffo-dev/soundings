@@ -130,6 +130,15 @@ function PreviewFrame({
   )
 }
 
+/** The logo at its own proportions (wide logos stay wide), or the mark. */
+function PreviewLogo({ url }: { url: string | null }) {
+  return url ? (
+    <img src={url} alt="" className="h-5 w-auto max-w-24 shrink-0 logo-plate object-contain" />
+  ) : (
+    <LogoMark src={null} className="size-5" />
+  )
+}
+
 function FakeButton({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
@@ -153,7 +162,7 @@ function AppPreview({ branding }: { branding: PreviewBranding }) {
     <div className="flex h-56">
       <div className="flex w-40 shrink-0 flex-col gap-1 border-r bg-background p-2 max-sm:w-32">
         <span className="flex min-w-0 items-center gap-1.5 px-1.5 py-1">
-          <LogoMark src={branding.logo_url} className="size-5" />
+          <PreviewLogo url={branding.logo_url} />
           <span className="truncate text-sm font-semibold">{branding.app_name}</span>
         </span>
         {nav.map((item) => (
@@ -195,9 +204,12 @@ function PublicFormPreview({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 px-4 py-4">
+      {/* Like the real form: a logo stands alone; without one, the mark and the name. */}
       <span className="flex min-w-0 items-center gap-1.5">
-        <LogoMark src={branding.logo_url} className="size-5" />
-        <span className="truncate text-sm font-semibold">{branding.app_name}</span>
+        <PreviewLogo url={branding.logo_url} />
+        {!branding.logo_url && (
+          <span className="truncate text-sm font-semibold">{branding.app_name}</span>
+        )}
       </span>
       <div className="flex w-full max-w-xs flex-col gap-2 rounded-lg border bg-surface p-3">
         <span className="text-sm font-semibold">Share an idea with {projectName}</span>

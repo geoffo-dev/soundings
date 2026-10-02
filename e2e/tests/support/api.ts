@@ -44,6 +44,26 @@ export type EmailConfig = Schemas['EmailConfig']
 export type OutboxEmail = Schemas['OutboxEmail']
 export type EmailStatus = Schemas['EmailStatus']
 export type CommentActivity = Schemas['CommentActivity']
+// Phase 4: proposals, public submission, branding (contract-phase4).
+export type AltchaChallenge = Schemas['AltchaChallenge']
+export type PublicProject = Schemas['PublicProject']
+export type PublicSubmissionCreate = Schemas['PublicSubmissionCreate']
+export type PublicSubmissionReceipt = Schemas['PublicSubmissionReceipt']
+export type TrackedSubmission = Schemas['TrackedSubmission']
+export type EmailVerified = Schemas['EmailVerified']
+export type PublicFormSettings = Schemas['PublicFormSettings']
+export type PublicFormSettingsUpdate = Schemas['PublicFormSettingsUpdate']
+export type ModerationPage = Schemas['ModerationPage']
+export type IdeaSubmission = Schemas['IdeaSubmission']
+export type BrandingSettings = Schemas['BrandingSettings']
+export type BrandingUpdate = Schemas['BrandingUpdate']
+export type BrandAsset = Schemas['BrandAsset']
+export type EffectiveBranding = Schemas['EffectiveBranding']
+export type ProposalView = Schemas['ProposalView']
+export type ProposalSection = Schemas['ProposalSection']
+export type ProposalSectionKey = Schemas['ProposalSectionKey']
+export type ProposalThread = Schemas['ProposalThread']
+export type ProposalThreadList = Schemas['ProposalThreadList']
 
 /** The seeded people (backend/app/seed/content.py), by username. */
 export const PEOPLE = {
@@ -184,6 +204,15 @@ export class Api {
       method,
       data,
       headers: method === 'GET' ? {} : { 'X-CSRF-Token': this.csrf },
+    })
+  }
+
+  /** A write whose body is a file (image uploads: the bytes, not JSON or multipart). */
+  rawBody(path: string, body: Buffer, contentType: string) {
+    return this.context.fetch(`${API}${path}`, {
+      method: 'POST',
+      data: body,
+      headers: { 'X-CSRF-Token': this.csrf, 'Content-Type': contentType },
     })
   }
 
@@ -468,6 +497,125 @@ export class Api {
 
   sendTestEmail(to?: string): Promise<OutboxEmail> {
     return this.send('POST', '/admin/email/test', to ? { to } : {}, 202)
+  }
+
+  // --- Public form, moderation, submitters (contract-phase4 §2) -------------------------
+  publicForm(slug: string): Promise<PublicFormSettings> {
+    return this.get(`/projects/${slug}/public-form`)
+  }
+
+  updatePublicForm(slug: string, changes: PublicFormSettingsUpdate): Promise<PublicFormSettings> {
+    return this.send('PATCH', `/projects/${slug}/public-form`, changes)
+  }
+
+  moderationQueue(slug: string): Promise<ModerationPage> {
+    return this.get(`/projects/${slug}/moderation?limit=100`)
+  }
+
+  approve(key: string): Promise<IdeaSubmission> {
+    return this.send('POST', `/ideas/${key}/submission/approve`)
+  }
+
+  reject(key: string): Promise<null> {
+    return this.send('POST', `/ideas/${key}/submission/reject`, undefined, 204)
+  }
+
+  submission(key: string): Promise<IdeaSubmission> {
+    return this.get(`/ideas/${key}/submission`)
+  }
+
+  eraseSubmitter(key: string): Promise<IdeaSubmission> {
+    return this.send('POST', `/ideas/${key}/submission/erase`)
+  }
+
+  // --- Branding (contract-phase4 §3.10-3.11) --------------------------------------------
+  globalBranding(): Promise<BrandingSettings> {
+    return this.get('/admin/branding')
+  }
+
+  setGlobalBranding(update: BrandingUpdate): Promise<BrandingSettings> {
+    return this.send('PUT', '/admin/branding', update)
+  }
+
+  projectBranding(slug: string): Promise<BrandingSettings> {
+    return this.get(`/projects/${slug}/branding`)
+  }
+
+  setProjectBranding(slug: string, update: BrandingUpdate): Promise<BrandingSettings> {
+    return this.send('PUT', `/projects/${slug}/branding`, update)
+  }
+
+  /** Uploads a logo or favicon for the global profile, or a project's when `slug` is set. */
+  async uploadBrandAsset(
+    kind: 'logo' | 'favicon',
+    bytes: Buffer,
+    contentType: 'image/png' | 'image/svg+xml',
+    slug?: string,
+  ): Promise<BrandAsset> {
+    const path = slug ? `/projects/${slug}/branding/assets` : '/admin/branding/assets'
+    return ok<BrandAsset>(await this.rawBody(`${path}?kind=${kind}`, bytes, contentType), 201)
+  }
+
+  // --- Proposals (contract-phase4 §3.1-3.4) ---------------------------------------------
+  proposal(key: string): Promise<ProposalView> {
+    return this.get(`/ideas/${key}/proposal`)
+  }
+
+  startProposal(key: string): Promise<ProposalView> {
+    return this.send('POST', `/ideas/${key}/proposal`, undefined, 201)
+  }
+
+  saveSection(
+    key: string,
+    section: ProposalSectionKey,
+    bodyMd: string,
+    baseVersion: number,
+  ): Promise<ProposalSection> {
+    return this.send('PUT', `/ideas/${key}/proposal/sections/${section}`, {
+      body_md: bodyMd,
+      base_version: baseVersion,
+    })
+  }
+
+  /** Writes every given section from its current version (a fresh read first). */
+  async writeSections(key: string, texts: Partial<Record<ProposalSectionKey, string>>) {
+    const view = await this.proposal(key)
+    for (const section of view.proposal?.sections ?? []) {
+      const text = texts[section.key]
+      if (text !== undefined) await this.saveSection(key, section.key, text, section.version)
+    }
+  }
+
+  async threads(key: string): Promise<ProposalThread[]> {
+    return (await this.get<ProposalThreadList>(`/ideas/${key}/proposal/threads`)).items
+  }
+
+  startThread(key: string, section: ProposalSectionKey, bodyMd: string): Promise<ProposalThread> {
+    return this.send(
+      'POST',
+      `/ideas/${key}/proposal/threads`,
+      { section_key: section, body_md: bodyMd },
+      201,
+    )
+  }
+
+  reply(key: string, threadId: string, bodyMd: string): Promise<ProposalThread> {
+    return this.send(
+      'POST',
+      `/ideas/${key}/proposal/threads/${threadId}/comments`,
+      { body_md: bodyMd },
+      201,
+    )
+  }
+
+  resolveThread(key: string, threadId: string): Promise<ProposalThread> {
+    return this.send('PUT', `/ideas/${key}/proposal/threads/${threadId}/resolved`)
+  }
+
+  /** An export as bytes (`markdown` or `pdf`), with the response for its headers. */
+  async exportProposal(key: string, format: 'markdown' | 'pdf') {
+    const response = await this.raw('GET', `/ideas/${key}/proposal/${format}`)
+    return { response, body: await response.body() }
   }
 }
 

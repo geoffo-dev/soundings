@@ -10,24 +10,28 @@ import { copyText } from '@/features/admin/copy-button'
 
 import { PublicCard } from './public-layout'
 
-/** What happens next, by what the idea is waiting for. */
+/** The receipt's heading and what happens next, by what the idea is waiting for. */
 export function nextStep(receipt: Pick<PublicSubmissionReceipt, 'held_for' | 'email_sent'>): {
+  heading: string
   title: string
   text: string
 } {
   if (receipt.held_for === 'email_verification') {
     return {
-      title: 'One more step: confirm your email address',
-      text: 'Open the link we’ve just emailed you. Your idea reaches the team once you confirm (within 3 days).',
+      heading: 'One more step: confirm your email',
+      title: 'Open the link we’ve just emailed you',
+      text: 'Your idea reaches the team once you confirm (within 3 days). Can’t see the email? Check your spam folder.',
     }
   }
   if (receipt.held_for === 'moderation') {
     return {
+      heading: 'Thanks! Your idea is in',
       title: 'The team reviews new ideas first',
       text: 'Your link shows when it’s through and what happens to it next.',
     }
   }
   return {
+    heading: 'Thanks! Your idea is in',
     title: 'The team can see it now',
     text: 'Your link shows what happens to it next.',
   }
@@ -58,6 +62,8 @@ export function SubmissionReceipt({
     return () => window.clearTimeout(timer.current)
   }, [])
   const step = nextStep(receipt)
+  // Held until the address is confirmed: that is the one thing to do now.
+  const confirming = receipt.held_for === 'email_verification'
 
   return (
     <PublicCard>
@@ -73,12 +79,18 @@ export function SubmissionReceipt({
           tabIndex={-1}
           className="text-xl font-semibold text-balance text-primary focus:outline-none"
         >
-          Thanks! Your idea is in
+          {step.heading}
         </h1>
-        <p className="text-base text-secondary">
+        <p className="text-base break-words text-secondary">
           “{title}” was sent to {projectName}.
         </p>
       </div>
+
+      {confirming && (
+        <Callout tone="info" icon={<MailCheck />} title={step.title}>
+          {step.text}
+        </Callout>
+      )}
 
       <div className="flex flex-col gap-2">
         <label htmlFor={linkId} className="text-sm font-medium text-primary">
@@ -125,15 +137,13 @@ export function SubmissionReceipt({
         )}
       </div>
 
-      {receipt.email_sent && (
-        <Callout tone="info" icon={<MailCheck />} title="We’ve also emailed it to you">
-          Can’t see it? Check your spam folder.
+      {!confirming && (
+        <Callout tone="neutral" title={step.title}>
+          {step.text}
+          {receipt.email_sent &&
+            ' We’ve also emailed you this link: check your spam folder if it isn’t there.'}
         </Callout>
       )}
-
-      <Callout tone="neutral" title={step.title}>
-        {step.text}
-      </Callout>
 
       <div className="flex flex-col gap-2 sm:flex-row-reverse">
         <Button asChild variant="secondary" size="lg" className="sm:flex-1">

@@ -214,11 +214,105 @@ score is hidden from you) come last.
 
 ## Proposals [Phase 4]
 
+A strong idea becomes a commercial proposal on its **Proposal** tab (`3`).
+
 ### Writing a proposal from the template
+
+Once an idea is **Shortlisted**, its owner (or a project or platform admin) sees **Start
+proposal** on the Proposal tab (also in ⌘K). Starting it moves the idea to **Proposal**,
+like any status change: watchers are notified and a public submitter who asked for
+updates gets an email. Everyone else sees "The owner will write the proposal" until then.
+
+Every proposal has the same eight sections: Summary, Problem, Solution, Market & users,
+Cost & effort, Benefits / revenue, Risks, and Next steps / the ask. Summary starts with
+the idea's summary; the rest start empty. Each section is a plain Markdown box that grows
+as you type, with **Write** and **Preview** (`⌘↵` switches), a small toolbar (bold,
+italic, link, list; `⌘B`, `⌘I`) and a word count. The outline on the left shows which
+sections are written and how many open comments each has; on narrow screens it becomes a
+"Jump to section" list. `j` / `k` move between sections and `⌘S` saves at once.
+
+Sections save by themselves a moment after you stop typing ("Saving…", then "Saved
+10:42"). Two people can write different sections at the same time. If someone else saved
+the **same** section since you started, you see both versions side by side with the
+changes marked: **Use theirs**, or **Keep mine** to save yours over it. A save that fails
+keeps your text and shows "Not saved" with **Retry**; the app asks before you leave with
+unsaved text. A section holds up to 20,000 characters.
+
+The proposal can be edited while the idea is Shortlisted or in Proposal. Moving the idea
+anywhere else makes it read-only (it can still be read, commented on and exported);
+moving it back makes it editable again. Viewers and evaluators read the rendered text.
+
 ### Comments in the margin
+
+Members and admins can comment on a section (`c` comments on the section in view): the
+thread sits beside the section on a wide screen and opens in a sheet on a phone. Anyone
+who may comment can reply, **Resolve** a thread (it collapses to one line) or **Reopen**
+it; replying to a resolved thread reopens it. You can delete your own comments (admins
+any). Margin comments don't notify anyone in this version and don't take @mentions;
+they never appear in exports.
+
 ### Exporting to PDF or Markdown
 
+**Export** (top right of the Proposal tab) downloads the proposal as **PDF** or
+**Markdown**; anyone who can see the idea can export it. Both start with the title and a
+details block (project, idea key, status, owner, "Exported 2 October 2026 by …") and
+list the eight sections in order; an empty one reads "Not written yet". The aggregate
+score line is included only if you are allowed to see scores (never for an evaluator who
+hasn't submitted yet). Comments are never exported.
+
+The PDF is A4 in the project's branding: a cover with the logo (or the app name), the
+title and the details, a contents page with page numbers, the app name and idea key at
+the top of every page and "Page X of Y" at the bottom, in the project's font and
+colours. Links stay links; pictures in the Markdown become links (a proposal never
+loads anything from the internet). You can export 10 times a minute. One PDF prints at a
+time, and printing stops after 20 seconds (only a huge proposal, such as one full of
+long tables, gets near that): the app then says "The PDF export is busy", so try again a
+few seconds later.
+
 ## Public submission and tracking links [Phase 4]
+
+A project can accept ideas from anyone, without an account, through its **public form**
+at `https://<your Soundings>/<project-slug>/submit` (a project admin turns it on, see
+[below](#public-form-moderation-and-erasing-submitter-details)). The form shows the
+project's name, an introduction and the project's branding, nothing else about it.
+
+**Sending an idea.** Fill in a title and a summary, and optionally a description
+(Markdown), your name and your email address. With an address you can tick "Email me
+when the status changes". A quiet "Verifying you're human" line works in the background
+while you type (a small proof-of-work puzzle your browser solves; no images to click, no
+third party). `⌘↵` sends. The fixed privacy notice under the form says what is kept:
+what you write, plus your name and address only if you give them; never your IP
+address.
+
+**Your private tracking link.** After sending, the page shows a private link
+(`…/track#…`) once, with **Copy**: keep it, it's the only way back to your idea without
+an account. If you gave an address, it is also in the confirmation email. The tracking
+page shows the title and summary as you sent them, the status and its history (dates
+only, no names), and lets you:
+
+- turn status emails on or off ("Email me when the status changes");
+- **resend** the confirmation email if you haven't confirmed your address;
+- **Delete my details**: erases your name, address and the link itself; the idea stays
+  with the team, and the link stops working at once.
+
+Anyone who has the link can do these things, so don't share it.
+
+**Confirming your address.** The confirmation email ("Confirm your idea for <project>")
+contains no text you typed. Its button opens a page where you click **Confirm my email
+address** (nothing happens just by opening the link, so mail scanners can't confirm for
+you). Only confirmed addresses get status emails. Some projects also hold an idea until
+its address is confirmed: then the team sees nothing until you click. Confirmation links
+last 3 days; an unconfirmed address is forgotten after 3 days, and an idea still waiting
+for confirmation then is deleted.
+
+**What happens next.** Most projects review public ideas first ("The team reviews new
+ideas first"): the idea waits until a project admin approves it, then appears in New
+like any other idea and follows the normal flow. Status emails say only "Your idea "…"
+is now Evaluating" and link to the tracking page, which is also where you stop them.
+
+**Limits.** To keep the form usable, each address can send a handful of ideas an hour,
+and a project takes at most 100 public ideas an hour; "You've sent several ideas in a
+short time" means try again in a few minutes.
 
 ## Notifications and email preferences [Phase 3]
 
@@ -343,10 +437,58 @@ the default.
 General settings: name, description, visibility (private: members only; internal:
 everyone who can sign in can read it), whether members may volunteer to own ideas, and
 the evaluation window in days. **Archive** makes a project read-only and hides it from
-lists, search and My work; restore it from the archived notice or the settings. Branding
-comes in Phase 4.
+lists, search and My work; restore it from the archived notice or the settings.
 
-### Moderating public submissions and erasing submitter details
+**Branding** (project settings → Branding) overrides the global branding for this
+project's **public pages, emails to its public submitters and exported proposals**; the
+signed-in app keeps the global look for everyone. Every field says "Use the global one"
+until you set it: app name, logo, favicon, primary and accent colour, font and email
+footer. The preview shows the app, the public form and an
+email, in light and dark, as you type; nothing changes until you save. See
+[Branding](#branding) for the rules on colours, fonts and images.
+
+### Public form, moderation and erasing submitter details
+
+**Turning the form on** (project settings → Public form): switch "Accept ideas through
+the public form", then choose:
+
+- **Review new ideas before the team sees them** (on by default): public ideas wait in a
+  moderation queue instead of appearing in New.
+- **Ask people to confirm their email address**: the address becomes required and the
+  idea reaches the team only once its sender clicks the confirmation link (needs email
+  set up; ideas never confirmed are deleted after 3 days).
+- An **intro** (Markdown) shown above the form: what kind of ideas you're after.
+
+The page shows the form's link to copy. Changes apply to new submissions only. The form
+isn't available in an archived project, when a platform operator has turned public
+submission off for the whole instance, or for a project whose address clashes with one
+of the app's own pages. A private project's form shows only its name, introduction and
+branding.
+
+**Moderating.** While ideas wait, the board shows "3 ideas waiting for review", which
+opens the queue (`/p/<project>/review`), oldest first: title, summary, description and
+the sender's name if they gave one. **Approve** puts the idea in New (at the top) with no
+email to anyone; **Reject** deletes it for good, for spam, abuse or off-topic posts. Both
+offer Undo for a few seconds. A genuine idea you don't want to pursue is better approved
+and later closed as Rejected: its sender then sees an honest status on their tracking
+page. A held idea is invisible everywhere else (board, lists, search, My work,
+notifications) and read-only for admins who open it by link, apart from approve, reject,
+erase and delete.
+
+**Who sent it.** A public idea says "Submitted by Jo via the public form" (or just "via
+the public form") to everyone who can see it; its activity starts with "A visitor sent
+it through the public form". Project and platform admins also see the address, whether
+it is confirmed and whether the sender wants status emails, in the idea's submission
+panel.
+
+**Erasing submitter details** (UK GDPR): "Erase submitter details" in the submission
+panel removes the sender's name, email address, confirmation, update preference, the
+copy of what they sent and their private link, and deletes the emails queued or sent to
+them; the idea and its history stay. It asks first and can't be undone. Senders can do
+the same themselves with "Delete my details" on their tracking page. Personal data they
+typed into the idea itself is removed by editing the idea. Automatically, unconfirmed
+addresses are forgotten after 3 days, and contact details of closed ideas with no
+activity for 180 days are erased.
 
 ## Platform administration [Phase 2]
 
@@ -418,6 +560,29 @@ each address the app is served on (with copy buttons), the order sign-in uses to
 an account, group sync, and whether break-glass and the development login are on.
 Secrets are never shown.
 
+### Branding
+
+**Settings → Branding** (platform admins) sets the instance's look: app name (up to 40
+characters, shown in the sidebar, page titles and emails), logo, favicon, primary and
+accent colours, font, and an email footer (plain text, up to 5 lines, for example your
+company name and address). The app, the sign-in page, every email to staff, and every
+project without its own override use it. The preview shows the app, a public form and
+an email in light and dark before you save; **Reset** goes back to the built-in
+Soundings branding. Saves are recorded in the audit log (field names only).
+
+- **Colours** are hex values (`#0b6e4f`). The app keeps text readable whatever you pick:
+  it derives the shades it needs and the preview warns when a colour has low contrast.
+- **Fonts** come from a bundled set: Inter (default), IBM Plex Sans, Source Serif 4 and
+  Atkinson Hyperlegible. They are part of the app, so nothing is downloaded from the
+  internet, and PDFs use the same font.
+- **Logo and favicon**: PNG or SVG, up to 512 KiB by default (your operator can change
+  it), logos at most 2048 × 2048 pixels and favicons 512 × 512. Drop a file or choose
+  one. PNGs are re-saved without their metadata; SVGs must be simple drawings (shapes,
+  gradients, text; no scripts, links, embedded images, styles or external references),
+  and the app explains what it refused. Design the logo for a light background: emails
+  and PDFs are always light, and in dark mode the app shows the logo on a light plate.
+  A logo you replace keeps working at its old address for a day, then is deleted.
+
 ### Email
 
 Shows the email settings in effect, read-only (they come from the deployment's
@@ -447,7 +612,8 @@ Sending a test email and retrying are recorded in the audit log, without the add
 Every sign-in (and refused sign-in, with the reason), admin change, project membership
 and group grant change, owner and evaluator assignment, submitted evaluation, closing
 and reopening of evaluation, status change, idea deletion, test email and email retry,
-newest first, one sentence each, for example "Priya Natarajan
+approval, rejection and erasure of public submissions (an erasure by the sender or by the
+retention rules has no actor), and branding changes, newest first, one sentence each, for example "Priya Natarajan
 added Lena Novak to group Tools members". Filter by who did it, what kind of action,
 project, dates, or "About" a user or group; "Details" shows the raw fields. Entries
 name ids, never emails, tokens or claims, and each records how the person had signed in

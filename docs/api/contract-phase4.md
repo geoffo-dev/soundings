@@ -997,3 +997,12 @@ The security and contract review's findings, applied before any builder started
 | No schema change: `viewable_ideas` is now the same filter as the new `listed_ideas` (both leave out every held idea, for everyone) | Every existing caller of `viewable_ideas` is a list, board, search, count, My work query or the inbox, so they all follow §3.6 without edits. c12 for a single idea (the idea page, its sub-resources, `get_idea_submission`) is in the policy (`load_idea` → `idea.view`), which lets PA and PAd open an idea held for moderation; the moderation queue filters `held_for = 'moderation'` itself. |
 | No schema change: c19 is the policy's `FROZEN_WHILE_HELD` (every idea write but `idea.delete`, `idea.moderate` and `public.erase_submitter`, plus `idea.watch`), checked after `project_archived` and before the rule's own 409s | §3.6. Permission flags follow from the same policy, so an admin sees only `can_delete` on a held idea. |
 | No schema change: the tracking and confirmation routes count their per-IP throttle (60/min) **before** the token lookup | It bounds load from unknown tokens, which a check after the 404 wouldn't. The form's own per-IP limit stays after c8 (§3.5 step 3). |
+
+### 2026-10-02 · Integration (no schema change)
+
+| Change | Why |
+|---|---|
+| Font URLs are `soundings-font:<font>-<weight>[-italic][-ext]` (`inter-600`, `inter-400-italic`, `inter-600-ext`), and the `latin-ext` subset is a CSS family of its own; 400 italics and IBM Plex Mono (code) are bundled too | Proposals backend: two subsets under one family name garbled text extraction from the PDF; italics and code need their own faces. Still a fixed name → file map (`app/proposals/fonts.py`). |
+| One branding resolver: `app.services.branding` (`effective_branding`, `logo_image`, `email_branding_for`, cached 5 s per process) serves the public pages, `GET /branding`, emails and PDFs; identity's `app/public/branding.py` is removed | Two implementations had grown up in parallel; the public pages now use the cached one (§3.10). |
+| The PDF cover's band carries no text (it named the project a third time); tables print at the body size | QA's PDF review. The band is still the primary colour (§3.4: "a band or rule in the primary colour"). |
+| Each PDF child process gets its own temporary folder, deleted when the child is stopped or killed | Platform: a killed render left WeasyPrint's font folder (about 700 KB) in `/tmp`; repeated slow exports could fill the pod's `/tmp`. |

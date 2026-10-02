@@ -55,12 +55,23 @@ export function PublicLayout({
   )
 }
 
-/** The applied (project or global) logo and app name: the store follows the override above. */
+/**
+ * The applied (project or global) logo, or the mark and app name: the store follows the
+ * override above. A logo stands alone (it is the brand; the PDF cover shows it alone too).
+ */
 function PublicBrand() {
-  const { app_name } = useAppBranding()
+  const { app_name, logo_url } = useAppBranding()
+  if (logo_url) {
+    return (
+      <span className="inline-flex min-w-0 items-center">
+        <LogoMark className="h-8 max-w-60" />
+        <span className="sr-only">{app_name}</span>
+      </span>
+    )
+  }
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
-      <LogoMark className="h-7 max-w-32" />
+      <LogoMark className="h-8 max-w-48" />
       <span className="truncate text-lg font-semibold tracking-tight text-primary">{app_name}</span>
     </span>
   )

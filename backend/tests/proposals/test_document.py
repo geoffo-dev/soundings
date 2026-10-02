@@ -349,14 +349,19 @@ def test_a_logo_replaces_the_wordmark() -> None:
     assert "data:" not in other
 
 
-@pytest.mark.parametrize(("primary", "text"), [("#1d5fa8", WHITE), ("#ffd700", INK)])
-def test_the_band_text_colour_follows_the_contrast_rule(primary: str, text: str) -> None:
-    style = _style(
-        build_html(document(branding=ExportBranding(app_name="Acme", primary_color=primary)))
-    )
+@pytest.mark.parametrize("primary", ["#1d5fa8", "#ffd700"])
+def test_the_cover_band_is_the_brand_colour_and_holds_no_text(primary: str) -> None:
+    html = build_html(document(branding=ExportBranding(app_name="Acme", primary_color=primary)))
+    style = _style(html)
     band = style[style.index(".cover-band {") : style.index("}", style.index(".cover-band {"))]
     assert f"background: {primary};" in band
-    assert f"color: {text};" in band
+    assert '<div class="cover-band"></div>' in html
+
+
+def test_the_cover_names_the_project_once() -> None:
+    html = build_html(document())
+    cover = html[html.index('<section class="cover">') : html.index("</section>")]
+    assert cover.count("Customer Innovation") == 1
 
 
 def test_no_owner_no_author_metadata() -> None:

@@ -54,6 +54,7 @@ export function ColorField({
   value,
   inherited,
   inheritedLabel,
+  resetLabel,
   onChange,
   error,
   advice,
@@ -63,7 +64,10 @@ export function ColorField({
   description: ReactNode
   value: string
   inherited: string
+  /** Next to an empty field: where the value comes from ("Default"). */
   inheritedLabel: string
+  /** The button that empties the field ("Use the default"). */
+  resetLabel: string
   onChange: (value: string) => void
   error?: string
   advice: (hex: string) => ColourAdvice
@@ -117,7 +121,7 @@ export function ColorField({
             <span className="text-sm text-muted">{inheritedLabel}</span>
           ) : (
             <Button type="button" variant="ghost" size="sm" onClick={() => onChange('')}>
-              Use the default
+              {resetLabel}
             </Button>
           )}
         </div>
@@ -163,6 +167,8 @@ export function ImageField({
   value,
   inheritedUrl,
   emptyText,
+  inheritedText,
+  resetLabel,
   scope,
   onChange,
   error,
@@ -174,6 +180,10 @@ export function ImageField({
   value: BrandAsset | null
   inheritedUrl: string | null
   emptyText: string
+  /** Shown while the inherited image is in use ("Using the default"). */
+  inheritedText: string
+  /** Drops this profile's image for the inherited one ("Use the default"). */
+  resetLabel: string
   scope: BrandingScope
   onChange: (asset: BrandAsset | null) => void
   error?: string
@@ -232,12 +242,20 @@ export function ImageField({
           message && 'border-danger',
         )}
       >
-        <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background">
+        <span
+          className={cn(
+            'flex h-14 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background',
+            kind === 'logo' ? 'w-24' : 'w-14',
+          )}
+        >
           {shown ? (
             <img
               src={shown}
               alt={value ? `The ${kind} you chose` : `The current ${kind}`}
-              className={cn('object-contain', kind === 'favicon' ? 'size-8' : 'max-h-12 max-w-12')}
+              className={cn(
+                'object-contain',
+                kind === 'favicon' ? 'size-8' : 'max-h-10 max-w-20 logo-plate',
+              )}
             />
           ) : (
             <ImagePlus aria-hidden="true" className="size-5 text-muted" />
@@ -245,9 +263,9 @@ export function ImageField({
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <p className="text-sm text-secondary">
-            {value ? assetSummary(value) : inheritedUrl ? 'Using the default' : emptyText}
+            {value ? assetSummary(value) : inheritedUrl ? inheritedText : emptyText}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1">
             <Button
               type="button"
               variant="outline"
@@ -270,11 +288,11 @@ export function ImageField({
                   onChange(null)
                 }}
               >
-                {inheritedUrl ? 'Use the default' : 'Remove'}
+                {inheritedUrl ? resetLabel : 'Remove'}
               </Button>
             )}
-            <span className="text-xs text-muted max-sm:hidden">or drop it here</span>
           </div>
+          <span className="text-xs text-muted pointer-coarse:hidden">or drop a file here</span>
         </div>
         <input
           ref={input}
@@ -304,7 +322,7 @@ function assetSummary(asset: BrandAsset): string {
   const type = asset.content_type === 'image/svg+xml' ? 'SVG' : 'PNG'
   const size = asset.width && asset.height ? ` · ${asset.width} × ${asset.height}` : ''
   const kb = Math.max(1, Math.round(asset.byte_size / 1024))
-  return `${type}${size} · ${kb} KB · saved with the form`
+  return `${type}${size} · ${kb} KB`
 }
 
 /** A sample of a bundled font, painted in it (the family comes from the fixed map). */
@@ -328,11 +346,14 @@ function FontSample({ font }: { font: BrandFont }) {
 export function FontField({
   value,
   inherited,
+  inheritedName,
   onChange,
   description,
 }: {
   value: BrandFont | null
   inherited: BrandFont
+  /** What the inherited value is called: "default", or "global" for a project. */
+  inheritedName: string
   onChange: (font: BrandFont | null) => void
   description: string
 }) {
@@ -346,7 +367,7 @@ export function FontField({
         </span>
         {value && value !== inherited && (
           <Button type="button" variant="link" size="sm" onClick={() => onChange(null)}>
-            Use the default ({BRAND_FONTS[inherited].label})
+            Use the {inheritedName} font ({BRAND_FONTS[inherited].label})
           </Button>
         )}
       </div>
@@ -372,7 +393,7 @@ export function FontField({
               <span className="text-sm font-medium text-primary">
                 {BRAND_FONTS[font].label}
                 {font === inherited && !value && (
-                  <span className="font-normal text-muted"> · default</span>
+                  <span className="font-normal text-muted"> · {inheritedName}</span>
                 )}
               </span>
               <FontSample font={font} />

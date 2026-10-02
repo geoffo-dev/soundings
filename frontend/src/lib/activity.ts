@@ -31,7 +31,8 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
     case 'comment':
       return item.comment.deleted ? 'deleted a comment' : 'commented'
     case 'idea_created':
-      return 'submitted the idea'
+      // Only the public form creates an idea without an actor (users are never deleted).
+      return item.actor ? 'submitted the idea' : 'sent it through the public form'
     case 'idea_edited':
       return `edited the ${list(item.fields.map((field) => FIELD_NAMES[field] ?? field))}`
     case 'status_changed':
@@ -61,9 +62,10 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
   }
 }
 
-/** Actor name for an event ("Someone" when the user no longer exists). */
+/** Actor name for an event ("A visitor" for a public submission, else "Someone"). */
 export function activityActor(item: ActivityItem): string {
-  return item.actor?.display_name ?? 'Someone'
+  if (item.actor) return item.actor.display_name
+  return item.type === 'idea_created' ? 'A visitor' : 'Someone'
 }
 
 /** Invitations this close together read as one: "invited Bob, Carol and Dave to evaluate". */

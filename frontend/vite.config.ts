@@ -61,6 +61,15 @@ export default defineConfig({
     outDir: 'dist',
     // Production images must not ship source maps (they expose the source).
     sourcemap: false,
+    rolldownOptions: {
+      output: {
+        // React and React DOM change only with an upgrade: a chunk of their own stays
+        // cached across releases and keeps the app's entry chunk under 500 kB.
+        codeSplitting: {
+          groups: [{ name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ }],
+        },
+      },
+    },
   },
   test: {
     environment: 'jsdom',

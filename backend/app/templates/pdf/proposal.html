@@ -68,21 +68,10 @@ a { color: {{ colors.accent_text }}; text-decoration: underline; }
   position: relative;
   break-after: page;
 }
-.cover-band {
-  height: 14mm;
-  padding: 0 20mm;
-  background: {{ colors.primary }};
-  color: {{ colors.on_primary }};
-  font-size: 8.5pt;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  line-height: 14mm;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cover-brand { padding: 16mm 20mm 0 20mm; height: 22mm; }
+/* A band of the brand colour, no text: the logo (or app name) says who it is from and
+   the details table names the project, so the cover names it once. */
+.cover-band { height: 8mm; background: {{ colors.primary }}; }
+.cover-brand { padding: 22mm 20mm 0 20mm; height: 22mm; }
 .cover-brand img { max-height: 18mm; max-width: 70mm; }
 .wordmark {
   font-size: 16pt;
@@ -163,7 +152,8 @@ pre {
   line-height: 1.4;
 }
 pre code { background: none; padding: 0; }
-table { width: 100%; border-collapse: collapse; margin: 0 0 4mm 0; font-size: 9pt; }
+/* Cells print at the body size (tables carry figures readers compare with the text). */
+table { width: 100%; border-collapse: collapse; margin: 0 0 4mm 0; }
 th, td { text-align: left; padding: 1.6mm 2mm; border-bottom: 0.5pt solid #d0d7de; vertical-align: top; }
 th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; }
 .align-center { text-align: center; }
@@ -183,7 +173,7 @@ th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; 
 </head>
 <body>
 <section class="cover">
-  <div class="cover-band">{{ document.project_name }}</div>
+  <div class="cover-band"></div>
   <div class="cover-brand">
     {%- if logo %}
     <img src="{{ logo }}" alt="{{ app_name }}">

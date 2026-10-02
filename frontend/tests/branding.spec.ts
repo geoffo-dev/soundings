@@ -32,6 +32,21 @@ const previewVar = (page: Page, name: string) =>
 test.describe('as a platform admin', () => {
   test.use({ signedInAs: USERS.priya })
 
+  test('the page scrolls inside the app shell, never the whole document (K4-3)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/settings/branding')
+    await expect(page.getByRole('heading', { level: 2, name: 'Branding' })).toBeVisible()
+    await expect(page.getByTestId('branding-preview').first()).toBeVisible()
+    // Hidden radio and file inputs are absolutely positioned: they must belong to <main>.
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      ),
+    ).toBe(0)
+  })
+
   test('the preview follows the form before Save; Save re-themes the app', async ({ page }) => {
     await page.goto('/settings/branding')
     await expect(page.getByRole('heading', { level: 2, name: 'Branding' })).toBeVisible()
@@ -74,6 +89,19 @@ test.describe('as a platform admin', () => {
     expect(await rootVar(page, '--brand-font')).toBe('"IBM Plex Sans"')
     await expect(page.getByRole('complementary').first().getByText('Acme Ideas')).toBeVisible()
     await expect(page).toHaveTitle(/Acme Ideas$/)
+  })
+
+  test('leaving with unsaved changes asks first', async ({ page }) => {
+    await page.goto('/settings/branding')
+    await page.getByLabel('App name').fill('Acme Ideas')
+    await page
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('link', { name: 'Email' })
+      .click()
+    const dialog = page.getByRole('alertdialog', { name: 'Leave without saving?' })
+    await expect(dialog).toContainText('Your changes to the branding haven’t been saved.')
+    await dialog.getByRole('button', { name: 'Keep editing' }).click()
+    await expect(page.getByLabel('App name')).toHaveValue('Acme Ideas')
   })
 
   test('colours are hex only, with contrast advice; invalid values never save', async ({
@@ -152,13 +180,16 @@ test.describe('as a platform admin', () => {
   test('a project’s branding override: only where it faces outward', async ({ page }) => {
     await page.goto('/p/sustainability/settings?tab=branding')
     const panel = page.getByRole('tabpanel', { name: 'Branding' })
-    await expect(panel.getByRole('heading', { name: 'Branding' })).toBeVisible()
+    await expect(panel.getByRole('heading', { name: 'Branding', exact: true })).toBeVisible()
     await expect(panel.getByRole('textbox', { name: 'Primary colour', exact: true })).toHaveValue(
       '#2e7d4f',
     )
     // Previews of the public form and emails only (the app keeps the global branding).
     await expect(panel.getByRole('tab', { name: 'App' })).toHaveCount(0)
     await expect(panel.getByRole('tab', { name: 'Public form' })).toBeVisible()
+    // Empty fields inherit the global branding, and say so.
+    await expect(panel.getByText('From the global branding')).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Use the global one' })).toBeVisible()
     await panel.getByRole('button', { name: 'Use the global branding' }).click()
     const puts: unknown[] = []
     page.on('request', (request) => {

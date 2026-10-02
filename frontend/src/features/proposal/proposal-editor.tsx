@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
 import { FileDown, FileText, Info, MessageSquarePlus } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { saveProposalSection, storeProposalSection, useProposalThreads } from '@/api/proposals'
 import type {
@@ -121,11 +121,25 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
     [modeOf, setMode],
   )
 
+  // While a smooth scroll to a section runs, it passes other sections: the scroll spy
+  // waits for it to end, so j/k/c carry on from the section asked for.
+  const navigation = useRef<{ settle: () => void } | null>(null)
   const focusSection = useCallback(
     (key: ProposalSectionKey) => {
       setCurrent(key)
       const section = document.getElementById(sectionDomId(key))
       if (!section) return
+      navigation.current?.settle()
+      const scroller = document.getElementById('main')
+      const settle = () => {
+        window.clearTimeout(timer)
+        scroller?.removeEventListener('scrollend', settle)
+        if (navigation.current?.settle === settle) navigation.current = null
+      }
+      // `scrollend` doesn't fire when there is nothing to scroll: a timer ends it too.
+      const timer = window.setTimeout(settle, 1000)
+      scroller?.addEventListener('scrollend', settle)
+      navigation.current = { settle }
       section.scrollIntoView({ block: 'start', behavior: 'smooth' })
       // Editors land in the text; readers on the heading (it is focusable).
       const field = section.querySelector<HTMLTextAreaElement>('textarea[data-section-text]')
@@ -170,7 +184,7 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
     { enabled: permissions.can_edit, preventDefault: false },
   )
 
-  useScrollSpy(keys, setCurrent)
+  useScrollSpy(keys, setCurrent, navigation)
 
   const exporting = useExportRunner(ideaKey, store)
   const actions: CommandAction[] = []
@@ -315,14 +329,22 @@ function UnsavedNavigationGuard({ store }: { store: ProposalSaveStore }) {
   )
 }
 
-/** The section near the top of the scroll area is "current" (outline highlight, j/k, c). */
-function useScrollSpy(keys: ProposalSectionKey[], setCurrent: (key: ProposalSectionKey) => void) {
+/**
+ * The section near the top of the scroll area is "current" (outline highlight, j/k, c),
+ * except while `navigation` scrolls to the section that was asked for.
+ */
+function useScrollSpy(
+  keys: ProposalSectionKey[],
+  setCurrent: (key: ProposalSectionKey) => void,
+  navigation: { readonly current: unknown },
+) {
   const joined = keys.join(',')
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
     const root = document.getElementById('main')
     const observer = new IntersectionObserver(
       (entries) => {
+        if (navigation.current) return
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
@@ -336,5 +358,5 @@ function useScrollSpy(keys: ProposalSectionKey[], setCurrent: (key: ProposalSect
       if (element) observer.observe(element)
     }
     return () => observer.disconnect()
-  }, [joined, setCurrent])
+  }, [joined, setCurrent, navigation])
 }

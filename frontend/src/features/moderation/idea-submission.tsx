@@ -53,7 +53,7 @@ export function HeldIdeaBanner({ idea, ideaKey }: { idea: IdeaDetail; ideaKey: s
   const submission = useSubmissionOf(idea, ideaKey).data
   const moderate = useModerate()
   const navigate = useNavigate()
-  const pending = useModerationPending(idea.id)
+  const pending = useModerationPending(idea)
   if (idea.held_for !== 'moderation') return null
   const canModerate = submission?.permissions.can_moderate ?? false
   const target = { id: idea.id, key: idea.key, title: idea.title, project: idea.project }
@@ -155,7 +155,9 @@ function SubmissionDetails({
                     ) : (
                       <Mail aria-hidden="true" className="size-3.5 shrink-0 text-muted" />
                     )}
-                    <span className="truncate">{contact.email}</span>
+                    <span className="truncate" title={contact.email}>
+                      {contact.email}
+                    </span>
                     <span className="shrink-0 text-muted">
                       {contact.email_verified ? 'confirmed' : 'not confirmed'}
                     </span>

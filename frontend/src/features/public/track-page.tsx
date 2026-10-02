@@ -350,7 +350,7 @@ function EmailSettings({ token, tracked }: { token: string; tracked: TrackedSubm
               <span className="text-danger">{resendError}</span>
             ) : !tracked.can_resend_verification ? (
               <span className="text-muted">
-                We’ve sent it 3 times today. You can ask again tomorrow.
+                We can’t send another one just now (at most 3 a day). Try again tomorrow.
               </span>
             ) : null}
           </p>

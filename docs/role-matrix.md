@@ -261,8 +261,8 @@ Notes ([contract-phase4 §3.5–3.9](api/contract-phase4.md#35-the-public-form))
 - A public idea may be **held**: for email confirmation (when the project requires it;
   nobody can see it, and it is deleted after 3 days unless confirmed) or for moderation
   (only PA and PAd can see it, c12). While held for moderation, idea writes other than
-  delete, approve, reject and erase are refused (c19), and every permission flag the
-  API returns for it is false except `can_delete`.
+  delete, approve, reject and erase are refused (c19), watching included, and every
+  permission flag the API returns for it is false except `can_delete`.
 - The submitter's name is visible to everyone who can view the idea; their email,
   confirmation and update preference only with `public.erase_submitter`. Status emails go
   only to an opted-in, confirmed address.
@@ -390,7 +390,7 @@ evaluations and one AI evaluation present.
 | c16 | Removing an evaluator: the evaluator is not the principal (contract-phase1 §3.5) | 403 `cannot_remove_self` |
 | c17 | Changing a user's `is_active` or `is_platform_admin`: the user is not the principal (contract-phase2 §3.4) | 403 `cannot_change_self` |
 | c18 | Demoting or deactivating a platform admin: another active platform admin (not the break-glass account) remains, counted under a lock (contract-phase2 §3.4) | 409 `last_platform_admin` |
-| c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
+| c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, and to `idea.watch`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
 
 ## 5. API keys
 

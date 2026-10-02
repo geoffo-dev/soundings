@@ -36,6 +36,10 @@ backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the whe
   app/schemas/      API contract (lead)          app/authz/ app/auth/ app/api_keys/ (identity)
   app/notifications/  fan-out, preferences, digests, reminders, mentions, inbox, unsubscribe
   app/email/          outbox, worker tasks, SMTP, rendering; app/templates/email/ (Jinja2)
+  app/proposals/      sections, margin threads, Markdown, exports; PDF child process
+                      (pdf.py, pdf_child.py), app/templates/pdf/, app/assets/fonts/ (woff2)
+  app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention
+  app/services/branding.py brand_assets.py moderation.py  branding (cached), images, queue
 frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 4
   src/api/generated/  openapi.json + schema.d.ts (lead, generated)
   src/components/ui/  design system; /design shows it (dev only)
@@ -69,13 +73,14 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make dev-up` / `dev-down` / `dev-logs` | Dev services via `docker compose -f dev/docker-compose.yml` |
 | `make dev` | Prints how to run API, worker and SPA against the dev services |
 | `make seed` | Migrate + load the demo data into `SOUNDINGS_DATABASE_URL` (default: the dev compose DB); a no-op once there are projects, `RESET=1` wipes app data first. Who's who: `dev/README.md` |
-| `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`). This sandbox has no Debian mirror: add `IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export then fails) |
-| `make demo` / `demo-down` | Build the image and run it with Postgres, the worker, Mailpit (inbox http://localhost:8026), dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_MAILPIT_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`, `DEMO_SMTP=0` in-app only, `DEMO_TIMEZONE=`; `scripts/demo.sh`) / remove it all |
-| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work, and a break-glass sign-in when available) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`) |
+| `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`): Ubuntu 24.04 base with Ubuntu's Python 3.12 and Pango, so PDF export works (the build fails if WeasyPrint can't render). Internal mirror: `IMAGE_BUILD_ARGS="--build-arg UBUNTU_MIRROR=http://…/ubuntu"`; `RUNTIME_APT_PACKAGES` only adds packages |
+| `make demo` / `demo-down` | Build the image and run it with Postgres, the worker, Mailpit (inbox http://localhost:8026), dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_MAILPIT_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`, `DEMO_SMTP=0` in-app only, `DEMO_TIMEZONE=`, `DEMO_PUBLIC_PER_IP=` public submissions per address and hour; containers run read-only with a `/tmp` tmpfs and no capabilities; `scripts/demo.sh`) / remove it all |
+| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work, a break-glass sign-in when available, and `public-smoke`) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`). `k3s-up.sh` lowers the kubelet's disk eviction to 1 GiB free (`K3S_EVICTION_HARD`; the percentage defaults evicted every pod here); `dev/k3s/public-ratelimit.yaml` puts a Traefik rate limit in front of `/api/v1/public` |
 | `make k3s-mailpit` · `k3s-install SMTP=1` · `k3s-smoke SMTP=1` | Mailpit in the cluster (`scripts/k3s-mailpit.sh up\|scale 0\|1\|down`; SMTP `mailpit.mailpit.svc.cluster.local:1025`, inbox http://mailpit.localhost:18081), install with `dev/k3s-smtp-values.yaml` (SMTP, time zone, egress policies), then `scripts/email-smoke.sh` through the ingress (invite → email with the evaluate link; Mailpit scaled to 0 → queued → delivered once). `SSO=1 SMTP=1` combines both (CI) |
 | `make k3s-keycloak` · `k3s-install SSO=1` · `k3s-smoke SSO=1` | Keycloak with the dev realm in the cluster (`scripts/k3s-keycloak.sh up\|down`; issuer `http://keycloak.localhost:18081/realms/soundings` for browser and pods; creates Secret `soundings-oidc`), then install with `dev/k3s-sso-values.yaml` and run `scripts/sso-smoke.sh` through the ingress |
 | `make sso-smoke` | `scripts/sso-smoke.sh $(SSO_BASE_URL)` (default :8000, the `make dev` API with `dev/.env`): alice signs in through Keycloak with curl, then the Phase 2 acceptance (managed group → private project; removed in Keycloak → 404 at next sign-in); needs `jq`, cleans up |
 | `make email-smoke` | `scripts/email-smoke.sh $(EMAIL_BASE_URL)` (default :8000) against an app with dev login, the worker and Mailpit (`MAILPIT_URL`, default :8025; `MAILPIT_CONTAINER`, default the dev compose one; `MAILPIT_OUTAGE=0` skips the outage step); needs `jq` |
+| `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then deletes the idea. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
 | `make e2e` | Playwright e2e in `e2e/` against `E2E_BASE_URL` (default http://localhost:8000, i.e. `make demo`); CI runs it against the built image with the demo data |
@@ -88,7 +93,11 @@ schedule and job cleanup; needed for any email), `migrate`, `revision m="..."` (
 owner only), `openapi`, `vendor-swagger` (refresh the bundled Swagger UI).
 `tests/acceptance/test_phase3_acceptance.py` sends through a real Mailpit (testcontainer,
 about 10 s; `SOUNDINGS_TEST_MAILPIT=0` skips, `SOUNDINGS_TEST_MAILPIT_SMTP=host:port` +
-`_URL` reuse one, as CI does). `tests/identity/test_keycloak.py`
+`_URL` reuse one, as CI does); `test_phase4_acceptance.py` (about 7 s) solves a real
+ALTCHA, sends through Mailpit the same way and renders the PDF with the real WeasyPrint
+child, read back with `pypdf` (a dev dependency). PDF tests need Pango on the host (it
+is installed here; CI installs it or runs on the Ubuntu image), else they skip.
+`tests/identity/test_keycloak.py`
 runs a real Keycloak 26 testcontainer (about 45 s of `test`): `SOUNDINGS_TEST_KEYCLOAK=0`
 skips it, `SOUNDINGS_TEST_KEYCLOAK_URL=<url>` reuses a running Keycloak with the dev
 realm (CI loads it with `dev/keycloak/import_realm.py`). The other SSO tests use the fake
@@ -115,7 +124,11 @@ admin-screenshots login-screenshots` in `frontend/` → `docs/screenshots/phase-
 Phase 3 mock knob: `soundings-mock-email` = `off` (no SMTP) or `failing` (a dead
 server); the mock's pretend worker "sends" queued mail after 1.5 s. Phase 3 mock
 screenshots: `SCREENSHOTS=1 npx playwright test notifications-screenshots` →
-`docs/screenshots/phase-3/mock/`.
+`docs/screenshots/phase-3/mock/`. Phase 4 mock: `soundings-mock-public=off` turns public
+submission off; fixtures CUST-3 (a proposal with threads), CUST-4 (ready to start),
+GREEN-9…12 (public submissions); the mock ALTCHA checks replay only (test the real
+widget against the backend). Phase 4 mock screenshots: `SCREENSHOTS=1 npx playwright
+test proposal-screenshots public-screenshots` → `docs/screenshots/phase-4/mock/`.
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -151,8 +164,24 @@ file's other tests without the outage ones. Email specs create run-unique people
 `screenshots:phase2` `docs/screenshots/phase-2/` (an SSO run, then a break-glass run)
 and `screenshots:phase3` `docs/screenshots/phase-3/` + `emails/` (an SMTP run, then
 `E2E_SMTP=0`), all from freshly seeded data (the local stack reseeds on start);
+**Public submission and branding (Phase 4):** the stack allows `E2E_PUBLIC_PER_IP`
+(default 1000) public submissions per address and hour and takes `E2E_ALTCHA_COST`
+(unset: the app's 5,000); changing either restarts the API. Every spec submits from
+127.0.0.1, which the stack trusts as its proxy, so a spec that exhausts a per-address
+throttle claims its own address with `X-Forwarded-For` (`tests/support/public.ts`
+`Visitor`, which also solves ALTCHA in Node); against `E2E_BASE_URL` that spec (PA-05)
+skips unless `E2E_TRUSTS_FORWARDED=1`, and the per-address limit spec (PA-06) needs
+`E2E_PUBLIC_PER_IP` ≤ 20. Specs that change the global branding are tagged `@serial` and
+run in the `serial` project (after `e2e`, one at a time; `smtp-outage` now depends on
+it; `--project=serial --no-deps` reruns them) and restore the profile in `finally`. PDFs
+are read with `tests/support/pdf.ts` (`pdfjs-dist`, an e2e dev dependency: text,
+metadata, colours, embedded fonts, page renders; there is no poppler here). The demo seed
+has 48 ideas (CUST-21 approved from the public form, CUST-22/23 in the moderation
+queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators.
+`screenshots:phase4` writes `docs/screenshots/phase-4/` (12 screens × 1440 light/dark and
+390), `pdf/` (the exported PDF and its pages) and `emails/` (as Mailpit received them).
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
-`docs/test-plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
+`docs/test-plans/phase-1.md` … `phase-4.md`.
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
@@ -267,6 +296,38 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   "Mark all read" is a deferred commit: it waits for its Undo toast (`api/undo.ts`),
   like comment delete. Theme utilities for features: `mention-tint`,
   `max-h-popover-tall`, `avatar-tint`, `scrollbar-none` (`styles/theme.css`).
+- **Proposals** (contract-phase4 §3.1–3.4): one Markdown text per fixed template section,
+  saved per section with `base_version` (409 `proposal_conflict` carries `current`); a
+  save locks the project `FOR KEY SHARE` then the idea `FOR SHARE`. Section Markdown is
+  rendered by `app/proposals/markdown.py` exactly as the SPA's `Markdown` does (raw HTML
+  dropped, images as links, headings demoted through the parser, tables capped). PDFs
+  render in a `spawn`ed child process (`app/proposals/pdf.py`; 20 s limit, one render at
+  a time, a warm child of about 190 MB per API process, its own temporary folder deleted
+  when it goes): any script that renders a PDF needs an `if __name__ == "__main__":`
+  guard. WeasyPrint gets a fetcher that answers only `data:` logos and
+  `soundings-font:<font>-<weight>[-italic][-ext]` names (`app/proposals/fonts.py`,
+  `app/assets/fonts/README.md`); only validated hex colours and fixed font families reach
+  its CSS. Importing WeasyPrint turns on Pillow's `LOAD_TRUNCATED_IMAGES` for the whole
+  process (only the child imports it in production). The SPA lazy-loads the editor.
+- **Public submission** (contract-phase4 §3.5–3.9): public routes are under
+  `/api/v1/public/`, writes must be JSON (415), throttles use the trusted-proxy client
+  address (`app.auth.throttle.client_key`), and they never return private data, scores,
+  people or the idea's current text (tracking shows the title and summary *as
+  submitted*). Tokens travel only after `#` (`/track#…`, `/verify#…`) and in bodies,
+  never in URLs the server sees, logs or audit. Held ideas (`ideas.held_for`) appear in
+  no list or count for anyone: lists use `listed_ideas`; ideas held for confirmation are
+  404 even for admins; writes on ideas held for moderation are 409
+  `awaiting_moderation` (c19, watching too). The honeypot is checked last. Submitter
+  emails carry fixed text and the project's branding; erasure
+  (`app/public/erasure.py`) also deletes the idea's submitter outbox rows.
+- **Branding** (contract-phase4 §3.10–3.11, ADR 0012): resolve with
+  `app.services.branding` (`effective_branding`, `email_branding_for`, `logo_image`;
+  cached 5 s per process, cleared on save, so other replicas lag up to 5 s). Colours are
+  `#rrggbb`, fonts one of four `BrandFont` keys; logos and favicons are PNG (re-encoded)
+  or allow-listed SVG (re-serialised), served with `nosniff` and a sandboxing CSP and
+  shown only through `<img>` / `<link rel=icon>`; in dark mode the SPA puts logos on a
+  light plate (`logo-plate`), and a public header shows the logo alone. The signed-in
+  app always uses the global branding.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -278,11 +339,11 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   `mirror.gcr.io` registry mirror (direct Hub pulls may 429). Pre-pulled:
   `postgres:16-alpine`, `python:3.12-slim`, `node:22-alpine`, `alpine/helm:3.16.2`,
   `rancher/k3s:v1.31.4-k3s1`, `keycloak/keycloak:26.0`, `axllent/mailpit`,
-  `testcontainers/ryuk:0.11.0`.
+  `testcontainers/ryuk:0.11.0`, `ubuntu:24.04` (the image's base).
 - **Blocked hosts:** quay.io, get.helm.sh, GitHub release downloads, ui.shadcn.com,
-  kagent.dev, modelcontextprotocol.io, deb.debian.org (so apt in the image build
-  fails; see `IMAGE_BUILD_ARGS` in the Makefile). pypi.org, registry.npmjs.org and
-  code.claude.com work. To check a library's API, read the installed source.
+  kagent.dev, modelcontextprotocol.io, deb.debian.org (the image uses Ubuntu's
+  archive.ubuntu.com, which works). pypi.org, registry.npmjs.org and code.claude.com
+  work. To check a library's API, read the installed source.
 - **TLS proxy:** outbound HTTPS is intercepted; the CA bundle is
   `/root/.ccr/ca-bundle.crt` (`SSL_CERT_FILE`). `make image` passes it as a BuildKit
   secret (`BUILD_CA`); k3s trusts it via `scripts/k3s-up.sh`.
@@ -445,3 +506,18 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   [docs/phase-summaries/phase-3.md](docs/phase-summaries/phase-3.md) (known issues and
   deferred items there). Decisions: `docs/decisions.md` (Phase 3). Stop for the
   human's review before Phase 4.
+- **Phase 4** (proposals, public submission, branding): proposals over the fixed
+  eight-section template (per-section autosave with `base_version` conflicts, margin
+  threads, Markdown and branded PDF export in a time-limited child process with a
+  local-only fetcher and bundled fonts); the public form at `/{slug}/submit` (honeypot,
+  per-address and per-project limits, ALTCHA with replay protection, JSON-only writes,
+  optional email confirmation and moderation, private `/track#` links, `/verify#`
+  confirmation on click, submitter emails, "Delete my details", admin erasure and
+  retention); held ideas invisible in every list; the moderation queue; global and
+  per-project branding (colours, bundled fonts, PNG/SVG logo and favicon stored in the
+  database, footer) applied at runtime to the SPA, public pages, emails and PDFs; the
+  image on Ubuntu 24.04 (PDF export works in it); `make public-smoke`. Integration
+  (2026-10-02): every check green, QA's K4-1…K4-5 and PDF nits fixed; test plan
+  `docs/test-plans/phase-4.md`, screenshots `docs/screenshots/phase-4/` (+ `pdf/`,
+  `emails/`, `mock/`). Decisions: `docs/decisions.md` (Phase 4). Review, phase summary
+  and k3s close still to do.

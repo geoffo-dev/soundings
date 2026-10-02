@@ -27,6 +27,13 @@ import { defineConfig, devices } from '@playwright/test'
  * after every other spec and one at a time, so no other spec waits for mail meanwhile
  * (`--project=smtp-outage --no-deps` runs only them). `npm run screenshots:phase3`
  * (SCREENSHOTS=phase-3) runs screenshots/phase-3.spec.ts (docs/screenshots/phase-3/).
+ *
+ * Phase 4: specs that change what every other spec sees (the global branding: "Acme
+ * Ideas" in every title and email) or exhaust a per-address throttle on purpose (every
+ * spec shares 127.0.0.1) are tagged @serial and run in the `serial` project, after
+ * `e2e` and before `smtp-outage`, one at a time; they put things back when they finish.
+ * `npm run screenshots:phase4` (SCREENSHOTS=phase-4) runs screenshots/phase-4.spec.ts
+ * (docs/screenshots/phase-4/, with pdf/ and emails/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -36,9 +43,13 @@ const screenshotSpec =
     ? /screenshots\/phase-2\.spec\.ts$/
     : process.env.SCREENSHOTS === 'phase-3'
       ? /screenshots\/phase-3\.spec\.ts$/
-      : /screenshots\/phase-1\.spec\.ts$/
+      : process.env.SCREENSHOTS === 'phase-4'
+        ? /screenshots\/phase-4\.spec\.ts$/
+        : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
+const serial = /@serial/
+const serialOrOutage = /@serial|@smtp-outage/
 
 export default defineConfig({
   testDir: '.',
@@ -74,7 +85,18 @@ export default defineConfig({
         {
           name: 'e2e',
           testMatch: /tests\/.*\.spec\.ts$/,
+          grepInvert: serialOrOutage,
+          use: desktop,
+        },
+        {
+          // Changes global state (branding, per-address throttles): after `e2e`, one
+          // test at a time, so no other spec sees it.
+          name: 'serial',
+          testMatch: /tests\/.*\.spec\.ts$/,
+          grep: serial,
           grepInvert: smtpOutage,
+          dependencies: ['e2e'],
+          workers: 1,
           use: desktop,
         },
         {
@@ -82,7 +104,7 @@ export default defineConfig({
           name: 'smtp-outage',
           testMatch: /tests\/.*\.spec\.ts$/,
           grep: smtpOutage,
-          dependencies: ['e2e'],
+          dependencies: ['serial'],
           workers: 1,
           use: desktop,
         },

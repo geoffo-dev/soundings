@@ -53,7 +53,7 @@ test('a visitor sends an idea: verified in the background, private link shown on
   await expect(heading).toBeFocused()
   const link = page.getByRole('textbox', { name: 'Your private link' })
   await expect(link).toHaveValue(/\/track#[A-Za-z0-9_-]{43}$/)
-  await expect(page.getByText('We’ve also emailed it to you')).toBeVisible()
+  await expect(page.getByText(/We’ve also emailed you this link/)).toBeVisible()
   await expect(page.getByText('The team reviews new ideas first')).toBeVisible()
 
   expect(posts).toHaveLength(1)
@@ -77,6 +77,15 @@ test('a visitor sends an idea: verified in the background, private link shown on
   await expect(page).toHaveURL(new RegExp(`/track#${tracking}$`))
   await expect(page.getByRole('heading', { level: 1, name: 'Print-free returns' })).toBeVisible()
   await expect(page.getByText('Waiting for review', { exact: true })).toBeVisible()
+})
+
+test('⌘Enter sends the idea from any field', async ({ page }) => {
+  await page.goto('/customer-innovation/submit')
+  await fillIdea(page)
+  await page.getByRole('textbox', { name: /^Summary/ }).press('ControlOrMeta+Enter')
+  await expect(page.getByRole('textbox', { name: 'Your private link' })).toBeVisible({
+    timeout: 20_000,
+  })
 })
 
 test('field problems are inline and focus moves to the first one', async ({ page }) => {

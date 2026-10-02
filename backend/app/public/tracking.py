@@ -39,7 +39,6 @@ from app.models.project import Project
 from app.models.public import PublicSubmission
 from app.notifications.unsubscribe import email_hint
 from app.public import erasure
-from app.public.branding import effective_branding
 from app.public.emails import (
     CONFIRMATION_WINDOW,
     CONFIRMATIONS_PER_SUBMISSION,
@@ -52,6 +51,7 @@ from app.schemas.public import (
     TrackedStatusChange,
     TrackedSubmission,
 )
+from app.services.branding import effective_branding
 
 __all__ = [
     "Tracked",

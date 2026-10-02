@@ -84,6 +84,11 @@ app_env() {
   export SOUNDINGS_BASE_URLS="$E2E_URL,http://127.0.0.1:$E2E_PORT"
   export SOUNDINGS_TIMEZONE="$E2E_TIMEZONE"
   export SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP="$E2E_PUBLIC_PER_IP"
+  # The specs' requests come from 127.0.0.1, trusted as the proxy (one hop; the app's
+  # defaults, spelled out): a spec can be a client of its own with X-Forwarded-For
+  # (public-abuse.spec.ts PA-05/06 exhaust per-address throttles without blocking the run).
+  export SOUNDINGS_TRUSTED_PROXIES=127.0.0.1
+  export SOUNDINGS_TRUSTED_PROXY_HOPS=1
   unset SOUNDINGS_ALTCHA_COST
   if [ -n "$E2E_ALTCHA_COST" ]; then export SOUNDINGS_ALTCHA_COST="$E2E_ALTCHA_COST"; fi
   export SOUNDINGS_BREAK_GLASS_ENABLED=false

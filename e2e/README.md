@@ -3,10 +3,12 @@
 Browser tests against the **real** Soundings stack: the FastAPI app serving the built
 SPA, PostgreSQL and the seeded demo data, signed in with the dev login, (Phase 2,
 `E2E_SSO=1`) a real Keycloak 26 with the dev realm, and (Phase 3) `soundings worker`
-with Mailpit as the SMTP server. No mocks (the SPA's own page tests with MSW live in
-`frontend/tests/`). The test plans, with every case ID and the known failures:
-[phase-1.md](../docs/test-plans/phase-1.md), [phase-2.md](../docs/test-plans/phase-2.md),
-[phase-3.md](../docs/test-plans/phase-3.md).
+with Mailpit as the SMTP server, and (Phase 4) the public form with the real ALTCHA proof
+of work and PDF export through the API's WeasyPrint child. No mocks (the SPA's own page
+tests with MSW live in `frontend/tests/`). The test plans, with every case ID and the
+known failures: [phase-1.md](../docs/test-plans/phase-1.md),
+[phase-2.md](../docs/test-plans/phase-2.md), [phase-3.md](../docs/test-plans/phase-3.md),
+[phase-4.md](../docs/test-plans/phase-4.md).
 
 ```bash
 npm --prefix e2e ci
@@ -18,30 +20,36 @@ E2E_SSO=1 npm --prefix e2e test -- --grep @sso  # only the SSO specs (as CI's SS
 npm --prefix e2e run screenshots               # docs/screenshots/phase-1/*.png
 npm --prefix e2e run screenshots:phase2        # docs/screenshots/phase-2/*.png (SSO, then break-glass)
 npm --prefix e2e run screenshots:phase3        # docs/screenshots/phase-3/ (+ emails/), then E2E_SMTP=0
+npm --prefix e2e run screenshots:phase4        # docs/screenshots/phase-4/ (+ pdf/, emails/)
 E2E_SMTP=0 npm --prefix e2e test               # no SMTP: in-app notifications only, admin banner
 npx --prefix e2e playwright test --project=smtp-outage --no-deps   # only the Mailpit-outage specs
+npx --prefix e2e playwright test --project=serial --no-deps        # only the @serial specs (global branding)
+E2E_PUBLIC_PER_IP=5 npx --prefix e2e playwright test public-abuse --grep PA-06   # the per-address limit
 npm --prefix e2e run check                     # tsc + prettier
 npx --prefix e2e playwright test tests/board.spec.ts --headed
 ```
 
-| Variable                          | Default         | Meaning                                                                                                                            |
-| --------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `E2E_BASE_URL`                    | unset           | Test this app as it is: nothing is started or reseeded. It must have the demo data and `SOUNDINGS_DEV_LOGIN_ENABLED=true`.         |
-| `E2E_PORT` / `E2E_PG_PORT`        | 8100 / 55433    | Ports of the local stack.                                                                                                          |
-| `E2E_PREFIX`                      | `p1-qa-`        | Docker name prefix (the Postgres container is `<prefix>pg`, Keycloak `<prefix>kc`).                                                |
-| `E2E_SSO`                         | `0`             | `1`: also Keycloak (fresh dev realm on every start) and the API with SSO next to the dev login. Break-glass is then off.           |
-| `E2E_KC_PORT` / `E2E_KC_URL`      | 8180 / unset    | Keycloak's port for the local stack; `E2E_KC_URL` points the specs at another Keycloak (CI). Admin `admin`/`admin`.                |
-| `E2E_BREAK_GLASS`                 | `1`             | `0`: no break-glass admin. On (without SSO) it is `E2E_BREAK_GLASS_USERNAME` / `_PASSWORD` (`admin` / `e2e-break-glass-password`). |
-| `E2E_KEEP_STACK`                  | unset           | `1`: don't stop the local stack after the run.                                                                                     |
-| `E2E_SKIP_BUILD`                  | unset           | `1`: reuse the last SPA build in `e2e/.stack/dist`.                                                                                |
-| `E2E_WORKERS`                     | 2               | Parallel browsers.                                                                                                                 |
-| `E2E_STATE_DIR`                   | `e2e/.stack`    | SPA build, API pid and log of the local stack. Give each stack run in parallel its own, with its own ports and prefix.             |
-| `SCREENSHOTS`                     | unset           | Set by the screenshot scripts: `phase-1` (or `1`) / `phase-2` / `phase-3` runs only that screenshots spec.                         |
-| `E2E_SMTP`                        | `1`             | `0`: the stack runs without SMTP (in-app notifications only; platform admins see a banner). The email specs skip.                  |
-| `E2E_MAILPIT_PORT` / `_SMTP_PORT` | 8125 / 1125     | Mailpit's web/API and SMTP ports of the local stack (container `<prefix>mailpit`, emptied on every start).                         |
-| `E2E_MAILPIT_URL`                 | unset           | Mailpit's web/API URL for an app given with `E2E_BASE_URL` (the local stack's otherwise).                                          |
-| `E2E_MAILPIT_CONTAINER`           | unset           | The Mailpit container the outage specs may stop and start (needed with `E2E_BASE_URL`; GitHub CI sets it, GitLab can't).           |
-| `E2E_TIMEZONE`                    | `Europe/London` | The instance time zone of the local stack (dates in emails, digests, reminders).                                                   |
+| Variable                          | Default         | Meaning                                                                                                                                    |
+| --------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `E2E_BASE_URL`                    | unset           | Test this app as it is: nothing is started or reseeded. It must have the demo data and `SOUNDINGS_DEV_LOGIN_ENABLED=true`.                 |
+| `E2E_PORT` / `E2E_PG_PORT`        | 8100 / 55433    | Ports of the local stack.                                                                                                                  |
+| `E2E_PREFIX`                      | `p1-qa-`        | Docker name prefix (the Postgres container is `<prefix>pg`, Keycloak `<prefix>kc`).                                                        |
+| `E2E_SSO`                         | `0`             | `1`: also Keycloak (fresh dev realm on every start) and the API with SSO next to the dev login. Break-glass is then off.                   |
+| `E2E_KC_PORT` / `E2E_KC_URL`      | 8180 / unset    | Keycloak's port for the local stack; `E2E_KC_URL` points the specs at another Keycloak (CI). Admin `admin`/`admin`.                        |
+| `E2E_BREAK_GLASS`                 | `1`             | `0`: no break-glass admin. On (without SSO) it is `E2E_BREAK_GLASS_USERNAME` / `_PASSWORD` (`admin` / `e2e-break-glass-password`).         |
+| `E2E_KEEP_STACK`                  | unset           | `1`: don't stop the local stack after the run.                                                                                             |
+| `E2E_SKIP_BUILD`                  | unset           | `1`: reuse the last SPA build in `e2e/.stack/dist`.                                                                                        |
+| `E2E_WORKERS`                     | 2               | Parallel browsers.                                                                                                                         |
+| `E2E_STATE_DIR`                   | `e2e/.stack`    | SPA build, API pid and log of the local stack. Give each stack run in parallel its own, with its own ports and prefix.                     |
+| `SCREENSHOTS`                     | unset           | Set by the screenshot scripts: `phase-1` (or `1`) / `phase-2` / `phase-3` / `phase-4` runs only that screenshots spec.                     |
+| `E2E_SMTP`                        | `1`             | `0`: the stack runs without SMTP (in-app notifications only; platform admins see a banner). The email specs skip.                          |
+| `E2E_MAILPIT_PORT` / `_SMTP_PORT` | 8125 / 1125     | Mailpit's web/API and SMTP ports of the local stack (container `<prefix>mailpit`, emptied on every start).                                 |
+| `E2E_MAILPIT_URL`                 | unset           | Mailpit's web/API URL for an app given with `E2E_BASE_URL` (the local stack's otherwise).                                                  |
+| `E2E_MAILPIT_CONTAINER`           | unset           | The Mailpit container the outage specs may stop and start (needed with `E2E_BASE_URL`; GitHub CI sets it, GitLab can't).                   |
+| `E2E_TIMEZONE`                    | `Europe/London` | The instance time zone of the local stack (dates in emails, digests, reminders).                                                           |
+| `E2E_PUBLIC_PER_IP`               | `1000`          | Public submissions per client address and hour (the app's default is 10; every spec submits from 127.0.0.1). Changing it restarts the API. |
+| `E2E_ALTCHA_COST`                 | unset           | The ALTCHA proof-of-work cost (unset: the app's 5,000). Changing it restarts the API.                                                      |
+| `E2E_TRUSTS_FORWARDED`            | unset           | `1`: the app given with `E2E_BASE_URL` trusts this runner's `X-Forwarded-For` (PA-05 runs; the local stack always does).                   |
 
 **The local stack** (`scripts/start-stack.sh`, run by `global-setup.ts`): Postgres 16 in
 Docker on tmpfs, `soundings migrate`, `soundings seed --reset --force`, `vite build` into
@@ -84,5 +92,21 @@ it started. CI tests the container image instead (`make demo`, the GitLab `e2e` 
   `--project=smtp-outage --no-deps`), and naming a file that holds one
   (`email-acceptance`, `admin-email`) runs the whole `e2e` project first (add
   `--project=e2e` to run just that file's other tests).
+- **Public form specs** (Phase 4) use `tests/support/public.ts`: `projectWithPublicForm(alice,
+name, members, { form, branding })` (a fresh project, form on and moderated unless said
+  otherwise), `Visitor` (no account, no session: the public API as the pages use it) and
+  `solveAltcha` (the widget's PBKDF2 proof of work in Node), `fillPublicForm` and
+  `humanCheckDone` for the browser (the SPA solves with its own worker). Every request comes
+  from 127.0.0.1, which the stack trusts as its proxy: a spec that exhausts a per-address
+  throttle claims an address of its own with `X-Forwarded-For` (`Visitor.open(url, address)`,
+  `extraHTTPHeaders`), so the rest of the run isn't throttled. Challenges are limited to 30
+  a minute per address: fetch one per submission.
+- **Global state** (Phase 4): a spec that changes the global branding is tagged `@serial`
+  and runs in the `serial` project (after `e2e`, before `smtp-outage`, one at a time), and
+  puts the profile back in `finally`. A project's branding override is per project: no tag.
+- **PDFs** are read with `tests/support/pdf.ts`: `readPdf` (pdf.js text per page and
+  metadata), `pdfColours` (RGB colours in the content streams), `embedsFont` (an embedded
+  font program's own name), `pdfImageCount`, and `renderPdfPages` (pdf.js in Chromium, for
+  screenshots). `pdfjs-dist` is a dev dependency here; there is no poppler on the machine.
 - `@playwright/test` is pinned to 1.56.1 (the CI image); never run `playwright install`
   here, Chromium comes from `PLAYWRIGHT_BROWSERS_PATH`.

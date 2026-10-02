@@ -19,10 +19,7 @@ const form = (patch = {}) => ({ ...EMPTY_PUBLIC_FORM, title: 'Idea', summary: 'W
 
 describe('validatePublicForm', () => {
   it('needs only a title and a summary', () => {
-    expect(validatePublicForm(EMPTY_PUBLIC_FORM, OPEN)).toEqual({
-      title: expect.any(String),
-      summary: expect.any(String),
-    })
+    expect(Object.keys(validatePublicForm(EMPTY_PUBLIC_FORM, OPEN))).toEqual(['title', 'summary'])
     expect(validatePublicForm(form(), OPEN)).toEqual({})
     expect(validatePublicForm(form({ title: '   ' }), OPEN).title).toBeDefined()
   })
@@ -91,7 +88,11 @@ describe('toSubmission', () => {
 })
 
 describe('submitProblem', () => {
-  const error = (status: number, code: string, errors?: { loc: (string | number)[]; msg: string }[]) =>
+  const error = (
+    status: number,
+    code: string,
+    errors?: { loc: (string | number)[]; msg: string }[],
+  ) =>
     new ApiError({
       status,
       code,
@@ -122,10 +123,9 @@ describe('submitProblem', () => {
         email: 'Wants_updates needs an email.',
       },
     })
-    expect(submitProblem(error(422, 'email_required'))).toEqual({
-      kind: 'fields',
-      errors: { email: expect.any(String) },
-    })
+    const required = submitProblem(error(422, 'email_required'))
+    expect(required.kind).toBe('fields')
+    expect(required.kind === 'fields' && Object.keys(required.errors)).toEqual(['email'])
     // A malformed ALTCHA payload is a verification problem, not a field.
     expect(
       submitProblem(error(422, 'validation_error', [{ loc: ['body', 'altcha'], msg: 'bad' }])),

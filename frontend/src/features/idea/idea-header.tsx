@@ -44,7 +44,8 @@ export function IdeaHeader({ primary }: { primary: ReactNode }) {
         {!idea.submitted_by && <PublicSubmitterLine idea={idea} ideaKey={ideaKey} />}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <VoteButton />
-          <WatchButton />
+          {/* An idea waiting for review is read-only, watching included (c19). */}
+          {!idea.held_for && <WatchButton />}
           <MoreMenu />
         </div>
       </div>

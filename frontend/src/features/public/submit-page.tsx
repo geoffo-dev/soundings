@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Markdown } from '@/components/ui/markdown'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
+import { ariaKeys } from '@/components/ui/kbd'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import { HumanCheck } from './human-check'
@@ -300,7 +300,7 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
             <legend className="sr-only">About you</legend>
             <p className="text-sm text-muted">
               {project.asks_for_email
-                ? 'Both optional unless marked. The team sees your name with your idea; your email address stays private.'
+                ? 'The team sees your name with your idea. Your email address is only for contacting you: it isn’t shown with your idea.'
                 : 'Optional. The team sees your name with your idea.'}
             </p>
             <Field
@@ -364,11 +364,11 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
             variant="primary"
             size="lg"
             loading={sending}
-            className="w-full"
+            className="h-11 w-full sm:h-10"
             aria-keyshortcuts={ariaKeys(SHORTCUTS.submitForm.keys)}
           >
+            {/* ⌘Enter works, but a public page shows no shortcut hints: calm for first-time visitors. */}
             {sending ? 'Sending…' : 'Send idea'}
-            {!sending && <ButtonShortcut keys={SHORTCUTS.submitForm.keys} tone="accent" />}
           </Button>
         </form>
       </PublicCard>

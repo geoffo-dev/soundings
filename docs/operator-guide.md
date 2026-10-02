@@ -33,6 +33,34 @@ Mirror `soundings:<tag>` and `postgres:16-alpine`, set `global.imageRegistry` (a
 `image.pullSecrets`). Nothing is downloaded at runtime: fonts, Swagger UI and the SPA
 are in the image; there is no telemetry.
 
+### The image: Ubuntu 24.04, Python 3.12 and the PDF libraries [Phase 4]
+
+Since Phase 4 the runtime image is based on `ubuntu:24.04` with Ubuntu's own Python 3.12
+(no downloaded interpreter) and the libraries WeasyPrint needs for PDF export: Pango,
+HarfBuzz (with its subsetter), fontconfig, DejaVu fonts as the glyph fallback, plus
+`ca-certificates` and `tzdata` ([ADR 0011](adr/0011-ubuntu-runtime-image-and-weasyprint.md)).
+It is about 40 MB larger than the Debian-based Phase 3 image (about 500 MB, 118 MB
+compressed). It still runs as user 10001 with a read-only root filesystem: fontconfig
+and WeasyPrint write only under `/tmp` (the chart's `emptyDir`; `XDG_CACHE_HOME=/tmp/cache`).
+The build fails if WeasyPrint can't render a test page, so an image that built can
+export PDFs.
+
+Building it yourself (`make image`, or `docker build .`): packages come from Ubuntu's
+archive; for an internal mirror pass `--build-arg UBUNTU_MIRROR=http://mirror.internal/ubuntu`
+(replaces `archive`, `security` and `ports.ubuntu.com`) and override the base with
+`UBUNTU_IMAGE` (CI pins it by digest). `RUNTIME_APT_PACKAGES` only *adds* packages (a
+mirror's keyring, debugging tools). Behind a TLS-intercepting proxy, pass its CA as the
+`build_ca` BuildKit secret (`BUILD_CA=` with `make image`); it never lands in a layer.
+Rebuild regularly: the Ubuntu packages are not version-pinned, so a rebuild picks up
+security fixes.
+
+**Fonts.** The four branding fonts (Inter, IBM Plex Sans, Source Serif 4, Atkinson
+Hyperlegible) and IBM Plex Mono for code ship inside the app (`app/assets/fonts/`,
+`woff2`, latin and latin-ext, about 750 KB with their SIL Open Font License texts) and
+in the SPA bundle; PDFs embed subsets of them, and emails name them first in a system
+font stack (mail clients use their own fonts; nothing is downloaded). There is no way to
+add a font: the set is fixed so that every surface can render it offline.
+
 ## Trying it out [Phase 1]
 
 ### `make demo`: the image on your machine
@@ -46,15 +74,17 @@ make demo-down                   # remove the containers and their data
 ```
 
 `make demo` (`scripts/demo.sh`) runs the same image as the cluster, in development mode
-with the dev login and the demo story (12 people, three projects, 45 ideas; who's who
+with the dev login and the demo story (12 people, three projects, 48 ideas, three of them
+from Customer Innovation's public form; who's who
 in [dev/README.md](../dev/README.md#demo-data)), plus `soundings worker` and Mailpit as
 its SMTP server, so invitations, mentions and the rest arrive in Mailpit's inbox.
 `DEMO_PORT` changes the app's port and `DEMO_MAILPIT_PORT` Mailpit's, `DEMO_SMTP=0`
 runs without email (in-app notifications only), `DEMO_TIMEZONE` sets the instance time
-zone, `DEMO_RESET=1` reloads fresh demo data, and running it again after `make image`
-swaps the app and worker containers and keeps the data. Without a Debian mirror, build with
-`IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` (PDF export, a Phase 4 feature,
-then has no system libraries).
+zone, `DEMO_PUBLIC_PER_IP` the public form's per-address limit, `DEMO_RESET=1` reloads
+fresh demo data, and running it again after `make image` swaps the app and worker
+containers and keeps the data. The containers run as in a cluster: read-only root
+filesystem, a `/tmp` tmpfs, no capabilities. `make public-smoke` then checks the public
+form, an anonymous submission and a branded PDF export against it.
 
 ### The dev login
 
@@ -545,10 +575,137 @@ by the sweep, so they don't stay "doing" for ever. The worker serves no HTTP and
 
 ## Public submission and anti-abuse [Phase 4]
 
+A project admin can open a **public form** for their project (project settings → Public
+form): anyone can then send an idea at `<baseUrl>/<project-slug>/submit` without an
+account and follow it through a private tracking link. This is the only part of
+Soundings that anonymous visitors can write to, so it is worth knowing what is exposed
+and which knobs exist. The chart README's
+[Public submission](../deploy/helm/README.md#public-submission) section has the ingress
+details.
+
+**What is exposed.** The form, `/track` and `/verify` are pages of the SPA. Their API is
+under `/api/v1/public/` (the form's project, an ALTCHA challenge, submit, tracking,
+status-email opt-in and out, resend, "Delete my details", confirm), plus the public
+`GET /api/v1/branding` and `/api/v1/branding/assets/<id>` (logos and favicons). Nothing
+there returns private data: a closed or unknown form is the same 404, the form shows only
+the project's name, intro and branding, and a tracking link shows only the title and
+summary as sent, the status and its dates, never people, comments, scores or the team's
+edits. Tracking and confirmation tokens travel after `#`, so they never reach the server,
+a proxy or an access log in a URL.
+
+**Turning it off.** `features.publicSubmission: false` (`SOUNDINGS_PUBLIC_SUBMISSION_ENABLED`)
+closes every form and makes every tracking and confirmation link answer 404, without
+touching project settings; turning it back on restores them. Use it to stop intake in
+an incident. Project slugs that clash with the app's own paths (`settings`, `track`,
+`verify`, `api`, …) can't be used for new projects, and older projects with one can't
+turn their form on.
+
+| Helm value | Environment | Default | What it does |
+|---|---|---|---|
+| `features.publicSubmission` | `SOUNDINGS_PUBLIC_SUBMISSION_ENABLED` | `true` | The instance switch above |
+| `publicSubmission.perIpPerHour` | `SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP` | `10` | Submissions per client address (IPv6: per /64) per hour, across projects, **per API pod** (1–1,000) |
+| `publicSubmission.perProjectPerHour` | `SOUNDINGS_PUBLIC_SUBMISSIONS_PER_PROJECT` | `100` | Submissions per project per hour from everyone, counted in the database (across pods; 1–10,000) |
+| `publicSubmission.altcha.cost` | `SOUNDINGS_ALTCHA_COST` | `5000` | Proof-of-work iterations per attempt (1,000–1,000,000) |
+| `publicSubmission.altcha.expiry` | `SOUNDINGS_ALTCHA_EXPIRY` | `PT30M` | How long a challenge stays valid (1 minute to 1 day) |
+| `branding.maxUploadBytes` | `SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES` | `524288` | Largest logo or favicon (16 KiB to 900 KiB) |
+
+Everything else is fixed: tracking and confirmation pages share a limit of 60 requests a
+minute per address, challenges 30 a minute, confirmation emails 3 a day per address (an
+address is compared lower-cased with any `+tag` removed) and per submission, and the
+confirmation email contains no text the visitor typed, so the form can't be used to
+send anyone spam.
+
 ### Rate limits behind a proxy (trusted proxies)
+
+The per-address limit keys on the client address the app derives from `X-Forwarded-For`
+through `trustedProxies` and `trustedProxyHops`, exactly as the sign-in throttles do
+(see [Security](#security-pod-security-restricted-networkpolicy-secrets)). Get this right
+before publishing a form:
+
+- If every request seems to come from one address (the load balancer, or a node after
+  SNAT), the whole internet shares one budget of `perIpPerHour` submissions. The first
+  refusal for an address in an hour is logged at **WARNING** (`public submission
+  refused`, `reason=rate_limited`, the project id, never the address): a burst of those
+  right after a launch usually means a wrong `trustedProxyHops` or an ingress that
+  doesn't pass the client address.
+- If the app trusts too much (a wide `trustedProxies` with pods able to reach the API
+  directly), a client can choose its own address. Keep `networkPolicy.ingressFrom` set
+  to your ingress controller's namespace.
+- The per-address limit is in memory, per pod, and forgets on restart; the per-project
+  limit (`perProjectPerHour`, counted in the database) is the real backstop against
+  address rotation such as IPv6 /64s.
+- For an edge limit on anonymous traffic only, `ingress.publicApi.annotations` renders a
+  second Ingress for `/api/v1/public` (ingress-nginx `limit-rpm`, a Traefik `RateLimit`
+  middleware; `dev/k3s/public-ratelimit.yaml` is the k3s example). Keep any edge body
+  limit at `1m` or more: the app refuses bodies over 1 MiB itself.
+- Don't let a CDN or proxy cache `/api/` (responses are `no-store`) except
+  `/api/v1/branding/assets/<id>` (immutable), and don't add a CSP at the edge.
+
 ### ALTCHA, moderation and email verification
 
+Three layers in the app, in this order, so that a bot learns nothing from the answers:
+
+1. **ALTCHA proof of work.** The visitor's browser solves a small PBKDF2 puzzle while
+   they type (under a second on a phone at the default cost) and sends the solution with
+   the idea. The app checks it locally: no third-party service, works air-gapped, no
+   cookies. Challenges are signed with a key derived from `SOUNDINGS_SECRET_KEY` (all
+   pods agree; rotating the secret key invalidates challenges in flight), bound to one
+   project's form, valid for `altcha.expiry`, and accepted once (solved challenges are
+   remembered in the database until they expire, so a replay fails on any pod). Raise
+   `altcha.cost` if bots get through; test the form on a slow phone after changing it.
+2. **A honeypot field**, checked last: a submission that filled it gets a normal-looking
+   receipt whose link tracks nothing, and nothing is stored (logged at INFO as
+   `public submission dropped (honeypot)`).
+3. **Per-address and per-project limits** (above): 429 with `Retry-After`.
+
+Writes must be `application/json` (415 otherwise), so other sites can't post the form
+through their visitors' browsers.
+
+Per project, admins choose **moderation** (on by default for a new form: public ideas
+wait in a queue, invisible everywhere, until an admin approves or rejects them) and
+**email verification** (the idea reaches the team only after its sender confirms their
+address; needs SMTP; ideas never confirmed are deleted after 3 days). Without SMTP the
+form asks for no address at all. Submitters' confirmation and status emails go through
+the normal outbox and worker ([Email](#email-phase-3)) in the project's branding; there
+is no unsubscribe header because the tracking page is where people stop them.
+
+The hourly cleanup (the worker) deletes expired ALTCHA records, ideas held for
+confirmation for more than 3 days, unconfirmed addresses after 3 days, contact details
+of closed ideas idle for 180 days, and unused uploaded images after 24 hours.
+
 ## Branding [Phase 4]
+
+Platform admins set the instance's branding in Settings → Branding (app name, logo,
+favicon, primary and accent colours, one of the four bundled fonts, an email footer);
+project admins can override any of them for their project. The
+signed-in app always uses the global branding; a project's override applies to its
+public pages, the emails its public submitters get and its exported PDFs. Global changes
+are audited as `branding.update`, project ones as `project.update`.
+
+- **Applied at runtime**, no restart or rebuild: the SPA sets CSS variables, the page
+  title and the favicon; emails and PDFs read the branding when they are produced.
+  Each API pod caches resolved branding for 5 seconds, so after a save other replicas
+  follow within 5 seconds.
+- **Safe by construction:** colours are `#rrggbb` only and fonts a fixed key (both also
+  checked by the database), so nothing typed reaches CSS; the app name and footer are
+  plain text.
+- **Uploads** are the only files Soundings accepts: logos and favicons, PNG or SVG, at
+  most `branding.maxUploadBytes` (512 KiB by default, 900 KiB at most so an upload
+  always fits the 1 MiB request limit), at most 2048 × 2048 pixels (favicons 512 × 512)
+  and 20 uploads per profile per day. They are stored in PostgreSQL (no volume or object
+  storage to provision; back up the database and you have them). PNGs are decoded with
+  Pillow's PNG reader only and re-encoded (metadata and trailing data stripped); SVGs
+  are parsed without DTDs or entities, checked against an allow-list of drawing elements
+  and attributes (no scripts, links, `use`, embedded images, styles or external
+  references; size and reference budgets against rendering bombs) and re-serialised
+  ([ADR 0012](adr/0012-branding-and-uploaded-images.md)). They are served by id with
+  `nosniff`, a sandboxing `Content-Security-Policy` and year-long immutable caching
+  (a new image gets a new id), and the SPA shows them only as images. Emails carry no
+  images. An image no profile uses is deleted 24 hours after upload.
+- **PDF export** renders in a child process of each API pod (about 100–190 MiB while
+  warm, one render at a time per pod, killed after 20 seconds with a 503; keep
+  `api.resources.limits.memory` at 512Mi or more) and fetches nothing: only the
+  embedded logo and the bundled fonts. No egress rule is needed.
 
 ## API keys and MCP [Phase 5]
 
@@ -610,4 +767,28 @@ ignored. Narrow `trustedProxies` to your ingress pods' range where you can.
 ## Data protection [Phase 4, 7]
 
 ### Erasing a public submitter's personal data
+
+What Soundings keeps about someone who used a public form (UK GDPR, data minimisation):
+the idea they wrote, and only if they gave them their name and email address, whether
+the address is confirmed and whether they want status emails, plus a copy of the title
+and summary as sent and a hashed and an encrypted copy of their tracking token. **No IP
+address, user agent or cookie is stored**: rate limits are counted in memory, and
+logs and the audit log hold ids and outcome codes only, never names, addresses, tokens
+or idea text. The form shows a fixed privacy notice saying this.
+
+Erasure removes the name, address, confirmation, update preference, the copy of what was
+sent and the tracking link (which stops working at once), and deletes every email queued
+or sent to that person; the idea and its history stay. It happens three ways, each
+recorded as `submission.erase` in the audit log:
+
+- a project or platform admin clicks **Erase submitter details** in the idea's
+  submission panel (a request by email or phone ends here);
+- the submitter clicks **Delete my details** on their tracking page (no actor);
+- the retention rules, hourly (no actor, reason `retention`): contact details of closed
+  ideas idle for 180 days; unconfirmed addresses are dropped after 3 days, and ideas
+  still waiting for confirmation then are deleted.
+
+Personal data someone typed into the idea's own text is removed by editing the idea;
+rejecting a held idea deletes it entirely. The retention periods are constants. Database
+backups keep erased data until they expire, so set your backup retention accordingly.
 ### What is stored about users

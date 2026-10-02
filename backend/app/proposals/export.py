@@ -7,8 +7,8 @@
   together, in-process like the sign-in throttles) -> 429 ``too_many_attempts`` with
   ``Retry-After``. Refusals are logged with the user id only.
 * **Branding** (PDF): the project's effective branding (override -> global ->
-  default, :func:`app.public.branding.effective_branding`), its logo embedded from
-  the database.
+  default, :func:`app.services.branding.effective_branding`), its logo embedded from
+  the database (:func:`app.services.branding.logo_image`).
 * **Files:** ``<KEY>-proposal.md`` / ``.pdf``; the key is ASCII letters, digits and a
   hyphen (checked again here), so nothing can be injected through the filename.
 
@@ -35,7 +35,6 @@ from app.config import Settings
 from app.domain.labels import status_label
 from app.domain.principal import Principal
 from app.errors import ProblemError
-from app.models.branding import BrandAsset
 from app.models.user import User
 from app.proposals.document import (
     LOGO_TYPES,
@@ -46,7 +45,7 @@ from app.proposals.document import (
 )
 from app.proposals.pdf import RETRY_AFTER, ExportBusy, RenderFailed, render_pdf
 from app.proposals.service import TEMPLATE, require_proposal, section_rows
-from app.public.branding import effective_branding
+from app.services import branding
 from app.services.ideas import LoadedIdea
 from app.services.refs import idea_key
 
@@ -62,9 +61,6 @@ logger = logging.getLogger(__name__)
 EXPORT_THROTTLE: Final = ("proposal_export", 10, 60.0)
 """Exports (Markdown and PDF together) per user per minute."""
 _SAFE_KEY: Final = re.compile(r"[A-Za-z][A-Za-z0-9]{0,9}-[0-9]{1,9}")
-_ASSET_URL: Final = re.compile(
-    r"/api/v1/branding/assets/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
-)
 
 
 def _check_limit(app: Any, principal: Principal) -> None:
@@ -82,24 +78,10 @@ def _check_limit(app: Any, principal: Principal) -> None:
     throttle.hit(key)
 
 
-async def _logo(db: AsyncSession, logo_url: str | None) -> tuple[str | None, bytes | None]:
-    """The effective logo's type and bytes (``logo_url`` is the asset's API path)."""
-    match = _ASSET_URL.fullmatch(logo_url or "")
-    if match is None:
-        return None, None
-    row = (
-        await db.execute(
-            select(BrandAsset.content_type, BrandAsset.data).where(BrandAsset.id == UUID(match[1]))
-        )
-    ).first()
-    if row is None or row.content_type not in LOGO_TYPES:
-        return None, None
-    return row.content_type, bytes(row.data)
-
-
 async def _branding(db: AsyncSession, project_id: UUID) -> ExportBranding:
-    effective = await effective_branding(db, project_id)
-    logo_type, logo = await _logo(db, effective.logo_url)
+    effective = await branding.effective_branding(db, project_id)
+    image = await branding.logo_image(db, project_id)
+    logo_type, logo = image if image is not None and image[0] in LOGO_TYPES else (None, None)
     return ExportBranding(
         app_name=effective.app_name,
         primary_color=effective.primary_color,

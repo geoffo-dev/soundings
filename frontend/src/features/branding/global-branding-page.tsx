@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { AdminPageHeader } from '@/features/admin/settings-frame'
+import { UnsavedChangesGuard } from '@/features/project/settings/settings-layout'
 
 import { BrandingSettingsForm } from './branding-settings-form'
 
@@ -23,11 +24,14 @@ export function GlobalBrandingPage() {
         description="How Soundings looks and introduces itself: the app, public forms, emails and exported proposals. Projects can override it for their public form, their emails to submitters and their PDFs."
       />
       {settings.data ? (
-        <BrandingSettingsForm
-          scope={{ kind: 'global' }}
-          settings={settings.data}
-          projectName="your team"
-        />
+        // Leaving with unsaved changes asks first, as in project settings.
+        <UnsavedChangesGuard>
+          <BrandingSettingsForm
+            scope={{ kind: 'global' }}
+            settings={settings.data}
+            projectName="your team"
+          />
+        </UnsavedChangesGuard>
       ) : settings.isError ? (
         <EmptyState
           role="alert"
@@ -60,10 +64,8 @@ export function BrandingSkeleton() {
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-8 w-full rounded-md" />
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <Skeleton className="h-20 w-full rounded-lg" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-        </div>
+        <Skeleton className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-20 w-full rounded-lg" />
         <Skeleton className="h-24 w-full rounded-lg" />
         <Skeleton className="h-24 w-full rounded-lg" />
       </div>

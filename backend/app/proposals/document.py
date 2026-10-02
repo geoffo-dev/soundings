@@ -270,7 +270,6 @@ def build_html(document: ExportDocument) -> str:
     ]
     colors = {
         "primary": primary,
-        "on_primary": text_color_on(primary),
         "accent_text": _readable_on_white(accent),
         "brand_text": _readable_on_white(primary),
         "ink": INK,

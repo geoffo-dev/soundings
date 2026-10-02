@@ -178,3 +178,16 @@
   background-color: var(--subtle-hover);
   box-shadow: 0 0 0 2px var(--subtle-hover);
 }
+
+/*
+ * An uploaded logo is drawn for a light page (emails and exported PDFs are always
+ * light), so in dark mode it sits on a small light plate: dark lettering stays
+ * readable and the logo looks the same everywhere.
+ */
+@utility logo-plate {
+  border-radius: var(--radius-sm);
+  &:where(.dark, .dark *) {
+    background-color: var(--color-white);
+    padding: 0.125rem 0.25rem;
+  }
+}

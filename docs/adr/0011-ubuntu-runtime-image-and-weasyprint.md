@@ -1,6 +1,6 @@
 # ADR 0011: Ubuntu 24.04 runtime image with its Python 3.12, for WeasyPrint
 
-- Status: Proposed · Date: 2026-10-01 · Supersedes the runtime base of [ADR 0004](0004-single-image-api-spa-worker.md)
+- Status: Accepted (built and verified in Phase 4 integration, 2026-10-02) · Date: 2026-10-01 · Supersedes the runtime base of [ADR 0004](0004-single-image-api-spa-worker.md)
 
 ## Context
 
@@ -26,8 +26,8 @@ air-gapped at runtime, non-root, read-only-root compatible and scannable.
   `fonts-dejavu-core` as the fallback for glyphs the bundled fonts lack (Greek,
   Cyrillic, symbols). `python3.12-venv` only in the build stage. `apt` lists are removed.
   Build args `UBUNTU_IMAGE` (default `ubuntu:24.04`, pinned by digest in CI) and
-  `UBUNTU_MIRROR` replace `PYTHON_IMAGE` / `DEBIAN_MIRROR`; `RUNTIME_APT_PACKAGES` stays
-  for unusual mirrors.
+  `UBUNTU_MIRROR` replace `PYTHON_IMAGE` / `DEBIAN_MIRROR`; `RUNTIME_APT_PACKAGES` now
+  only **adds** packages (default empty: an internal mirror's keyring, debugging tools).
 - The **bundled fonts** (Inter, IBM Plex Sans, Source Serif 4, Atkinson Hyperlegible;
   latin + latin-ext `woff2`, 400/600/700, with their OFL texts) ship inside the backend
   package (`app/assets/fonts/`) and are the only fonts the PDF stylesheet names, as
@@ -49,11 +49,21 @@ air-gapped at runtime, non-root, read-only-root compatible and scannable.
 ## Consequences
 
 - PDF export works in the shipped image and in `make demo`; CLAUDE.md's
-  `IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` workaround goes away.
+  `IMAGE_BUILD_ARGS="--build-arg RUNTIME_APT_PACKAGES="` workaround is gone (Phase 4
+  integration: `make image` builds without it and `make public-smoke` exports a PDF
+  rendered inside the container).
 - The image grows by roughly 60 MB (Python from Ubuntu, Pango stack, fonts) and follows
   Ubuntu's security updates (USNs) for Python and the libraries; Trivy scans them.
-- Ubuntu's Python 3.12 is a patch release behind python.org's; the backend must not
-  rely on newer 3.12.x behaviour (CI runs the image's interpreter).
+  *Measured in Phase 4 (same dependencies, only the base changed): 461 MB → 504 MB
+  (+43 MB; 105 MB → 117 MB compressed). The Phase 3 image was 365 MB; most of the growth
+  since is WeasyPrint's Python dependencies (fontTools, Pillow, pyphen).*
+- Ubuntu's Python 3.12 is a patch release behind python.org's (3.12.3 in 24.04); the
+  backend must not rely on newer 3.12.x behaviour (GitLab's `backend:test` runs on the
+  Ubuntu image's interpreter; GitHub installs Pango next to its own Python).
+- *Measured:* a render takes 1.4 s cold and 0.5 s warm in a hardened container (read-only
+  root, `/tmp` tmpfs, no capabilities, no network); the warm child keeps about 100–190 MB.
+  Each child writes WeasyPrint's temporary font folder in its own directory, which the
+  API deletes when the child goes (a killed render left about 700 KB in `/tmp` before).
 - Rendering is CPU-bound and holds the GIL: one render at a time per API process, in
   its own process with a hard time limit (contract-phase4 §3.4). Starting a fresh
   interpreter costs about a second per export, acceptable for a rare action; a warm

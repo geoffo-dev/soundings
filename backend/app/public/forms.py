@@ -17,8 +17,8 @@ from app.authz import ProjectFacts, Resource, Rule, not_found, require
 from app.config import Settings
 from app.models.enums import HoldReason
 from app.models.project import Project
-from app.public.branding import effective_branding
 from app.schemas.public import PublicProject
+from app.services.branding import effective_branding
 
 __all__ = [
     "asks_for_email",

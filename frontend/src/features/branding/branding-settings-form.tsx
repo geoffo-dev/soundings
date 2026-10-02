@@ -117,6 +117,7 @@ export function BrandingSettingsForm({
   const inherited = settings.inherited
   const preview = previewBranding(form, inherited)
   const inheritedLabel = global ? 'Default' : 'From the global branding'
+  const resetLabel = global ? 'Use the default' : 'Use the global one'
   const empty = isEmptyProfile(form)
 
   return (
@@ -160,7 +161,7 @@ export function BrandingSettingsForm({
             />
           </Field>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="flex flex-col gap-6">
             <ImageField
               kind="logo"
               label="Logo"
@@ -168,6 +169,8 @@ export function BrandingSettingsForm({
               value={form.logo}
               inheritedUrl={inherited.logo?.url ?? null}
               emptyText="None: the app name is the wordmark."
+              inheritedText={global ? 'Using the default' : 'Using the global logo'}
+              resetLabel={resetLabel}
               description="PNG or SVG, up to 512 KB. Emails never show images."
               error={errors.logo}
               disabled={readOnly}
@@ -180,6 +183,8 @@ export function BrandingSettingsForm({
               value={form.favicon}
               inheritedUrl={inherited.favicon?.url ?? null}
               emptyText="The Soundings icon."
+              inheritedText={global ? 'Using the default' : 'Using the global favicon'}
+              resetLabel={resetLabel}
               description={
                 global
                   ? 'The browser tab icon. PNG up to 512 × 512, or SVG.'
@@ -198,6 +203,7 @@ export function BrandingSettingsForm({
             value={form.primary_color}
             inherited={inherited.primary_color}
             inheritedLabel={inheritedLabel}
+            resetLabel={resetLabel}
             error={errors.primary_color}
             advice={primaryAdvice}
             onChange={(primary_color) => set({ primary_color })}
@@ -209,6 +215,7 @@ export function BrandingSettingsForm({
             value={form.accent_color}
             inherited={inherited.accent_color}
             inheritedLabel={inheritedLabel}
+            resetLabel={resetLabel}
             error={errors.accent_color}
             advice={accentAdvice}
             onChange={(accent_color) => set({ accent_color })}
@@ -217,6 +224,7 @@ export function BrandingSettingsForm({
           <FontField
             value={form.font}
             inherited={inherited.font}
+            inheritedName={global ? 'default' : 'global'}
             onChange={(font) => set({ font })}
             description={
               global

@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { http } from 'msw'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '@/api/query'
@@ -81,15 +81,22 @@ function capture(answer?: (body: PublicSubmissionCreate, n: number) => Response 
 
 async function fillAndSend(user: ReturnType<typeof userEvent.setup>) {
   await user.type(await screen.findByRole('textbox', { name: /^Title/ }), 'Print-free returns')
-  await user.type(screen.getByRole('textbox', { name: /^Summary/ }), 'Return parcels with a QR code.')
+  await user.type(
+    screen.getByRole('textbox', { name: /^Summary/ }),
+    'Return parcels with a QR code.',
+  )
   await user.click(screen.getByRole('button', { name: /Send idea/ }))
 }
 
-describe('the public form', () => {
+// Typing whole fields: generous under load (a shared machine running other suites).
+describe('the public form', { timeout: 15_000 }, () => {
   it('shows the project’s name and intro, and nothing else about it', async () => {
     renderForm()
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Share an idea with Customer Innovation' }),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Share an idea with Customer Innovation',
+      }),
     ).toBeVisible()
     expect(screen.getByText(/A real person on the Customer Innovation team/)).toBeVisible()
     expect(screen.getByText(/The team reviews new ideas first/)).toBeVisible()
@@ -114,7 +121,7 @@ describe('the public form', () => {
   })
 
   it('solves a challenge for this form and sends the idea as JSON', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const bodies = capture()
     renderForm()
     await fillAndSend(user)
@@ -140,16 +147,29 @@ describe('the public form', () => {
   })
 
   it('says the link was emailed when an address was given', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     renderForm()
     await user.type(await screen.findByRole('textbox', { name: /^Your email/ }), 'jo@example.org')
     await user.click(screen.getByRole('checkbox', { name: 'Email me when the status changes' }))
     await fillAndSend(user)
-    expect(await screen.findByText('We’ve also emailed it to you')).toBeVisible()
+    expect(await screen.findByText(/We’ve also emailed you this link/)).toBeVisible()
+  })
+
+  it('leads with “confirm your email” when the idea waits for that', async () => {
+    const user = userEvent.setup({ delay: null })
+    renderForm('sustainability')
+    await user.type(await screen.findByRole('textbox', { name: /^Your email/ }), 'jo@example.org')
+    await fillAndSend(user)
+    const heading = await screen.findByRole('heading', {
+      name: 'One more step: confirm your email',
+    })
+    expect(heading).toHaveFocus()
+    expect(screen.getByText('Open the link we’ve just emailed you')).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Your private link' })).toBeVisible()
   })
 
   it('checks fields first and moves focus to the first problem', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const bodies = capture()
     renderForm()
     await screen.findByRole('heading', { level: 1 })
@@ -162,7 +182,7 @@ describe('the public form', () => {
   })
 
   it('tries a fresh challenge once when the API refuses one, then offers Retry', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const bodies = capture(() => problemResponse(422, 'challenge_failed'))
     renderForm()
     await fillAndSend(user)
@@ -174,8 +194,10 @@ describe('the public form', () => {
   })
 
   it('recovers when the second challenge passes', async () => {
-    const user = userEvent.setup()
-    const bodies = capture((_body, n) => (n === 1 ? problemResponse(422, 'challenge_failed') : undefined))
+    const user = userEvent.setup({ delay: null })
+    const bodies = capture((_body, n) =>
+      n === 1 ? problemResponse(422, 'challenge_failed') : undefined,
+    )
     renderForm()
     await fillAndSend(user)
     expect(await screen.findByRole('heading', { name: 'Thanks! Your idea is in' })).toBeVisible()
@@ -183,13 +205,11 @@ describe('the public form', () => {
   })
 
   it('says so kindly when this browser has sent too many ideas', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     capture(() => problemResponse(429, 'too_many_attempts'))
     renderForm()
     await fillAndSend(user)
-    expect(
-      await screen.findByText('You’ve sent several ideas in a short time'),
-    ).toBeVisible()
+    expect(await screen.findByText('You’ve sent several ideas in a short time')).toBeVisible()
     expect(screen.getByText(/Try again in a few minutes/)).toBeVisible()
     expect(screen.getByRole('textbox', { name: /^Title/ })).toHaveValue('Print-free returns')
   })
