@@ -136,6 +136,10 @@ jobs:
           E2E_MAILPIT_URL: http://localhost:8026
           # The SMTP-outage specs stop and start it (e2e/scripts/mailpit.ts).
           E2E_MAILPIT_CONTAINER: soundings-demo-mailpit
+      # The MCP server against the same image (after the specs: it adds and deletes a test
+      # idea): a key, the tools, blind evaluation, the key's project, revoke -> 401.
+      - if: steps.e2e.outputs.present == 'true'
+        run: scripts/mcp-smoke.sh http://localhost:8000
       - if: failure() && steps.e2e.outputs.present == 'true'
         run: |
           docker logs soundings-demo-app

@@ -98,7 +98,6 @@ _WRITE: Final = frozenset(
         Rule.IDEA_CREATE,
         Rule.IDEA_EDIT_OWN,
         Rule.IDEA_EDIT_ANY,
-        Rule.IDEA_DELETE,
         Rule.COMMENT_CREATE,
         Rule.COMMENT_EDIT_OWN,
         Rule.COMMENT_DELETE_ANY,
@@ -112,7 +111,6 @@ _WRITE: Final = frozenset(
         Rule.EVALUATION_CLOSE,
         Rule.EVALUATION_INCLUDE_AI,
         Rule.IDEA_CHANGE_STATUS,
-        Rule.IDEA_MODERATE,
         Rule.PROPOSAL_WRITE,
         Rule.PROPOSAL_COMMENT,
         Rule.PROPOSAL_SUGGEST_SECTION,
@@ -129,12 +127,15 @@ RULE_SCOPES: Final[dict[Rule, ApiKeyScope]] = {
     Rule.EVALUATION_SUBMIT_OWN: "evaluate",
     Rule.MCP_CONNECT: "mcp",
 }
-"""Role matrix section 5: the API-key scope that grants each rule."""
+"""Role matrix section 5: the API-key scope that grants each rule. ``idea.delete`` and
+``idea.moderate`` have none (a hard delete, a rejection that deletes): nothing
+irreversible happens through a key."""
 
 PUBLIC_RULES: Final = frozenset({Rule.PUBLIC_SUBMIT, Rule.PUBLIC_TRACK, Rule.SELF_UNSUBSCRIBE})
 """Rules decided by a token or a project setting, whoever (if anyone) is signed in."""
 
 SESSION_ONLY_RULES: Final = frozenset(set(Rule) - set(RULE_SCOPES) - PUBLIC_RULES)
 """Never available through an API key, whatever its scopes (role matrix section 5):
-project.create, project administration, public.erase_submitter, platform.*,
-api_key.* and self.manage_profile."""
+project.create, project administration, public.erase_submitter, idea.delete,
+idea.moderate, platform.*, api_key.* and self.manage_profile. Routes without a rule of
+their own are classified in :data:`app.authz.keys.ROUTE_KEY_ACCESS`."""

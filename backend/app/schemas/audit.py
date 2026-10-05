@@ -74,6 +74,10 @@ class AuditAction(StrEnum):
     SUBMISSION_REJECT = "submission.reject"
     SUBMISSION_ERASE = "submission.erase"
     BRANDING_UPDATE = "branding.update"
+    # API keys and MCP (contract-phase5 section 3.6)
+    API_KEY_CREATE = "api_key.create"
+    API_KEY_REVOKE = "api_key.revoke"
+    MCP_CALL = "mcp.call"
 
 
 class AuditEntry(ResponseModel):

@@ -1,0 +1,43 @@
+{{- /*
+Example kagent resources (kagent.enabled and kagent.examples, off by default): register
+this release's MCP server with kagent 0.10 (CRD group kagent.dev, v1alpha2), so agents
+can list and call Soundings' tools. Checked against the v0.10.2 CRD (see
+deploy/kagent/README.md for what is verified). The API key is never in values: the
+operator creates kagent.mcp.keySecret from the key Soundings shows once.
+*/ -}}
+{{- if and .Values.kagent.enabled .Values.kagent.examples }}
+{{- $fullname := include "soundings.fullname" . }}
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: {{ $fullname }}-mcp
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "kagent") | nindent 4 }}
+spec:
+  description: >-
+    Soundings ideas pipeline: search and read ideas, rubrics and proposals, submit
+    blind evaluations, comment, and suggest proposal sections, as the API key's
+    service account.
+  protocol: STREAMABLE_HTTP
+  # The Service, not the public URL: /mcp is exempt from the app's Host check, and the
+  # API's NetworkPolicy admits kagent.namespace (kagent.enabled).
+  url: {{ printf "http://%s.%s.svc.cluster.local:%v/mcp" $fullname .Release.Namespace .Values.service.port | quote }}
+  timeout: {{ .Values.kagent.mcp.timeout | quote }}
+  # kagent sends the Secret's value as is: it must be "Bearer sdg_...".
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: {{ .Values.kagent.mcp.keySecret | quote }}
+        key: {{ .Values.kagent.mcp.keySecretKey | quote }}
+  {{- if ne .Values.kagent.namespace .Release.Namespace }}
+  # Agents in this namespace may use it as is; agents in kagent's namespace reference it
+  # with namespace {{ .Release.Namespace }} (the header is still read from this
+  # namespace's Secret).
+  allowedNamespaces:
+    from: Selector
+    selector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.kagent.namespace | quote }}
+  {{- end }}
+{{- end }}

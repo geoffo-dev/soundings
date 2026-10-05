@@ -11,12 +11,17 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Path, Request, status
+from fastapi.responses import JSONResponse
 
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
+from app.api.v1.proposals import _conflict as section_conflict
 from app.api.v1.responses import problems
-from app.errors import PROBLEM_CONTENT_TYPE, NotImplementedProblem
+from app.db import SessionDep
+from app.errors import PROBLEM_CONTENT_TYPE
+from app.models.enums import SuggestionSource
+from app.proposals import service, suggestions
 from app.schemas.proposals import (
     AcceptedProposalSuggestion,
     ProposalSuggestion,
@@ -24,6 +29,7 @@ from app.schemas.proposals import (
     ProposalSuggestionCreate,
     ProposalSuggestionList,
 )
+from app.services import ideas
 
 router = APIRouter(prefix="/ideas/{idea}/proposal/suggestions", tags=["proposals"])
 
@@ -57,9 +63,10 @@ _ACCEPT_CONFLICT: dict[int | str, dict[str, Any]] = {
     responses=problems(401, 404),
 )
 async def list_proposal_suggestions(
-    principal: PrincipalDep, idea: IdeaParam
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> ProposalSuggestionList:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await suggestions.list_suggestions(session, principal, loaded)
 
 
 @router.post(
@@ -78,9 +85,15 @@ async def list_proposal_suggestions(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def create_proposal_suggestion(
-    principal: PrincipalDep, idea: IdeaParam, body: ProposalSuggestionCreate
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: ProposalSuggestionCreate
 ) -> ProposalSuggestion:
-    raise NotImplementedProblem
+    # The idea's lock: one pending suggestion per author and section, and the cap of 50,
+    # can't race another create, an accept or a discard.
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    created = await suggestions.create_suggestion(
+        session, principal, loaded, body, channel=SuggestionSource.API
+    )
+    return created.suggestion
 
 
 @router.post(
@@ -93,15 +106,21 @@ async def create_proposal_suggestion(
         "version you are looking at): 409 proposal_conflict with current when someone saved "
         "it since; suggestion_not_pending when it was already accepted or discarded."
     ),
+    response_model=AcceptedProposalSuggestion,
     responses={**problems(401, 403, 404, 422), **_ACCEPT_CONFLICT},
 )
 async def accept_proposal_suggestion(
+    request: Request,
     principal: PrincipalDep,
+    session: SessionDep,
     idea: IdeaParam,
     suggestion_id: SuggestionId,
     body: ProposalSuggestionAccept,
-) -> AcceptedProposalSuggestion:
-    raise NotImplementedProblem
+) -> AcceptedProposalSuggestion | JSONResponse:
+    try:
+        return await suggestions.accept_suggestion(session, principal, idea, suggestion_id, body)
+    except service.SectionConflict as conflict:
+        return section_conflict(request, conflict.current)
 
 
 @router.post(
@@ -116,6 +135,6 @@ async def accept_proposal_suggestion(
     responses=problems(401, 403, 404, 409),
 )
 async def discard_proposal_suggestion(
-    principal: PrincipalDep, idea: IdeaParam, suggestion_id: SuggestionId
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, suggestion_id: SuggestionId
 ) -> ProposalSuggestion:
-    raise NotImplementedProblem
+    return await suggestions.discard_suggestion(session, principal, idea, suggestion_id)

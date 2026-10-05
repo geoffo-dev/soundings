@@ -110,4 +110,19 @@ Public form
    features.publicSubmission=false.
 {{- end }}
 
+MCP server (MCP clients and AI agents)
+   {{ first .Values.baseUrls }}/mcp, and in the cluster
+   http://{{ $fullname }}.{{ .Release.Namespace }}.svc.cluster.local{{ if ne (int .Values.service.port) 80 }}:{{ .Values.service.port }}{{ end }}/mcp
+   Clients authenticate with an API key (Settings > API keys, scope "mcp"):
+   "Authorization: Bearer sdg_...". Revoking the key cuts access at the next call.
+{{- if and .Values.networkPolicy.enabled .Values.networkPolicy.ingressFrom }}
+   networkPolicy.ingressFrom restricts the API: {{ if .Values.kagent.enabled }}kagent's namespace ({{ .Values.kagent.namespace }}) is allowed;
+   add {{ else }}add {{ end }}the namespaces of other in-cluster MCP clients to it.
+{{- end }}
+{{- if and .Values.kagent.enabled .Values.kagent.examples }}
+   kagent: RemoteMCPServer {{ $fullname }}-mcp sends the Authorization header from
+   Secret {{ .Values.kagent.mcp.keySecret }} (key {{ .Values.kagent.mcp.keySecretKey }}), which must hold "Bearer sdg_..."
+   (a service account's key: read, evaluate, mcp). Check: kubectl -n {{ .Release.Namespace }} get rmcps
+{{- end }}
+
 Check the release: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

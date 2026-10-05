@@ -1,4 +1,4 @@
-import { Circle, CircleCheck } from 'lucide-react'
+import { Circle, CircleCheck, GitCompareArrows } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
 
 import type { ProposalSection, ProposalSectionKey } from '@/api/types'
@@ -47,7 +47,7 @@ export function Outline({
   sections: readonly ProposalSection[]
   className?: string
 }) {
-  const { store, threads, current, focusSection } = useProposalEditor()
+  const { store, threads, suggestions, current, focusSection } = useProposalEditor()
   const written = useWritten(store, sections)
   const done = [...written.values()].filter(Boolean).length
   return (
@@ -67,6 +67,7 @@ export function Outline({
       <ol className="flex flex-col gap-0.5">
         {sections.map((section) => {
           const count = openThreadCount(threads?.get(section.key))
+          const suggested = suggestions.get(section.key)?.length ?? 0
           const isWritten = written.get(section.key) ?? false
           return (
             <li key={section.key}>
@@ -90,8 +91,20 @@ export function Outline({
                   <span className="sr-only">
                     {isWritten ? ', written' : ', not written yet'}
                     {count > 0 && `, ${String(count)} open ${count === 1 ? 'thread' : 'threads'}`}
+                    {suggested > 0 &&
+                      `, ${String(suggested)} ${suggested === 1 ? 'suggestion' : 'suggestions'}`}
                   </span>
                 </span>
+                {suggested > 0 && (
+                  <span
+                    aria-hidden="true"
+                    title="Suggestions"
+                    className="inline-flex items-center gap-0.5 text-xs font-medium text-accent tabular-nums"
+                  >
+                    <GitCompareArrows className="size-3.5" />
+                    {suggested}
+                  </span>
+                )}
                 {count > 0 && <CountBadge aria-hidden="true">{count}</CountBadge>}
               </a>
             </li>

@@ -28,9 +28,11 @@ import type {
 } from '@/api/types'
 
 import { seedAccess } from './access-fixtures'
+import type { MockApiKey } from './api-keys'
 import type { MockBrandAsset, MockBrandingProfile } from './branding'
 import { seedNotifications } from './notification-fixtures'
 import { seedPhase4 } from './phase4-fixtures'
+import { seedPhase5 } from './phase5-fixtures'
 import type {
   MockProposal,
   MockProposalComment,
@@ -38,6 +40,7 @@ import type {
   MockProposalThread,
 } from './proposals'
 import type { MockPublicForm, MockPublicSubmission } from './public'
+import type { MockSuggestion } from './suggestions'
 
 export interface MockUser {
   id: string
@@ -327,6 +330,9 @@ export interface MockDb {
   publicAttempts: number[]
   brandingProfiles: MockBrandingProfile[]
   brandAssets: MockBrandAsset[]
+  /* Phase 5 (contract-phase5; records in api-keys.ts, suggestions.ts) */
+  apiKeys: MockApiKey[]
+  proposalSuggestions: MockSuggestion[]
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -367,6 +373,8 @@ export const ID_KIND = {
   outbox: 'd',
   /** Phase 4: proposals, sections' threads and comments, submissions, branding assets. */
   phase4: 'e',
+  /** Phase 5: API keys, proposal suggestions, the agent and other Phase 5 people. */
+  phase5: 'f',
 } as const
 
 const HOUR = 3_600_000
@@ -1222,6 +1230,8 @@ export function createDb({
     publicAttempts: [],
     brandingProfiles: [],
     brandAssets: [],
+    apiKeys: [],
+    proposalSuggestions: [],
     seq: 1_000_000,
   }
 
@@ -1508,6 +1518,7 @@ export function createDb({
   seedAccess(db, { users: USERS, projects: PROJECTS, nextId })
   seedNotifications(db, { users: USERS, nextId })
   seedPhase4(db, { users: USERS, projects: PROJECTS, nextId })
+  seedPhase5(db, { users: USERS, projects: PROJECTS, nextId })
   return db
 }
 

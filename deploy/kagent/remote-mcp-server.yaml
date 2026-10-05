@@ -1,0 +1,51 @@
+# Register Soundings' MCP server with kagent 0.10 (CRD group kagent.dev, v1alpha2) by
+# hand, for agents in kagent's own namespace (the kagent UI creates them there). The
+# Helm chart renders the same RemoteMCPServer in the release namespace instead with
+# kagent.enabled=true and kagent.examples=true (README.md).
+#
+# 1. In Soundings, a platform admin creates the agents' service account and its API key
+#    (scopes read, evaluate, mcp; add write for proposal suggestions and comments;
+#    restricted to the projects the agents serve). The key is shown once.
+# 2. Put it in the Secret below, then apply this file:
+#      kubectl -n kagent create secret generic soundings-mcp-key \
+#        --from-literal=authorization="Bearer sdg_..."      # or edit stringData below
+#      kubectl apply -f deploy/kagent/remote-mcp-server.yaml
+# 3. kubectl -n kagent get rmcps soundings  -> ACCEPTED True, and status.discoveredTools
+#    should list the nine tools once kagent's controller has connected (not yet seen
+#    with a live kagent: README.md, "What is verified").
+#
+# Change "soundings.soundings" in the URL to <service>.<namespace> of your release
+# (`kubectl get svc -l app.kubernetes.io/name=soundings -A`). With the chart's
+# networkPolicy.ingressFrom set, kagent.enabled=true admits kagent's namespace.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: soundings-mcp-key
+  namespace: kagent
+type: Opaque
+stringData:
+  # kagent sends this value as the Authorization header as is: keep the "Bearer ".
+  authorization: "Bearer sdg_REPLACE_WITH_THE_AGENTS_KEY"
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: soundings
+  namespace: kagent
+spec:
+  description: >-
+    Soundings ideas pipeline: search and read ideas, rubrics and proposals, submit
+    blind evaluations, comment, and suggest proposal sections, as the API key's
+    service account.
+  protocol: STREAMABLE_HTTP
+  # The Service inside the cluster (/mcp is exempt from the app's Host check, so it
+  # needn't be one of the release's baseUrls). Port 80 is the chart's service.port.
+  url: http://soundings.soundings.svc.cluster.local:80/mcp
+  timeout: 30s
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: soundings-mcp-key
+        key: authorization

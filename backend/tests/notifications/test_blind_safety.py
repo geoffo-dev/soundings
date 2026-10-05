@@ -91,7 +91,10 @@ async def test_no_email_or_inbox_item_carries_score_data(
     settings: Settings,
 ) -> None:
     aggregate = await build_story(api, team, db_session)
-    forbidden = re.compile(FORBIDDEN_WORDS + "|" + re.escape(f"{aggregate:.1f}"), re.IGNORECASE)
+    # The aggregate as a number of its own ("3.7"), not inside another one: timestamps
+    # such as "...:13.712" carry fractional seconds that would match it by chance.
+    number = r"(?<![\d:.])" + re.escape(f"{aggregate:.1f}") + r"(?![\d])"
+    forbidden = re.compile(FORBIDDEN_WORDS + "|" + number, re.IGNORECASE)
     eve3 = team.evaluators[2]
     # A reminder for the pending evaluator (invited "earlier", due today).
     now = utcnow()

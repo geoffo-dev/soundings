@@ -11,11 +11,18 @@
 # sign-in, sign-out at the IdP); with SMTP=1, email through the cluster's Mailpit
 # (scripts/email-smoke.sh: an invited evaluator gets the branded email with the evaluate
 # link; with Mailpit scaled to 0 the next one waits in the outbox and arrives, once, when
-# it is back). Then `helm test`.
+# it is back); with MCP=1, the MCP server (scripts/mcp-smoke.sh through the ingress:
+# a key, initialize, the nine tools, blind search and get_idea, submit_evaluation, the
+# key's project restriction and scopes, the audit trail, revoke -> 401; and an MCP SDK
+# client in a pod of the "kagent" namespace calling the Service URL, before and after
+# the revoke: scripts/k3s-mcp-client.sh), plus, when the API's NetworkPolicy restricts
+# ingressFrom, a pod in another namespace that can't connect. Then `helm test` (which
+# also calls /mcp through the Service: 401 without a key).
 #
 #   RELEASE / NAMESPACE as for k3s-install.sh
 #   SSO=1             also the SSO checks (after `make k3s-keycloak k3s-install SSO=1`)
 #   SMTP=1            also the email checks (after `make k3s-mailpit k3s-install SMTP=1`)
+#   MCP=1             also the MCP checks (after `make k3s-install MCP=1`)
 #   K3S_CONNECT_HOST  where the ingress port is reachable when not on localhost (CI with
 #                     docker:dind: "docker"); requests still carry Host: localhost:<port>.
 set -euo pipefail
@@ -226,6 +233,23 @@ if [ "${SMTP:-0}" = "1" ]; then
   CONNECT_HOST="${K3S_CONNECT_HOST:-}" MAILPIT_URL="http://mailpit.localhost:$K3S_HTTP_PORT" \
     MAILPIT_STOP="$mailpit_script scale 0" MAILPIT_START="$mailpit_script scale 1" \
     "$(dirname "$0")/email-smoke.sh" "$BASE_URL" || failed=1
+fi
+
+if [ "${MCP:-0}" = "1" ]; then
+  RELEASE="$RELEASE" NAMESPACE="$NAMESPACE" CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
+    MCP_CLIENT_HOOK="$(dirname "$0")/k3s-mcp-client.sh" \
+    "$(dirname "$0")/mcp-smoke.sh" "$BASE_URL" || failed=1
+  # The API's NetworkPolicy: with ingressFrom set, a namespace it doesn't admit can't
+  # reach /mcp (kagent's can: above).
+  policy_from="$(kubectl -n "$NAMESPACE" get networkpolicy \
+    -l "app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=api" \
+    -o jsonpath='{.items[0].spec.ingress[0].from}' 2>/dev/null || true)"
+  if [ -n "$policy_from" ]; then
+    RELEASE="$RELEASE" NAMESPACE="$NAMESPACE" MCP_KEY=none MCP_EXPECT=blocked \
+      MCP_CLIENT_NAMESPACE=mcp-outsider "$(dirname "$0")/k3s-mcp-client.sh" || failed=1
+  else
+    ok "networkPolicy.ingressFrom is empty: any namespace may reach /mcp (not checked)"
+  fi
 fi
 
 log "helm test $RELEASE"

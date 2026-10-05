@@ -199,6 +199,35 @@ export class ProposalSaveStore {
     return this.saveNow(key)
   }
 
+  /**
+   * Accepting a suggestion (contract-phase5 §3.4) is about to replace the
+   * section: its waiting autosave must not race it. `releaseSave` re-arms the
+   * autosave if the accept didn't happen.
+   */
+  holdSave(key: ProposalSectionKey): void {
+    this.cancel(key)
+  }
+
+  releaseSave(key: ProposalSectionKey): void {
+    if (this.sections.get(key)?.status === 'dirty' && !this.disposed) this.schedule(key)
+  }
+
+  /** The server saved this section (an accepted suggestion): it replaces the text here. */
+  replace(section: ProposalSection): void {
+    this.cancel(section.key)
+    if (!this.sections.has(section.key)) return
+    this.onSaved(section)
+    this.set(section.key, {
+      draft: section.body_md,
+      saved: section.body_md,
+      base: section.version,
+      status: 'saved',
+      conflict: null,
+      error: null,
+      savedAt: new Date().toISOString(),
+    })
+  }
+
   /** Newer text from the server (a refetch): taken only where nothing is unsaved here. */
   receive(sections: readonly ProposalSection[]): void {
     for (const section of sections) {

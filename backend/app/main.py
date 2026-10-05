@@ -20,7 +20,9 @@ from app.api.v1 import api_router
 from app.config import Settings, get_settings
 from app.db import create_engine, create_sessionmaker
 from app.errors import install_exception_handlers
+from app.mcp import MCP_PATH, McpTransport, install_mcp
 from app.middleware import (
+    PROBE_PATHS,
     BodySizeLimitMiddleware,
     ProxyHeadersMiddleware,
     RequestContextMiddleware,
@@ -57,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = create_engine(settings, application_name="soundings-api")
     telemetry, tracer_provider = telemetry_config(settings)
     spa = SpaBundle.load(settings.static_dir)
+    mcp = McpTransport()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -69,7 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
         try:
-            async with open_job_queue(settings) as job_queue:
+            # The MCP session manager runs here: a route's own lifespan never runs.
+            async with open_job_queue(settings) as job_queue, mcp.run():
                 app.state.job_queue = job_queue
                 freeze_startup_heap()
                 yield
@@ -100,7 +104,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # refused hosts and oversized bodies still get a request id, an access-log line
     # and metrics. No middleware reads the body, so the size limit needs no more.
     app.add_middleware(BodySizeLimitMiddleware)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+    # /mcp is exempt like the probes: agents call the cluster Service by name; the bearer
+    # key and the Origin check cover what the Host check guards (contract-phase5 3.5).
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.trusted_hosts,
+        exempt_paths=PROBE_PATHS | {MCP_PATH},
+    )
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         SecurityHeadersMiddleware,
@@ -118,6 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.include_router(health.metrics_router)
     app.include_router(docs.router)
     app.include_router(api_router)
+    install_mcp(app, settings, mcp)
     if spa is not None:
         install_spa(app, spa)
 

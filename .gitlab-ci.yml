@@ -502,9 +502,10 @@ e2e:sso:
 # Install, upgrade and smoke-test the chart on k3s running in docker:dind, with the same
 # scripts as local development (scripts/k3s-*.sh), in a namespace that enforces the
 # Restricted Pod Security Standard. Also exercises the external-database path, single
-# sign-on through the ingress against Keycloak in the cluster, and email to Mailpit in
+# sign-on through the ingress against Keycloak in the cluster, email to Mailpit in
 # the cluster with egress NetworkPolicies (an invited evaluator's email; an SMTP outage
-# while Mailpit is scaled to 0, then delivery once it is back).
+# while Mailpit is scaled to 0, then delivery once it is back), and the MCP server
+# through the ingress and from another namespace (API keys, tools, revoke).
 k3s:install-upgrade:
   extends: .dind
   stage: deploy-test
@@ -539,10 +540,12 @@ k3s:install-upgrade:
     - scripts/k3s-keycloak.sh
     - SSO=1 scripts/k3s-install.sh --set image.tag=ci
     - SSO=1 scripts/k3s-smoke.sh
-    # Email: Mailpit in the cluster, SMTP and egress policies on top of SSO.
+    # Email: Mailpit in the cluster, SMTP and egress policies on top of SSO. MCP: the API
+    # admits only Traefik and kagent's namespace; a key through the ingress (acceptance,
+    # revoke -> 401) and an MCP SDK client in a pod of namespace kagent (mcp-smoke.sh).
     - scripts/k3s-mailpit.sh
-    - SSO=1 SMTP=1 scripts/k3s-install.sh --set image.tag=ci
-    - SSO=1 SMTP=1 scripts/k3s-smoke.sh
+    - SSO=1 SMTP=1 MCP=1 scripts/k3s-install.sh --set image.tag=ci
+    - SSO=1 SMTP=1 MCP=1 scripts/k3s-smoke.sh
     - IMAGE_TAG=ci scripts/k3s-test-external-db.sh
   after_script:
     - scripts/k3s-down.sh || true

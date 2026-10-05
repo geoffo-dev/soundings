@@ -231,6 +231,9 @@ async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
         "thread_id": str(uuid4()),
         # Branding images (contract-phase4 section 3.11).
         "asset_id": str(uuid4()),
+        # API keys and proposal suggestions (contract-phase5 section 2).
+        "key_id": str(uuid4()),
+        "suggestion_id": str(uuid4()),
     }
     params = _string_params(app)
     assert {name for _, _, name in params} >= {"q", "tag", "cursor", "slug", "idea", "project"}

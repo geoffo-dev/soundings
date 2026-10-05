@@ -9,6 +9,9 @@
  *   useCreateProposalThread(key) · useReplyToProposalThread(key) ·
  *   useSetProposalThreadResolved(key) · useDeleteProposalComment(key) (deferred, Undo)
  *   useExportProposal(key)           Markdown / PDF download through fetch + blob
+ *   useProposalSuggestions(key)      Phase 5: pending suggestions + can_suggest / can_decide
+ *   useAcceptProposalSuggestion(key) a versioned section save (409 proposal_conflict inline)
+ *   useDiscardProposalSuggestion(key) deferred, Undo
  */
 import {
   MutationObserver,
@@ -28,6 +31,8 @@ import type {
   ProposalComment,
   ProposalSection,
   ProposalSectionKey,
+  ProposalSuggestion,
+  ProposalSuggestionList,
   ProposalThread,
   ProposalThreadList,
   ProposalView,
@@ -325,6 +330,104 @@ export function useDeleteProposalComment(idea: string) {
           unhideItem(key)
         },
         errorTitle: 'Couldn’t delete the comment',
+      })
+    },
+    [queryClient, idea],
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Suggestions (Phase 5, contract-phase5 §3.4)                         */
+/* ------------------------------------------------------------------ */
+
+const hiddenSuggestion = (suggestionId: string) => `proposal-suggestion:${suggestionId}`
+
+export const proposalSuggestionsQueryOptions = (idea: string) =>
+  queryOptions({
+    queryKey: queryKeys.proposals.suggestions(idea),
+    queryFn: ({ signal }) =>
+      unwrap(
+        api.GET('/api/v1/ideas/{idea}/proposal/suggestions', {
+          params: { path: { idea } },
+          signal,
+        }),
+      ),
+  })
+
+/**
+ * Pending suggestions (template order, then oldest first) and whether you may
+ * decide. Suggestions waiting for a deferred discard are left out.
+ */
+export function useProposalSuggestions(
+  idea: string,
+  { enabled = true }: { enabled?: boolean } = {},
+) {
+  const hidden = useHiddenItems()
+  const select = useCallback(
+    (data: ProposalSuggestionList) => ({
+      ...data,
+      items: data.items.filter((item) => !hidden.has(hiddenSuggestion(item.id))),
+    }),
+    [hidden],
+  )
+  return useQuery({ ...proposalSuggestionsQueryOptions(idea), enabled, select })
+}
+
+/**
+ * Accepts a suggestion: the section's text becomes the suggestion's, saved
+ * from `baseVersion` (the version on screen). Throws the ApiError: 409
+ * `proposal_conflict` carries `problem.current` (the editor shows it inline;
+ * other errors too: silent). On success the saved section is stored in the
+ * proposal view and the suggestion leaves the list.
+ */
+export function useAcceptProposalSuggestion(idea: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ suggestionId, baseVersion }: { suggestionId: string; baseVersion: number }) =>
+      unwrap(
+        api.POST('/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/accept', {
+          params: { path: { idea, suggestion_id: suggestionId } },
+          body: { base_version: baseVersion },
+        }),
+      ),
+    onSuccess: ({ suggestion, section }) => {
+      storeProposalSection(queryClient, idea, section)
+      queryClient.setQueryData<ProposalSuggestionList>(
+        queryKeys.proposals.suggestions(idea),
+        (list) =>
+          list && { ...list, items: list.items.filter((item) => item.id !== suggestion.id) },
+      )
+    },
+    onSettled: () =>
+      void queryClient.invalidateQueries({ queryKey: queryKeys.proposals.suggestions(idea) }),
+    meta: { silent: true },
+  })
+}
+
+/**
+ * Discards a suggestion — deferred like comment deletes (contract §3.14): it
+ * disappears at once and the request goes out when the Undo toast closes.
+ */
+export function useDiscardProposalSuggestion(idea: string) {
+  const queryClient = useQueryClient()
+  return useCallback(
+    (suggestion: ProposalSuggestion, title = 'Suggestion discarded') => {
+      const key = hiddenSuggestion(suggestion.id)
+      return deferUntilToastCloses({
+        title,
+        hide: () => hideItem(key),
+        restore: () => unhideItem(key),
+        commit: async ({ keepalive }) => {
+          await unwrap(
+            api.POST('/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/discard', {
+              params: { path: { idea, suggestion_id: suggestion.id } },
+              keepalive,
+            }),
+          )
+          await queryClient.invalidateQueries({ queryKey: queryKeys.proposals.suggestions(idea) })
+          unhideItem(key)
+        },
+        errorTitle: 'Couldn’t discard the suggestion',
       })
     },
     [queryClient, idea],

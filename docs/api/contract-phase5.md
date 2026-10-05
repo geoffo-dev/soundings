@@ -908,6 +908,12 @@ Simpler option chosen each time; the lead may revisit (also in
 Builders record additive contract changes here (date, change, why), then run
 `make gen-api`.
 
+| Date | Change | Why |
+|---|---|---|
+| 2026-10-02 | `AuditAction` gains `api_key.create`, `api_key.revoke`, `mcp.call` (identity, the integration step of §3.6, done first so builders can record them); `list_audit_entries`' `action` filter takes up to 64 values (was 40). | §3.6. The enum now has 42 values: a filter for every action but one (the viewer's test, an "all categories" filter) was 422 at 40. |
+| 2026-10-02 | OpenAPI declares the `api_key` bearer scheme (`HTTPBearer`, `bearerFormat: sdg_…`) on `get_current_user`: every signed-in operation's `security` lists `session` or `api_key`. No schema or TypeScript type changed. | §3.2 (identity). |
+| 2026-10-02 | Behaviour, no shape change: (1) every operation is classified for keys in `app.authz.keys.ROUTE_KEY_ACCESS` (`policy`, `read`, `session`, `public`; deny by default) and `get_current_user` refuses a key on a `session` route, or a `read` route without `read`, with 403 `insufficient_scope` **before** the route's 404/422 (the answer doesn't depend on the resource, so it reveals nothing; key routes therefore answer a key 403 even for a malformed body). Session routes beyond §3.3's list: the moderation queue and `get_idea_submission` (moderation), the public-form and branding settings (`project.edit_settings`). (2) `require_view` (routes that load an idea or project to read it) needs `read` with a key, after the 404s: a key with only `mcp` reads nothing through REST (before, `GET /ideas/{idea}` and other loads answered it). | §3.3 "routes without a rule", role matrix §5 (`mcp` grants `mcp.connect` only). Found by `tests/authz/test_key_routes.py`. |
+
 ## 9. Contract review (2026-10-02, before building)
 
 Applied from the read-only contract review; the lead may revisit any of them.

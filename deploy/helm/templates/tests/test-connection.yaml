@@ -23,12 +23,12 @@ spec:
       command:
         - python
         - -c
-        # The app only answers hosts listed in baseUrls (except /healthz and /readyz), so
+        # The app only answers hosts listed in baseUrls (except /healthz, /readyz, /mcp), so
         # requests carry the first base URL's host, as the ingress would send it.
         # Retried for up to 30 s: a NetworkPolicy controller (k3s's kube-router, Calico…)
         # may admit a new pod's address a moment after the pod starts.
         - |
-          import sys, time, urllib.request
+          import sys, time, urllib.error, urllib.request
           base, host = sys.argv[1], sys.argv[2]
           def get(path):
               for attempt in range(30):
@@ -46,6 +46,22 @@ spec:
                   print(path, response.status, kind)
                   if response.status != 200 or not kind.startswith(expected):
                       sys.exit(f"unexpected response for {path}")
+          # The MCP server, as an in-cluster agent calls it: the Service's own host name
+          # (/mcp is exempt from the Host check), no key -> 401 asking for a bearer key.
+          request = urllib.request.Request(
+              base + "/mcp", method="POST", data=b'{"jsonrpc":"2.0","id":1,"method":"ping"}',
+              headers={"Content-Type": "application/json",
+                       "Accept": "application/json, text/event-stream"})
+          try:
+              urllib.request.urlopen(request, timeout=10)
+              sys.exit("/mcp answered without an API key")
+          except urllib.error.HTTPError as error:
+              kind = error.headers.get("content-type", "")
+              challenge = error.headers.get("www-authenticate", "")
+              print("/mcp", error.code, kind, challenge)
+              if error.code != 401 or not kind.startswith("application/problem+json") \
+                      or not challenge.startswith("Bearer"):
+                  sys.exit("unexpected response for /mcp without a key")
         - {{ printf "http://%s:%v" (include "soundings.fullname" .) .Values.service.port | quote }}
         - {{ (urlParse (first .Values.baseUrls)).host | quote }}
       resources:

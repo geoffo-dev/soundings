@@ -15,6 +15,7 @@ import {
   ssoConfig,
   testMapping,
 } from '@/mocks/access'
+import { revokeAllKeys } from '@/mocks/api-keys'
 import { ID_KIND, newId, type MockDb, type MockUser } from '@/mocks/db'
 import { findUser, isPickable, paginate } from '@/mocks/domain'
 import {
@@ -88,6 +89,9 @@ const AUDIT_ACTIONS: AuditAction[] = [
   'submission.reject',
   'submission.erase',
   'branding.update',
+  'api_key.create',
+  'api_key.revoke',
+  'mcp.call',
 ]
 
 function requirePlatformAdmin(ctx: RouteContext): void {
@@ -418,6 +422,8 @@ export const adminHandlers = [
         },
       )
     }
+    // Deactivating revokes every key, each audited (contract-phase5 §2), after the update.
+    if (isActive === false && fields.includes('is_active')) revokeAllKeys(db, ctx.user, user)
     return adminUser(db, user)
   }),
 

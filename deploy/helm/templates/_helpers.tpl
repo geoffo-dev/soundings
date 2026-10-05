@@ -639,6 +639,15 @@ Validation (errors a JSON schema cannot express)
 {{- if and .Values.httpRoute.enabled (not .Values.httpRoute.parentRefs) }}
 {{- fail "httpRoute.parentRefs is required when httpRoute.enabled=true" }}
 {{- end }}
+{{- if and .Values.kagent.enabled (not .Values.kagent.namespace) }}
+{{- fail "kagent.namespace is required when kagent.enabled=true" }}
+{{- end }}
+{{- if and .Values.kagent.examples (not .Values.kagent.enabled) }}
+{{- fail "kagent.examples needs kagent.enabled=true (and kagent's CRDs in the cluster)" }}
+{{- end }}
+{{- if and .Values.kagent.enabled .Values.kagent.examples (not .Values.kagent.mcp.keySecret) }}
+{{- fail "kagent.mcp.keySecret is required with kagent.examples: an existing Secret whose key kagent.mcp.keySecretKey holds \"Bearer <the agents' API key>\"" }}
+{{- end }}
 {{- if and .Values.demo.seed (not .Values.devLogin) }}
 {{- fail "demo.seed needs devLogin=true: demo data is only loaded in development mode" }}
 {{- end }}

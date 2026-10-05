@@ -3,13 +3,19 @@ import { useBlocker } from '@tanstack/react-router'
 import { FileDown, FileText, Info, MessageSquarePlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
-import { saveProposalSection, storeProposalSection, useProposalThreads } from '@/api/proposals'
+import {
+  saveProposalSection,
+  storeProposalSection,
+  useProposalSuggestions,
+  useProposalThreads,
+} from '@/api/proposals'
 import type {
   CurrentUser,
   IdeaDetail,
   Proposal,
   ProposalPermissions,
   ProposalSectionKey,
+  ProposalSuggestion,
   ProposalThread,
 } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -38,6 +44,8 @@ import { ProposalSaveStore } from './save-store'
 import { SectionRow } from './section'
 import { CommentsSheet } from './threads'
 import { hasContent, sectionDomId } from './text'
+
+const NO_SUGGESTION_RIGHTS = { can_suggest: false, can_decide: false } as const
 
 /** Tailwind's `lg`: margin comments beside each section from here up. */
 const LG_UP = '(min-width: 64rem)'
@@ -87,6 +95,19 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
     }
     return map
   }, [threadsQuery.data])
+
+  // Phase 5: suggestions from people, MCP clients and AI agents, shown by their section.
+  const suggestionsQuery = useProposalSuggestions(ideaKey)
+  const suggestions = useMemo(() => {
+    const map = new Map<ProposalSectionKey, ProposalSuggestion[]>()
+    for (const suggestion of suggestionsQuery.data?.items ?? []) {
+      const list = map.get(suggestion.section_key) ?? []
+      list.push(suggestion)
+      map.set(suggestion.section_key, list)
+    }
+    return map
+  }, [suggestionsQuery.data])
+  const suggestionPermissions = suggestionsQuery.data?.permissions ?? NO_SUGGESTION_RIGHTS
 
   const [modes, setModes] = useState<ReadonlyMap<ProposalSectionKey, SectionMode>>(new Map())
   const [composingIn, setComposingIn] = useState<ProposalSectionKey | null>(null)
@@ -227,6 +248,8 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
     threads,
     threadsError: threadsQuery.isError,
     retryThreads: () => void threadsQuery.refetch(),
+    suggestions,
+    suggestionPermissions,
     modeOf,
     setMode,
     toggleSectionMode,

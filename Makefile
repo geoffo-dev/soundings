@@ -22,6 +22,8 @@ E2E_BASE_URL ?= http://localhost:$(DEMO_PORT)
 SSO ?=
 # `make k3s-install SMTP=1` / `make k3s-smoke SMTP=1`: email to Mailpit in k3s.
 SMTP ?=
+# `make k3s-install MCP=1` / `make k3s-smoke MCP=1`: the MCP server for in-cluster agents.
+MCP ?=
 # `make sso-smoke` runs against this app (configured for the dev Keycloak realm).
 SSO_BASE_URL ?= http://localhost:8000
 # `make email-smoke` runs against this app (dev login, worker, Mailpit: MAILPIT_URL,
@@ -30,13 +32,15 @@ EMAIL_BASE_URL ?= http://localhost:8000
 # `make public-smoke` runs against this app (demo data and dev login: `make dev` or
 # `make demo`).
 PUBLIC_BASE_URL ?= http://localhost:8000
+# `make mcp-smoke` runs against this app (demo data and dev login: `make dev` or `make demo`).
+MCP_BASE_URL ?= http://localhost:8000
 
 comma := ,
 build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(BUILD_CA))
 
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
         check-scripts e2e image demo demo-down k3s-up k3s-load k3s-keycloak k3s-mailpit k3s-install k3s-smoke \
-        k3s-down openapi gen-api seed sso-smoke email-smoke public-smoke
+        k3s-down openapi gen-api seed sso-smoke email-smoke public-smoke mcp-smoke
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
@@ -109,12 +113,12 @@ k3s-keycloak: ## Keycloak with the dev realm in the k3s cluster (for SSO=1 below
 k3s-mailpit: ## Mailpit in the k3s cluster (for SMTP=1 below; inbox http://mailpit.localhost:18081)
 	scripts/k3s-mailpit.sh up
 
-k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak; SMTP=1: + Mailpit)
-	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' scripts/k3s-install.sh \
+k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak; SMTP=1: + Mailpit; MCP=1: + agents' NetworkPolicy)
+	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' scripts/k3s-install.sh \
 	  --set image.repository="$${image%:*}" --set image.tag="$${image##*:}"
 
-k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, then helm test (SSO=1: + SSO flow; SMTP=1: + email)
-	SSO='$(SSO)' SMTP='$(SMTP)' scripts/k3s-smoke.sh
+k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, then helm test (SSO=1: + SSO flow; SMTP=1: + email; MCP=1: + MCP, in-cluster client)
+	SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' scripts/k3s-smoke.sh
 
 k3s-down: ## Delete the local k3s cluster
 	scripts/k3s-down.sh
@@ -127,6 +131,9 @@ email-smoke: ## Invite -> branded email in Mailpit, then an SMTP outage -> deliv
 
 public-smoke: ## Public form + branding, then anonymous idea -> approved -> proposal -> PDF/Markdown export (PUBLIC_BASE_URL)
 	scripts/public-smoke.sh $(PUBLIC_BASE_URL)
+
+mcp-smoke: ## API key -> /mcp: tools, blind search, submit an evaluation, project restriction, audit, revoke -> 401 (MCP_BASE_URL)
+	scripts/mcp-smoke.sh $(MCP_BASE_URL)
 
 # --- API contract ------------------------------------------------------------------------
 openapi: ## Export the backend's OpenAPI document to $(OPENAPI_JSON)

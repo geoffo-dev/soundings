@@ -389,12 +389,26 @@ def test_key_acts_with_its_owners_live_role() -> None:
     assert authorize(key, Rule.IDEA_VIEW, resource(role=None)).status == 404
 
 
-def test_write_key_needs_no_read_scope_for_the_implied_view() -> None:
-    key = principal(auth="api_key", scopes={"write"})
+def test_the_implied_view_is_the_owners_but_loading_needs_read() -> None:
+    """Inside a rule the implied view is the owner's (the rule's scope decides); a route
+    that loads an idea to read it (``require_view``) needs ``read`` too, so a key with
+    only ``mcp`` reads nothing through REST (contract-phase5 section 3.3). Keys with
+    ``write`` or ``evaluate`` always have ``read`` (section 3.1)."""
+    write_only = principal(auth="api_key", scopes={"write"})
+    mcp_only = principal(auth="api_key", scopes={"mcp"})
+    read = principal(auth="api_key", scopes={"read"})
 
-    assert can(key, Rule.COMMENT_CREATE, resource())
-    assert authorize(key, Rule.IDEA_VIEW, resource()).code == "insufficient_scope"
-    require_view(key, resource())  # no scope needed to see that it exists
+    assert can(write_only, Rule.COMMENT_CREATE, resource())
+    assert authorize(write_only, Rule.IDEA_VIEW, resource()).code == "insufficient_scope"
+    for key in (write_only, mcp_only):
+        with pytest.raises(ProblemError) as refused:
+            require_view(key, resource())
+        assert (refused.value.status, refused.value.code) == (403, "insufficient_scope")
+    require_view(read, resource())
+    require_view(principal(), resource())
+    with pytest.raises(ProblemError) as hidden:  # 404 before the scope
+        require_view(mcp_only, resource(role=None))
+    assert hidden.value.status == 404
 
 
 def test_mcp_connect() -> None:

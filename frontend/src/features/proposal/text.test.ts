@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { countWords, diffLines, hasContent, markdownExcerpt, wordLabel } from './text'
+import {
+  countWords,
+  diffLines,
+  hasContent,
+  markdownExcerpt,
+  suggestionDiff,
+  wordLabel,
+} from './text'
 
 describe('countWords', () => {
   it('counts words, not Markdown punctuation', () => {
@@ -58,5 +65,29 @@ describe('markdownExcerpt', () => {
       'Ask @Ada Lovelace about it',
     )
     expect(markdownExcerpt('2 * 3 * 4')).toBe('2 * 3 * 4')
+  })
+})
+
+describe('suggestionDiff', () => {
+  it('marks removed and added lines with a little context', () => {
+    const current = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].join('\n')
+    const suggested = ['a', 'b', 'c', 'd', 'E', 'f', 'g', 'h'].join('\n')
+    expect(suggestionDiff(current, suggested, 1)).toEqual([
+      { kind: 'skip', count: 3 },
+      { kind: 'same', text: 'd' },
+      { kind: 'removed', text: 'e' },
+      { kind: 'added', text: 'E' },
+      { kind: 'same', text: 'f' },
+      { kind: 'skip', count: 2 },
+    ])
+  })
+
+  it('shows an empty section’s suggestion as additions only, and nothing when equal', () => {
+    expect(suggestionDiff('', 'New text\n\nMore')).toEqual([
+      { kind: 'added', text: 'New text' },
+      { kind: 'added', text: '' },
+      { kind: 'added', text: 'More' },
+    ])
+    expect(suggestionDiff('Same', 'Same')).toEqual([])
   })
 })

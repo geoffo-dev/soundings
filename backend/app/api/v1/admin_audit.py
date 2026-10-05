@@ -36,7 +36,7 @@ async def list_audit_entries(
     page: PageParamsDep,
     actor_id: Annotated[UUID | None, Query(description="Entries by this user.")] = None,
     action: Annotated[
-        list[AuditAction] | None, Query(max_length=40, description="Any of these actions.")
+        list[AuditAction] | None, Query(max_length=64, description="Any of these actions.")
     ] = None,
     target_type: Annotated[
         AuditTargetType | None, Query(description="Entries about this kind of thing.")

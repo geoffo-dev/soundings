@@ -19,6 +19,7 @@ import { openThreadCount, useProposalEditor } from './editor-context'
 import { applyFormat, type FormatKind } from './format'
 import { useSectionSave, type SectionSaveState } from './save-store'
 import { countWords, MARKDOWN_HINT_ID, SECTION_LIMIT, sectionDomId, wordLabel } from './text'
+import { SectionSuggestions } from './suggestions'
 import { SectionThreads } from './threads'
 
 const isMod = (event: KeyboardEvent) => event.metaKey || event.ctrlKey
@@ -123,6 +124,8 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
             {describeError(state.error).title}. Your text is still here.
           </Callout>
         )}
+
+        <SectionSuggestions section={section} />
       </div>
 
       <aside aria-label={`Comments on ${section.title}`} className="hidden min-w-0 lg:block">

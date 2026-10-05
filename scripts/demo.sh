@@ -147,6 +147,7 @@ up() {
       else
         printf '    Email: off (DEMO_SMTP=0): in-app notifications only\n'
       fi
+      printf '    MCP: %s/mcp with a key from Settings > API keys (dev/README.md, "MCP clients")\n' "$url"
       printf '    Logs: docker logs -f %s (or %s)    Stop: make demo-down\n' "$app" "$worker"
       return 0
     fi

@@ -290,6 +290,35 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'That image can’t be used here',
     description: 'Upload it again, then save.',
   },
+  // Phase 5: API keys and proposal suggestions (contract-phase5 §5)
+  insufficient_scope: {
+    title: 'An API key can’t do that',
+    description: 'Sign in to Soundings to do this yourself.',
+  },
+  break_glass_account: {
+    title: 'The break-glass account can’t create API keys',
+    description: 'Sign in with your own account to create one.',
+  },
+  too_many_api_keys: {
+    title: 'You have 25 API keys',
+    description: 'Revoke keys you no longer use, then create a new one.',
+  },
+  api_key_name_taken: {
+    title: 'You already have a key with this name',
+    description: 'Choose another name, or revoke the old key first.',
+  },
+  invalid_project: {
+    title: 'You can’t restrict a key to that project',
+    description: 'Choose projects you can open in Soundings.',
+  },
+  too_many_suggestions: {
+    title: 'This proposal has 50 suggestions waiting',
+    description: 'Accept or discard some of them first.',
+  },
+  suggestion_not_pending: {
+    title: 'Someone already decided on this suggestion',
+    description: 'It was accepted or discarded a moment ago.',
+  },
   network_error: { title: 'Can’t reach the server', description: 'Check your connection.' },
 }
 

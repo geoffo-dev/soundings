@@ -20,6 +20,7 @@ import { formatTime } from '@/lib/dates'
 
 import { useProposalEditor } from './editor-context'
 import { SectionJump } from './outline'
+import { suggestionDomId } from './suggestions'
 import { useEditorSaveSummary, type ProposalSaveStore } from './save-store'
 import { hasContent, MARKDOWN_HINT_ID } from './text'
 
@@ -39,10 +40,37 @@ export function EditorBar({ proposal }: { proposal: Proposal }) {
         </span>
       )}
       <div className="ml-auto flex min-w-0 items-center gap-2">
+        <SuggestionsJump />
         <SectionJump sections={proposal.sections} className="xl:hidden" />
         <ExportMenu />
       </div>
     </div>
+  )
+}
+
+/** "3 suggestions": jumps to the first one (the section's text stays where it was). */
+function SuggestionsJump() {
+  const { suggestions, setCurrent } = useProposalEditor()
+  const all = [...suggestions.values()].flat()
+  const first = all[0]
+  if (!first) return null
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-accent max-sm:px-2"
+      aria-label={`${String(all.length)} ${all.length === 1 ? 'suggestion' : 'suggestions'}: go to the first`}
+      onClick={() => {
+        setCurrent(first.section_key)
+        const card = document.getElementById(suggestionDomId(first.id))
+        card?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        card?.focus({ preventScroll: true })
+      }}
+    >
+      <GitCompareArrows />
+      {all.length}
+      <span className="hidden sm:inline">{all.length === 1 ? ' suggestion' : ' suggestions'}</span>
+    </Button>
   )
 }
 

@@ -11,11 +11,12 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Path, Response, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.api_keys import service
+from app.db import SessionDep
 from app.schemas.api_keys import ApiKeyCreate, ApiKeyList, CreatedApiKey
 
 router = APIRouter(prefix="/me/api-keys", tags=["api-keys"])
@@ -35,8 +36,8 @@ _RULE = "api_key.manage_own (session only; an API key gets 403 insufficient_scop
     ),
     responses=problems(401, 403),
 )
-async def list_my_api_keys(principal: PrincipalDep) -> ApiKeyList:
-    raise NotImplementedProblem
+async def list_my_api_keys(principal: PrincipalDep, session: SessionDep) -> ApiKeyList:
+    return await service.list_my_keys(session, principal)
 
 
 @router.post(
@@ -52,8 +53,11 @@ async def list_my_api_keys(principal: PrincipalDep) -> ApiKeyList:
     ),
     responses=problems(401, 403, 409, 422),
 )
-async def create_my_api_key(principal: PrincipalDep, body: ApiKeyCreate) -> CreatedApiKey:
-    raise NotImplementedProblem
+async def create_my_api_key(
+    principal: PrincipalDep, session: SessionDep, body: ApiKeyCreate, response: Response
+) -> CreatedApiKey:
+    response.headers["Cache-Control"] = "no-store"
+    return await service.create_my_key(session, principal, body)
 
 
 @router.delete(
@@ -68,5 +72,5 @@ async def create_my_api_key(principal: PrincipalDep, body: ApiKeyCreate) -> Crea
     ),
     responses=problems(401, 403, 404),
 )
-async def revoke_my_api_key(principal: PrincipalDep, key_id: KeyId) -> None:
-    raise NotImplementedProblem
+async def revoke_my_api_key(principal: PrincipalDep, session: SessionDep, key_id: KeyId) -> None:
+    await service.revoke_my_key(session, principal, key_id)

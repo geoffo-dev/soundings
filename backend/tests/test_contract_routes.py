@@ -324,7 +324,12 @@ _SUGGESTIONS = f"{_PROPOSAL}/suggestions"
 # Phase 1-4 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
 # tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
 # tests/moderation). Add a row per stub of a later phase; delete it when you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+
+# Phase 5 operations already implemented (tests/proposals/test_suggestions.py, ...): a
+# valid request each, for the shape and session checks below. Move a row here from
+# STUBS when you implement it.
+PHASE5_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     # --- Phase 5: your API keys (session only) -----------------------------------------
     "list_my_api_keys": ("/api/v1/me/api-keys", None),
     "create_my_api_key": (
@@ -343,7 +348,7 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
         None,
     ),
     "revoke_admin_api_key": (f"/api/v1/admin/api-keys/{API_KEY}", None),
-    # --- Phase 5: proposal suggestions --------------------------------------------------
+    # --- Proposal suggestions -----------------------------------------------------------
     "list_proposal_suggestions": (_SUGGESTIONS, None),
     "create_proposal_suggestion": (
         _SUGGESTIONS,
@@ -641,7 +646,7 @@ async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
 
 
 async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
-    requests = PHASE2_REQUESTS | PHASE4_REQUESTS | STUBS
+    requests = PHASE2_REQUESTS | PHASE4_REQUESTS | PHASE5_REQUESTS | STUBS
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
         url, body = requests[operation_id]
         response = await client.request(_METHODS[operation_id], url, json=body)
@@ -943,7 +948,7 @@ async def test_whitespace_only_section_text_is_a_valid_body(client: httpx.AsyncC
 
 
 # --- Phase 5 ---------------------------------------------------------------------------
-_NEW_KEY = STUBS["create_my_api_key"][1] or {}
+_NEW_KEY = PHASE5_REQUESTS["create_my_api_key"][1] or {}
 
 
 def _in_days(days: int) -> str:
@@ -1003,7 +1008,7 @@ def _in_days(days: int) -> str:
 async def test_invalid_phase5_requests_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS[operation_id]
+    valid_url, valid_body = (PHASE5_REQUESTS | STUBS)[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -1025,11 +1030,12 @@ async def test_invalid_phase5_requests_are_rejected_before_the_endpoint(
 async def test_valid_api_key_bodies_reach_the_endpoint(
     client: httpx.AsyncClient, body: dict[str, Any]
 ) -> None:
-    url, _ = STUBS["create_my_api_key"]
+    url, _ = PHASE5_REQUESTS["create_my_api_key"]
 
     response = await client.post(url, json=body)
 
-    assert response.status_code == 501, response.text
+    # Past the shape check (the stand-in user has no session, so the endpoint refuses).
+    assert response.json()["code"] != "validation_error", response.text
 
 
 def test_only_the_creation_response_carries_a_secret(app: FastAPI) -> None:

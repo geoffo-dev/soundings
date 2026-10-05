@@ -1,0 +1,16 @@
+# MCP for in-cluster agents on the local k3s cluster, layered on dev/k3s-values.yaml by
+# `make k3s-install MCP=1` (scripts/k3s-install.sh). The API admits only the ingress
+# controller (Traefik, in kube-system) and kagent's namespace, as a production install
+# should; `make k3s-smoke MCP=1` then calls /mcp through the ingress
+# (scripts/mcp-smoke.sh), from a pod in the "kagent" namespace with the official MCP
+# SDK (scripts/k3s-mcp-client.sh: allowed) and from a pod in another namespace (dropped).
+# kagent itself is not installed: the client pod stands in for its agents.
+kagent:
+  enabled: true
+  namespace: kagent
+
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system

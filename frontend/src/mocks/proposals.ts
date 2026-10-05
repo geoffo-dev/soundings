@@ -255,6 +255,7 @@ export function forgetProposal(db: MockDb, ideaId: string): void {
     db.proposalThreads.filter((t) => t.proposal_id === proposal.id).map((t) => t.id),
   )
   db.proposalComments = db.proposalComments.filter((c) => !threads.has(c.thread_id))
+  db.proposalSuggestions = db.proposalSuggestions.filter((s) => s.proposal_id !== proposal.id)
   db.proposalThreads = db.proposalThreads.filter((t) => t.proposal_id !== proposal.id)
   db.proposalSections = db.proposalSections.filter((s) => s.proposal_id !== proposal.id)
   db.proposals = db.proposals.filter((p) => p !== proposal)

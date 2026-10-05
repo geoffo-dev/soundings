@@ -265,6 +265,8 @@ describe('admin (§3.4, §3.5, §3.11)', () => {
       'Break-glass admin',
       'Lena Novak',
       'Nia Lee',
+      // Phase 5: an AI agent's service account never signs in.
+      'Research agent',
     ])
   })
 

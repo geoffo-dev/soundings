@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { History, UserRoundX } from 'lucide-react'
+import { History, KeyRound, UserRoundX } from 'lucide-react'
 import { useState } from 'react'
 
 import { isNotFound, useAdminUser, useUpdateAdminUser } from '@/api/admin'
@@ -248,12 +248,20 @@ function UserDetail({ user }: { user: AdminUser }) {
         <UserSignIn user={user} isMe={isMe} />
       </SheetBody>
       <SheetFooter className="justify-between">
-        <Button asChild variant="ghost" size="sm" className="text-secondary">
-          <Link to="/settings/audit" search={{ target: `user:${user.id}` }}>
-            <History />
-            Audit log
-          </Link>
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button asChild variant="ghost" size="sm" className="text-secondary">
+            <Link to="/settings/audit" search={{ target: `user:${user.id}` }}>
+              <History />
+              Audit log
+            </Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="text-secondary">
+            <Link to="/settings/all-api-keys" search={{ user_id: user.id }}>
+              <KeyRound />
+              API keys
+            </Link>
+          </Button>
+        </div>
         {isMe ? (
           <p className="text-sm text-muted">You can’t deactivate yourself.</p>
         ) : user.is_active ? (
@@ -282,8 +290,8 @@ function UserDetail({ user }: { user: AdminUser }) {
         pending={update.isPending}
         onConfirm={() => setActive(false)}
       >
-        Their groups, project roles and ideas stay, but grant nothing while they’re deactivated. Use
-        this when someone leaves.
+        Their groups, project roles and ideas stay, but grant nothing while they’re deactivated.
+        Their API keys are revoked for good. Use this when someone leaves.
       </ConfirmDialog>
       <ConfirmDialog
         open={confirm === 'reactivate'}

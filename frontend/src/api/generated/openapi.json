@@ -971,7 +971,10 @@
           "submission.approve",
           "submission.reject",
           "submission.erase",
-          "branding.update"
+          "branding.update",
+          "api_key.create",
+          "api_key.revoke",
+          "mcp.call"
         ],
         "title": "AuditAction",
         "type": "string"
@@ -9026,6 +9029,12 @@
       }
     },
     "securitySchemes": {
+      "api_key": {
+        "bearerFormat": "sdg_…",
+        "description": "A personal API key (Settings -> API keys), sent as Authorization: Bearer sdg_<lookup id>_<secret>. It acts as its owner, live, narrowed by its scopes (read, write, evaluate, mcp) and optional project restriction; it needs no CSRF header and is decided before any session cookie. Session-only routes answer 403 insufficient_scope; a missing, invalid, expired or revoked key 401.",
+        "scheme": "bearer",
+        "type": "http"
+      },
       "session": {
         "description": "Server-side session cookie set by every sign-in (SSO via GET /api/v1/auth/login, the break-glass admin, the development login). Named __Host-soundings_session (and __Host-soundings_csrf) whenever cookies are Secure, i.e. over HTTPS and in production. Unsafe methods must also send the X-CSRF-Token header equal to the CSRF cookie (soundings_csrf or __Host-soundings_csrf).",
         "in": "cookie",
@@ -9202,6 +9211,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List every API key",
@@ -9286,6 +9298,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Revoke any API key",
@@ -9329,7 +9344,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AuditAction"
                   },
-                  "maxItems": 40,
+                  "maxItems": 64,
                   "type": "array"
                 },
                 {
@@ -9539,6 +9554,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Read the audit log",
@@ -9596,6 +9614,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Admin settings: branding",
@@ -9671,6 +9692,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Change the global branding",
@@ -9788,6 +9812,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Upload a global logo or favicon",
@@ -9845,6 +9872,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Effective email configuration",
@@ -9999,6 +10029,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "The email outbox",
@@ -10066,6 +10099,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Retry every failed email",
@@ -10155,6 +10191,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "One outbox email",
@@ -10254,6 +10293,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Retry a failed email",
@@ -10351,6 +10393,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Send a test email",
@@ -10482,6 +10527,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List groups",
@@ -10567,6 +10615,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Create a group",
@@ -10644,6 +10695,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Test the group mapping",
@@ -10726,6 +10780,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Delete a group",
@@ -10813,6 +10870,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Get a group",
@@ -10920,6 +10980,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Rename or describe a group",
@@ -11019,6 +11082,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Replace the IdP mapping",
@@ -11170,6 +11236,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List group members",
@@ -11277,6 +11346,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Add a manual member",
@@ -11369,6 +11441,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Remove a member",
@@ -11426,6 +11501,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Effective SSO configuration",
@@ -11611,6 +11689,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List users",
@@ -11696,6 +11777,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Pre-create a user",
@@ -11785,6 +11869,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Get a user",
@@ -11892,6 +11979,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Update a user",
@@ -12001,6 +12091,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Replace a user's external IDs",
@@ -12093,6 +12186,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Unlink an SSO identity",
@@ -12175,6 +12271,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Sign a user out everywhere",
@@ -12722,6 +12821,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Who am I",
@@ -12936,6 +13038,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Delete a comment",
@@ -13043,6 +13148,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Edit a comment",
@@ -13139,6 +13247,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Search groups",
@@ -13234,6 +13345,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Delete an idea",
@@ -13313,6 +13427,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Get an idea (the idea page)",
@@ -13423,6 +13540,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Edit an idea",
@@ -13548,6 +13668,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Activity feed",
@@ -13660,6 +13783,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Comment on an idea",
@@ -13762,6 +13888,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Close evaluation",
@@ -13874,6 +14003,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Set or clear the evaluation due date",
@@ -13976,6 +14108,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Reopen evaluation",
@@ -14058,6 +14193,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List submitted evaluations",
@@ -14148,6 +14286,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Get my evaluation",
@@ -14258,6 +14399,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Save or submit my evaluation",
@@ -14370,6 +14514,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Invite evaluators",
@@ -14482,6 +14629,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Remove an evaluator",
@@ -14594,6 +14744,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Assign or unassign the owner",
@@ -14676,6 +14829,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "The Proposal tab",
@@ -14776,6 +14932,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Start the proposal",
@@ -14877,6 +15036,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Export as Markdown",
@@ -14988,6 +15150,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Export as PDF",
@@ -15110,6 +15275,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Save a section",
@@ -15192,6 +15360,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Pending suggestions",
@@ -15302,6 +15473,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Suggest text for a section",
@@ -15426,6 +15600,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Accept a suggestion",
@@ -15540,6 +15717,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Discard a suggestion",
@@ -15622,6 +15802,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Margin comment threads",
@@ -15732,6 +15915,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Comment on a section",
@@ -15856,6 +16042,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Reply in a thread",
@@ -15975,6 +16164,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Delete a margin comment",
@@ -16089,6 +16281,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Reopen a thread",
@@ -16201,6 +16396,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Resolve a thread",
@@ -16313,6 +16511,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Move an idea to a status",
@@ -16395,6 +16596,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "How a public idea came in",
@@ -16487,6 +16691,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Approve a public idea",
@@ -16579,6 +16786,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Erase the submitter's details",
@@ -16664,6 +16874,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Reject a public idea",
@@ -16766,6 +16979,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "I'll own this",
@@ -16868,6 +17084,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Remove my upvote",
@@ -16968,6 +17187,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Upvote",
@@ -17050,6 +17272,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Stop watching",
@@ -17130,6 +17355,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Watch",
@@ -17187,6 +17415,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List my API keys",
@@ -17272,6 +17503,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Create an API key",
@@ -17356,6 +17590,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Revoke an API key",
@@ -17413,6 +17650,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "My email preferences",
@@ -17488,6 +17728,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Change my email preferences",
@@ -17602,6 +17845,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "My notifications",
@@ -17691,6 +17937,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Mark all notifications read",
@@ -17738,6 +17987,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Unread count and email status",
@@ -17810,6 +18062,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Mark a notification read",
@@ -17933,6 +18188,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Ideas I own, across projects",
@@ -17980,6 +18238,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "My work",
@@ -18055,6 +18316,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List projects I can see",
@@ -18140,6 +18404,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Create a project",
@@ -18222,6 +18489,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Get a project",
@@ -18322,6 +18592,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Update project settings",
@@ -18484,6 +18757,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Everyone with access",
@@ -18699,6 +18975,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Board: ideas by status",
@@ -18791,6 +19070,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Project settings: branding",
@@ -18901,6 +19183,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Change the project's branding",
@@ -19051,6 +19336,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Upload a project logo or favicon",
@@ -19137,6 +19425,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List group grants",
@@ -19247,6 +19538,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Grant a group a role",
@@ -19352,6 +19646,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Remove a group grant",
@@ -19472,6 +19769,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Change a group's role",
@@ -19758,6 +20058,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List ideas",
@@ -19868,6 +20171,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Submit an idea",
@@ -19954,6 +20260,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List members",
@@ -20064,6 +20373,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Add a member",
@@ -20169,6 +20481,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Remove a member",
@@ -20289,6 +20604,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Change a member's role",
@@ -20424,6 +20742,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Ideas waiting for moderation",
@@ -20516,6 +20837,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Project settings: public form",
@@ -20626,6 +20950,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Change the public form",
@@ -20728,6 +21055,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Replace the rubric",
@@ -20814,6 +21144,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "List tags",
@@ -21574,6 +21907,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Search ideas and projects",
@@ -21892,6 +22228,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "api_key": []
           }
         ],
         "summary": "Search users",

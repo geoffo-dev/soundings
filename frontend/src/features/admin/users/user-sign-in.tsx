@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import {
@@ -267,12 +268,7 @@ function Sessions({ user, isMe }: { user: AdminUser; isMe: boolean }) {
             : `Signed in on ${count === 1 ? '1 browser' : `${count} browsers`}.`}
         </p>
         {count > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            loading={end.isPending && !confirming}
-            onClick={() => (isMe ? setConfirming(true) : run())}
-          >
+          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
             Sign out everywhere
           </Button>
         )}
@@ -280,12 +276,27 @@ function Sessions({ user, isMe }: { user: AdminUser; isMe: boolean }) {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Sign yourself out everywhere?"
-        description="This ends this session too: you’ll go to the sign-in page."
+        title={isMe ? 'Sign yourself out everywhere?' : `Sign ${user.display_name} out everywhere?`}
+        description={
+          isMe
+            ? 'This ends this session too: you’ll go to the sign-in page.'
+            : `Their ${sessions(count)} end now; group changes apply at their next sign-in.`
+        }
         confirmLabel="Sign out everywhere"
         pending={end.isPending}
         onConfirm={run}
-      />
+      >
+        {/* contract-phase5 §2: ending sessions doesn't stop API keys. */}
+        API keys keep working.{' '}
+        <Link
+          to="/settings/all-api-keys"
+          search={{ user_id: user.id }}
+          className="text-accent underline-offset-4 hover:underline"
+        >
+          {isMe ? 'Review your keys' : 'Review their keys'}
+        </Link>{' '}
+        to revoke any that should stop too.
+      </ConfirmDialog>
     </div>
   )
 }

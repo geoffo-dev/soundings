@@ -6,6 +6,7 @@
 #
 #   SSO=1 scripts/k3s-install.sh                    # + dev/k3s-sso-values.yaml (Keycloak)
 #   SMTP=1 scripts/k3s-install.sh                   # + dev/k3s-smtp-values.yaml (Mailpit)
+#   MCP=1 scripts/k3s-install.sh                    # + dev/k3s-mcp-values.yaml (agents' access)
 #
 #   RELEASE    release name (default soundings)     NAMESPACE  (default soundings)
 #   VALUES     values file under deploy/helm/ or dev/ TIMEOUT   helm --timeout (default 10m)
@@ -13,6 +14,8 @@
 #              first): adds dev/k3s-sso-values.yaml and the issuer for K3S_HTTP_PORT
 #   SMTP       1: email to the cluster's Mailpit (scripts/k3s-mailpit.sh first): adds
 #              dev/k3s-smtp-values.yaml (SMTP, time zone, egress NetworkPolicies)
+#   MCP        1: adds dev/k3s-mcp-values.yaml (kagent.enabled; the API admits only
+#              Traefik and the kagent namespace), for `scripts/k3s-smoke.sh` with MCP=1
 # Extra arguments are passed to helm.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/k3s-env.sh
@@ -24,6 +27,7 @@ VALUES="${VALUES:-dev/k3s-values.yaml}"
 TIMEOUT="${TIMEOUT:-10m}"
 SSO="${SSO:-0}"
 SMTP="${SMTP:-0}"
+MCP="${MCP:-0}"
 
 require_k3s
 case "$VALUES" in
@@ -56,6 +60,12 @@ if [ "$SMTP" = "1" ]; then
   values_label="$values_label + dev/k3s-smtp-values.yaml"
 fi
 
+mcp_args=()
+if [ "$MCP" = "1" ]; then
+  mcp_args=(--values dev/k3s-mcp-values.yaml)
+  values_label="$values_label + dev/k3s-mcp-values.yaml"
+fi
+
 # An edge rate limit for the public form's API (dev/k3s/public-ratelimit.yaml), attached
 # through the chart's second Ingress, when Traefik's CRDs are there (k3s ships them).
 edge_args=()
@@ -71,6 +81,7 @@ helm upgrade --install "$RELEASE" deploy/helm \
   --values "$VALUES" \
   ${sso_args[@]+"${sso_args[@]}"} \
   ${smtp_args[@]+"${smtp_args[@]}"} \
+  ${mcp_args[@]+"${mcp_args[@]}"} \
   ${edge_args[@]+"${edge_args[@]}"} \
   --set "baseUrls[0]=http://localhost:$K3S_HTTP_PORT" \
   --wait --timeout "$TIMEOUT" \

@@ -64,7 +64,10 @@ demo:
 # in the IdP stops new sign-ins only: deactivate them in Settings > Users (or use "Sign
 # out everywhere") to end running sessions at once. Otherwise IdP changes (removals,
 # group changes) apply within maxAge, a day by default. Break-glass sessions are
-# shorter (8 hours, 1 hour idle).
+# shorter (8 hours, 1 hour idle). Personal API keys are not sessions: "Sign out
+# everywhere" leaves them working; deactivating the owner revokes them, and a person's
+# keys pause after 30 days without signing in (a sign-in, which also syncs their IdP
+# groups, resumes them). Service accounts' keys never pause.
 sessions:
   # -- A session ends after this long without a request: ISO 8601 duration or seconds.
   idleTimeout: PT12H
@@ -213,14 +216,31 @@ branding:
   # app's 1 MiB request limit).
   maxUploadBytes: 524288
 
-# kagent integration (Phase 6: AI evaluator, research and drafting assistant).
-# Placeholders only for now; see deploy/kagent/README.md.
+# kagent integration: AI agents in the cluster use Soundings' MCP server (/mcp, with a
+# service account's API key); Phase 6 adds the AI evaluator and research assistant that
+# the worker starts over A2A. deploy/kagent/README.md has the manifests, the key and
+# what has been verified against which kagent version.
 kagent:
+  # -- kagent runs in this cluster and uses Soundings. When networkPolicy.ingressFrom
+  # restricts the API, kagent's namespace (below) is then allowed to reach it too: the
+  # controller lists the MCP server's tools and agents created there call them.
   enabled: false
   # -- Namespace where kagent runs.
   namespace: kagent
-  # -- Also install the example Agent manifests and the MCP server registration.
+  # -- Also render the example kagent resources (kagent 0.10, kagent.dev/v1alpha2; needs
+  # kagent.enabled and kagent's CRDs): a RemoteMCPServer "<fullname>-mcp" in the release
+  # namespace pointing at this release's /mcp through its Service, usable by agents in
+  # the release namespace and in kagent.namespace.
   examples: false
+  mcp:
+    # -- Existing Secret (release namespace) whose key `keySecretKey` holds the whole
+    # Authorization header kagent sends: "Bearer sdg_...", a service account's API key
+    # with the read, evaluate and mcp scopes, restricted to the projects the agents
+    # serve. Required with examples.
+    keySecret: ""
+    keySecretKey: authorization
+    # -- How long kagent waits for the MCP server (connect and each call), e.g. 30s.
+    timeout: 30s
 
 otel:
   # -- OTLP/HTTP base URL for traces, e.g. http://otel-collector.observability:4318.
@@ -339,6 +359,17 @@ ingress:
     # -- e.g. {nginx.ingress.kubernetes.io/limit-rpm: "30"}, or for Traefik
     # {traefik.ingress.kubernetes.io/router.middlewares: <ns>-<ratelimit>@kubernetescrd}.
     annotations: {}
+  # The MCP server (/mcp: MCP clients and AI agents with a personal or service-account
+  # API key) is served through the Ingress above like the rest of the app: short JSON
+  # responses (no SSE stream, nothing to unbuffer), so the controller's default
+  # timeouts and buffering are fine. Optional extra Ingress for /mcp with its
+  # own annotations, e.g. an allow-list of the networks MCP clients connect from. Rendered
+  # when annotations is not empty, with the class, hosts and TLS above but only these
+  # annotations.
+  mcp:
+    # -- e.g. {nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8"}, or for
+    # Traefik {traefik.ingress.kubernetes.io/router.middlewares: <ns>-<ipallowlist>@kubernetescrd}.
+    annotations: {}
 
 # Gateway API HTTPRoute (alternative to ingress; needs the Gateway API CRDs).
 httpRoute:
@@ -443,7 +474,9 @@ networkPolicy:
   # controller's namespace, e.g. [{namespaceSelector: {matchLabels:
   # {kubernetes.io/metadata.name: ingress-nginx}}}]. Empty: any source, so any pod in
   # the cluster can reach the API directly and choose its own X-Forwarded-For. Pods of
-  # this release are always allowed.
+  # this release are always allowed, and kagent.namespace when kagent.enabled. Other
+  # in-cluster MCP clients (agents in other namespaces) call
+  # http://<fullname>.<namespace>.svc.cluster.local/mcp: add their namespace here.
   ingressFrom: []
   # -- Who may scrape the metrics port (e.g. the Prometheus namespace), as peers.
   # Empty: any source. Pods of this release are always allowed.

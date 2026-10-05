@@ -9,20 +9,22 @@ import { cn } from '@/lib/utils'
 export const SETTINGS_PAGES = [
   { to: '/settings', label: 'Account', admin: false },
   { to: '/settings/notifications', label: 'Notifications', admin: false },
+  { to: '/settings/api-keys', label: 'API keys', admin: false },
   { to: '/settings/users', label: 'Users', admin: true },
   { to: '/settings/groups', label: 'Groups', admin: true },
   { to: '/settings/sso', label: 'Sign-in (SSO)', short: 'SSO', admin: true },
   { to: '/settings/email', label: 'Email', admin: true },
   { to: '/settings/branding', label: 'Branding', admin: true },
+  { to: '/settings/all-api-keys', label: 'All API keys', short: 'All keys', admin: true },
   { to: '/settings/audit', label: 'Audit log', admin: true },
 ] as const
 
 /**
  * /settings and its pages (SPEC §5 screen 7, wireframe 07): one "Settings"
  * page with a row of sections, like project settings. Everyone has Account
- * (profile, appearance, projects they manage) and Notifications (email
- * preferences); platform admins also get Users, Groups, Sign-in (SSO), Email,
- * Branding and the Audit log, after a divider. Anyone else never sees the admin
+ * (profile, appearance, projects they manage), Notifications (email
+ * preferences) and API keys (theirs); platform admins also get Users, Groups,
+ * Sign-in (SSO), Email, Branding, All API keys and the Audit log, after a divider. Anyone else never sees the admin
  * sections (and their URLs are a 404).
  */
 export function SettingsFrame({ children }: { children: ReactNode }) {

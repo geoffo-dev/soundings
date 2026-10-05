@@ -409,6 +409,116 @@ describe('audit sentences', () => {
     ).toBe('Alice Anders changed the public form and public form moderation of Customer Innovation')
   })
 
+  it('describes API keys by their prefix, never more', () => {
+    const own = {
+      target_type: 'user' as const,
+      target_id: ALICE.id,
+      target_label: ALICE.display_name,
+    }
+    expect(
+      say(
+        entry('api_key.create', {
+          ...own,
+          details: {
+            rule: 'api_key.manage_own',
+            key_id: 'k-1',
+            prefix: 'sdg_Ab12Cd34Ef56',
+            scopes: ['read', 'evaluate', 'mcp'],
+            restricted: true,
+            project_ids: [CUST.id],
+            expires_at: '2027-01-02T10:00:00Z',
+          },
+        }),
+      ),
+    ).toBe(
+      'Alice Anders created API key sdg_Ab12Cd34Ef56 (read, evaluate and mcp; 1 project; expires 2 Jan 2027)',
+    )
+    expect(
+      say(
+        entry('api_key.create', {
+          actor: PRIYA,
+          actor_id: PRIYA.id,
+          target_type: 'user',
+          target_id: 'u-agent',
+          target_label: 'Research agent',
+          details: { prefix: 'sdg_Zz', scopes: ['read'], restricted: false, expires_at: null },
+        }),
+      ),
+    ).toBe(
+      'Priya Natarajan created API key sdg_Zz for Research agent (read; all projects; never expires)',
+    )
+    expect(
+      say(
+        entry('api_key.revoke', {
+          ...own,
+          details: { rule: 'api_key.manage_own', prefix: 'sdg_Ab' },
+        }),
+      ),
+    ).toBe('Alice Anders revoked API key sdg_Ab')
+    expect(
+      say(
+        entry('api_key.revoke', {
+          ...own,
+          actor: PRIYA,
+          actor_id: PRIYA.id,
+          details: { rule: 'api_key.manage_any', prefix: 'sdg_Ab' },
+        }),
+      ),
+    ).toBe('Priya Natarajan revoked API key sdg_Ab of Alice Anders')
+    expect(
+      say(
+        entry('api_key.revoke', {
+          ...own,
+          actor: PRIYA,
+          actor_id: PRIYA.id,
+          details: { rule: 'platform.manage_users', prefix: 'sdg_Ab', reason: 'deactivated' },
+        }),
+      ),
+    ).toBe('Priya Natarajan deactivated Alice Anders, which revoked API key sdg_Ab')
+  })
+
+  it('describes MCP calls with their tool, target and outcome', () => {
+    const call = (details: Record<string, unknown>, overrides: Partial<AuditEntry> = {}) =>
+      say(
+        entry('mcp.call', {
+          details: { auth: 'api_key', api_key_id: 'k-1', ...details },
+          ...overrides,
+        }),
+      )
+    const onIdea = {
+      target_type: 'idea' as const,
+      target_id: 'i-12',
+      target_label: 'CUST-12',
+      project: CUST,
+    }
+    expect(
+      call({ tool: 'get_idea', rule: 'idea.view', decision: 'allow', code: null }, onIdea),
+    ).toBe('Alice Anders’s key called get_idea on CUST-12')
+    expect(
+      call({ tool: 'get_idea', rule: 'idea.view', decision: 'deny', code: 'not_found' }, onIdea),
+    ).toBe('Alice Anders’s key called get_idea on CUST-12: denied (not found)')
+    expect(
+      call({ tool: 'submit_evaluation', decision: 'allow', code: 'evaluation_closed' }, onIdea),
+    ).toBe('Alice Anders’s key called submit_evaluation on CUST-12: failed (evaluation closed)')
+    expect(
+      call(
+        { tool: 'create_idea', decision: 'deny', code: 'insufficient_scope' },
+        { target_type: 'project', target_id: CUST.id, target_label: CUST.name, project: CUST },
+      ),
+    ).toBe(
+      'Alice Anders’s key called create_idea in Customer Innovation: denied (insufficient scope)',
+    )
+    expect(call({ tool: 'search_ideas', decision: 'allow' })).toBe(
+      'Alice Anders’s key called search_ideas',
+    )
+    expect(call({ tool: 'unknown', decision: 'deny', code: 'unknown_tool' })).toBe(
+      'Alice Anders’s key called an unknown tool: denied (unknown tool)',
+    )
+    expect(
+      call({ tool: null, rule: 'mcp.connect', decision: 'deny', code: 'insufficient_scope' }),
+    ).toBe('Alice Anders’s key was refused by the MCP server: it has no mcp scope')
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -456,6 +566,9 @@ describe('audit categories', () => {
       'submission.reject': true,
       'submission.erase': true,
       'branding.update': true,
+      'api_key.create': true,
+      'api_key.revoke': true,
+      'mcp.call': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

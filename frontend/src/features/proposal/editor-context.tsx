@@ -5,6 +5,8 @@ import type {
   IdeaDetail,
   ProposalPermissions,
   ProposalSectionKey,
+  ProposalSuggestion,
+  ProposalSuggestionPermissions,
   ProposalThread,
 } from '@/api/types'
 
@@ -24,6 +26,10 @@ export interface ProposalEditorContextValue {
   threads: Map<ProposalSectionKey, ProposalThread[]> | undefined
   threadsError: boolean
   retryThreads: () => void
+  /** Phase 5: pending suggestions per section (template order, then oldest first). */
+  suggestions: Map<ProposalSectionKey, ProposalSuggestion[]>
+  /** Accept / discard (`can_decide`), suggest (`can_suggest`); false while loading. */
+  suggestionPermissions: ProposalSuggestionPermissions
   modeOf: (key: ProposalSectionKey) => SectionMode
   setMode: (key: ProposalSectionKey, mode: SectionMode) => void
   /** Write ⇄ Preview, keeping focus in the section (its text, or the preview). */

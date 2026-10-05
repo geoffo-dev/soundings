@@ -43,6 +43,36 @@ describe('ProposalSaveStore', () => {
     return { store, onSaved }
   }
 
+  it('holds the autosave while a suggestion is accepted, and replaces the text after', async () => {
+    const save = vi.fn<SaveFn>((key, body, base) => Promise.resolve(section(key, body, base + 1)))
+    const { store, onSaved } = setup(save)
+    store.edit('summary', 'Hello, edited')
+    store.holdSave('summary')
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2)
+    expect(save).not.toHaveBeenCalled()
+    const accepted = section('summary', 'Suggested text', 4, 'alice')
+    store.replace(accepted)
+    expect(store.get('summary')).toMatchObject({
+      draft: 'Suggested text',
+      saved: 'Suggested text',
+      base: 4,
+      status: 'saved',
+    })
+    expect(onSaved).toHaveBeenCalledWith(accepted)
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('re-arms the held autosave when the accept didn’t happen', async () => {
+    const save = vi.fn<SaveFn>((key, body, base) => Promise.resolve(section(key, body, base + 1)))
+    const { store } = setup(save)
+    store.edit('summary', 'Hello, edited')
+    store.holdSave('summary')
+    store.releaseSave('summary')
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS)
+    expect(save).toHaveBeenCalledWith('summary', 'Hello, edited', 3, { keepalive: false })
+  })
+
   it('saves a section 800 ms after the last keystroke, from its version', async () => {
     const save = vi.fn<SaveFn>((key, body, base) => Promise.resolve(section(key, body, base + 1)))
     const { store, onSaved } = setup(save)

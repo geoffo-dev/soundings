@@ -110,3 +110,51 @@ export function markdownExcerpt(markdown: string): string {
     .replace(/\s+/g, ' ')
     .trim()
 }
+
+export type SuggestionLine =
+  | { kind: 'same' | 'removed' | 'added'; text: string }
+  /** Unchanged lines left out between changes. */
+  | { kind: 'skip'; count: number }
+
+/**
+ * A suggestion against the section's text as a unified diff (contract-phase5
+ * §3.4 "a preview of the proposed text against the current text"): removed
+ * and added lines with `context` unchanged lines around each change; longer
+ * unchanged runs become one `skip`. Nothing changed: an empty list.
+ */
+export function suggestionDiff(current: string, suggested: string, context = 2): SuggestionLine[] {
+  // An empty section: every suggested line is new (no phantom removed blank line).
+  if (current === '') return suggested.split('\n').map((text) => ({ kind: 'added' as const, text }))
+  const lines = diffLines(current, suggested).map((line) => ({
+    kind:
+      line.kind === 'theirs'
+        ? ('removed' as const)
+        : line.kind === 'yours'
+          ? ('added' as const)
+          : ('same' as const),
+    text: line.text,
+  }))
+  if (!lines.some((line) => line.kind !== 'same')) return []
+  const keep = lines.map((line) => line.kind !== 'same')
+  lines.forEach((line, index) => {
+    if (line.kind === 'same') return
+    for (
+      let i = Math.max(0, index - context);
+      i <= Math.min(lines.length - 1, index + context);
+      i++
+    ) {
+      keep[i] = true
+    }
+  })
+  const out: SuggestionLine[] = []
+  let skipped = 0
+  lines.forEach((line, index) => {
+    if (keep[index]) {
+      if (skipped) out.push({ kind: 'skip', count: skipped })
+      skipped = 0
+      out.push(line)
+    } else skipped++
+  })
+  if (skipped) out.push({ kind: 'skip', count: skipped })
+  return out
+}

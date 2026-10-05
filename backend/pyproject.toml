@@ -37,6 +37,10 @@ dependencies = [
     # Markdown for proposal exports (app/proposals/markdown.py): CommonMark + GFM tables
     # as the SPA renders them, a token stream with source maps for heading demotion.
     "markdown-it-py>=3,<5",
+    # The MCP server at /mcp (app/mcp/; contract-phase5 section 4, ADR 0013): the official
+    # SDK's low-level Server over stateless streamable HTTP; 2.x is the API verified in
+    # research R1 section 1 (brings httpx2, sse-starlette and pyjwt).
+    "mcp>=2.2,<3",
 ]
 
 [project.optional-dependencies]

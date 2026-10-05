@@ -69,3 +69,41 @@ spec:
                   name: http
     {{- end }}
 {{- end }}
+{{- if and .Values.ingress.enabled .Values.ingress.mcp.annotations }}
+{{- $hosts := .Values.ingress.hosts | default (include "soundings.baseHosts" . | fromYamlArray) }}
+---
+# The MCP server (/mcp: MCP clients and AI agents with an API key) with its own
+# annotations, e.g. an allow-list of client networks. A Prefix path, so it wins over "/"
+# above everywhere (Traefik ranks routers by rule length, and an Exact /mcp rule is
+# shorter than PathPrefix(`/`)); only ingress.mcp.annotations apply here (as for the
+# public form's Ingress).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "soundings.fullname" . }}-mcp
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.mcp.annotations | nindent 4 }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "soundings.fullname" $ }}
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

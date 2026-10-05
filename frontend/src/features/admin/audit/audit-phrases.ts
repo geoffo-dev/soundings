@@ -149,6 +149,35 @@ function fieldWords(fields: string[], words: Record<string, string>): string {
   return joinWords(fields.map((field) => words[field] ?? field.replaceAll('_', ' ')))
 }
 
+/** A key by its public prefix (`sdg_` + lookup id), or "a key" for older entries. */
+function keyPrefix(details: Details): AuditPart {
+  const prefix = str(details, 'prefix')
+  return prefix ? name(prefix) : text('(prefix not recorded)')
+}
+
+const KEY_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
+/** "read, evaluate and mcp; 1 project; expires 2 Jan 2027" for `api_key.create`. */
+function keyTerms(details: Details): string {
+  const scopes = list(details, 'scopes')
+  const projects = list(details, 'project_ids')
+  const expires = str(details, 'expires_at')
+  const date = expires ? new Date(expires) : null
+  return [
+    scopes.length ? joinWords(scopes) : 'no scopes',
+    details.restricted === true
+      ? projects.length
+        ? plural(projects.length, 'project')
+        : 'restricted to projects'
+      : 'all projects',
+    date && !Number.isNaN(date.getTime()) ? `expires ${KEY_DATE.format(date)}` : 'never expires',
+  ].join('; ')
+}
+
 const MATCHED_BY: Record<string, string> = {
   external_id: 'by external ID',
   email: 'by verified email',
@@ -500,6 +529,74 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
             ? ` changed the ${fieldWords(fields, BRANDING_FIELDS)} of the branding`
             : ' changed the branding',
         ),
+      ]
+    }
+
+    /* API keys and MCP (contract-phase5 §3.6): never a key, only its prefix */
+    case 'api_key.create': {
+      const forSomeoneElse =
+        entry.target_type === 'user' && entry.target_id && entry.target_id !== entry.actor_id
+      return [
+        actor,
+        text(' created API key '),
+        keyPrefix(details),
+        ...(forSomeoneElse ? [text(' for '), targetUser] : []),
+        text(` (${keyTerms(details)})`),
+      ]
+    }
+    case 'api_key.revoke': {
+      const ownKey = !entry.target_id || entry.target_id === entry.actor_id
+      if (str(details, 'reason') === 'deactivated') {
+        return [
+          actor,
+          text(' deactivated '),
+          targetUser,
+          text(', which revoked API key '),
+          keyPrefix(details),
+        ]
+      }
+      return [
+        actor,
+        text(' revoked API key '),
+        keyPrefix(details),
+        ...(ownKey ? [] : [text(' of '), targetUser]),
+      ]
+    }
+    case 'mcp.call': {
+      const tool = str(details, 'tool')
+      const code = str(details, 'code')
+      const denied = str(details, 'decision') === 'deny'
+      const outcome = code
+        ? `: ${denied ? 'denied' : 'failed'} (${code.replaceAll('_', ' ')})`
+        : denied
+          ? ': denied'
+          : ''
+      const owner: AuditPart[] = entry.actor
+        ? [name(`${entry.actor.display_name}’s`), text(' key')]
+        : [text(entry.actor_id ? 'A deleted user’s key' : 'A key')]
+      if (!tool) {
+        // c15: refused at the door (the key has no `mcp` scope).
+        return [
+          ...owner,
+          text(
+            !code || code === 'insufficient_scope'
+              ? ' was refused by the MCP server: it has no mcp scope'
+              : ` was refused by the MCP server${outcome}`,
+          ),
+        ]
+      }
+      const on: AuditPart[] =
+        entry.target_type === 'idea'
+          ? [text(' on '), idea()]
+          : entry.target_type === 'project'
+            ? [text(' in '), project]
+            : []
+      return [
+        ...owner,
+        text(tool === 'unknown' ? ' called an unknown tool' : ' called '),
+        ...(tool === 'unknown' ? [] : [name(tool)]),
+        ...on,
+        text(outcome),
       ]
     }
   }

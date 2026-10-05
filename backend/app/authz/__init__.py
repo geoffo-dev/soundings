@@ -12,10 +12,20 @@ rule X on resource Y", for every rule in docs/role-matrix.md. Deny by default.
   :func:`listed_ideas` (alias :func:`viewable_ideas`: never a held idea),
   :func:`score_visible` and the masked score columns.
 * ``permissions`` response objects: :mod:`app.authz.permissions`.
+* API keys route by route (:mod:`app.authz.keys`): :data:`ROUTE_KEY_ACCESS`,
+  :func:`check_route_for_key`, :func:`require_session`, :func:`require_key_scope`.
 
 Nothing else inspects roles: routes, MCP tools, jobs and emails call this package.
 """
 
+from app.authz.keys import (
+    ROUTE_KEY_ACCESS,
+    InsufficientScopeProblem,
+    KeyAccess,
+    check_route_for_key,
+    require_key_scope,
+    require_session,
+)
 from app.authz.loaders import (
     admin_count,
     effective_role_of,
@@ -59,10 +69,13 @@ __all__ = [
     "ASSIGNABLE_ROLES",
     "FROZEN_WHILE_HELD",
     "POLICY",
+    "ROUTE_KEY_ACCESS",
     "RULE_SCOPES",
     "SESSION_ONLY_RULES",
     "Decision",
     "IdeaFacts",
+    "InsufficientScopeProblem",
+    "KeyAccess",
     "ProjectFacts",
     "Resource",
     "Rule",
@@ -70,6 +83,7 @@ __all__ = [
     "authorize",
     "best_decision",
     "can",
+    "check_route_for_key",
     "effective_role",
     "effective_role_of",
     "effective_roles_of",
@@ -86,6 +100,8 @@ __all__ = [
     "project_resource",
     "require",
     "require_any",
+    "require_key_scope",
+    "require_session",
     "require_view",
     "score_visible",
     "viewable_ideas",

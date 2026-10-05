@@ -14,7 +14,8 @@ from fastapi import APIRouter, Path, Query, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.api_keys import service
+from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.api_keys import AdminApiKeyPage, ApiKeyState
 from app.schemas.base import NoNul
@@ -40,6 +41,7 @@ _ADMIN = "Platform admins (api_key.manage_any, session only). "
 )
 async def list_admin_api_keys(
     principal: PrincipalDep,
+    session: SessionDep,
     page: PageParamsDep,
     q: Annotated[
         str | None,
@@ -59,7 +61,9 @@ async def list_admin_api_keys(
         ApiKeyState | None, Query(description="Only active, expired or dormant keys.")
     ] = None,
 ) -> AdminApiKeyPage:
-    raise NotImplementedProblem
+    return await service.list_admin_keys(
+        session, principal, q=q, user_id=user_id, state=state, page=page
+    )
 
 
 @router.delete(
@@ -73,5 +77,5 @@ async def list_admin_api_keys(
     ),
     responses=problems(401, 403, 404),
 )
-async def revoke_admin_api_key(principal: PrincipalDep, key_id: KeyId) -> None:
-    raise NotImplementedProblem
+async def revoke_admin_api_key(principal: PrincipalDep, session: SessionDep, key_id: KeyId) -> None:
+    await service.revoke_admin_key(session, principal, key_id)

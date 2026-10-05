@@ -25,10 +25,12 @@ import { Route as AppIdeasIdeaKeyRouteImport } from './routes/_app/ideas.$ideaKe
 import { Route as AppPSlugRouteImport } from './routes/_app/p.$slug'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings.index'
 import { Route as AppSettingsAdminRouteImport } from './routes/_app/settings._admin'
+import { Route as AppSettingsApiKeysRouteImport } from './routes/_app/settings.api-keys'
 import { Route as AppSettingsNotificationsRouteImport } from './routes/_app/settings.notifications'
 import { Route as AppPSlugIndexRouteImport } from './routes/_app/p.$slug.index'
 import { Route as AppPSlugReviewRouteImport } from './routes/_app/p.$slug.review'
 import { Route as AppPSlugSettingsRouteImport } from './routes/_app/p.$slug.settings'
+import { Route as AppSettingsAdminAllApiKeysRouteImport } from './routes/_app/settings._admin.all-api-keys'
 import { Route as AppSettingsAdminAuditRouteImport } from './routes/_app/settings._admin.audit'
 import { Route as AppSettingsAdminBrandingRouteImport } from './routes/_app/settings._admin.branding'
 import { Route as AppSettingsAdminEmailRouteImport } from './routes/_app/settings._admin.email'
@@ -116,6 +118,11 @@ const AppSettingsAdminRoute = AppSettingsAdminRouteImport.update({
   id: '/_admin',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsApiKeysRoute = AppSettingsApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppSettingsNotificationsRoute =
   AppSettingsNotificationsRouteImport.update({
     id: '/notifications',
@@ -137,6 +144,12 @@ const AppPSlugSettingsRoute = AppPSlugSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppPSlugRoute,
 } as any)
+const AppSettingsAdminAllApiKeysRoute =
+  AppSettingsAdminAllApiKeysRouteImport.update({
+    id: '/all-api-keys',
+    path: '/all-api-keys',
+    getParentRoute: () => AppSettingsAdminRoute,
+  } as any)
 const AppSettingsAdminAuditRoute = AppSettingsAdminAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -196,10 +209,12 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRouteWithChildren
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/p/$slug': typeof AppPSlugRouteWithChildren
+  '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/': typeof AppSettingsIndexRoute
   '/p/$slug/review': typeof AppPSlugReviewRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/settings/all-api-keys': typeof AppSettingsAdminAllApiKeysRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
   '/settings/branding': typeof AppSettingsAdminBrandingRoute
   '/settings/email': typeof AppSettingsAdminEmailRoute
@@ -223,9 +238,11 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/p/$slug/review': typeof AppPSlugReviewRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/settings/all-api-keys': typeof AppSettingsAdminAllApiKeysRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
   '/settings/branding': typeof AppSettingsAdminBrandingRoute
   '/settings/email': typeof AppSettingsAdminEmailRoute
@@ -253,10 +270,12 @@ export interface FileRoutesById {
   '/_app/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
   '/_app/p/$slug': typeof AppPSlugRouteWithChildren
   '/_app/settings/_admin': typeof AppSettingsAdminRouteWithChildren
+  '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/_app/settings/notifications': typeof AppSettingsNotificationsRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/p/$slug/review': typeof AppPSlugReviewRoute
   '/_app/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/_app/settings/_admin/all-api-keys': typeof AppSettingsAdminAllApiKeysRoute
   '/_app/settings/_admin/audit': typeof AppSettingsAdminAuditRoute
   '/_app/settings/_admin/branding': typeof AppSettingsAdminBrandingRoute
   '/_app/settings/_admin/email': typeof AppSettingsAdminEmailRoute
@@ -283,10 +302,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/ideas/$ideaKey'
     | '/p/$slug'
+    | '/settings/api-keys'
     | '/settings/notifications'
     | '/settings/'
     | '/p/$slug/review'
     | '/p/$slug/settings'
+    | '/settings/all-api-keys'
     | '/settings/audit'
     | '/settings/branding'
     | '/settings/email'
@@ -310,9 +331,11 @@ export interface FileRouteTypes {
     | '/'
     | '/ideas/$ideaKey'
     | '/settings'
+    | '/settings/api-keys'
     | '/settings/notifications'
     | '/p/$slug/review'
     | '/p/$slug/settings'
+    | '/settings/all-api-keys'
     | '/settings/audit'
     | '/settings/branding'
     | '/settings/email'
@@ -339,10 +362,12 @@ export interface FileRouteTypes {
     | '/_app/ideas/$ideaKey'
     | '/_app/p/$slug'
     | '/_app/settings/_admin'
+    | '/_app/settings/api-keys'
     | '/_app/settings/notifications'
     | '/_app/settings/'
     | '/_app/p/$slug/review'
     | '/_app/p/$slug/settings'
+    | '/_app/settings/_admin/all-api-keys'
     | '/_app/settings/_admin/audit'
     | '/_app/settings/_admin/branding'
     | '/_app/settings/_admin/email'
@@ -479,6 +504,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsAdminRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/api-keys': {
+      id: '/_app/settings/api-keys'
+      path: '/api-keys'
+      fullPath: '/settings/api-keys'
+      preLoaderRoute: typeof AppSettingsApiKeysRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/notifications': {
       id: '/_app/settings/notifications'
       path: '/notifications'
@@ -506,6 +538,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/p/$slug/settings'
       preLoaderRoute: typeof AppPSlugSettingsRouteImport
       parentRoute: typeof AppPSlugRoute
+    }
+    '/_app/settings/_admin/all-api-keys': {
+      id: '/_app/settings/_admin/all-api-keys'
+      path: '/all-api-keys'
+      fullPath: '/settings/all-api-keys'
+      preLoaderRoute: typeof AppSettingsAdminAllApiKeysRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
     }
     '/_app/settings/_admin/audit': {
       id: '/_app/settings/_admin/audit'
@@ -580,6 +619,7 @@ const AppSettingsAdminUsersRouteWithChildren =
   )
 
 interface AppSettingsAdminRouteChildren {
+  AppSettingsAdminAllApiKeysRoute: typeof AppSettingsAdminAllApiKeysRoute
   AppSettingsAdminAuditRoute: typeof AppSettingsAdminAuditRoute
   AppSettingsAdminBrandingRoute: typeof AppSettingsAdminBrandingRoute
   AppSettingsAdminEmailRoute: typeof AppSettingsAdminEmailRoute
@@ -590,6 +630,7 @@ interface AppSettingsAdminRouteChildren {
 }
 
 const AppSettingsAdminRouteChildren: AppSettingsAdminRouteChildren = {
+  AppSettingsAdminAllApiKeysRoute: AppSettingsAdminAllApiKeysRoute,
   AppSettingsAdminAuditRoute: AppSettingsAdminAuditRoute,
   AppSettingsAdminBrandingRoute: AppSettingsAdminBrandingRoute,
   AppSettingsAdminEmailRoute: AppSettingsAdminEmailRoute,
@@ -604,12 +645,14 @@ const AppSettingsAdminRouteWithChildren =
 
 interface AppSettingsRouteChildren {
   AppSettingsAdminRoute: typeof AppSettingsAdminRouteWithChildren
+  AppSettingsApiKeysRoute: typeof AppSettingsApiKeysRoute
   AppSettingsNotificationsRoute: typeof AppSettingsNotificationsRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsAdminRoute: AppSettingsAdminRouteWithChildren,
+  AppSettingsApiKeysRoute: AppSettingsApiKeysRoute,
   AppSettingsNotificationsRoute: AppSettingsNotificationsRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
 }

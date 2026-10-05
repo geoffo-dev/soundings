@@ -255,6 +255,88 @@ Mailpit's API is handy in scripts: `curl -s localhost:8025/api/v1/messages | jq
 `/api/v1/message/<ID>/headers`, and `curl -X DELETE localhost:8025/api/v1/messages`
 empties it.
 
+## MCP clients and API keys
+
+The API serves Soundings' MCP server at `/mcp` (streamable HTTP, stateless, JSON): with
+`make -C backend dev` or `make demo` that is `http://localhost:8000/mcp`. Clients
+authenticate with a personal API key, act as its owner (narrowed by the key's scopes and
+projects) and see exactly what the app shows them: a pending evaluator gets no scores.
+Every tool call is in Settings → Audit log (`mcp.call`).
+
+**A key.** Sign in (dev login: carol is a member of Customer Innovation and Internal
+Tools), open Settings → API keys, create one with the "MCP client" preset (`read`,
+`mcp`; "AI evaluator" adds `evaluate`), optionally restricted to some projects, and copy
+it: it is shown once (`sdg_…`). Keys pause after 30 days without a sign-in (signing in
+resumes them), and a key made with the dev login stops working when dev login is off.
+Scripted, with the dev login:
+
+```sh
+api=http://localhost:8000/api/v1
+carol=$(curl -s $api/auth/dev/users | jq -r '.[] | select(.email == "carol@example.com") | .id')
+curl -s -c /tmp/carol.jar -H 'Content-Type: application/json' -d "{\"user_id\":\"$carol\"}" $api/auth/dev/login >/dev/null
+csrf=$(awk '$6 ~ /soundings_csrf$/ {print $7}' /tmp/carol.jar)
+export SOUNDINGS_API_KEY=$(curl -s -b /tmp/carol.jar -H "X-CSRF-Token: $csrf" \
+  -H 'Content-Type: application/json' -d '{"name": "Claude Code", "scopes": ["evaluate", "mcp"]}' \
+  $api/me/api-keys | jq -r .secret)
+```
+
+**Claude Code** (an HTTP server with a header; `claude mcp get soundings` checks it):
+
+```sh
+claude mcp add --transport http soundings http://localhost:8000/mcp \
+  --header "Authorization: Bearer $SOUNDINGS_API_KEY"
+```
+
+That stores the key in your `~/.claude.json`. To keep it in the environment instead, a
+project's `.mcp.json` expands variables:
+
+```json
+{
+  "mcpServers": {
+    "soundings": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp",
+      "headers": { "Authorization": "Bearer ${SOUNDINGS_API_KEY}" }
+    }
+  }
+}
+```
+
+Then ask, for example, "Which Soundings ideas are waiting for my evaluation?" (Claude
+calls `search_ideas` with `awaiting_my_evaluation`, then `get_rubric` and `get_idea`).
+
+**Claude Desktop.** Its custom connectors sign in with OAuth, which Soundings doesn't
+offer (keys are issued in the app), so connect through the `mcp-remote` stdio bridge
+(npm; needs Node.js) with the key in a header file, which keeps it out of process lists.
+`claude_desktop_config.json` (macOS `~/Library/Application Support/Claude/`, Windows
+`%APPDATA%\Claude\`):
+
+```json
+{
+  "mcpServers": {
+    "soundings": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@0.14.3", "http://localhost:8000/mcp",
+               "--header-file", "/Users/you/.config/soundings/mcp-headers.txt"]
+    }
+  }
+}
+```
+
+with `mcp-headers.txt` (mode 600) holding one line, `Authorization: Bearer sdg_…`.
+`mcp-remote` refuses plain `http://` URLs other than localhost unless you add
+`--allow-http`; use https for anything else.
+
+**Checks.** `make mcp-smoke` (`scripts/mcp-smoke.sh`, against `MCP_BASE_URL`, default
+:8000, with the demo data and dev login) runs the SPEC acceptance with curl JSON-RPC:
+carol's key, `initialize`, the nine tools, blind `search_ideas` / `get_idea`,
+`submit_evaluation`, `not_found` outside the key's project, `insufficient_scope`
+without `write`, a foreign `Origin`, the audit entries, then revoke → 401 at the next
+call (it creates and deletes a test idea). Checked on 2026-10-02 against this server:
+the key snippet and `claude mcp add` above with Claude Code 2.1.287 (`claude mcp get
+soundings`: Connected), `mcp-remote` 0.14.3 over stdio, the Python SDK (`mcp` 2.2) and
+the Go SDK that kagent 0.10 uses (`go-sdk` 1.6.1).
+
 ## Local Kubernetes (k3s in Docker)
 
 ```sh
@@ -297,7 +379,19 @@ make k3s-smoke SMTP=1    # + scripts/email-smoke.sh: invite -> email; Mailpit sc
 scripts/k3s-mailpit.sh scale 0|1    # the SMTP outage by hand; `down` removes it
 ```
 
-`SSO=1 SMTP=1` combines both.
+**MCP on k3s.** `dev/k3s-mcp-values.yaml` restricts the API's NetworkPolicy to Traefik
+and kagent's namespace (`kagent.enabled`), as an install with in-cluster agents would:
+
+```sh
+make k3s-install MCP=1   # + dev/k3s-mcp-values.yaml
+make k3s-smoke MCP=1     # + scripts/mcp-smoke.sh through the ingress, and
+                         # scripts/k3s-mcp-client.sh: the MCP SDK in a pod of namespace
+                         # kagent calls http://soundings.soundings.svc.cluster.local/mcp with
+                         # the key from a Secret (works; 401 once revoked), a pod in another
+                         # namespace can't connect
+```
+
+`SSO=1 SMTP=1 MCP=1` combines them (CI does).
 
 `export KUBECONFIG=$PWD/.k3s/soundings-k3s/kubeconfig` for your own kubectl, or use
 `docker exec soundings-k3s kubectl ...`. Scripts and their settings: `scripts/k3s-*.sh`.

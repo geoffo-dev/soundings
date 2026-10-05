@@ -32,7 +32,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 
 | Key | Default | Description |
 |---|---|---|
-| `baseUrls` | `[http://localhost:8000]` | Origins the app is served on (`scheme://host[:port]`, no path). First = default for email links. Sign-in redirect URIs and ingress/HTTPRoute hosts derive from these. The app answers **only** these hosts (400 `invalid_host` otherwise, except `/healthz` and `/readyz`): list every public host, and call it from inside the cluster with one of them as `Host`. |
+| `baseUrls` | `[http://localhost:8000]` | Origins the app is served on (`scheme://host[:port]`, no path). First = default for email links. Sign-in redirect URIs and ingress/HTTPRoute hosts derive from these. The app answers **only** these hosts (400 `invalid_host` otherwise, except `/healthz`, `/readyz` and `/mcp`): list every public host, and call it from inside the cluster with one of them as `Host` (in-cluster MCP clients use the Service name: [MCP server](#mcp-server-ai-agents-and-mcp-clients)). |
 | `nameOverride` / `fullnameOverride` | `""` | Override the chart name / the release-scoped base name (max 50 chars). |
 | `global.imageRegistry` | `""` | Registry for **every** image (app + Postgres), for air-gapped mirrors. |
 | `image.registry` / `.repository` / `.tag` / `.digest` | `""` / `soundings` / appVersion / `""` | The Soundings image. |
@@ -42,7 +42,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `logLevel` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR`. JSON logs, no PII. |
 | `devLogin` | `false` | Dev login stub; also switches the app to development mode. Never on shared installs. |
 | `demo.seed` | `false` | Load the demo data after install and upgrades (hook Job, see [Demo data](#demo-data)). Needs `devLogin`. |
-| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `PT24H` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds (passed to the app as `PT<n>S`). |
+| `sessions.idleTimeout` / `.maxAge` | `PT12H` / `PT24H` | A session ends after this long without a request / this long after sign-in. ISO 8601 durations or seconds (passed to the app as `PT<n>S`). API keys are not sessions: see [MCP server](#mcp-server-ai-agents-and-mcp-clients). |
 | `metrics.port` | `9090` | Port of Prometheus `/metrics` (container and Service port `metrics`); never the app port. |
 | `secretKey.existingSecret` / `.existingSecretKey` | `""` / `secret-key` | Session/CSRF signing key. Empty: generated once, kept across upgrades. |
 | `oidc.issuer` | `""` | OIDC issuer URL, exactly the provider's `issuer` (https unless `devLogin`). Empty: SSO off; the break-glass admin works instead. See [Single sign-on](#single-sign-on). |
@@ -64,7 +64,9 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `publicSubmission.perIpPerHour` / `.perProjectPerHour` | `10` / `100` | Public submissions per client address (IPv6: /64) per hour, counted **per API pod**; per project per hour from everyone (in the database). |
 | `publicSubmission.altcha.cost` / `.expiry` | `5000` / `PT30M` | ALTCHA proof of work: PBKDF2 iterations per attempt (1000-1000000); how long a challenge stays valid (1 minute to 1 day). |
 | `branding.maxUploadBytes` | `524288` | Largest logo or favicon upload (16 KiB-900 KiB, under the 1 MiB request limit). |
-| `kagent.enabled` / `.namespace` / `.examples` | `false` / `kagent` / `false` | Placeholders for Phase 6 (`deploy/kagent/README.md`). |
+| `kagent.enabled` / `.namespace` | `false` / `kagent` | kagent runs in the cluster and uses Soundings' MCP server: with `networkPolicy.ingressFrom` set, its namespace may reach the API too. Phase 6: AI runs over A2A. See [`deploy/kagent/README.md`](../kagent/README.md). |
+| `kagent.examples` | `false` | Also render the example `RemoteMCPServer` `<fullname>-mcp` (kagent 0.10, `kagent.dev/v1alpha2`; needs `kagent.enabled` and kagent's CRDs) pointing at this release's `/mcp` through its Service. |
+| `kagent.mcp.keySecret` / `.keySecretKey` / `.timeout` | `""` / `authorization` / `30s` | Existing Secret (release namespace) whose key holds the whole header kagent sends, `Bearer sdg_...` (a service account's key: `read`, `evaluate`, `mcp`; restricted to the agents' projects); required with `examples`. kagent's timeout per call. |
 | `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics` (`metrics.port`). |
 | `extraEnv` / `extraEnvFrom` | `[]` | Extra env for api, worker and migration containers. |
 | `extraVolumes` / `extraVolumeMounts` | `[]` | Extra volumes, e.g. a DB CA for `sslmode=verify-full` (+ `PGSSLROOTCERT`). |
@@ -80,6 +82,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `ingress.enabled` / `.className` / `.annotations` | `false` / `""` / `{}` | |
 | `ingress.hosts` / `.tls` | `[]` (hosts of `baseUrls`) / `[]` | TLS entries: `{secretName, hosts}`. |
 | `ingress.publicApi.annotations` | `{}` | Not empty: a second Ingress `<release>-soundings-public` for `/api/v1/public` (the anonymous form's API) with only these annotations, e.g. an edge rate limit. See [Public submission](#public-submission). |
+| `ingress.mcp.annotations` | `{}` | Not empty: a third Ingress `<release>-soundings-mcp` for `/mcp` (a Prefix path, so it outranks `/` on Traefik too) with only these annotations, e.g. an allow-list of the networks MCP clients connect from. See [MCP server](#mcp-server-ai-agents-and-mcp-clients). |
 | `httpRoute.enabled` / `.parentRefs` / `.hostnames` / `.annotations` | `false` / `[]` / `[]` (hosts of `baseUrls`) / `{}` | Gateway API `HTTPRoute` (v1). `parentRefs` required when enabled. |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | No API token is mounted. |
 | `podSecurityContext` / `securityContext` | Restricted | uid/gid 10001, non-root, seccomp `RuntimeDefault`, read-only root FS, no capabilities, no privilege escalation. |
@@ -94,7 +97,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `externalDatabase.host` / `.port` / `.database` / `.user` | `""` / `5432` / `soundings` / `soundings` | Used when `postgresql.enabled=false` (host required). |
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
 | `externalDatabase.sslmode` | `require` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. |
-| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace. |
+| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace, plus the namespaces of in-cluster MCP clients (kagent's is added with `kagent.enabled`). |
 | `networkPolicy.egress.enabled` | `false` | Also restrict the api and worker pods' egress to DNS, the database, SMTP (worker), the IdP (api), OTLP and `extra` (see [Security](#security)). |
 | `networkPolicy.egress.smtp.to` / `.port` | `[]` / `""` | Peers of the SMTP server (empty: any address) and its pods' port (empty: the SMTP port). |
 | `networkPolicy.egress.database.to` / `.oidc.to` / `.oidc.port` | `[]` / `[]` / `""` | Peers of an external database and of the IdP (empty: any address); the IdP's port (empty: the issuer's). |
@@ -352,7 +355,10 @@ app ignores them until the issuer is unset.
 - `/metrics` is served only on `metrics.port` (Service port `metrics`), never on the app
   port, so the ingress and HTTPRoute (which route `http` only) do not expose it.
 - The app refuses requests for hosts that are not in `baseUrls`, so a spoofed `Host`
-  cannot steer links or sign-in redirects.
+  cannot steer links or sign-in redirects. `/mcp` is exempt (like the probes) so that
+  in-cluster agents can call the Service by name: every request there needs an API key,
+  an `Origin` header must be a base URL's origin, and links in its results use the
+  first base URL, never the `Host` header.
 - **Request bodies over 1 MiB** get 413 `content_too_large` from the app itself, before
   authentication and without reading them into memory (a too-large `Content-Length` is
   refused at once; chunked bodies are counted as they stream in), so no ingress setting
@@ -433,6 +439,51 @@ largest proposals fail to export. The child gets no secrets in its environment. 
 read-only root filesystem, fontconfig caches under `/tmp/cache` (the `/tmp` emptyDir;
 `XDG_CACHE_HOME` is set in the image).
 
+## MCP server (AI agents and MCP clients)
+
+Soundings serves an MCP server at `<baseUrl>/mcp` (streamable HTTP, stateless, JSON
+responses) on the same Service, Ingress or HTTPRoute as the app: nothing extra is
+deployed. MCP clients (Claude Code, Claude Desktop, scripts, kagent agents) send a
+personal or service-account **API key**: `Authorization: Bearer sdg_...`. People create
+keys in Settings → API keys (scopes `read`, `write`, `evaluate`, `mcp`; optional expiry
+and project restriction; shown once), platform admins see and revoke everyone's in
+Admin settings → API keys. A key acts as its owner, live, narrowed by its scopes and
+projects, so MCP tools follow the same rules as the app (blind evaluation included),
+and every tool call is audited (`mcp.call`). Connecting a client:
+[`dev/README.md`](../../dev/README.md#mcp-clients-and-api-keys).
+
+- **Routing.** `/` already routes `/mcp` to the API. Responses are short JSON (no SSE
+  stream: `GET /mcp` is 405), so no buffering or streaming settings are needed and the
+  controller's default timeouts (ingress-nginx 60 s) are ample. To treat `/mcp`
+  differently at the edge, `ingress.mcp.annotations` renders an Ingress for `/mcp`
+  with only those annotations, e.g. `nginx.ingress.kubernetes.io/whitelist-source-range`
+  or a Traefik `ipAllowList` Middleware; with Gateway API, add your own HTTPRoute for
+  `/mcp`. The app's 1 MiB body limit applies (413).
+- **In the cluster.** Agents call the Service:
+  `http://<fullname>.<namespace>.svc.cluster.local[:<service.port>]/mcp`. `/mcp` is
+  exempt from the Host check (the key, the `Origin` check and base-URL links cover what
+  it guards), so that name needn't be in `baseUrls`. With `networkPolicy.ingressFrom`
+  set (as recommended), add the namespaces of in-cluster MCP clients to it;
+  `kagent.enabled` adds kagent's namespace. `helm test` calls `/mcp` this way (401
+  without a key).
+- **Keys are not sessions.** "Sign out everywhere" leaves a person's keys working;
+  revoking a key, its expiry or deactivating its owner (which revokes all their keys)
+  cuts access at the next request. A person's keys also pause while they haven't signed
+  in for 30 days (group changes in the IdP only apply at sign-in), and work again at
+  their next sign-in. Service accounts' keys never pause. Keys made in a dev-login
+  session stop when `devLogin` is turned off, SSO-made keys while SSO isn't configured;
+  the break-glass admin can't create keys.
+- **Limits.** 300 requests and 30 writes per key per minute, per API pod (429); 30
+  failed key authentications per client address per minute. As for sign-in, that
+  address comes through `trustedProxies`: a pod calling the Service directly from the
+  default private ranges could choose it, another reason to narrow `trustedProxies` to
+  the ingress controller's pods ([Security](#security)). `mcp.call` audit entries are
+  kept 90 days.
+- **kagent.** `kagent.examples` registers the server with kagent 0.10 as a
+  `RemoteMCPServer` that reads the agents' key from `kagent.mcp.keySecret`;
+  [`deploy/kagent/README.md`](../kagent/README.md) has the manifests and what has been
+  verified against which kagent version.
+
 ## Air-gapped installs
 
 Mirror `soundings:<tag>` and `postgres:16-alpine` into your registry and set
@@ -491,6 +542,21 @@ make k3s-smoke SMTP=1                   # + scripts/email-smoke.sh through the i
 make k3s-down
 ```
 
-`SSO=1 SMTP=1` combines both (CI does). `dev/k3s-smtp-values.yaml` also turns on
+`SSO=1 SMTP=1` combines both. `dev/k3s-smtp-values.yaml` also turns on
 `networkPolicy.egress`: the worker may reach only DNS, Postgres and Mailpit's namespace
 on 1025, and the api DNS, Postgres and (with SSO) Keycloak.
+
+The MCP server end to end on k3s, with the API's NetworkPolicy restricted to Traefik and
+kagent's namespace (`dev/k3s-mcp-values.yaml`):
+
+```sh
+make k3s-install MCP=1                  # + kagent.enabled, networkPolicy.ingressFrom: kube-system
+make k3s-smoke MCP=1                    # + scripts/mcp-smoke.sh through the ingress: a key,
+                                        # initialize, tools, blind search and get_idea,
+                                        # submit_evaluation, project restriction, scopes,
+                                        # Origin, audit, revoke -> 401; an MCP SDK client in a
+                                        # pod of namespace kagent (Service URL, key from a
+                                        # Secret), and a pod elsewhere that can't connect
+```
+
+`SSO=1 SMTP=1 MCP=1` combines all three (CI does).

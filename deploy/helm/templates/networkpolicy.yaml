@@ -1,14 +1,19 @@
 {{- /*
-Ingress: the API accepts traffic on its HTTP port from ingressFrom peers and on its
-metrics port from metricsFrom peers (each: anyone when empty; this release's pods
-always), the worker accepts nothing, and the bundled Postgres only accepts this
-release's app pods and Jobs.
+Ingress: the API accepts traffic on its HTTP port from ingressFrom peers (plus
+kagent's namespace when kagent.enabled: its controller lists the MCP tools and its
+agents call /mcp) and on its metrics port from metricsFrom peers (each: anyone when
+the list is empty; this release's pods always), the worker accepts nothing, and the
+bundled Postgres only accepts this release's app pods and Jobs.
 Egress (networkPolicy.egress.enabled, off by default: IdP, SMTP, kagent and the
 database live in different places in every cluster): the api and worker pods reach
 only DNS, the database and their own destinations ("soundings.egressRules").
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
 {{- $egress := .Values.networkPolicy.egress.enabled }}
+{{- $httpFrom := .Values.networkPolicy.ingressFrom }}
+{{- if and $httpFrom .Values.kagent.enabled }}
+{{- $httpFrom = append $httpFrom (dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .Values.kagent.namespace))) }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -27,7 +32,7 @@ spec:
     {{- include "soundings.egressRules" (dict "ctx" . "component" "api") | nindent 4 }}
     {{- end }}
   ingress:
-    {{- range $port, $peers := dict "http" .Values.networkPolicy.ingressFrom "metrics" .Values.networkPolicy.metricsFrom }}
+    {{- range $port, $peers := dict "http" $httpFrom "metrics" .Values.networkPolicy.metricsFrom }}
     - ports:
         - port: {{ $port }}
           protocol: TCP

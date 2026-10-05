@@ -1,0 +1,26 @@
+# MCP for in-cluster agents: kagent in its own namespace (admitted by the API's
+# NetworkPolicy next to the ingress controller), the example RemoteMCPServer reading
+# the agents' key from an existing Secret, and an allow-list on the /mcp Ingress.
+baseUrls:
+  - https://ideas.example.com
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    - secretName: soundings-tls
+      hosts: [ideas.example.com]
+  mcp:
+    annotations:
+      nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,192.0.2.0/24"
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+kagent:
+  enabled: true
+  namespace: kagent
+  examples: true
+  mcp:
+    keySecret: soundings-agent-key
+    timeout: 45s

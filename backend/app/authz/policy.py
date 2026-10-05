@@ -9,7 +9,7 @@ failed condition denies. Evaluation order (role matrix section 2), first failure
    confirmation (c12, for everyone), or the implied view rule (``project.view`` /
    ``idea.view``, incl. c12) failing;
 3. **403**: the key's scopes, then no grant for the column or an overlay, then the
-   principal conditions (c1 submitter, c2, c3, c15, c16, c17);
+   principal conditions (c1 submitter, c2, c3, c15, c16, c17, c20, c21);
 4. **422**: request-body conditions (c4);
 5. **409**: state conditions (archived project, then c19 (an idea held for moderation),
    then c1 status, c5, c6, c7, c10, c11, c13, c18).
@@ -54,7 +54,9 @@ __all__ = [
     "ASSIGNABLE_ROLES",
     "CONDITIONS",
     "FROZEN_WHILE_HELD",
+    "ISSUING_KEYS",
     "MANAGE_USER_ACCESS",
+    "PERSONS_ONLY",
     "POLICY",
     "Column",
     "Decision",
@@ -176,6 +178,11 @@ class Resource:
       break-glass account) who would remain after demoting or deactivating one
       (:func:`app.authz.loaders.other_platform_admins`). ``None`` = the change takes
       no platform admin away.
+    * ``assignee_service_account``: c4 for an **owner** assignment (``idea.assign_owner``):
+      the user being made owner is a service account, which never owns an idea
+      (contract-phase5 section 3.7). Evaluators may be service accounts.
+    * ``issuing_api_key``: the request creates an API key (``api_key.manage_own``; Phase
+      6 ``platform.manage_agents`` for an agent's key): c20 applies.
     * ``ai_available``: c10. ``token_valid``: c9 / c14.
     * ``public_submission_on``: the instance switch
       (``SOUNDINGS_PUBLIC_SUBMISSION_ENABLED``) for c8 and c9; unset fails.
@@ -188,6 +195,7 @@ class Resource:
     idea: IdeaFacts | None = None
     comment_author_id: UUID | None = None
     assignee_roles: tuple[ProjectRole | None, ...] | None = None
+    assignee_service_account: bool = False
     evaluator_to_remove: UUID | None = None
     admins_after_change: int | None = None
     user_to_change: UUID | None = None
@@ -196,6 +204,7 @@ class Resource:
     token_valid: bool = False
     token_covers_request: bool = False
     public_submission_on: bool = False
+    issuing_api_key: bool = False
 
     def replace(self, **changes: object) -> Resource:
         return dataclasses.replace(self, **changes)  # type: ignore[arg-type]
@@ -236,8 +245,10 @@ def _project(resource: Resource) -> ProjectFacts:
 
 
 def _assignees_eligible(principal: Principal | None, resource: Resource, rule: Rule) -> bool:
-    if rule is Rule.IDEA_VOLUNTEER_OWNER:  # the principal assigns themselves
+    if rule is Rule.IDEA_VOLUNTEER_OWNER:  # the principal assigns themselves (c21 first)
         return resource.role in ASSIGNABLE_ROLES
+    if rule is Rule.IDEA_ASSIGN_OWNER and resource.assignee_service_account:
+        return False  # an owner is a person (contract-phase5 section 3.7)
     return all(role in ASSIGNABLE_ROLES for role in resource.assignee_roles or ())
 
 
@@ -247,6 +258,16 @@ def _is_api_key(principal: Principal | None, _resource: Resource, _rule: Rule) -
 
 def _has_mcp_scope(principal: Principal | None, _resource: Resource, _rule: Rule) -> bool:
     return principal is not None and principal.has_scope("mcp")
+
+
+def _not_issuing_for_break_glass(principal: Principal | None, resource: Resource, _: Rule) -> bool:
+    return not (
+        resource.issuing_api_key and principal is not None and principal.user.is_break_glass
+    )
+
+
+def _a_person(principal: Principal | None, _resource: Resource, _rule: Rule) -> bool:
+    return principal is not None and not principal.user.is_service_account
 
 
 CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
@@ -349,6 +370,9 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     "c19": (
         Check("c19", 409, "awaiting_moderation", lambda p, r, _: not _idea(r).awaiting_moderation),
     ),
+    # Not in the cells (role matrix section 4): properties of the principal.
+    "c20": (Check("c20", 403, "break_glass_account", _not_issuing_for_break_glass),),
+    "c21": (Check("c21", 403, "forbidden", _a_person),),
 }
 
 _PHASE: Final = {404: 0, 401: 1, 403: 1, 422: 2, 409: 3}
@@ -413,10 +437,13 @@ class RuleSpec:
 
     def conditions_for(self, grant: Grant) -> tuple[Check, ...]:
         """The grant's checks in evaluation order: by phase, then as listed; the
-        archived-project check leads the 409s, then c19."""
+        archived-project check leads the 409s, then c19. c20 (:data:`ISSUING_KEYS`) and
+        c21 (:data:`PERSONS_ONLY`) are 403s that aren't written in the cells."""
         names = (
             (("archived",) if self.idea_write else ())
             + (("c19",) if self.frozen_while_held else ())
+            + (("c20",) if self.rule in ISSUING_KEYS else ())
+            + (("c21",) if self.rule in PERSONS_ONLY else ())
             + grant.conditions
         )
         checks = [check for name in names for check in CONDITIONS[name]]
@@ -503,6 +530,15 @@ FROZEN_WHILE_HELD: Final = frozenset(
 is 409 ``awaiting_moderation`` (watching included), except ``idea.delete``,
 ``idea.moderate`` (approve, reject) and ``public.erase_submitter``, so admins see a
 read-only idea with Approve and Reject until they decide."""
+
+ISSUING_KEYS: Final = frozenset({Rule.API_KEY_MANAGE_OWN, Rule.PLATFORM_MANAGE_AGENTS})
+"""c20: when the request creates an API key (``Resource.issuing_api_key``), the
+break-glass account is refused (403 ``break_glass_account``): a key would outlive the
+emergency (contract-phase5 section 3.1). Listing and revoking aren't affected."""
+
+PERSONS_ONLY: Final = frozenset({Rule.IDEA_VOLUNTEER_OWNER})
+"""c21: a service account (an AI agent) never volunteers as owner (403 ``forbidden``;
+contract-phase5 section 3.7). ``idea.assign_owner`` refuses one through c4."""
 
 _G, _P, _I, _U = Scope.GLOBAL, Scope.PROJECT, Scope.IDEA, Scope.PUBLIC
 _W = True  # idea_write: 409 project_archived in archived projects
@@ -628,6 +664,9 @@ _DETAILS: Final[Mapping[str, str]] = {
     "idea_has_owner": "The idea already has an owner.",
     "project_archived": "The project is archived, so its ideas are read-only.",
     "awaiting_moderation": "This idea is waiting for review: approve it first.",
+    "break_glass_account": (
+        "The break-glass account can't create API keys: a key would outlive the emergency."
+    ),
 }
 
 
@@ -717,8 +756,10 @@ def _locate(principal: Principal, spec: RuleSpec, resource: Resource) -> Column 
     """Steps 1-2 for a signed-in principal: their column, or the 404 that hides the
     resource (key restriction, a 404 cell, or the implied view rule failing).
 
-    The implied ``project.view`` / ``idea.view`` does not check API-key scopes: a
-    ``write`` key may create an idea in a project it cannot list.
+    The implied ``project.view`` / ``idea.view`` is the owner's, not a scope check:
+    the rule's own scope is checked next (every key that can change something has
+    ``read`` anyway). :func:`require_view` adds the ``read`` scope for routes that
+    load what they read.
     """
     if spec.scope in (Scope.PROJECT, Scope.IDEA):
         project = _project(resource)
@@ -791,15 +832,20 @@ def authorize(
 
 
 def require_view(principal: Principal | None, resource: Resource) -> None:
-    """Only the implied view rule (``idea.view`` when the resource has an idea, else
-    ``project.view``): 401 or 404, without API-key scopes. Check the actual rule
-    afterwards."""
+    """The view rule (``idea.view`` when the resource has an idea, else
+    ``project.view``) as routes use it to load what they read or change: 401, 404
+    (hidden, or outside a key's projects), then 403 ``insufficient_scope`` for a key
+    without ``read`` (a key with only ``mcp`` reads nothing through REST; every key
+    that can change something has ``read``, contract-phase5 section 3.1). Check the
+    actual rule afterwards."""
     if principal is None:
         raise _deny(Rule.PROJECT_VIEW, 401).problem()
     view = POLICY[Rule.IDEA_VIEW if resource.idea is not None else Rule.PROJECT_VIEW]
     located = _locate(principal, view, resource)
     if isinstance(located, Decision):
         raise located.problem()
+    if principal.auth == "api_key" and not principal.has_scope("read"):
+        raise _deny(view.rule, 403, "insufficient_scope").problem()
 
 
 def can(principal: Principal | None, rule: Rule, resource: Resource = NO_RESOURCE) -> bool:

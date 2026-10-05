@@ -443,6 +443,26 @@
         },
         "examples": {
           "type": "boolean"
+        },
+        "mcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "keySecret": {
+              "type": "string",
+              "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+              "maxLength": 253
+            },
+            "keySecretKey": {
+              "type": "string",
+              "pattern": "^[-._a-zA-Z0-9]+$",
+              "maxLength": 253
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+            }
+          }
         }
       }
     },
@@ -802,6 +822,18 @@
           }
         },
         "publicApi": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "annotations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "mcp": {
           "type": "object",
           "additionalProperties": false,
           "properties": {

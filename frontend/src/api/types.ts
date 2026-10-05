@@ -203,3 +203,23 @@ export type BrandingSettings = Schemas['BrandingSettings']
 export type BrandingUpdate = Schemas['BrandingUpdate']
 export type EffectiveBranding = Schemas['EffectiveBranding']
 export type InheritedBranding = Schemas['InheritedBranding']
+
+/* Phase 5: API keys and proposal suggestions (docs/api/contract-phase5.md) */
+export type AcceptedProposalSuggestion = Schemas['AcceptedProposalSuggestion']
+export type AdminApiKey = Schemas['AdminApiKey']
+export type AdminApiKeyPage = Schemas['AdminApiKeyPage']
+export type ApiKey = Schemas['ApiKey']
+export type ApiKeyCreate = Schemas['ApiKeyCreate']
+export type ApiKeyList = Schemas['ApiKeyList']
+export type ApiKeyScope = Schemas['ApiKeyScope']
+export type ApiKeyState = Schemas['ApiKeyState']
+export type CreatedApiKey = Schemas['CreatedApiKey']
+export type ProposalSuggestion = Schemas['ProposalSuggestion']
+export type ProposalSuggestionAccept = Schemas['ProposalSuggestionAccept']
+export type ProposalSuggestionCreate = Schemas['ProposalSuggestionCreate']
+export type ProposalSuggestionList = Schemas['ProposalSuggestionList']
+export type ProposalSuggestionPermissions = Schemas['ProposalSuggestionPermissions']
+export type SuggestionSource = Schemas['SuggestionSource']
+export type SuggestionStatus = Schemas['SuggestionStatus']
+/** Query parameters of `list_admin_api_keys` (filters, cursor, limit). */
+export type AdminApiKeyQuery = NonNullable<operations['list_admin_api_keys']['parameters']['query']>

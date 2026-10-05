@@ -20,7 +20,8 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *              ['admin', 'sso'] · ['admin', 'email'] · ['admin', 'email', 'outbox', …]
  *   notifications ['notifications', 'summary'] · ['notifications', 'list', {unread}] ·
  *              ['notifications', 'preferences'] · ['notifications', 'unsubscribe', token]
- *   proposals  ['proposals', KEY, 'view' | 'threads']
+ *   proposals  ['proposals', KEY, 'view' | 'threads' | 'suggestions']
+ *   apiKeys    ['api-keys', 'mine'] (admin: ['admin', 'api-keys', 'list', filters])
  *   public     ['public', 'project', slug] · ['public', 'track', token] (public pages, no session)
  *   branding   ['branding', 'effective'] · ['branding', 'global'] · ['branding', 'project', slug]
  *   submissions ['submissions', 'form', slug] · ['submissions', 'moderation', slug] ·
@@ -137,6 +138,15 @@ export const queryKeys = {
     outbox: (filters: Record<string, unknown>) =>
       ['admin', 'email', 'outbox', 'list', filters] as const,
     outboxEmail: (id: string) => ['admin', 'email', 'outbox', 'detail', id.toLowerCase()] as const,
+    /** Phase 5: Admin settings → API keys (`api/api-keys.ts`). */
+    apiKeys: () => ['admin', 'api-keys'] as const,
+    apiKeyList: (filters: Record<string, unknown>) =>
+      ['admin', 'api-keys', 'list', filters] as const,
+  },
+  /** Phase 5: your API keys (`api/api-keys.ts`). */
+  apiKeys: {
+    all: ['api-keys'] as const,
+    mine: () => ['api-keys', 'mine'] as const,
   },
   /** Phase 4: an idea's proposal (`api/proposals.ts`): the tab's view and its margin threads. */
   proposals: {
@@ -144,6 +154,8 @@ export const queryKeys = {
     idea: (idea: string) => ['proposals', ideaCacheId(idea)] as const,
     view: (idea: string) => ['proposals', ideaCacheId(idea), 'view'] as const,
     threads: (idea: string) => ['proposals', ideaCacheId(idea), 'threads'] as const,
+    /** Phase 5: pending suggestions (from people, MCP clients and AI agents). */
+    suggestions: (idea: string) => ['proposals', ideaCacheId(idea), 'suggestions'] as const,
   },
   /** Phase 4: the public form and tracking pages (`api/public.ts`); no session. */
   public: {
