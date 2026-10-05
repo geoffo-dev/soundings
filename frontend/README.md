@@ -85,14 +85,35 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
 | `/p/$slug/review` (project admins: the moderation queue)                  | `routes/_app/p.$slug.review.tsx`                                                        | `features/moderation/moderation-page`                                                 | frontend (P4)    |
 | `/p/$slug/settings?tab=public-form\|branding` (project admins)            | `routes/_app/p.$slug.settings.tsx`                                                      | `features/public/public-form-settings`, `features/branding/project-branding-settings` | frontend (P4)    |
 | `/settings/branding` (platform admins)                                    | `routes/_app/settings._admin.branding.tsx`                                              | `features/branding/global-branding-page`                                              | frontend (P4)    |
+| `/settings/api-keys` (everyone: your keys, "Connect an MCP client")       | `routes/_app/settings.api-keys.tsx`                                                     | `features/api-keys/api-keys-page`                                                     | frontend         |
+| `/settings/all-api-keys?q=&state=&user_id=` (platform admins)             | `routes/_app/settings._admin.all-api-keys.tsx`                                          | `features/api-keys/admin-api-keys-page`                                               | frontend         |
 | `/design`                                                                 | `routes/design.tsx`                                                                     | `features/design` (dev only)                                                          | —                |
 
 - **Admin settings** (`settings._admin.tsx`, platform admins): its `beforeLoad` throws `notFound()`
   for anyone else (the ordinary 404, no admin request sent); admin crumbs come from loaders so
   they never show on that 404. Every settings page renders `SettingsFrame`
   (`features/admin/settings-frame.tsx`): the "Settings" heading and the section row Account ·
-  Notifications, then (platform admins only, after a divider) Users · Groups · Sign-in (SSO) ·
-  Email · Audit log.
+  Notifications · API keys, then (platform admins only, after a divider) Users · Groups · Sign-in
+  (SSO) · Email · Branding · All API keys · Audit log.
+- **API keys (Phase 5, contract-phase5 §3.10):** `features/api-keys/`. Settings → API keys lists
+  your keys (prefix, scope chips, projects, expiry, last use; Dormant/Expired badges), "Create
+  key" (`create-key-dialog`: presets, `read` ticked and locked under Write/Evaluate, expiry
+  presets or a date, an optional project restriction; rules in `key-rules.ts`), the one-time
+  secret (`secret-dialog`: Copy, ready-made MCP config / Claude Code / curl with the key filled
+  in; it never goes into a toast, URL, storage or draft, and the create mutation is `reset()`
+  once the dialog has closed, so the secret leaves React Query's cache), Revoke (confirmed: no
+  undo) and "Connect an MCP client" (`connect-mcp`, `snippets.ts`). Admin settings → All API keys
+  (`admin-api-keys-page`): every key with its owner (AI badge for service accounts), a state
+  filter, `?user_id=` (linked from a user's sheet and the "Sign out everywhere" confirmation), and
+  search where a pasted whole key is cut to its prefix (`keySearchTerm` in `api/api-keys.ts`)
+  before it reaches the URL or a request.
+- **Proposal suggestions (Phase 5, contract-phase5 §3.4):** `features/proposal/suggestions.tsx`
+  shows each section's pending suggestions under its text (author, AI badge for `source: ai`,
+  "via MCP", when, a line diff or the suggested text, "the section has changed since"), with
+  Accept (a versioned save from the version on screen; asks first over unsaved edits; a 409
+  `proposal_conflict` shows the saved text and offers "Accept anyway"; Undo puts the old text
+  back) and Discard (deferred, with Undo) for the owner and admins. The editor bar has "N
+  suggestions" (jumps to the first) and the outline counts them per section.
 - **Notifications (Phase 3):** the bell in the top bar (`features/notifications/notification-bell`)
   polls `GET /me/notifications/summary` about once a minute while the tab is visible and on
   focus (the poll doesn't keep the session alive; a 401 is handled like any other); a popover on
@@ -320,6 +341,15 @@ backend and its tests are.
   containing `invalid` fails with `challenge_failed`); the mock has one client address, so the
   per-IP limit (10 an hour) counts every attempt. Knob `soundings-mock-public` = `off` turns
   public submission off for the instance. With mock latency on, a PDF export takes 1.2 s.
+- **Phase 5 fixtures** (`phase5-fixtures.ts`; rules in `api-keys.ts`, `suggestions.ts`; handlers
+  `handlers/api-keys.ts`, `handlers/suggestions.ts`): **Alice** has three keys ("Claude Desktop":
+  read, evaluate, mcp, Customer Innovation only; "Weekly report script"; "Old laptop", expired);
+  Priya, Bob, **Mateo Rossi** (hasn't signed in for 41 days: his key is `dormant`) and the
+  **Research agent** (a service account; its key was created by Priya) have one each. **CUST-3**'s
+  proposal has four pending suggestions: Summary from Carol (via MCP) and the Research agent (AI),
+  Problem from Bob (against an older version) and Benefits / revenue from the Research agent. The
+  audit log has key and `mcp.call` entries. Deactivating a user revokes their keys; the
+  break-glass account can't create one (c20).
 - **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
   Customer Innovation (also in the user menu → Switch user → Mock data);
   `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);
@@ -368,6 +398,9 @@ nothing MSW-related ends up in `dist/`.
   Alice** with mock latency off; `test.use({ signedInAs: USERS.priya })` or `null` for signed
   out; `seriousViolations(page)` runs axe. Wait for the page's heading before pressing
   shortcuts. `PW_PORT=5191 npm run test:pw` to use another port.
+- Review screenshots against the mock: `SCREENSHOTS=1 npx playwright test <name>-screenshots`
+  (Phase 5: `api-keys-screenshots` → `docs/screenshots/phase-5/mock/`; `SCREENSHOT_DIR`
+  overrides).
 - Two Playwright runs at once share `test-results/` (pass `--output=<own dir>`). The Vite
   dev server reloads open pages whenever someone saves a file; the server `test:pw` starts has
   that off (`VITE_NO_HMR=1`), but one you started yourself and Playwright reuses has not.

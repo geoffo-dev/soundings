@@ -13,10 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { focusRow } from '@/lib/return-to-row'
-
-import { copyText } from '@/features/admin/copy-button'
 import { toast } from '@/components/ui/toaster'
+import { copyText } from '@/features/admin/copy-button'
+import { focusRow } from '@/lib/return-to-row'
 
 import { KeyExamples } from './connect-mcp'
 
@@ -26,9 +25,9 @@ const SECRET_ID = 'new-key-secret'
  * The new key, shown once (contract-phase5 §3.1): the full key with Copy, "Store
  * it somewhere safe: you won't see it again", and ready-to-paste examples with
  * the key filled in. The secret lives only in the create mutation's result;
- * Done calls `onDone`, which resets the mutation, so it leaves the cache. Focus
- * then goes to the new key's row. A click outside doesn't close it (losing the
- * key by accident means creating another); Esc and Done do.
+ * once the dialog has closed (Done or Esc), `onDone` resets the mutation, so it
+ * leaves the cache, and focus goes to the new key's row. A click outside doesn't
+ * close it (losing the key by accident means creating another).
  */
 export function SecretDialog({
   created,
@@ -37,14 +36,17 @@ export function SecretDialog({
   created: CreatedApiKey | undefined
   onDone: () => void
 }) {
-  const keyId = created?.key.id
+  // What is on screen: kept through the closing animation, then dropped with the secret.
+  const [shown, setShown] = useState<CreatedApiKey | undefined>(undefined)
+  const [open, setOpen] = useState(false)
+  // The result already shown and closed (until `onDone` has reset it, it must not reopen).
+  const [closed, setClosed] = useState<CreatedApiKey | undefined>(undefined)
+  if (created && created !== shown && created !== closed) {
+    setShown(created)
+    setOpen(true)
+  }
   return (
-    <Dialog
-      open={Boolean(created)}
-      onOpenChange={(open) => {
-        if (!open) onDone()
-      }}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         size="xl"
         mobile="fullscreen"
@@ -54,10 +56,14 @@ export function SecretDialog({
           document.getElementById(SECRET_ID)?.querySelector('button')?.focus()
         }}
         onCloseAutoFocus={(event) => {
+          const keyId = shown?.key.id
+          setClosed(shown)
+          setShown(undefined)
+          onDone()
           if (keyId && focusRow(keyId)) event.preventDefault()
         }}
       >
-        {created && (
+        {shown && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -65,7 +71,7 @@ export function SecretDialog({
                 Copy your new key
               </DialogTitle>
               <DialogDescription>
-                “{created.key.name}” is ready. Copy it into the app or script that will use it.
+                “{shown.key.name}” is ready. Copy it into the app or script that will use it.
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="flex flex-col gap-5">
@@ -76,11 +82,9 @@ export function SecretDialog({
                 >
                   <p className="min-w-0 flex-1">
                     <span className="sr-only">Your new API key: </span>
-                    <code className="font-mono text-sm break-all text-primary">
-                      {created.secret}
-                    </code>
+                    <code className="font-mono text-sm break-all text-primary">{shown.secret}</code>
                   </p>
-                  <CopySecretButton secret={created.secret} />
+                  <CopySecretButton secret={shown.secret} />
                 </div>
                 <Callout tone="warning" title="Store it somewhere safe: you won’t see it again">
                   Soundings keeps only a fingerprint of it. If you lose it, revoke it and create a
@@ -91,11 +95,11 @@ export function SecretDialog({
                 <h3 id="new-key-use" className="text-sm font-medium text-primary">
                   Use it
                 </h3>
-                <KeyExamples secret={created.secret} scopes={created.key.scopes} />
+                <KeyExamples secret={shown.secret} scopes={shown.key.scopes} />
               </section>
             </DialogBody>
             <DialogFooter className="pt-2">
-              <Button variant="primary" onClick={onDone}>
+              <Button variant="primary" onClick={() => setOpen(false)}>
                 Done
               </Button>
             </DialogFooter>

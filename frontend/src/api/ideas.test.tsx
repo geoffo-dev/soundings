@@ -139,8 +139,8 @@ describe('useVoteIdea', () => {
     )
     const { result } = renderHook(() => useVoteIdea('CUST-2'), { wrapper })
     act(() => result.current.mutate({ vote: true }))
-    await waitFor(() => expect(detail()?.has_voted).toBe(true))
-    expect(detail()?.vote_count).toBe(votes + 1)
+    // Both at once (one snapshot): on a loaded machine the rollback can land between two reads.
+    await waitFor(() => expect(detail()).toMatchObject({ has_voted: true, vote_count: votes + 1 }))
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(detail()).toMatchObject({ has_voted: false, vote_count: votes })
   })

@@ -181,7 +181,8 @@ function SuggestionCard({
       className="flex flex-col overflow-hidden rounded-lg border bg-surface outline-offset-2"
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle px-3 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/* On phones the view toggle goes below, so the author's name keeps its room. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 max-sm:basis-full">
           <Avatar
             size="xs"
             name={author}
@@ -236,7 +237,14 @@ function SuggestionCard({
         </Callout>
       )}
 
-      <div className="max-h-80 overflow-y-auto">
+      {/* Long suggestions scroll here; focusable so the keyboard can scroll it too. */}
+      <div
+        role="region"
+        aria-label={view === 'preview' ? 'Suggested text' : 'Changes'}
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+        tabIndex={0}
+        className="max-h-80 overflow-y-auto focus-visible:-outline-offset-2"
+      >
         {view === 'preview' ? (
           <div className="px-3.5 py-3">
             <Markdown nested>{suggestion.body_md}</Markdown>

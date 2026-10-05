@@ -75,8 +75,14 @@ describe('your keys', () => {
     await waitFor(() => expect(result.current.create.data).toBeUndefined())
     // No query or mutation the client holds still carries the secret.
     const cached = JSON.stringify([
-      queryClient.getQueryCache().getAll().map((query) => query.state.data),
-      queryClient.getMutationCache().getAll().map((mutation) => mutation.state.data),
+      queryClient
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.state.data),
+      queryClient
+        .getMutationCache()
+        .getAll()
+        .map((mutation) => mutation.state.data),
     ])
     expect(cached).not.toContain(secret)
   })

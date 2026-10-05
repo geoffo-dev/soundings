@@ -170,14 +170,15 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
         submit()
       }}
     >
-      <DialogHeader>
+      {/* A long form: lines keep the header and the buttons apart from what scrolls. */}
+      <DialogHeader className="border-b border-subtle pb-4">
         <DialogTitle>Create API key</DialogTitle>
         <DialogDescription>
           The key acts as you, limited to what you choose here, and never does more than you can. It
           can’t be changed later: create another key instead.
         </DialogDescription>
       </DialogHeader>
-      <DialogBody className="flex flex-col gap-6">
+      <DialogBody className="flex flex-col gap-6 py-5">
         {errors.form && <Callout role="alert" tone="danger" title={errors.form} />}
 
         <Field
@@ -347,7 +348,7 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
           )}
         </Field>
       </DialogBody>
-      <DialogFooter className="pt-2">
+      <DialogFooter className="sm:border-t sm:border-subtle sm:pt-4">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>

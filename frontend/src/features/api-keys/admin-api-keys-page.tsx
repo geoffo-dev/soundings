@@ -3,7 +3,12 @@ import { CircleDashed, CloudOff, KeyRound, UserRound } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { useAdminUserName } from '@/api/admin'
-import { keySearchTerm, useAdminApiKeys, useRevokeAdminApiKey } from '@/api/api-keys'
+import {
+  containsWholeKey,
+  keySearchTerm,
+  useAdminApiKeys,
+  useRevokeAdminApiKey,
+} from '@/api/api-keys'
 import type { AdminApiKey } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +17,6 @@ import { Command, CommandGroup, CommandList } from '@/components/ui/command'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FilterValueChip } from '@/components/ui/filter-chip'
 import { FilterMenu, FilterMenuOption } from '@/components/ui/filter-menu'
-import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import {
   Table,
@@ -23,8 +27,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from '@/components/ui/toaster'
+import { WithTooltip } from '@/components/ui/tooltip'
 import { SearchField } from '@/features/admin/search-field'
 import { AdminPageHeader } from '@/features/admin/settings-frame'
+import { formatDateTime, formatShortDate } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
 import { useShortcut } from '@/lib/shortcuts'
@@ -57,6 +63,8 @@ export function AdminApiKeysPage({
   const searchRef = useRef<HTMLInputElement>(null)
   useShortcut('focusFilters', () => searchRef.current?.focus())
   const owner = useAdminUserName(search.user_id)
+  // A whole key was pasted: say that only its prefix was searched (until the next search).
+  const [cutKey, setCutKey] = useState(false)
 
   return (
     <>
@@ -72,7 +80,10 @@ export function AdminApiKeysPage({
         <SearchField
           value={search.q}
           // A pasted whole key never reaches the URL or the API: only its prefix.
-          onChange={(q) => onSearchChange({ q: q === undefined ? undefined : keySearchTerm(q) })}
+          onChange={(q) => {
+            setCutKey(q !== undefined && containsWholeKey(q))
+            onSearchChange({ q: q === undefined ? undefined : keySearchTerm(q) })
+          }}
           label="Search API keys"
           placeholder="Name, owner or sdg_ prefix…"
           inputRef={searchRef}
@@ -123,6 +134,12 @@ export function AdminApiKeysPage({
           )}
         </div>
       </div>
+      {cutKey && search.q && (
+        <p role="status" className="-mt-2 text-sm text-muted">
+          You pasted a whole key: only its prefix, <code className="font-mono">{search.q}</code>,
+          was searched. The secret part never left this page.
+        </p>
+      )}
       <KeysList
         search={search}
         onClear={() => onSearchChange({ q: undefined, state: undefined, user_id: undefined })}
@@ -323,12 +340,14 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => voi
               <span aria-hidden="true">·</span>
               <code className="min-w-0 truncate font-mono">{apiKey.prefix}</code>
             </span>
-            {createdBySomeoneElse && apiKey.created_by && (
-              <span className="truncate text-xs text-muted">
-                Created by {apiKey.created_by.display_name},{' '}
-                <RelativeTime date={apiKey.created_at} style="short" />
-              </span>
-            )}
+            <span className="truncate text-xs text-muted">
+              {createdBySomeoneElse && apiKey.created_by
+                ? `Created by ${apiKey.created_by.display_name}, `
+                : 'Created '}
+              <WithTooltip content={formatDateTime(apiKey.created_at)}>
+                <time dateTime={apiKey.created_at}>{formatShortDate(apiKey.created_at)}</time>
+              </WithTooltip>
+            </span>
           </div>
         </div>
       </TableCell>

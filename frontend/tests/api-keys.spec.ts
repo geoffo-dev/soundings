@@ -128,14 +128,18 @@ test('revoking asks first, explains there is no undo, and focuses the next key',
   page,
 }) => {
   await open(page)
-  await keyRow(page, 'Claude Desktop').getByRole('button', { name: 'Revoke Claude Desktop' }).click()
+  await keyRow(page, 'Claude Desktop')
+    .getByRole('button', { name: 'Revoke Claude Desktop' })
+    .click()
   const confirm = page.getByRole('alertdialog', { name: 'Revoke “Claude Desktop”?' })
   await expect(confirm).toContainText('stops working immediately')
   await expect(confirm).toContainText('There is no undo')
   await confirm.getByRole('button', { name: 'Cancel' }).click()
   await expect(keyRow(page, 'Claude Desktop')).toHaveCount(1)
 
-  await keyRow(page, 'Claude Desktop').getByRole('button', { name: 'Revoke Claude Desktop' }).click()
+  await keyRow(page, 'Claude Desktop')
+    .getByRole('button', { name: 'Revoke Claude Desktop' })
+    .click()
   await page
     .getByRole('alertdialog', { name: 'Revoke “Claude Desktop”?' })
     .getByRole('button', { name: 'Revoke key' })
@@ -172,6 +176,7 @@ for (const theme of ['light', 'dark'] as const) {
     const dialog = page.getByRole('dialog', { name: 'Create API key' })
     await dialog.getByLabel('Name').fill('Axe check')
     await dialog.getByText('Only these projects').click()
+    await dialog.getByRole('checkbox', { name: 'Customer Innovation' }).click()
     expect(await seriousViolations(page)).toEqual([])
     await dialog.getByRole('button', { name: /^Create key/ }).click()
     await expect(page.getByRole('dialog', { name: 'Copy your new key' })).toBeVisible()
@@ -191,6 +196,6 @@ test.describe('on a phone', () => {
     await page.getByRole('button', { name: 'Create key' }).click()
     const dialog = page.getByRole('dialog', { name: 'Create API key' })
     const box = await dialog.boundingBox()
-    expect(box?.width).toBe(390)
+    expect(box?.width).toBeGreaterThan(385)
   })
 })

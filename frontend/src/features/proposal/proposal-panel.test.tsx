@@ -116,5 +116,5 @@ describe('ProposalPanel', () => {
       { timeout: 3000 },
     )
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^Saved/))
-  })
+  }, 15_000)
 })

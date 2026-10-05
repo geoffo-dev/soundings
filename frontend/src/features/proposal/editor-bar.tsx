@@ -1,4 +1,12 @@
-import { Check, ChevronDown, CircleAlert, FileDown, FileText, GitCompareArrows } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  CloudOff,
+  FileDown,
+  FileText,
+  GitCompareArrows,
+} from 'lucide-react'
 import { useRef, useState, useSyncExternalStore } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
@@ -20,8 +28,8 @@ import { formatTime } from '@/lib/dates'
 
 import { useProposalEditor } from './editor-context'
 import { SectionJump } from './outline'
-import { suggestionDomId } from './suggestions'
 import { useEditorSaveSummary, type ProposalSaveStore } from './save-store'
+import { suggestionDomId } from './suggestions'
 import { hasContent, MARKDOWN_HINT_ID } from './text'
 
 /**
@@ -48,11 +56,26 @@ export function EditorBar({ proposal }: { proposal: Proposal }) {
   )
 }
 
-/** "3 suggestions": jumps to the first one (the section's text stays where it was). */
+/**
+ * "3 suggestions": jumps to the first one (the section's text stays where it
+ * was). If they couldn't load, says so with a retry: the text is still editable.
+ */
 function SuggestionsJump() {
-  const { suggestions, setCurrent } = useProposalEditor()
+  const { suggestions, suggestionsError, retrySuggestions, setCurrent } = useProposalEditor()
   const all = [...suggestions.values()].flat()
   const first = all[0]
+  if (suggestionsError) {
+    return (
+      <span role="alert" className="flex items-center gap-1 text-sm text-muted">
+        <CloudOff aria-hidden="true" className="size-4" />
+        <span className="max-sm:sr-only">Suggestions didn’t load.</span>
+        <Button variant="ghost" size="sm" onClick={retrySuggestions}>
+          Try again
+          <span className="sr-only"> loading suggestions</span>
+        </Button>
+      </span>
+    )
+  }
   if (!first) return null
   return (
     <Button

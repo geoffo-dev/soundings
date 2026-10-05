@@ -280,7 +280,7 @@ function Sessions({ user, isMe }: { user: AdminUser; isMe: boolean }) {
         description={
           isMe
             ? 'This ends this session too: you’ll go to the sign-in page.'
-            : `Their ${sessions(count)} end now; group changes apply at their next sign-in.`
+            : `This ends their ${sessions(count)} now; group changes apply at their next sign-in.`
         }
         confirmLabel="Sign out everywhere"
         pending={end.isPending}

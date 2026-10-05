@@ -190,9 +190,9 @@ test.describe('without platform admin rights', () => {
 
     await page.goto('/settings')
     await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
-    // Account and Notifications only: no admin sections, not even as disabled links.
+    // Account, Notifications and API keys only: no admin sections, not even as disabled links.
     const nav = page.getByRole('navigation', { name: 'Settings sections' })
-    await expect(nav.getByRole('link')).toHaveText(['Account', 'Notifications'])
+    await expect(nav.getByRole('link')).toHaveText(['Account', 'Notifications', 'API keys'])
   })
 })
 

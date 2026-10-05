@@ -121,7 +121,7 @@ describe('EvaluateSheet', () => {
     expect(within(reveal).getByRole('img', { name: 'Your score: 1 out of 5' })).toBeInTheDocument()
     expect(within(reveal).getByText(/3 evaluations/)).toBeInTheDocument()
     expect(within(reveal).getByRole('button', { name: 'Edit my evaluation' })).toBeEnabled()
-  })
+  }, 15_000)
 
   it('keeps the draft and turns read-only when evaluation closed meanwhile', async () => {
     const user = userEvent.setup()

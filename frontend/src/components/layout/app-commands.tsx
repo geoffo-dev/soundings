@@ -50,6 +50,12 @@ const ADMIN_PAGES = [
   { id: 'groups', label: 'Groups', to: '/settings/groups', keywords: ['mapping', 'sync'] },
   { id: 'sso', label: 'Sign-in (SSO)', to: '/settings/sso', keywords: ['oidc', 'login'] },
   { id: 'email', label: 'Email', to: '/settings/email', keywords: ['smtp', 'outbox', 'mail'] },
+  {
+    id: 'all-api-keys',
+    label: 'All API keys',
+    to: '/settings/all-api-keys',
+    keywords: ['keys', 'tokens', 'mcp', 'agents', 'revoke'],
+  },
   { id: 'audit', label: 'Audit log', to: '/settings/audit', keywords: ['history', 'log'] },
 ] as const
 
@@ -182,6 +188,14 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
                 icon: <Settings />,
                 keywords: ['notifications', 'digest', 'unsubscribe', 'email'],
                 onSelect: () => void navigate({ to: '/settings/notifications' }),
+              },
+              {
+                id: 'api-keys',
+                label: 'API keys',
+                hint: 'Settings',
+                icon: <Settings />,
+                keywords: ['tokens', 'mcp', 'claude', 'assistant', 'integration'],
+                onSelect: () => void navigate({ to: '/settings/api-keys' }),
               },
               // Admin settings (platform admins only; the pages are a 404 for anyone else).
               ...(me.data?.is_platform_admin

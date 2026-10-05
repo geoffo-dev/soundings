@@ -28,6 +28,8 @@ export interface ProposalEditorContextValue {
   retryThreads: () => void
   /** Phase 5: pending suggestions per section (template order, then oldest first). */
   suggestions: Map<ProposalSectionKey, ProposalSuggestion[]>
+  suggestionsError: boolean
+  retrySuggestions: () => void
   /** Accept / discard (`can_decide`), suggest (`can_suggest`); false while loading. */
   suggestionPermissions: ProposalSuggestionPermissions
   modeOf: (key: ProposalSectionKey) => SectionMode

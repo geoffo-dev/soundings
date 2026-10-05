@@ -249,6 +249,9 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
     threadsError: threadsQuery.isError,
     retryThreads: () => void threadsQuery.refetch(),
     suggestions,
+    // Kept while a refetch fails: only a list that never loaded is an error here.
+    suggestionsError: suggestionsQuery.isError && !suggestionsQuery.data,
+    retrySuggestions: () => void suggestionsQuery.refetch(),
     suggestionPermissions,
     modeOf,
     setMode,
