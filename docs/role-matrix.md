@@ -73,7 +73,12 @@ it immediately.
   its keys (Phase 6, `platform.manage_agents`;
   [contract-phase5 §3.7](api/contract-phase5.md#37-service-accounts-minimum-now-phase-6-builds-the-ui)),
   restricted to the projects it serves, and its evaluations are left out of the
-  aggregate by default (section 3 rule 10).
+  aggregate by default (section 3 rule 10). **Phase 6:** each registered kagent agent
+  has exactly one service account and one key, managed by the server (scopes from the
+  agent's purposes, restriction = its projects;
+  [contract-phase6 §3.1](api/contract-phase6.md#31-agents-their-service-accounts-and-keys));
+  while the agent is disabled its key is refused (401). Since it is never an owner or
+  admin it can't start AI runs (table J).
 - **Break-glass admin:** the one local account whose credentials come from a K8s
   Secret, a platform admin (column PA). Usable only while SSO is not configured; every
   action in its sessions is audited with `auth_method: break_glass`. It never holds
@@ -335,8 +340,30 @@ finds none (404). `api_key.*` are session-only rules (section 5).
 | `ai.draft_section` | "Draft section" in the proposal editor | Y (c7, c10) | Y (c7, c10) | 403 | 403 | 403 | 404 | 401 | + (c7, c10) | · |
 | `ai.cancel_run` | Cancel a running AI job on the idea | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
 
-Watching a run's live progress needs only `idea.view`; progress events never carry
-scores.
+Notes ([contract-phase6 §3.5](api/contract-phase6.md#35-authorisation-role-matrix-section-j)):
+
+- **Watching** a run (the idea's run list, a run with its events, the SSE stream) needs
+  only `idea.view`. Runs, events and permission flags never carry score data, so pending
+  evaluators may watch; an open stream re-checks the principal and `idea.view` every 30
+  seconds. Reading a research note is `idea.view`; deleting one is `comment.delete_any`.
+- **c10 names one agent:** it must be enabled, have the run's kind among its purposes,
+  serve the idea's project with a service account that is active and has effective role
+  **member** there, and hold an active key; and AI must be on for the instance. The
+  idea page's agent list and flags are exactly the agents and actions that pass.
+- **Idempotent:** a request while the same run (idea, agent, kind, section) is queued or
+  running returns that run.
+- The request rules are idea writes (409 `project_archived`; c19 `awaiting_moderation`);
+  `ai.cancel_run` isn't (it only stops work). `ai.request_evaluation` also assigns the
+  agent's service account as an evaluator (no separate `evaluator.manage` check: the
+  rule's holders have it anyway).
+- `evaluation.include_ai` (table C) acts on a submitted AI evaluation the principal may
+  see under section 3 (a pending evaluator, admin or owner, gets 404); on a person's
+  evaluation 409 `not_ai_evaluation`.
+- **Agents' own work** goes through ordinary rules with their key: `evaluation.submit_own`
+  (they are assigned evaluators), `proposal.suggest_section`, and `comment.create` + c22
+  for MCP `add_research_note`. Section 3 applies to them like anyone (rule 9).
+- `platform.manage_agents` (table H) is session only; registering an agent and rotating
+  its key also need c20 (403 `break_glass_account`).
 
 ## 3. Blind evaluation: exact visibility rules
 
@@ -408,7 +435,7 @@ evaluations and one AI evaluation present.
 | c7 | The idea's status is `shortlisted` or `proposal` | 409 `proposal_not_available` |
 | c8 | Public submission is on for the instance (`SOUNDINGS_PUBLIC_SUBMISSION_ENABLED`) and for the project, the project isn't archived and its slug isn't reserved (`RESERVED_SLUGS`, older projects only) | 404 (the same for an unknown project) |
 | c9 | The request carries a valid token for this submission, and public submission is on for the instance: a tracking token whose hash matches a submission that isn't erased, or (confirming only) a confirmation-link token with a valid signature and expiry for a submission that isn't erased and still has that address | 404 (unknown, erased, expired and invalid alike) |
-| c10 | AI is enabled (Helm feature toggle) and a suitable agent is registered | 409 `ai_unavailable` |
+| c10 | AI is enabled (Helm feature toggle, `SOUNDINGS_AI_ENABLED`) and the agent named in the request is suitable: enabled, the run's kind among its purposes, serving the idea's project, its service account active with effective role `member` there, and an active key (contract-phase6 §3.5) | 409 `ai_unavailable` |
 | c11 | After the change, the project still has at least one admin (effective role, direct or via a group) who is active and not a service account | 409 `last_admin` |
 | c12 | The idea is not held (`ideas.held_for` null). Held for moderation: always true for PA and PAd. Held for email confirmation: false for everyone, PA and PAd included (the idea doesn't exist yet) | 404 |
 | c13 | The idea has no owner | 409 `idea_has_owner` |
@@ -420,6 +447,7 @@ evaluations and one AI evaluation present.
 | c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, and to `idea.watch`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
 | c20 | The principal is not the break-glass account (a key would outlive the emergency and keep working after SSO is configured; contract-phase5 §3.1). Covers agents' keys too (Phase 6) | 403 `break_glass_account` |
 | c21 | The principal is a person, not a service account. Not written in the cells (a property of the principal, like c20); applies to `idea.volunteer_owner` (contract-phase5 §3.7) | 403 `forbidden` |
+| c22 | MCP `add_research_note` only (with `comment.create`): the principal is an AI agent's service account whose agent has a `running`, not cancel-requested research run on the idea (contract-phase6 §4) | a person → `forbidden`; no such run → `ai_run_not_active` |
 
 ## 5. API keys
 
@@ -506,6 +534,7 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
 | `add_comment` | `comment.create` | `write` |
 | `propose_proposal_section` | `proposal.suggest_section` | `write` |
 | `submit_evaluation` | `evaluation.submit_own` | `evaluate` |
+| `add_research_note` (Phase 6, lands with its handler) | `comment.create` + c22 | `write` |
 
 - Tools that filter (`list_projects`, `search_ideas`) check their scope first
   (`insufficient_scope`), then list only what the owner can view inside the key's
@@ -523,6 +552,12 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   `sumbit` never falls back to a default); the read tools ignore them. Request text with
   Unicode tag characters is refused everywhere (REST 422, MCP `validation_error`), and
   tool results carry no invisible characters.
+
+- **Phase 6:** `submit_evaluation` takes per-criterion `sources` from service accounts
+  only (people: `validation_error`) and needs an AI evaluator's rationale (the comment)
+  on every scored criterion; every call by an agent during one of its running runs adds
+  a `tool_called` event (the tool's name only) to that run
+  ([contract-phase6 §4](api/contract-phase6.md#4-mcp-additions)).
 
 ## 7. Writing the tests
 
@@ -554,6 +589,14 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   audit entry per tool call.
 - A meta-test fails if any route or MCP tool has no rule, or if a rule name used in
   code is missing from this file.
+- Phase 6 ([contract-phase6 §3.13](api/contract-phase6.md#313-minimum-tests-tests-first)):
+  table J for every column and the owner overlay (also demoted), each part of c10, c5 /
+  c6 / c7, c19, archived and held ideas; a service account's key can't request a run;
+  `evaluation.include_ai` with a pending evaluator (404), a person's evaluation (409) and
+  a draft (404); c22 for people and agents without a running research run; the event
+  stream for every column (404 / 401) and with access removed mid-stream; a pending
+  evaluator's stream and run responses hold no score data; `platform.manage_agents`
+  refused to keys and non-admins, c20 on register and rotate.
 - Phase 4: table E for every column and overlay (a demoted owner can't write; c7 on
   start and save; archived → 409); c8 for each of its parts (instance switch, project
   setting, archived, reserved slug, unknown slug: identical 404s); c9 with unknown,

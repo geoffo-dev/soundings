@@ -110,6 +110,21 @@ BRANDING_UPLOAD_MAX_BYTES = 900 * 1024
 """Ceiling for ``SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES``: an image must fit in a request
 body under the 1 MiB limit (``app.middleware.MAX_REQUEST_BODY_BYTES``)."""
 
+AiProtocolName = Literal["kagent_v0_10", "kagent_v1_0"]
+"""= ``app.models.enums.AiAgentProtocol`` values (config imports nothing from the app;
+``tests/test_config_ai.py`` keeps them equal)."""
+
+KAGENT_DEFAULT_URL = "http://kagent-controller.kagent:8083"
+"""kagent's Helm default: the ``kagent-controller`` Service in namespace ``kagent``,
+A2A on port 8083 (docs/research/kagent-a2a-claude-code-frontend.md section 1)."""
+
+AI_RUN_TIMEOUT_MIN = timedelta(seconds=30)
+AI_RUN_TIMEOUT_MAX = timedelta(hours=1)
+"""Bounds of ``SOUNDINGS_AI_RUN_TIMEOUT`` (= ``ck_ai_runs_timeout_range``)."""
+
+_KUBERNETES_LABEL = re.compile(r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?")
+"""= ``app.models.ai.KUBERNETES_LABEL_PATTERN`` (a DNS-1123 label)."""
+
 
 def _has_control_characters(value: str) -> bool:
     return any(ord(character) < 32 or ord(character) == 127 for character in value)
@@ -448,6 +463,76 @@ class Settings(DatabaseSettings):
         ),
     )
 
+    # --- AI assistance through kagent (contract-phase6 section 3.2) ------------------
+    # Names match the chart (features.ai, kagent.*). The A2A URL of an agent is built
+    # from kagent_url + the protocol's fixed path + the agent's namespace and name
+    # (DNS labels), never taken from a request or an agent card, so nothing else can be
+    # reached from the UI (SSRF).
+    ai_enabled: bool = Field(
+        default=False,
+        description=(
+            "Instance switch for AI assistance (the chart's features.ai). false: no run "
+            "starts (c10: 409 ai_unavailable), queued runs fail ai_disabled, and the idea "
+            "page hides the AI actions; Admin settings -> AI agents still registers agents."
+        ),
+    )
+    kagent_url: str = Field(
+        default=KAGENT_DEFAULT_URL,
+        description=(
+            "Base URL of kagent's controller (its A2A endpoint, port 8083): an absolute "
+            "http(s) URL without a path, query or credentials."
+        ),
+    )
+    kagent_token: SecretStr | None = Field(
+        default=None,
+        repr=False,
+        description=(
+            "Optional bearer token for the kagent controller (its trusted-proxy auth mode): "
+            "sent as Authorization: Bearer <token> on every A2A request. Never logged or "
+            "shown (Admin settings shows only whether it is set)."
+        ),
+    )
+    ai_default_protocol: AiProtocolName = Field(
+        default="kagent_v0_10",
+        description=(
+            "Protocol of a newly registered agent when the admin doesn't choose one: "
+            "kagent_v0_10 (/api/a2a/{namespace}/{name}/, A2A 0.3) or kagent_v1_0 "
+            "(/agents/{namespace}/{name}, A2A 1.0)."
+        ),
+    )
+    ai_run_timeout: timedelta = Field(
+        default=timedelta(minutes=5),
+        description=(
+            "How long a run may take once it has started (an ISO 8601 duration such as "
+            "PT5M, or seconds; 30 seconds to 1 hour). Then the worker asks the agent to "
+            "cancel and the run is timed_out."
+        ),
+    )
+    ai_max_concurrent_runs: int = Field(
+        default=4,
+        ge=1,
+        le=50,
+        description=(
+            "Runs talking to agents at the same time, across every worker; the rest wait "
+            "queued, oldest first."
+        ),
+    )
+    ai_agent_namespaces: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Kubernetes namespaces agents may be registered in (comma-separated). Empty: "
+            "any namespace."
+        ),
+    )
+    ai_mcp_url: str | None = Field(
+        default=None,
+        description=(
+            "The MCP URL agents use to reach Soundings (the chart sets the Service URL, "
+            "http://<release>.<namespace>.svc.cluster.local:<port>/mcp). Sent to agents as a "
+            "hint and shown in Admin settings; unset: the first base URL + /mcp."
+        ),
+    )
+
     # --- Observability / worker -----------------------------------------------------
     otel_endpoint: str | None = Field(
         default=None,
@@ -455,10 +540,79 @@ class Settings(DatabaseSettings):
     )
     worker_concurrency: int = Field(default=4, ge=1, le=64)
 
-    @field_validator("base_urls", "trusted_proxies", "oidc_scopes", "reminder_days", mode="before")
+    @field_validator(
+        "base_urls",
+        "trusted_proxies",
+        "oidc_scopes",
+        "reminder_days",
+        "ai_agent_namespaces",
+        mode="before",
+    )
     @classmethod
     def _parse_list(cls, value: object) -> object:
         return _split_csv(value)
+
+    @field_validator("kagent_url")
+    @classmethod
+    def _validate_kagent_url(cls, value: str) -> str:
+        parts = urlsplit(value.strip())
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("kagent_url must be an absolute http(s) URL")
+        if parts.username is not None or parts.password is not None:
+            raise ValueError("kagent_url must not contain credentials (use kagent_token)")
+        if parts.path.strip("/") or parts.query or parts.fragment:
+            raise ValueError("kagent_url must not have a path, query or fragment")
+        if _has_control_characters(value):
+            raise ValueError("kagent_url must not contain control characters")
+        return f"{parts.scheme}://{parts.netloc.lower()}"
+
+    @field_validator("kagent_token", mode="before")
+    @classmethod
+    def _empty_token_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("kagent_token")
+    @classmethod
+    def _validate_kagent_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and (
+            _has_control_characters(value.get_secret_value()) or " " in value.get_secret_value()
+        ):
+            raise ValueError("kagent_token must be one token without spaces or control characters")
+        return value
+
+    @field_validator("ai_run_timeout")
+    @classmethod
+    def _validate_ai_run_timeout(cls, value: timedelta) -> timedelta:
+        if not AI_RUN_TIMEOUT_MIN <= value <= AI_RUN_TIMEOUT_MAX:
+            raise ValueError("ai_run_timeout must be between 30 seconds and 1 hour")
+        return value
+
+    @field_validator("ai_agent_namespaces")
+    @classmethod
+    def _validate_ai_agent_namespaces(cls, value: list[str]) -> list[str]:
+        for namespace in value:
+            if not _KUBERNETES_LABEL.fullmatch(namespace):
+                raise ValueError(f"not a Kubernetes namespace name: {namespace!r}")
+        return sorted(set(value))
+
+    @field_validator("ai_mcp_url", mode="before")
+    @classmethod
+    def _empty_mcp_url_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("ai_mcp_url")
+    @classmethod
+    def _validate_ai_mcp_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value.strip())
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("ai_mcp_url must be an absolute http(s) URL")
+        if parts.username is not None or parts.query or parts.fragment:
+            raise ValueError("ai_mcp_url must not have credentials, a query or a fragment")
+        if _has_control_characters(value):
+            raise ValueError("ai_mcp_url must not contain control characters")
+        return value.strip()
 
     @model_validator(mode="before")
     @classmethod
@@ -727,6 +881,17 @@ class Settings(DatabaseSettings):
         """Email is on: a host (and, enforced above, a sender) is configured. Otherwise
         nothing is written to the outbox and people get in-app notifications only."""
         return self.smtp_host is not None and self.smtp_from is not None
+
+    @property
+    def ai_mcp_url_effective(self) -> str:
+        """The MCP URL agents are told about: ``ai_mcp_url``, else the first base URL +
+        ``/mcp``."""
+        return self.ai_mcp_url or self.public_base_url + "/mcp"
+
+    @property
+    def ai_run_timeout_seconds(self) -> int:
+        """``ai_run_timeout`` in whole seconds (``ai_runs.timeout_seconds``)."""
+        return int(self.ai_run_timeout.total_seconds())
 
     @property
     def public_base_url(self) -> str:

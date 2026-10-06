@@ -72,10 +72,15 @@ def test_every_route_of_the_area_is_covered() -> None:
             or path.endswith(("/groups", "/groups/{group_id}", "/access"))
         )
         # Phase 3 Admin -> Email (/admin/email...), Phase 4 Admin -> Branding
-        # (/admin/branding...) and Phase 5 Admin -> API keys (/admin/api-keys...) get
-        # their own guard tests.
+        # (/admin/branding...), Phase 5 Admin -> API keys (/admin/api-keys...) and Phase 6
+        # Admin -> AI agents (/admin/ai-agents...) get their own guard tests.
         and not path.startswith(
-            ("/api/v1/admin/email", "/api/v1/admin/branding", "/api/v1/admin/api-keys")
+            (
+                "/api/v1/admin/email",
+                "/api/v1/admin/branding",
+                "/api/v1/admin/api-keys",
+                "/api/v1/admin/ai-agents",
+            )
         )
     }
     assert mine == set(ROUTES)

@@ -24,6 +24,10 @@ from tests.conftest import make_settings
 
 DOMAIN_TABLES = {
     "activity_events",
+    "ai_agent_projects",
+    "ai_agents",
+    "ai_run_events",
+    "ai_runs",
     "altcha_used_challenges",
     "api_keys",
     "audit_log",

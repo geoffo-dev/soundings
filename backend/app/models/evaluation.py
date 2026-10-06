@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -69,11 +71,28 @@ class Evaluation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+EVALUATION_SOURCES_MAX = 5
+"""At most this many cited sources per criterion (an AI evaluator's; contract-phase6)."""
+
+
 class EvaluationScore(Base):
-    """A 1-5 score for one criterion. ``score`` may be null only in a draft."""
+    """A 1-5 score for one criterion. ``score`` may be null only in a draft.
+
+    ``comment`` is the evaluator's note on the score; for an AI evaluator it is the
+    criterion's **rationale** (required when it submits). ``sources`` (Phase 6) are the
+    sources an AI evaluator cited for the criterion: a JSON array of ``{"title", "url"}``
+    objects (``app.schemas.ai.Citation``), at most five; always empty for people.
+    """
 
     __tablename__ = "evaluation_scores"
-    __table_args__ = (CheckConstraint("score BETWEEN 1 AND 5", name="score_range"),)
+    __table_args__ = (
+        CheckConstraint("score BETWEEN 1 AND 5", name="score_range"),
+        CheckConstraint(
+            "CASE WHEN jsonb_typeof(sources) = 'array'"
+            f" THEN jsonb_array_length(sources) <= {EVALUATION_SOURCES_MAX} ELSE false END",
+            name="sources_array",
+        ),
+    )
 
     evaluation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("evaluations.id", ondelete="CASCADE"), primary_key=True
@@ -88,3 +107,7 @@ class EvaluationScore(Base):
     )
     score: Mapped[int | None] = mapped_column(SmallInteger)
     comment: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    # Phase 6: an AI evaluator's cited sources for this criterion ([{title, url}], <= 5).
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )

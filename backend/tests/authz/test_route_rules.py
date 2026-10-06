@@ -150,6 +150,30 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "create_proposal_suggestion": ("proposal.suggest_section",),
     "accept_proposal_suggestion": ("proposal.write",),
     "discard_proposal_suggestion": ("proposal.write",),
+    # Phase 6 (docs/api/contract-phase6.md section 2)
+    "list_ai_agents": ("platform.manage_agents",),
+    "register_ai_agent": ("platform.manage_agents",),
+    "get_ai_agent": ("platform.manage_agents",),
+    "update_ai_agent": ("platform.manage_agents",),
+    "rotate_ai_agent_key": ("platform.manage_agents",),
+    "test_ai_agent": ("platform.manage_agents",),
+    "list_idea_ai_runs": (
+        "idea.view",
+        "ai.request_evaluation",
+        "ai.research",
+        "ai.draft_section",
+        "ai.cancel_run",
+        "evaluation.include_ai",
+    ),
+    "request_ai_evaluation": ("ai.request_evaluation",),
+    "request_ai_research": ("ai.research",),
+    "request_ai_section_draft": ("ai.draft_section",),
+    "get_ai_run": ("idea.view",),
+    "cancel_ai_run": ("ai.cancel_run",),
+    "stream_ai_run_events": ("idea.view",),
+    "set_evaluation_inclusion": ("evaluation.include_ai", "evaluation.view_others"),
+    "get_research_note": ("idea.view",),
+    "delete_research_note": ("comment.delete_any",),
 }
 
 

@@ -702,6 +702,1161 @@
         "title": "AggregateScoreSummary",
         "type": "object"
       },
+      "AiAgent": {
+        "description": "A registered agent (Admin settings -> AI agents).",
+        "properties": {
+          "a2a_url": {
+            "description": "Where Soundings sends its runs (built, read-only).",
+            "title": "A2A Url",
+            "type": "string"
+          },
+          "active_run_count": {
+            "description": "Runs queued or running now.",
+            "minimum": 0.0,
+            "title": "Active Run Count",
+            "type": "integer"
+          },
+          "card_url": {
+            "description": "Where its agent card is read.",
+            "title": "Card Url",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Also its service account's name.",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Disabled: no new runs, active runs cancelled, its key refused (401).",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKey"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its API key (never the secret): restricted to its projects, scopes from its purposes. Null after a revoke in Admin settings -> API keys: rotate to get one."
+          },
+          "name": {
+            "description": "The kagent Agent's name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "The kagent Agent's namespace.",
+            "title": "Namespace",
+            "type": "string"
+          },
+          "projects": {
+            "description": "The projects it serves, by name.",
+            "items": {
+              "$ref": "#/components/schemas/AiAgentProjectRef"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/AiAgentProtocol"
+          },
+          "purposes": {
+            "items": {
+              "$ref": "#/components/schemas/AiRunKind"
+            },
+            "title": "Purposes",
+            "type": "array"
+          },
+          "service_account": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "description",
+          "namespace",
+          "name",
+          "protocol",
+          "purposes",
+          "enabled",
+          "projects",
+          "service_account",
+          "key",
+          "a2a_url",
+          "card_url",
+          "active_run_count",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AiAgent",
+        "type": "object"
+      },
+      "AiAgentCard": {
+        "description": "What the agent card says (strings cut to 200 characters, at most 20 skills).\nWritten by whoever configured the agent: shown as plain text, never as a link.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol_versions": {
+            "description": "The A2A versions it offers (supportedInterfaces, protocolVersion).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Protocol Versions",
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/AiAgentSkill"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "streaming": {
+            "description": "capabilities.streaming.",
+            "title": "Streaming",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "protocol_versions",
+          "streaming",
+          "skills"
+        ],
+        "title": "AiAgentCard",
+        "type": "object"
+      },
+      "AiAgentCreate": {
+        "additionalProperties": false,
+        "description": "Register a kagent agent (platform admins, session only).",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "What people see, e.g. \"Idea evaluator\" (also its service account).",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "name": {
+            "description": "The kagent Agent's name (a DNS label); unique with the namespace.",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "The kagent Agent's namespace (a DNS label; in SOUNDINGS_AI_AGENT_NAMESPACES when that is set, else 422 namespace_not_allowed).",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$",
+            "title": "Namespace",
+            "type": "string"
+          },
+          "project_ids": {
+            "description": "The projects it serves (1-50, unknown ones: 422 invalid_project). Its service account becomes a member of each; its key is restricted to them.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Project Ids",
+            "type": "array"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiAgentProtocol"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: SOUNDINGS_AI_DEFAULT_PROTOCOL."
+          },
+          "purposes": {
+            "items": {
+              "$ref": "#/components/schemas/AiRunKind"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Purposes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "namespace",
+          "name",
+          "purposes",
+          "project_ids"
+        ],
+        "title": "AiAgentCreate",
+        "type": "object"
+      },
+      "AiAgentList": {
+        "properties": {
+          "can_register": {
+            "description": "Below the limit, and not the break-glass account (c20: it makes keys).",
+            "title": "Can Register",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "By display name; disabled ones included.",
+            "items": {
+              "$ref": "#/components/schemas/AiAgent"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "max_agents": {
+            "description": "How many agents may be registered (50).",
+            "title": "Max Agents",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AiSettingsInEffect"
+          }
+        },
+        "required": [
+          "items",
+          "settings",
+          "max_agents",
+          "can_register"
+        ],
+        "title": "AiAgentList",
+        "type": "object"
+      },
+      "AiAgentProjectRef": {
+        "description": "A project the agent serves, and whether its service account still has a role\nthere (a project admin may have removed it).",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "Idea-key prefix, e.g. \"CUST\" in CUST-12.",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRole"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The service account's effective role: member (it can work), viewer (it can only read: no evaluations, notes or suggestions), or null (removed: runs there are refused)."
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "key",
+          "name",
+          "role"
+        ],
+        "title": "AiAgentProjectRef",
+        "type": "object"
+      },
+      "AiAgentProtocol": {
+        "description": "How Soundings talks to a registered agent: which kagent A2A endpoint layout and A2A\nprotocol version (docs/research/kagent-a2a-claude-code-frontend.md section 1). The URL\nis always built from ``SOUNDINGS_KAGENT_URL`` + this layout + the agent's namespace\nand name, never taken from the API or the agent card.",
+        "enum": [
+          "kagent_v0_10",
+          "kagent_v1_0"
+        ],
+        "title": "AiAgentProtocol",
+        "type": "string"
+      },
+      "AiAgentRef": {
+        "description": "An agent as the idea page sees it.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "purposes": {
+            "description": "Which AI actions it takes.",
+            "items": {
+              "$ref": "#/components/schemas/AiRunKind"
+            },
+            "title": "Purposes",
+            "type": "array"
+          },
+          "user_id": {
+            "description": "Its service account: the evaluator (IdeaEvaluator.user.id, Evaluation.evaluator.id) and the author of its notes and suggestions.",
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "purposes",
+          "user_id"
+        ],
+        "title": "AiAgentRef",
+        "type": "object"
+      },
+      "AiAgentSkill": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AiAgentSkill",
+        "type": "object"
+      },
+      "AiAgentTest": {
+        "description": "Test connection: Soundings fetched the agent card from :attr:`url` (no redirects,\n5 seconds, at most 64 KiB).",
+        "properties": {
+          "card": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiAgentCard"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiRunError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "agent_unreachable or agent_protocol_error when not ok."
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no answer came back.",
+            "title": "Http Status"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "url": {
+            "description": "The card URL it fetched.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "url",
+          "http_status",
+          "duration_ms",
+          "card",
+          "error_code",
+          "error_message"
+        ],
+        "title": "AiAgentTest",
+        "type": "object"
+      },
+      "AiAgentUpdate": {
+        "additionalProperties": false,
+        "description": "Change an agent (at least one field). Namespace and name can't change: register\nanother agent. Purposes and projects also change its key's scopes and restriction\n(the same key keeps working) and its memberships.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "false: no new runs, active runs cancelled, its key refused until enabled.",
+            "title": "Enabled"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Ids"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiAgentProtocol"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purposes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AiRunKind"
+                },
+                "maxItems": 3,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purposes"
+          }
+        },
+        "title": "AiAgentUpdate",
+        "type": "object"
+      },
+      "AiPermissions": {
+        "description": "What you may do with AI on this idea now (rules, conditions and c10 included).",
+        "properties": {
+          "can_cancel": {
+            "description": "ai.cancel_run (runs say it per run too).",
+            "title": "Can Cancel",
+            "type": "boolean"
+          },
+          "can_draft_section": {
+            "description": "ai.draft_section: Shortlisted or Proposal (c7), a proposal, a draft agent.",
+            "title": "Can Draft Section",
+            "type": "boolean"
+          },
+          "can_include_ai": {
+            "description": "evaluation.include_ai: include or leave out AI evaluations.",
+            "title": "Can Include Ai",
+            "type": "boolean"
+          },
+          "can_request_evaluation": {
+            "description": "ai.request_evaluation: evaluation open (c6) and an evaluate agent (c10).",
+            "title": "Can Request Evaluation",
+            "type": "boolean"
+          },
+          "can_research": {
+            "description": "ai.research: not closed (c5), a research agent.",
+            "title": "Can Research",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_request_evaluation",
+          "can_research",
+          "can_draft_section",
+          "can_cancel",
+          "can_include_ai"
+        ],
+        "title": "AiPermissions",
+        "type": "object"
+      },
+      "AiRun": {
+        "description": "One AI run. Holds no score data: safe for everyone who may view the idea.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AiAgentRef"
+          },
+          "can_cancel": {
+            "description": "ai.cancel_run, and the run is active.",
+            "title": "Can Cancel",
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "description": "Show \"Cancelling\" until it ends.",
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "started_at + the timeout while running; null otherwise.",
+            "title": "Deadline At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiRunErrorInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "failed and timed_out only."
+          },
+          "event_count": {
+            "description": "The last event's seq (0: none yet).",
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea_id": {
+            "format": "uuid",
+            "title": "Idea Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AiRunKind"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/AiRunResult"
+          },
+          "section_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalSectionKey"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "draft_section only."
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AiRunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "idea_id",
+          "kind",
+          "section_key",
+          "agent",
+          "requested_by",
+          "status",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "deadline_at",
+          "cancel_requested",
+          "error",
+          "result",
+          "event_count",
+          "can_cancel"
+        ],
+        "title": "AiRun",
+        "type": "object"
+      },
+      "AiRunDetail": {
+        "description": "A run with its events (the polling fallback of the SSE stream).",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AiAgentRef"
+          },
+          "can_cancel": {
+            "description": "ai.cancel_run, and the run is active.",
+            "title": "Can Cancel",
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "description": "Show \"Cancelling\" until it ends.",
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "started_at + the timeout while running; null otherwise.",
+            "title": "Deadline At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiRunErrorInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "failed and timed_out only."
+          },
+          "event_count": {
+            "description": "The last event's seq (0: none yet).",
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "events": {
+            "description": "Oldest first, at most 200.",
+            "items": {
+              "$ref": "#/components/schemas/AiRunEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea_id": {
+            "format": "uuid",
+            "title": "Idea Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AiRunKind"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/AiRunResult"
+          },
+          "section_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalSectionKey"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "draft_section only."
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AiRunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "idea_id",
+          "kind",
+          "section_key",
+          "agent",
+          "requested_by",
+          "status",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "deadline_at",
+          "cancel_requested",
+          "error",
+          "result",
+          "event_count",
+          "can_cancel",
+          "events"
+        ],
+        "title": "AiRunDetail",
+        "type": "object"
+      },
+      "AiRunError": {
+        "description": "Why a run failed or timed out (``ai_runs.error_code``). The message shown with it is\nSoundings' own sentence for the code, never the agent's text.",
+        "enum": [
+          "ai_disabled",
+          "agent_unavailable",
+          "agent_unreachable",
+          "agent_protocol_error",
+          "agent_rejected",
+          "agent_failed",
+          "agent_needs_input",
+          "no_result",
+          "timed_out",
+          "queue_timeout",
+          "worker_lost",
+          "internal_error"
+        ],
+        "title": "AiRunError",
+        "type": "string"
+      },
+      "AiRunErrorInfo": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AiRunError"
+          },
+          "message": {
+            "description": "Soundings' sentence for the code; never the agent's text.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "AiRunErrorInfo",
+        "type": "object"
+      },
+      "AiRunEvent": {
+        "description": "One progress event: the SSE ``id`` is ``seq`` and the ``data`` is this, as JSON.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "final": {
+            "description": "The run's last event: it is over (refetch the run).",
+            "readOnly": true,
+            "title": "Final",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "Soundings' own sentence; never agent text or scores.",
+            "title": "Message",
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AiRunEventType"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "message",
+          "created_at",
+          "final"
+        ],
+        "title": "AiRunEvent",
+        "type": "object"
+      },
+      "AiRunEventType": {
+        "description": "One step of a run's progress (``ai_run_events.type``), streamed over SSE. Events\ncarry Soundings' own fixed messages (and tool names), never the agent's text or any\nscore data, so anyone who can view the idea may watch (role matrix section J).",
+        "enum": [
+          "queued",
+          "started",
+          "retrying",
+          "agent_accepted",
+          "agent_working",
+          "tool_called",
+          "result_recorded",
+          "cancel_requested",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "timed_out"
+        ],
+        "title": "AiRunEventType",
+        "type": "string"
+      },
+      "AiRunKind": {
+        "description": "What an AI run does (``ai_runs.kind``), and the purposes a registered agent serves\n(``ai_agents.purposes``). SPEC section 9's two jobs: the evaluator, and the research\nand drafting assistant.",
+        "enum": [
+          "evaluate",
+          "research",
+          "draft_section"
+        ],
+        "title": "AiRunKind",
+        "type": "string"
+      },
+      "AiRunList": {
+        "description": "An idea's AI runs and what can be asked.",
+        "properties": {
+          "agents": {
+            "description": "Agents you may ask on this idea now (c10: enabled, serving this project with a member role and a usable key), by name.",
+            "items": {
+              "$ref": "#/components/schemas/AiAgentRef"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "ai_enabled": {
+            "description": "features.ai is on for the instance.",
+            "title": "Ai Enabled",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Newest first, at most limit.",
+            "items": {
+              "$ref": "#/components/schemas/AiRun"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/AiPermissions"
+          }
+        },
+        "required": [
+          "items",
+          "ai_enabled",
+          "agents",
+          "permissions"
+        ],
+        "title": "AiRunList",
+        "type": "object"
+      },
+      "AiRunRequest": {
+        "additionalProperties": false,
+        "description": "Ask an agent (one from ``AiRunList.agents`` with the purpose).",
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "AiRunRequest",
+        "type": "object"
+      },
+      "AiRunResult": {
+        "description": "What the run produced (all null until then; kept if the run later fails).",
+        "properties": {
+          "evaluation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "evaluate: the AI evaluation.",
+            "title": "Evaluation Id"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "research: the research note (activity item id).",
+            "title": "Note Id"
+          },
+          "suggestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "draft_section: the proposal suggestion.",
+            "title": "Suggestion Id"
+          }
+        },
+        "required": [
+          "evaluation_id",
+          "note_id",
+          "suggestion_id"
+        ],
+        "title": "AiRunResult",
+        "type": "object"
+      },
+      "AiRunStatus": {
+        "description": "Where an AI run is (``ai_runs.status``). ``queued`` and ``running`` are active; the\nother four are final (``finished_at`` set).",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "timed_out"
+        ],
+        "title": "AiRunStatus",
+        "type": "string"
+      },
+      "AiSectionDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "section_key": {
+            "$ref": "#/components/schemas/ProposalSectionKey"
+          }
+        },
+        "required": [
+          "agent_id",
+          "section_key"
+        ],
+        "title": "AiSectionDraftRequest",
+        "type": "object"
+      },
+      "AiSettingsInEffect": {
+        "description": "The AI settings in effect (read-only: Helm values / ``SOUNDINGS_*``).",
+        "properties": {
+          "agent_namespaces": {
+            "description": "Allowed namespaces; empty: any.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Agent Namespaces",
+            "type": "array"
+          },
+          "default_protocol": {
+            "$ref": "#/components/schemas/AiAgentProtocol"
+          },
+          "enabled": {
+            "description": "features.ai: runs can start.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "kagent_token_set": {
+            "description": "A controller token is configured (never shown).",
+            "title": "Kagent Token Set",
+            "type": "boolean"
+          },
+          "kagent_url": {
+            "title": "Kagent Url",
+            "type": "string"
+          },
+          "max_concurrent_runs": {
+            "title": "Max Concurrent Runs",
+            "type": "integer"
+          },
+          "mcp_url": {
+            "description": "The MCP URL agents are told to use.",
+            "title": "Mcp Url",
+            "type": "string"
+          },
+          "run_timeout_seconds": {
+            "title": "Run Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "kagent_url",
+          "kagent_token_set",
+          "default_protocol",
+          "run_timeout_seconds",
+          "max_concurrent_runs",
+          "agent_namespaces",
+          "mcp_url"
+        ],
+        "title": "AiSettingsInEffect",
+        "type": "object"
+      },
       "AltchaChallenge": {
         "description": "A proof-of-work challenge for the ALTCHA widget (Python ``altcha`` 2.x with the\n``altcha@3`` widget, research R1 section 7). Pass the endpoint's URL (or this JSON)\nto the widget unchanged; it solves it in the browser and puts the result in the\nform's ``altcha`` field. The one place the API isn't snake_case: the format is the\nwidget's.",
         "properties": {
@@ -1655,6 +2810,32 @@
         "title": "BreakGlassStatus",
         "type": "object"
       },
+      "Citation": {
+        "description": "A cited source, as people see it: written by an AI agent, untrusted. The SPA shows\nthe title as a plain link (``rel=\"noopener noreferrer nofollow\"``, new tab) with\n``host`` next to it, so a title can't disguise where the link goes.",
+        "properties": {
+          "host": {
+            "description": "The URL's host name, shown next to the title.",
+            "readOnly": true,
+            "title": "Host",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "host"
+        ],
+        "title": "Citation",
+        "type": "object"
+      },
       "CommentActivity": {
         "properties": {
           "actor": {
@@ -1874,6 +3055,30 @@
           "body_md"
         ],
         "title": "CommentUpdate",
+        "type": "object"
+      },
+      "CreatedAiAgent": {
+        "description": "Registration's answer: the agent and its key, **once** (``Cache-Control:\nno-store``).",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AiAgent"
+          },
+          "key": {
+            "$ref": "#/components/schemas/CreatedApiKey",
+            "description": "The full key, shown once."
+          },
+          "secret_manifest": {
+            "description": "A Kubernetes Secret (in the agent's namespace) holding Authorization: Bearer <key> for kagent's RemoteMCPServer headersFrom. Contains the key: shown once.",
+            "title": "Secret Manifest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "key",
+          "secret_manifest"
+        ],
+        "title": "CreatedAiAgent",
         "type": "object"
       },
       "CreatedApiKey": {
@@ -2509,6 +3714,21 @@
           "due_at"
         ],
         "title": "EvaluationDueDate",
+        "type": "object"
+      },
+      "EvaluationInclusionUpdate": {
+        "additionalProperties": false,
+        "description": "Count an AI evaluation in the aggregate, or leave it out again.",
+        "properties": {
+          "include": {
+            "title": "Include",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "include"
+        ],
+        "title": "EvaluationInclusionUpdate",
         "type": "object"
       },
       "EvaluationList": {
@@ -7407,6 +8627,72 @@
         "title": "RecommendationCounts",
         "type": "object"
       },
+      "ResearchNote": {
+        "description": "A research note in the activity feed (the ``ai_research_note`` item, at\nintegration): Markdown by an AI agent, untrusted, rendered sanitised with an AI\nlabel. Holds no score data.",
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiAgentRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if the agent is gone."
+          },
+          "body_md": {
+            "description": "Empty when deleted.",
+            "title": "Body Md",
+            "type": "string"
+          },
+          "can_delete": {
+            "description": "comment.delete_any: project and platform admins.",
+            "title": "Can Delete",
+            "type": "boolean"
+          },
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The activity item's id.",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "agent",
+          "body_md",
+          "sources",
+          "deleted",
+          "can_delete"
+        ],
+        "title": "ResearchNote",
+        "type": "object"
+      },
       "Resolution": {
         "description": "Why a closed idea was closed. Set if and only if the status is ``closed``.",
         "enum": [
@@ -7474,6 +8760,44 @@
           "group"
         ],
         "title": "RoleSource",
+        "type": "object"
+      },
+      "RotatedAiAgentKey": {
+        "description": "A new key for the agent; the previous one is revoked in the same change.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AiAgent"
+          },
+          "key": {
+            "$ref": "#/components/schemas/CreatedApiKey",
+            "description": "The full key, shown once."
+          },
+          "revoked_key_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The key it replaces (now revoked).",
+            "title": "Revoked Key Id"
+          },
+          "secret_manifest": {
+            "description": "As CreatedAiAgent.secret_manifest.",
+            "title": "Secret Manifest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "key",
+          "secret_manifest",
+          "revoked_key_id"
+        ],
+        "title": "RotatedAiAgentKey",
         "type": "object"
       },
       "Rubric": {
@@ -9101,6 +10425,548 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/ai-agents": {
+      "get": {
+        "description": "Platform admins (platform.manage_agents, session only). Every registered agent by display name (disabled ones too), with its projects, service account, key (never the secret), the A2A URL Soundings builds for it and its active runs; plus the AI settings in effect (read-only).",
+        "operationId": "list_ai_agents",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAgentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List AI agents",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Platform admins (platform.manage_agents, session only). Creates the agent, its service account (a member of each project it serves) and its API key (scopes read and mcp, plus evaluate for evaluate and write for research or draft_section; restricted to its projects; no expiry), and returns the key once with a Secret manifest (Cache-Control: no-store). The A2A URL is built from SOUNDINGS_KAGENT_URL, the protocol and the namespace and name. 403 break_glass_account (c20); 409 agent_taken (namespace and name already registered), too_many_agents (50); 422 invalid_project, namespace_not_allowed. Audited as ai_agent.register and api_key.create.",
+        "operationId": "register_ai_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiAgentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAiAgent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Register an AI agent",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ai-agents/{agent_id}": {
+      "get": {
+        "description": "Platform admins (platform.manage_agents, session only). One agent, as in the list.",
+        "operationId": "get_ai_agent",
+        "parameters": [
+          {
+            "description": "A registered agent's id.",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "A registered agent's id.",
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAgent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an AI agent",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Platform admins (platform.manage_agents, session only). Display name (also its service account's), description, protocol, purposes, projects, enabled. Purposes and projects also change its key's scopes and project restriction (the same key keeps working) and add or remove its member role in those projects. enabled false: no new runs, its queued and running runs are cancelled, and its key is refused (401) until it is enabled again. Namespace and name can't change (422). 422 invalid_project. Audited as ai_agent.update.",
+        "operationId": "update_ai_agent",
+        "parameters": [
+          {
+            "description": "A registered agent's id.",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "A registered agent's id.",
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiAgentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAgent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change or disable an AI agent",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ai-agents/{agent_id}/key": {
+      "post": {
+        "description": "Platform admins (platform.manage_agents, session only). Creates a new key for the agent (as at registration) and revokes the previous one in the same change, so the agent stops working until the operator updates its Secret. Returns the key once with a Secret manifest (Cache-Control: no-store). 403 break_glass_account (c20). Audited as api_key.create and api_key.revoke (rule platform.manage_agents).",
+        "operationId": "rotate_ai_agent_key",
+        "parameters": [
+          {
+            "description": "A registered agent's id.",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "A registered agent's id.",
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotatedAiAgentKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Rotate an AI agent's key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ai-agents/{agent_id}/test": {
+      "post": {
+        "description": "Platform admins (platform.manage_agents, session only). Fetches the agent card from the built card URL (5 seconds, no redirects, at most 64 KiB, the controller token if set) and reports what it says. Always 200: ok false with error_code agent_unreachable or agent_protocol_error when it fails. 10 a minute per admin (429 too_many_attempts). Not audited.",
+        "operationId": "test_ai_agent",
+        "parameters": [
+          {
+            "description": "A registered agent's id.",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "A registered agent's id.",
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAgentTest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Test an AI agent's connection",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/api-keys": {
       "get": {
         "description": "Platform admins (api_key.manage_any, session only). Keys that aren't revoked, of every user (service accounts included), newest first, with their owner and when they were last used. q matches part of the key's name or its owner's name or email (any case), or exactly a key's prefix (sdg_ + lookup id) or lookup id, so a leaked key can be found; the filters combine.",
@@ -13730,6 +15596,904 @@
         ]
       }
     },
+    "/api/v1/ideas/{idea}/ai-runs": {
+      "get": {
+        "description": "idea.view: the idea's AI runs, newest first, with the agents you may ask here (c10) and what you may do (ai.request_evaluation, ai.research, ai.draft_section, ai.cancel_run, evaluation.include_ai). Runs never carry score data.",
+        "operationId": "list_idea_ai_runs",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs of this kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AiRunKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs of this kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "AI runs on an idea",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/ai-runs/evaluation": {
+      "post": {
+        "description": "ai.request_evaluation (the owner and admins; c6: evaluation open). Assigns the agent's service account as an evaluator if it isn't one (audited evaluator.add, activity evaluator_added) and queues a run: the agent reads the idea and the rubric through MCP and submits an evaluation with a rationale and sources per criterion, shown with an AI badge and left out of the aggregate until someone includes it. 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.",
+        "operationId": "request_ai_evaluation",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent)."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Ask AI to evaluate",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/ai-runs/research": {
+      "post": {
+        "description": "ai.research (the owner and admins; c5: the idea isn't closed). Queues a run: the agent reads the idea through MCP and writes one cited research note into the activity feed (add_research_note). 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.",
+        "operationId": "request_ai_research",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent)."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Research this",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/ai-runs/section-draft": {
+      "post": {
+        "description": "ai.draft_section (the owner and admins; c7: Shortlisted or Proposal). 404 when the idea has no proposal yet. Queues a run: the agent reads the idea and the proposal and suggests the whole text of the section (propose_proposal_section, source ai), which the owner accepts or discards. 201 with the new run, or 200 with the active one for the same section. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.",
+        "operationId": "request_ai_section_draft",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSectionDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent)."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Draft a proposal section with AI",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/ai-runs/{run_id}": {
+      "get": {
+        "description": "idea.view: the run and every event so far (oldest first): the polling fallback of the event stream (every 2-3 seconds while it is active).",
+        "operationId": "get_ai_run",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An AI run's id (on this idea).",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "An AI run's id (on this idea).",
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "An AI run with its events",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/ai-runs/{run_id}/cancel": {
+      "post": {
+        "description": "ai.cancel_run (the owner and admins). A queued run is cancelled at once; a running one is marked cancel_requested and the worker asks the agent to cancel (A2A tasks/cancel) within a few seconds, then it ends cancelled. Idempotent while active. 409 ai_run_finished for a run that already ended. Audited as ai_run.cancel.",
+        "operationId": "cancel_ai_run",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An AI run's id (on this idea).",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "An AI run's id (on this idea).",
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel an AI run",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/ai-runs/{run_id}/events": {
+      "get": {
+        "description": "idea.view: a text/event-stream of the run's events after Last-Event-ID (or after), then live ones until the run ends. Each event: 'id: <seq>' and 'data: <AiRunEvent JSON>' (no event name); 'retry: 3000' first; ': keep-alive' comments every 15 seconds; the stream ends after the final event (final true) and after 10 minutes (reconnect with Last-Event-ID). A run already over with nothing new: 204 (EventSource stops). Events carry no score data, so pending evaluators may watch. The principal and idea.view are re-checked every 30 seconds. 5 open streams per person (429 too_many_attempts). Doesn't keep a session alive.",
+        "operationId": "stream_ai_run_events",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An AI run's id (on this idea).",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "An AI run's id (on this idea).",
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay events after this seq (header wins).",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Replay events after this seq (header wins).",
+              "title": "After"
+            }
+          },
+          {
+            "description": "Sent by EventSource when it reconnects: replay events after it.",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sent by EventSource when it reconnects: replay events after it.",
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The event stream (text/event-stream; data: AiRunEvent as JSON).",
+            "headers": {
+              "Cache-Control": {
+                "description": "no-cache",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Accel-Buffering": {
+                "description": "no (proxies must not buffer the stream)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "The run is over and the client has every event."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Live AI run progress (SSE)",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/v1/ideas/{idea}/comments": {
       "post": {
         "description": "Members and admins. Returns the new feed item; the author watches the idea.",
@@ -14458,6 +17222,133 @@
         "summary": "Save or submit my evaluation",
         "tags": [
           "evaluations"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/evaluations/{evaluation_id}/include-in-aggregate": {
+      "put": {
+        "description": "evaluation.include_ai (the owner and admins). Counts a submitted AI evaluation in the aggregate (include true) or leaves it out again (false, the default); returns it. 404 for an evaluation you can't see (a draft, another idea's, or any while you are a pending evaluator: blind evaluation). 409 not_ai_evaluation for a person's evaluation (always counted), project_archived, awaiting_moderation. Idempotent. Audited as evaluation.include_ai.",
+        "operationId": "set_evaluation_inclusion",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A submitted evaluation's id (on this idea).",
+            "in": "path",
+            "name": "evaluation_id",
+            "required": true,
+            "schema": {
+              "description": "A submitted evaluation's id (on this idea).",
+              "format": "uuid",
+              "title": "Evaluation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationInclusionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Include an AI evaluation in the score",
+        "tags": [
+          "ai"
         ]
       }
     },
@@ -16455,6 +19346,211 @@
         "summary": "Resolve a thread",
         "tags": [
           "proposals"
+        ]
+      }
+    },
+    "/api/v1/ideas/{idea}/research-notes/{note_id}": {
+      "delete": {
+        "description": "comment.delete_any (project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived.",
+        "operationId": "delete_research_note",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A research note's id (its activity item id).",
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "description": "A research note's id (its activity item id).",
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a research note",
+        "tags": [
+          "ai"
+        ]
+      },
+      "get": {
+        "description": "idea.view: one AI research note (Markdown and cited sources, untrusted: render it sanitised, with an AI label and the sources as plain links). The activity feed embeds the same object (ai_research_note items, from integration). Holds no score data. 404 for an unknown note or one on another idea.",
+        "operationId": "get_research_note",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A research note's id (its activity item id).",
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "description": "A research note's id (its activity item id).",
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchNote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "A research note",
+        "tags": [
+          "ai"
         ]
       }
     },

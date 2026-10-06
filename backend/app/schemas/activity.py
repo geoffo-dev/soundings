@@ -15,14 +15,17 @@ from uuid import UUID
 from pydantic import Field
 
 from app.models.enums import IdeaStatus, Resolution
+from app.schemas.ai import ResearchNote
 from app.schemas.base import ResponseModel
 from app.schemas.common import Page
 from app.schemas.users import UserRef
 
 __all__ = [
     "ACTIVITY_TYPES",
+    "AI_RESEARCH_NOTE",
     "ActivityItem",
     "ActivityPage",
+    "AiResearchNoteActivity",
     "CommentActivity",
     "CommentBody",
     "DueDateChangedActivity",
@@ -115,6 +118,24 @@ class DueDateChangedActivity(_ActivityBase):
     type: Literal["due_date_changed"]
     from_due_at: datetime | None
     to_due_at: datetime | None
+
+
+class AiResearchNoteActivity(_ActivityBase):
+    """Phase 6: a research note an AI agent wrote for a "Research this" run (actor: the
+    agent's service account). **Agreed, not yet in** :data:`ActivityItem`: it joins the
+    union at integration, with the SPA's ``describeActivity`` case (contract-phase6
+    section 6). Stored as an ``activity_events`` row of type :data:`AI_RESEARCH_NOTE`
+    whose payload is ``{run_id, agent_id, body_md, sources: [{title, url}]}`` (a deleted
+    note keeps ``run_id`` and ``agent_id`` and gets ``deleted: true``, ``body_md: ""``,
+    ``sources: []``). Never holds score data."""
+
+    type: Literal["ai_research_note"]
+    note: ResearchNote
+
+
+AI_RESEARCH_NOTE = "ai_research_note"
+"""``activity_events.type`` of a research note (Phase 6; not in :data:`ACTIVITY_TYPES`
+until integration)."""
 
 
 ActivityItem = Annotated[

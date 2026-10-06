@@ -1,6 +1,6 @@
 # Data model (ERD)
 
-Schema after Phase 5: `backend/app/models/` (SQLAlchemy 2, typed), created by the
+Schema after Phase 6: `backend/app/models/` (SQLAlchemy 2, typed), created by the
 Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
 (Phase 1), `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external IDs,
 groups, group grants, the group-aware effective-roles view, audit indexes),
@@ -15,10 +15,12 @@ public submitters, held ideas, ALTCHA replay protection, submitter emails, brand
 profiles and images), `20261002_0008_confirmation_email_sends.py` (Phase 4 review: the
 per-address confirmation-email limit counts its own keyed rows) and
 `20261002_0009_submission_reached_team_at.py` (Phase 4 UX review: when a public idea
-reached the team) and `20261002_0010_api_keys_and_suggestions.py` (Phase 5: API keys
-and proposal suggestions). The procrastinate job-queue tables (revision `0001`) are not
+reached the team), `20261002_0010_api_keys_and_suggestions.py` (Phase 5: API keys
+and proposal suggestions) and `20261006_0011_ai_agents_and_runs.py` (Phase 6: kagent
+agents, the projects they serve, AI runs and their events, an AI evaluator's cited
+sources per criterion). The procrastinate job-queue tables (revision `0001`) are not
 shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md) to
-[api/contract-phase5.md](api/contract-phase5.md).
+[api/contract-phase6.md](api/contract-phase6.md).
 
 **Operators:** the migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. `pg_trgm`
 is a trusted extension, so the application's database user needs `CREATE` on the
@@ -78,6 +80,16 @@ erDiagram
     users |o--o{ api_keys : "created or revoked"
     proposals ||--o{ proposal_suggestions : "is suggested text for"
     users |o--o{ proposal_suggestions : "suggested or decided"
+    users ||--o| ai_agents : "acts as (service account, Phase 6)"
+    ai_agents ||--o{ ai_agent_projects : serves
+    projects ||--o{ ai_agent_projects : "is served by"
+    ideas ||--o{ ai_runs : "AI runs on"
+    ai_agents ||--o{ ai_runs : "runs"
+    users |o--o{ ai_runs : "requested or cancelled"
+    ai_runs ||--o{ ai_run_events : "progress of"
+    evaluations |o--o{ ai_runs : "result (evaluate)"
+    proposal_suggestions |o--o{ ai_runs : "result (draft_section)"
+    activity_events |o--o{ ai_runs : "result (research note)"
 
     users {
         uuid id PK
@@ -86,7 +98,7 @@ erDiagram
         varchar avatar_url "nullable"
         bool is_platform_admin
         bool is_active
-        bool is_service_account "reserved: AI agents"
+        bool is_service_account "AI agents (Phase 6: ai_agents)"
         bool is_break_glass "at most one row"
         timestamptz last_seen_at
     }
@@ -220,7 +232,8 @@ erDiagram
         uuid evaluation_id PK, FK
         uuid criterion_id PK, FK
         smallint score "1..5, null in drafts"
-        varchar comment
+        varchar comment "an AI evaluator's rationale"
+        jsonb sources "AI only: [{title, url}], at most 5"
     }
     idea_votes {
         uuid idea_id PK, FK
@@ -400,6 +413,51 @@ erDiagram
         uuid decided_by_id FK
         timestamptz decided_at "set iff not pending"
     }
+    ai_agents {
+        uuid id PK
+        varchar display_name "also the service account's name"
+        varchar description
+        varchar namespace "kagent, DNS label"
+        varchar name "kagent, DNS label; unique with namespace"
+        varchar protocol "kagent_v0_10, kagent_v1_0"
+        varchar_array purposes "evaluate, research, draft_section"
+        uuid service_account_id FK, UK "users.is_service_account"
+        bool enabled
+        uuid created_by_id FK
+    }
+    ai_agent_projects {
+        uuid agent_id PK, FK
+        uuid project_id PK, FK
+    }
+    ai_runs {
+        uuid id PK
+        uuid idea_id FK
+        uuid agent_id FK
+        varchar kind "evaluate, research, draft_section"
+        varchar section_key "draft_section only"
+        uuid requested_by_id FK
+        varchar status "queued, running, succeeded, failed, cancelled, timed_out"
+        int timeout_seconds "30..3600"
+        timestamptz started_at
+        timestamptz finished_at "set iff final"
+        timestamptz heartbeat_at
+        timestamptz cancel_requested_at
+        uuid cancel_requested_by_id FK
+        varchar a2a_task_id
+        varchar a2a_context_id
+        varchar error_code "set iff failed or timed_out"
+        varchar error_message "Soundings' sentence"
+        int event_count "last event's seq"
+        uuid evaluation_id FK "result"
+        uuid suggestion_id FK "result"
+        uuid activity_event_id FK "result: research note"
+    }
+    ai_run_events {
+        uuid run_id PK, FK
+        int seq PK "1, 2, ... (SSE id)"
+        varchar type
+        varchar message "Soundings' sentence, never agent text"
+    }
 ```
 
 Every table with a `uuid id` also has `created_at`, and most have `updated_at`
@@ -459,7 +517,7 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `ideas` | `(project_id, number)` unique; key = `project.key || '-' || number`. `resolution` set iff `status = 'closed'` (`ck_ideas_resolution_iff_closed`). Cached, **unmasked** aggregate: `aggregate_score` (1 decimal), `aggregate_count`, `high_disagreement`, recomputed in the same transaction as any evaluation, evaluator or rubric change; blind masking is applied per viewer when reading ([ADR 0006](adr/0006-blind-evaluation-and-aggregate-scoring.md)). `vote_count` caches `idea_votes`. `last_activity_at` is bumped by every activity event. Search: `ILIKE '%q%'` on `title`/`summary` served by `pg_trgm` GIN indexes. Indexes for board/list keyset pages in the default order: `(project_id, last_activity_at, id)` and `(project_id, status, last_activity_at, id)` (also the per-status counts); plus `(project_id, aggregate_score)`, `owner_id`, `last_activity_at` (cross-project My work). Phase 3 reminder scan: partial index `ix_ideas_evaluation_due_at_open` on `evaluation_due_at` where it is set and evaluation is open. **Phase 4:** a public idea has `submitted_by_id` null and a `public_submissions` row; `held_for` (`email_verification` \| `moderation`, null = visible, `ck_ideas_held_for`) hides it from every list and count for everyone ([contract-phase4 §3.6](api/contract-phase4.md#36-holds-moderation-and-visibility)); partial indexes `ix_ideas_project_id_created_at_moderation (project_id, created_at, id) WHERE held_for = 'moderation'` (the moderation queue) and `ix_ideas_created_at_email_verification (created_at) WHERE held_for = 'email_verification'` (the 3-day cleanup). |
 | `idea_evaluators` | The assignment. AI evaluators (Phase 6) are service-account users, so no extra column: `is_ai` in the API is `users.is_service_account`. Indexed by `user_id` for My work. |
 | `evaluations` | One per assignment: composite FK `(idea_id, evaluator_id)` → `idea_evaluators` with `ON DELETE CASCADE`, so removing the assignment removes the evaluation. Created on first save. `submitted` requires `recommendation` and `submitted_at` (`ck_evaluations_submitted_complete`). `submitted_at` is the first submission; `edited_at` is the last save after it (null if none; the UI shows "edited after submission"). Whether an evaluation is AI is `users.is_service_account` of the evaluator (no column here); `include_in_aggregate` is for Phase 6 (AI excluded by default). |
-| `evaluation_scores` | `score` 1–5 (`ck_evaluation_scores_score_range`), null only in drafts. `criterion_id` FK is deferred (see `rubric_criteria`). |
+| `evaluation_scores` | `score` 1–5 (`ck_evaluation_scores_score_range`), null only in drafts. `criterion_id` FK is deferred (see `rubric_criteria`). Phase 6: for an AI evaluator `comment` is the criterion's rationale (required when it submits) and `sources` its cited sources, a JSON array of at most five `{title, url}` objects (`ck_evaluation_scores_sources_array`; `'[]'` for people). |
 | `idea_votes`, `idea_watchers` | One row per user per idea. Watchers are added automatically for the submitter, owner, evaluators and commenters (Phase 3 notifications). |
 | `comments` | Flat. Every comment also has an `activity_events` row (`type = 'comment'`, `comment_id`) that places it in the feed. Deleting sets `deleted_at` and clears `body_md`. |
 | `activity_events` | The idea feed and, from Phase 3, the source of notifications. `type` is validated in the application (the set grows per phase); `payload` holds ids and from/to values and **never scores**. `idea_id` is nullable for future project-level events. Feed index `(idea_id, created_at, id)`. |
@@ -477,6 +535,10 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `brand_assets` | Uploaded logos and favicons ([ADR 0012](adr/0012-branding-and-uploaded-images.md)): the bytes in the database (`bytea`, `byte_size` = `octet_length(data)`, 1 byte to 1 MiB), `content_type` only `image/png` (re-encoded PNG uploads) or `image/svg+xml` (allow-listed, re-serialised SVG), `sha256` (the ETag), pixel `width`/`height` (≤ 4096; null for an SVG without a size). `project_id` null = a global image. Immutable: a new image is a new row, so URLs cache for ever. Unreferenced rows are deleted by the hourly cleanup 24 hours after upload. Index `(project_id, created_at)` (upload quota, cleanup). |
 | `api_keys` | Personal API keys ([contract-phase5 §3.1](api/contract-phase5.md#31-keys-format-storage-and-lifecycle), [ADR 0013](adr/0013-api-keys-and-mcp-server.md)). A key is `sdg_<lookup_id>_<secret>`; only `lookup_id` (12 base62 characters, `ck_api_keys_lookup_id_format`, unique: the lookup) and `secret_hash` (SHA-256 hex of the whole key, `ck_api_keys_secret_hash_format`, compared in constant time) are stored, never the key. `scopes` is a `varchar[]` of 1–4 `ApiKeyScope` values (`ck_api_keys_scopes`, no NULL element), distinct and in canonical order (application); `write` or `evaluate` always comes with `read` (`ck_api_keys_scopes_include_read`). `project_ids` is a `uuid[]` restriction (null = every project the owner can access; else 1–50 ids and no NULL element, `ck_api_keys_project_ids_not_empty`, so a restriction can never read as "every project"; no foreign key: a deleted project's id matches nothing, so a restriction never widens). `created_auth_method` is the creating session's sign-in method (`ck_api_keys_created_auth_method`): the key works only while that method is available. `name` 1–80 characters, unique per owner case-insensitively among keys that aren't revoked (`uq_api_keys_user_id_name_lower`, partial on `revoked_at IS NULL`). `expires_at` null = never. `last_used_at` moves at most once a minute. Revoking sets `revoked_at` and `revoked_by_id` (`ck_api_keys_revoked_by_needs_revoked`); the row stays, never listed again, so audit entries can name the key. `created_by_id` is the owner, or from Phase 6 the platform admin who registered an agent. A person's key also stops working (state `dormant`, no column) while the owner's `users.last_seen_at` is older than 30 days. Indexes: `user_id`, and `ix_api_keys_created_at_id_unrevoked (created_at, id) WHERE revoked_at IS NULL` (Admin → API keys, newest first). At most 25 per user that aren't revoked (application, under the owner's row lock). |
 | `proposal_suggestions` | Suggested text for one proposal section ([contract-phase5 §3.4](api/contract-phase5.md#34-proposal-suggestions)): `body_md` is the whole section, verbatim (`ck_proposal_suggestions_body_not_empty`); `base_version` (≥ 1) the section version its author read; `source` `api` (REST), `mcp` (a person's key) or `ai` (a service account through MCP); `status` `pending` until the owner or an admin accepts (a normal versioned section save) or discards it, with `decided_by_id` / `decided_at` set exactly when not pending (`ck_proposal_suggestions_decided_iff_not_pending`). One pending suggestion per author per section (`uq_proposal_suggestions_pending_author_section`, partial on `status = 'pending'`: a newer one discards the older, decided by its author); at most 50 pending per proposal (application). Indexes: `proposal_id`, `author_id`, and `(proposal_id, created_at) WHERE status = 'pending'` (the editor's list and the cap). No score data. |
+| `ai_agents` | kagent agents registered by a platform admin ([contract-phase6 §3.1](api/contract-phase6.md#31-agents-their-service-accounts-and-keys), [ADR 0014](adr/0014-kagent-a2a-integration.md)). `namespace` and `name` are DNS-1123 labels (`ck_ai_agents_namespace_format`, `ck_ai_agents_name_format`), unique together (`uq_ai_agents_namespace_name`); the A2A URL is **not stored**: it is built from `SOUNDINGS_KAGENT_URL`, `protocol` and these two, so no row can point Soundings at another host. `purposes` is a `varchar[]` of 1–3 distinct `AiRunKind` values (`ck_ai_agents_purposes`). `service_account_id` is unique (one agent per service account) and NO ACTION (users are never deleted). Agents are disabled, never deleted. |
+| `ai_agent_projects` | The projects an agent serves: primary key `(agent_id, project_id)`, indexed by `project_id`, cascading with either side. Its key's `project_ids` mirror these rows. |
+| `ai_runs` | One AI job on an idea ([contract-phase6 §3.3](api/contract-phase6.md#33-runs-lifecycle-statuses-and-a2a-states)). `section_key` iff `kind = 'draft_section'`; `finished_at` iff final; `started_at` for `running` and `succeeded`; `error_code` and `error_message` iff `failed` or `timed_out`; each result column only for its kind (`ck_ai_runs_result_matches_kind`). **Idempotency:** `uq_ai_runs_active` (`UNIQUE NULLS NOT DISTINCT (idea_id, agent_id, kind, section_key) WHERE status IN ('queued', 'running')`). `ix_ai_runs_created_at_active` (partial) is the worker's FIFO queue, the concurrency count and the stale-run sweep; `ix_ai_runs_requested_by_id_created_at` the per-person hourly limit. `event_count` numbers events (`UPDATE … SET event_count = event_count + 1 RETURNING event_count`). |
+| `ai_run_events` | A run's progress, primary key `(run_id, seq)` (seq from 1: the SSE event id), cascading with the run. `message` is Soundings' own sentence (never the agent's text, never score data); at most 200 per run (application). |
 | `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. Phase 5: `api_key.create`, `api_key.revoke` and `mcp.call` (one per MCP tool call, with the tool, rule, decision and code; deleted after 90 days by the hourly cleanup on `(action, created_at)`; every other entry is kept). Entries made through a key carry `details.auth = "api_key"` and `details.api_key_id`. |
 
 ## Delete behaviour
@@ -501,6 +563,11 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | a user (Phase 5) | Also cascades to their API keys; keys they created or revoked keep `created_by_id` / `revoked_by_id` null; their suggestions stay with `author_id` / `decided_by_id` null. |
 | a proposal (with its idea) | Also cascades to its suggestions. |
 | a project (Phase 5) | Nothing changes in `api_keys`: the id stays in restrictions and matches nothing. |
+| an idea (Phase 6) | Also cascades to its AI runs and their events (an active run's worker finds it gone and stops; its A2A task is cancelled best effort). |
+| an agent | Never deleted (disabled instead); its runs and service account stay. |
+| a project (Phase 6) | Also cascades to its `ai_agent_projects` rows; the agent's key restriction keeps the id, which matches nothing. |
+| an evaluation, suggestion or research note | The run that produced it keeps its row with that result column null. |
+| downgrading 0011 | Drops `ai_run_events`, `ai_runs`, `ai_agent_projects`, `ai_agents` and `evaluation_scores.sources`: agents, run history and AI evaluations' cited sources are lost; the evaluations, service accounts, keys and research-note activity rows stay. |
 | downgrading 0010 | Drops `api_keys` (every key stops working) and `proposal_suggestions`. |
 | downgrading 0009 / 0008 | 0009 drops `reached_team_at`; 0008 drops `confirmation_email_sends` (the limit then counts `outbound_email` again, by the old index it recreates). |
 | downgrading 0007 | Deletes ideas still held and every submitter email, then drops the Phase 4 tables and columns: proposals, submitter details, branding and images are lost; public ideas stay as anonymous ideas. |
@@ -545,3 +612,15 @@ same transaction and tests them:
 - (Phase 5) A suggestion's `section_key` is a template section of its proposal; its
   text never holds score data; an accepted suggestion's text was saved as the section's
   text (one versioned save) in the same transaction.
+- (Phase 6) An agent's `service_account_id` is a service account (`is_service_account`,
+  never a person or the break-glass account); its key's scopes are
+  `agent_key_scopes(purposes)` and its `project_ids` the agent's `ai_agent_projects`
+  (kept equal on every change); the service account never holds the admin role.
+- (Phase 6) An AI run's `agent_id` served the idea's project when it was requested; its
+  result is the agent's own (the evaluation's evaluator, the suggestion's or note's
+  author is the agent's service account) and on the run's idea.
+- (Phase 6) `evaluation_scores.sources` is empty for people's evaluations; each entry is
+  `{title, url}` with a one-line title and an http(s) URL without credentials.
+- (Phase 6) No `ai_run_events.message`, `ai_runs.error_message` or A2A message holds
+  agent text, score data, keys or tokens; research notes (`activity_events` of type
+  `ai_research_note`) hold no score data.

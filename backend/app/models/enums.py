@@ -242,3 +242,114 @@ class SuggestionSource(StrEnum):
     AI = "ai"
     """An AI agent's service account, through MCP or REST (shown with an AI badge;
     Phase 6's "Draft section" arrives this way)."""
+
+
+# --- Phase 6: kagent AI assistance (contract-phase6) -------------------------------------
+class AiRunKind(StrEnum):
+    """What an AI run does (``ai_runs.kind``), and the purposes a registered agent serves
+    (``ai_agents.purposes``). SPEC section 9's two jobs: the evaluator, and the research
+    and drafting assistant."""
+
+    EVALUATE = "evaluate"
+    """"Ask AI to evaluate": the agent becomes an evaluator of the idea and submits a
+    cited evaluation through MCP ``submit_evaluation`` (left out of the aggregate by
+    default)."""
+    RESEARCH = "research"
+    """"Research this": the agent writes a cited research note into the idea's activity
+    feed through MCP ``add_research_note``."""
+    DRAFT_SECTION = "draft_section"
+    """"Draft section": the agent suggests the text of one proposal section through MCP
+    ``propose_proposal_section`` (a Phase 5 suggestion the owner accepts or discards)."""
+
+
+class AiRunStatus(StrEnum):
+    """Where an AI run is (``ai_runs.status``). ``queued`` and ``running`` are active; the
+    other four are final (``finished_at`` set)."""
+
+    QUEUED = "queued"
+    """Waiting for the worker (at most ``SOUNDINGS_AI_MAX_CONCURRENT_RUNS`` run at once)."""
+    RUNNING = "running"
+    """The worker is talking to the agent over A2A."""
+    SUCCEEDED = "succeeded"
+    """The agent's task ended and its result (evaluation, note or suggestion) was recorded."""
+    FAILED = "failed"
+    """It ended without a result: see ``error_code``."""
+    CANCELLED = "cancelled"
+    """Someone cancelled it (``ai.cancel_run``), or the agent's task was cancelled."""
+    TIMED_OUT = "timed_out"
+    """It hit its deadline (``timeout_seconds`` after it started) or waited too long in the
+    queue; the worker asked the agent to cancel."""
+
+
+class AiAgentProtocol(StrEnum):
+    """How Soundings talks to a registered agent: which kagent A2A endpoint layout and A2A
+    protocol version (docs/research/kagent-a2a-claude-code-frontend.md section 1). The URL
+    is always built from ``SOUNDINGS_KAGENT_URL`` + this layout + the agent's namespace
+    and name, never taken from the API or the agent card."""
+
+    KAGENT_V0_10 = "kagent_v0_10"
+    """kagent 0.10.x: ``POST {kagent_url}/api/a2a/{namespace}/{name}/`` with A2A 0.3
+    JSON-RPC methods (``message/stream``, ``tasks/get``, ``tasks/cancel``) and
+    ``A2A-Version: 0.3``."""
+    KAGENT_V1_0 = "kagent_v1_0"
+    """kagent 1.0 (pre-release when written): ``POST {kagent_url}/agents/{namespace}/{name}``
+    with A2A 1.0 methods (``SendStreamingMessage``, ``GetTask``, ``CancelTask``) and the
+    required ``A2A-Version: 1.0`` header."""
+
+
+class AiRunEventType(StrEnum):
+    """One step of a run's progress (``ai_run_events.type``), streamed over SSE. Events
+    carry Soundings' own fixed messages (and tool names), never the agent's text or any
+    score data, so anyone who can view the idea may watch (role matrix section J)."""
+
+    QUEUED = "queued"
+    STARTED = "started"
+    """The worker picked it up and is sending it to the agent."""
+    RETRYING = "retrying"
+    """The agent couldn't be reached before a task existed; trying again shortly."""
+    AGENT_ACCEPTED = "agent_accepted"
+    """The agent created its A2A task (state submitted)."""
+    AGENT_WORKING = "agent_working"
+    """The agent's task is working (written once per transition, not per update)."""
+    TOOL_CALLED = "tool_called"
+    """The agent called a Soundings MCP tool for this run (the tool's name only)."""
+    RESULT_RECORDED = "result_recorded"
+    """The evaluation, research note or suggestion was saved and attached to the run."""
+    CANCEL_REQUESTED = "cancel_requested"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+
+
+class AiRunError(StrEnum):
+    """Why a run failed or timed out (``ai_runs.error_code``). The message shown with it is
+    Soundings' own sentence for the code, never the agent's text."""
+
+    AI_DISABLED = "ai_disabled"
+    """AI assistance was turned off for the instance before the run started."""
+    AGENT_UNAVAILABLE = "agent_unavailable"
+    """At start the agent was no longer suitable (disabled, removed from the project, no
+    usable key, purpose removed): c10 checked again."""
+    AGENT_UNREACHABLE = "agent_unreachable"
+    """No connection to kagent, or it answered 5xx / 404, after the retries."""
+    AGENT_PROTOCOL_ERROR = "agent_protocol_error"
+    """kagent answered something that isn't the A2A protocol we speak (bad JSON-RPC, a
+    redirect, an oversized or malformed response, an unknown task state)."""
+    AGENT_REJECTED = "agent_rejected"
+    """The agent's task ended rejected."""
+    AGENT_FAILED = "agent_failed"
+    """The agent's task ended failed (or cancelled by someone else) without a result."""
+    AGENT_NEEDS_INPUT = "agent_needs_input"
+    """The agent asked for input or authorisation (input-required / auth-required), which
+    a run can't give: the task was cancelled."""
+    NO_RESULT = "no_result"
+    """The agent's task completed but it never recorded its result through MCP."""
+    TIMED_OUT = "timed_out"
+    """The run reached its deadline (status ``timed_out``)."""
+    QUEUE_TIMEOUT = "queue_timeout"
+    """It waited in the queue for 30 minutes without starting (status ``timed_out``)."""
+    WORKER_LOST = "worker_lost"
+    """The worker running it stopped (no heartbeat for 2 minutes)."""
+    INTERNAL_ERROR = "internal_error"
+    """Anything unexpected (logged with the traceback)."""

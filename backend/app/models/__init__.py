@@ -5,10 +5,16 @@ autogenerate and for the test-suite's table truncation. See docs/erd.md.
 """
 
 from app.models.activity import ActivityEvent, AuditLog, Comment
+from app.models.ai import AiAgent, AiAgentProject, AiRun, AiRunEvent
 from app.models.api_key import ApiKey
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.branding import BrandAsset, BrandingProfile
 from app.models.enums import (
+    AiAgentProtocol,
+    AiRunError,
+    AiRunEventType,
+    AiRunKind,
+    AiRunStatus,
     ApiKeyScope,
     AuthMethod,
     BrandAssetKind,
@@ -53,6 +59,15 @@ from app.models.user import User, UserExternalId, UserIdentity, UserSession
 
 __all__ = [
     "ActivityEvent",
+    "AiAgent",
+    "AiAgentProject",
+    "AiAgentProtocol",
+    "AiRun",
+    "AiRunError",
+    "AiRunEvent",
+    "AiRunEventType",
+    "AiRunKind",
+    "AiRunStatus",
     "AltchaUsedChallenge",
     "ApiKey",
     "ApiKeyScope",

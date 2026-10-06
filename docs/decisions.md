@@ -650,3 +650,47 @@ section folded behind "For developers and AI assistants", "via assistant", "chec
 facts" on AI cards, monospace prefixes and tool names in the audit log, a nudge towards
 "Only these projects" when assistants may use every project (p1–p9). A partly typed key
 in the admin search is cut to its prefix before it reaches the URL (code-review nit).
+
+## 2026-10-06 · Phase 6 contract
+
+Calls made while writing the kagent contract
+([contract-phase6.md](api/contract-phase6.md), section 7 has the full list with reasons;
+[ADR 0014](adr/0014-kagent-a2a-integration.md)). Status **Proposed** = the lead's
+default; build it this way unless told otherwise. No kagent installation or LLM exists
+here: builders use a deterministic fake A2A agent (contract-phase6 §3.12), and §8 there
+says what is verified against real kagent and what is assumed.
+
+### Agents and keys
+
+| Decision | Status | Why |
+|---|---|---|
+| A platform admin registers an agent by kagent namespace and name (DNS labels), protocol (`kagent_v0_10` or `kagent_v1_0`, default from settings), purposes (evaluate, research, draft_section) and 1–50 projects; registering creates its service account (`agent-<id>@soundings.invalid`), a direct member role in each project and one key (scopes from purposes, restricted to the projects, no expiry), shown once with a Kubernetes Secret manifest. | Proposed | One form does everything an operator needs; least privilege per purpose; the platform admin decides an agent's reach (prompt-injection blast radius). |
+| The server keeps an agent key's scopes and restriction in step with the agent's purposes and projects (an exception to Phase 5's immutable keys, for agents only); rotation replaces the key (no overlap); disabling refuses the key (401) and cancels its runs; agents are never deleted. | Proposed | Adding a project never requires re-deploying a Secret; one switch stops an agent; history keeps its author. |
+| Project admins may remove an agent from their project (c10 then fails there) and add it back; people pickers never list agents. | Proposed | A project keeps a veto without a second way to grant agents access. |
+
+### Runs and A2A
+
+| Decision | Status | Why |
+|---|---|---|
+| The A2A URL is built from `SOUNDINGS_KAGENT_URL` (an origin, validated at start-up) + the protocol's fixed path + namespace and name; no URL field anywhere; card URLs ignored; redirects never followed; an optional namespace allow-list. | Proposed | SSRF can't be configured in through the UI, the API or a malicious card. |
+| One A2A message per run with references and instructions only (`run_message`; idea text is read by the agent through MCP, labelled untrusted); streaming when the card says so, else polling `tasks/get`; `X-User-Id: soundings`; an optional controller token. | Proposed | No secrets or people's text in prompts; works with kagent 0.10's Go and Python runtimes. |
+| Results come back through MCP as the agent's service account (`submit_evaluation`, the new `add_research_note`, `propose_proposal_section`) and the server attaches them to the run; A2A text and artifacts are ignored. | Proposed | kagent 0.10 has no output schema; the same rules, blind evaluation, limits and audit as for people; no parsing of model output. |
+| Runs are rows (`ai_runs`, `ai_run_events`) executed by a procrastinate job with a database-counted concurrency limit (4), a per-run deadline (5 minutes from start), a 15-second heartbeat, a minute sweep (`worker_lost`, 30-minute queue limit) and cooperative cancel (`tasks/cancel`); no job retries; connection retries only before a task exists. | Proposed | Durable and restart-safe; nothing is sent twice; timeouts and cancels end cleanly even when kagent's Python runtime can't cancel. |
+| One active run per idea + agent + kind (+ section) by a partial unique index; a repeated request returns it (200); 20 requests per person per hour. | Proposed | Double clicks and races are harmless; bounded cost. |
+
+### Evaluations, notes, progress
+
+| Decision | Status | Why |
+|---|---|---|
+| An AI evaluator's rationale is its per-criterion comment (required); its sources are a JSONB column on `evaluation_scores` (≤ 5 per criterion, `{title, url}`, http(s) without credentials); people never cite. | Proposed | One evaluation shape; no sibling table; the evaluate UI already shows comments. |
+| AI evaluations stay out of the aggregate until the owner or an admin includes each one (`set_evaluation_inclusion`); the toggle is 404 for a pending evaluator (the response has scores) and 409 on a person's evaluation. | Proposed | SPEC section 9; blind evaluation holds for the people who include. |
+| Research notes are `ai_research_note` activity events (body + sources in the payload), one per run, readable alone and deletable by admins; a new MCP tool that requires a running research run (c22). | Proposed | No new table; a note can't be planted outside a requested run; harmful output can be removed. |
+| Live progress is SSE from the API (one stream per run, `Last-Event-ID` replay, keep-alives, re-checks every 30 s, 204 when over) with `get_ai_run` polling as fallback; events are Soundings' fixed sentences and MCP tool names only. | Proposed | Works across replicas and through the ingress; blind-safe by construction (a test walks every run model for score-like fields). |
+| No new notification types; no run retention job in Phase 6. | Proposed | The requester watches; results appear where people look; simple. |
+
+### Contract mechanics
+
+| Decision | Status | Why |
+|---|---|---|
+| The `ai_research_note` activity item, `EvaluationScore.sources`, five `AuditAction` values and the tenth MCP tool are agreed and modelled now but land in one integration step with the SPA (contract-phase6 §5). | Proposed | They break the SPA's exhaustive maps and mocks, or need their handler (Phases 3–5 precedent). |
+| The contract adds the new operations to identity's and backend's meta-test tables (`ROUTE_KEY_ACCESS`, `test_route_rules.py`, the guard tests' exclusions, `DOMAIN_TABLES`). | Proposed | Otherwise `make check-backend` fails on stub routes and new tables (Phase 5 precedent). |

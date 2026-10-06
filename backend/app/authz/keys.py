@@ -132,6 +132,14 @@ ROUTE_KEY_ACCESS: Final[dict[str, KeyAccess]] = {
     "list_admin_api_keys": _S, "revoke_admin_api_key": _S,
     "list_proposal_suggestions": _P, "create_proposal_suggestion": _P,
     "accept_proposal_suggestion": _P, "discard_proposal_suggestion": _P,
+    # Phase 6: agents are managed in a session only (platform.manage_agents); AI runs,
+    # their events, the include-AI toggle and research notes follow their rules
+    "list_ai_agents": _S, "register_ai_agent": _S, "get_ai_agent": _S,
+    "update_ai_agent": _S, "rotate_ai_agent_key": _S, "test_ai_agent": _S,
+    "list_idea_ai_runs": _P, "request_ai_evaluation": _P, "request_ai_research": _P,
+    "request_ai_section_draft": _P, "get_ai_run": _P, "cancel_ai_run": _P,
+    "stream_ai_run_events": _P, "set_evaluation_inclusion": _P,
+    "get_research_note": _P, "delete_research_note": _P,
 }
 # fmt: on
 """Every API operation (``operation_id``) and what a key may do there."""

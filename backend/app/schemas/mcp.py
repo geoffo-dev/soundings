@@ -66,18 +66,25 @@ from app.models.enums import (
     Recommendation,
     Resolution,
 )
+from app.models.evaluation import EVALUATION_SOURCES_MAX
+from app.schemas.ai import (
+    RESEARCH_NOTE_MAX_LENGTH,
+    RESEARCH_NOTE_SOURCES_MAX,
+    CitationIn,
+)
 from app.schemas.base import SLUG_PATTERN, ScoreKey, reject_hidden
 from app.schemas.comments import CommentCreate
-from app.schemas.evaluations import MyEvaluationIn
+from app.schemas.evaluations import MyEvaluationIn, MyScoreIn
 from app.schemas.ideas import AggregateScore, EvaluatorProgress, IdeaCreate, IdeaSort
 from app.schemas.proposals import (
     ProposalSection,
     ProposalSuggestion,
     ProposalSuggestionCreate,
 )
-from app.schemas.rubric import RubricCriterion
+from app.schemas.rubric import MAX_CRITERIA, RubricCriterion
 
 __all__ = [
+    "ADD_RESEARCH_NOTE",
     "COMMENTS_DEFAULT",
     "COMMENTS_MAX",
     "IDEA_REFERENCE_PATTERN",
@@ -92,11 +99,14 @@ __all__ = [
     "MCP_TEXT_LIMIT",
     "MCP_TOOLS",
     "MCP_WRITE_INPUT_CONFIG",
+    "RESEARCH_NOTE_INSTRUCTION",
     "SEARCH_DEFAULT_LIMIT",
     "SEARCH_MAX_LIMIT",
     "UNTRUSTED",
     "AddCommentInput",
     "AddCommentOutput",
+    "AddResearchNoteInput",
+    "AddResearchNoteOutput",
     "CreateIdeaInput",
     "CreateIdeaOutput",
     "GetIdeaInput",
@@ -107,6 +117,7 @@ __all__ = [
     "GetRubricOutput",
     "ListProjectsInput",
     "ListProjectsOutput",
+    "McpCitation",
     "McpComment",
     "McpEvaluation",
     "McpEvaluator",
@@ -124,6 +135,7 @@ __all__ = [
     "McpRubricCriterion",
     "McpScore",
     "McpScoreEntry",
+    "McpScoreIn",
     "McpTool",
     "McpToolError",
     "McpUser",
@@ -178,10 +190,12 @@ awaiting_my_evaluation=true lists the ideas you have been asked to evaluate).
 - Read: get_idea (by key such as CUST-12, or id), get_rubric, get_proposal.
 - Evaluate: get_rubric for the criteria, get_idea for the idea, then submit_evaluation \
 with a 1-5 score and a short comment for every criterion, a recommendation (go, maybe \
-or no) and an overall comment. For inverted criteria (such as Effort or Risk) a high \
-score means more effort or more risk: score what you see; the aggregate inverts it. \
-Evaluation is blind: until you submit, other people's scores are hidden from you \
-(score_hidden is true). That is expected; don't ask for them.
+or no) and an overall comment. AI agents give their rationale in each criterion's \
+comment and may cite up to 5 sources per criterion (title and http(s) URL). For \
+inverted criteria (such as Effort or Risk) a high score means more effort or more \
+risk: score what you see; the aggregate inverts it. Evaluation is blind: until you \
+submit, other people's scores are hidden from you (score_hidden is true). That is \
+expected; don't ask for them.
 - Contribute: create_idea, add_comment, and propose_proposal_section, which only \
 suggests text: the idea's owner accepts or discards it. Changes are limited to 30 a \
 minute per key.
@@ -322,11 +336,24 @@ class McpEvaluator(McpOutput):
     submitted_at: datetime | None
 
 
+class McpCitation(McpOutput):
+    """A source an AI evaluator cited (Phase 6)."""
+
+    title: str = Field(description="What the source is. " + UNTRUSTED)
+    url: str = Field(description="An http(s) URL. " + UNTRUSTED)
+
+
 class McpScoreEntry(McpOutput):
     criterion_id: UUID
     criterion: str = Field(description="The criterion's name.")
     score: int | None = Field(description="1-5; null only in your own draft.")
-    comment: str = Field(description="At most 1,000 characters. " + UNTRUSTED)
+    comment: str = Field(
+        description="At most 1,000 characters (an AI evaluator's rationale). " + UNTRUSTED
+    )
+    sources: list[McpCitation] = Field(
+        default_factory=list,
+        description="Sources an AI evaluator cited for this criterion (Phase 6; empty for people).",
+    )
 
 
 class McpEvaluation(McpOutput):
@@ -588,12 +615,38 @@ class AddCommentOutput(McpOutput):
 
 
 # --- submit_evaluation ---------------------------------------------------------------------
+class McpScoreIn(MyScoreIn):
+    """REST's ``MyScoreIn`` (criterion id, score, comment) plus the sources an **AI
+    evaluator** cites for the criterion (Phase 6). People's evaluations carry none: a
+    person's key sending sources gets ``validation_error``. An AI evaluator's submission
+    needs a comment (its rationale) for every scored criterion (``evaluation_incomplete``)."""
+
+    comment: str = Field(
+        default="",
+        max_length=1000,
+        description="Your note on the score; AI evaluators: your rationale (required).",
+    )
+    sources: list[CitationIn] = Field(
+        default_factory=list,
+        max_length=EVALUATION_SOURCES_MAX,
+        description=(
+            "AI evaluators only: up to 5 sources you relied on for this criterion, each a "
+            "one-line title and an http(s) URL (no user name or password in it)."
+        ),
+    )
+
+
 class SubmitEvaluationInput(MyEvaluationIn):
     """REST's ``MyEvaluationIn`` (scores with criterion ids from get_rubric, each criterion
     once; recommendation; comment) plus the idea. Unlike REST, ``submit`` defaults to
-    true: an agent's evaluation is meant to count."""
+    true: an agent's evaluation is meant to count. Phase 6: each score may carry
+    ``sources`` (:class:`McpScoreIn`, AI evaluators only)."""
 
     model_config = MCP_WRITE_INPUT_CONFIG
+
+    scores: list[McpScoreIn] = Field(  # type: ignore[assignment]
+        default_factory=list, max_length=MAX_CRITERIA
+    )
 
     submit: bool = Field(
         default=True,
@@ -632,6 +685,45 @@ class ProposeProposalSectionOutput(McpOutput):
     replaced_suggestion_id: UUID | None = Field(
         description="Your earlier pending suggestion for this section, now discarded."
     )
+
+
+# --- add_research_note (Phase 6) ------------------------------------------------------------
+class AddResearchNoteInput(McpInput):
+    """A research note for a "Research this" run: only an AI agent's service account,
+    while its research run on the idea is running (else ``forbidden`` for people,
+    ``ai_run_not_active`` for an agent without one). One note per run: calling again
+    replaces the run's note."""
+
+    model_config = MCP_WRITE_INPUT_CONFIG
+
+    idea: IdeaReference
+    body_md: str = Field(
+        min_length=1,
+        max_length=RESEARCH_NOTE_MAX_LENGTH,
+        description=(
+            "The note in Markdown: findings and open questions (at most 20,000 characters). "
+            "No scores or go/no recommendation."
+        ),
+    )
+    sources: list[CitationIn] = Field(
+        default_factory=list,
+        max_length=RESEARCH_NOTE_SOURCES_MAX,
+        description="Up to 20 sources you relied on: a one-line title and an http(s) URL each.",
+    )
+
+
+class AddResearchNoteOutput(McpOutput):
+    idea: McpIdeaRef
+    note_id: UUID = Field(description="The research note (its activity item id).")
+    replaced: bool = Field(description="An earlier note of the same run was replaced.")
+
+
+RESEARCH_NOTE_INSTRUCTION: Final = (
+    "- Research (AI agents, during a research run only): add_research_note writes a cited "
+    "note into the idea's activity feed; calling it again in the same run replaces it."
+)
+"""The ``MCP_INSTRUCTIONS`` bullet that lands with :data:`ADD_RESEARCH_NOTE`
+(contract-phase6 section 5)."""
 
 
 # --- The catalogue -------------------------------------------------------------------------
@@ -803,6 +895,27 @@ MCP_TOOLS: Final[tuple[McpTool, ...]] = (
     ),
 )
 """The nine tools of SPEC section 8, in this order (role matrix section 6)."""
+
+ADD_RESEARCH_NOTE: Final = McpTool(
+    name="add_research_note",
+    title="Write a research note",
+    description=(
+        'AI agents only, during a research run on the idea ("Research this"): write a '
+        "cited research note into the idea's activity feed, shown with an AI label. One "
+        "note per run: calling again replaces it. Not for scores or recommendations."
+    ),
+    rule="comment.create",
+    scope=ApiKeyScope.WRITE,
+    read_only=False,
+    destructive=False,
+    idempotent=True,
+    input=AddResearchNoteInput,
+    output=AddResearchNoteOutput,
+)
+"""Phase 6's tenth tool. **Agreed, not yet in** :data:`MCP_TOOLS`: backend appends it
+(and :data:`RESEARCH_NOTE_INSTRUCTION` to :data:`MCP_INSTRUCTIONS`) in the change that
+adds its handler to ``app.mcp.tools.TOOLS`` and the tests' catalogue
+(contract-phase6 section 5)."""
 
 
 def tool_by_name(name: str) -> McpTool | None:

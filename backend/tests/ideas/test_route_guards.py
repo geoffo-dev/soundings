@@ -57,12 +57,16 @@ def test_every_route_of_the_area_is_covered() -> None:
         for _, path, operation_id in CONTRACT
         if ("/ideas" in path or "/board" in path or "/comments" in path or "/me/" in path)
         # Phase 3 inbox and preferences (/me/notification...), Phase 4 proposals and
-        # public submissions (/ideas/{idea}/proposal..., /ideas/{idea}/submission...) and
-        # Phase 5 API keys (/me/api-keys...) get their own guard tests.
+        # public submissions (/ideas/{idea}/proposal..., /ideas/{idea}/submission...),
+        # Phase 5 API keys (/me/api-keys...) and Phase 6 AI runs, the include-AI toggle
+        # and research notes get their own guard tests.
         and "/me/notification" not in path
         and "/me/api-keys" not in path
         and "/proposal" not in path
         and "/submission" not in path
+        and "/ai-runs" not in path
+        and "/include-in-aggregate" not in path
+        and "/research-notes" not in path
     }
     assert mine == set(ROUTES)
 
