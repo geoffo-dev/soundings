@@ -878,9 +878,9 @@ Security properties to rely on:
   agent open at once can't reach each other. After a run ends (done, cancelled, timed
   out, worker restart) calls naming it do nothing, even while a newer run is open.
 - **Agents are blind:** they never see other evaluators' scores or comments, before or
-  after submitting, and see their own evaluation only in their evaluate run. Everything an agent writes is shown labelled AI and treated as
-  untrusted text (sanitised Markdown, http/https links only, sources "Cited by AI, not
-  checked").
+  after submitting, and see their own evaluation only in their evaluate run. Everything
+  an agent writes is shown labelled AI and treated as untrusted text (sanitised
+  Markdown, http/https links only, sources "Cited by AI, not checked").
 
 ### Enabling AI assistance
 
@@ -938,10 +938,10 @@ kubectl -n soundings get agents,rmcps
 **Rotate key** issues a new key and revokes the old one at once (apply the new Secret;
 runs fail until you do). **Disable** revokes the key and cancels the agent's runs;
 enabling it again needs a rotation. Deactivating the service account (Admin → Users) also
-revokes its key. Agents are never deleted. Every registration, change (with the new purposes, projects
-and key scopes), rotation, run request, cancel, "include in score" and research-note
-deletion is in the audit log (category "AI agents and runs"), and every MCP call an agent
-makes is an `mcp.call` entry with its key.
+revokes its key. Agents are never deleted. Every registration, change (with the new
+purposes, projects and key scopes), rotation, run request, cancel, "include in score" and
+research-note deletion is in the audit log (category "AI agents and runs"), and every MCP
+call an agent makes is an `mcp.call` entry with its key.
 
 **Reach:** an agent's key can act only inside its runs, but while a run is open, anyone
 who can message that kagent agent directly could steer it on that idea. Keep kagent's UI
@@ -1007,8 +1007,8 @@ to evaluate"; then swap in a Declarative agent with your `ModelConfig`.
 
 A run's row on the idea page says why it ended in plain words with a next step (its
 **Steps** show Soundings' fixed sentence, including the A2A state where there is one);
-`GET /api/v1/ideas/{idea}/ai-runs/{id}` has the code and that sentence: `agent_unreachable` (no connection to the controller, or
-5xx / 404, after two retries: check `kagent.controllerUrl`, the egress policy, the
+`GET /api/v1/ideas/{idea}/ai-runs/{id}` has the code and that sentence:
+`agent_unreachable` (no connection to the controller, or 5xx / 404, after two retries: check `kagent.controllerUrl`, the egress policy, the
 Agent's namespace and name), `agent_unavailable` (the agent was disabled, lost the
 project or purpose, or has no usable key when the run started), `agent_protocol_error`
 (the controller answered something other than A2A: wrong protocol for the kagent

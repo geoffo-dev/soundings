@@ -572,7 +572,9 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
 1.2.1 (the fake agent only; the backend's A2A client is hand-written on httpx). OIDC is httpx +
   `joserfc` (no Authlib: `authlib.jose` is deprecated and its Starlette client isn't used).
 - **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
-  stop what you start, never kill other agents' processes or containers.
+  stop what you start, never kill other agents' processes or containers. `make -C backend
+  test-slow`'s My work p95 sits near its 150 ms budget here (about 140 ms): run it on an
+  idle machine, not straight after another test session.
 
 ## Claude Code multi-agent setup
 
@@ -757,5 +759,21 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   `E2E_AI=1`), `make image`, `make k3s-install AI=1 MCP=1` + `k3s-smoke AI=1 MCP=1` with
   that image. Guides: user guide "AI assistance" and "AI agents", operator guide "kagent
   integration", `docs/mcp.md` §5; test plan `docs/test-plans/phase-6.md`; screenshots
-  `docs/screenshots/phase-6/` (+ `mock/`); decisions `docs/decisions.md` (Phase 6). Next:
-  the security and UX reviews.
+  `docs/screenshots/phase-6/` (+ `mock/`); decisions `docs/decisions.md` (Phase 6).
+  Security review (H1: every MCP tool takes `run_id`, required for agents, binding each
+  call to that open run's idea before any lookup, which also fixes N1; M1 an agent's own
+  evaluation only in its evaluate run; M2 bidi and zero-width characters stripped from
+  agent text and isolated on display; L4 audit incl. `ai_note.delete`; L5 break-glass
+  can't widen an agent; L6 100 streams per process; L7 5 s cancel and card deadlines; L8
+  `SOUNDINGS_AI_AGENT_NAMESPACES` defaults to `soundings`) and UX review (focus stays put
+  when a run ends; busy buttons keep focus; one run row per agent and kind with Steps and
+  History; errors worded by `error.code`; "1 AI evaluation not counted · Review") applied;
+  lead decisions at the close: H1 option 2 accepted, `ai_note.delete`, the "would be 3.6"
+  preview declined. Closed on 2026-10-06 with every check green: backend (6281 tests,
+  `test-slow`), frontend check + test:pw, e2e in all three modes (default, SSO,
+  `E2E_AI=1`), `make image`, and a clean k3s install as CI (`SSO=1 SMTP=1 MCP=1 AI=1`:
+  kagent v0.10.2 CRDs with a dry run of every manifest, the AI smoke through Traefik
+  against the fake), upgrade to two API replicas and smoke:
+  [docs/phase-summaries/phase-6.md](docs/phase-summaries/phase-6.md) (what is verified
+  against real kagent vs the fake, known issues and deferred items there). Stop for the
+  human's review.
