@@ -195,7 +195,8 @@ test.describe('on a phone', () => {
     ).toBe(true)
     await page.getByRole('button', { name: 'Create key' }).click()
     const dialog = page.getByRole('dialog', { name: 'Create API key' })
-    const box = await dialog.boundingBox()
-    expect(box?.width).toBeGreaterThan(385)
+    await expect(dialog).toBeVisible()
+    // Measured once the open animation (a slight zoom) has finished.
+    await expect.poll(async () => (await dialog.boundingBox())?.width ?? 0).toBeGreaterThan(385)
   })
 })

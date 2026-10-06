@@ -4,7 +4,8 @@
 * Any other GET/HEAD that matches no route and is not a backend path serves a
   file from the build root if one exists (favicon, fonts, ...) or ``index.html``,
   both with ``Cache-Control: no-cache`` so new deploys are picked up.
-* Backend paths (``/api``, ``/mcp``, ...) keep returning problem+json 404s.
+* Backend paths (``/api``, ``/mcp``, ``/.well-known``, ...) keep returning problem+json
+  404s (an MCP client probing for OAuth metadata after a 401 gets a clean 404).
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.errors import NotFoundProblem
 
-BACKEND_PATH_PREFIXES = ("/api", "/mcp", "/metrics", "/healthz", "/readyz")
+BACKEND_PATH_PREFIXES = ("/api", "/mcp", "/metrics", "/healthz", "/readyz", "/.well-known")
 """Paths the SPA fallback never answers. Add new non-SPA top-level paths here."""
 
 IMMUTABLE = "public, max-age=31536000, immutable"

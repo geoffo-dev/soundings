@@ -200,7 +200,7 @@ function UserDetail({ user }: { user: AdminUser }) {
         {!user.is_active && (
           <Callout tone="neutral" title="Deactivated">
             They can’t sign in, and their groups and project roles grant nothing until they’re
-            reactivated. Nothing else is removed.
+            reactivated. Their API keys were revoked; nothing else is removed.
           </Callout>
         )}
         {user.is_break_glass && (

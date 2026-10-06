@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.db import SessionMaker, session_scope
 from app.email import outbox
+from app.mcp import audit as mcp_audit
 from app.models.enums import (
     EmailStatus,
     EmailType,
@@ -326,6 +327,9 @@ async def run_schedule(
     async with session_scope(sessionmaker) as db:
         # Phase 4: brand images no profile has used for 24 hours.
         await brand_assets.delete_unreferenced(db, now)
+    async with session_scope(sessionmaker) as db:
+        # Phase 5: the MCP call trail older than 90 days (other audit entries stay).
+        await mcp_audit.delete_expired_calls(db, now)
     if reminders or digests:
         logger.info("notification schedule ran", extra={"reminders": reminders, "digests": digests})
     return ScheduleResult(reminders=reminders, digests=digests, cleaned=True)

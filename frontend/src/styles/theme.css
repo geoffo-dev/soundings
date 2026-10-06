@@ -168,6 +168,27 @@
   }
 }
 
+/* A row that scrolls sideways fades the edge it can still scroll towards
+   (useScrollFade in components/ui/scroll-fade.ts sets the attributes). */
+@utility scroll-fade-x {
+  --scroll-fade: 2rem;
+  &[data-fade-end] {
+    mask-image: linear-gradient(to left, transparent, black var(--scroll-fade));
+  }
+  &[data-fade-start] {
+    mask-image: linear-gradient(to right, transparent, black var(--scroll-fade));
+  }
+  &[data-fade-start][data-fade-end] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--scroll-fade),
+      black calc(100% - var(--scroll-fade)),
+      transparent
+    );
+  }
+}
+
 /* A tall popover (the bell's inbox): up to 36rem, never taller than the viewport
    below the top bar. */
 @utility max-h-popover-tall {

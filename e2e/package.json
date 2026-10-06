@@ -13,6 +13,7 @@
     "screenshots:phase2": "SCREENSHOTS=phase-2 E2E_SSO=1 playwright test --project=screenshots && SCREENSHOTS=phase-2 E2E_SSO=0 playwright test --project=screenshots --grep @break-glass",
     "screenshots:phase3": "SCREENSHOTS=phase-3 playwright test --project=screenshots && SCREENSHOTS=phase-3 E2E_SMTP=0 playwright test --project=screenshots --grep @no-smtp",
     "screenshots:phase4": "SCREENSHOTS=phase-4 playwright test --project=screenshots",
+    "screenshots:phase5": "SCREENSHOTS=phase-5 playwright test --project=screenshots",
     "stack:start": "scripts/start-stack.sh",
     "stack:stop": "scripts/stop-stack.sh",
     "stack:reseed": "scripts/reseed.sh",

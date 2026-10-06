@@ -723,11 +723,143 @@ changes are audited as `branding.update`, project ones as `project.update`.
 
 ## API keys and MCP [Phase 5]
 
+People create personal API keys in Settings → API keys and use them with the REST API
+(`/api/v1`) or the MCP server (`/mcp`). How to connect a client and the tool catalogue:
+[mcp.md](mcp.md); the contract: [contract-phase5.md](api/contract-phase5.md); the design:
+[ADR 0013](adr/0013-api-keys-and-mcp-server.md). Nothing needs configuring: keys and
+`/mcp` are always on, and every limit below is a constant (simple beats configurable).
+
+### Keys
+
+- **Format and storage:** `sdg_` + a 12-character lookup id + `_` + a 40-character secret
+  (`sdg_[A-Za-z0-9]{12}_[A-Za-z0-9]{40}`: add it to GitHub push protection or gitleaks as
+  a custom pattern). The database holds the lookup id and a SHA-256 of the whole key, never
+  the key; the key is shown once. Rotating `SOUNDINGS_SECRET_KEY` doesn't affect keys.
+- **What a key can do:** its owner's permissions **at each request** (roles, groups,
+  platform-admin flag), narrowed by its scopes (`read`, `write`, `evaluate`, `mcp`) and an
+  optional project restriction. Deleting and moderating ideas, project and admin settings,
+  the inbox and key management are session only. Platform admins' keys are narrowed the
+  same way and can't reach any admin page.
+- **When a key stops:** revoked (by its owner, or any key in Settings → All API keys),
+  expired, its owner deactivated (that revokes every key of theirs; reactivating doesn't
+  bring them back), its owner hasn't signed in for 30 days (**dormant**: it works again
+  after their next sign-in, which also refreshes their groups; service accounts are exempt),
+  or the sign-in method of the session that created it is no longer available (a key made
+  with the development login stops when `devLogin` is off; a key made through SSO while
+  `oidc.issuer` is empty). Authentication reads the key's row on every request, so all of
+  these apply to the next request on every replica. The break-glass account can't create
+  keys. "Sign out everywhere" ends sessions, not keys.
+- **A leaked key:** paste it into Settings → All API keys' search (only its first 16
+  characters are sent and matched exactly), revoke it, and look for its id in the audit
+  log (`api_key_id`).
+
+### Exposing `/mcp`
+
+- `/mcp` is served by the API pods on the app's port, `POST` only (other methods 405),
+  stateless JSON responses (no SSE, no sessions), so proxies need no buffering or timeout
+  changes. The chart's ingress (or HTTPRoute) already routes it with the rest of the app.
+  To restrict who may reach it from outside, set `ingress.mcp.annotations` (for example an
+  allow-list middleware): it adds an Ingress `<release>-soundings-mcp` for `/mcp` only, a
+  Prefix path so it outranks `/` on Traefik too.
+- **In the cluster** (kagent, Phase 6), clients call the Service:
+  `http://<fullname>.<namespace>.svc.cluster.local/mcp`. `/mcp` is exempt from the app's
+  Host check (like the probes), so that host needn't be in `baseUrls`. Every request still
+  needs a bearer key, and an `Origin` header, when a client sends one, must be one of the
+  `baseUrls` origins (403 `invalid_origin`), which stops DNS rebinding from browsers. With
+  `networkPolicy.ingressFrom` set, add the namespaces of in-cluster clients to it
+  (`kagent.enabled` adds kagent's).
+- `/mcp` never accepts session cookies and sends no CORS headers. `/.well-known/*` answers
+  404 problem+json: there is no OAuth for MCP (keys are issued in the app), and clients
+  that probe for it report the key error instead.
+
+### Rate limits
+
+All three are counted **in each API pod's memory** (like the sign-in throttles), so with
+N replicas a client spread across them gets up to N times as much; they bound floods and
+runaway agents, not determined attackers.
+
+| Limit | Over it |
+|---|---|
+| 30 failed key authentications a minute per client address (IPv6: per /64) | failing keys from that address get 429 `too_many_attempts` with `Retry-After` instead of 401; **valid** keys from the same address still work, so one broken script behind a NAT can't lock out its neighbours |
+| 300 requests a minute per key (REST and `/mcp` together) | 429 `too_many_attempts` |
+| 30 writes a minute per key (REST `POST`/`PUT`/`PATCH`/`DELETE`, MCP tools that change something) | 429, or the tool error `too_many_attempts`; reads still work |
+
+The client address comes from the trusted proxies (`trustedProxies`, `trustedProxyHops`;
+see [Security](#security-pod-security-restricted-networkpolicy-secrets)): get those right or
+every client looks like the ingress controller and shares one failure budget.
+
+### Audit and logs
+
+- `api_key.create` and `api_key.revoke` (with the key's id and prefix; `reason:
+  deactivated` when deactivation revoked it) are kept like every other audit entry.
+- **Every MCP tool call** is one `mcp.call` entry: the tool, its rule, `allow` or `deny`,
+  the error code, the key's id, and the idea or project it was about; never the arguments
+  (queries, comments and idea text can hold personal data). A call refused for lack of the
+  `mcp` scope is recorded too; `initialize` and `tools/list` aren't. What a call changed has
+  its own entry as in the app (`evaluation.submit`, with `auth: api_key` and the key id).
+  The worker's hourly job deletes `mcp.call` entries older than **90 days**; other entries
+  are kept for good. Audit log → "API keys and MCP" shows them.
+- Refused key authentications are **not** audited (a flood must not fill the audit log):
+  they are logged at INFO as `api key refused` with a `reason` (`malformed`, `unknown`,
+  `mismatch`, `revoked`, `expired`, `inactive_owner`, `method_unavailable`,
+  `dormant_owner`) and the key id when known; the first throttled refusal of an address in
+  a minute is a WARNING. Logs never contain a key, the `Authorization` header or tool
+  arguments; the MCP SDK's own loggers are held at WARNING for that reason.
+
+### Checking it
+
+`make mcp-smoke` (`scripts/mcp-smoke.sh <base URL>`, needs dev login and the demo data)
+runs the acceptance with curl: a key, `initialize`, the nine tools, blind results,
+`not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the
+audit entries, then revoke and 401 on the next call. On k3s, `make k3s-install MCP=1` and
+`make k3s-smoke MCP=1` also run an MCP client in a pod of another namespace with its key in
+a Secret, as kagent will (`scripts/k3s-mcp-client.sh`).
+
 ## kagent integration [Phase 6]
 
+Phase 5 prepares it; Phase 6 adds the agents, their UI and the A2A runs. Agents use the
+MCP server above with a **service account's** key, under the same rules as people (blind
+evaluation, the key's projects and scopes, every call audited); a service account never
+owns an idea or holds the admin role, and its evaluations are left out of the aggregate by
+default. Details and what has been verified: [`deploy/kagent/README.md`](../deploy/kagent/README.md).
+
 ### Checking the installed kagent version
+
+The manifests target kagent **0.10.x** (`kagent.dev/v1alpha2`); the 1.0 line changes the
+API group version and the Agent kinds. Check what is installed before enabling them:
+
+```sh
+kubectl get crd | grep kagent
+kubectl explain remotemcpservers.kagent.dev.spec --recursive | head -40
+kubectl -n kagent get agents,rmcps
+```
+
 ### Registering agents and service-account API keys
+
+Phase 6's Admin → AI agents creates the service account and its key (scopes `read`,
+`evaluate`, `mcp`, plus `write` for suggestions and comments), restricted to the projects
+the agent serves: one agent account shared by projects that must not see each other is a
+path for prompt injection, so register one agent per project there. Project admins add the
+agent as a member (never admin). Put the key in a Secret as the whole header value,
+`Bearer sdg_…` (kagent sends it as is). Revoking the key, or deactivating the account,
+cuts the agent off at its next call.
+
 ### Example manifests (`deploy/kagent/`)
+
+`deploy/kagent/remote-mcp-server.yaml` (apply by hand) and the chart's `kagent.examples`
+render a `RemoteMCPServer` pointing at the release's Service URL, reading the header from
+`kagent.mcp.keySecret` / `.keySecretKey` (both need `kagent.enabled`, which also admits
+kagent's namespace through the NetworkPolicy):
+
+```sh
+kubectl -n soundings create secret generic soundings-agent-key \
+  --from-literal=authorization="Bearer sdg_..."
+helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
+  --set kagent.enabled=true --set kagent.examples=true \
+  --set kagent.mcp.keySecret=soundings-agent-key
+```
+
+The example `Agent` manifests (evaluator and researcher) come with Phase 6.
 
 ## Operations [Phase 1, 7]
 
@@ -776,6 +908,13 @@ entries (default 1: the ingress controller's; set 2 when an L7 load balancer in 
 of the ingress also appends). Entries further left are whatever the client sent and are
 ignored. Narrow `trustedProxies` to your ingress pods' range where you can.
 ### Audit log
+
+Settings → Audit log (platform admins) records sign-ins, admin and access changes,
+assignments, evaluations, status changes, deletions, public-submission decisions,
+branding, API keys and every MCP tool call, with ids and outcome codes only. Entries are
+kept indefinitely except `mcp.call`, which the worker deletes after 90 days
+([above](#audit-and-logs)).
+
 ### Troubleshooting
 
 ## Data protection [Phase 4, 7]

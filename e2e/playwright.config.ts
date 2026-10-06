@@ -34,6 +34,11 @@ import { defineConfig, devices } from '@playwright/test'
  * `e2e` and before `smtp-outage`, one at a time; they put things back when they finish.
  * `npm run screenshots:phase4` (SCREENSHOTS=phase-4) runs screenshots/phase-4.spec.ts
  * (docs/screenshots/phase-4/, with pdf/ and emails/).
+ *
+ * Phase 5: specs use API keys and `/mcp` as a client would (tests/support/mcp.ts: a
+ * bearer key, no cookie, an X-Forwarded-For address of their own so refused keys don't
+ * add up on 127.0.0.1). Nothing new to run. `npm run screenshots:phase5`
+ * (SCREENSHOTS=phase-5) runs screenshots/phase-5.spec.ts (docs/screenshots/phase-5/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -45,7 +50,9 @@ const screenshotSpec =
       ? /screenshots\/phase-3\.spec\.ts$/
       : process.env.SCREENSHOTS === 'phase-4'
         ? /screenshots\/phase-4\.spec\.ts$/
-        : /screenshots\/phase-1\.spec\.ts$/
+        : process.env.SCREENSHOTS === 'phase-5'
+          ? /screenshots\/phase-5\.spec\.ts$/
+          : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/

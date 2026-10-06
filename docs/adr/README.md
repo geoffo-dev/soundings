@@ -16,9 +16,9 @@ go in [../decisions.md](../decisions.md) instead.
 | [0008](0008-contract-first-generated-client-msw.md) | Contract-first build, generated TS client, MSW | Accepted |
 | [0009](0009-product-name-and-open-questions.md) | Product name "Soundings" and SPEC section 16 answers | Accepted |
 | [0010](0010-central-authorisation-policy.md) | Authorisation in one central policy module, deny by default | Accepted |
-| [0011](0011-ubuntu-runtime-image-and-weasyprint.md) | Ubuntu 24.04 runtime image with its Python 3.12, for WeasyPrint (supersedes 0004's runtime base) | Proposed |
+| [0011](0011-ubuntu-runtime-image-and-weasyprint.md) | Ubuntu 24.04 runtime image with its Python 3.12, for WeasyPrint (supersedes 0004's runtime base) | Accepted |
 | [0012](0012-branding-and-uploaded-images.md) | Branding profiles and uploaded images stored in the database | Proposed |
-| [0013](0013-api-keys-and-mcp-server.md) | API keys as a principal source; an MCP server built on the REST services | Proposed |
+| [0013](0013-api-keys-and-mcp-server.md) | API keys as a principal source; an MCP server built on the REST services | Accepted |
 
 ## Writing a new ADR
 

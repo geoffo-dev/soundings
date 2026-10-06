@@ -20,6 +20,7 @@ from sqlalchemy import Select, and_, exists, func, or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api_keys import service as api_keys
 from app.auth.group_mapping import project_roles_for
 from app.authz import Resource, Rule, other_platform_admins, require
 from app.config import Settings
@@ -307,7 +308,8 @@ async def update_user(
 ) -> None:
     """PATCH semantics (null = unchanged). c17 (403 ``cannot_change_self``) for your
     own active / platform-admin flags, then 409 ``system_account``, ``email_taken``
-    and c18 (``last_platform_admin``). Deactivating ends every session of the user."""
+    and c18 (``last_platform_admin``). Deactivating ends every session of the user and
+    revokes every API key."""
     is_active = body.is_active if body.is_active is not None else user.is_active
     is_platform_admin = (
         body.is_platform_admin if body.is_platform_admin is not None else user.is_platform_admin
@@ -349,6 +351,9 @@ async def update_user(
         details["is_active"] = is_active
         if not is_active:
             details["sessions_ended"] = await sessions.end_user_sessions(db, user.id)
+            # Every key goes too (contract-phase5 §2), each with its own api_key.revoke
+            # entry; it flushes the users update first, so a racing create serialises.
+            await api_keys.revoke_all_for_user(db, user.id, actor=principal)
     if is_platform_admin != user.is_platform_admin:
         user.is_platform_admin = is_platform_admin
         fields.append("is_platform_admin")

@@ -3,12 +3,14 @@
 Browser tests against the **real** Soundings stack: the FastAPI app serving the built
 SPA, PostgreSQL and the seeded demo data, signed in with the dev login, (Phase 2,
 `E2E_SSO=1`) a real Keycloak 26 with the dev realm, and (Phase 3) `soundings worker`
-with Mailpit as the SMTP server, and (Phase 4) the public form with the real ALTCHA proof
-of work and PDF export through the API's WeasyPrint child. No mocks (the SPA's own page
+with Mailpit as the SMTP server, (Phase 4) the public form with the real ALTCHA proof
+of work and PDF export through the API's WeasyPrint child, and (Phase 5) API keys used
+against `/api/v1` and the MCP server at `/mcp` exactly as a script or an MCP client would.
+No mocks (the SPA's own page
 tests with MSW live in `frontend/tests/`). The test plans, with every case ID and the
 known failures: [phase-1.md](../docs/test-plans/phase-1.md),
 [phase-2.md](../docs/test-plans/phase-2.md), [phase-3.md](../docs/test-plans/phase-3.md),
-[phase-4.md](../docs/test-plans/phase-4.md).
+[phase-4.md](../docs/test-plans/phase-4.md), [phase-5.md](../docs/test-plans/phase-5.md).
 
 ```bash
 npm --prefix e2e ci
@@ -21,6 +23,7 @@ npm --prefix e2e run screenshots               # docs/screenshots/phase-1/*.png
 npm --prefix e2e run screenshots:phase2        # docs/screenshots/phase-2/*.png (SSO, then break-glass)
 npm --prefix e2e run screenshots:phase3        # docs/screenshots/phase-3/ (+ emails/), then E2E_SMTP=0
 npm --prefix e2e run screenshots:phase4        # docs/screenshots/phase-4/ (+ pdf/, emails/)
+npm --prefix e2e run screenshots:phase5        # docs/screenshots/phase-5/ (API keys, admin keys, suggestions)
 E2E_SMTP=0 npm --prefix e2e test               # no SMTP: in-app notifications only, admin banner
 npx --prefix e2e playwright test --project=smtp-outage --no-deps   # only the Mailpit-outage specs
 npx --prefix e2e playwright test --project=serial --no-deps        # only the @serial specs (global branding)
@@ -108,5 +111,16 @@ name, members, { form, branding })` (a fresh project, form on and moderated unle
   metadata), `pdfColours` (RGB colours in the content streams), `embedsFont` (an embedded
   font program's own name), `pdfImageCount`, and `renderPdfPages` (pdf.js in Chromium, for
   screenshots). `pdfjs-dist` is a dev dependency here; there is no poppler on the machine.
+- **API keys and MCP** (Phase 5) use `tests/support/mcp.ts`: `KeyClient.open(url, secret)` is
+  a client with the key only (`Authorization: Bearer`, no cookie, no CSRF header): `rest()`
+  for `/api/v1`, `rpc()` / `connect()` / `toolNames()` / `call()` / `ok()` / `fails()` for
+  `/mcp` JSON-RPC (stateless, so one POST per call), and `expectRefusedKey` for the one 401
+  every refused key gets. Each client claims an address of its own with `X-Forwarded-For`:
+  refused keys count towards 30 a minute per address, and the run shares 127.0.0.1. Keys are
+  made with `api.createApiKey(...)` (the session API; the secret is only in that result) and
+  revoked when the spec ends (25 keys per user). Specs that end someone's sessions or
+  deactivate them create that person (`admin-api-keys.spec.ts` `newPerson`). Tests for
+  contract rules that aren't built yet are `test.fail(true, …)`: they pass while the defect
+  stands and fail once it is fixed (then drop the mark; none are left).
 - `@playwright/test` is pinned to 1.56.1 (the CI image); never run `playwright install`
   here, Chromium comes from `PLAYWRIGHT_BROWSERS_PATH`.

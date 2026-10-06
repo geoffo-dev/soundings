@@ -12,7 +12,9 @@ import {
 import {
   authorizationHeader,
   claudeCodeCommand,
+  claudeDesktopConfig,
   curlExample,
+  HEADER_FILE_PLACEHOLDER,
   KEY_PLACEHOLDER,
   mcpServersConfig,
   mcpUrl,
@@ -102,6 +104,20 @@ describe('examples', () => {
       `claude mcp add --transport http soundings https://ideas.example.com/mcp`,
     )
     expect(claudeCodeCommand(url, key)).toContain(`--header "Authorization: Bearer ${key}"`)
+  })
+
+  it('connects Claude Desktop through mcp-remote with the header in a file, never the key', () => {
+    const url = mcpUrl('https://ideas.example.com')
+    const config = claudeDesktopConfig(url)
+    expect(JSON.parse(config)).toEqual({
+      mcpServers: {
+        soundings: {
+          command: 'npx',
+          args: ['-y', 'mcp-remote@0.14.3', url, '--header-file', HEADER_FILE_PLACEHOLDER],
+        },
+      },
+    })
+    expect(config).not.toContain('Bearer')
   })
 
   it('checks a read key on REST and an mcp-only key on the MCP server', () => {

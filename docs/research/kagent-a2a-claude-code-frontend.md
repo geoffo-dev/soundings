@@ -47,6 +47,14 @@ Main risks for later phases:
   need it.
 - `RemoteMCPServer` protocol is `SSE` or `STREAMABLE_HTTP` (the default). The default
   timeout is 30s.
+- **Phase 5 [run, v0.10.2 CRD on k3s]:** `RemoteMCPServer.spec` also has
+  `allowedNamespaces` (which other namespaces' Agents may reference it) and `tls`, and
+  defaults `terminateOnClose: true`; the header is always read from the RemoteMCPServer's
+  own namespace. kagent's source labels agent pods `app.kubernetes.io/managed-by:
+  kagent`. Its MCP client (`go-sdk` v1.6.1) worked against Soundings' `/mcp`
+  (initialize `2025-11-25`, its SSE `GET` gets 405 and is skipped, `DELETE` 405 ignored).
+  Keys are `sdg_…`, not the `sk_soundings_…` placeholder below: see
+  `deploy/kagent/README.md`.
 
 **Minimal manifest [run].** The API server accepted this with v0.10.2 CRDs and their
 validation rules, and defaulted `runtime` to `go`:

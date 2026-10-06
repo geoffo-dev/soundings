@@ -100,7 +100,18 @@ async def test_path_traversal_and_dotfiles_are_not_served(client: httpx.AsyncCli
 
 
 @pytest.mark.parametrize(
-    "path", ["/api", "/api/v1/nope", "/api/unknown", "/mcp/x", "/healthz/extra"]
+    "path",
+    [
+        "/api",
+        "/api/v1/nope",
+        "/api/unknown",
+        "/mcp/x",
+        "/healthz/extra",
+        # An MCP client probing for OAuth after a 401 gets a 404, not index.html.
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-authorization-server",
+    ],
 )
 async def test_backend_paths_keep_problem_json_404s(client: httpx.AsyncClient, path: str) -> None:
     response = await client.get(path)

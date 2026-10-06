@@ -451,7 +451,16 @@ projects.**
   delete, a rejection that deletes), `platform.*`, `api_key.*`, `self.manage_profile`,
   and the inbox routes (list, unread count, mark read: a person's reading state).
 - **Signed-in routes without a rule of their own** (`get_me`, My work, owned ideas,
-  global search) need `read` with a key.
+  global search) need `read` with a key, and so does every route that loads an idea or
+  project to read it (`require_view`, after the 404s): an `mcp`-only key reads nothing
+  through REST.
+- **Every operation is classified for keys** in `app.authz.keys.ROUTE_KEY_ACCESS`:
+  `policy` (its rule decides, as above), `read` (needs `read`), `session` (403
+  `insufficient_scope` for any key: the rules above plus the moderation queue,
+  `get_idea_submission` and the public-form and branding settings) or `public`; an
+  operation without a row is refused to keys. A key on a `session` route, or on a `read`
+  route without `read`, gets 403 before the route's own 404 or 422 (the answer doesn't
+  depend on the resource).
 - Missing, malformed, unknown, expired or revoked keys, keys whose owner is
   deactivated or the break-glass account, keys whose creating sign-in method is no
   longer available, and a person's keys while they haven't used the app for 30 days

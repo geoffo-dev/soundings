@@ -8,18 +8,20 @@ import { CodeSnippet, CopyLine } from './code-snippet'
 import {
   authorizationHeader,
   claudeCodeCommand,
+  claudeDesktopConfig,
   curlExample,
   KEY_PLACEHOLDER,
   mcpServersConfig,
   mcpUrl,
 } from './snippets'
 
-type Example = 'json' | 'claude' | 'curl'
+type Example = 'json' | 'claude' | 'desktop' | 'curl'
 
 /**
- * The examples for a key: an `mcpServers` config, the Claude Code command and
- * curl. With the new key filled in (the secret dialog) or a placeholder (the
- * page). Without the `mcp` scope only curl is offered.
+ * The examples for a key: an `mcpServers` config, the Claude Code command,
+ * Claude Desktop (through `mcp-remote`) and curl. With the new key filled in (the
+ * secret dialog) or a placeholder (the page). Without the `mcp` scope only curl
+ * is offered.
  */
 export function KeyExamples({
   secret,
@@ -40,6 +42,7 @@ export function KeyExamples({
           <>
             <TabsTrigger value="json">MCP config</TabsTrigger>
             <TabsTrigger value="claude">Claude Code</TabsTrigger>
+            <TabsTrigger value="desktop">Claude Desktop</TabsTrigger>
           </>
         )}
         <TabsTrigger value="curl">curl</TabsTrigger>
@@ -49,13 +52,28 @@ export function KeyExamples({
           <TabsContent value="json" className="flex flex-col gap-2 pt-3">
             <p className="text-sm text-muted">
               For clients that take an <code className="font-mono text-secondary">mcpServers</code>{' '}
-              map (Claude Desktop, IDE assistants and others).
+              map of HTTP servers, such as a project’s{' '}
+              <code className="font-mono text-secondary">.mcp.json</code> and many editor
+              assistants.
             </p>
             <CodeSnippet code={mcpServersConfig(url, key)} label="the MCP config" />
           </TabsContent>
           <TabsContent value="claude" className="flex flex-col gap-2 pt-3">
             <p className="text-sm text-muted">Run it in a terminal where you use Claude Code.</p>
             <CodeSnippet code={claudeCodeCommand(url, key)} label="the Claude Code command" />
+          </TabsContent>
+          <TabsContent value="desktop" className="flex flex-col gap-2 pt-3">
+            <p className="text-sm text-muted">
+              Claude Desktop connects through the{' '}
+              <code className="font-mono text-secondary">mcp-remote</code> bridge (it needs
+              Node.js). Add this to{' '}
+              <code className="font-mono text-secondary">claude_desktop_config.json</code>:
+            </p>
+            <CodeSnippet code={claudeDesktopConfig(url)} label="the Claude Desktop config" />
+            <p className="text-sm text-muted">
+              Then save this line in that header file, readable only by you:
+            </p>
+            <CopyLine value={authorizationHeader(key)} label="the header line" wrap />
           </TabsContent>
         </>
       )}

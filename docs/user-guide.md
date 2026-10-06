@@ -95,7 +95,8 @@ Light or Dark), the account menu (your name at the bottom of the sidebar) or typ
 **Settings** in the sidebar shows your account (name and email, from sign-in), the
 theme, and links to the settings of every project you manage. **Notifications**, next
 to Account, holds your email preferences
-([below](#notifications-and-email-preferences-phase-3)). Platform admins also see the
+([below](#notifications-and-email-preferences-phase-3)), and **API keys** your keys for
+scripts and MCP clients ([below](#api-keys-and-mcp-phase-5)). Platform admins also see the
 sections described in [Platform administration](#platform-administration-phase-2).
 
 ## Ideas [Phase 1]
@@ -252,6 +253,20 @@ it; replying to a resolved thread reopens it. You can delete your own comments (
 any). Margin comments don't notify anyone in this version and don't take @mentions;
 they never appear in exports.
 
+### Suggestions [Phase 5]
+
+An MCP client (or, from Phase 6, an AI agent) can **suggest** the whole new text of a
+section; it doesn't change the proposal. Pending suggestions appear under their section
+("1 suggestion", and a count in the outline and the editor's top bar) with who suggested
+it ("via MCP", or an AI badge for an agent), when, and the changes against the current
+text (**Changes**) or the text alone (**Suggested text**). If the section was saved since,
+it says "The section has changed since this was suggested". Everyone who can read the
+proposal sees suggestions; the owner and admins **Accept** (the text is saved as a normal
+section save, with Undo; if you have unsaved edits in that section it asks first, and a
+conflicting save offers **Accept anyway**) or **Discard** (with Undo). A newer suggestion
+from the same person for the same section replaces their earlier one; nobody is notified
+of suggestions in this version.
+
 ### Exporting to PDF or Markdown
 
 **Export** (top right of the Proposal tab) downloads the proposal as **PDF** or
@@ -392,8 +407,50 @@ in Settings → Notifications.
 
 ## API keys and MCP [Phase 5]
 
+A personal API key lets a script or an AI assistant use Soundings **as you**: the REST
+API at `/api/v1`, or the MCP server at `/mcp`. It never does more than you can do in the
+app, and only what its scopes allow.
+
 ### Creating and revoking a personal API key
+
+**Settings → API keys** (also in ⌘K) lists your keys: name, the start of the key
+(`sdg_…`), scopes, projects, expiry and when it was last used. **Create key** asks for:
+
+- **A name** that says what it's for ("Claude Desktop", "Weekly report"); each of your
+  keys needs a different one.
+- **Scopes**, or one of four presets: **Read only** (scripts and reports that look),
+  **MCP client** (an assistant that searches and reads), **AI evaluator** (it also submits
+  your evaluations) and **Full access**. *Read* sees what you see; *Write* creates and
+  changes ideas, comments, owners, evaluators, statuses and proposals; *Evaluate* saves
+  and submits your own evaluations, blind as in the app; *MCP* lets an MCP client connect
+  (its tools also need Read, Write or Evaluate). Write and Evaluate include Read.
+- **Expiry**: 30 days, 90 days, a year, a date, or never.
+- **Projects**: all the projects you can access (now and later), or only some.
+
+The key is shown **once**, with Copy and ready-made examples: store it somewhere safe,
+because Soundings keeps only a fingerprint of it. After that the list shows only its
+start. A key can't be changed later: create a new one and revoke the old.
+
+**Revoke** asks first, then the key stops at once: whatever uses it gets "unauthorized"
+on its next request. Signing out doesn't stop keys. A key also pauses when you haven't
+signed in to Soundings for 30 days (signing in resumes it), and a platform admin can
+revoke any key (Settings → All API keys); deactivating an account revokes all its keys.
+Some things always need you signed in, so no key can do them: deleting or moderating
+ideas, project and admin settings, your inbox, and managing keys. You can have up to 25
+keys. The break-glass admin account can't create keys.
+
 ### Connecting an MCP client
+
+Below your keys, **Connect an MCP client** shows the server URL (`<this address>/mcp`),
+the header (`Authorization: Bearer <your key>`) and examples for Claude Code, Claude
+Desktop, other clients that take an `mcpServers` config, and curl. Create a key with the
+MCP client or AI evaluator preset and paste it in; then ask the assistant something like
+"Which Soundings ideas are waiting for my evaluation?". The client can list projects,
+search and read ideas, rubrics and proposals, create ideas, comment, submit your
+evaluations and suggest proposal text, within the key's scopes and projects. It sees what
+you see: no scores before you have submitted your own evaluation. Every call it makes is
+recorded in the audit log. Step-by-step setup, the tool list and safety notes for power
+users: [mcp.md](mcp.md).
 
 ## AI assistance [Phase 6]
 
@@ -621,17 +678,31 @@ quiet banner "Email isn't set up" across the app (dismiss it for the session).
 
 Sending a test email and retrying are recorded in the audit log, without the address.
 
+### All API keys [Phase 5]
+
+**Settings → All API keys** lists every key people and AI agents have that isn't revoked:
+owner (with an AI badge for agents), name, the key's start (`sdg_` and 12 characters),
+scopes, projects, when it was created and last used, expiry, and an **Expired** or
+**Dormant** badge (the owner hasn't signed in for 30 days). Search by name, owner, or a
+key's start: pasting a whole leaked key works, and only its start is ever searched for.
+Filter by state; a user's admin page links to their keys. **Revoke** stops a key at once.
+"Sign out everywhere" ends a person's sessions but not their keys; deactivating them
+revokes those too.
+
 ### Audit log
 
 Every sign-in (and refused sign-in, with the reason), admin change, project membership
 and group grant change, owner and evaluator assignment, submitted evaluation, closing
 and reopening of evaluation, status change, idea deletion, test email and email retry,
 approval, rejection and erasure of public submissions (an erasure by the sender or by the
-retention rules has no actor), and branding changes, newest first, one sentence each, for example "Priya Natarajan
-added Lena Novak to group Tools members". Filter by who did it, what kind of action,
+retention rules has no actor), branding changes, API keys created and revoked, and every
+MCP tool call (under "API keys and MCP": the tool, allowed or denied, and the key, never
+what was asked; these entries are kept for 90 days), newest first, one sentence each, for
+example "Priya Natarajan added Lena Novak to group Tools members". Filter by who did it, what kind of action,
 project, dates, or "About" a user or group; "Details" shows the raw fields. Entries
 name ids, never emails, tokens or claims, and each records how the person had signed in
-(single sign-on, break-glass or the development login). The log is kept indefinitely.
+(single sign-on, break-glass or the development login) or which API key they used. The
+log is kept indefinitely (MCP calls: 90 days).
 
 ## Who can do what
 

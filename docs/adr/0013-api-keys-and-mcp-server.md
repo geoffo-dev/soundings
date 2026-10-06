@@ -1,6 +1,6 @@
 # ADR 0013: API keys as a principal source, and an MCP server built on the REST services
 
-- Status: Proposed · Date: 2026-10-02
+- Status: Accepted (built and verified in Phase 5 integration, 2026-10-06) · Date: 2026-10-02
 
 ## Context
 

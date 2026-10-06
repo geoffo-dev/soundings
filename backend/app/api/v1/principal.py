@@ -1,8 +1,8 @@
 """The request's :class:`~app.domain.principal.Principal`, for every signed-in route.
 
 Routes depend on ``PrincipalDep``, not on the user directly: the principal also
-says how the caller authenticated (session now; API key in Phase 5, with scopes and
-a project restriction), which the authorisation policy narrows by. The principal
+says how the caller authenticated (a session, or an API key with scopes and a project
+restriction), which the authorisation policy narrows by. The principal
 sources in :mod:`app.auth.sources` build it; adding one changes no route.
 """
 
@@ -21,11 +21,12 @@ __all__ = ["PrincipalDep", "get_principal"]
 async def get_principal(request: Request, user: CurrentUserDep) -> Principal:
     """The principal ``get_current_user`` authenticated (401/403 come from there).
 
-    Falls back to a plain session principal when ``get_current_user`` is overridden
-    (tests).
+    Whenever a principal was stored it is the answer, as it is: a key's principal is
+    never widened into a session one (contract-phase5 section 3.2). Only when none was
+    stored (tests that override ``get_current_user``) is a plain session principal built.
     """
     principal = getattr(request.state, "principal", None)
-    if isinstance(principal, Principal) and principal.user is user:
+    if isinstance(principal, Principal):
         return principal
     return Principal(user=user)
 

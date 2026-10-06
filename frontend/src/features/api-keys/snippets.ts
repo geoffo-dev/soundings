@@ -3,7 +3,7 @@ import type { ApiKeyScope } from '@/api/types'
 /**
  * Ready-to-paste examples for a key (contract-phase5 §3.10 "Connect an MCP
  * client"): the server URL, the header, an `mcpServers` config, the Claude Code
- * command and curl. With the new key's secret in the secret dialog, or a
+ * command, Claude Desktop through `mcp-remote` and curl (docs/mcp.md has them all). With the new key's secret in the secret dialog, or a
  * placeholder on the page (the key is never shown again).
  */
 
@@ -18,12 +18,40 @@ export function authorizationHeader(key: string = KEY_PLACEHOLDER): string {
   return `Authorization: Bearer ${key}`
 }
 
-/** A JSON `mcpServers` map for clients that take `type: "http"`, `url` and `headers`. */
+/**
+ * A JSON `mcpServers` map for clients that take `type: "http"`, `url` and
+ * `headers` (a project's `.mcp.json` for Claude Code, many editor assistants).
+ */
 export function mcpServersConfig(url: string, key: string = KEY_PLACEHOLDER): string {
   return JSON.stringify(
     {
       mcpServers: {
         soundings: { type: 'http', url, headers: { Authorization: `Bearer ${key}` } },
+      },
+    },
+    null,
+    2,
+  )
+}
+
+/** Where the Claude Desktop example keeps the header line (the person picks the path). */
+export const HEADER_FILE_PLACEHOLDER = '/Users/you/.config/soundings/mcp-headers.txt'
+
+/** The `mcp-remote` release the Claude Desktop example pins (checked against `/mcp`). */
+export const MCP_REMOTE = 'mcp-remote@0.14.3'
+
+/**
+ * Claude Desktop's `claude_desktop_config.json`. Its custom connectors only sign
+ * in with OAuth, which Soundings doesn't offer (keys are made in the app), so it
+ * runs the `mcp-remote` stdio bridge, which reads the header from a file (the key
+ * stays out of the config and of process lists). `mcp-remote` takes plain http
+ * only for localhost; any other server is https.
+ */
+export function claudeDesktopConfig(url: string, headerFile = HEADER_FILE_PLACEHOLDER): string {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        soundings: { command: 'npx', args: ['-y', MCP_REMOTE, url, '--header-file', headerFile] },
       },
     },
     null,

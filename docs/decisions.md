@@ -546,3 +546,61 @@ contract review, before building ([contract-phase5 §9](api/contract-phase5.md#9
 | New `AuditAction` values `api_key.create`, `api_key.revoke`, `mcp.call` are agreed but land at integration with the SPA's phrases (target type `user` for key events: no new target type). | Proposed | Adding enum values breaks the frontend typecheck until the phrases exist (Phases 3 and 4 precedent). |
 | No new settings: every limit and the `mcp.call` retention are constants. | Proposed | Simple beats configurable. |
 | The contract commit adds the new operations to the meta-test tables owned by identity and backend (`test_route_rules.py`, the guard tests' exclusions, `DOMAIN_TABLES`), as the Phase 4 contract did. | Proposed | Otherwise `make check-backend` fails on routes and tables that exist only as stubs. |
+
+## 2026-10-06 · Phase 5 build and integration
+
+Calls made while building and integrating API keys, the MCP server and proposal
+suggestions. Contract changes are listed in
+[contract-phase5.md §8](api/contract-phase5.md#8-changes-after-the-contract); QA's six
+defects ([test-plans/phase-5.md](test-plans/phase-5.md#defects-found-by-these-tests)) are
+fixed below and their expected-failure marks removed.
+
+### API keys
+
+| Decision | Status | Why |
+|---|---|---|
+| Every operation is classified for keys (`app.authz.keys.ROUTE_KEY_ACCESS`: `policy`, `read`, `session`, `public`; unclassified is refused), and `get_current_user` refuses a key on a session route, or a read route without `read`, with 403 `insufficient_scope` before the route's own 404 or 422. | Decided | Deny by default for every new route; the answer doesn't depend on the resource, so nothing leaks (contract §8). |
+| `require_view` (loading an idea or project to read it) needs `read` with a key; the moderation queue, `get_idea_submission` and the public-form and branding settings are session only too. | Decided | An `mcp`-only key read ideas over REST before (found by `test_key_routes.py`); moderation and settings aren't integration surfaces. |
+| Deactivating a user revokes every key in the same transaction (`revoke_all_for_user`, each audited `reason: deactivated`), after the `users` update is flushed. | Decided | Integration fix (QA AC5-API-3, AAK-04): a reactivated account got its old keys back. The flush orders it after a racing create's lock. |
+| `get_principal` returns whatever principal was stored, even when the route's user object is another instance. | Decided | Contract §3.2: a key's narrowed principal must never become a session one. |
+| The audit filter takes up to 64 actions. | Decided | 42 actions now; a filter on all of them was 422. |
+
+### MCP
+
+| Decision | Status | Why |
+|---|---|---|
+| One guard in front of the SDK (`app/mcp/guard.py`: method, Origin, key, c15 with one audit entry, the key's rate, Content-Type), on identity's `key_auth`; 415 comes from the guard as problem+json. | Decided | One code path for keys; the SDK answers a wrong Content-Type with a plain-text 400. |
+| The SDK's session manager runs its task group in a task of its own; its loggers are held at WARNING. | Decided | pytest-asyncio enters and leaves the lifespan in different tasks; it logs every request at INFO and may log raw messages at DEBUG (tool arguments must never reach logs). |
+| `get_idea`'s `evaluation_count` and `evaluations` are other people's; yours is `my_evaluation`. Tool error messages name the failing fields, never their values. | Decided | The schema's wording; arguments may hold personal data. |
+| `mcp.call` `decision`: refusals before or by authorisation (401/403/404/429, bad arguments, unknown tool, the write cap) are `deny`; business 409/422s and crashes are `allow`. | Decided | "Was the caller allowed to try" is what an auditor asks; the code says what happened. |
+| The hourly schedule (`run_schedule`) deletes `mcp.call` entries older than 90 days. | Decided | Integration fix: `delete_expired_calls` existed but nothing called it. |
+| `/.well-known/*` is a backend path: the SPA never answers it. | Decided | Integration fix (QA AK-04): it returned `index.html` 200 on a stack with the SPA, which broke `mcp-smoke`. |
+
+### Service accounts and suggestions
+
+| Decision | Status | Why |
+|---|---|---|
+| A service account's **first** submission sets `include_in_aggregate = false`; later edits keep whatever it is (Phase 6's `evaluation.include_ai` changes it). A person's evaluation through a key stays included. | Decided | Integration fix (QA AC5-API-4): an agent's evaluation counted in the aggregate. |
+| `set_idea_owner` passes `assignee_service_account` to the policy (c4, 422 `assignee_not_eligible`); `add_project_member` and `update_project_member` refuse `role: admin` for a service account (409 `system_account`, "AI agents can be members or viewers, not admins"). The SPA shows the server's detail for `system_account`. | Decided | Integration fix (QA AC5-API-4); one code, two contexts, so the detail says which. |
+| No notification for a new suggestion in Phase 5. | Decided | Contract §3.4 and §7: a new `NotificationType` needs the SPA's maps (Phase 6). |
+| Discarding waits for its Undo toast (about 6 s) before the request, like comment delete; Undo after Accept saves the previous text again as a new version (the suggestion stays accepted). | Decided | A misclick is recoverable; an MCP client may see the suggestion pending for those seconds. |
+| No in-app "Suggest" button; `can_suggest` is unused by the SPA. | Proposed | Suggestions come from the API, MCP clients and (Phase 6) agents; people edit sections directly. |
+
+### Screens
+
+| Decision | Status | Why |
+|---|---|---|
+| A key with all four scopes shows one "Full access" chip (the preset's name; the scopes in screen-reader text); admin columns widened so three chips and two project names fit; the owner's name truncates before the key's prefix. | Decided | QA: four chips wrapped to two lines, and "Customer Innovation, Internal Tools" took three; the prefix finds a leaked key. |
+| Code blocks (the MCP config, commands) wrap long lines softly instead of scrolling sideways; copying still gets the text as written. | Decided | QA: `"Authorization": "Bearer sdg_…"` ran out of the dialog with no sign it scrolled. |
+| Rows that scroll sideways (tabs, the settings row) fade the edge they can still scroll towards; on phones the settings row runs to the screen's edges. | Decided | QA: at 390 px the admin's settings row was cut at both edges with no hint. |
+| A blank line in a suggestion's diff is a short gap in its band's colour, with no "+" or "−". | Decided | QA: an empty "+" row read like a missing line. |
+| "Connect an MCP client" and the secret dialog add a **Claude Desktop** example through `mcp-remote@0.14.3` with `--header-file`; the `mcpServers` example is described for `.mcp.json` and editor assistants. | Decided | Claude Desktop's custom connectors only sign in with OAuth (platform verified `mcp-remote`); the old text promised Claude Desktop would take the HTTP config. |
+
+### Platform and testing
+
+| Decision | Status | Why |
+|---|---|---|
+| `kagent.enabled` adds kagent's namespace to the API's NetworkPolicy (when `networkPolicy.ingressFrom` is set); `ingress.mcp.annotations` adds an Ingress for `/mcp` only, with a Prefix path. | Decided | The contract had the operator add the namespace by hand; on Traefik 2.11 an Exact `/mcp` path lost to `/`. |
+| The kagent example renders only a `RemoteMCPServer` (kagent 0.10, `v1alpha2`), reading the whole `Bearer sdg_…` header from an existing Secret; Agents come in Phase 6. | Decided | Checked against kagent 0.10.2's CRD; a live kagent install isn't verified yet. |
+| `make mcp-smoke` and `k3s-smoke MCP=1` (an SDK client in another namespace with a Secret-held key) run the acceptance; CI's k3s job runs `SSO=1 SMTP=1 MCP=1`. | Decided | The acceptance through the ingress and the Service, as kagent will call it. |
+| Tests for contract rules that aren't built yet are expected failures (`test.fail(true, …)`, strict `xfail`) that fail once fixed. | Decided | QA's convention: the suites stay green while a defect is open, and the fix can't go unnoticed. |

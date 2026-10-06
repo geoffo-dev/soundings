@@ -26,6 +26,7 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 | `docs/api/contract-phase*.md`, `docs/erd.md` | The current API contract and data model |
 | `docs/wireframes/` | Low-fi wireframes of the seven screens (`index.html` shows all) |
 | `docs/research/` | Verified library, kagent, A2A and Claude Code facts (with caveats) |
+| `docs/mcp.md` | Connecting MCP clients (Claude Code, Claude Desktop, SDKs) with a key; the tools; safety |
 | `docs/phase-summaries/` | What each phase built, its evidence, review outcomes and known issues |
 
 ## Repository layout
@@ -34,9 +35,11 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the wheel),
                   tests/ — uv, Python 3.12; app/seed/ is the demo story (`soundings seed`)
   app/schemas/      API contract (lead)          app/authz/ app/auth/ app/api_keys/ (identity)
+  app/mcp/            the MCP server at /mcp: guard (Origin, key, c15, rate), SDK server,
+                      one tools/call dispatcher (audit), the nine tools over the REST services
   app/notifications/  fan-out, preferences, digests, reminders, mentions, inbox, unsubscribe
   app/email/          outbox, worker tasks, SMTP, rendering; app/templates/email/ (Jinja2)
-  app/proposals/      sections, margin threads, Markdown, exports; PDF child process
+  app/proposals/      sections, margin threads, suggestions, Markdown, exports; PDF child process
                       (pdf.py, pdf_child.py), app/templates/pdf/, app/assets/fonts/ (woff2)
   app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention
   app/services/branding.py brand_assets.py moderation.py  branding (cached), images, queue
@@ -48,7 +51,7 @@ dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailp
                   k3s/ (Mailpit, Keycloak manifests), k3s-*-values.yaml
 e2e/              Playwright e2e against the real stack + review screenshots (qa)
 scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers
-docs/             ADRs, role matrix, ownership, wireframes, guides, research,
+docs/             ADRs, role matrix, ownership, wireframes, guides (user, operator, mcp), research,
                   test-plans/phase-N.md (qa), screenshots/phase-N/ (real-stack review
                   screenshots, light/dark/390 px; the frontend's mock ones in mock/;
                   phase-3/emails/: every email template, light/dark, desktop/390 px),
@@ -80,6 +83,8 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make k3s-keycloak` · `k3s-install SSO=1` · `k3s-smoke SSO=1` | Keycloak with the dev realm in the cluster (`scripts/k3s-keycloak.sh up\|down`; issuer `http://keycloak.localhost:18081/realms/soundings` for browser and pods; creates Secret `soundings-oidc`), then install with `dev/k3s-sso-values.yaml` and run `scripts/sso-smoke.sh` through the ingress |
 | `make sso-smoke` | `scripts/sso-smoke.sh $(SSO_BASE_URL)` (default :8000, the `make dev` API with `dev/.env`): alice signs in through Keycloak with curl, then the Phase 2 acceptance (managed group → private project; removed in Keycloak → 404 at next sign-in); needs `jq`, cleans up |
 | `make email-smoke` | `scripts/email-smoke.sh $(EMAIL_BASE_URL)` (default :8000) against an app with dev login, the worker and Mailpit (`MAILPIT_URL`, default :8025; `MAILPIT_CONTAINER`, default the dev compose one; `MAILPIT_OUTAGE=0` skips the outage step); needs `jq` |
+| `make mcp-smoke` | `scripts/mcp-smoke.sh $(MCP_BASE_URL)` (default :8000): curl JSON-RPC at `/mcp` with the demo data and dev login: 405/401/`/.well-known` 404 anonymously, then carol's key (read, evaluate, mcp; Customer Innovation only), the nine tools, blind `search_ideas` / `get_idea`, `submit_evaluation`, `not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the audit entries, revoke → 401 at the next call and on REST; creates and deletes a test idea; needs `jq`. `MCP_CLIENT_HOOK` runs another client with the key (k3s) |
+| `make k3s-install MCP=1` · `k3s-smoke MCP=1` | `dev/k3s-mcp-values.yaml` (`kagent.enabled`; the API admits only Traefik and the `kagent` namespace), then `mcp-smoke` through the ingress plus `scripts/k3s-mcp-client.sh`: the official Python SDK in a pod in namespace `kagent` with its key from a Secret (`Bearer sdg_…`) calling the Service URL, and a pod in another namespace refused by the NetworkPolicy. CI runs `SSO=1 SMTP=1 MCP=1` |
 | `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then deletes the idea. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
@@ -97,7 +102,13 @@ about 10 s; `SOUNDINGS_TEST_MAILPIT=0` skips, `SOUNDINGS_TEST_MAILPIT_SMTP=host:
 ALTCHA, sends through Mailpit the same way and renders the PDF with the real WeasyPrint
 child, read back with `pypdf` (a dev dependency). PDF tests need Pango on the host (it
 is installed here; CI installs it or runs on the Ubuntu image), else they skip.
-`tests/identity/test_keycloak.py`
+`test_phase5_acceptance.py` (about 50 s) runs the app behind a real uvicorn with the demo
+data and drives the contract §3.9 story with the official `mcp` client over TCP.
+API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
+layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
+`make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
+`httpx2.ASGITransport` inside the app's lifespan: `Client(streamable_http_client(url,
+http_client=…), mode="auto" | "legacy")` (both handshakes). `tests/identity/test_keycloak.py`
 runs a real Keycloak 26 testcontainer (about 45 s of `test`): `SOUNDINGS_TEST_KEYCLOAK=0`
 skips it, `SOUNDINGS_TEST_KEYCLOAK_URL=<url>` reuses a running Keycloak with the dev
 realm (CI loads it with `dev/keycloak/import_realm.py`). The other SSO tests use the fake
@@ -128,7 +139,12 @@ screenshots: `SCREENSHOTS=1 npx playwright test notifications-screenshots` →
 submission off; fixtures CUST-3 (a proposal with threads), CUST-4 (ready to start),
 GREEN-9…12 (public submissions); the mock ALTCHA checks replay only (test the real
 widget against the backend). Phase 4 mock screenshots: `SCREENSHOTS=1 npx playwright
-test proposal-screenshots public-screenshots` → `docs/screenshots/phase-4/mock/`.
+test proposal-screenshots public-screenshots` → `docs/screenshots/phase-4/mock/`. Phase 5
+mock: fixtures in `src/mocks/phase5-fixtures.ts` (Alice's three keys, Mateo's dormant key,
+the Research agent's key, four pending suggestions on CUST-3; `frontend/README.md`);
+⌘K has "API keys" (everyone) and "All API keys" (platform admins). Phase 5 mock
+screenshots: `SCREENSHOTS=1 npx playwright test api-keys-screenshots` →
+`docs/screenshots/phase-5/mock/`.
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -182,8 +198,18 @@ has 48 ideas (CUST-21 approved from the public form, CUST-22/23 in the moderatio
 queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators.
 `screenshots:phase4` writes `docs/screenshots/phase-4/` (12 screens × 1440 light/dark and
 390), `pdf/` (the exported PDF and its pages) and `emails/` (as Mailpit received them).
+**API keys and MCP (Phase 5):** specs use keys only through `tests/support/mcp.ts`
+(`KeyClient`: `Authorization: Bearer`, no cookie or CSRF; `rest()` for `/api/v1`, `rpc()` /
+`call()` / `ok()` / `fails()` for `/mcp`; each client claims its own address with
+`X-Forwarded-For`, since refused keys count 30 a minute per address) and make keys with
+`api.createApiKey(...)`, revoking them when they end (25 per user). Specs that end
+someone's sessions or deactivate them create that person (`newPerson`).
+`screenshots:phase5` writes `docs/screenshots/phase-5/` (7 screens × 1440 light/dark and
+390; the shown key is revoked at once). Contract rules not built yet are pinned as
+expected failures (`test.fail(true, …)` in Playwright, `@pytest.mark.xfail(strict=True)`
+in pytest), which fail loudly once fixed: then delete the mark.
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
-`docs/test-plans/phase-1.md` … `phase-4.md`.
+`docs/test-plans/phase-1.md` … `phase-5.md`.
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
@@ -296,8 +322,12 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   is exactly a canonical token), never links; comment boxes show "@Name" with a tint
   (`features/idea/mention-highlights.tsx`) while the stored text keeps the tokens.
   "Mark all read" is a deferred commit: it waits for its Undo toast (`api/undo.ts`),
-  like comment delete. Theme utilities for features: `mention-tint`,
-  `max-h-popover-tall`, `avatar-tint`, `scrollbar-none` (`styles/theme.css`).
+  like comment delete (so is discarding a proposal suggestion). Theme utilities for features: `mention-tint`,
+  `max-h-popover-tall`, `avatar-tint`, `scrollbar-none` (`styles/theme.css`). Phase 5:
+  rows that scroll sideways (`TabsList`, the settings row) fade the edge with more
+  (`useScrollFade` in `components/ui/scroll-fade.ts` + `scroll-fade-x`); `CodeSnippet`
+  wraps long lines; the secret dialog never puts the key in a toast, URL, storage or
+  draft and `reset()`s the create mutation after closing.
 - **Proposals** (contract-phase4 §3.1–3.4): one Markdown text per fixed template section,
   saved per section with `base_version` (409 `proposal_conflict` carries `current`); a
   save locks the project `FOR KEY SHARE` then the idea `FOR SHARE`. Section Markdown is
@@ -342,6 +372,21 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   name (UX M3; `resolve` and the settings preview). The signed-in app always uses the
   global branding; its UI text stays Inter (the brand font is `font-brand`: titles,
   wordmark, public pages).
+- **API keys and MCP** (contract-phase5, role matrix §5–6, ADR 0013): `ApiKeySource` is
+  the first principal source; a bearer token never falls back to the cookie and needs no
+  CSRF. Effective permission = the owner's live permission ∩ scopes ∩ projects, through
+  the same policy; every operation is classified for keys in
+  `app.authz.keys.ROUTE_KEY_ACCESS` (deny by default; a new route needs a row);
+  `require_view` needs `read`. Key management, admin, settings, the inbox, `idea.delete`
+  and `idea.moderate` are session only. `get_principal` returns the stored principal
+  as is. Deactivation revokes keys (`api_keys.service.revoke_all_for_user`). Service
+  accounts never own an idea (c4, c21) or hold the admin role (409 `system_account`),
+  and their first submission is left out of the aggregate. `/mcp` (`app/mcp/`) reuses the
+  REST services for every tool; the one dispatcher validates, applies the write cap,
+  runs one transaction and writes exactly one `mcp.call` audit entry per `tools/call`
+  (never arguments; deleted after 90 days by the hourly schedule). Held ideas are
+  `not_found` through MCP for everyone. Never log or return a key after creation, the
+  `Authorization` header or tool arguments.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -409,10 +454,17 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   Mailpit's inbox is shared by a whole e2e run: filter by recipient and time. aiosmtplib
   tries STARTTLS opportunistically unless told not to: `security=none` passes
   `start_tls=False`.
+- **MCP SDK (`mcp` 2.2):** it uses `httpx2` (not `httpx`) for its client; `send_ping`
+  raises a DeprecationWarning, which pytest's warnings-as-errors turns into a failure (send
+  a raw `ping`); its streamable-HTTP session manager keeps its task group in a task of its
+  own (pytest-asyncio enters and leaves the lifespan in different tasks); its loggers are
+  held at WARNING (it logs every request at INFO). Claude Desktop needs the `mcp-remote`
+  bridge (custom connectors only do OAuth). On k3s's Traefik 2.11 an `Exact` `/mcp`
+  Ingress path loses to `/`: use `Prefix`.
 - **Undo inside sheets:** a toast's Undo can't be clicked while a modal sheet is open
   (the sheet blocks outside clicks), so destructive actions in sheets confirm instead.
 - **Library pins that matter:** TypeScript 5.9.x (7.x breaks typescript-eslint and
-  openapi-typescript), MSW 2.15, `mcp` 2.x (`MCPServer`, not `FastMCP`), WeasyPrint 70
+  openapi-typescript), MSW 2.15, `mcp` 2.x (2.2: the low-level `Server`, not `FastMCP`), WeasyPrint 70
   (new URL-fetcher API), Python `altcha` 2.x with the `altcha@3` widget. OIDC is httpx +
   `joserfc` (no Authlib: `authlib.jose` is deprecated and its Starlette client isn't used).
 - **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
@@ -542,3 +594,25 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   (known issues and deferred items there). Test plan `docs/test-plans/phase-4.md`,
   screenshots `docs/screenshots/phase-4/` (+ `pdf/`, `emails/`, `mock/`). Decisions:
   `docs/decisions.md` (Phase 4). Stop for the human's review before Phase 5.
+- **Phase 5** (API keys and MCP): personal API keys (`sdg_` + lookup id + secret, SHA-256
+  stored, shown once; scopes `read`/`write`/`evaluate`/`mcp` with `write`/`evaluate`
+  including `read`; optional expiry and project restriction; 25 per user; dormant after 30
+  days without sign-in; immutable) as the first principal source, narrowed by the policy
+  and the per-operation key table (`app/authz/keys.py`); throttles (30 failures per
+  address, 300 requests and 30 writes per key a minute); Settings → API keys (presets, the
+  one-time secret with Claude Code / Claude Desktop / `mcpServers` / curl examples,
+  revoke) and Settings → All API keys; the MCP server at `/mcp` (`app/mcp/`: stateless
+  JSON, Origin check, Host-check exempt, nine tools over the REST services, blind and
+  hold filtering, one `mcp.call` audit entry per call, 90-day retention); proposal
+  suggestions (`propose_proposal_section`, REST create/list/accept/discard, the editor's
+  cards with Accept/Discard); service accounts never own or admin and their evaluations
+  stay out of the aggregate; Helm `ingress.mcp`, `kagent.*` (RemoteMCPServer example,
+  NetworkPolicy), `make mcp-smoke`, `k3s-smoke MCP=1`. Integration (2026-10-06): QA's six
+  defects fixed (deactivation revokes keys, `/.well-known` kept from the SPA, agents'
+  evaluations out of the aggregate, no agent owners or admins, `get_principal`, the
+  `mcp.call` cleanup scheduled) and the visual nits (wrapping code blocks, faded scroll
+  edges on tab rows, a "Full access" chip, admin column widths, blank diff lines); every
+  check green in both e2e modes, `make mcp-smoke` against the e2e stack. Guides:
+  `docs/mcp.md`, user and operator guides; test plan `docs/test-plans/phase-5.md`,
+  screenshots `docs/screenshots/phase-5/` (+ `mock/`); decisions `docs/decisions.md`
+  (Phase 5). Next: code-reviewer and ux-reviewer, then the human's review before Phase 6.

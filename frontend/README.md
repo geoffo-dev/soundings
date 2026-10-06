@@ -96,11 +96,13 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   Notifications · API keys, then (platform admins only, after a divider) Users · Groups · Sign-in
   (SSO) · Email · Branding · All API keys · Audit log.
 - **API keys (Phase 5, contract-phase5 §3.10):** `features/api-keys/`. Settings → API keys lists
-  your keys (prefix, scope chips, projects, expiry, last use; Dormant/Expired badges), "Create
+  your keys (prefix, scope chips, all four as one "Full access" chip, projects, expiry, last use;
+  Dormant/Expired badges), "Create
   key" (`create-key-dialog`: presets, `read` ticked and locked under Write/Evaluate, expiry
   presets or a date, an optional project restriction; rules in `key-rules.ts`), the one-time
-  secret (`secret-dialog`: Copy, ready-made MCP config / Claude Code / curl with the key filled
-  in; it never goes into a toast, URL, storage or draft, and the create mutation is `reset()`
+  secret (`secret-dialog`: Copy, ready-made MCP config / Claude Code / Claude Desktop (through
+  `mcp-remote` with a header file, as `docs/mcp.md`) / curl with the key filled in; code blocks
+  wrap long lines instead of scrolling; it never goes into a toast, URL, storage or draft, and the create mutation is `reset()`
   once the dialog has closed, so the secret leaves React Query's cache), Revoke (confirmed: no
   undo) and "Connect an MCP client" (`connect-mcp`, `snippets.ts`). Admin settings → All API keys
   (`admin-api-keys-page`): every key with its owner (AI badge for service accounts), a state

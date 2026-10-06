@@ -322,6 +322,15 @@ async def _require_an_admin_left(
     require(principal, Rule.PROJECT_MANAGE_MEMBERS, resource.replace(admins_after_change=remaining))
 
 
+def _refuse_admin_service_account(user: User, role: ProjectRole) -> None:
+    """A service account (an AI agent) is never a project admin: a person stays
+    accountable (contract-phase5 section 3.7; groups never contain service accounts)."""
+    if user.is_service_account and role is ProjectRole.ADMIN:
+        raise ConflictProblem(
+            "AI agents can be members or viewers, not admins.", code="system_account"
+        )
+
+
 async def add_member(
     db: AsyncSession, principal: Principal, project: Project, body: MemberAdd
 ) -> Member:
@@ -331,6 +340,7 @@ async def add_member(
         raise UserNotFoundProblem
     if await db.get(ProjectMember, (project.id, user.id)) is not None:
         raise ConflictProblem("Already a member of this project.", code="already_member")
+    _refuse_admin_service_account(user, body.role)
     member = ProjectMember(project_id=project.id, user_id=user.id, role=body.role)
     db.add(member)
     await db.flush()
@@ -355,8 +365,11 @@ async def update_member(
     body: MemberUpdate,
 ) -> Member:
     member = await _direct_member(db, project, user_id)
+    user = await db.get(User, user_id)
+    assert user is not None  # noqa: S101 - the membership's foreign key
     previous = member.role
     if body.role != previous:
+        _refuse_admin_service_account(user, body.role)
         member.role = body.role
         await _require_an_admin_left(db, principal, project, resource)
         await audit.record(
@@ -368,8 +381,6 @@ async def update_member(
             project_id=project.id,
             details={"rule": Rule.PROJECT_MANAGE_MEMBERS, "from_role": previous, "role": body.role},
         )
-    user = await db.get(User, user_id)
-    assert user is not None  # noqa: S101 - the membership's foreign key
     return _member_out(member, user)
 
 

@@ -221,10 +221,9 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'Soundings needs a platform admin',
     description: 'Make someone else a platform admin first.',
   },
-  system_account: {
-    title: 'System accounts can’t be changed like this',
-    description: 'Only their name and whether they are active can change.',
-  },
+  // The server's detail says what (an agent is never a project admin; service and
+  // break-glass accounts keep their email and platform-admin role).
+  system_account: { title: 'System accounts can’t be changed like this' },
   // Phase 3: email and notifications (contract-phase3 §4)
   too_many_mentions: {
     title: 'Too many people mentioned',

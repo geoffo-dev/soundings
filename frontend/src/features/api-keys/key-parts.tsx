@@ -7,9 +7,12 @@ import { WithTooltip } from '@/components/ui/tooltip'
 import { formatDateTime, formatShortDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
-import { SCOPE_COPY } from './key-rules'
+import { presetOf, SCOPE_COPY } from './key-rules'
 
-/** The scopes as quiet chips, in canonical order. */
+/**
+ * The scopes as quiet chips, in canonical order. All four are one "Full access"
+ * chip (the create dialog's preset of that name), so rows keep one line.
+ */
 export function ScopeBadges({
   scopes,
   className,
@@ -17,14 +20,25 @@ export function ScopeBadges({
   scopes: readonly ApiKeyScope[]
   className?: string
 }) {
+  const full = presetOf(scopes) === 'full'
   return (
     <span className={cn('inline-flex flex-wrap items-center gap-1', className)}>
       <span className="sr-only">Scopes: </span>
-      {scopes.map((scope) => (
-        <Badge key={scope} variant="outline">
-          {SCOPE_COPY[scope].label}
+      {full ? (
+        <Badge variant="outline">
+          Full access
+          <span className="sr-only">
+            {' '}
+            ({scopes.map((scope) => SCOPE_COPY[scope].label).join(', ')})
+          </span>
         </Badge>
-      ))}
+      ) : (
+        scopes.map((scope) => (
+          <Badge key={scope} variant="outline">
+            {SCOPE_COPY[scope].label}
+          </Badge>
+        ))
+      )}
     </span>
   )
 }

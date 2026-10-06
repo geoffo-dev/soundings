@@ -1,16 +1,27 @@
 import { Tabs as TabsPrimitive } from 'radix-ui'
-import type { ComponentProps } from 'react'
+import { type ComponentProps, useMemo } from 'react'
 
-import { cn } from '@/lib/utils'
+import { cn, mergeRefs } from '@/lib/utils'
+
+import { useScrollFade } from './scroll-fade'
 
 export const Tabs = TabsPrimitive.Root
 
-/** Underlined tabs (the idea page's Overview / Evaluations / Proposal). */
-export function TabsList({ className, ...props }: ComponentProps<typeof TabsPrimitive.List>) {
+/**
+ * Underlined tabs (the idea page's Overview / Evaluations / Proposal). Too many
+ * for the width (a phone), the row scrolls sideways and fades the edge with more.
+ */
+export function TabsList({ className, ref, ...props }: ComponentProps<typeof TabsPrimitive.List>) {
+  const fade = useScrollFade<HTMLDivElement>()
+  const merged = useMemo(() => mergeRefs(fade, ref), [fade, ref])
   return (
     <TabsPrimitive.List
+      ref={merged}
       data-slot="tabs-list"
-      className={cn('scrollbar-none flex items-center gap-4 overflow-x-auto border-b', className)}
+      className={cn(
+        'scrollbar-none flex items-center gap-4 overflow-x-auto border-b scroll-fade-x',
+        className,
+      )}
       {...props}
     />
   )

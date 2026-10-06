@@ -350,6 +350,10 @@ async def save_my_evaluation(
     if first_submission:
         evaluation.status = EvaluationStatus.SUBMITTED
         evaluation.submitted_at = now
+        if principal.user.is_service_account:
+            # An AI agent's evaluation is left out of the aggregate by default (role
+            # matrix section 3 rule 10); ``evaluation.include_ai`` changes it later.
+            evaluation.include_in_aggregate = False
     elif already_submitted:
         evaluation.edited_at = now
     await db.flush()

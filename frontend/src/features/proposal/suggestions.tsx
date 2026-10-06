@@ -307,7 +307,11 @@ function SuggestionCard({
   )
 }
 
-/** The unified diff: removed and added lines marked by sign and words, not colour alone. */
+/**
+ * The unified diff: removed and added lines marked by sign and words, not colour
+ * alone. A blank line is a paragraph break: a short gap in its band's colour, with
+ * no sign or words of its own.
+ */
 function DiffLines({ lines }: { lines: SuggestionLine[] }) {
   return (
     <div className="py-1.5 text-sm leading-relaxed">
@@ -316,6 +320,16 @@ function DiffLines({ lines }: { lines: SuggestionLine[] }) {
           <p key={index} className="px-3 py-0.5 text-muted italic">
             {line.count === 1 ? '1 unchanged line' : `${String(line.count)} unchanged lines`}
           </p>
+        ) : line.text.trim() === '' ? (
+          <div
+            key={index}
+            aria-hidden="true"
+            className={cn(
+              'h-2',
+              line.kind === 'added' && 'bg-success-subtle/60',
+              line.kind === 'removed' && 'bg-danger-subtle/60',
+            )}
+          />
         ) : (
           <p
             key={index}
@@ -332,7 +346,7 @@ function DiffLines({ lines }: { lines: SuggestionLine[] }) {
             {line.kind !== 'same' && (
               <span className="sr-only">{line.kind === 'added' ? 'Added: ' : 'Removed: '}</span>
             )}
-            <span className="min-w-0 flex-1">{line.text || ' '}</span>
+            <span className="min-w-0 flex-1">{line.text}</span>
           </p>
         ),
       )}

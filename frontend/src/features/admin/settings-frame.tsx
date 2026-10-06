@@ -1,9 +1,10 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 
 import { Page, PageHeader } from '@/components/layout/page'
 import { useCurrentUser } from '@/features/auth/current-user'
-import { cn } from '@/lib/utils'
+import { useScrollFade } from '@/components/ui/scroll-fade'
+import { cn, mergeRefs } from '@/lib/utils'
 
 /** The settings pages, in nav order. Admin pages are for platform admins only. */
 export const SETTINGS_PAGES = [
@@ -24,8 +25,8 @@ export const SETTINGS_PAGES = [
  * page with a row of sections, like project settings. Everyone has Account
  * (profile, appearance, projects they manage), Notifications (email
  * preferences) and API keys (theirs); platform admins also get Users, Groups,
- * Sign-in (SSO), Email, Branding, All API keys and the Audit log, after a divider. Anyone else never sees the admin
- * sections (and their URLs are a 404).
+ * Sign-in (SSO), Email, Branding, All API keys and the Audit log, after a
+ * divider. Anyone else never sees the admin sections (and their URLs are a 404).
  */
 export function SettingsFrame({ children }: { children: ReactNode }) {
   const me = useCurrentUser()
@@ -50,6 +51,8 @@ const navLink = cn(
 function SettingsNav({ admin }: { admin: boolean }) {
   const pages = SETTINGS_PAGES.filter((page) => admin || !page.admin)
   const listRef = useRef<HTMLUListElement>(null)
+  const fade = useScrollFade<HTMLUListElement>()
+  const ref = useMemo(() => mergeRefs(listRef, fade), [fade])
   const pathname = useLocation({ select: (location) => location.pathname })
   // On phones the row scrolls sideways: bring the current section into view (an
   // admin on Email or Audit log would otherwise see the row end at "SSO"). Only the
@@ -60,13 +63,17 @@ function SettingsNav({ admin }: { admin: boolean }) {
     if (!list || !active) return
     const row = list.getBoundingClientRect()
     const link = active.getBoundingClientRect()
-    const margin = 16
-    if (link.right > row.right) list.scrollLeft += link.right - row.right + margin
-    else if (link.left < row.left) list.scrollLeft -= row.left - link.left + margin
+    const margin = 40 // the padding and the faded edge
+    if (link.right > row.right - margin) list.scrollLeft += link.right - row.right + margin
+    else if (link.left < row.left + margin) list.scrollLeft -= row.left + margin - link.left
   }, [pathname, admin])
   return (
-    <nav aria-label="Settings sections" className="-mx-4 px-4 sm:mx-0 sm:px-0">
-      <ul ref={listRef} className="scrollbar-none flex items-center gap-4 overflow-x-auto border-b">
+    // On phones the row runs to the screen's edges, fading the side with more.
+    <nav aria-label="Settings sections" className="-mx-4 sm:mx-0">
+      <ul
+        ref={ref}
+        className="scrollbar-none flex items-center gap-4 overflow-x-auto border-b scroll-fade-x px-4 sm:px-0"
+      >
         {pages.map((page, index) => (
           <li key={page.to} className="flex shrink-0 items-center gap-4">
             {page.admin && !pages[index - 1]?.admin && (

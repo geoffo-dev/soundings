@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api_keys.tokens import hash_key
 from app.auth.key_auth import KEY_WRITE_THROTTLE
 from app.auth.throttle import Throttle
+from app.config import Settings
 from app.mcp import tools
 from app.mcp.audit import delete_expired_calls
 from app.models.activity import AuditLog, Comment
@@ -27,6 +28,7 @@ from app.models.base import utcnow
 from app.models.enums import IdeaStatus
 from app.models.idea import Idea
 from app.models.project import Project
+from app.notifications.schedule import run_schedule
 from tests.factories import add_evaluator, make_idea
 from tests.mcp.conftest import (
     AsAgent,
@@ -267,3 +269,24 @@ async def test_the_cleanup_removes_only_old_mcp_call_entries(
     left = list(await db_session.execute(select(AuditLog.action, AuditLog.created_at)))
     assert sorted(action for action, _ in left) == ["evaluation.submit", "mcp.call", "mcp.call"]
     assert all(created > old for action, created in left if action == "mcp.call")
+
+
+async def test_the_hourly_schedule_runs_the_mcp_call_cleanup(
+    app: FastAPI, settings: Settings, db_session: AsyncSession
+) -> None:
+    now = utcnow()
+    db_session.add_all(
+        [
+            AuditLog(
+                id=uuid4(), action="mcp.call", details={}, created_at=now - timedelta(days=91)
+            ),
+            AuditLog(id=uuid4(), action="mcp.call", details={}, created_at=now - timedelta(days=1)),
+        ]
+    )
+    await db_session.commit()
+
+    await run_schedule(app.state.sessionmaker, settings, now)
+
+    left = list(await db_session.scalars(select(AuditLog.created_at)))
+    assert len(left) == 1
+    assert left[0] > now - timedelta(days=2)

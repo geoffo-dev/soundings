@@ -467,8 +467,17 @@ async def set_owner(
         rule = decision.rule
     else:
         roles = await assignee_roles(db, loaded.project.id, [owner_id])
+        service_account = bool(
+            await db.scalar(select(User.is_service_account).where(User.id == owner_id))
+        )
         rule = Rule.IDEA_ASSIGN_OWNER
-        require(principal, rule, resource.replace(assignee_roles=(roles[owner_id],)))
+        require(
+            principal,
+            rule,
+            resource.replace(
+                assignee_roles=(roles[owner_id],), assignee_service_account=service_account
+            ),
+        )
     await _change_owner(db, principal, loaded, owner_id, rule=rule)
 
 

@@ -260,8 +260,8 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
           <TableHeader>
             <TableRow>
               <TableHead>Key and owner</TableHead>
-              <TableHead className="w-44">Scopes</TableHead>
-              <TableHead className="w-36">Projects</TableHead>
+              <TableHead className="w-48">Scopes</TableHead>
+              <TableHead className="w-44">Projects</TableHead>
               <TableHead className="w-28">Last used</TableHead>
               <TableHead className="w-28">Expires</TableHead>
               <TableHead className="w-20">
@@ -328,17 +328,20 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => voi
                 to="/settings/users/$userId"
                 params={{ userId: owner.id }}
                 title={apiKey.owner_email || undefined}
-                className="shrink-0 text-secondary hover:text-primary hover:underline"
+                className="min-w-0 truncate text-secondary hover:text-primary hover:underline"
               >
                 {owner.display_name}
               </Link>
               {agent && (
-                <Badge variant="accent" className="h-4 px-1">
+                <Badge variant="accent" className="h-4 shrink-0 px-1">
                   AI agent
                 </Badge>
               )}
-              <span aria-hidden="true">·</span>
-              <code className="min-w-0 truncate font-mono">{apiKey.prefix}</code>
+              <span aria-hidden="true" className="shrink-0">
+                ·
+              </span>
+              {/* The prefix stays whole (it finds a leaked key); a long name gives way. */}
+              <code className="shrink-0 font-mono">{apiKey.prefix}</code>
             </span>
             <span className="truncate text-xs text-muted">
               {createdBySomeoneElse && apiKey.created_by

@@ -64,6 +64,15 @@ export type ProposalSection = Schemas['ProposalSection']
 export type ProposalSectionKey = Schemas['ProposalSectionKey']
 export type ProposalThread = Schemas['ProposalThread']
 export type ProposalThreadList = Schemas['ProposalThreadList']
+// Phase 5: API keys and proposal suggestions (contract-phase5).
+export type ApiKey = Schemas['ApiKey']
+export type ApiKeyList = Schemas['ApiKeyList']
+export type ApiKeyScope = Schemas['ApiKeyScope']
+export type CreatedApiKey = Schemas['CreatedApiKey']
+export type AdminApiKey = Schemas['AdminApiKey']
+export type AdminApiKeyPage = Schemas['AdminApiKeyPage']
+export type ProposalSuggestion = Schemas['ProposalSuggestion']
+export type ProposalSuggestionList = Schemas['ProposalSuggestionList']
 
 /** The seeded people (backend/app/seed/content.py), by username. */
 export const PEOPLE = {
@@ -610,6 +619,37 @@ export class Api {
 
   resolveThread(key: string, threadId: string): Promise<ProposalThread> {
     return this.send('PUT', `/ideas/${key}/proposal/threads/${threadId}/resolved`)
+  }
+
+  // --- API keys (contract-phase5 §2; session only) ------------------------------------
+  /** Creates a key for this user; the secret is in the result and nowhere else. */
+  createApiKey(body: {
+    name: string
+    scopes: ApiKeyScope[]
+    project_ids?: string[] | null
+    expires_at?: string | null
+  }): Promise<CreatedApiKey> {
+    return this.send('POST', '/me/api-keys', body, 201)
+  }
+
+  apiKeys(): Promise<ApiKeyList> {
+    return this.get('/me/api-keys')
+  }
+
+  revokeApiKey(id: string): Promise<null> {
+    return this.send('DELETE', `/me/api-keys/${id}`, undefined, 204)
+  }
+
+  /** Admin settings → API keys (platform admins), filtered like the page. */
+  adminApiKeys(filters: { q?: string; user_id?: string; state?: string } = {}) {
+    const query = new URLSearchParams({ limit: '100' })
+    for (const [key, value] of Object.entries(filters)) if (value) query.append(key, value)
+    return this.get<AdminApiKeyPage>(`/admin/api-keys?${query.toString()}`)
+  }
+
+  // --- Proposal suggestions (contract-phase5 §3.4) ---------------------------------------
+  suggestions(key: string): Promise<ProposalSuggestionList> {
+    return this.get(`/ideas/${key}/proposal/suggestions`)
   }
 
   /** An export as bytes (`markdown` or `pdf`), with the response for its headers. */

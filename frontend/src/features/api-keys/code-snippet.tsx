@@ -4,9 +4,10 @@ import { CopyButton } from '@/features/admin/copy-button'
 import { cn } from '@/lib/utils'
 
 /**
- * A copyable block of code or config (monospace, scrolls sideways rather than
- * wrapping, so pasted commands stay intact). `label` names it for the copy
- * button ("Copy the MCP config") and assistive tech.
+ * A copyable block of code or config (monospace). Long lines (a key in a header)
+ * wrap softly instead of running out of sight: the copy button and a selection
+ * both get the text as written, without the wrapping. `label` names it for the
+ * copy button ("Copy the MCP config") and assistive tech.
  */
 export function CodeSnippet({
   code,
@@ -26,12 +27,7 @@ export function CodeSnippet({
       <figcaption id={id} className="sr-only">
         {label}
       </figcaption>
-      <pre
-        // A scrolling region is focusable so keyboard users can scroll it (axe).
-        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-        tabIndex={0}
-        className="min-w-0 flex-1 overflow-x-auto px-3 py-2.5 pr-11 font-mono text-xs leading-relaxed text-primary"
-      >
+      <pre className="min-w-0 flex-1 px-3 py-2.5 pr-11 font-mono text-xs leading-relaxed wrap-anywhere whitespace-pre-wrap text-primary">
         <code>{code}</code>
       </pre>
       <div className="absolute top-1.5 right-1.5">
