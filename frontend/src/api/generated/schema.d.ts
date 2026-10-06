@@ -19,7 +19,7 @@ export interface paths {
         put?: never;
         /**
          * Register an AI agent
-         * @description Platform admins (platform.manage_agents, session only). Creates the agent, its service account (a member of each project it serves) and its API key (scopes read and mcp, plus evaluate for evaluate and write for research or draft_section; restricted to its projects; no expiry), and returns the key once with a Secret manifest (Cache-Control: no-store). The A2A URL is built from SOUNDINGS_KAGENT_URL, the protocol and the namespace and name. 403 break_glass_account (c20); 409 agent_taken (namespace and name already registered), too_many_agents (50); 422 invalid_project, namespace_not_allowed. Audited as ai_agent.register and api_key.create.
+         * @description Platform admins (platform.manage_agents, session only). Creates the agent, its service account (a member of each project it serves) and its API key (scopes read and mcp, plus evaluate for evaluate and write for research or draft_section; restricted to its projects; no expiry; MCP only, and only during the agent's running runs: c22), and returns the key once with a Secret manifest (Cache-Control: no-store). The A2A URL is built from SOUNDINGS_KAGENT_URL, the protocol and the namespace and name. 403 break_glass_account (c20); 409 agent_taken (namespace and name already registered), too_many_agents (50); 422 invalid_project, namespace_not_allowed. Audited as ai_agent.register and api_key.create.
          */
         post: operations["register_ai_agent"];
         delete?: never;
@@ -47,7 +47,7 @@ export interface paths {
         head?: never;
         /**
          * Change or disable an AI agent
-         * @description Platform admins (platform.manage_agents, session only). Display name (also its service account's), description, protocol, purposes, projects, enabled. Purposes and projects also change its key's scopes and project restriction (the same key keeps working) and add or remove its member role in those projects. enabled false: no new runs, its queued and running runs are cancelled, and its key is refused (401) until it is enabled again. Namespace and name can't change (422). 422 invalid_project. Audited as ai_agent.update.
+         * @description Platform admins (platform.manage_agents, session only). Display name (also its service account's), description, protocol, purposes, projects, enabled. Purposes and projects also change its key's scopes and project restriction (the same key keeps working) and add or remove its member role in those projects; dropping a purpose or a project cancels its active runs of that kind or there. enabled false: no new runs, its queued and running runs are cancelled and its key is revoked (audited api_key.revoke); after enabling it again, rotate the key. Namespace and name can't change (422). 422 invalid_project. Audited as ai_agent.update.
          */
         patch: operations["update_ai_agent"];
         trace?: never;
@@ -898,7 +898,7 @@ export interface paths {
         };
         /**
          * AI runs on an idea
-         * @description idea.view: the idea's AI runs, newest first, with the agents you may ask here (c10) and what you may do (ai.request_evaluation, ai.research, ai.draft_section, ai.cancel_run, evaluation.include_ai). Runs never carry score data.
+         * @description idea.view: the idea's AI runs, newest first, with the agents you may ask here (c10) and what you may do (ai.request_evaluation, ai.research, ai.draft_section, ai.cancel_run, evaluation.include_ai), each request action with the reason it is unavailable (AiBlockedReason). Runs never carry score data.
          */
         get: operations["list_idea_ai_runs"];
         put?: never;
@@ -920,7 +920,7 @@ export interface paths {
         put?: never;
         /**
          * Ask AI to evaluate
-         * @description ai.request_evaluation (the owner and admins; c6: evaluation open). Assigns the agent's service account as an evaluator if it isn't one (audited evaluator.add, activity evaluator_added) and queues a run: the agent reads the idea and the rubric through MCP and submits an evaluation with a rationale and sources per criterion, shown with an AI badge and left out of the aggregate until someone includes it. 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.
+         * @description ai.request_evaluation (the owner and admins; c6: evaluation open). Assigns the agent's service account as an evaluator if it isn't one (audited evaluator.add, activity evaluator_added; removed again if the run ends without its submitted evaluation) and queues a run: the agent reads the idea and the rubric through MCP and submits an evaluation with a rationale and sources per criterion, shown with an AI badge and left out of the aggregate until someone includes it. 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.
          */
         post: operations["request_ai_evaluation"];
         delete?: never;
@@ -2772,7 +2772,7 @@ export interface components {
             display_name: string;
             /**
              * Enabled
-             * @description Disabled: no new runs, active runs cancelled, its key refused (401).
+             * @description Disabled: no new runs, active runs cancelled and its key revoked (after enabling it again, rotate the key and update the agent's Secret).
              */
             enabled: boolean;
             /**
@@ -2780,7 +2780,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** @description Its API key (never the secret): restricted to its projects, scopes from its purposes. Null after a revoke in Admin settings -> API keys: rotate to get one. */
+            /** @description Its API key (never the secret): MCP only, restricted to its projects, scopes from its purposes, usable only for its running runs (c22). Null after a revoke (Admin settings -> API keys, disabling the agent, deactivating its service account): rotate to get one. */
             key: components["schemas"]["ApiKey"] | null;
             /**
              * Name
@@ -2862,7 +2862,10 @@ export interface components {
             project_ids: string[];
             /** @description Null: SOUNDINGS_AI_DEFAULT_PROTOCOL. */
             protocol?: components["schemas"]["AiAgentProtocol"] | null;
-            /** Purposes */
+            /**
+             * Purposes
+             * @description 1-3 distinct kinds (duplicates are dropped).
+             */
             purposes: components["schemas"]["AiRunKind"][];
         };
         /** AiAgentList */
@@ -2977,7 +2980,8 @@ export interface components {
          * AiAgentUpdate
          * @description Change an agent (at least one field). Namespace and name can't change: register
          *     another agent. Purposes and projects also change its key's scopes and restriction
-         *     (the same key keeps working) and its memberships.
+         *     (the same key keeps working) and its memberships; dropping a purpose or a project
+         *     cancels the agent's active runs of that kind or in that project.
          */
         AiAgentUpdate: {
             /** Description */
@@ -2986,7 +2990,7 @@ export interface components {
             display_name?: string | null;
             /**
              * Enabled
-             * @description false: no new runs, active runs cancelled, its key refused until enabled.
+             * @description false: no new runs, active runs cancelled, its key revoked. true again: rotate the key to get a new one.
              */
             enabled?: boolean | null;
             /** Project Ids */
@@ -2996,8 +3000,17 @@ export interface components {
             purposes?: components["schemas"]["AiRunKind"][] | null;
         };
         /**
+         * AiBlockedReason
+         * @description Why an AI action is unavailable on this idea now (``AiPermissions.*_blocked_by``),
+         *     so the idea page can disable it with a reason. When several apply, the first in this
+         *     order (the order the request checks them).
+         * @enum {string}
+         */
+        AiBlockedReason: "not_allowed" | "ai_off" | "project_archived" | "awaiting_moderation" | "idea_closed" | "evaluation_closed" | "proposal_not_available" | "no_proposal" | "no_agent";
+        /**
          * AiPermissions
-         * @description What you may do with AI on this idea now (rules, conditions and c10 included).
+         * @description What you may do with AI on this idea now (rules, conditions and c10 included). Each
+         *     request flag comes with the reason it is false (null while true).
          */
         AiPermissions: {
             /**
@@ -3025,6 +3038,14 @@ export interface components {
              * @description ai.research: not closed (c5), a research agent.
              */
             can_research: boolean;
+            /** @description Why can_draft_section is false (null when true). */
+            draft_section_blocked_by: components["schemas"]["AiBlockedReason"] | null;
+            /** @description Why can_include_ai is false: not_allowed, project_archived or awaiting_moderation (null when true). */
+            include_ai_blocked_by: components["schemas"]["AiBlockedReason"] | null;
+            /** @description Why can_request_evaluation is false (null when true). */
+            request_evaluation_blocked_by: components["schemas"]["AiBlockedReason"] | null;
+            /** @description Why can_research is false (null when true). */
+            research_blocked_by: components["schemas"]["AiBlockedReason"] | null;
         };
         /**
          * AiRun
@@ -3115,7 +3136,7 @@ export interface components {
             event_count: number;
             /**
              * Events
-             * @description Oldest first, at most 200.
+             * @description Oldest first, at most 200 (the final event included).
              */
             events: components["schemas"]["AiRunEvent"][];
             /** Finished At */
@@ -3240,7 +3261,7 @@ export interface components {
             evaluation_id: string | null;
             /**
              * Note Id
-             * @description research: the research note (activity item id).
+             * @description research: the research note: its activity item id (ai_runs.activity_event_id).
              */
             note_id: string | null;
             /**
@@ -3288,11 +3309,14 @@ export interface components {
             kagent_token_set: boolean;
             /** Kagent Url */
             kagent_url: string;
-            /** Max Concurrent Runs */
+            /**
+             * Max Concurrent Runs
+             * @description Runs at once per worker process (the ai queue's own pool).
+             */
             max_concurrent_runs: number;
             /**
              * Mcp Url
-             * @description The MCP URL agents are told to use.
+             * @description The URL to give the agent's RemoteMCPServer (shown to admins; never sent to agents, which use only the MCP server their operator configured).
              */
             mcp_url: string;
             /** Run Timeout Seconds */
@@ -3722,19 +3746,24 @@ export interface components {
         };
         /**
          * Citation
-         * @description A cited source, as people see it: written by an AI agent, untrusted. The SPA shows
-         *     the title as a plain link (``rel="noopener noreferrer nofollow"``, new tab) with
-         *     ``host`` next to it, so a title can't disguise where the link goes.
+         * @description A cited source, as people see it: written by an AI agent, untrusted, and **not
+         *     checked** by anyone (an agent without a web tool may invent sources). The SPA labels
+         *     sources "Cited by AI, not checked" and shows the title as a plain link
+         *     (``rel="noopener noreferrer nofollow"``, new tab) with ``host`` next to it, so a title
+         *     can't disguise where the link goes.
          */
         Citation: {
             /**
              * Host
-             * @description The URL's host name, shown next to the title.
+             * @description The URL's host name (ASCII: punycode for international names, so look-alike letters can't pass for another site), shown next to the title.
              */
             readonly host: string;
             /** Title */
             title: string;
-            /** Url */
+            /**
+             * Url
+             * @description An http(s) URL, plain ASCII (see CitationIn.url).
+             */
             url: string;
         };
         /** CommentActivity */
@@ -10996,7 +11025,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent). */
+            /** @description The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent). A run queued for longer than the queue timeout is finished timed_out instead and a new one starts (201). */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11095,7 +11124,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent). */
+            /** @description The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent). A run queued for longer than the queue timeout is finished timed_out instead and a new one starts (201). */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11194,7 +11223,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent). */
+            /** @description The same request is already active (queued or running) for this idea, agent and kind (and section): that run, unchanged (idempotent). A run queued for longer than the queue timeout is finished timed_out instead and a new one starts (201). */
             200: {
                 headers: {
                     [name: string]: unknown;

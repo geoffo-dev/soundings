@@ -46,7 +46,9 @@ _CREATED_OR_EXISTING: dict[int | str, dict[str, Any]] = {
     200: {
         "description": (
             "The same request is already active (queued or running) for this idea, agent "
-            "and kind (and section): that run, unchanged (idempotent)."
+            "and kind (and section): that run, unchanged (idempotent). A run queued for "
+            "longer than the queue timeout is finished timed_out instead and a new one "
+            "starts (201)."
         ),
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AiRun"}}},
     }
@@ -66,7 +68,8 @@ _REQUEST_ERRORS = (
     description=(
         "idea.view: the idea's AI runs, newest first, with the agents you may ask here (c10) "
         "and what you may do (ai.request_evaluation, ai.research, ai.draft_section, "
-        "ai.cancel_run, evaluation.include_ai). Runs never carry score data."
+        "ai.cancel_run, evaluation.include_ai), each request action with the reason it is "
+        "unavailable (AiBlockedReason). Runs never carry score data."
     ),
     responses=problems(401, 404),
 )
@@ -87,7 +90,8 @@ async def list_idea_ai_runs(
     description=(
         "ai.request_evaluation (the owner and admins; c6: evaluation open). Assigns the "
         "agent's service account as an evaluator if it isn't one (audited evaluator.add, "
-        "activity evaluator_added) and queues a run: the agent reads the idea and the "
+        "activity evaluator_added; removed again if the run ends without its submitted "
+        "evaluation) and queues a run: the agent reads the idea and the "
         "rubric through MCP and submits an evaluation with a rationale and sources per "
         "criterion, shown with an AI badge and left out of the aggregate until someone "
         "includes it. 201 with the new run, or 200 with the active one." + _REQUEST_ERRORS

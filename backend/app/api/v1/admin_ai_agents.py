@@ -5,7 +5,8 @@ Rule ``platform.manage_agents``: platform admins, **session only** (an API key g
 ``insufficient_scope``). Admin order of checks as in Phase 2: 401 -> 422 shape -> 403
 (``forbidden``; ``break_glass_account`` for creating a key, c20) -> 404 -> 422 business
 (``invalid_project``, ``namespace_not_allowed``) -> 409. Agents are never deleted:
-disable them (``PATCH enabled: false``).
+disable them (``PATCH enabled: false``, which also revokes their key). An agent's key
+works on ``/mcp`` only and only during its running runs (c22, run scope).
 """
 
 from __future__ import annotations
@@ -58,7 +59,8 @@ async def list_ai_agents(principal: PrincipalDep) -> AiAgentList:
     description=(
         _ADMIN + "Creates the agent, its service account (a member of each project it "
         "serves) and its API key (scopes read and mcp, plus evaluate for evaluate and "
-        "write for research or draft_section; restricted to its projects; no expiry), and "
+        "write for research or draft_section; restricted to its projects; no expiry; MCP "
+        "only, and only during the agent's running runs: c22), and "
         "returns the key once with a Secret manifest (Cache-Control: no-store). The A2A URL "
         "is built from SOUNDINGS_KAGENT_URL, the protocol and the namespace and name. 403 "
         "break_glass_account (c20); 409 agent_taken (namespace and name already "
@@ -93,9 +95,11 @@ async def get_ai_agent(principal: PrincipalDep, agent_id: AgentId) -> AiAgent:
         _ADMIN + "Display name (also its service account's), description, protocol, "
         "purposes, projects, enabled. Purposes and projects also change its key's scopes "
         "and project restriction (the same key keeps working) and add or remove its member "
-        "role in those projects. enabled false: no new runs, its queued and running runs "
-        "are cancelled, and its key is refused (401) until it is enabled again. Namespace "
-        "and name can't change (422). 422 invalid_project. Audited as ai_agent.update."
+        "role in those projects; dropping a purpose or a project cancels its active runs of "
+        "that kind or there. enabled false: no new runs, its queued and running runs are "
+        "cancelled and its key is revoked (audited api_key.revoke); after enabling it again, "
+        "rotate the key. Namespace and name can't change (422). 422 invalid_project. "
+        "Audited as ai_agent.update."
     ),
     responses=problems(401, 403, 404, 422),
 )

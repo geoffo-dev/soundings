@@ -1174,7 +1174,8 @@ _RUN_REQUESTS = ("request_ai_evaluation", "request_ai_research", "request_ai_sec
         ("register_ai_agent", None, _NEW_AGENT | {"protocol": "a2a"}),
         ("register_ai_agent", None, _NEW_AGENT | {"purposes": []}),
         ("register_ai_agent", None, _NEW_AGENT | {"purposes": ["summarise"]}),
-        ("register_ai_agent", None, _NEW_AGENT | {"purposes": ["evaluate"] * 4}),
+        ("register_ai_agent", None, _NEW_AGENT | {"purposes": "evaluate"}),
+        ("register_ai_agent", None, _NEW_AGENT | {"purposes": [None]}),
         ("register_ai_agent", None, _NEW_AGENT | {"project_ids": []}),
         ("register_ai_agent", None, _NEW_AGENT | {"project_ids": ["cust"]}),
         (
@@ -1257,6 +1258,8 @@ async def test_a_malformed_last_event_id_is_rejected(
         _NEW_AGENT | {"protocol": None, "description": ""},
         _NEW_AGENT
         | {"purposes": ["draft_section", "evaluate", "evaluate"], "protocol": "kagent_v1_0"},
+        # Duplicates are dropped before max_length (3) counts them (contract review C9).
+        _NEW_AGENT | {"purposes": ["evaluate"] * 4 + ["research"] * 2},
         {k: v for k, v in _NEW_AGENT.items() if k not in {"protocol", "description"}},
         _NEW_AGENT | {"name": "a", "namespace": "x" * 63},
     ],

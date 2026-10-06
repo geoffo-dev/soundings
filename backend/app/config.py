@@ -513,8 +513,10 @@ class Settings(DatabaseSettings):
         ge=1,
         le=50,
         description=(
-            "Runs talking to agents at the same time, across every worker; the rest wait "
-            "queued, oldest first."
+            "Runs talking to agents at the same time per worker process: the worker "
+            "consumes the ai queue with a pool of this size, separate from "
+            "worker_concurrency (email, notifications, schedules), so AI runs never hold "
+            "those up. The rest wait queued, first in, first out."
         ),
     )
     ai_agent_namespaces: Annotated[list[str], NoDecode] = Field(
@@ -527,9 +529,9 @@ class Settings(DatabaseSettings):
     ai_mcp_url: str | None = Field(
         default=None,
         description=(
-            "The MCP URL agents use to reach Soundings (the chart sets the Service URL, "
-            "http://<release>.<namespace>.svc.cluster.local:<port>/mcp). Sent to agents as a "
-            "hint and shown in Admin settings; unset: the first base URL + /mcp."
+            "The MCP URL to configure in agents' RemoteMCPServer (the chart sets the Service "
+            "URL, http://<release>.<namespace>.svc.cluster.local:<port>/mcp). Shown in Admin "
+            "settings only, never sent to agents; unset: the first base URL + /mcp."
         ),
     )
 
@@ -884,8 +886,8 @@ class Settings(DatabaseSettings):
 
     @property
     def ai_mcp_url_effective(self) -> str:
-        """The MCP URL agents are told about: ``ai_mcp_url``, else the first base URL +
-        ``/mcp``."""
+        """The MCP URL Admin settings -> AI agents shows for agents' ``RemoteMCPServer``:
+        ``ai_mcp_url``, else the first base URL + ``/mcp``."""
         return self.ai_mcp_url or self.public_base_url + "/mcp"
 
     @property

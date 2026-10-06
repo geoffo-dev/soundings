@@ -4,15 +4,17 @@
   description, kagent ``namespace`` and ``name`` (DNS-1123 labels, unique together; the
   A2A URL is built from ``SOUNDINGS_KAGENT_URL`` and them, never stored), ``protocol``
   (``kagent_v0_10`` | ``kagent_v1_0``), ``purposes`` (a ``varchar[]`` of 1-3
-  ``evaluate | research | draft_section``), the service account it acts as
-  (``service_account_id``, unique), ``enabled`` and who registered it.
+  ``evaluate | research | draft_section``, each at most once), the service account it
+  acts as (``service_account_id``, unique), ``enabled`` and who registered it.
 * ``ai_agent_projects``: the projects each agent serves (cascade with either side).
 * ``ai_runs``: one AI job on an idea (kind, the section for ``draft_section``, who asked,
   status ``queued | running | succeeded | failed | cancelled | timed_out``, timeout,
   timestamps and heartbeat, cancel request, the agent's A2A task and context ids, a
-  sanitised error code and message, the event counter, and the result: an evaluation, a
-  proposal suggestion or the research note's activity event). At most one active run per
-  idea, agent, kind and section (``uq_ai_runs_active``, NULLS NOT DISTINCT).
+  sanitised error code and message, the event counter, the result: an evaluation, a
+  proposal suggestion or the research note's activity event (each indexed where set, for
+  the ``ON DELETE SET NULL`` cascades), and ``assigned_evaluator``: the run's request made
+  the agent the idea's evaluator). At most one active run per idea, agent, kind and
+  section (``uq_ai_runs_active``, NULLS NOT DISTINCT).
 * ``ai_run_events``: each run's progress events, numbered from 1 (the SSE event ids).
 * ``evaluation_scores.sources``: an AI evaluator's cited sources per criterion (a JSON
   array of at most five ``{title, url}`` objects; ``'[]'`` for every existing row).
@@ -21,9 +23,12 @@ Research notes need no table: they are ``activity_events`` rows of type
 ``ai_research_note`` (the note's Markdown and sources in ``payload``). The audit log
 needs no change.
 
-Downgrade drops the four tables and ``evaluation_scores.sources``: registered agents,
-run history and every AI evaluation's cited sources are lost (the evaluations
-themselves, their service accounts and keys stay).
+Downgrade first **revokes every agent's API key** (below 0011 nothing limits an agent's
+key to its runs, c22, so a kept key would act as a full project member) and deletes the
+research notes (``activity_events`` of type ``ai_research_note``, which older code
+can't show), then drops the four tables and ``evaluation_scores.sources``: registered
+agents, run history and every AI evaluation's cited sources are lost (the evaluations
+themselves and the service accounts stay; their keys stay listed, revoked).
 
 Hand-written to match the models exactly (``tests/test_domain_schema.py`` compares
 them). See docs/erd.md and docs/api/contract-phase6.md.
@@ -51,6 +56,11 @@ KINDS_SQL = "ARRAY['evaluate', 'research', 'draft_section']::varchar[]"
 PROTOCOLS = ("kagent_v0_10", "kagent_v1_0")
 STATUSES = ("queued", "running", "succeeded", "failed", "cancelled", "timed_out")
 ACTIVE = "status IN ('queued', 'running')"
+PURPOSES_DISTINCT = (
+    "(cardinality(purposes) < 2 OR purposes[1] <> purposes[2])"
+    " AND (cardinality(purposes) < 3"
+    " OR (purposes[1] <> purposes[3] AND purposes[2] <> purposes[3]))"
+)
 SECTION_KEYS = (
     "summary",
     "problem",
@@ -141,7 +151,7 @@ def _ai_agents() -> None:
         ),
         sa.CheckConstraint(
             f"cardinality(purposes) BETWEEN 1 AND 3 AND purposes <@ {KINDS_SQL}"
-            " AND array_position(purposes, NULL) IS NULL",
+            f" AND array_position(purposes, NULL) IS NULL AND {PURPOSES_DISTINCT}",
             name=op.f("ck_ai_agents_purposes"),
         ),
         _enum_check("protocol", PROTOCOLS, "ck_ai_agents_protocol"),
@@ -196,6 +206,9 @@ def _ai_runs() -> None:
         sa.Column("evaluation_id", sa.Uuid(), nullable=True),
         sa.Column("suggestion_id", sa.Uuid(), nullable=True),
         sa.Column("activity_event_id", sa.Uuid(), nullable=True),
+        sa.Column(
+            "assigned_evaluator", sa.Boolean(), server_default=sa.text("false"), nullable=False
+        ),
         _enum_check("kind", KINDS, "ck_ai_runs_kind"),
         _enum_check("section_key", SECTION_KEYS, "ck_ai_runs_section_key"),
         _enum_check("status", STATUSES, "ck_ai_runs_status"),
@@ -232,6 +245,10 @@ def _ai_runs() -> None:
         sa.CheckConstraint(
             "cancel_requested_by_id IS NULL OR cancel_requested_at IS NOT NULL",
             name=op.f("ck_ai_runs_cancel_requested_by_needs_at"),
+        ),
+        sa.CheckConstraint(
+            "NOT assigned_evaluator OR kind = 'evaluate'",
+            name=op.f("ck_ai_runs_assigned_evaluator_evaluate"),
         ),
         _fk("idea_id", "ideas.id", "fk_ai_runs_idea_id_ideas"),
         _fk("agent_id", "ai_agents.id", "fk_ai_runs_agent_id_ai_agents", None),
@@ -276,6 +293,13 @@ def _ai_runs() -> None:
     op.create_index(
         "ix_ai_runs_requested_by_id_created_at", "ai_runs", ["requested_by_id", "created_at"]
     )
+    for column in ("evaluation_id", "suggestion_id", "activity_event_id"):
+        op.create_index(
+            f"ix_ai_runs_{column}",
+            "ai_runs",
+            [column],
+            postgresql_where=sa.text(f"{column} IS NOT NULL"),
+        )
 
 
 def _ai_run_events() -> None:
@@ -321,6 +345,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Older code doesn't confine agents' keys to their runs (c22): revoke them all.
+    op.execute(
+        "UPDATE api_keys SET revoked_at = now()"
+        " WHERE revoked_at IS NULL"
+        " AND user_id IN (SELECT service_account_id FROM ai_agents)"
+    )
+    # Older code can't show research notes (and would show nothing in their place).
+    op.execute("DELETE FROM activity_events WHERE type = 'ai_research_note'")
     op.drop_constraint(
         op.f("ck_evaluation_scores_sources_array"), "evaluation_scores", type_="check"
     )

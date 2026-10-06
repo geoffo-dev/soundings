@@ -41,8 +41,9 @@ INSERT_AGENT = text(
 INSERT_RUN = text(
     "INSERT INTO ai_runs (id, idea_id, agent_id, kind, section_key, status, timeout_seconds,"
     " started_at, finished_at, error_code, error_message, evaluation_id, suggestion_id,"
-    " activity_event_id) VALUES (:id, :idea, :agent, :kind, :section, :status, :timeout,"
-    " :started, :finished, :error, :message, :evaluation, :suggestion, :event)"
+    " activity_event_id, assigned_evaluator) VALUES (:id, :idea, :agent, :kind, :section,"
+    " :status, :timeout, :started, :finished, :error, :message, :evaluation, :suggestion,"
+    " :event, :assigned)"
 )
 
 
@@ -76,6 +77,7 @@ def _run(idea: uuid.UUID, agent: object, **values: object) -> dict[str, object]:
         "evaluation": None,
         "suggestion": None,
         "event": None,
+        "assigned": False,
     }
     row.update(values)
     return row
@@ -131,7 +133,15 @@ async def test_agents_have_kubernetes_names_known_purposes_and_one_service_accou
         await _fails(
             db_session, INSERT_AGENT, _agent(other, ns=bad), "ck_ai_agents_namespace_format"
         )
-    for purposes in ("{}", "{evaluate,research,draft_section,evaluate}", "{summarise}", "{NULL}"):
+    for purposes in (
+        "{}",
+        "{evaluate,research,draft_section,evaluate}",
+        "{summarise}",
+        "{NULL}",
+        "{evaluate,evaluate}",
+        "{research,evaluate,research}",
+        "{evaluate,draft_section,draft_section}",
+    ):
         await _fails(
             db_session, INSERT_AGENT, _agent(other, purposes=purposes), "ck_ai_agents_purposes"
         )
@@ -220,12 +230,18 @@ async def test_run_states_are_consistent(db_session: AsyncSession) -> None:
         (_run(idea_id, a, kind="summarise"), "ck_ai_runs_kind"),
         (_run(idea_id, a, timeout=29), "ck_ai_runs_timeout_range"),
         (_run(idea_id, a, timeout=3601), "ck_ai_runs_timeout_range"),
+        (
+            _run(idea_id, a, kind="research", assigned=True),
+            "ck_ai_runs_assigned_evaluator_evaluate",
+        ),
     ]
     for values, constraint in cases:
         await _fails(db_session, INSERT_RUN, values, constraint)
 
     # A queued run cancelled or timed out in the queue never started.
-    await db_session.execute(INSERT_RUN, _run(idea_id, a, status="cancelled", finished=now))
+    await db_session.execute(
+        INSERT_RUN, _run(idea_id, a, status="cancelled", finished=now, assigned=True)
+    )
     await db_session.execute(
         INSERT_RUN,
         _run(
@@ -384,23 +400,40 @@ async def test_evaluation_scores_hold_at_most_five_sources(db_session: AsyncSess
 
 
 def test_0011_downgrade_drops_agents_runs_and_sources(scratch_database_url: str) -> None:  # noqa: F811
-    """Going back below 0011 drops the AI tables and the sources column; people,
-    evaluations and service accounts stay. Upgrading again recreates them matching the
-    models."""
+    """Going back below 0011 revokes every agent's key (older code doesn't confine it to
+    its runs, c22) and deletes research notes (older code can't show them), then drops
+    the AI tables and the sources column; people, evaluations, service accounts and other
+    keys stay. Upgrading again recreates them matching the models."""
     config = alembic_config(make_settings(database_url=scratch_database_url).sqlalchemy_url)
     command.upgrade(config, "head")
-    account = uuid.uuid4()
+    account, person, project = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     with psycopg.connect(_dsn(scratch_database_url)) as connection:
         connection.execute(
             "INSERT INTO users (id, email, display_name, is_service_account)"
-            " VALUES (%s, 'agent@soundings.invalid', 'Idea evaluator', true)",
-            (account,),
+            " VALUES (%s, 'agent@soundings.invalid', 'Idea evaluator', true),"
+            " (%s, 'person@example.com', 'Person', false)",
+            (account, person),
         )
         connection.execute(
             "INSERT INTO ai_agents (id, display_name, namespace, name, protocol, purposes,"
             " service_account_id) VALUES (%s, 'Idea evaluator', 'soundings', 'evaluator',"
             " 'kagent_v0_10', '{evaluate}', %s)",
             (uuid.uuid4(), account),
+        )
+        for owner, lookup in ((account, "agentKey0001"), (person, "personKey001")):
+            connection.execute(
+                "INSERT INTO api_keys (id, user_id, name, lookup_id, secret_hash, scopes,"
+                " created_auth_method) VALUES (%s, %s, 'Key', %s, %s, '{read,mcp}', 'sso')",
+                (uuid.uuid4(), owner, lookup, "0" * 64),
+            )
+        connection.execute(
+            "INSERT INTO projects (id, slug, key, name) VALUES (%s, 'demo', 'DEMO', 'D')",
+            (project,),
+        )
+        connection.execute(
+            "INSERT INTO activity_events (id, project_id, actor_id, type, payload) VALUES"
+            " (%s, %s, %s, 'ai_research_note', '{}'), (%s, %s, %s, 'comment', '{}')",
+            (uuid.uuid4(), project, account, uuid.uuid4(), project, person),
         )
 
     command.downgrade(config, "0010")
@@ -414,9 +447,15 @@ def test_0011_downgrade_drops_agents_runs_and_sources(scratch_database_url: str)
             " AND column_name = 'sources'"
         ).fetchone()
         users = connection.execute("SELECT count(*) FROM users").fetchone()
+        keys = connection.execute(
+            "SELECT user_id, revoked_at IS NOT NULL FROM api_keys ORDER BY lookup_id"
+        ).fetchall()
+        events = connection.execute("SELECT type FROM activity_events").fetchall()
     assert tables == []
     assert column is None
-    assert users == (1,)
+    assert users == (2,)
+    assert keys == [(account, True), (person, False)]
+    assert events == [("comment",)]
 
     command.upgrade(config, "head")
     command.check(config)
