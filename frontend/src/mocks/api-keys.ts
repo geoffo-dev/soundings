@@ -76,25 +76,33 @@ export function keyState(db: MockDb, key: MockApiKey, now = Date.now()): ApiKeyS
   return 'active'
 }
 
-/** Restricted projects that still exist and the owner can still view, by name. */
-function keyProjects(db: MockDb, key: MockApiKey, viewer: MockUser): ProjectRef[] {
+/** Restricted projects that still exist, by name, and whether the owner can view each. */
+function keyProjects(
+  db: MockDb,
+  key: MockApiKey,
+  owner: MockUser | undefined,
+): { project: ProjectRef; ownerCanView: boolean }[] {
   if (key.project_ids === null) return []
   return db.projects
     .filter((project) => key.project_ids?.includes(project.id))
-    .filter((project) => canViewProject(db, project, viewer))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map(projectRef)
+    .map((project) => ({
+      project: projectRef(project),
+      ownerCanView: owner ? canViewProject(db, project, owner) : false,
+    }))
 }
 
 export function apiKeyOut(db: MockDb, key: MockApiKey): ApiKey {
   const owner = findUser(db, key.user_id)
+  const projects = keyProjects(db, key, owner)
   return {
     id: key.id,
     name: key.name,
     prefix: keyPrefix(key),
     scopes: key.scopes,
     restricted: key.project_ids !== null,
-    projects: owner ? keyProjects(db, key, owner) : [],
+    projects: projects.filter((p) => p.ownerCanView).map((p) => p.project),
+    unavailable_project_count: projects.filter((p) => !p.ownerCanView).length,
     expires_at: key.expires_at,
     state: keyState(db, key),
     created_at: key.created_at,
@@ -106,6 +114,10 @@ export function adminApiKeyOut(db: MockDb, key: MockApiKey): AdminApiKey {
   const owner = findUser(db, key.user_id)
   return {
     ...apiKeyOut(db, key),
+    projects: keyProjects(db, key, owner).map((p) => ({
+      ...p.project,
+      owner_can_view: p.ownerCanView,
+    })),
     owner: owner
       ? userRef(owner)
       : { id: key.user_id, display_name: 'A deleted user', avatar_url: null, initials: '?' },

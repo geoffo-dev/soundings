@@ -10,11 +10,11 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import EvaluationStatus, IdeaStatus
+from app.models.enums import EvaluationStatus, IdeaStatus, ProjectRole
 from app.models.evaluation import Evaluation
 from tests.api_keys.helpers import API, World, audit_rows, key_client, key_row, make_key, problem
 from tests.conftest import Login
-from tests.factories import add_evaluator, criteria, make_idea, make_user
+from tests.factories import add_evaluator, add_member, criteria, make_idea, make_user
 
 
 async def _scores(db: AsyncSession, world: World, value: int) -> list[dict[str, Any]]:
@@ -165,3 +165,52 @@ async def test_deactivating_a_user_revokes_their_keys_for_good(
     assert all(entry.details["reason"] == "deactivated" for entry in revokes)
     assert all(entry.details["rule"] == "platform.manage_users" for entry in revokes)
     assert all(entry.actor_id == world.platform.id for entry in revokes)
+
+
+# --- People search (security review L4) ---------------------------------------------------
+async def _names(app: FastAPI, key: str, query: str = "") -> set[str]:
+    async with key_client(app, key) as client:
+        response = await client.get(f"{API}/users", params={"q": query, "limit": 100})
+    assert response.status_code == 200, response.text
+    return {item["display_name"] for item in response.json()["items"]}
+
+
+async def test_an_agent_finds_only_people_who_share_a_project_with_it(
+    app: FastAPI, world: World, db_session: AsyncSession
+) -> None:
+    """An agent's key searches the people of its own projects, not the whole directory
+    (a person's key, like a session, still finds everyone)."""
+    tia = await make_user(db_session, "Tia Tools")
+    await add_member(db_session, world.tools, tia, ProjectRole.MEMBER)
+    agent = await make_key(db_session, world.bot, scopes=["read"])
+    person = await make_key(db_session, world.carol, scopes=["read"])
+
+    found = await _names(app, agent)
+    everyone = await _names(app, person)
+
+    assert found == {"Lena Lead", "Carol Chen", "Vic Viewer"}
+    assert {"Tia Tools", "Pat Platform", "Otto Outsider"} <= everyone
+    assert await _names(app, agent, "tia") == set()
+    assert await _names(app, agent, "carol") == {"Carol Chen"}
+
+
+async def test_an_agents_people_search_stays_inside_its_keys_projects(
+    app: FastAPI, world: World, db_session: AsyncSession
+) -> None:
+    tia = await make_user(db_session, "Tia Tools")
+    await add_member(db_session, world.tools, tia, ProjectRole.MEMBER)
+    await add_member(db_session, world.tools, world.bot, ProjectRole.MEMBER)
+    unrestricted = await make_key(db_session, world.bot, scopes=["read"])
+    cust_only = await make_key(db_session, world.bot, scopes=["read"], project_ids=[world.cust.id])
+
+    assert "Tia Tools" in await _names(app, unrestricted)
+    assert await _names(app, cust_only) == {"Lena Lead", "Carol Chen", "Vic Viewer"}
+
+
+async def test_an_agent_without_a_project_finds_nobody(
+    app: FastAPI, world: World, db_session: AsyncSession
+) -> None:
+    loner = await make_user(db_session, "Idle Agent", service_account=True)
+    key = await make_key(db_session, loner, scopes=["read"])
+
+    assert await _names(app, key) == set()

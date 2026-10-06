@@ -255,17 +255,22 @@ they never appear in exports.
 
 ### Suggestions [Phase 5]
 
-An MCP client (or, from Phase 6, an AI agent) can **suggest** the whole new text of a
-section; it doesn't change the proposal. Pending suggestions appear under their section
-("1 suggestion", and a count in the outline and the editor's top bar) with who suggested
-it ("via MCP", or an AI badge for an agent), when, and the changes against the current
-text (**Changes**) or the text alone (**Suggested text**). If the section was saved since,
-it says "The section has changed since this was suggested". Everyone who can read the
-proposal sees suggestions; the owner and admins **Accept** (the text is saved as a normal
-section save, with Undo; if you have unsaved edits in that section it asks first, and a
-conflicting save offers **Accept anyway**) or **Discard** (with Undo). A newer suggestion
-from the same person for the same section replaces their earlier one; nobody is notified
-of suggestions in this version.
+An AI assistant connected with someone's key (or, from Phase 6, an AI agent) can
+**suggest** the whole new text of a section; it doesn't change the proposal. Pending
+suggestions appear under their section ("1 suggestion", and a count in the outline and
+the editor's top bar) with who suggested it ("via assistant", or an AI badge for an
+agent, with "Written by an AI agent: check the facts"), when, and the changes against the
+current text (**Changes**, with the changed words highlighted inside each line) or the
+text alone (**Suggested text**). Each card says who decides ("Ada decides whether to use
+it."). If the section was saved since, it says "The section has changed since this was
+suggested". Everyone who can read the proposal sees suggestions; the owner and admins
+**Accept** (the text is saved as a normal section save, with Undo; any edit still being
+saved is saved first, and it asks only if your edits couldn't be saved; a conflicting save
+offers **Accept anyway**) or **Discard** (with Undo); focus then moves to the next pending
+suggestion. For the owner and admins the idea's **Proposal** tab shows how many
+suggestions wait for a decision ("3 to review" on phones). A newer suggestion from the
+same person for the same section replaces their earlier one; nobody is notified of
+suggestions in this version.
 
 ### Exporting to PDF or Markdown
 
@@ -414,22 +419,29 @@ app, and only what its scopes allow.
 ### Creating and revoking a personal API key
 
 **Settings → API keys** (also in ⌘K) lists your keys: name, the start of the key
-(`sdg_…`), scopes, projects, expiry and when it was last used. **Create key** asks for:
+(`sdg_…`; hover it for when it was created), what it **can** do in plain words ("Read
+and evaluate", "Also through AI assistants"), projects, expiry ("in 3 days" stands out in
+the last week; expired keys are listed last, quieter, with **Remove**) and when it was
+last used. If you lose access to a project a key is restricted to, the key stops reaching
+it and the row says "+1 project you can no longer open". **Create key** asks for:
 
 - **A name** that says what it's for ("Claude Desktop", "Weekly report"); each of your
   keys needs a different one.
 - **Scopes**, or one of four presets: **Read only** (scripts and reports that look),
-  **MCP client** (an assistant that searches and reads), **AI evaluator** (it also submits
-  your evaluations) and **Full access**. *Read* sees what you see; *Write* creates and
-  changes ideas, comments, owners, evaluators, statuses and proposals; *Evaluate* saves
-  and submits your own evaluations, blind as in the app; *MCP* lets an MCP client connect
-  (its tools also need Read, Write or Evaluate). Write and Evaluate include Read.
+  **Read with an assistant** (an AI assistant that searches and reads), **Evaluate with an
+  assistant** (it also submits evaluations as you: they count as yours) and **Full
+  access**. *Read* sees what you see; *Write* creates and changes ideas, comments, owners,
+  evaluators, statuses and proposals; *Evaluate* saves and submits your own evaluations,
+  blind as in the app; *AI assistants (MCP)* lets an AI assistant connect (its tools also
+  need Read, Write or Evaluate). Write and Evaluate include Read. Under the form, "This
+  key can …" says in plain words what the key will be able to do.
 - **Expiry**: 30 days, 90 days, a year, a date, or never.
 - **Projects**: all the projects you can access (now and later), or only some.
 
 The key is shown **once**, with Copy and ready-made examples: store it somewhere safe,
-because Soundings keeps only a fingerprint of it. After that the list shows only its
-start. A key can't be changed later: create a new one and revoke the old.
+because Soundings keeps only a fingerprint of it ("Treat it like a password"), then
+choose **I've copied it**; closing without copying asks once more. After that the list
+shows only its start. A key can't be changed later: create a new one and revoke the old.
 
 **Revoke** asks first, then the key stops at once: whatever uses it gets "unauthorized"
 on its next request. Signing out doesn't stop keys. A key also pauses when you haven't
@@ -439,12 +451,13 @@ Some things always need you signed in, so no key can do them: deleting or modera
 ideas, project and admin settings, your inbox, and managing keys. You can have up to 25
 keys. The break-glass admin account can't create keys.
 
-### Connecting an MCP client
+### Connecting an AI assistant (MCP client)
 
-Below your keys, **Connect an MCP client** shows the server URL (`<this address>/mcp`),
-the header (`Authorization: Bearer <your key>`) and examples for Claude Code, Claude
-Desktop, other clients that take an `mcpServers` config, and curl. Create a key with the
-MCP client or AI evaluator preset and paste it in; then ask the assistant something like
+Below your keys, **For developers and AI assistants** (folded; open it) shows the server
+URL (`<this address>/mcp`), the header (`Authorization: Bearer <your key>`), a link to
+the API reference and examples for Claude Code, Claude Desktop, other clients that take
+an `mcpServers` config, and curl. Create a key with the **Read with an assistant** or
+**Evaluate with an assistant** preset and paste it in; then ask the assistant something like
 "Which Soundings ideas are waiting for my evaluation?". The client can list projects,
 search and read ideas, rubrics and proposals, create ideas, comment, submit your
 evaluations and suggest proposal text, within the key's scopes and projects. It sees what
@@ -681,9 +694,10 @@ Sending a test email and retrying are recorded in the audit log, without the add
 ### All API keys [Phase 5]
 
 **Settings → All API keys** lists every key people and AI agents have that isn't revoked:
-owner (with an AI badge for agents), name, the key's start (`sdg_` and 12 characters),
-scopes, projects, when it was created and last used, expiry, and an **Expired** or
-**Dormant** badge (the owner hasn't signed in for 30 days). Search by name, owner, or a
+the key's name and start (`sdg_` and 12 characters), the owner (an AI agent's avatar says
+so) with a **Dormant** badge when they haven't signed in for 30 days, scopes, projects
+(a project the owner can no longer open is struck through: the key no longer reaches
+it), when it was last used, and expiry (or **Expired**). Search by name, owner, or a
 key's start: pasting a whole leaked key works, and only its start is ever searched for.
 Filter by state; a user's admin page links to their keys. **Revoke** stops a key at once.
 "Sign out everywhere" ends a person's sessions but not their keys; deactivating them

@@ -43,7 +43,7 @@ import {
   toAdminKeyFilters,
   type AdminKeysSearch,
 } from './admin-keys-search'
-import { KeyExpiry, KeyLastUsed, KeyProjects, KeyStateBadge, ScopeBadges } from './key-parts'
+import { AdminKeyProjects, KeyExpiry, KeyLastUsed, KeyStateBadge, ScopeBadges } from './key-parts'
 import { RevokeKeyDialog } from './revoke-key-dialog'
 
 /**
@@ -267,7 +267,7 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
             <TableRow>
               <TableHead>Key and owner</TableHead>
               <TableHead className="w-40">Scopes</TableHead>
-              <TableHead className="w-36">Projects</TableHead>
+              <TableHead className="w-40">Projects</TableHead>
               <TableHead className="w-28">Last used</TableHead>
               <TableHead className="w-28">Expires</TableHead>
               <TableHead className="w-20">
@@ -368,7 +368,7 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => voi
         <ScopeBadges scopes={apiKey.scopes} />
       </TableCell>
       <TableCell label="Projects" className="min-w-0">
-        <KeyProjects apiKey={apiKey} />
+        <AdminKeyProjects apiKey={apiKey} />
       </TableCell>
       <TableCell label="Last used">
         <KeyLastUsed at={apiKey.last_used_at} />

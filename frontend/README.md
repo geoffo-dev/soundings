@@ -110,8 +110,11 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   can …" line above the create dialog's buttons, and "Treat it like a password: anyone who has it
   can act as you: …" on the new key. The new-key dialog's "I've copied it" (or Esc, ×) asks once
   when nothing with the key was copied. Within 7 days of its expiry a key says "in 3 days" in a
-  warning tone. Admin settings → All API keys (`admin-api-keys-page`): every key with its owner
-  (the avatar marks an agent), a state filter, `?user_id=` (linked from a user's sheet and the
+  warning tone. Restricted projects the owner can no longer open show as "+N project(s) you can
+  no longer open" (`KeyProjects`, from `unavailable_project_count`). Admin settings → All API
+  keys (`admin-api-keys-page`): every key with its owner (the avatar marks an agent), its
+  projects with the ones the owner can no longer open struck through (`AdminKeyProjects`,
+  `owner_can_view`), a state filter, `?user_id=` (linked from a user's sheet and the
   "Sign out everywhere" confirmation), and search where a pasted key, whole or in part, is cut to
   its prefix (`keySearchTerm` in `api/api-keys.ts`) before it reaches the URL or a request.
 - **Proposal suggestions (Phase 5, contract-phase5 §3.4):** `features/proposal/suggestions.tsx`

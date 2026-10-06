@@ -264,8 +264,8 @@ projects) and see exactly what the app shows them: a pending evaluator gets no s
 Every tool call is in Settings → Audit log (`mcp.call`).
 
 **A key.** Sign in (dev login: carol is a member of Customer Innovation and Internal
-Tools), open Settings → API keys, create one with the "MCP client" preset (`read`,
-`mcp`; "AI evaluator" adds `evaluate`), optionally restricted to some projects, and copy
+Tools), open Settings → API keys, create one with the "Read with an assistant" preset (`read`,
+`mcp`; "Evaluate with an assistant" adds `evaluate`), optionally restricted to some projects, and copy
 it: it is shown once (`sdg_…`). Keys pause after 30 days without a sign-in (signing in
 resumes them), and a key made with the dev login stops working when dev login is off.
 Scripted, with the dev login:

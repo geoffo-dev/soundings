@@ -40,7 +40,7 @@ from app.models.group import Group, GroupIdpValue, GroupMembership, ProjectGroup
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.schemas.admin_users import is_reserved_email
-from app.schemas.base import BIDI_CONTROLS
+from app.schemas.base import BIDI_CONTROLS, has_tag_character
 from app.schemas.groups import (
     GroupRef,
     MappingTestGroup,
@@ -208,12 +208,12 @@ def display_name_from_claims(claims: Mapping[str, Any], email: str) -> str:
 
 def _one_line(value: str) -> str:
     """``value`` with control characters and line separators as spaces, bidi controls
-    removed and runs of white space collapsed: what the admin API rejects
-    (:func:`app.schemas.base.has_control`)."""
+    and Unicode tag characters removed and runs of white space collapsed: what the admin
+    API rejects (:func:`app.schemas.base.has_control`)."""
     return " ".join(
         "".join(
             ""
-            if char in BIDI_CONTROLS
+            if char in BIDI_CONTROLS or has_tag_character(char)
             else " "
             if unicodedata.category(char) in ("Cc", "Zl", "Zp")
             else char

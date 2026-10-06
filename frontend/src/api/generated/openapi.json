@@ -98,7 +98,7 @@
         "type": "object"
       },
       "AdminApiKey": {
-        "description": "A key in Admin settings -> API keys, with its owner. ``projects`` lists every\nrestricted project that still exists.",
+        "description": "A key in Admin settings -> API keys, with its owner. ``projects`` lists every\nrestricted project that still exists, each with whether the owner can still open it\n(``unavailable_project_count`` counts those they can't).",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -169,9 +169,9 @@
             "type": "string"
           },
           "projects": {
-            "description": "The projects it is restricted to that still exist and you can still view, by name. Empty when not restricted (or when you can view none of them: then the key reaches nothing).",
+            "description": "Every project it is restricted to that still exists, by name, with owner_can_view. Empty when not restricted.",
             "items": {
-              "$ref": "#/components/schemas/ProjectRef"
+              "$ref": "#/components/schemas/AdminApiKeyProject"
             },
             "title": "Projects",
             "type": "array"
@@ -191,6 +191,12 @@
           },
           "state": {
             "$ref": "#/components/schemas/ApiKeyState"
+          },
+          "unavailable_project_count": {
+            "description": "Projects it is restricted to that still exist but its owner can no longer open (removed from them, say): the key reaches none of them. Show \"+N project(s) you can no longer open\". 0 when not restricted. Deleted projects aren't counted.",
+            "minimum": 0.0,
+            "title": "Unavailable Project Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -200,6 +206,7 @@
           "scopes",
           "restricted",
           "projects",
+          "unavailable_project_count",
           "expires_at",
           "state",
           "created_at",
@@ -245,6 +252,43 @@
           "total"
         ],
         "title": "AdminApiKeyPage",
+        "type": "object"
+      },
+      "AdminApiKeyProject": {
+        "description": "A project an admin-listed key is restricted to.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "Idea-key prefix, e.g. \"CUST\" in CUST-12.",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_can_view": {
+            "description": "The key's owner can open this project now; false: the key no longer reaches it (mark it as unavailable).",
+            "title": "Owner Can View",
+            "type": "boolean"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "key",
+          "name",
+          "owner_can_view"
+        ],
+        "title": "AdminApiKeyProject",
         "type": "object"
       },
       "AdminUser": {
@@ -803,6 +847,12 @@
           },
           "state": {
             "$ref": "#/components/schemas/ApiKeyState"
+          },
+          "unavailable_project_count": {
+            "description": "Projects it is restricted to that still exist but its owner can no longer open (removed from them, say): the key reaches none of them. Show \"+N project(s) you can no longer open\". 0 when not restricted. Deleted projects aren't counted.",
+            "minimum": 0.0,
+            "title": "Unavailable Project Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -812,6 +862,7 @@
           "scopes",
           "restricted",
           "projects",
+          "unavailable_project_count",
           "expires_at",
           "state",
           "created_at",
@@ -22087,7 +22138,7 @@
     },
     "/api/v1/users": {
       "get": {
-        "description": "Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role.",
+        "description": "Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role. An AI agent's service account finds only people who share a project with it (inside its key's projects).",
         "operationId": "search_users",
         "parameters": [
           {

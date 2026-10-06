@@ -74,3 +74,17 @@ project restriction); the `mcp` SDK 2.x was verified in research R1 §1.
   admin noticing.
 - Phase 6 adds agent registration (service accounts and their keys) without changing
   authentication, the policy or the tools' authorisation.
+
+## Amendment (2026-10-06, after the security and UX reviews)
+
+- The key check (and `last_used_at`) runs in one short transaction that closes before
+  the request's session opens, and every MCP tool call checks the key and its owner
+  again inside its own transaction: no pool lock-up under parallel keys, and a revoke
+  stops even a call already let in (tool error `unauthorized`).
+- Text that reaches agents is cleaned at both ends: request bodies refuse Unicode tag
+  characters, MCP results lose every invisible character, and every people-written
+  output field (names and labels included) is marked untrusted. Write tools refuse
+  unknown arguments.
+- A service account without a role is a private non-member everywhere, and its people
+  search covers only its projects' people: an agent sees what it was added to, nothing
+  more.

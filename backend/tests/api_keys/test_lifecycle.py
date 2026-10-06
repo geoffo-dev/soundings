@@ -25,7 +25,7 @@ from app.authz import Rule
 from app.domain.principal import Principal
 from app.models.api_key import ApiKey
 from app.models.base import utcnow
-from app.models.enums import ApiKeyScope, AuthMethod
+from app.models.enums import ApiKeyScope, AuthMethod, ProjectRole
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.schemas.api_keys import API_KEY_PATTERN, ApiKeyCreate
@@ -40,6 +40,7 @@ from tests.api_keys.helpers import (
     problem,
 )
 from tests.conftest import Login
+from tests.factories import make_project
 
 KEYS = f"{API}/me/api-keys"
 ADMIN_KEYS = f"{API}/admin/api-keys"
@@ -242,6 +243,47 @@ async def test_listed_projects_are_the_ones_that_still_exist_and_you_can_view(
 
     assert item["restricted"] is True
     assert [p["slug"] for p in item["projects"]] == ["internal-tools"]
+    assert item["unavailable_project_count"] == 1  # "+1 project you can no longer open"
+
+
+async def test_unavailable_projects_are_counted_for_the_owner_and_marked_for_admins(
+    login: Login, world: World, db_session: AsyncSession
+) -> None:
+    """UX m1: the owner learns how many restricted projects the key no longer reaches;
+    admins see which. Deleted projects aren't counted; unrestricted keys count 0."""
+    gone = await make_project(
+        db_session, slug="gone", key="GONE", name="Gone", members={world.carol: ProjectRole.MEMBER}
+    )
+    http = await login(world.carol)
+    restricted = [str(world.cust.id), str(world.tools.id), str(gone.id)]
+    fresh = created(await create(http, scopes=["read"], project_ids=restricted))
+    created(await create(http, scopes=["read"], name="Everywhere"))
+    assert fresh["key"]["unavailable_project_count"] == 0
+    await db_session.execute(
+        delete(ProjectMember).where(
+            ProjectMember.project_id == world.cust.id, ProjectMember.user_id == world.carol.id
+        )
+    )
+    await db_session.execute(delete(Project).where(Project.id == gone.id))
+    await db_session.commit()
+
+    mine = {item["name"]: item for item in (await http.get(KEYS)).json()["items"]}
+    admin = await login(world.platform)
+    listed = (await admin.get(ADMIN_KEYS, params={"user_id": str(world.carol.id)})).json()
+    theirs = {item["name"]: item for item in listed["items"]}
+
+    assert mine["Claude Desktop"]["unavailable_project_count"] == 1
+    assert [p["slug"] for p in mine["Claude Desktop"]["projects"]] == ["internal-tools"]
+    assert mine["Everywhere"]["unavailable_project_count"] == 0
+    assert mine["Everywhere"]["projects"] == []
+    flagged = theirs["Claude Desktop"]
+    assert [(p["slug"], p["owner_can_view"]) for p in flagged["projects"]] == [
+        ("customer-innovation", False),
+        ("internal-tools", True),
+    ]
+    assert flagged["unavailable_project_count"] == 1
+    assert theirs["Everywhere"]["projects"] == []
+    assert theirs["Everywhere"]["unavailable_project_count"] == 0
 
 
 # --- c20: the break-glass account ------------------------------------------------------------

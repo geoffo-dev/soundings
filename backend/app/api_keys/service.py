@@ -95,40 +95,55 @@ def _key_not_found() -> ProblemError:
 
 
 # --- Responses -----------------------------------------------------------------------------
-async def _project_refs(
-    db: AsyncSession, ids: Iterable[UUID], *, viewer: Principal | None
-) -> dict[UUID, ProjectRef]:
-    """The projects that still exist among ``ids`` (and that ``viewer`` can view, when
-    given), by id."""
+async def _project_refs(db: AsyncSession, ids: Iterable[UUID]) -> dict[UUID, ProjectRef]:
+    """The projects that still exist among ``ids``, by id."""
     wanted = list(dict.fromkeys(ids))
     if not wanted:
         return {}
-    statement = select(Project).where(Project.id.in_(wanted))
-    if viewer is not None:
-        statement = statement.where(visible_projects(viewer))
     return {
         project.id: ProjectRef(id=project.id, slug=project.slug, key=project.key, name=project.name)
-        for project in await db.scalars(statement)
+        for project in await db.scalars(select(Project).where(Project.id.in_(wanted)))
     }
 
 
-def _refs_for(key: ApiKey, projects: dict[UUID, ProjectRef]) -> list[ProjectRef]:
-    if key.project_ids is None:
-        return []
-    found = [projects[project_id] for project_id in key.project_ids if project_id in projects]
+async def _viewable(db: AsyncSession, owner: User, ids: Iterable[UUID]) -> set[UUID]:
+    """Which of ``ids`` the owner can view now (``project.view``, as the key would)."""
+    wanted = list(dict.fromkeys(ids))
+    if not wanted:
+        return set()
+    return set(
+        await db.scalars(
+            select(Project.id).where(
+                Project.id.in_(wanted), visible_projects(Principal(user=owner))
+            )
+        )
+    )
+
+
+def _restricted_to(key: ApiKey, projects: dict[UUID, ProjectRef]) -> list[ProjectRef]:
+    """The key's restricted projects that still exist, by name."""
+    found = [projects[project_id] for project_id in key.project_ids or () if project_id in projects]
     return sorted(found, key=lambda ref: (ref.name.lower(), str(ref.id)))
 
 
 def _fields(
-    key: ApiKey, owner: User, projects: dict[UUID, ProjectRef], now: datetime
+    key: ApiKey,
+    owner: User,
+    projects: dict[UUID, ProjectRef],
+    viewable: set[UUID],
+    now: datetime,
 ) -> dict[str, Any]:
+    """An ``ApiKey``'s fields: ``projects`` are the existing restricted ones the owner
+    can view, ``unavailable_project_count`` the existing ones they can't (UX m1)."""
+    existing = _restricted_to(key, projects)
     return {
         "id": key.id,
         "name": key.name,
         "prefix": key_prefix(key.lookup_id),
         "scopes": [ApiKeyScope(scope) for scope in key.scopes],
         "restricted": key.project_ids is not None,
-        "projects": _refs_for(key, projects),
+        "projects": [ref for ref in existing if ref.id in viewable],
+        "unavailable_project_count": sum(1 for ref in existing if ref.id not in viewable),
         "expires_at": key.expires_at,
         "state": key_state(key, owner, now),
         "created_at": key.created_at,
@@ -157,12 +172,14 @@ async def list_my_keys(db: AsyncSession, principal: Principal) -> schemas.ApiKey
             .order_by(ApiKey.created_at.desc(), ApiKey.id.desc())
         )
     )
-    projects = await _project_refs(
-        db, (pid for row in rows for pid in row.project_ids or ()), viewer=principal
-    )
+    restricted = [pid for row in rows for pid in row.project_ids or ()]
+    projects = await _project_refs(db, restricted)
+    viewable = await _viewable(db, principal.user, projects)
     now = utcnow()
     return schemas.ApiKeyList(
-        items=[schemas.ApiKey(**_fields(row, principal.user, projects, now)) for row in rows],
+        items=[
+            schemas.ApiKey(**_fields(row, principal.user, projects, viewable, now)) for row in rows
+        ],
         max_keys=MAX_API_KEYS_PER_USER,
         can_create=len(rows) < MAX_API_KEYS_PER_USER
         and can(principal, Rule.API_KEY_MANAGE_OWN, Resource(issuing_api_key=True)),
@@ -184,9 +201,11 @@ async def create_my_key(
         created_auth_method=principal.auth_method,
         body=body,
     )
-    projects = await _project_refs(db, row.project_ids or (), viewer=None)
+    projects = await _project_refs(db, row.project_ids or ())
+    viewable = await _viewable(db, principal.user, projects)
     return schemas.CreatedApiKey(
-        key=schemas.ApiKey(**_fields(row, principal.user, projects, utcnow())), secret=secret
+        key=schemas.ApiKey(**_fields(row, principal.user, projects, viewable, utcnow())),
+        secret=secret,
     )
 
 
@@ -382,14 +401,28 @@ async def list_admin_keys(
     items, next_cursor = slice_page(
         rows, page.limit, lambda row: {"c": row[0].created_at, "id": row[0].id}
     )
-    projects = await _project_refs(
-        db, (pid for key, _ in items for pid in key.project_ids or ()), viewer=None
-    )
+    projects = await _project_refs(db, (pid for key, _ in items for pid in key.project_ids or ()))
+    viewable: dict[UUID, set[UUID]] = {}
+    for key, owner in items:
+        if key.project_ids and owner.id not in viewable:
+            owned = {pid for k, o in items if o.id == owner.id for pid in k.project_ids or ()}
+            viewable[owner.id] = await _viewable(db, owner, (p for p in owned if p in projects))
     creators = await _users_by_id(db, (key.created_by_id for key, _ in items))
     return schemas.AdminApiKeyPage(
         items=[
             schemas.AdminApiKey(
-                **_fields(key, owner, projects, now),
+                **(
+                    _fields(key, owner, projects, viewable.get(owner.id, set()), now)
+                    | {
+                        "projects": [
+                            schemas.AdminApiKeyProject(
+                                **ref.model_dump(),
+                                owner_can_view=ref.id in viewable.get(owner.id, set()),
+                            )
+                            for ref in _restricted_to(key, projects)
+                        ]
+                    }
+                ),
                 owner=_user_ref(owner),
                 owner_email=owner.email,
                 owner_is_service_account=owner.is_service_account,

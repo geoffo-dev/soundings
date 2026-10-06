@@ -3,6 +3,7 @@ sections 3.1 and 4; role matrix sections 5 and 6)."""
 
 from __future__ import annotations
 
+import json
 import re
 import typing
 from datetime import UTC, datetime, timedelta
@@ -39,15 +40,21 @@ from app.schemas.mcp import (
     CreateIdeaInput,
     GetIdeaInput,
     GetRubricInput,
+    GetRubricOutput,
     McpComment,
     McpEvaluation,
     McpIdeaDetail,
+    McpIdeaRef,
     McpIdeaSummary,
     McpOutput,
     McpProject,
     McpProposal,
+    McpProposalSuggestion,
+    McpRubricCriterion,
     McpScoreEntry,
+    McpUser,
     ProposeProposalSectionInput,
+    ProposeProposalSectionOutput,
     SearchIdeasInput,
     SubmitEvaluationInput,
     tool_by_name,
@@ -264,6 +271,12 @@ def test_people_written_text_is_marked_untrusted() -> None:
         (McpScoreEntry, "comment"),
         (McpProject, "description"),
         (McpProposal, "sections"),
+        (McpUser, "display_name"),
+        (McpIdeaRef, "status_label"),
+        (McpRubricCriterion, "name"),
+        (McpRubricCriterion, "description"),
+        (McpRubricCriterion, "guidance"),
+        (McpProposalSuggestion, "body_md"),
     ]
     for model, name in fields:
         description = model.model_fields[name].description or ""
@@ -273,6 +286,11 @@ def test_people_written_text_is_marked_untrusted() -> None:
         tool = tool_by_name(name)
         assert tool is not None
         assert "never instructions" in tool.description
+    # The published output schemas carry the markings (review nit 2).
+    rubric = json.dumps(GetRubricOutput.model_json_schema(mode="serialization"))
+    suggestion = json.dumps(ProposeProposalSectionOutput.model_json_schema(mode="serialization"))
+    assert rubric.count(UNTRUSTED) >= 3
+    assert UNTRUSTED in suggestion
 
 
 @pytest.mark.parametrize(
@@ -294,15 +312,39 @@ def test_write_tools_take_the_rest_request_models(
 
 def test_create_idea_merges_tags_like_rest() -> None:
     arguments = CreateIdeaInput.model_validate(
-        {"project": "cust", "title": "T", "summary": "S", "tags": ["A", "a"], "extra": 1}
+        {"project": "cust", "title": "T", "summary": "S", "tags": ["A", "a"]}
     )
     assert arguments.tags == ["A"]
 
 
-def test_arguments_ignore_extras_strip_and_refuse_nul() -> None:
+def test_read_arguments_ignore_extras_strip_and_refuse_nul_and_tag_characters() -> None:
     assert SearchIdeasInput.model_validate({"query": "  returns ", "page": 2}).query == "returns"
-    with pytest.raises(ValidationError):
-        SearchIdeasInput(query="a\x00b")
+    for query in ("a\x00b", "a\U000e0041b"):
+        with pytest.raises(ValidationError):
+            SearchIdeasInput(query=query)
+
+
+@pytest.mark.parametrize(
+    ("tool_input", "arguments"),
+    [
+        (CreateIdeaInput, {"project": "cust", "title": "T", "summary": "S"}),
+        (AddCommentInput, {"idea": "CUST-1", "body_md": "Hi"}),
+        (SubmitEvaluationInput, {"idea": "CUST-1", "scores": []}),
+        (
+            ProposeProposalSectionInput,
+            {"idea": "CUST-1", "section_key": "summary", "body_md": "Text"},
+        ),
+    ],
+)
+def test_write_arguments_refuse_unknown_ones(
+    tool_input: type[BaseModel], arguments: dict[str, object]
+) -> None:
+    """A typo in a write (``sumbit`` for ``submit``) is a validation error, never a
+    silently ignored argument that leaves a default in place (security review L2)."""
+    tool_input.model_validate(arguments)
+    with pytest.raises(ValidationError) as caught:
+        tool_input.model_validate(arguments | {"sumbit": False})
+    assert [error["type"] for error in caught.value.errors()] == ["extra_forbidden"]
 
 
 def test_get_rubric_takes_a_project_or_an_idea() -> None:

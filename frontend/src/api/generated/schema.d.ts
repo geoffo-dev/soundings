@@ -2126,7 +2126,7 @@ export interface paths {
         };
         /**
          * Search users
-         * @description Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role.
+         * @description Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role. An AI agent's service account finds only people who share a project with it (inside its key's projects).
          */
         get: operations["search_users"];
         put?: never;
@@ -2163,7 +2163,8 @@ export interface components {
         /**
          * AdminApiKey
          * @description A key in Admin settings -> API keys, with its owner. ``projects`` lists every
-         *     restricted project that still exists.
+         *     restricted project that still exists, each with whether the owner can still open it
+         *     (``unavailable_project_count`` counts those they can't).
          */
         AdminApiKey: {
             /**
@@ -2205,9 +2206,9 @@ export interface components {
             prefix: string;
             /**
              * Projects
-             * @description The projects it is restricted to that still exist and you can still view, by name. Empty when not restricted (or when you can view none of them: then the key reaches nothing).
+             * @description Every project it is restricted to that still exists, by name, with owner_can_view. Empty when not restricted.
              */
-            projects: components["schemas"]["ProjectRef"][];
+            projects: components["schemas"]["AdminApiKeyProject"][];
             /**
              * Restricted
              * @description Only the projects below (true), or every project you can access.
@@ -2219,6 +2220,11 @@ export interface components {
              */
             scopes: components["schemas"]["ApiKeyScope"][];
             state: components["schemas"]["ApiKeyState"];
+            /**
+             * Unavailable Project Count
+             * @description Projects it is restricted to that still exist but its owner can no longer open (removed from them, say): the key reaches none of them. Show "+N project(s) you can no longer open". 0 when not restricted. Deleted projects aren't counted.
+             */
+            unavailable_project_count: number;
         };
         /**
          * AdminApiKeyPage
@@ -2234,6 +2240,31 @@ export interface components {
              * @description Keys matching the filters, all pages.
              */
             total: number;
+        };
+        /**
+         * AdminApiKeyProject
+         * @description A project an admin-listed key is restricted to.
+         */
+        AdminApiKeyProject: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Key
+             * @description Idea-key prefix, e.g. "CUST" in CUST-12.
+             */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Owner Can View
+             * @description The key's owner can open this project now; false: the key no longer reaches it (mark it as unavailable).
+             */
+            owner_can_view: boolean;
+            /** Slug */
+            slug: string;
         };
         /**
          * AdminUser
@@ -2532,6 +2563,11 @@ export interface components {
              */
             scopes: components["schemas"]["ApiKeyScope"][];
             state: components["schemas"]["ApiKeyState"];
+            /**
+             * Unavailable Project Count
+             * @description Projects it is restricted to that still exist but its owner can no longer open (removed from them, say): the key reaches none of them. Show "+N project(s) you can no longer open". 0 when not restricted. Deleted projects aren't counted.
+             */
+            unavailable_project_count: number;
         };
         /**
          * ApiKeyCreate

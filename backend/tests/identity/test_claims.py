@@ -196,6 +196,8 @@ def test_email_claim(claims: dict[str, Any], address: str | None, verified: bool
         ({"name": "Nia\u2028Lee\u2029"}, "Nia Lee"),
         ({"name": "Nia \u202eeeL\u202c \u2067x\u2069\u061c"}, "Nia eeL x"),
         ({"name": "\u202e\u2066", "preferred_username": "nia"}, "nia"),
+        # Unicode tag characters (hidden text for AI models) go too (Phase 5 review M4).
+        ({"name": "Nia\U000e0069\U000e0067\U000e006e Lee"}, "Nia Lee"),
     ],
 )
 def test_display_name(claims: dict[str, Any], expected: str) -> None:

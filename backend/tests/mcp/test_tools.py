@@ -423,7 +423,6 @@ async def test_create_idea_is_rest_create_idea(
         title="  Self-service refunds  ",
         summary="Let customers refund without calling us.",
         tags=["Payments", "payments", "UX"],
-        ignored_extra_argument=True,
     )
 
     ref = created["idea"]
@@ -561,6 +560,42 @@ async def test_submit_evaluation_submits_by_default_and_counts(
         await db_session.scalars(select(ActivityEvent.type).where(ActivityEvent.idea_id == idea.id))
     )
     assert events == ["evaluation_submitted"]
+
+
+async def test_a_misspelt_write_argument_is_refused_not_ignored(
+    as_agent: AsAgent, team: Team, db_session: AsyncSession
+) -> None:
+    """Security review L2: ``sumbit=false`` must not quietly submit (the default) or save
+    anything; read tools still ignore extra arguments."""
+    evaluator = team.evaluators[0]
+    idea = await make_idea(db_session, team.project, status=IdeaStatus.EVALUATING)
+    await add_evaluator(db_session, idea, evaluator)
+    agent = await as_agent(evaluator, EVALUATE)
+
+    refused = await agent.call(
+        "submit_evaluation",
+        idea=key_of(team, idea),
+        scores=full_scores(team, 4),
+        recommendation="go",
+        sumbit=False,
+    )
+    read = await agent.ok("get_idea", idea=key_of(team, idea), verbose=True)
+
+    assert refused.is_error
+    assert refused.structured_content["code"] == "validation_error"
+    assert "sumbit" in refused.structured_content["message"]
+    assert read["idea"]["my_evaluation"]["state"] == "invited"
+    saved = await db_session.scalar(select(Evaluation).where(Evaluation.idea_id == idea.id))
+    assert saved is None
+    calls = list(
+        await db_session.scalars(
+            select(AuditLog).where(AuditLog.action == "mcp.call").order_by(AuditLog.created_at)
+        )
+    )
+    assert [(c.details["tool"], c.details["decision"], c.details["code"]) for c in calls] == [
+        ("submit_evaluation", "deny", "validation_error"),
+        ("get_idea", "allow", None),
+    ]
 
 
 async def test_submit_evaluation_follows_the_phase1_rules(

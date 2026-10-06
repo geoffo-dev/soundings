@@ -604,3 +604,49 @@ fixed below and their expected-failure marks removed.
 | The kagent example renders only a `RemoteMCPServer` (kagent 0.10, `v1alpha2`), reading the whole `Bearer sdg_…` header from an existing Secret; Agents come in Phase 6. | Decided | Checked against kagent 0.10.2's CRD; a live kagent install isn't verified yet. |
 | `make mcp-smoke` and `k3s-smoke MCP=1` (an SDK client in another namespace with a Secret-held key) run the acceptance; CI's k3s job runs `SSO=1 SMTP=1 MCP=1`. | Decided | The acceptance through the ingress and the Service, as kagent will call it. |
 | Tests for contract rules that aren't built yet are expected failures (`test.fail(true, …)`, strict `xfail`) that fail once fixed. | Decided | QA's convention: the suites stay green while a defect is open, and the fix can't go unnoticed. |
+
+## 2026-10-06 · Phase 5 review and final verification
+
+What the security and UX reviews changed, and the lead's calls on the findings the fixers
+left open. Details and tests:
+[phase-summaries/phase-5.md](phase-summaries/phase-5.md#review-findings-and-outcomes);
+contract changes in [contract-phase5.md §8](api/contract-phase5.md#8-changes-after-the-contract).
+
+### Security
+
+| Decision | Status | Why |
+|---|---|---|
+| The key check and the `last_used_at` update run in one short transaction that closes before the request's own session opens; `/mcp` holds no session at the door. | Decided | Review H1: parallel requests with fresh keys held two pool connections each and stalled the pool (15 s, then 500). |
+| Each MCP tool call reads the key and its owner again inside its own transaction; a key revoked or expired, or an owner deactivated, dormant or demoted meanwhile, is the tool error `unauthorized` (audited as a denial). | Decided | Review M1: a request let in before a revoke still created an idea. |
+| At `/mcp` the key's request budget comes before the `mcp`-scope check, so refusals count; a scope refusal and a budget refusal are audited at most once per key per minute; cancelled calls (`cancelled`) and crashing validators (`internal_error`) are audited; the SDK's 415/406/400 aren't (no tool call). | Decided | Review M2, L1: a key without `mcp` could hammer `/mcp` and fill the audit log for free. |
+| A service account with no role in a project is a private non-member there (404), internal projects included; lists leave those projects out; a key can't be restricted to them. | Decided | Review M3: an agent added to one project could read every internal one. |
+| MCP results lose every invisible character (Unicode tag characters, variation selectors beyond VS15/VS16, zero-width, other format, bidi and control characters; ZWJ, ZWNJ and line breaks stay), and error messages cut field names to 40 characters. | Decided | Review M4, output side: tag characters spell instructions a model reads and a person never sees ("ASCII smuggling"). |
+| Request bodies (every `RequestModel` string, `SingleLine` included) and MCP arguments refuse Unicode tag characters (U+E0000–U+E007F, 422 / `validation_error`); sign-in strips them from IdP display names. Subdivision flag emoji (England, Scotland, Wales) are refused with them. | Decided (lead) | Review M4, input side: stop hidden text at the door, so stored text is clean for agents, exports and emails alike; the flags are the only legitimate use and not worth a special case. |
+| The four MCP write tools refuse unknown arguments (`extra="forbid"`, `validation_error`); the read tools keep ignoring them. | Decided (lead) | Review L2: `sumbit: false` was ignored and the evaluation submitted (the default). Reads can't do harm by ignoring an extra. |
+| `display_name`, `status_label`, rubric criteria's name, description and guidance, and a suggestion's `body_md` say `UNTRUSTED` in the MCP output schemas (`McpRubricCriterion`, `McpProposalSuggestion`). | Decided (lead) | Review nit 2: people write those too. |
+| A service account's people search (`GET /users`) finds only people with a role in a project where it has one, inside its key's projects; people's keys and sessions still search the directory. | Decided (lead) | Review L4: an agent needs its projects' people for @mentions, not the whole directory. |
+| Bound SQL parameters never appear in database errors (`hide_parameters=True`); a suggestion's checks run 404 → 403 → 422 → 409. | Decided | Review nits. |
+| A proxy that adds its own `Authorization: Bearer` header breaks sign-in (every bearer is read as a key): documented in the Helm README and the operator guide, not worked around. | Decided | Review L3: a fall-through to the cookie would make a bad key silently act as the browser's user. |
+
+### UX: lead decisions (final verification)
+
+| Decision | Status | Why |
+|---|---|---|
+| Presets "Read with an assistant" (`read`, `mcp`) and "Evaluate with an assistant" (`read`, `evaluate`, `mcp`: "…they count as yours"); the `mcp` scope is labelled "AI assistants (MCP)". | Decided | UX M4: "AI evaluator" read as SPEC §9's agent, whose evaluations are left out of the aggregate; a person's assistant submits as them. |
+| The idea's Proposal tab shows the number of pending suggestions to people who may decide (owner, project admins, while c7 holds); no notification in Phase 5. | Decided | UX M5: an assistant's suggestion sat unseen unless someone opened the tab; a notification needs a new `NotificationType` and the SPA's maps (Phase 6). |
+| `ApiKey.unavailable_project_count` and `AdminApiKey.projects[].owner_can_view` (additive): the owner sees "+N project(s) you can no longer open", the admin view strikes those projects through. | Decided | UX m1: the owner's list dropped a project the owner had lost while the admin list still named it, with nothing saying why. |
+
+### UX: fixed by the frontend
+
+A plain-words "Can" column in Settings → API keys and a live "This key can …" line in
+the create dialog (M3); "Treat it like a password" and "I've copied it", with one
+reminder if nothing containing the key was copied (m3); expiry within a week in a
+warning tone, expired keys last with Remove (m2); a single break-glass empty state (m9);
+State-menu rows that wrap with descriptions (M1) and owner names that no longer
+collapse in the admin table (M2); word-level highlights in suggestion diffs (m5), who
+decides on each card (m6), focus to the next pending suggestion after a decision (m7),
+pending autosaves sent before Accept (m8), distinct names per card (m4); the developer
+section folded behind "For developers and AI assistants", "via assistant", "check the
+facts" on AI cards, monospace prefixes and tool names in the audit log, a nudge towards
+"Only these projects" when assistants may use every project (p1–p9). A partly typed key
+in the admin search is cut to its prefix before it reaches the URL (code-review nit).

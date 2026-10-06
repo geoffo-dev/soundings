@@ -747,8 +747,18 @@ People create personal API keys in Settings → API keys and use them with the R
   or the sign-in method of the session that created it is no longer available (a key made
   with the development login stops when `devLogin` is off; a key made through SSO while
   `oidc.issuer` is empty). Authentication reads the key's row on every request, so all of
-  these apply to the next request on every replica. The break-glass account can't create
-  keys. "Sign out everywhere" ends sessions, not keys.
+  these apply to the next request on every replica, and each MCP tool call reads the key
+  and its owner again inside its own transaction (a call let in just before a revoke
+  runs nothing after it: the tool error `unauthorized`). The break-glass account can't
+  create keys. "Sign out everywhere" ends sessions, not keys.
+- **Lost project access shows:** a restricted key whose owner can no longer open one of
+  its projects stops reaching it at once; Settings → API keys says "+1 project you can no
+  longer open", and Settings → All API keys strikes that project through.
+- **AI agents' keys** (service accounts, Phase 6): an agent without a role in a project is
+  treated as a private non-member there (404), internal projects included; it never owns
+  an idea or holds the admin role; its evaluations are left out of the aggregate; and its
+  people search (`GET /api/v1/users`) finds only people who share a project with it,
+  inside its key's projects.
 - **A leaked key:** paste it into Settings → All API keys' search (only its first 16
   characters are sent and matched exactly), revoke it, and look for its id in the audit
   log (`api_key_id`).
@@ -771,6 +781,18 @@ People create personal API keys in Settings → API keys and use them with the R
 - `/mcp` never accepts session cookies and sends no CORS headers. `/.well-known/*` answers
   404 problem+json: there is no OAuth for MCP (keys are issued in the app), and clients
   that probe for it report the key error instead.
+- **No `Authorization: Bearer` header from a proxy.** The app reads every `Authorization:
+  Bearer …` header as an API key (a bad one is 401, never a fall-through to the session
+  cookie), so a forward-auth or OAuth2 proxy in front of the app that adds its own bearer
+  token (oauth2-proxy's `--pass-authorization-header` or `--set-authorization-header`, an
+  ingress `auth-response-headers: Authorization`, an identity-aware proxy injecting an ID
+  token) makes every browser request 401 and counts the proxy's address towards the
+  failed-key throttle. Don't forward such a header upstream; `Basic` and other schemes are
+  ignored. Sign-in to Soundings is OIDC itself: it needs no auth proxy.
+- **Text for agents:** request bodies refuse invisible Unicode tag characters (hidden
+  instructions for AI models), and MCP results have every invisible character stripped;
+  ideas from the public form say `via_public_form`, and every people-written field is
+  described as untrusted in the tools' output schemas.
 
 ### Rate limits
 
@@ -781,7 +803,7 @@ runaway agents, not determined attackers.
 | Limit | Over it |
 |---|---|
 | 30 failed key authentications a minute per client address (IPv6: per /64) | failing keys from that address get 429 `too_many_attempts` with `Retry-After` instead of 401; **valid** keys from the same address still work, so one broken script behind a NAT can't lock out its neighbours |
-| 300 requests a minute per key (REST and `/mcp` together) | 429 `too_many_attempts` |
+| 300 requests a minute per key (REST and `/mcp` together, refused ones included) | 429 `too_many_attempts` |
 | 30 writes a minute per key (REST `POST`/`PUT`/`PATCH`/`DELETE`, MCP tools that change something) | 429, or the tool error `too_many_attempts`; reads still work |
 
 The client address comes from the trusted proxies (`trustedProxies`, `trustedProxyHops`;
@@ -794,8 +816,11 @@ every client looks like the ingress controller and shares one failure budget.
   deactivated` when deactivation revoked it) are kept like every other audit entry.
 - **Every MCP tool call** is one `mcp.call` entry: the tool, its rule, `allow` or `deny`,
   the error code, the key's id, and the idea or project it was about; never the arguments
-  (queries, comments and idea text can hold personal data). A call refused for lack of the
-  `mcp` scope is recorded too; `initialize` and `tools/list` aren't. What a call changed has
+  (queries, comments and idea text can hold personal data). A request refused for lack of
+  the `mcp` scope, or over the key's request budget, is recorded too, at most once a
+  minute per key; a cancelled call (`cancelled`) and a crash (`internal_error`) are
+  recorded; `initialize`, `tools/list` and requests the SDK refuses before a tool runs
+  (415, 406, 400) aren't. What a call changed has
   its own entry as in the app (`evaluation.submit`, with `auth: api_key` and the key id).
   The worker's hourly job deletes `mcp.call` entries older than **90 days**; other entries
   are kept for good. Audit log → "API keys and MCP" shows them.

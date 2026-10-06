@@ -1,6 +1,7 @@
 import { Clock, Moon } from 'lucide-react'
+import { Fragment } from 'react'
 
-import type { ApiKey, ApiKeyScope, ApiKeyState } from '@/api/types'
+import type { AdminApiKey, ApiKey, ApiKeyScope, ApiKeyState } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { RelativeTime, useNow } from '@/components/ui/relative-time'
 import { WithTooltip } from '@/components/ui/tooltip'
@@ -113,15 +114,81 @@ export function KeyStateBadge({
   return null
 }
 
-/** "All projects", the names it is restricted to, or a warning when none is left. */
-export function KeyProjects({ apiKey }: { apiKey: Pick<ApiKey, 'restricted' | 'projects'> }) {
+function plural(count: number, one: string, many: string): string {
+  return `${String(count)} ${count === 1 ? one : many}`
+}
+
+/**
+ * "All projects", the names it is restricted to, or a warning when none is
+ * left; then "+1 project you can no longer open" for restricted projects the
+ * owner has lost access to (the key reaches none of them).
+ */
+export function KeyProjects({
+  apiKey,
+}: {
+  apiKey: Pick<ApiKey, 'restricted' | 'projects' | 'unavailable_project_count'>
+}) {
+  if (!apiKey.restricted) return <span className="text-sm text-secondary">All projects</span>
+  const lost = apiKey.unavailable_project_count
+  return (
+    <span className="flex min-w-0 flex-col text-sm">
+      {apiKey.projects.length === 0 ? (
+        <span className="text-warning">No projects left: it reaches nothing</span>
+      ) : (
+        <span className="text-secondary">
+          {apiKey.projects.map((project) => project.name).join(', ')}
+        </span>
+      )}
+      {lost > 0 && (
+        <span className="text-xs text-muted">
+          +{plural(lost, 'project you can no longer open', 'projects you can no longer open')}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Admin view of a key's projects: every restricted project that still exists;
+ * the ones its owner can no longer open are struck through and named as such
+ * (the key no longer reaches them).
+ */
+export function AdminKeyProjects({
+  apiKey,
+}: {
+  apiKey: Pick<AdminApiKey, 'restricted' | 'projects' | 'unavailable_project_count'>
+}) {
   if (!apiKey.restricted) return <span className="text-sm text-secondary">All projects</span>
   if (apiKey.projects.length === 0) {
     return <span className="text-sm text-warning">No projects left: it reaches nothing</span>
   }
+  const reachable = apiKey.projects.length - apiKey.unavailable_project_count
   return (
-    <span className="text-sm text-secondary">
-      {apiKey.projects.map((project) => project.name).join(', ')}
+    <span className="flex min-w-0 flex-col text-sm">
+      <span className="text-secondary">
+        {apiKey.projects.map((project, index) => (
+          <Fragment key={project.id}>
+            {index > 0 && ', '}
+            {project.owner_can_view ? (
+              <span>{project.name}</span>
+            ) : (
+              <WithTooltip content="The owner can no longer open this project, so the key doesn’t reach it.">
+                <span className="text-muted line-through">
+                  {project.name}
+                  <span className="sr-only"> (the owner can no longer open it)</span>
+                </span>
+              </WithTooltip>
+            )}
+          </Fragment>
+        ))}
+      </span>
+      {apiKey.unavailable_project_count > 0 && (
+        <span className="text-xs text-warning">
+          {reachable === 0
+            ? 'Reaches nothing'
+            : `Owner can’t open ${String(apiKey.unavailable_project_count)}`}
+        </span>
+      )}
     </span>
   )
 }

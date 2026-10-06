@@ -25,7 +25,9 @@ router = APIRouter(prefix="/users", tags=["users"])
     description=(
         "Active, non-service-account users whose name or email contains q "
         "(case-insensitive), ordered by display name. With project, only members of "
-        "that project are returned and each result carries project_role."
+        "that project are returned and each result carries project_role. An AI agent's "
+        "service account finds only people who share a project with it (inside its "
+        "key's projects)."
     ),
     responses=problems(400, 401, 404),
 )
@@ -45,4 +47,10 @@ async def search_users(
     in_project = None
     if project is not None:
         in_project, _ = await load_project(session, principal, project)
-    return await users.search_users(session, q=q, project=in_project, page=page)
+    return await users.search_users(
+        session,
+        q=q,
+        project=in_project,
+        page=page,
+        co_members_of=principal if principal.user.is_service_account else None,
+    )

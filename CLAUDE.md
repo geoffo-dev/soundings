@@ -274,7 +274,8 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   (`replace_rubric`) take the project `FOR UPDATE`. One order, so no deadlocks or stale
   cached aggregates.
 - **Input limits:** bodies over 1 MiB get 413 before auth; request models extend
-  `RequestModel` (rejects NUL, unknown fields); cursors are validated on decode
+  `RequestModel` (rejects NUL, Unicode tag characters U+E0000–E007F and unknown fields;
+  `SingleLine` refuses tag characters too); cursors are validated on decode
   (`app/pagination.py`). Malformed input is a 4xx, never a 500.
 - **Demo data:** `soundings seed --reset` needs `--force` once anyone who is not a demo
   person has an account; it refuses production without `--force`.
@@ -292,7 +293,7 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   attempts and error classes; never addresses, subjects, bodies, tokens, SMTP
   credentials or server replies. One-line names that reach subjects (idea titles,
   display names) use `SingleLine` (`app/schemas/base.py`: no CR/LF or other control
-  characters, U+2028/U+2029 or bidi controls). Unsubscribe tokens are scoped: a type's
+  characters, U+2028/U+2029, bidi controls or Unicode tag characters). Unsubscribe tokens are scoped: a type's
   or the digest's link turns off only that; `all=true` needs a token scoped to `all`
   (the footer's "Unsubscribe from all email" link; else 403 `insufficient_scope`, c14).
   SMTP credentials reach worker pods only (the API gets `SOUNDINGS_SMTP_*_SET`).
@@ -386,7 +387,15 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   runs one transaction and writes exactly one `mcp.call` audit entry per `tools/call`
   (never arguments; deleted after 90 days by the hourly schedule). Held ideas are
   `not_found` through MCP for everyone. Never log or return a key after creation, the
-  `Authorization` header or tool arguments.
+  `Authorization` header or tool arguments. The key check and `last_used_at` run in one
+  short transaction before the request's session (`app/api_keys/verify.py`); each tool
+  re-reads the key and owner in its own transaction (tool error `unauthorized`). At
+  `/mcp`: key → rate → c15; c15 and budget refusals are audited once per key a minute.
+  Write tools' inputs forbid unknown arguments (`MCP_WRITE_INPUT_CONFIG`), read tools'
+  ignore them; every result string goes through `app/mcp/text.py` (no invisible
+  characters). A service account with no role is a private non-member everywhere
+  (internal projects too), and its `search_users` finds only co-members. Key responses
+  carry `unavailable_project_count` (and admin `projects[].owner_can_view`).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -615,4 +624,16 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   check green in both e2e modes, `make mcp-smoke` against the e2e stack. Guides:
   `docs/mcp.md`, user and operator guides; test plan `docs/test-plans/phase-5.md`,
   screenshots `docs/screenshots/phase-5/` (+ `mock/`); decisions `docs/decisions.md`
-  (Phase 5). Next: code-reviewer and ux-reviewer, then the human's review before Phase 6.
+  (Phase 5). Security review (pool-safe key check, keys re-checked inside each tool call,
+  refusals rate-limited and audited once a minute, service accounts NMp without a role,
+  invisible characters stripped from results, `hide_parameters`) and UX review (plain-words
+  key access, "I've copied it", expiry warnings, word diffs, focus, State menu, admin
+  layout) applied; lead decisions at the close: assistant presets and the Proposal tab's
+  suggestion count accepted, `unavailable_project_count` / `owner_can_view`, write tools
+  forbid unknown arguments, tag characters refused in request text, more `UNTRUSTED`
+  fields, agents search co-members only. Closed on 2026-10-06 with every check green in
+  both e2e modes (one Phase 1 page test flaked under load and passed 5 of 5 on rerun) and
+  a clean k3s install (`SSO=1 SMTP=1 MCP=1`, as CI), MCP smoke through the ingress and
+  the in-cluster SDK client, upgrade to two API replicas and smoke:
+  [docs/phase-summaries/phase-5.md](docs/phase-summaries/phase-5.md) (known issues and
+  deferred items there). Stop for the human's review before Phase 6.

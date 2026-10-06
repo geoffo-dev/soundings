@@ -84,6 +84,8 @@ from app.schemas.mcp import (
     McpProject,
     McpProjectRef,
     McpProposal,
+    McpProposalSuggestion,
+    McpRubricCriterion,
     McpScore,
     McpScoreEntry,
     McpUser,
@@ -94,7 +96,6 @@ from app.schemas.mcp import (
     SubmitEvaluationInput,
     SubmitEvaluationOutput,
 )
-from app.schemas.rubric import RubricCriterion as RubricCriterionOut
 from app.services import comments, evaluations, ideas, projects
 from app.services.board import Sort, fetch_page
 from app.services.ideas import LoadedIdea
@@ -503,7 +504,7 @@ async def get_rubric(ctx: ToolContext, args: GetRubricInput) -> GetRubricOutput:
     criteria = await _criteria(ctx.db, project.id)
     return GetRubricOutput(
         project=McpProjectRef(id=project.id, slug=project.slug, key=project.key, name=project.name),
-        criteria=[RubricCriterionOut.model_validate(criterion) for criterion in criteria],
+        criteria=[McpRubricCriterion.model_validate(criterion) for criterion in criteria],
         recommendations=list(Recommendation),
     )
 
@@ -588,7 +589,7 @@ async def propose_proposal_section(
     )
     return ProposeProposalSectionOutput(
         idea=_idea_ref(ctx, loaded),
-        suggestion=created.suggestion,
+        suggestion=McpProposalSuggestion.model_validate(created.suggestion.model_dump()),
         replaced_suggestion_id=created.replaced_id,
     )
 

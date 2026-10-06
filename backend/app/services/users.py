@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import Select, and_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.principal import Principal
 from app.models.enums import ProjectRole
 from app.models.project import Project, project_effective_roles
 from app.models.user import User
@@ -52,17 +53,32 @@ async def list_dev_users(db: AsyncSession) -> list[CurrentUser]:
 
 
 async def search_users(
-    db: AsyncSession, *, q: str | None, project: Project | None, page: PageParams
+    db: AsyncSession,
+    *,
+    q: str | None,
+    project: Project | None,
+    page: PageParams,
+    co_members_of: Principal | None = None,
 ) -> UserPage:
     """Active people whose name or email contains ``q``, by display name (never
     service accounts or the break-glass admin).
 
     With ``project``: only users with an effective role there, ``project_role`` set.
+    With ``co_members_of`` (an AI agent's service account): only people with an
+    effective role in a project where it has one too, inside its key's projects; an
+    agent doesn't need the whole directory.
     """
     sort_key = func.lower(User.display_name)
     statement: Select[Any] = select(User, sort_key.label("sort_key")).where(
         User.is_active, User.is_service_account.is_(False), User.is_break_glass.is_(False)
     )
+    if co_members_of is not None:
+        own = select(_roles.c.project_id).where(_roles.c.user_id == co_members_of.user_id)
+        if co_members_of.project_ids is not None:
+            own = own.where(_roles.c.project_id.in_(list(co_members_of.project_ids)))
+        statement = statement.where(
+            User.id.in_(select(_roles.c.user_id).where(_roles.c.project_id.in_(own)))
+        )
     if project is not None:
         statement = statement.join(
             _roles, and_(_roles.c.user_id == User.id, _roles.c.project_id == project.id)

@@ -16,9 +16,11 @@ pins the catalogue and the backend's MCP tests compare the registered tools with
   write tools' models **are** the REST request models (subclasses of ``IdeaCreate``,
   ``CommentCreate``, ``MyEvaluationIn``, ``ProposalSuggestionCreate``) plus the idea or
   project they are about, so limits, de-duplication and cross-field rules can't drift
-  from REST. Strings are stripped (proposal text excepted) and NUL is refused; unknown
-  top-level arguments are ignored (models often add extras). A failed validation is the
-  tool error ``validation_error`` (field names, never values); an unknown tool name is
+  from REST. Strings are stripped (proposal text excepted); NUL and Unicode tag
+  characters are refused. The read tools ignore unknown arguments (models often add
+  extras); the write tools refuse them, so a misspelt argument (``sumbit``) can't
+  silently change what a write does. A failed validation is the tool error
+  ``validation_error`` (field names, never values); an unknown tool name is
   ``unknown_tool``.
 * **Results:** ``structuredContent`` is the ``*Output`` model (snake_case JSON), and the
   text content is the same JSON (for clients without structured content). Results are
@@ -64,7 +66,7 @@ from app.models.enums import (
     Recommendation,
     Resolution,
 )
-from app.schemas.base import SLUG_PATTERN, reject_nul
+from app.schemas.base import SLUG_PATTERN, ScoreKey, reject_hidden
 from app.schemas.comments import CommentCreate
 from app.schemas.evaluations import MyEvaluationIn
 from app.schemas.ideas import AggregateScore, EvaluatorProgress, IdeaCreate, IdeaSort
@@ -89,6 +91,7 @@ __all__ = [
     "MCP_SERVER_TITLE",
     "MCP_TEXT_LIMIT",
     "MCP_TOOLS",
+    "MCP_WRITE_INPUT_CONFIG",
     "SEARCH_DEFAULT_LIMIT",
     "SEARCH_MAX_LIMIT",
     "UNTRUSTED",
@@ -117,6 +120,8 @@ __all__ = [
     "McpProject",
     "McpProjectRef",
     "McpProposal",
+    "McpProposalSuggestion",
+    "McpRubricCriterion",
     "McpScore",
     "McpScoreEntry",
     "McpTool",
@@ -193,21 +198,24 @@ content {code, message}. not_found also covers things this key may not see.\
 
 # --- Base models -----------------------------------------------------------------------
 MCP_INPUT_CONFIG: Final = ConfigDict(extra="ignore", str_strip_whitespace=True)
-"""Tool arguments: stripped strings; unknown top-level arguments are ignored (nested
-REST models such as score entries still refuse unknown fields)."""
+"""The read tools' arguments: stripped strings; unknown arguments are ignored."""
+MCP_WRITE_INPUT_CONFIG: Final = ConfigDict(extra="forbid", str_strip_whitespace=True)
+"""The write tools' arguments: stripped strings (proposal text keeps its own verbatim
+type); an unknown argument is a ``validation_error``, so a typo such as ``sumbit``
+can't quietly fall back to a default that changes what the write does."""
 
 
 class McpInput(BaseModel):
-    """Arguments of the read tools. Strings are stripped and may not contain NUL;
-    unknown arguments are ignored. The write tools' arguments subclass the REST request
-    models instead (with :data:`MCP_INPUT_CONFIG`)."""
+    """Arguments of the read tools. Strings are stripped and may not contain NUL or
+    Unicode tag characters; unknown arguments are ignored. The write tools' arguments
+    subclass the REST request models instead (with :data:`MCP_WRITE_INPUT_CONFIG`)."""
 
     model_config = MCP_INPUT_CONFIG
 
     @field_validator("*")
     @classmethod
     def _no_nul(cls, value: object) -> object:
-        return reject_nul(value)
+        return reject_hidden(value)
 
 
 class McpOutput(BaseModel):
@@ -241,7 +249,7 @@ ProjectSlugArg = Annotated[
 # --- Shared result pieces ----------------------------------------------------------------
 class McpUser(McpOutput):
     id: UUID
-    display_name: str
+    display_name: str = Field(description="The person's or agent's name. " + UNTRUSTED)
     is_ai: bool = Field(description="An AI agent's account.")
 
 
@@ -270,7 +278,7 @@ class McpIdeaRef(McpOutput):
     project: McpProjectRef
     status: IdeaStatus
     resolution: Resolution | None = Field(description="Set if and only if status is closed.")
-    status_label: str = Field(description="The project's name for the status.")
+    status_label: str = Field(description="The project's name for the status. " + UNTRUSTED)
     url: str = Field(description="The idea's page in the app, for people.")
 
 
@@ -512,9 +520,19 @@ class GetRubricInput(McpInput):
         return self
 
 
+class McpRubricCriterion(RubricCriterion):
+    """An active criterion, as REST returns it, with its people-written text marked."""
+
+    name: str = Field(description="The criterion, e.g. Impact. " + UNTRUSTED)
+    description: str = Field(description="What it measures. " + UNTRUSTED)
+    guidance: dict[ScoreKey, str] = Field(
+        description='Hints keyed by score ("1".."5"), any subset. ' + UNTRUSTED
+    )
+
+
 class GetRubricOutput(McpOutput):
     project: McpProjectRef
-    criteria: list[RubricCriterion] = Field(
+    criteria: list[McpRubricCriterion] = Field(
         description=(
             "Active criteria in order. weight: relative weight in the aggregate; inverted: "
             "a high score is bad (the aggregate uses 6 - score); guidance: hints per score."
@@ -546,7 +564,7 @@ class CreateIdeaInput(IdeaCreate):
     """REST's ``IdeaCreate`` (title, summary, description_md, tags: same limits, tags
     de-duplicated in any case) plus the project."""
 
-    model_config = MCP_INPUT_CONFIG
+    model_config = MCP_WRITE_INPUT_CONFIG
 
     project: ProjectSlugArg
 
@@ -559,7 +577,7 @@ class CreateIdeaOutput(McpOutput):
 class AddCommentInput(CommentCreate):
     """REST's ``CommentCreate`` (body_md with @mention tokens) plus the idea."""
 
-    model_config = MCP_INPUT_CONFIG
+    model_config = MCP_WRITE_INPUT_CONFIG
 
     idea: IdeaReference
 
@@ -575,7 +593,7 @@ class SubmitEvaluationInput(MyEvaluationIn):
     once; recommendation; comment) plus the idea. Unlike REST, ``submit`` defaults to
     true: an agent's evaluation is meant to count."""
 
-    model_config = MCP_INPUT_CONFIG
+    model_config = MCP_WRITE_INPUT_CONFIG
 
     submit: bool = Field(
         default=True,
@@ -597,14 +615,20 @@ class ProposeProposalSectionInput(ProposalSuggestionCreate):
     """REST's ``ProposalSuggestionCreate`` (section_key, body_md kept verbatim and not
     blank, base_version) plus the idea."""
 
-    model_config = MCP_INPUT_CONFIG
+    model_config = MCP_WRITE_INPUT_CONFIG
 
     idea: IdeaReference
 
 
+class McpProposalSuggestion(ProposalSuggestion):
+    """The suggestion, as REST returns it, with its text marked."""
+
+    body_md: str = Field(description="The proposed text of the whole section. " + UNTRUSTED)
+
+
 class ProposeProposalSectionOutput(McpOutput):
     idea: McpIdeaRef
-    suggestion: ProposalSuggestion
+    suggestion: McpProposalSuggestion
     replaced_suggestion_id: UUID | None = Field(
         description="Your earlier pending suggestion for this section, now discarded."
     )

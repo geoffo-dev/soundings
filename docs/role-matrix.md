@@ -63,7 +63,11 @@ it immediately.
   ([contract-phase4 §3.7](api/contract-phase4.md#37-tracking-and-confirmation-links)).
 - **Service account:** a user of kind `service` used by kagent agents via an API key.
   It needs a real project role like any user (member or viewer; **never admin**: 409
-  `system_account`) and follows every rule here, including blind evaluation. It **never
+  `system_account`) and follows every rule here, including blind evaluation. **Without
+  a role it is treated as NMp (a private non-member) in every project, internal ones
+  included** (404 everywhere; lists leave those projects out; a key can't be restricted
+  to them): it never gets the NMi column. Its people search (`user.search`) finds only
+  people who share a project with it, inside its key's projects. It **never
   owns an idea** (c4 refuses it as owner, c21 as a volunteer), so it can't accept its own
   suggestions or include its own evaluation. It never signs in: platform admins create
   its keys (Phase 6, `platform.manage_agents`;
@@ -443,7 +447,9 @@ projects.**
   counts, search and My work only contain projects in *S* (`app.authz.queries`
   `visible_projects` / `listed_ideas`). Rules that aren't about a project
   (`user.search` without a project: the people directory every signed-in person sees)
-  are unaffected. A platform admin's key is narrowed the same way.
+  are unaffected for people; a **service account's** search finds only people with a
+  role in a project where it has one, inside its key's projects. A platform admin's key
+  is narrowed the same way.
 - **Session only** (never through an API key, whatever its scopes; 403
   `insufficient_scope`): `project.create`, `project.manage_members`,
   `project.edit_rubric`, `project.rename_status_labels`, `project.edit_settings`,
@@ -470,7 +476,7 @@ projects.**
   session cookie is decided by the key.
 - Failed key authentications are counted per client address (30 a minute; beyond it a
   failing key gets 429 while a valid key still works), and each key may make 300
-  requests and 30 writes a minute (429 `too_many_attempts`).
+  requests (refused ones included) and 30 writes a minute (429 `too_many_attempts`).
 - Public routes (`public.submit`, `public.track`, `self.unsubscribe`, branding reads)
   ignore keys and sessions alike: the setting or token decides.
 
@@ -479,8 +485,15 @@ projects.**
 `/mcp` needs `mcp.connect` (a key with the `mcp` scope, c15). Every tool call is then
 authorised with the rule below, through the same policy and services as the REST API,
 and audited (`mcp.call`) with the tool, rule name, decision, error code, user and key
-id, whatever the outcome; never the arguments
+id, whatever the outcome (a cancelled call: `cancelled`, a crash: `internal_error`);
+never the arguments
 ([contract-phase5 §3.6 and §4](api/contract-phase5.md#4-mcp-server-and-tool-catalogue)).
+Requests refused before any tool runs are audited at most **once a minute per key**: a
+c15 refusal (`mcp.connect`, `insufficient_scope`) and the key's request budget
+(`too_many_attempts`); what the SDK refuses as malformed (400, 406, 415) isn't audited.
+Each tool call reads the key and its owner again inside its own transaction: a key
+revoked or expired, or an owner deactivated or demoted, while the request waited takes
+effect for that very call (the tool error `unauthorized`, audited as a denial).
 
 | Tool | Rule | Scope |
 |---|---|---|
@@ -505,7 +518,11 @@ id, whatever the outcome; never the arguments
 - Section 3 applies to every tool: a pending evaluator's key gets no score data
   (`score_hidden`), whatever its scopes or role; service accounts evaluate blind.
 - Tool errors carry the REST problem code (`not_found`, `forbidden`,
-  `insufficient_scope`, `evaluation_closed`, …).
+  `insufficient_scope`, `evaluation_closed`, …), or `unauthorized` (above).
+- The write tools refuse arguments they don't know (`validation_error`: a typo such as
+  `sumbit` never falls back to a default); the read tools ignore them. Request text with
+  Unicode tag characters is refused everywhere (REST 422, MCP `validation_error`), and
+  tool results carry no invisible characters.
 
 ## 7. Writing the tests
 

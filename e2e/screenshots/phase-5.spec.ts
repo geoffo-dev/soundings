@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { Page } from '@playwright/test'
 
-import { Api, type Person } from '../tests/support/api'
+import { Api, type Person, uniqueKey, uniqueSuffix } from '../tests/support/api'
 import { expect, settled, signIn, test } from '../tests/support/fixtures'
 import { KeyClient } from '../tests/support/mcp'
 
@@ -14,12 +14,13 @@ import { KeyClient } from '../tests/support/mcp'
  *
  * `npm run screenshots:phase5` → docs/screenshots/phase-5/ (`SCREENSHOT_DIR` overrides):
  * <screen>-<1440-light|1440-dark|390-light>.png for Settings → API keys (Carol's three
- * keys, one used a moment ago by an MCP client) and its "Connect an MCP client" section,
- * the create dialog filled in (AI
- * evaluator, one project), the key shown once (revoked straight after: it opens
- * nothing), Admin settings → API keys (Alice: everyone's keys), the proposal editor of
- * CUST-6 with two pending suggestions (Carol's through MCP, Bob's through the API) and
- * the audit log's "API keys and MCP" entries.
+ * keys, one used a moment ago by an MCP client, one restricted to a project she has since
+ * left: "+1 project you can no longer open") and its "For developers and AI assistants"
+ * section opened, the create dialog filled in ("Evaluate with an assistant", one
+ * project), the key shown once (revoked straight after: it opens nothing), Admin settings
+ * → API keys (Alice: everyone's keys; the project Carol left struck through), the
+ * proposal editor of CUST-6 with two pending suggestions (Carol's through MCP, Bob's
+ * through the API) and the audit log's "API keys and MCP" entries.
  *
  * Needs freshly seeded data (the local stack reseeds on start).
  */
@@ -54,8 +55,10 @@ let ready: Promise<void> | undefined
 
 /**
  * Once per run: Carol's keys ("Claude Desktop" used through MCP just now, "Weekly report
- * script" with an expiry, "Old laptop" for all projects), keys of Bob and Priya, and
- * CUST-6's proposal with Carol's MCP suggestion for Summary and Bob's REST one for Risks.
+ * script" with an expiry, restricted to two projects and "Partner pilots", a private
+ * project she then leaves (archived afterwards, so no sidebar shows it), "Old laptop" for
+ * all projects), keys of Bob and Priya, and CUST-6's proposal with Carol's MCP suggestion
+ * for Summary and Bob's REST one for Risks.
  */
 function prepare(): Promise<void> {
   ready ??= (async () => {
@@ -66,6 +69,13 @@ function prepare(): Promise<void> {
     try {
       const cust = await carol.project('customer-innovation')
       const tools = await carol.project('internal-tools')
+      const pilots = await alice.createProject({
+        name: 'Partner pilots',
+        slug: `partner-pilots-${uniqueSuffix()}`,
+        key: uniqueKey('PL'),
+        visibility: 'private',
+      })
+      await alice.addMember(pilots.slug, 'carol', 'member')
       await carol.createApiKey({
         name: 'Old laptop',
         scopes: ['read'],
@@ -73,9 +83,12 @@ function prepare(): Promise<void> {
       await carol.createApiKey({
         name: 'Weekly report script',
         scopes: ['read'],
-        project_ids: [cust.id, tools.id],
+        project_ids: [cust.id, tools.id, pilots.id],
         expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString(),
       })
+      // Carol leaves the pilot: the key keeps its id but no longer reaches it (UX m1).
+      await alice.send('DELETE', `/projects/${pilots.slug}/members/${carol.me.id}`, undefined, 204)
+      await alice.archiveCreated()
       const claude = await carol.createApiKey({
         name: 'Claude Desktop',
         scopes: ['read', 'write', 'evaluate', 'mcp'],
@@ -130,7 +143,7 @@ async function openCreate(page: Page) {
   await page.getByRole('button', { name: 'Create key' }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Create API key' })
   await dialog.getByLabel('Name').fill('Claude Code')
-  await dialog.getByRole('button', { name: 'AI evaluator' }).click()
+  await dialog.getByRole('button', { name: /^Evaluate with an assistant/ }).click()
   await dialog.getByRole('radio', { name: '30 days' }).click()
   await dialog.getByText('Only these projects').click()
   await dialog.getByRole('checkbox', { name: 'Customer Innovation' }).click()
@@ -165,8 +178,9 @@ const SHOTS: Shot[] = [
     as: 'carol',
     open: async (page) => {
       await openKeys(page)
+      await page.getByRole('button', { name: 'For developers and AI assistants' }).click()
       await page
-        .getByRole('region', { name: 'Connect an MCP client' })
+        .getByRole('region', { name: 'For developers and AI assistants' })
         .evaluate((element) => element.scrollIntoView({ block: 'start' }))
     },
   },

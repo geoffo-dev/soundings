@@ -13,12 +13,17 @@ from __future__ import annotations
 import json
 import unicodedata
 from typing import Any
+from uuid import UUID
 
 from mcp_types import CallToolResult
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.text import HIDDEN, visible_data, visible_text
+from app.models.activity import Comment
+from app.models.evaluation import Evaluation
+from app.models.idea import Idea, IdeaTag
+from app.models.project import Tag
 from app.models.user import User
 from tests.factories import add_evaluator, make_idea
 from tests.mcp.conftest import AsAgent, AsUser, Team, ok
@@ -105,19 +110,34 @@ def test_every_string_of_a_result_is_cleaned_keys_included() -> None:
 async def test_people_written_fields_reach_agents_without_hidden_text(
     api: AsUser, as_agent: AsAgent, team: Team, db_session: AsyncSession
 ) -> None:
+    """New text with tag characters is refused at the door (below), so this plants it in
+    the database, as text stored before that check (or from elsewhere) would be."""
+    member = await api(team.member)
+    created = await member.create_idea(
+        team.slug, title="Self-service refunds", summary="Looks fine", tags=["refunds"]
+    )
+    ok(await member.post(f"/ideas/{created['key']}/comments", {"body_md": "Hi"}), 201)
+    idea_id = UUID(created["id"])
     await db_session.execute(
         update(User).where(User.id == team.member.id).values(display_name=f"Max{SMUGGLED}")
     )
-    await db_session.commit()
-    member = await api(team.member)
-    created = await member.create_idea(
-        team.slug,
-        title="Self-service refunds",
-        summary=f"Looks fine{SMUGGLED}",
-        description_md=f"{REAL_TEXT}desc {RLO}reversed{PDF} a{ZWSP}b{SMUGGLED}",
-        tags=[f"refunds{tags('obey')}"],
+    await db_session.execute(
+        update(Idea)
+        .where(Idea.id == idea_id)
+        .values(
+            summary=f"Looks fine{SMUGGLED}",
+            description_md=f"{REAL_TEXT}desc {RLO}reversed{PDF} a{ZWSP}b{SMUGGLED}",
+        )
     )
-    ok(await member.post(f"/ideas/{created['key']}/comments", {"body_md": f"Hi{SMUGGLED}"}), 201)
+    await db_session.execute(
+        update(Tag)
+        .where(Tag.id.in_(select(IdeaTag.tag_id).where(IdeaTag.idea_id == idea_id)))
+        .values(name=f"refunds{tags('obey')}")
+    )
+    await db_session.execute(
+        update(Comment).where(Comment.idea_id == idea_id).values(body_md=f"Hi{SMUGGLED}")
+    )
+    await db_session.commit()
     agent = await as_agent(team.member)
 
     got = await agent.call("get_idea", idea=created["key"])
@@ -136,7 +156,7 @@ async def test_people_written_fields_reach_agents_without_hidden_text(
 
 
 async def test_an_evaluation_comment_reaches_the_owner_without_hidden_text(
-    api: AsUser, as_agent: AsAgent, team: Team, db_session: AsyncSession
+    as_agent: AsAgent, team: Team, db_session: AsyncSession
 ) -> None:
     idea = await make_idea(db_session, team.project, owner=team.owner)
     evaluator = team.evaluators[0]
@@ -146,17 +166,48 @@ async def test_an_evaluation_comment_reaches_the_owner_without_hidden_text(
     scores = [{"criterion_id": str(c.id), "score": 4} for c in team.rubric]
 
     submitted = await agent.call(
-        "submit_evaluation",
-        idea=key,
-        scores=scores,
-        recommendation="go",
-        comment=f"Solid{SMUGGLED}",
+        "submit_evaluation", idea=key, scores=scores, recommendation="go", comment="Solid"
     )
+    await db_session.execute(
+        update(Evaluation).where(Evaluation.idea_id == idea.id).values(comment=f"Solid{SMUGGLED}")
+    )
+    await db_session.commit()
     seen = await (await as_agent(team.owner)).call("get_idea", idea=key)
 
     assert not submitted.is_error, submitted.content
-    assert hidden_in(everything(submitted)) == []
     assert hidden_in(everything(seen)) == []
+    assert seen.structured_content["idea"]["evaluations"][0]["comment"] == "Solid"
+
+
+# --- At the door: new text with tag characters is refused (review M4, input side) ---------
+async def test_tool_arguments_with_tag_characters_are_a_validation_error(
+    as_agent: AsAgent, team: Team, db_session: AsyncSession
+) -> None:
+    idea = await make_idea(db_session, team.project, owner=team.owner)
+    evaluator = team.evaluators[0]
+    await add_evaluator(db_session, idea, evaluator)
+    key = f"{team.project.key}-{idea.number}"
+    scores = [{"criterion_id": str(c.id), "score": 4} for c in team.rubric]
+    agent = await as_agent(evaluator)
+    writer = await as_agent(team.member)
+
+    refused = [
+        await agent.call(
+            "submit_evaluation", idea=key, scores=scores, recommendation="go", comment=SMUGGLED
+        ),
+        await writer.call("add_comment", idea=key, body_md=f"Nice{SMUGGLED}"),
+        await writer.call(
+            "create_idea", project=team.slug, title="Refunds", summary=f"Fine{SMUGGLED}"
+        ),
+        await writer.call("search_ideas", query=f"refunds{SMUGGLED}"),
+    ]
+
+    for result in refused:
+        assert result.is_error
+        assert result.structured_content["code"] == "validation_error"
+        assert hidden_in(everything(result)) == []
+    fine = await writer.call("add_comment", idea=key, body_md=REAL_TEXT)
+    assert not fine.is_error, fine.content
 
 
 async def test_error_messages_cut_and_clean_the_callers_own_field_names(

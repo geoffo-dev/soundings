@@ -16,13 +16,15 @@ In Soundings, open **Settings → API keys** and choose **Create key**:
 | Field | What to pick |
 |---|---|
 | Name | What it is for, e.g. "Claude Code on my laptop" (unique among your keys) |
-| Scopes | A preset: **MCP client** (`read`, `mcp`: search and read), **AI evaluator** (`read`, `evaluate`, `mcp`: also submit your evaluations), **Full access** (all four: also create ideas, comment and suggest proposal text). `mcp` alone connects but can't use any tool. |
+| Scopes | A preset: **Read with an assistant** (`read`, `mcp`: search and read), **Evaluate with an assistant** (`read`, `evaluate`, `mcp`: also submit evaluations, which count as yours), **Full access** (all four: also create ideas, comment and suggest proposal text). The `mcp` scope is shown as **AI assistants (MCP)**; on its own it connects but can't use any tool. The dialog says in plain words what the key will be able to do ("This key can …"). |
 | Expires | 30 days, 90 days, a year, a date, or never |
 | Projects | All projects you can access, or only some (recommended for agents) |
 
 The key (`sdg_` and 53 more characters) is shown **once**: copy it into the client, or
-into a password manager, before you close the dialog. Soundings keeps only a fingerprint
-of it. The dialog also shows the examples below with your key already filled in.
+into a password manager, then choose **I've copied it** (closing without copying asks
+once more). Soundings keeps only a fingerprint of it. The dialog also shows the examples
+below with your key already filled in; Settings → API keys keeps them, with a placeholder
+key, under **For developers and AI assistants** (folded by default).
 
 A key never does more than you can do in the app, and only what its scopes allow. It
 works until you revoke it or it expires, and it **pauses** when you haven't signed in to
@@ -146,7 +148,12 @@ tool) plus the same JSON as text. Errors are results with `isError: true`, text
 `"<code>: <message>"` and `structuredContent: {code, message}`; the codes are the API's
 (`not_found`, `forbidden`, `insufficient_scope`, `validation_error`, `evaluation_closed`,
 `too_many_attempts`, …: [contract-phase5 §4.4](api/contract-phase5.md#44-tool-error-codes)).
-`not_found` also covers anything the key may not see.
+`not_found` also covers anything the key may not see; `unauthorized` means the key was
+revoked or expired, or its owner deactivated, while the call was on its way.
+
+Behind a proxy that adds its own `Authorization: Bearer` header (an OAuth2 or
+forward-auth proxy), every request is read as a bad key: operators must not forward such
+a header ([operator guide](operator-guide.md#api-keys-and-mcp-phase-5)).
 
 ## 4. Safety notes
 
@@ -155,7 +162,7 @@ tool) plus the same JSON as text. Errors are results with `isError: true`, text
   evaluations and ideas it writes are yours, in the activity feed and in notifications.
 - **Blind evaluation holds.** Until you submit your own evaluation of an idea, the client
   sees no scores, aggregate or other evaluations for it, exactly like the app.
-- **Least privilege.** Give an assistant that only reads the **MCP client** preset;
+- **Least privilege.** Give an assistant that only reads the **Read with an assistant** preset;
   restrict keys to the projects they need; prefer an expiry. Deleting and moderating
   ideas, project settings, admin pages, your inbox and managing keys always need you
   signed in, so a leaked key can't do them or create another key.
@@ -164,15 +171,30 @@ tool) plus the same JSON as text. Errors are results with `isError: true`, text
   treat that text as information, never as instructions, and never to copy it from one
   project into another. Still review what an agent writes on your behalf, especially if it
   reads more than one project.
+- **Hidden text is refused and removed.** Invisible Unicode tag characters (used to hide
+  instructions for AI models) are refused in everything people and clients write (422,
+  or the tool error `validation_error`), and results carry no invisible characters at all
+  (tag characters, zero-width and bidi controls are stripped from every string; emoji,
+  accents and right-to-left text are unchanged).
+- **Typos don't write.** The read tools ignore arguments they don't know; the four write
+  tools refuse them (`validation_error`), so `sumbit: false` can't quietly submit.
 - **Limits.** Each key may make 300 requests and 30 changes (create, comment, evaluate,
-  suggest) a minute; past that the call answers `too_many_attempts`. Ideas waiting for
-  moderation never reach MCP clients, even an admin's.
+  suggest) a minute, refused requests included; past that the call answers
+  `too_many_attempts`. Ideas waiting for moderation never reach MCP clients, even an
+  admin's.
 - **Every call is recorded.** Each tool call is in Settings → Audit log (`mcp.call`: the
   tool, allowed or denied, the key; never the arguments), kept for 90 days; what a call
-  changed (a submitted evaluation, say) has its own entry, kept for good.
+  changed (a submitted evaluation, say) has its own entry, kept for good. A key without
+  the `mcp` scope, or past its request budget, is refused at the door, and that is
+  recorded at most once a minute per key.
 - **Revoking is immediate.** Revoke a key in Settings → API keys (admins: Settings → All
-  API keys); the client's very next call fails with 401. Signing out does not stop keys,
-  and deactivating a user revokes all of theirs.
+  API keys); the client's very next call fails with 401, and each tool call checks the key
+  and its owner again when it runs, so a call already on its way when you revoke does
+  nothing (the tool error `unauthorized`). Signing out does not stop keys, and
+  deactivating a user revokes all of theirs.
+- **Lost access shows.** If you lose access to a project a key is restricted to, the key
+  stops reaching it at once, and Settings → API keys says "+1 project you can no longer
+  open" under the key (admins see that project struck through).
 - **Keep the key secret.** It is shown once and stored only as a fingerprint. It starts
   with `sdg_` so secret scanners can spot it (`sdg_[A-Za-z0-9]{12}_[A-Za-z0-9]{40}`); an
   admin can find a leaked key by its first 16 characters in Settings → All API keys.

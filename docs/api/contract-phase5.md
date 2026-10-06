@@ -166,14 +166,22 @@ evaluation and holds), 3.6 (audit completeness). §3.8 lists the minimum cases.
   otherwise would mislead; the API adds `read` to such a key when it is created
   (`canonical_scopes`; `ck_api_keys_scopes_include_read` backs it). Otherwise scopes
   don't imply each other (`mcp` only opens `/mcp`). The SPA offers presets: "Read only"
-  (`read`), "MCP client" (`read`, `mcp`), "AI evaluator" (`read`, `evaluate`, `mcp`),
-  "Full access" (all four); ticking `write` or `evaluate` ticks and locks `read`
-  ("Included").
+  (`read`), "Read with an assistant" (`read`, `mcp`), "Evaluate with an assistant"
+  (`read`, `evaluate`, `mcp`: "…they count as yours", so it isn't mistaken for SPEC §9's
+  AI evaluator, a service account left out of the aggregate), "Full access" (all four);
+  ticking `write` or `evaluate` ticks and locks `read` ("Included"). The `mcp` scope is
+  labelled "AI assistants (MCP)" (lead decision on UX M4, 2026-10-06).
 - **Project restriction:** `project_ids` null = every project the owner can access, now
   and later; else 1–50 projects, each one the owner can view **now** (`project.view`;
   otherwise, and for unknown ids, 422 `invalid_project`, without saying which). Stored
   as `uuid[]`; a deleted project's id simply matches nothing, so a restriction never
-  widens. Archived projects may be chosen (read-only anyway).
+  widens. Archived projects may be chosen (read-only anyway). **Lost access shows:**
+  `ApiKey.projects` lists the restricted projects that still exist and the owner can
+  view; `ApiKey.unavailable_project_count` counts those that still exist but the owner
+  can no longer open (the key reaches none of them; deleted projects aren't counted), and
+  the SPA says "+N project(s) you can no longer open". `AdminApiKey.projects` lists every
+  restricted project that still exists, each with `owner_can_view` (the admin view strikes
+  the others through). Both added after the contract (§8, UX m1).
 - **Expiry:** `expires_at` null (never) or 1 hour to 366 days ahead, with an offset
   (422 otherwise). From that instant every request with the key is 401; the key stays
   listed as `expired` (it counts towards the limit) until revoked. No renewal: create a
@@ -318,10 +326,12 @@ projects.**
   Lists, boards, counts, search, My work and `list_projects` contain only those projects
   (`app.authz.queries.visible_projects` / `listed_ideas` already add
   `project_id IN (:ids)` when `principal.project_ids` is set, and match nothing without
-  `read`). Global rules are unaffected: `search_users` without `project=` finds people
-  across the directory as it does for every signed-in person (names and emails, no
-  project data); accepted, since the picker and @mentions need it and the restriction is
-  about project data.
+  `read`). Global rules are unaffected for people: `search_users` without `project=`
+  finds people across the directory as it does for every signed-in person (names and
+  emails, no project data); accepted, since the picker and @mentions need it and the
+  restriction is about project data. A **service account's** `search_users` finds only
+  people with an effective role in a project where it has one, inside its key's projects
+  (security review L4: an agent doesn't need the directory).
 - **Platform admins' keys** are narrowed like anyone's: a restricted key of a platform
   admin sees only its projects; `platform.*` is session only.
 - **Writes through a key** are audited exactly like the same writes in a session (the
@@ -345,6 +355,9 @@ projects.**
   proposal (c7 needs Shortlisted), and its writes are 409 `awaiting_moderation` (c19).
 - **Needs a proposal:** creating, listing or deciding on an idea without one → 404 (the
   owner starts the proposal first).
+- **Order of checks** (create, as `save_my_evaluation`): 404 → 403 → 422 (a
+  `base_version` above the section's) → 409 (`proposal_not_available`,
+  `too_many_suggestions`, `project_archived`, `awaiting_moderation`).
 - **`base_version`** is the section version the author read (default: the current one;
   above the current one → 422 `validation_error`); `section_changed` in responses is
   true when the section's version is now higher, and the editor says "The section has
@@ -401,7 +414,13 @@ projects.**
 - **c15 (`mcp.connect`):** a key without the `mcp` scope → 403 `insufficient_scope` with
   `WWW-Authenticate: Bearer error="insufficient_scope", scope="mcp"`. Although
   `initialize` and `tools/list` aren't audited, a request refused by c15 is, whatever its
-  JSON-RPC method (one `mcp.call` entry, §3.6).
+  JSON-RPC method (one `mcp.call` entry per key per minute at most, §3.6). Refused
+  requests count towards the key's request budget, so a key without `mcp` can't hammer
+  `/mcp` for free.
+- **Checked again inside the tool:** each `tools/call` re-reads the key and its owner in
+  the tool's own transaction, so a key revoked or expired, or an owner deactivated or
+  demoted (platform-admin flag), while the request waited (a slow body, a queue) applies
+  to that very call: the tool error `unauthorized`, audited as a denial.
 - **Host:** `/mcp` (exactly `MCP_PATH`) is **exempt** from the app's
   `TrustedHostMiddleware`, like the probes, so Phase 6 agents in the cluster can call
   the Service directly (`http://<fullname>.<namespace>.svc.cluster.local/mcp`: the
@@ -426,9 +445,10 @@ projects.**
   handshake versions 2024-11-05 to 2025-11-25, and 2026-07-28). Phase 6 checks kagent's
   client against them.
 - **Order of checks:** body size (413) → method (405) → Origin (403) → key (401, or 429
-  for a failing key from an address over the failure limit) → c15 (403) → per-key rate
-  (429) → SDK (406, 415, 400) → JSON-RPC method → tool (§4.3, including the write cap).
-  No Host check (above).
+  for a failing key from an address over the failure limit) → per-key rate (429) → c15
+  (403) → SDK (406, 415, 400) → JSON-RPC method → tool (§4.3: the key re-checked, then the
+  write cap). No Host check (above). (Rate before c15 since the security review, so
+  refusals count; the contract first had c15 first.)
 - **Not audited:** `initialize`, `notifications/initialized`, `tools/list`, `ping` (no
   data is read). Every `tools/call` is, and so is a c15 refusal (§3.6).
 - **`/.well-known/*`** answers 404 problem+json from the API (§2): MCP clients that look
@@ -458,10 +478,16 @@ can patch `AUDIT_ACTIONS`).
   unknown_tool`, `decision: deny`), arguments that fail the input model (`code:
   validation_error`, `decision: deny`), the write cap (`code: too_many_attempts`,
   `decision: deny`), policy denials (`decision: deny` with `not_found`, `forbidden` or
-  `insufficient_scope`), business failures (`decision: allow` with e.g.
-  `evaluation_closed`), crashes (`code: internal_error`) and successes. A c15 refusal at
-  HTTP level is one entry with `tool: null`, `rule: mcp.connect`, `decision: deny`,
-  `code: insufficient_scope` (audited although `initialize` and `tools/list` aren't).
+  `insufficient_scope`), a key refused when re-checked inside the tool (`unauthorized`,
+  `deny`), business failures (`decision: allow` with e.g. `evaluation_closed`), crashes
+  (`code: internal_error`, also a validator that crashes, `deny`), a call cancelled by
+  the client or the server (`code: cancelled`, `allow`, written from a separate task)
+  and successes. A c15 refusal at HTTP level is one entry with `tool: null`, `rule:
+  mcp.connect`, `decision: deny`, `code: insufficient_scope`, and the request budget's
+  429 one with `code: too_many_attempts`, each **at most once per key per minute**
+  (audited although `initialize` and `tools/list` aren't; a flood can't fill the log).
+  Requests that never become a tool call (the SDK's 415, 406 and 400) aren't audited;
+  they still count towards the key's budget.
 - **Where it is written:** in the tool's transaction when the call commits; otherwise in
   a separate short transaction after the rollback, so denials and failures are kept.
 - **Writes keep their own entries:** a call that submits an evaluation records
@@ -510,6 +536,11 @@ can patch `AUDIT_ACTIONS`).
   which lists agents from Phase 6.
 - **Its evaluations** are left out of the aggregate by default (§2), carry `is_ai`, and
   suggestions it makes have `source: ai` (REST or MCP).
+- **Without a role it is a private non-member everywhere** (role matrix §1): in an
+  internal project too, it gets 404 for every project and idea rule (not the NMi
+  column), lists and `list_projects` leave the project out, and a key can't be
+  restricted to it (`invalid_project`). An agent sees only the projects it was added to.
+- **People search:** its `search_users` finds only co-members (§3.3).
 - Deactivating a service account revokes its keys (§3.1).
 
 ### 3.8 Minimum tests (tests first)
@@ -597,9 +628,12 @@ Calm and Linear-like (SPEC section 5): design-system components only, loading, e
 error states, dark mode, keyboard, 390 px.
 
 - **Settings → API keys** (personal settings, next to Notifications): one row per key:
-  name, `prefix…` in monospace, scope chips, "All projects" or the project names,
-  expiry ("Never", a date, or an "Expired" badge), last used ("Never used" or a relative
-  time). Empty state: "No API keys yet. Create one to use the API or connect an MCP
+  name, `prefix…` in monospace (created in its tooltip), a **"Can"** column in plain
+  words instead of scope chips ("Read and evaluate", "Also through AI assistants"; keys
+  that can change things read stronger), "All projects" or the project names (with "+N
+  project(s) you can no longer open", §3.1), expiry ("Never", a date, "in 3 days" in a
+  warning tone within a week, or an "Expired" badge; expired keys last, quieter, with
+  Remove), last used ("Never used" or a relative time). Empty state: "No API keys yet. Create one to use the API or connect an MCP
   client." **Create key** (disabled with a reason when `can_create` is false: "You have
   25 keys. Revoke one you no longer use." / not for the break-glass account): name;
   scopes as checkboxes with one-line explanations and the presets of §3.1 (`read` ticked
@@ -607,13 +641,17 @@ error states, dark mode, keyboard, 390 px.
   days, 1 year, never, or a date); projects ("All projects I can access" or "Only
   these", a multi-select of projects you can view). One muted line under the list: "Keys
   pause when you haven't signed in to Soundings for 30 days; signing in reactivates
-  them." Then the **secret dialog**: the full key once, Copy, "Store it somewhere safe:
-  you won't see it again", Done (focus returns to the new row; the create mutation is
-  `reset()` so the secret leaves the query cache). **Revoke** asks first ("Revoke "Claude Desktop"?
+  them." The dialog says live what the key will be able to do ("This key can …"). Then
+  the **secret dialog**: the full key once, Copy, "Treat it like a password: anyone who
+  has it can act as you: …", "I've copied it" (closing before anything containing the
+  key was copied asks once, with its own Copy key button; focus returns to the new row;
+  the create mutation is `reset()` so the secret leaves the query cache). **Revoke** asks first ("Revoke "Claude Desktop"?
   Anything using it stops working immediately.") because the row disappears; no Undo.
-  **Connect an MCP client:** the server URL (`<origin>/mcp`), the header
-  (`Authorization: Bearer <your key>`) and a copyable JSON example for clients that take
-  an `mcpServers` map with `type: "http"`, `url` and `headers`.
+  **For developers and AI assistants** (folded by default; was "Connect an MCP client"):
+  the server URL (`<origin>/mcp`), the header (`Authorization: Bearer <your key>`), a
+  link to the API reference (`/api/docs`) and copyable examples: an `mcpServers` map with
+  `type: "http"`, `url` and `headers`, Claude Code, Claude Desktop (`mcp-remote`
+  `--header-file`) and curl.
 - **Admin settings → API keys:** a table (cards at 390 px) of every key that isn't
   revoked: owner (AI badge for service accounts), name, prefix, scopes, projects,
   created, last used, expires, state (an "Expired" or "Dormant" badge; Dormant's tooltip:
@@ -622,7 +660,10 @@ error states, dark mode, keyboard, 390 px.
   a secret never goes into a URL), filter by state, a link from a user's admin page
   (`?user_id=`); Revoke with the same confirmation. A user's "Sign out everywhere"
   confirmation adds "API keys keep working" with a link here (`?user_id=`).
-- **Proposal editor:** §3.4 "The editor".
+- **Proposal editor:** §3.4 "The editor". The idea's **Proposal tab** shows the number of
+  pending suggestions to people who may decide (the owner and project admins, while c7
+  holds; the server's `can_decide` confirms), so an assistant's suggestion doesn't sit
+  unseen; there is no notification in Phase 5 (lead decision on UX M5, 2026-10-06).
 - **Audit log:** the three new actions' sentences and an "API keys and MCP" category
   (§3.6).
 
@@ -682,9 +723,11 @@ The models are in `app/schemas/mcp.py` (`MCP_TOOLS`, `*Input`, `*Output`, `McpTo
   `ProposeProposalSectionInput(ProposalSuggestionCreate)`) and add the idea or project,
   so limits, tag de-duplication (`["A", "a"]` → `["A"]`), verbatim proposal text and
   cross-field rules are REST's; the tool passes the validated model to the REST service
-  as its body. Strings are stripped (proposal text excepted) and NUL is refused; unknown
-  top-level arguments are ignored (`MCP_INPUT_CONFIG`), nested REST models (score
-  entries) still refuse unknown fields. `submit_evaluation`'s `submit` defaults to
+  as its body. Strings are stripped (proposal text excepted); NUL and Unicode tag
+  characters are refused. The **read** tools ignore unknown arguments
+  (`MCP_INPUT_CONFIG`); the **write** tools refuse them (`MCP_WRITE_INPUT_CONFIG`,
+  `validation_error`: a typo such as `sumbit` must not fall back to a default; security
+  review L2), and nested REST models (score entries) refuse unknown fields too. `submit_evaluation`'s `submit` defaults to
   **true** (REST's to false): an agent's evaluation is meant to count.
 - **Results:** the `*Output` model as `structuredContent` (snake_case, every field
   present), and the same JSON as one text content block (for clients without structured
@@ -693,10 +736,16 @@ The models are in `app/schemas/mcp.py` (`MCP_TOOLS`, `*Input`, `*Output`, `McpTo
   default 10) comments and the latest `MCP_EVALUATIONS_MAX` (25) evaluations with
   `evaluation_count` for all; comment bodies and evaluations' overall comments longer
   than `MCP_TEXT_LIMIT` (2,000 characters) are cut there with `truncated: true` (the
-  idea's description, at most 50,000 characters, is returned whole).
+  idea's description, at most 50,000 characters, is returned whole). **No invisible
+  text:** every string of a result (and of an error message) loses Unicode tag
+  characters, variation selectors beyond VS15/VS16, zero-width, other format, bidi and
+  control characters (`app/mcp/text.py`; ZWJ, ZWNJ and line breaks stay), and error
+  messages cut each field-name part to 40 characters (security review M4).
 - **Untrusted text:** every field people write (`title`, `summary`, `description_md`,
   `tags`, comment and evaluation comments, proposal sections' `body_md`, project
-  `description`) carries `UNTRUSTED` in its output-schema description, and the
+  `description`, people's `display_name`, the project's `status_label`, rubric criteria's
+  `name`, `description` and `guidance` (`McpRubricCriterion`), a suggestion's `body_md`
+  (`McpProposalSuggestion`)) carries `UNTRUSTED` in its output-schema description, and the
   descriptions of `search_ideas`, `get_idea` and `get_proposal` say the same; ideas from
   the public form say so in search results too (`via_public_form` on `McpIdeaSummary`).
 - **Errors** are tool results with `isError: true`, `content: [{type: "text", text:
@@ -785,6 +834,8 @@ Notes per tool:
 | `unknown_criterion`, `evaluation_incomplete`, `too_many_mentions` | as REST 422s |
 | `evaluation_closed`, `idea_closed`, `evaluation_already_submitted`, `proposal_not_available`, `too_many_suggestions`, `project_archived` | as REST 409s |
 | `too_many_attempts` | the key's write cap (30 a minute) on a tool that isn't read-only |
+| `unauthorized` | the key (revoked, expired, its sign-in method gone) or its owner (deactivated, dormant) was refused when checked again inside the tool's transaction (§3.5) |
+| `cancelled` | audit only: the call was cancelled before it finished (§3.6) |
 | `unknown_tool` | a name that isn't in the catalogue |
 | `internal_error` | anything unexpected (logged with the traceback; the message says nothing more) |
 
@@ -912,6 +963,11 @@ Builders record additive contract changes here (date, change, why), then run
 |---|---|---|
 | 2026-10-02 | `AuditAction` gains `api_key.create`, `api_key.revoke`, `mcp.call` (identity, the integration step of §3.6, done first so builders can record them); `list_audit_entries`' `action` filter takes up to 64 values (was 40). | §3.6. The enum now has 42 values: a filter for every action but one (the viewer's test, an "all categories" filter) was 422 at 40. |
 | 2026-10-02 | OpenAPI declares the `api_key` bearer scheme (`HTTPBearer`, `bearerFormat: sdg_…`) on `get_current_user`: every signed-in operation's `security` lists `session` or `api_key`. No schema or TypeScript type changed. | §3.2 (identity). |
+| 2026-10-06 | `ApiKey.unavailable_project_count` (int ≥ 0) and `AdminApiKey.projects` items become `AdminApiKeyProject` (`ProjectRef` + `owner_can_view`); `make gen-api` (lead, final verification). | UX m1: the owner's list and the admin list disagreed silently when the owner lost access to a restricted project (§3.1). |
+| 2026-10-06 | Descriptions only: `search_users` says a service account finds only co-members. | Security review L4 (§3.3). |
+| 2026-10-06 | MCP catalogue (not OpenAPI): write tools' inputs use `MCP_WRITE_INPUT_CONFIG` (`extra="forbid"`); new output models `McpRubricCriterion` and `McpProposalSuggestion` mark people-written text `UNTRUSTED`, as do `McpUser.display_name` and `McpIdeaRef.status_label`; read tools' inputs refuse tag characters too. | Security review L2 and nit 2 (§4.2). |
+| 2026-10-06 | Behaviour, no shape change: every request body (`RequestModel`) and `SingleLine` refuse Unicode tag characters (U+E0000–U+E007F, 422); sign-in strips them from IdP display names. Subdivision flag emoji (Scotland's) go with them. | Security review M4, input side. |
+| 2026-10-06 | Behaviour, no shape change (security review, backend): `/mcp` checks the key's rate before c15 and refusals count towards it; c15 and budget refusals audited once per key per minute; `cancelled` and validator `internal_error` audit codes; the tool error `unauthorized` (key re-checked in the tool); results stripped of invisible characters; suggestion check order 404 → 403 → 422 → 409; a service account without a role is NMp everywhere. | §3.4–§3.7, §4.2, §4.4. |
 | 2026-10-02 | Behaviour, no shape change: (1) every operation is classified for keys in `app.authz.keys.ROUTE_KEY_ACCESS` (`policy`, `read`, `session`, `public`; deny by default) and `get_current_user` refuses a key on a `session` route, or a `read` route without `read`, with 403 `insufficient_scope` **before** the route's 404/422 (the answer doesn't depend on the resource, so it reveals nothing; key routes therefore answer a key 403 even for a malformed body). Session routes beyond §3.3's list: the moderation queue and `get_idea_submission` (moderation), the public-form and branding settings (`project.edit_settings`). (2) `require_view` (routes that load an idea or project to read it) needs `read` with a key, after the 404s: a key with only `mcp` reads nothing through REST (before, `GET /ideas/{idea}` and other loads answered it). | §3.3 "routes without a rule", role matrix §5 (`mcp` grants `mcp.connect` only). Found by `tests/authz/test_key_routes.py`. |
 
 ## 9. Contract review (2026-10-02, before building)

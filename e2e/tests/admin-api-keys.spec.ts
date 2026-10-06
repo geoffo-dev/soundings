@@ -237,3 +237,48 @@ test('AAK-05: only platform admins, and only in a session', async ({ page, api }
     await alice.revokeApiKey(key.key.id)
   }
 })
+
+test('AAK-06: a project the owner can no longer open is counted for them and struck through here', async ({
+  page,
+  api,
+}) => {
+  // UX m1 (contract-phase5 §3.1): the key keeps the project's id but no longer reaches
+  // it; the owner's list counts it, this list names it as unavailable.
+  const alice = await api('alice')
+  const carol = await api('carol')
+  const run = uniqueSuffix()
+  const kept = await createTeamProject(alice, 'Kept', { carol: 'member' })
+  const left = await createTeamProject(alice, 'Left', { carol: 'member' })
+  const key = await carol.createApiKey({
+    name: `Two projects ${run}`,
+    scopes: ['read'],
+    project_ids: [kept.id, left.id],
+  })
+  try {
+    await alice.send('DELETE', `/projects/${left.slug}/members/${carol.me.id}`, undefined, 204)
+    const mine = (await carol.apiKeys()).items.find((item) => item.id === key.key.id)
+    expect(mine?.projects.map((project) => project.name)).toEqual([kept.name])
+    expect(mine?.unavailable_project_count).toBe(1)
+
+    await signIn(page, 'carol')
+    await page.goto('/settings/api-keys')
+    const own = page.getByRole('row').filter({ hasText: `Two projects ${run}` })
+    await expect(own).toContainText(kept.name)
+    await expect(own).not.toContainText(left.name)
+    await expect(own).toContainText('+1 project you can no longer open')
+
+    await signIn(page, 'alice')
+    await openAdminKeys(page, `?q=${run}`)
+    const row = keyRow(page, `Two projects ${run}`)
+    await expect(row).toContainText(kept.name)
+    await expect(row).toContainText(`${left.name} (the owner can no longer open it)`)
+    await expect(row).toContainText('Owner can’t open 1')
+    const listed = await alice.adminApiKeys({ q: run })
+    expect(listed.items[0]?.projects.map((project) => project.owner_can_view).sort()).toEqual([
+      false,
+      true,
+    ])
+  } finally {
+    await carol.revokeApiKey(key.key.id)
+  }
+})

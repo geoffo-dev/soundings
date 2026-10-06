@@ -44,6 +44,7 @@ __all__ = [
     "SCOPES_IMPLYING_READ",
     "AdminApiKey",
     "AdminApiKeyPage",
+    "AdminApiKeyProject",
     "ApiKey",
     "ApiKeyCreate",
     "ApiKeyExpiry",
@@ -171,6 +172,15 @@ class ApiKey(ResponseModel):
             "key reaches nothing)."
         )
     )
+    unavailable_project_count: int = Field(
+        ge=0,
+        description=(
+            "Projects it is restricted to that still exist but its owner can no longer "
+            'open (removed from them, say): the key reaches none of them. Show "+N '
+            'project(s) you can no longer open". 0 when not restricted. Deleted projects '
+            "aren't counted."
+        ),
+    )
     expires_at: datetime | None = Field(description="Null: never expires.")
     state: ApiKeyState
     created_at: datetime
@@ -205,10 +215,28 @@ class CreatedApiKey(ResponseModel):
     )
 
 
+class AdminApiKeyProject(ProjectRef):
+    """A project an admin-listed key is restricted to."""
+
+    owner_can_view: bool = Field(
+        description=(
+            "The key's owner can open this project now; false: the key no longer reaches "
+            "it (mark it as unavailable)."
+        )
+    )
+
+
 class AdminApiKey(ApiKey):
     """A key in Admin settings -> API keys, with its owner. ``projects`` lists every
-    restricted project that still exists."""
+    restricted project that still exists, each with whether the owner can still open it
+    (``unavailable_project_count`` counts those they can't)."""
 
+    projects: list[AdminApiKeyProject] = Field(  # type: ignore[assignment]
+        description=(
+            "Every project it is restricted to that still exists, by name, with "
+            "owner_can_view. Empty when not restricted."
+        )
+    )
     owner: UserRef
     owner_email: str
     owner_is_service_account: bool = Field(
