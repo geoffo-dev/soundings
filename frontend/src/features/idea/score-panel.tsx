@@ -1,9 +1,10 @@
 import { Lock, TriangleAlert } from 'lucide-react'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 
 import type { AggregateScore, IdeaDetail } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { ScoreBar } from '@/components/ui/score-bar'
+import { AiNotCounted } from '@/features/ai/ai-evaluation'
 import { formatScore } from '@/lib/scores'
 import { cn } from '@/lib/utils'
 
@@ -48,11 +49,24 @@ export function useRevealOnce(hidden: boolean): boolean {
  * evaluation: no numbers, no counts, no flag; role matrix §3).
  */
 export function ScorePanel({ className }: { className?: string }) {
-  const { idea } = useIdeaPage()
-  return <ScoreSummary idea={idea} className={className} />
+  const { idea, ideaKey, setTab } = useIdeaPage()
+  return (
+    <ScoreSummary idea={idea} className={className}>
+      <AiNotCounted ideaKey={ideaKey} idea={idea} setTab={setTab} />
+    </ScoreSummary>
+  )
 }
 
-export function ScoreSummary({ idea, className }: { idea: IdeaDetail; className?: string }) {
+export function ScoreSummary({
+  idea,
+  className,
+  children,
+}: {
+  idea: IdeaDetail
+  className?: string
+  /** Under the score (e.g. "1 AI evaluation not counted · Review"). */
+  children?: ReactNode
+}) {
   const reveal = useRevealOnce(idea.score_hidden)
   const headingId = useId()
   return (
@@ -71,6 +85,7 @@ export function ScoreSummary({ idea, className }: { idea: IdeaDetail; className?
             : 'No scores yet.'}
         </p>
       )}
+      {children}
     </section>
   )
 }

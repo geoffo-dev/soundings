@@ -2852,7 +2852,7 @@ export interface components {
             name: string;
             /**
              * Namespace
-             * @description The kagent Agent's namespace (a DNS label; in SOUNDINGS_AI_AGENT_NAMESPACES when that is set, else 422 namespace_not_allowed).
+             * @description The kagent Agent's namespace (a DNS label; one of SOUNDINGS_AI_AGENT_NAMESPACES, by default soundings, else 422 namespace_not_allowed).
              */
             namespace: string;
             /**
@@ -3328,7 +3328,7 @@ export interface components {
         AiSettingsInEffect: {
             /**
              * Agent Namespaces
-             * @description Allowed namespaces; empty: any.
+             * @description The namespaces agents may be registered in (at least one; default soundings).
              */
             agent_namespaces: string[];
             default_protocol: components["schemas"]["AiAgentProtocol"];

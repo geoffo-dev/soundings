@@ -8,6 +8,7 @@ import {
   run,
   signInAs,
   skipWithoutAi,
+  runSteps,
   waitRun,
 } from './support/ai'
 import { details, expect, openIdea, test } from './support/fixtures'
@@ -47,20 +48,22 @@ test.describe('@ai how runs end', () => {
       })
       await expect(progress).toBeFocused()
       const card = page.locator('article[id^="ai-run-"]').first()
-      await expect(card.getByRole('list', { name: 'Steps' })).toContainText('Read the idea', {
-        timeout: 30_000,
-      })
+      // One line while it works: the current step, the time taken and the time left.
+      await expect(card).toContainText('Read the idea', { timeout: 30_000 })
       await expect(card.getByText('Working', { exact: true })).toBeVisible()
-      await expect(card).toContainText(/Stops by \d{2}:\d{2}/)
+      await expect(card).toContainText(/\d+ min left|under a minute left/)
       // While it works the menu offers its progress, not a second run.
       await page.getByRole('button', { name: 'AI actions' }).first().click()
       await expect(page.getByRole('menuitem', { name: /Evaluating…/ })).toBeVisible()
       await page.keyboard.press('Escape')
 
-      await card.getByRole('button', { name: /^Cancel: Evaluating by Idea evaluator/ }).click()
-      await expect(card.getByText('Cancelled').first()).toBeVisible({ timeout: 30_000 })
-      await expect(card.getByRole('list', { name: 'Steps' })).toContainText('Cancelling')
+      const cancel = card.getByRole('button', { name: /^Cancel: Evaluating by Idea evaluator/ })
+      await cancel.click()
+      // Cancelling keeps focus on Cancel (busy, not disabled); when it ends, on the run.
+      await expect(card).toContainText('Cancelled: nothing was saved.', { timeout: 30_000 })
+      await expect(card).toBeFocused()
       await expect(card.getByRole('button', { name: 'Try again' })).toBeVisible()
+      await expect(await runSteps(card)).toContainText('Cancelling')
       // The run assigned the agent and ends without an evaluation: it is taken off.
       const evaluators = details(page).getByRole('list', { name: 'Evaluators' })
       await expect(evaluators.getByText('Idea evaluator')).toHaveCount(0)
@@ -129,15 +132,25 @@ test.describe('@ai how runs end', () => {
       await openIdea(page, key)
       const cards = page.locator('article[id^="ai-run-"]')
       await expect(cards).toHaveCount(2)
-      for (const [name, sentence] of [
-        ['Failing researcher', 'The agent stopped with an error.'],
-        ['Curious evaluator', "The agent asked for input, which a run can't give."],
+      for (const [name, words, sentence] of [
+        [
+          'Failing researcher',
+          'The agent ran into an error and stopped.',
+          'The agent stopped with an error.',
+        ],
+        [
+          'Curious evaluator',
+          'The agent asked a question, and a run can’t answer one.',
+          "The agent asked for input, which a run can't give.",
+        ],
       ] as const) {
         const card = cards.filter({ hasText: name })
-        await expect(card).toContainText(sentence)
-        await card.getByRole('button', { name: 'Steps' }).click()
-        await expect(card.getByRole('list', { name: 'Steps' })).toContainText(sentence)
-        await expect(card.getByText('Failed', { exact: true })).toBeVisible()
+        // The row: Soundings' plain words by error code, with a next step; the steps keep
+        // the server's sentence.
+        await expect(card).toContainText(words)
+        await expect(card).toContainText('Try again')
+        await expect(card).not.toContainText('(state ')
+        await expect(await runSteps(card)).toContainText(sentence)
         await expect(card.getByRole('button', { name: 'Try again' })).toBeVisible()
       }
       // The evaluate run took its assignment back.
@@ -145,12 +158,15 @@ test.describe('@ai how runs end', () => {
         details(page).getByRole('list', { name: 'Evaluators' }).getByText('Curious evaluator'),
       ).toHaveCount(0)
 
-      // "Try again" asks the same agent again: a new run.
+      // "Try again" asks the same agent again: a new run takes the row (focus follows it),
+      // the failed one goes to History.
       await cards
         .filter({ hasText: 'Failing researcher' })
         .getByRole('button', { name: 'Try again' })
         .click()
-      await expect(cards).toHaveCount(3)
+      await expect(page.getByRole('button', { name: 'History (1)' })).toBeVisible()
+      await expect(cards).toHaveCount(2)
+      await expect(cards.filter({ hasText: 'Failing researcher' })).toBeFocused()
 
       // An agent the controller doesn't know (404): no retries, Soundings' sentence.
       const shortlisted = await team.idea({
@@ -194,11 +210,15 @@ test.describe('@ai how runs end', () => {
       await signInAs(page, team.owner.me)
       await openIdea(page, key)
       const card = page.locator('article[id^="ai-run-"]').first()
-      await expect(card).toContainText(/Stops by \d{2}:\d{2}/)
-      await expect(card.getByText('Timed out', { exact: true })).toBeVisible({
-        timeout: (settings.run_timeout_seconds + 30) * 1000,
-      })
-      await expect(card).toContainText('The agent didn')
+      await expect(card).toContainText(/\d+ min left|under a minute left/)
+      // The row says the limit it hit, and what to do.
+      await expect(card).toContainText(
+        /The agent didn’t finish within (\d+ seconds|1 minute|\d+ minutes)\./,
+        {
+          timeout: (settings.run_timeout_seconds + 30) * 1000,
+        },
+      )
+      await expect(card).toContainText('Try again: it may have been busy.')
       const over = await run(alice, key, started.id)
       expect([over.status, over.error?.code]).toEqual(['timed_out', 'timed_out'])
       const seen = await new FakeAgent().waitFor(started.id, (r) => r.cancel_requests > 0)

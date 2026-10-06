@@ -136,39 +136,60 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   disabled with the `*_blocked_by` reason in plain words (`BLOCKED_COPY` in `ai-copy.ts`), and
   "Evaluating… view progress" while a run is active (⌘K has the same, `useAiCommands`). The
   evaluators list has "Ask AI to evaluate" (or "…again") and the AI evaluator's row (AI badge; a
-  spinner button to its run while it works). Runs live on the Overview tab (`ai-runs-section.tsx`):
-  every active run as a `RunCard` (`run-card.tsx`: agent, who asked, the live steps, elapsed time and
-  "Stops by", Cancel; then the outcome with "View the evaluation" / "Read the note" / "Open the
-  proposal" or the error sentence and "Try again"), runs that finished while you watched, then the
-  three latest others folded to their outcome. Steps are the server's own sentences, never agent
+  spinner button to its run while it works; if it had focus when the run ends, focus goes to "Ask
+  AI to evaluate…" or "Invite evaluators"). Runs live on the Overview tab (`ai-runs-section.tsx`,
+  `partitionRuns`): one quiet row per agent and kind, its latest run as a `RunCard` (`run-card.tsx`:
+  while it works the current step, elapsed time and "N min left" (rounded), Cancel; after, one
+  outcome line: what it saved ("Evaluation submitted · not in the score yet") with "View the
+  evaluation" / "Read the note", or why it stopped in Soundings' words by `error.code` with a next
+  step (`runErrorWords` in `ai-copy.ts`; the timeout states the limit) and "Try again" on the latest
+  row only); who asked and every step behind "Steps"; older runs under "History (N)"; draft runs stay
+  in the proposal editor. Focus stays where the person put it: when a run ends, focus moves to its
+  row only if it was in the row and got lost (its Cancel went); the outcome is announced in the
+  row's live region either way. Steps are the server's own sentences, never agent
   text; each new one is announced politely. Progress streams over SSE (`api/ai-stream.ts`,
   `use-run-progress.ts`: one EventSource per shown run, closed after the final event; a refused or
   repeatedly failing stream falls back to polling `get_ai_run` every 2.5 s and says so); when a run
   ends, `runFinished` refetches the run, the list and what its kind changed. The Evaluations tab's
   AI card (`ai-evaluation.tsx`, `features/idea/evaluations-tab.tsx`): AI badge, "Not in score", the
-  "Include in score" switch (`can_include_ai`, Undo toast; read-only text for everyone else),
-  "Rationale" per criterion with its sources (`SourceList compact`), the summary; the comparison
-  table marks AI columns "not in score". Research notes in the feed (`research-note.tsx`): untrusted
+  "Include in score" switch (`can_include_ai`, Undo toast; `Switch pending` keeps focus while it
+  saves; read-only text for everyone else), "Rationale" per criterion with its sources
+  (`SourceList compact`), the summary, "Re-evaluated" (not "Edited") after an agent re-submits;
+  the comparison table mutes a left-out column (`ScoreChip muted`, dashed) and heads Mean
+  "counted"; under the sidebar's score, "1 AI evaluation not counted · Review" (`AiNotCounted`). Research notes in the feed (`research-note.tsx`): untrusted
   Markdown (`<Markdown untrusted>`), numbered sources under "Cited by AI, not checked", Delete for
   `note.can_delete` (confirmed: no undo); a deleted note reads "wrote a research note, since deleted";
   an `evaluator_removed` without an actor reads "Idea evaluator ended its run without an evaluation
   and was taken off the evaluators". The proposal editor's "Draft with AI" per section
-  (`draft-with-ai.tsx`, `can_draft_section`): progress in place with Cancel, the AI suggestion card
-  (Phase 5) when done, a callout with "Try again" when it fails. Admin settings → AI agents
+  (`draft-with-ai.tsx`, `can_draft_section`; shown on the current section, others on hover or focus):
+  progress in place with Cancel, the AI suggestion card (Phase 5, untrusted Markdown) when done, a
+  `role=status` callout with "Try again" when it stops; focus follows from a Cancel that went to the
+  suggestion or "Try again". Admin settings → AI agents
   (`features/admin/ai-agents/`): settings in effect (a banner while AI is off; the MCP URL to copy),
   the agents (kagent `namespace/name`, protocol, purposes, projects with "Viewer" / "Removed", key
   prefix and last use or "No key", state, active runs), Register / Change (`agent-form-sheet.tsx`,
   rules in `agent-rules.ts`: Kubernetes names only, the built A2A URL previewed, narrowing warns
   that runs stop), the key shown once (`agent-key-dialog.tsx`: key, the Secret manifest and the
-  agent's own RemoteMCPServer, "I've copied it" asks once; the mutation is `reset()` after), Test
-  connection (the card's name, A2A versions, streaming, skills, or why not), Rotate key (confirmed),
+  agent's own RemoteMCPServer, step 3 "Test the connection", "I've copied it" asks once; the
+  register sheet `reset()`s its mutation as it hands the key over, rotate after the dialog closes,
+  both `gcTime: 0`), Test connection (the card's name, A2A versions, streaming, skills, or why not:
+  a 404 says the controller has no such ready agent, with what to check as a list), Rotate key (confirmed),
   Disable (confirmed: runs stop, key revoked) and Enable (then "Rotate key" in its toast); "Runs and
   changes in the audit log" opens `/settings/audit?action=ai`.
 - **Untrusted text (agents):** `Markdown untrusted` keeps http/https links only (no `mailto:`),
   opens them with `rel="noopener noreferrer nofollow"` in a new tab with the host after each
-  (`urlHost`: the browser's ASCII/punycode reading), drops raw HTML and never makes mention chips.
-  `SourceList` shows sources the same way. `AiBadge` (`components/ui/ai-badge.tsx`, on `/design`)
-  marks AI work everywhere and reads "AI agent".
+  (`urlHost`: the browser's ASCII/punycode reading, isolated with `<bdi dir="ltr">` by `LinkHost`;
+  images become such links too), drops raw HTML, never makes mention chips, and removes invisible
+  and direction-changing characters first (`lib/visible-text.ts`, the backend's `HIDDEN` set).
+  `SourceList` and AI rationales do the same. `AiBadge` (`components/ui/ai-badge.tsx`, on `/design`)
+  marks AI work everywhere, neutral, and reads "AI agent"; an agent's avatar next to it drops its
+  corner badge (`Avatar agentBadge={false}`): one marker per row.
+- **Pending states keep focus:** `Button loading` is `aria-disabled` + `aria-busy` (presses ignored,
+  a form's Enter included), not `disabled`, so a "Cancel" or "Save" that is working keeps focus;
+  `Switch pending` likewise. ⌘/Ctrl+Enter on a `Checkbox` or `RadioGroupItem` presses the form's
+  button with `aria-keyshortcuts` (Radix swallows Enter there). `WithTooltip` doesn't open when
+  focus is only handed back (a menu or dialog closing). Overlays opened from a menu item return
+  focus to the menu's button even when they open as the menu animates closed (`return-focus.ts`).
 - **Notifications (Phase 3):** the bell in the top bar (`features/notifications/notification-bell`)
   polls `GET /me/notifications/summary` about once a minute while the tab is visible and on
   focus (the poll doesn't keep the session alive; a 401 is handled like any other); a popover on

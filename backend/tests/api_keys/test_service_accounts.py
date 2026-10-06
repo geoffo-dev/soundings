@@ -80,9 +80,17 @@ async def test_a_person_can_still_be_made_an_admin(
 
 
 async def _mcp_submit(
-    app: FastAPI, key: str, idea: str, scores: list[dict[str, Any]], *, submit: bool
+    app: FastAPI,
+    key: str,
+    idea: str,
+    scores: list[dict[str, Any]],
+    *,
+    submit: bool,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     arguments: dict[str, Any] = {"idea": idea, "scores": scores, "submit": submit}
+    if run_id is not None:  # an agent's call names its run (c22)
+        arguments["run_id"] = run_id
     if submit:
         arguments["recommendation"] = "no"
     async with httpx2.AsyncClient(
@@ -108,7 +116,7 @@ async def test_an_agents_evaluation_is_left_out_of_the_aggregate(
     agent = await make_agent(
         db_session, [world.cust], user=world.bot, role=None, purposes=[AiRunKind.EVALUATE]
     )
-    await open_run(db_session, agent, idea, AiRunKind.EVALUATE)
+    run_id = str((await open_run(db_session, agent, idea, AiRunKind.EVALUATE)).id)
     agent_key = await make_key(db_session, world.bot, scopes=["read", "evaluate", "mcp"])
     url = f"{API}/ideas/{idea.id}/evaluations/me"
     carol = await login(world.carol)
@@ -116,8 +124,12 @@ async def test_an_agents_evaluation_is_left_out_of_the_aggregate(
         {**score, "comment": "Why this score."} for score in await _scores(db_session, world, 1)
     ]
 
-    draft = await _mcp_submit(app, agent_key, str(idea.id), agent_scores, submit=False)
-    submitted = await _mcp_submit(app, agent_key, str(idea.id), agent_scores, submit=True)
+    draft = await _mcp_submit(
+        app, agent_key, str(idea.id), agent_scores, submit=False, run_id=run_id
+    )
+    submitted = await _mcp_submit(
+        app, agent_key, str(idea.id), agent_scores, submit=True, run_id=run_id
+    )
     async with key_client(app, agent_key) as rest:
         problem(await rest.put(url, json={"scores": agent_scores}), 403, "insufficient_scope")
     person = await carol.put(

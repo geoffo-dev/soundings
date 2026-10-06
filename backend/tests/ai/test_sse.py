@@ -379,3 +379,27 @@ async def test_a_pending_evaluator_watching_an_ai_evaluation_learns_no_score_dat
     assert idea["aggregate"] is None
     await owner.aclose()
     await watcher.aclose()
+
+
+def test_streams_are_capped_per_process_too() -> None:
+    """L6: besides 5 per person, at most ``STREAMS_PER_PROCESS`` open streams per API
+    process (each on another run adds a poller reading once a second); the count is
+    released as streams close."""
+    from typing import Any, cast
+    from uuid import uuid4
+
+    import pytest
+
+    from app.ai.sse import STREAMS_PER_PROCESS, RunEventHub, TooManyStreamsProblem
+
+    assert 20 <= STREAMS_PER_PROCESS <= 200
+    hub = RunEventHub(cast(Any, None), max_streams=3)  # never polls here
+    people = [uuid4() for _ in range(4)]
+    for person in people[:3]:
+        hub.open_stream(person)
+    with pytest.raises(TooManyStreamsProblem) as refused:
+        hub.open_stream(people[3])
+    assert (refused.value.status, refused.value.code) == (429, "too_many_attempts")
+    hub.close_stream(people[0])
+    hub.open_stream(people[3])
+    assert hub.total_streams() == 3

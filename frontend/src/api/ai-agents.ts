@@ -4,8 +4,8 @@
  *
  *   useAiAgents()            the agents (disabled ones too), the settings in effect, can_register
  *   useRegisterAiAgent()     silent (the sheet shows errors inline); its `data.key.secret` and
- *                            `data.secret_manifest` are the only copies of the key: call
- *                            `reset()` once the key dialog has closed
+ *                            `data.secret_manifest` are the only copies of the key: the
+ *                            sheet hands them to the key dialog and `reset()`s at once
  *   useUpdateAiAgent()       name, description, protocol, purposes, projects, enabled
  *   useRotateAiAgentKey()    a new key (shown once), the old one revoked; `reset()` after
  *   useTestAiAgent()         fetches the agent card through the configured controller
@@ -64,6 +64,8 @@ export function useRegisterAiAgent() {
       storeAgent(queryClient, created.agent)
       afterAgentChange(queryClient)
     },
+    // Nothing keeps a finished registration (and its key) around once it is reset.
+    gcTime: 0,
     meta: { silent: true },
   })
 }
@@ -99,6 +101,8 @@ export function useRotateAiAgentKey() {
       storeAgent(queryClient, rotated.agent)
       afterAgentChange(queryClient)
     },
+    // As registering: the new key goes from the cache with `reset()`.
+    gcTime: 0,
     meta: { errorTitle: 'Couldn’t rotate the key' },
   })
 }

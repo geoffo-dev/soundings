@@ -1,48 +1,58 @@
-"""c22, the run scope of an agent's key (contract-phase6 section 3.5; role matrix c22).
+"""c22, the run scope of an agent's key (contract-phase6 sections 3.5 and 10; role matrix
+c22).
 
 An **open run** is a run of the principal's agent that is ``running`` and that nobody
-asked to cancel. For a service-account principal (every service account is an agent's;
-one without an agent row has no runs, so it can do nothing):
+asked to cancel. Every call an agent makes **names its run** (the tools' ``run_id``
+argument, from the run's message), and reaches only that run's idea. For a
+service-account principal (every service account is an agent's; one without an agent row
+has no runs, so it can do nothing):
 
 * REST is refused (:func:`app.authz.keys.check_route_for_key`: 403 ``insufficient_scope``);
-* every MCP tool naming an idea must name the idea of an open run (else
-  ``ai_run_not_active``; an idea it can't see stays ``not_found``, checked first);
-  ``get_rubric`` by a project needs an open run on an idea there; ``list_projects`` and
-  ``search_ideas`` list only the projects and ideas of its open runs;
-* the only write is the open run's kind's tool (:data:`~app.schemas.ai.AGENT_RUN_WRITE_TOOLS`;
+* **the run comes first**, before anything is looked up: a tool naming an idea (or
+  ``get_rubric`` a project) needs ``run_id`` to name one of its open runs and the idea
+  (project) to be that run's, else ``ai_run_not_active``, whether the other idea exists
+  or not (nothing tells the agent which ideas exist); then the idea is loaded as for
+  anyone (``not_found`` while held); ``list_projects`` and ``search_ideas`` list only the
+  named run's project and idea (nothing without an open run);
+* the only write is the named run's kind's tool (:data:`~app.schemas.ai.AGENT_RUN_WRITE_TOOLS`;
   ``propose_proposal_section`` only for the run's section); ``create_idea`` and
   ``add_comment`` are always ``forbidden``.
 
-For people, c22 refuses only ``add_research_note`` (``forbidden``). So a cancelled,
-timed-out or lost run is final: the agent can't finish later, and text planted in one
-idea can't make it read or write another.
+For people, ``run_id`` is ignored and c22 refuses only ``add_research_note``
+(``forbidden``). So two runs of one agent open at once can't reach each other, a run that
+was cancelled, timed out or lost stays over even while a newer run on the same idea is
+open (an agent task that outlives its run names the old run), and text planted in one
+idea can't make the agent read or write another.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, and_, select
+from sqlalchemy import ColumnElement, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.idea_keys import parse_idea_key
 from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.models.ai import AiAgent, AiRun
 from app.models.enums import AiRunKind, AiRunStatus, ProposalSectionKey
 from app.models.idea import Idea
+from app.models.project import Project
 from app.schemas.ai import AGENT_READ_TOOLS, AGENT_RUN_WRITE_TOOLS
 
 __all__ = [
     "RESEARCH_NOTE_TOOL",
+    "NamedRun",
     "RunNotActiveProblem",
+    "check_write",
     "is_agent",
-    "open_run_ideas",
-    "open_run_projects",
-    "open_runs",
-    "require_open_run",
-    "require_open_run_in_project",
-    "write_run",
+    "lock_run",
+    "named_run",
+    "refuse_agent_write",
+    "require_run",
 ]
 
 RESEARCH_NOTE_TOOL: Final = AGENT_RUN_WRITE_TOOLS[AiRunKind.RESEARCH]
@@ -58,7 +68,8 @@ class RunNotActiveProblem(ProblemError):
             "ai_run_not_active",
             detail=(
                 "This agent has no running Soundings AI run for that: its key works only "
-                "during a run, on the run's idea, through the run's tool."
+                "during a run, on the run's idea, through the run's tool, with the run's id "
+                "as run_id in every call."
             ),
         )
 
@@ -71,96 +82,137 @@ def is_agent(principal: Principal) -> bool:
     return principal.user.is_service_account
 
 
-def _agent_id(principal: Principal) -> ColumnElement[UUID]:
-    return (
-        select(AiAgent.id).where(AiAgent.service_account_id == principal.user_id).scalar_subquery()
-    )
+@dataclass(frozen=True, slots=True)
+class NamedRun:
+    """The open run an agent's call names, with what c22 compares the call with."""
+
+    id: UUID
+    kind: AiRunKind
+    section_key: ProposalSectionKey | None
+    idea_id: UUID
+    idea_number: int
+    project_id: UUID
+    project_key: str
+    project_slug: str
+
+    def names_idea(self, ref: str) -> bool:
+        """Whether an idea reference (a UUID, or a key in any case) is this run's idea."""
+        key = parse_idea_key(ref)
+        if key is not None:
+            return key.project_key == self.project_key and key.number == self.idea_number
+        try:
+            return UUID(ref) == self.idea_id
+        except ValueError:
+            return False
+
+    def names_project(self, slug: str) -> bool:
+        return slug.lower() == self.project_slug.lower()
 
 
 def _open(principal: Principal) -> ColumnElement[bool]:
     return and_(
-        AiRun.agent_id == _agent_id(principal),
+        AiRun.agent_id
+        == select(AiAgent.id)
+        .where(AiAgent.service_account_id == principal.user_id)
+        .scalar_subquery(),
         AiRun.status == AiRunStatus.RUNNING,
         AiRun.cancel_requested_at.is_(None),
     )
 
 
-def open_run_ideas(principal: Principal) -> Select[UUID]:
-    """Ids of the ideas of the principal's open runs (empty for people)."""
-    return select(AiRun.idea_id).where(_open(principal))
-
-
-def open_run_projects(principal: Principal) -> Select[UUID]:
-    return select(Idea.project_id).where(Idea.id.in_(open_run_ideas(principal)))
-
-
-async def open_runs(
-    db: AsyncSession, principal: Principal, idea_id: UUID, kind: AiRunKind | None = None
-) -> list[AiRun]:
-    """The principal's open runs on the idea (of ``kind``), oldest first."""
-    statement = select(AiRun).where(_open(principal), AiRun.idea_id == idea_id)
-    if kind is not None:
-        statement = statement.where(AiRun.kind == kind)
-    return list(await db.scalars(statement.order_by(AiRun.created_at, AiRun.id)))
-
-
-async def require_open_run(db: AsyncSession, principal: Principal, idea_id: UUID) -> None:
-    """A read tool on an idea: an agent needs an open run there (people pass)."""
-    if not is_agent(principal):
-        return
-    found = await db.scalar(select(AiRun.id).where(_open(principal), AiRun.idea_id == idea_id))
-    if found is None:
-        raise RunNotActiveProblem
-
-
-async def require_open_run_in_project(
-    db: AsyncSession, principal: Principal, project_id: UUID
-) -> None:
-    """``get_rubric`` by project: an agent needs an open run on an idea there."""
-    if not is_agent(principal):
-        return
-    found = await db.scalar(
-        select(AiRun.id)
-        .join(Idea, Idea.id == AiRun.idea_id)
-        .where(_open(principal), Idea.project_id == project_id)
-        .limit(1)
+async def named_run(db: AsyncSession, principal: Principal, run_id: UUID | None) -> NamedRun | None:
+    """The agent's open run that ``run_id`` names; ``None`` without one (no ``run_id``,
+    someone else's run, or one that isn't open) and for people."""
+    if run_id is None or not is_agent(principal):
+        return None
+    row = (
+        await db.execute(
+            select(AiRun, Idea.number, Project.id, Project.key, Project.slug)
+            .join(Idea, Idea.id == AiRun.idea_id)
+            .join(Project, Project.id == Idea.project_id)
+            .where(AiRun.id == run_id, _open(principal))
+        )
+    ).first()
+    if row is None:
+        return None
+    run, number, project_id, project_key, project_slug = row
+    return NamedRun(
+        id=run.id,
+        kind=AiRunKind(run.kind),
+        section_key=run.section_key,
+        idea_id=run.idea_id,
+        idea_number=number,
+        project_id=project_id,
+        project_key=project_key,
+        project_slug=project_slug,
     )
-    if found is None:
-        raise RunNotActiveProblem
 
 
-async def write_run(
+async def require_run(
     db: AsyncSession,
     principal: Principal,
+    run_id: UUID | None,
+    *,
+    idea: str | None = None,
+    project: str | None = None,
+) -> NamedRun | None:
+    """c22 for a call by an agent, before anything is looked up: the open run ``run_id``
+    names, whose idea ``idea`` (or project ``project``) must be; else
+    ``ai_run_not_active``. ``None`` for people (nothing to check)."""
+    if not is_agent(principal):
+        return None
+    run = await named_run(db, principal, run_id)
+    if run is None:
+        raise RunNotActiveProblem
+    if idea is not None and not run.names_idea(idea):
+        raise RunNotActiveProblem
+    if project is not None and not run.names_project(project):
+        raise RunNotActiveProblem
+    return run
+
+
+def check_write(
+    principal: Principal,
     tool: str,
-    idea_id: UUID,
+    run: NamedRun | None,
     section_key: ProposalSectionKey | None = None,
-) -> AiRun | None:
-    """c22 for a write tool, after the idea was loaded (``not_found`` first): for an agent,
-    its open run of the tool's kind on the idea (and section), locked until commit, so a
-    cancel request can't slip in between this check and attaching the result (lock order:
-    project, idea, run); ``None`` for people. Refusals: ``forbidden`` (an agent's
-    ``create_idea``, ``add_comment``, any tool that isn't a run's; a person's
-    ``add_research_note``), ``ai_run_not_active`` (no such open run)."""
+) -> None:
+    """c22 for a write tool, with the run :func:`require_run` found: an agent writes only
+    with its run kind's tool (``create_idea``, ``add_comment`` and anything else:
+    ``forbidden``; another kind's tool or another section: ``ai_run_not_active``); a
+    person's ``add_research_note`` is ``forbidden`` (call it after the idea was loaded,
+    so an idea the person can't see stays ``not_found``)."""
     if not is_agent(principal):
         if tool == RESEARCH_NOTE_TOOL:
             raise _forbidden()
-        return None
+        return
     kind = _KIND_OF_TOOL.get(tool)
     if kind is None or tool in AGENT_READ_TOOLS:
         raise _forbidden()
-    statement = select(AiRun).where(_open(principal), AiRun.idea_id == idea_id, AiRun.kind == kind)
-    if kind is AiRunKind.DRAFT_SECTION:
-        statement = statement.where(AiRun.section_key == section_key)
-    run: AiRun | None = await db.scalar(
-        statement.order_by(AiRun.created_at, AiRun.id)
-        .limit(1)
+    if run is None or run.kind is not kind:
+        raise RunNotActiveProblem
+    if kind is AiRunKind.DRAFT_SECTION and run.section_key != section_key:
+        raise RunNotActiveProblem
+
+
+async def lock_run(db: AsyncSession, principal: Principal, run: NamedRun | None) -> AiRun | None:
+    """The named run, locked until commit and still open, after the tool loaded and
+    locked the idea (lock order: project, idea, run), so a cancel request can't slip in
+    between this check and attaching the result. ``None`` for people; an agent's run that
+    ended meanwhile is ``ai_run_not_active``."""
+    if not is_agent(principal):
+        return None
+    if run is None:
+        raise RunNotActiveProblem
+    locked: AiRun | None = await db.scalar(
+        select(AiRun)
+        .where(AiRun.id == run.id, _open(principal))
         .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     )
-    if run is None:
+    if locked is None:
         raise RunNotActiveProblem
-    return run
+    return locked
 
 
 def refuse_agent_write() -> ProblemError:

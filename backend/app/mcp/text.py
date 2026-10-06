@@ -20,6 +20,14 @@ The set is every ``Cc``, ``Cf`` and ``Cs`` character of Unicode 15 but those kep
 variation selectors U+FE00-U+FE0D and U+E0100-U+E01EF, the unassigned rest of the tag
 block, the combining grapheme joiner and the Hangul fillers (blank letters);
 ``tests/mcp/test_hidden_text.py`` checks it against :mod:`unicodedata`.
+
+**Agents' text, too** (Phase 6 review M2): what an AI agent writes (a research note, a
+suggested section, its evaluation's comments) is shown to people as untrusted Markdown,
+where a right-to-left override or a zero-width space could make a link's text or its
+host read as something else. :func:`agent_text_arguments` removes the same characters
+from those fields of an agent's write before they are validated again and stored.
+Source titles are one-line names, which refuse them (``SingleLine``), and source URLs
+refuse them too; tag characters are refused for everyone by the request models.
 """
 
 from __future__ import annotations
@@ -27,7 +35,7 @@ from __future__ import annotations
 import re
 from typing import Any, Final
 
-__all__ = ["HIDDEN", "visible_data", "visible_text"]
+__all__ = ["AGENT_TEXT_FIELDS", "HIDDEN", "agent_text_arguments", "visible_data", "visible_text"]
 
 HIDDEN: Final = re.compile(
     "["
@@ -58,6 +66,29 @@ HIDDEN: Final = re.compile(
 def visible_text(text: str) -> str:
     """``text`` without the characters in :data:`HIDDEN`."""
     return HIDDEN.sub("", text)
+
+
+AGENT_TEXT_FIELDS: Final = ("body_md", "comment")
+"""The free-text arguments of the write tools an agent may call (and ``scores[].comment``)."""
+
+
+def agent_text_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """An agent's write arguments with :data:`HIDDEN` removed from its Markdown and
+    comments (:data:`AGENT_TEXT_FIELDS`, and each score's ``comment``); everything else as
+    sent (identifiers and URLs are validated as they are)."""
+    cleaned = dict(arguments)
+    for name in AGENT_TEXT_FIELDS:
+        if isinstance(cleaned.get(name), str):
+            cleaned[name] = visible_text(cleaned[name])
+    scores = cleaned.get("scores")
+    if isinstance(scores, list):
+        cleaned["scores"] = [
+            {**score, "comment": visible_text(score["comment"])}
+            if isinstance(score, dict) and isinstance(score.get("comment"), str)
+            else score
+            for score in scores
+        ]
+    return cleaned
 
 
 def visible_data(value: Any) -> Any:

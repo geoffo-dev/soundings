@@ -13,13 +13,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-import {
-  useAiAgents,
-  useRegisterAiAgent,
-  useRotateAiAgentKey,
-  useTestAiAgent,
-  useUpdateAiAgent,
-} from '@/api/ai-agents'
+import { useAiAgents, useRotateAiAgentKey, useTestAiAgent, useUpdateAiAgent } from '@/api/ai-agents'
 import type { AiAgent, AiAgentTest, AiSettingsInEffect } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -74,7 +68,7 @@ import { AgentKeyDialog, type AgentKeyReveal } from './agent-key-dialog'
 export function AiAgentsPage() {
   const me = useCurrentUser()
   const query = useAiAgents()
-  const register = useRegisterAiAgent()
+  // The register sheet resets its own mutation as soon as it hands the key over.
   const rotate = useRotateAiAgentKey()
   const [registering, setRegistering] = useState(false)
   const [editing, setEditing] = useState<AiAgent | null>(null)
@@ -170,8 +164,7 @@ export function AiAgentsPage() {
             onDone={() => {
               const agentId = reveal?.agent.id
               setReveal(undefined)
-              // The key leaves the cache with the mutations' results.
-              register.reset()
+              // The rotated key leaves the cache with the mutation's result.
               rotate.reset()
               if (agentId) {
                 focusWhenRendered(
@@ -398,7 +391,11 @@ function AgentRow({
               <span className="sr-only"> (AI agent)</span>
             </span>
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xs text-muted">
-              <code className="min-w-0 truncate font-mono text-secondary">
+              <code
+                className="min-w-0 truncate font-mono text-secondary"
+                // Cut to the column: the whole name on hover.
+                title={`${agent.namespace}/${agent.name}`}
+              >
                 {agent.namespace}/{agent.name}
               </code>
               <span aria-hidden="true">·</span>
@@ -452,11 +449,14 @@ function AgentRow({
               )}
             </span>
           </span>
-        ) : (
+        ) : agent.enabled ? (
           <span className="flex items-center gap-1 text-xs text-warning">
             <KeyRound aria-hidden="true" className="size-3.5" />
             No key: rotate to issue one
           </span>
+        ) : (
+          // Disabling revoked it: expected, not a problem to fix.
+          <span className="text-xs text-muted">Revoked when disabled</span>
         )}
       </TableCell>
       <TableCell label="State">
@@ -565,7 +565,7 @@ function TestResultDialog({
               <DialogDescription>
                 {result.ok
                   ? `Its agent card came back in ${result.duration_ms} ms.`
-                  : (result.error_message ?? 'The agent card couldn’t be read.')}
+                  : testFailureWords(tested.agent, result)}
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="flex flex-col gap-4">
@@ -612,9 +612,11 @@ function TestResultDialog({
               </dl>
               {!result.ok && (
                 <Callout tone="neutral" title="What to check">
-                  The agent is deployed in {tested.agent.namespace} as {tested.agent.name} and
-                  ready; the controller at {settings.kagent_url} is reachable from Soundings (its
-                  NetworkPolicy egress) and, for kagent 0.10, the protocol is kagent 0.10.
+                  <ul className="mt-1 flex list-disc flex-col gap-1 pl-4">
+                    {testChecks(tested.agent, result, settings).map((check) => (
+                      <li key={check}>{check}</li>
+                    ))}
+                  </ul>
                 </Callout>
               )}
               {result.ok && result.card && !result.card.streaming && (
@@ -633,6 +635,37 @@ function TestResultDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/**
+ * Why Test connection failed, in words: the controller answering 404 means it is
+ * there but has no such agent (not "couldn't reach"); no answer at all means it
+ * couldn't be reached.
+ */
+function testFailureWords(agent: AiAgent, result: AiAgentTest): string {
+  const where = `${agent.namespace}/${agent.name}`
+  if (result.http_status === 404) {
+    return `The kagent controller answered, but it has no ready agent ${where}.`
+  }
+  if (result.http_status === null) return 'Soundings couldn’t reach the kagent controller.'
+  if (result.http_status === 401 || result.http_status === 403) {
+    return `The kagent controller refused the request (HTTP ${result.http_status}).`
+  }
+  return result.error_message ?? 'The agent card couldn’t be read.'
+}
+
+/** The likely causes first, one per line (Test connection failed). */
+function testChecks(agent: AiAgent, result: AiAgentTest, settings: AiSettingsInEffect): string[] {
+  const where = `${agent.namespace}/${agent.name}`
+  const deployed = `The Agent ${where} exists and is Ready (kubectl get agents -n ${agent.namespace}).`
+  const secret = `Its Secret with the key is applied, and its RemoteMCPServer accepted.`
+  const protocol = `The protocol matches your kagent: ${PROTOCOL_COPY[agent.protocol].label} calls ${PROTOCOL_COPY[agent.protocol].detail}.`
+  const reachable = `Soundings can reach ${settings.kagent_url} (the NetworkPolicy egress to the controller).`
+  const token = 'The controller token in the Helm values (kagent.existingTokenSecret) is right.'
+  if (result.http_status === 404) return [deployed, secret, protocol]
+  if (result.http_status === 401 || result.http_status === 403) return [token, deployed]
+  if (result.http_status === null) return [reachable, deployed]
+  return [protocol, deployed, reachable]
 }
 
 /** The read-only AI settings (Helm values), and the MCP URL to give agents. */

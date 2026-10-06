@@ -316,8 +316,7 @@ async def _existing_projects(db: AsyncSession, project_ids: Sequence[UUID]) -> l
 
 
 def _check_namespace(settings: Settings, namespace: str) -> None:
-    allowed = settings.ai_agent_namespaces
-    if allowed and namespace not in allowed:
+    if namespace not in settings.ai_agent_namespaces:  # never empty (config, review L8)
         raise _NamespaceNotAllowed
 
 
@@ -532,6 +531,15 @@ async def _cancel_runs(
     return cancelled
 
 
+def _widens(agent: AiAgent, current: list[UUID], body: schemas.AiAgentUpdate) -> bool:
+    """Whether the update adds a purpose or a project (and so widens the agent's key)."""
+    if body.purposes is not None:
+        wanted = {purpose.value for purpose in canonical_purposes(body.purposes)}
+        if wanted - set(agent.purposes):
+            return True
+    return body.project_ids is not None and bool(set(body.project_ids) - set(current))
+
+
 async def update_agent(
     db: AsyncSession,
     principal: Principal,
@@ -542,12 +550,22 @@ async def update_agent(
     """``PATCH /admin/ai-agents/{agent_id}`` (see the module docstring)."""
     require(principal, Rule.PLATFORM_MANAGE_AGENTS)
     agent = await _load(db, agent_id, for_update=True)
+    current = list(
+        await db.scalars(
+            select(AiAgentProject.project_id).where(AiAgentProject.agent_id == agent.id)
+        )
+    )
+    if _widens(agent, current, body):
+        # c20: adding a purpose or a project widens the agent's key, which is issuing one
+        # (403 break_glass_account, before the 422 for an unknown project).
+        require(principal, Rule.PLATFORM_MANAGE_AGENTS, Resource(issuing_api_key=True))
     new_projects = (
         await _existing_projects(db, body.project_ids) if body.project_ids is not None else None
     )
     user = await db.get(User, agent.service_account_id, with_for_update={"key_share": True})
     assert user is not None  # noqa: S101 - users are never deleted
     changed: list[str] = []
+    details: dict[str, Any] = {"rule": Rule.PLATFORM_MANAGE_AGENTS, "agent_id": agent.id}
     if body.display_name is not None and body.display_name != agent.display_name:
         agent.display_name = body.display_name
         user.display_name = body.display_name
@@ -565,34 +583,32 @@ async def update_agent(
             dropped = [AiRunKind(p) for p in agent.purposes if p not in purposes]
             agent.purposes = purposes
             changed.append("purposes")
+            details["purposes"] = list(purposes)
             if key is not None:
                 key.scopes = [
                     scope.value for scope in agent_key_scopes([AiRunKind(p) for p in purposes])
                 ]
+                details["key_scopes"] = list(key.scopes)
             if dropped:
                 await _cancel_runs(db, principal, agent, kinds=dropped)
-    if new_projects is not None:
-        current = list(
-            await db.scalars(
-                select(AiAgentProject.project_id).where(AiAgentProject.agent_id == agent.id)
-            )
-        )
-        if set(new_projects) != set(current):
-            added = [pid for pid in new_projects if pid not in current]
-            dropped_projects = [pid for pid in current if pid not in new_projects]
-            changed.append("project_ids")
-            for project_id in dropped_projects:
-                link = await db.get(AiAgentProject, (agent.id, project_id))
-                if link is not None:
-                    await db.delete(link)
-            db.add_all(AiAgentProject(agent_id=agent.id, project_id=pid) for pid in added)
-            await db.flush()
-            if dropped_projects:
-                await _cancel_runs(db, principal, agent, project_ids=dropped_projects)
-            await _remove_memberships(db, principal, user, dropped_projects)
-            await _add_memberships(db, principal, user, added)
-            if key is not None:
-                key.project_ids = list(new_projects)
+    if new_projects is not None and set(new_projects) != set(current):
+        added = [pid for pid in new_projects if pid not in current]
+        dropped_projects = [pid for pid in current if pid not in new_projects]
+        changed.append("project_ids")
+        details["project_ids"] = list(new_projects)
+        for project_id in dropped_projects:
+            link = await db.get(AiAgentProject, (agent.id, project_id))
+            if link is not None:
+                await db.delete(link)
+        db.add_all(AiAgentProject(agent_id=agent.id, project_id=pid) for pid in added)
+        await db.flush()
+        if dropped_projects:
+            await _cancel_runs(db, principal, agent, project_ids=dropped_projects)
+        await _remove_memberships(db, principal, user, dropped_projects)
+        await _add_memberships(db, principal, user, added)
+        if key is not None:
+            key.project_ids = list(new_projects)
+            details["key_project_ids"] = list(new_projects)
     enabled_changed = body.enabled is not None and body.enabled != agent.enabled
     if enabled_changed:
         assert body.enabled is not None  # noqa: S101 - narrowed above
@@ -604,11 +620,9 @@ async def update_agent(
                 await revoke_key(db, key, actor=principal, rule=Rule.PLATFORM_MANAGE_AGENTS)
     if changed:
         agent.updated_at = utcnow()
-        details: dict[str, Any] = {
-            "rule": Rule.PLATFORM_MANAGE_AGENTS,
-            "agent_id": agent.id,
-            "changed": changed,
-        }
+        details["changed"] = changed
+        if key is not None and ("key_scopes" in details or "key_project_ids" in details):
+            details["key_id"] = key.id  # the key's widened or narrowed reach (L4)
         if enabled_changed:
             details["enabled"] = agent.enabled
         await audit.record(

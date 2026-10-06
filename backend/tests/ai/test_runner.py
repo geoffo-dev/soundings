@@ -630,3 +630,47 @@ async def test_an_evaluate_run_is_matched_by_the_server_not_by_agent_text(
     assert idea is not None
     assert idea.aggregate_count in (0, None)
     assert utcnow() >= run.finished_at  # type: ignore[operator]
+
+
+async def test_the_sweep_sends_its_cancels_side_by_side_within_one_deadline(
+    crew: Crew,
+    db_session: AsyncSession,
+    ai_runtime: AiRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L7: with the controller hanging, the sweep still ends every lost run at once and
+    spends at most about one cancel deadline on their ``tasks/cancel`` (sent side by side,
+    after the runs ended), not one per run on the main pool."""
+    import asyncio
+    import time
+
+    import httpx
+
+    from app.ai import a2a
+
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(30)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(a2a, "CANCEL_DEADLINE", 0.3)
+    ai_runtime.transport = httpx.MockTransport(hang)
+    lost = []
+    for n in range(4):
+        idea = await make_idea(db_session, crew.team.project)
+        run = await open_run(
+            db_session, crew.agent, idea, AiRunKind.RESEARCH, heartbeat_at=ago(minutes=3)
+        )
+        await db_session.execute(
+            update(AiRun).where(AiRun.id == run.id).values(a2a_task_id=f"task-{n}")
+        )
+        lost.append(run)
+    await db_session.commit()
+
+    started = time.monotonic()
+    result = await sweep_runs(ai_runtime)
+    took = time.monotonic() - started
+
+    assert result.lost == 4
+    assert took < 4 * 0.3
+    for run in lost:
+        assert (await run_row(db_session, run.id)).error_code is AiRunError.WORKER_LOST

@@ -3,9 +3,14 @@ import { Checkbox as CheckboxPrimitive } from 'radix-ui'
 import type { ComponentProps } from 'react'
 
 import { useFieldControl } from '@/components/ui/field'
+import { pressSubmitShortcut } from '@/components/ui/submit-shortcut'
 import { cn } from '@/lib/utils'
 
-export function Checkbox({ className, ...props }: ComponentProps<typeof CheckboxPrimitive.Root>) {
+export function Checkbox({
+  className,
+  onKeyDown,
+  ...props
+}: ComponentProps<typeof CheckboxPrimitive.Root>) {
   const fieldProps = useFieldControl(props)
   return (
     <CheckboxPrimitive.Root
@@ -20,6 +25,11 @@ export function Checkbox({ className, ...props }: ComponentProps<typeof Checkbox
         'relative after:absolute after:-inset-2 after:content-[""]',
         className,
       )}
+      onKeyDown={(event) => {
+        onKeyDown?.(event)
+        // Mod+Enter still submits the form (Radix swallows Enter on checkboxes).
+        if (!event.defaultPrevented) pressSubmitShortcut(event)
+      }}
       {...fieldProps}
     >
       <CheckboxPrimitive.Indicator className="group flex items-center justify-center">

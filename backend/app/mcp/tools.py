@@ -15,12 +15,13 @@ evaluator. Two things are stricter than REST, on purpose:
   text waiting for review must not reach an agent.
 * **Results are bounded** (the latest comments and evaluations, long texts cut with
   ``truncated``) and carry no public submitter's name.
-* **AI agents act only inside their runs** (c22, :mod:`app.ai.scope`): after the idea is
-  found (``not_found`` first), an agent's call must target the idea of one of its open
-  runs (``ai_run_not_active``), lists show only those ideas, and its only write is the
-  run kind's tool, whose result is attached to the run (:mod:`app.ai.results`).
+* **AI agents act only inside their runs** (c22, :mod:`app.ai.scope`): every call of an
+  agent names its open run (``run_id``) and, before anything is looked up, must be about
+  that run's idea (``ai_run_not_active``); lists show only that idea, and its only write
+  is the run kind's tool, whose result is attached to the run (:mod:`app.ai.results`).
   ``create_idea`` and ``add_comment`` are ``forbidden`` for agents. Rule 9: agents see
-  no other evaluator's score data (the policy treats them as pending evaluators).
+  no other evaluator's score data (the policy treats them as pending evaluators), and
+  their own evaluation only in an evaluate run.
 
 The write tools pass their input model, a subclass of the REST request model, to the
 REST service as its body, so limits and cross-field rules can't drift.
@@ -139,6 +140,9 @@ class ToolContext:
     recorded: list[tuple[UUID, AiRunKind]] = field(default_factory=list)
     """Runs this call attached a result to (an agent's write): the dispatcher adds their
     ``result_recorded`` events after the transaction."""
+    event_run: UUID | None = None
+    """The agent's run this call was about (it named the run and the run's idea): the
+    dispatcher adds the call's ``tool_called`` event to it after the transaction."""
 
 
 ToolFunction = Callable[[ToolContext, Any], Awaitable[McpOutput]]
@@ -165,6 +169,17 @@ async def _idea(ctx: ToolContext, ref: str, *, for_update: bool = False) -> Load
     if loaded.idea.held_for is not None:
         raise not_found()
     return loaded
+
+
+async def _run_for_idea(
+    ctx: ToolContext, run_id: UUID | None, ref: str
+) -> ai_scope.NamedRun | None:
+    """c22 first, for an agent: the open run the call names, whose idea ``ref`` must be
+    (``ai_run_not_active`` otherwise, before ``ref`` is looked up); ``None`` for people."""
+    run = await ai_scope.require_run(ctx.db, ctx.principal, run_id, idea=ref)
+    if run is not None:
+        ctx.event_run = run.id
+    return run
 
 
 async def _users(db: AsyncSession, ids: Iterable[UUID | None]) -> dict[UUID, McpUser]:
@@ -276,12 +291,14 @@ async def list_projects(ctx: ToolContext, args: ListProjectsInput) -> ListProjec
     """``project.view`` as a filter: the owner's projects inside the key's restriction,
     by name, with the counts and flags REST's ``list_projects`` computes."""
     _require_read(ctx.principal, Rule.PROJECT_VIEW)
+    run = await ai_scope.named_run(ctx.db, ctx.principal, args.run_id)
+    if ai_scope.is_agent(ctx.principal) and run is None:  # c22: only the named run's project
+        return ListProjectsOutput(projects=[])
     found = await projects.list_projects(
         ctx.db, ctx.principal, include_archived=args.include_archived
     )
-    if ai_scope.is_agent(ctx.principal):  # c22: only its open runs' projects
-        allowed = set(await ctx.db.scalars(ai_scope.open_run_projects(ctx.principal)))
-        found = [project for project in found if project.id in allowed]
+    if run is not None:
+        found = [project for project in found if project.id == run.project_id]
     return ListProjectsOutput(
         projects=[
             McpProject(
@@ -344,8 +361,11 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
     principal = ctx.principal
     _require_read(principal, Rule.IDEA_VIEW)
     where: list[ColumnElement[bool]] = [listed_ideas(principal)]
-    if ai_scope.is_agent(principal):  # c22: only its open runs' ideas
-        where.append(Idea.id.in_(ai_scope.open_run_ideas(principal)))
+    if ai_scope.is_agent(principal):  # c22: only the named run's idea, nothing looked up
+        run = await ai_scope.named_run(ctx.db, principal, args.run_id)
+        if run is None or (args.project is not None and not run.names_project(args.project)):
+            return SearchIdeasOutput(items=[], next_cursor=None)
+        where.append(Idea.id == run.idea_id)
     if args.project is not None:
         project, _ = await load_project(ctx.db, principal, args.project)
         ctx.target.project(project.id)
@@ -481,12 +501,15 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
     """REST ``get_idea`` + ``list_evaluations`` + ``get_my_evaluation`` + the latest
     comments, bounded; no public submitter's name."""
     db, principal = ctx.db, ctx.principal
+    run = await _run_for_idea(ctx, args.run_id, args.idea)
     loaded = await _idea(ctx, args.idea)
-    await ai_scope.require_open_run(db, principal, loaded.idea.id)
     require(principal, Rule.IDEA_VIEW, loaded.resource)  # the key's read scope
     detail = await ideas.idea_detail(db, principal, loaded)
     names = {c.id: c.name for c in await _criteria(db, loaded.project.id)}
     mine = await evaluations.my_evaluation(db, principal, loaded)
+    # M1 (rule 9): an agent sees its own scores only in its evaluate run; a research note
+    # or a draft could otherwise pass them on to people who are still blind.
+    show_mine = run is None or run.kind is AiRunKind.EVALUATE
     others, evaluation_count = await _evaluations_out(ctx, loaded, names)
     has_proposal = await proposal_service.find_proposal(db, loaded.idea.id) is not None
     users = await _users(
@@ -539,7 +562,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
             ],
             my_evaluation=(
                 _my_out(mine, names, await _own_sources(db, principal, loaded.idea.id))
-                if mine
+                if mine and show_mine
                 else None
             ),
             aggregate=detail.aggregate,
@@ -561,17 +584,14 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
 async def get_rubric(ctx: ToolContext, args: GetRubricInput) -> GetRubricOutput:
     """``project.view``: the active criteria of a project, or of an idea's project."""
     if args.project is not None:
-        if ai_scope.is_agent(ctx.principal):
-            # c22 before the rule: an agent reads only the rubric of an open run's project.
-            project, _ = await load_project(ctx.db, ctx.principal, args.project, None)
-            ctx.target.project(project.id)
-            await ai_scope.require_open_run_in_project(ctx.db, ctx.principal, project.id)
+        # c22 first: an agent reads only the rubric of its named run's project.
+        await ai_scope.require_run(ctx.db, ctx.principal, args.run_id, project=args.project)
         project, _ = await load_project(ctx.db, ctx.principal, args.project)
         ctx.target.project(project.id)
     else:
         assert args.idea is not None  # noqa: S101 - the input model needs one of the two
+        await _run_for_idea(ctx, args.run_id, args.idea)
         loaded = await _idea(ctx, args.idea)
-        await ai_scope.require_open_run(ctx.db, ctx.principal, loaded.idea.id)
         require(ctx.principal, Rule.PROJECT_VIEW, loaded.resource)
         project = loaded.project
     criteria = await _criteria(ctx.db, project.id)
@@ -586,8 +606,8 @@ async def get_rubric(ctx: ToolContext, args: GetRubricInput) -> GetRubricOutput:
 async def get_proposal(ctx: ToolContext, args: GetProposalInput) -> GetProposalOutput:
     """``proposal.view``: the proposal (null until started; no margin comments, no
     score line) and whether suggesting works now."""
+    await _run_for_idea(ctx, args.run_id, args.idea)
     loaded = await _idea(ctx, args.idea)
-    await ai_scope.require_open_run(ctx.db, ctx.principal, loaded.idea.id)
     view = await proposal_service.proposal_view(ctx.db, ctx.principal, loaded)
     proposal = view.proposal
     return GetProposalOutput(
@@ -611,9 +631,7 @@ async def get_proposal(ctx: ToolContext, args: GetProposalInput) -> GetProposalO
 async def create_idea(ctx: ToolContext, args: CreateIdeaInput) -> CreateIdeaOutput:
     """Exactly REST ``create_idea``: ``idea.create`` on the project, New, the creator
     watches it, activity and notifications as in the app."""
-    if ai_scope.is_agent(ctx.principal):  # c22: agents never create ideas
-        project, _ = await load_project(ctx.db, ctx.principal, args.project, None)
-        ctx.target.project(project.id)
+    if ai_scope.is_agent(ctx.principal):  # c22: agents never create ideas (nothing looked up)
         raise ai_scope.refuse_agent_write()
     project, _ = await load_project(ctx.db, ctx.principal, args.project, Rule.IDEA_CREATE)
     ctx.target.project(project.id)
@@ -626,9 +644,12 @@ async def create_idea(ctx: ToolContext, args: CreateIdeaInput) -> CreateIdeaOutp
 async def add_comment(ctx: ToolContext, args: AddCommentInput) -> AddCommentOutput:
     """Exactly REST ``create_comment`` (the idea's lock, @mentions, watching,
     notifications)."""
-    loaded = await _idea(ctx, args.idea, for_update=True)
     if ai_scope.is_agent(ctx.principal):  # c22: agents never comment (nor @mention)
+        run = await ai_scope.named_run(ctx.db, ctx.principal, args.run_id)
+        if run is not None and run.names_idea(args.idea):
+            ctx.event_run = run.id  # the requester sees that it tried
         raise ai_scope.refuse_agent_write()
+    loaded = await _idea(ctx, args.idea, for_update=True)
     item = await comments.create_comment(ctx.db, ctx.principal, loaded, args)
     body, truncated = cut(item.comment.body_md)
     author = (await _users(ctx.db, [ctx.principal.user_id])).get(ctx.principal.user_id)
@@ -651,8 +672,11 @@ async def submit_evaluation(
 ) -> SubmitEvaluationOutput:
     """Exactly REST ``save_my_evaluation`` under the idea's lock: the arguments replace
     what was saved; ``submit`` (default true here) submits."""
+    named = await _run_for_idea(ctx, args.run_id, args.idea)
+    if named is not None:
+        ai_scope.check_write(ctx.principal, "submit_evaluation", named)
     loaded = await _idea(ctx, args.idea, for_update=True)
-    run = await ai_scope.write_run(ctx.db, ctx.principal, "submit_evaluation", loaded.idea.id)
+    run = await ai_scope.lock_run(ctx.db, ctx.principal, named)
     mine = await evaluations.save_my_evaluation(ctx.db, ctx.principal, loaded, args)
     if run is not None and args.submit and mine.state is EvaluatorState.SUBMITTED:
         evaluation_id = await ctx.db.scalar(
@@ -679,10 +703,11 @@ async def propose_proposal_section(
 ) -> ProposeProposalSectionOutput:
     """Exactly REST ``create_proposal_suggestion`` with ``source`` ``mcp`` (``ai`` for a
     service account)."""
+    named = await _run_for_idea(ctx, args.run_id, args.idea)
+    if named is not None:
+        ai_scope.check_write(ctx.principal, "propose_proposal_section", named, args.section_key)
     loaded = await _idea(ctx, args.idea, for_update=True)
-    run = await ai_scope.write_run(
-        ctx.db, ctx.principal, "propose_proposal_section", loaded.idea.id, args.section_key
-    )
+    run = await ai_scope.lock_run(ctx.db, ctx.principal, named)
     created = await suggestions.create_suggestion(
         ctx.db, ctx.principal, loaded, args, channel=SuggestionSource.MCP
     )
@@ -702,9 +727,14 @@ async def add_research_note(ctx: ToolContext, args: AddResearchNoteInput) -> Add
     """An agent's research note for its open research run on the idea (c22; people:
     ``forbidden``), stored as an ``ai_research_note`` activity item and attached to the
     run; calling it again in the same run replaces the note."""
+    named = await _run_for_idea(ctx, args.run_id, args.idea)
+    if named is not None:  # an agent: c22 before the idea is looked up
+        ai_scope.check_write(ctx.principal, "add_research_note", named)
     loaded = await _idea(ctx, args.idea, for_update=True)
-    run = await ai_scope.write_run(ctx.db, ctx.principal, "add_research_note", loaded.idea.id)
-    if run is None:  # pragma: no cover - write_run refuses people for this tool
+    if named is None:  # people: forbidden, after the idea (not_found first)
+        ai_scope.check_write(ctx.principal, "add_research_note", named)
+    run = await ai_scope.lock_run(ctx.db, ctx.principal, named)
+    if run is None:  # pragma: no cover - check_write refuses people for this tool
         raise ai_scope.refuse_agent_write()
     note_id, replaced = await ai_notes.write_note(
         ctx.db, ctx.principal, loaded, run, body_md=args.body_md, sources=args.sources

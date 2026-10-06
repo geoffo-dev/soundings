@@ -27,6 +27,7 @@ exception class.
 
 from __future__ import annotations
 
+import asyncio
 import http.cookiejar
 import json
 import os
@@ -57,6 +58,8 @@ from app.schemas.ai import (
 )
 
 __all__ = [
+    "CANCEL_DEADLINE",
+    "CARD_DEADLINE",
     "CONNECT_TIMEOUT",
     "INTERRUPTED_STATES",
     "JSON_RPC_MAX_BYTES",
@@ -73,6 +76,11 @@ __all__ = [
 ]
 
 CONNECT_TIMEOUT: Final = 10.0
+CANCEL_DEADLINE: float = AI_RUN_CANCEL_TIMEOUT.total_seconds()
+"""``tasks/cancel`` as a whole (connect, send, answer) ends within this (review L7: not
+the connect timeout plus the read); tests shorten it."""
+CARD_DEADLINE: float = AI_CARD_TIMEOUT.total_seconds()
+"""The card fetch (test connection) as a whole ends within this; tests shorten it."""
 """Seconds to connect to the controller (and to write a request)."""
 JSON_RPC_MAX_BYTES: Final = 1024 * 1024
 SSE_EVENT_MAX_BYTES: Final = 1024 * 1024
@@ -535,9 +543,10 @@ class A2AClient:
         0.10.2 can't cancel and answers -32603). ``True`` when the controller answered at
         all within :data:`~app.schemas.ai.AI_RUN_CANCEL_TIMEOUT`."""
         try:
-            await self._call(
-                "cancel", {"id": task_id}, read_seconds=AI_RUN_CANCEL_TIMEOUT.total_seconds()
-            )
+            async with asyncio.timeout(CANCEL_DEADLINE):
+                await self._call("cancel", {"id": task_id}, read_seconds=CANCEL_DEADLINE)
+        except TimeoutError:
+            return False
         except A2AProtocolError:
             return True  # an answer, just not a task
         except A2AUnreachable as error:
@@ -547,7 +556,14 @@ class A2AClient:
     async def fetch_card(self) -> tuple[int, object]:
         """``GET`` the card URL (5 seconds, at most 64 KiB, no redirects): ``(status,
         JSON)``. Raises :class:`A2AUnreachable` / :class:`A2AProtocolError`."""
-        seconds = AI_CARD_TIMEOUT.total_seconds()
+        try:
+            async with asyncio.timeout(CARD_DEADLINE):
+                return await self._fetch_card()
+        except TimeoutError as error:
+            raise A2AUnreachable("timed out") from error
+
+    async def _fetch_card(self) -> tuple[int, object]:
+        seconds = CARD_DEADLINE
         headers = self.headers("application/json")
         headers.pop("Content-Type")
         async with http_client(transport=self._transport, read_timeout=seconds) as http:

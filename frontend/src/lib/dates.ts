@@ -134,9 +134,10 @@ export function formatRelative(
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style })
   if (abs < 45_000) {
     const moment = rtf.format(0, 'second')
-    // "Sent just now", not "Sent now" (a bare "now" reads oddly for the past). A few
-    // seconds ahead is the server's clock, not the future.
-    return diff < 5_000 && moment === 'now' ? 'just now' : moment
+    // "Sent just now", not "Sent now" (a bare "now" reads oddly for the past). Seconds
+    // ahead are the server's clock running ahead of this one, not the future: the
+    // same moment reads the same everywhere ("Asked by … just now").
+    return moment === 'now' ? 'just now' : moment
   }
   if (abs < HOUR) return rtf.format(Math.round(diff / MINUTE), 'minute')
   if (abs < DAY && calendarDaysBetween(nowDate, date) === 0)

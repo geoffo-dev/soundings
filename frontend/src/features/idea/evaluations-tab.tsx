@@ -16,6 +16,7 @@ import { WithTooltip } from '@/components/ui/tooltip'
 import { formatDateTime } from '@/lib/dates'
 import { formatScore } from '@/lib/scores'
 import { cn } from '@/lib/utils'
+import { visibleText } from '@/lib/visible-text'
 
 import { useIdeaPage } from './idea-context'
 import { RecommendationBadge, ScoreChip } from './score-display'
@@ -161,6 +162,8 @@ function Comparison({
 }) {
   const { me } = useIdeaPage()
   const stats = new Map(aggregate?.criteria.map((c) => [c.criterion_id, c]))
+  // An AI evaluation left out: its column is muted and Mean says it counts the rest.
+  const someLeftOut = items.some((evaluation) => !evaluation.include_in_aggregate)
   return (
     // Scrolls sideways on phones: focusable so the keyboard can scroll it too (axe
     // scrollable-region-focusable); a named region says what it is.
@@ -203,14 +206,16 @@ function Comparison({
                   <span
                     aria-hidden="true"
                     title={evaluation.is_ai ? name : undefined}
-                    className="mx-auto mt-0.5 block max-w-24 truncate text-xs font-normal text-secondary"
+                    // Narrower on phones, so the ellipsis shows before the pinned Mean column.
+                    className="mx-auto mt-0.5 block max-w-16 truncate text-xs font-normal text-secondary sm:max-w-24"
                   >
                     {evaluation.is_ai ? name : name.split(' ')[0]}
                   </span>
                   {!evaluation.include_in_aggregate && (
                     <span
                       aria-hidden="true"
-                      className="mx-auto block text-xs font-normal whitespace-nowrap text-muted"
+                      // Wraps on phones, inside the narrow column (not under the pinned Mean).
+                      className="mx-auto block max-w-16 text-xs leading-tight font-normal text-muted sm:max-w-none sm:whitespace-nowrap"
                     >
                       not in score
                     </span>
@@ -220,6 +225,7 @@ function Comparison({
             })}
             <th scope="col" className={cn(MEAN_COLUMN, 'bg-background font-medium text-secondary')}>
               Mean
+              {someLeftOut && <span className="block text-xs font-normal text-muted">counted</span>}
             </th>
           </tr>
         </thead>
@@ -250,7 +256,8 @@ function Comparison({
                         <ScoreChip
                           score={score}
                           inverted={criterion.inverted}
-                          label={`${evaluation.evaluator.display_name}: ${score} out of 5`}
+                          muted={!evaluation.include_in_aggregate}
+                          label={`${evaluation.evaluator.display_name}: ${score} out of 5${evaluation.include_in_aggregate ? '' : ', not counted'}`}
                           className="mx-auto"
                         />
                       )}
@@ -321,6 +328,7 @@ function EvaluationCard({
           name={name}
           src={evaluation.evaluator.avatar_url}
           isAgent={ai}
+          agentBadge={false}
           size="sm"
           decorative
         />
@@ -332,17 +340,25 @@ function EvaluationCard({
         <RecommendationBadge value={evaluation.recommendation} />
         {!evaluation.include_in_aggregate && <Badge variant="outline">Not in score</Badge>}
         <span className="ml-auto flex items-center gap-2 text-sm text-muted">
-          {evaluation.edited_at && (
-            <WithTooltip content={`Edited ${formatDateTime(evaluation.edited_at)}`}>
-              <span className="inline-flex items-center gap-1">
-                <PencilLine aria-hidden="true" className="size-3.5" />
-                Edited after submission
+          {evaluation.edited_at &&
+            (ai ? (
+              // An agent asked again re-submits: that is a new evaluation, not an edit.
+              <span>
+                Re-evaluated <RelativeTime date={evaluation.edited_at} />
               </span>
-            </WithTooltip>
+            ) : (
+              <WithTooltip content={`Edited ${formatDateTime(evaluation.edited_at)}`}>
+                <span className="inline-flex items-center gap-1">
+                  <PencilLine aria-hidden="true" className="size-3.5" />
+                  Edited after submission
+                </span>
+              </WithTooltip>
+            ))}
+          {!(ai && evaluation.edited_at) && (
+            <span>
+              Submitted <RelativeTime date={evaluation.submitted_at} />
+            </span>
           )}
-          <span>
-            Submitted <RelativeTime date={evaluation.submitted_at} />
-          </span>
         </span>
       </header>
       {ai && <AiInclusionControl ideaKey={ideaKey} evaluation={evaluation} />}
@@ -356,6 +372,7 @@ function EvaluationCard({
                 <ScoreChip
                   score={entry.score}
                   inverted={criterion.inverted}
+                  muted={!evaluation.include_in_aggregate}
                   label={`${criterion.name}: ${entry.score} out of 5`}
                 />
               </dt>
@@ -363,7 +380,8 @@ function EvaluationCard({
                 {entry.comment ? (
                   <p className="text-sm [overflow-wrap:anywhere] whitespace-pre-line text-primary">
                     {ai && <span className="mr-1.5 text-xs font-medium text-muted">Rationale</span>}
-                    {entry.comment}
+                    {/* An agent's words: nothing invisible or direction-changing. */}
+                    {ai ? visibleText(entry.comment) : entry.comment}
                   </p>
                 ) : (
                   ai && <p className="text-sm text-muted">No rationale given.</p>
@@ -387,7 +405,7 @@ function EvaluationCard({
         >
           <p className="text-xs font-medium text-muted">{ai ? 'Summary' : 'Overall comment'}</p>
           <p className="text-sm [overflow-wrap:anywhere] whitespace-pre-line text-primary">
-            {evaluation.comment}
+            {ai ? visibleText(evaluation.comment) : evaluation.comment}
           </p>
         </div>
       )}

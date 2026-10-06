@@ -137,13 +137,23 @@ def connect(app: FastAPI) -> Connect:
 
 class Agent:
     """An MCP client identity: a key's secret; ``await agent.call(tool, **arguments)``
-    opens a client (SDK, streamable HTTP), calls the tool once and closes it."""
+    opens a client (SDK, streamable HTTP), calls the tool once and closes it.
+    ``agent.for_run(run)``: the same key, passing that run's id as ``run_id`` in every call
+    (as an AI agent does, contract-phase6 section 10) unless the call names one itself."""
 
-    def __init__(self, connect: Connect, secret: str) -> None:
+    def __init__(self, connect: Connect, secret: str, run_id: UUID | None = None) -> None:
         self.connect = connect
         self.secret = secret
+        self.run_id = run_id
+
+    def for_run(self, run: Any) -> Agent:
+        """``run``: an ``AiRun`` (or anything with an ``id``), a UUID, or ``None``."""
+        run_id = run if run is None or isinstance(run, UUID) else run.id
+        return Agent(self.connect, self.secret, run_id)
 
     async def call(self, tool: str, **arguments: Any) -> CallToolResult:
+        if self.run_id is not None:
+            arguments.setdefault("run_id", str(self.run_id))
         async with self.connect(self.secret) as client:
             return await call(client, tool, **arguments)
 

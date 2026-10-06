@@ -41,11 +41,17 @@ export function RecommendationBadge({
 export function ScoreChip({
   score,
   inverted = false,
+  muted = false,
   label,
   className,
 }: {
   score: number
   inverted?: boolean
+  /**
+   * Not counted in the score (an AI evaluation left out): no tint and a dashed
+   * outline, so it never reads like the scores that are.
+   */
+  muted?: boolean
   /** Accessible name, e.g. "Value: 4 out of 5". Defaults to "4 out of 5". */
   label?: string
   className?: string
@@ -56,8 +62,10 @@ export function ScoreChip({
       role="img"
       aria-label={label ?? `${score} out of 5`}
       className={cn(
-        'inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm font-semibold text-primary tabular-nums',
-        SCORE_TINT[band],
+        'inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm font-semibold tabular-nums',
+        muted
+          ? 'border border-dashed border-strong font-medium text-secondary'
+          : ['text-primary', SCORE_TINT[band]],
         className,
       )}
     >

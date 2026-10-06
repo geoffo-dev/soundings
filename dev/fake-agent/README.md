@@ -68,7 +68,10 @@ like an Agent that doesn't exist. Keys are never logged or returned.
 
 The message's `metadata.soundings` (`run_id`, `kind`, `idea`, `section_key`) says what to
 do; the text is for a model and is only checked for what must never be in it (a URL or an
-API key: `message_checks`). It initialises an MCP session with its key, then:
+API key: `message_checks`). It initialises an MCP session with its key, then makes these
+calls, each with the run's id as `run_id` (as the message tells a model to: Soundings binds
+every call of an agent to the run it names, c22; the `-late` write names the run that
+ended):
 
 | Kind | Calls | Result |
 |---|---|---|

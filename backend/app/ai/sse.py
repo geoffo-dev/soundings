@@ -13,7 +13,8 @@ stream ends after the final event, after 10 minutes (the browser reconnects with
 **One poller per run per API process** (:class:`RunEventHub`) reads ``ai_run_events``
 once a second in a short session of its own and fans new events out to every open
 stream of that run here; no ``LISTEN/NOTIFY`` and no request session (the request's is
-closed before streaming starts). At most 5 open streams per person per process.
+closed before streaming starts). At most 5 open streams per person per process, and
+:data:`STREAMS_PER_PROCESS` for everyone together.
 
 **Blind safety by construction:** a stream carries :class:`~app.schemas.ai.AiRunEvent`
 only (Soundings' fixed sentences), so pending evaluators may watch an AI evaluation.
@@ -56,6 +57,7 @@ from app.services import sessions
 
 __all__ = [
     "EVENT_STREAM_HEADERS",
+    "STREAMS_PER_PROCESS",
     "EventStreamResponse",
     "RunEventHub",
     "TooManyStreamsProblem",
@@ -71,15 +73,23 @@ EVENT_STREAM_HEADERS: Final = {
     "X-Accel-Buffering": "no",
 }
 POLL_INTERVAL: Final = 1.0
+STREAMS_PER_PROCESS: Final = 100
+"""Open streams per API process, for everyone together (review L6): each stream on
+another run adds a poller reading once a second. Past it: 429, and the SPA polls
+``get_ai_run`` instead (its fallback)."""
 _HUB: Final = "ai_event_hub"
 
 
 class TooManyStreamsProblem(ProblemError):
-    def __init__(self) -> None:
+    def __init__(self, *, server: bool = False) -> None:
         super().__init__(
             429,
             "too_many_attempts",
-            detail=f"You have {AI_SSE_STREAMS_PER_USER} AI run streams open. Close one first.",
+            detail=(
+                "Too many AI run streams are open on this server. Try again in a moment."
+                if server
+                else f"You have {AI_SSE_STREAMS_PER_USER} AI run streams open. Close one first."
+            ),
             headers={"Retry-After": "5"},
         )
 
@@ -114,18 +124,31 @@ class _Feed:
 class RunEventHub:
     """One poller per run with open streams in this process, and the per-person count."""
 
-    def __init__(self, sessionmaker: SessionMaker, *, interval: float = POLL_INTERVAL) -> None:
+    def __init__(
+        self,
+        sessionmaker: SessionMaker,
+        *,
+        interval: float = POLL_INTERVAL,
+        max_streams: int = STREAMS_PER_PROCESS,
+    ) -> None:
         self._sessionmaker = sessionmaker
         self._interval = interval
+        self._max_streams = max_streams
         self._feeds: dict[UUID, _Feed] = {}
         self._streams: Counter[UUID] = Counter()
 
     def open_stream(self, user_id: UUID) -> None:
-        """Count a new stream for ``user_id`` (429 past the limit)."""
+        """Count a new stream for ``user_id`` (429 past the person's limit or the
+        process's)."""
         if self._streams[user_id] >= AI_SSE_STREAMS_PER_USER:
             raise TooManyStreamsProblem
+        if self.total_streams() >= self._max_streams:
+            raise TooManyStreamsProblem(server=True)
         self._streams[user_id] += 1
         AI_RUN_EVENT_STREAMS.inc()
+
+    def total_streams(self) -> int:
+        return sum(self._streams.values())
 
     def close_stream(self, user_id: UUID) -> None:
         if self._streams[user_id] > 0:

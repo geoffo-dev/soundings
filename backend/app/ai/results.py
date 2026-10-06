@@ -2,8 +2,8 @@
 ``tool_called`` / ``result_recorded`` progress events of its calls.
 
 Results are attached by the server, never by parsing agent text: in the write tool's
-transaction, after it locked the project and the idea and :func:`app.ai.scope.write_run`
-locked the open run (lock order project, idea, run), the evaluation, suggestion or note
+transaction, after it locked the project and the idea and :func:`app.ai.scope.lock_run`
+locked the run the call names (lock order project, idea, run), the evaluation, suggestion or note
 id goes on the run. The events are written by :func:`record_call` **after** the tool's
 transaction has ended (committed or rolled back), in a short transaction of their own:
 writing them while the tool's transaction holds the run row would deadlock the call on
@@ -28,7 +28,7 @@ from app.db import session_scope
 from app.domain.principal import Principal
 from app.models.ai import AiRun
 from app.models.enums import AiRunEventType, AiRunKind, AiRunStatus
-from app.schemas.ai import AGENT_RUN_WRITE_TOOLS, tool_event_message
+from app.schemas.ai import tool_event_message
 
 __all__ = ["NO_RUN_EVENT_TOOLS", "attach", "record_call"]
 
@@ -36,7 +36,6 @@ logger = logging.getLogger("soundings.ai")
 
 NO_RUN_EVENT_TOOLS: Final = frozenset({"list_projects", "search_ideas"})
 """Tools that name no single idea: they add no ``tool_called`` event."""
-_KIND_OF_TOOL: Final = {tool: kind for kind, tool in AGENT_RUN_WRITE_TOOLS.items()}
 
 
 async def attach(
@@ -46,7 +45,7 @@ async def attach(
     evaluation_id: UUID | None = None,
     suggestion_id: UUID | None = None,
 ) -> bool:
-    """Put the result on ``run`` (locked by :func:`~app.ai.scope.write_run`) while it is
+    """Put the result on ``run`` (locked by :func:`~app.ai.scope.lock_run`) while it is
     still open: ``running`` and not cancel-requested. ``False`` when it isn't."""
     values: dict[str, Any] = {}
     if evaluation_id is not None:
@@ -74,29 +73,33 @@ async def record_call(
     principal: Principal,
     *,
     tool: str,
-    idea_id: UUID | None,
+    run_id: UUID | None,
     error_code: str | None,
     recorded: Sequence[tuple[UUID, AiRunKind]] = (),
 ) -> None:
     """After an agent's tool call: ``tool_called`` (Soundings' sentence for the tool, with
-    the error code when it failed) on its open runs on the idea (a write tool: on its
-    kind's run only), then ``result_recorded`` on each run the call attached a result to.
-    Nothing for people, unknown tools, ``list_projects`` / ``search_ideas`` or a call that
-    named no idea. Never fails the call (logged)."""
-    if not scope.is_agent(principal) or idea_id is None or tool in NO_RUN_EVENT_TOOLS:
+    the error code when it failed) on the run the call named, when the call was about that
+    run's idea (``run_id``, from :attr:`app.mcp.tools.ToolContext.event_run`), then
+    ``result_recorded`` on each run the call attached a result to. Nothing for people,
+    unknown tools, ``list_projects`` / ``search_ideas``, or a call about anything else.
+    Never fails the call (logged)."""
+    if not scope.is_agent(principal) or tool in NO_RUN_EVENT_TOOLS:
         return
     try:
         message = tool_event_message(tool, error_code)
     except ValueError:
         message = tool_event_message(tool)
+    if run_id is None:
+        message = None
     if message is None and not recorded:
         return
     try:
         async with session_scope(app.state.sessionmaker) as db:
-            if message is not None:
-                for run in await scope.open_runs(db, principal, idea_id, _KIND_OF_TOOL.get(tool)):
-                    await add_event(db, run.id, AiRunEventType.TOOL_CALLED, message)
-            for run_id, kind in recorded:
-                await add_event(db, run_id, AiRunEventType.RESULT_RECORDED, RESULT_MESSAGES[kind])
+            if message is not None and run_id is not None:
+                await add_event(db, run_id, AiRunEventType.TOOL_CALLED, message)
+            for recorded_id, kind in recorded:
+                await add_event(
+                    db, recorded_id, AiRunEventType.RESULT_RECORDED, RESULT_MESSAGES[kind]
+                )
     except Exception:  # pragma: no cover - progress events must never fail a tool call
         logger.exception("ai run events failed", extra={"tool": tool})

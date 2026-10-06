@@ -12,7 +12,7 @@ import {
   waitRun,
 } from './support/ai'
 import { Api, type CurrentUser, type Person, uniqueSuffix } from './support/api'
-import { expect, seriousViolations, settled, signIn, test, toast } from './support/fixtures'
+import { expect, seriousViolations, settled, signIn, test } from './support/fixtures'
 
 /**
  * axe (WCAG 2.2 AA rules) on the Phase 6 screens against the real app with the fake
@@ -346,7 +346,8 @@ test.describe('@ai Phase 6 accessibility', () => {
     }
     await expect(research).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(toast(page, /to research this idea/)).toBeVisible()
+    // Its row on Overview is in view and says so itself (no toast on top of it).
+    await expect(page.locator('article[id^="ai-run-"]').first()).toBeVisible()
     await expect(menu).toBeFocused() // the menu returns focus to its button
     const read = page.getByRole('button', { name: 'Read the note' })
     await expect(read).toBeVisible({ timeout: 30_000 })

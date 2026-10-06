@@ -19,7 +19,8 @@ owner deactivated, is the tool error ``unauthorized`` (``deny``); a lost platfor
 flag or project role applies at once.
 
 **Results carry no invisible text** (:mod:`app.mcp.text`): every string in a result
-and in an error message passes through :func:`visible_text`.
+and in an error message passes through :func:`visible_text`; an AI agent's Markdown and
+comments lose the same characters before they are stored (:func:`agent_text_arguments`).
 
 ``decision`` in the entry is ``deny`` when the call was refused before or by
 authorisation (an unknown tool, invalid arguments, the write cap, a key refused when
@@ -34,7 +35,6 @@ import json
 import logging
 from collections.abc import Mapping
 from typing import Any, Final
-from uuid import UUID
 
 import mcp_types as types
 from pydantic import BaseModel, ValidationError
@@ -47,7 +47,7 @@ from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.mcp.audit import AuditTarget, Decision, record_call, record_call_separately
 from app.mcp.context import McpRequest
-from app.mcp.text import visible_data, visible_text
+from app.mcp.text import agent_text_arguments, visible_data, visible_text
 from app.mcp.tools import TOOLS, ToolContext
 from app.schemas.mcp import McpTool, McpToolError, tool_by_name
 
@@ -137,6 +137,12 @@ async def call_tool(
     raw = dict(arguments or {})
     try:
         args = tool.input.model_validate(raw)
+        if not tool.read_only and principal.user.is_service_account:
+            # M2: an agent's Markdown and comments without invisible or direction
+            # characters, validated again (so text that was only those is refused).
+            cleaned = agent_text_arguments(raw)
+            if cleaned != raw:
+                args = tool.input.model_validate(cleaned)
     except ValidationError as exc:
         await _refused(request, tool, "validation_error", raw)
         return error_result("validation_error", validation_message(exc))
@@ -162,10 +168,6 @@ async def _refused(request: McpRequest, tool: McpTool, code: str, raw: object) -
         code=code,
         arguments=raw,
     )
-
-
-def _target_idea(target: AuditTarget) -> UUID | None:
-    return target.target_id if target.target_type == "idea" else None
 
 
 async def _run(
@@ -195,7 +197,7 @@ async def _run(
             app,
             request.principal,
             tool=tool.name,
-            idea_id=_target_idea(target),
+            run_id=context.event_run,
             error_code=None,
             recorded=context.recorded,
         )
@@ -204,7 +206,11 @@ async def _run(
         code, message = problem.code, _problem_message(problem)
         decision = _decision(problem)
         await ai_results.record_call(
-            app, request.principal, tool=tool.name, idea_id=_target_idea(target), error_code=code
+            app,
+            request.principal,
+            tool=tool.name,
+            run_id=context.event_run if context is not None else None,
+            error_code=code,
         )
     except asyncio.CancelledError:
         _audit_cancelled(request, tool, target, raw)

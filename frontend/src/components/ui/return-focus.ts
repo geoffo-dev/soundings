@@ -38,10 +38,26 @@ function focusOrigin(): Origin {
   const closing = active.closest(`${OVERLAY_SELECTOR}[data-state="closed"]`)
   if (closing) return origins.get(closing) ?? { element: null, pathname }
   const menu = active.closest('[role="menu"]')
-  const trigger = menu?.id
+  return { element: (menu && menuTrigger(menu)) ?? active, pathname }
+}
+
+/**
+ * A Radix menu's button. The menu names it (`aria-labelledby`) for as long as it is
+ * mounted; the button points back (`aria-controls`) only while the menu is open, so
+ * an overlay that opens as the menu animates closed (a fast "Test connection") would
+ * otherwise remember the menu item, which is about to go.
+ */
+function menuTrigger(menu: Element): HTMLElement | null {
+  const labelledBy = menu.getAttribute('aria-labelledby')
+  const named = labelledBy ? document.getElementById(labelledBy) : null
+  if (named && !menu.contains(named)) {
+    // A submenu is named by its item in the parent menu: that menu's button, then.
+    const parent = named.closest('[role="menu"]')
+    return parent ? menuTrigger(parent) : named
+  }
+  return menu.id
     ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(menu.id)}"]`)
     : null
-  return { element: trigger ?? active, pathname }
 }
 
 function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {

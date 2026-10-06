@@ -4,19 +4,39 @@ import type { ComponentProps } from 'react'
 import { useFieldControl } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
 
-export function Switch({ className, ...props }: ComponentProps<typeof SwitchPrimitive.Root>) {
+export interface SwitchProps extends ComponentProps<typeof SwitchPrimitive.Root> {
+  /**
+   * The last change is being saved: presses are ignored until it is, but the switch
+   * keeps focus (`aria-disabled`, not `disabled`, which would drop it to `<body>`).
+   */
+  pending?: boolean
+}
+
+export function Switch({ className, pending = false, ...props }: SwitchProps) {
   const fieldProps = useFieldControl(props)
+  const busy = pending && !props.disabled
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
         'peer relative inline-flex h-5 w-8 shrink-0 items-center rounded-full border border-transparent p-px',
         'transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50',
+        'aria-busy:cursor-progress',
         'data-[state=checked]:bg-accent data-[state=unchecked]:bg-control',
         'after:absolute after:-inset-1.5 after:content-[""]',
         className,
       )}
       {...fieldProps}
+      aria-disabled={busy || fieldProps['aria-disabled']}
+      aria-busy={busy || undefined}
+      onClick={(event) => {
+        // Radix toggles on click: a prevented click changes nothing.
+        if (busy) event.preventDefault()
+        fieldProps.onClick?.(event)
+      }}
+      onCheckedChange={(checked) => {
+        if (!busy) fieldProps.onCheckedChange?.(checked)
+      }}
     >
       <SwitchPrimitive.Thumb
         className={cn(

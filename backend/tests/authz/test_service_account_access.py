@@ -172,13 +172,13 @@ async def test_an_agents_key_never_reaches_an_internal_project_without_a_role(
     got = await _tool(app, key, "get_idea", idea=idea_key)
     rubric = await _tool(app, key, "get_rubric", project=world.tools.slug)
 
-    # Phase 6 (c22): without an open run an agent lists nothing at all; an idea it can't
-    # see stays not_found (checked before the run scope).
+    # Phase 6 (c22): without an open run an agent lists nothing at all, and the run scope
+    # comes before any lookup (review N1), so the answer says nothing about the idea.
     assert projects["structuredContent"]["projects"] == []
     assert found["structuredContent"]["items"] == []
     for result in (got, rubric):
         assert result["isError"] is True
-        assert result["structuredContent"]["code"] == "not_found"
+        assert result["structuredContent"]["code"] == "ai_run_not_active"
 
     async with key_client(app, key) as http:
         listed = await http.get(f"{API}/projects")

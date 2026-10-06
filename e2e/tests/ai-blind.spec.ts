@@ -9,6 +9,7 @@ import {
   readEvents,
   registerAgent,
   retireAgents,
+  runSteps,
   skipWithoutAi,
   waitRun,
 } from './support/ai'
@@ -66,7 +67,7 @@ test.describe('@ai blind evaluation with an AI evaluator', () => {
       await signIn(page, 'farah')
       await openIdea(page, key)
       const card = page.locator('article[id^="ai-run-"]').first()
-      const steps = card.getByRole('list', { name: 'Steps' })
+      const steps = await runSteps(card)
       await expect(steps).toContainText('Saved its evaluation')
       await expect(steps).toContainText('Evaluation submitted')
       await expect(card.getByText('Working', { exact: true })).toBeVisible() // still open
@@ -91,6 +92,8 @@ test.describe('@ai blind evaluation with an AI evaluator', () => {
       await team.owner.send('POST', `/ideas/${key}/ai-runs/${run.id}/cancel`)
       await page.getByRole('tab', { name: /^Overview/ }).click()
       await expect(card.getByText('Cancelled').first()).toBeVisible({ timeout: 30_000 })
+      // It had saved its evaluation before the cancel: the row says it stays.
+      await expect(card).toContainText('Cancelled · its evaluation was submitted')
       await expect(page.getByRole('main')).not.toContainText(AGENT_TEXT)
 
       // Nothing the page fetched held the agent's evaluation...

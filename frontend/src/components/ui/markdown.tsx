@@ -4,6 +4,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { exactMention, MENTION_HREF } from '@/lib/mentions'
+import { visibleText } from '@/lib/visible-text'
 import { cn } from '@/lib/utils'
 
 const isExternal = (href: string | undefined) => !!href && /^https?:/i.test(href)
@@ -307,13 +308,31 @@ export interface MarkdownProps {
   /** Section text under an h2 section title (proposals): headings start at h3. */
   nested?: boolean
   /**
-   * Text an AI agent wrote (research notes): http/https links only, each with its
-   * host shown after it; no mention chips (agents can't mention anyone).
+   * Text an AI agent wrote (research notes, AI suggestions): http/https links only,
+   * each with its host shown after it (images too), no mention chips (agents can't
+   * mention anyone), and no invisible or direction-changing characters.
    */
   untrusted?: boolean
 }
 
-/** Agent links: new tab, never followed for ranking, the host after the text. */
+/**
+ * The host after an agent's link, as the browser reads the URL (ASCII), isolated
+ * left-to-right: no direction override around it or in the link text can reverse
+ * it into another site's name (code review M2).
+ */
+export function LinkHost({ host, className }: { host: string; className?: string }) {
+  return (
+    <span className={cn('text-sm text-muted', className)}>
+      {' '}
+      <bdi dir="ltr">({host})</bdi>
+    </span>
+  )
+}
+
+/**
+ * Agent links: new tab, never followed for ranking, the text isolated (`<bdi>`) and
+ * the host after it. Images are links too (nothing is fetched), with their host.
+ */
 const untrustedLinks: Components = {
   a: ({ node: _node, href, children, ...props }) => {
     const host = href ? urlHost(href) : null
@@ -327,9 +346,28 @@ const untrustedLinks: Components = {
           rel="noopener noreferrer nofollow"
           {...props}
         >
-          {children}
+          <bdi>{children}</bdi>
         </a>
-        <span className="text-sm text-muted"> ({host})</span>
+        <LinkHost host={host} />
+      </>
+    )
+  },
+  img: ({ src, alt }) => {
+    const href = typeof src === 'string' && src ? safeWebUrl(src) : null
+    const host = href ? urlHost(href) : null
+    if (!href || !host) return alt ? <span>{alt}</span> : null
+    return (
+      <>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          className="inline-flex items-center gap-1 text-accent underline underline-offset-2"
+        >
+          <bdi>{alt?.trim() ? alt : 'Image'}</bdi>
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+        <LinkHost host={host} />
       </>
     )
   },
@@ -376,7 +414,8 @@ export function Markdown({
         urlTransform={untrusted ? safeWebUrl : safeMarkdownUrl}
         components={withMentions}
       >
-        {children}
+        {/* Agent text loses what shows nothing (bidi overrides, zero-width, tags). */}
+        {untrusted ? visibleText(children) : children}
       </ReactMarkdown>
     </div>
   )

@@ -49,9 +49,11 @@ import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TagInput } from '@/components/ui/tag-input'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { isActiveRun } from '@/features/ai/ai-copy'
 import { AskAiToEvaluateButton, showRun, submittedEvaluatorIds } from '@/features/ai/idea-ai'
 import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
+import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -223,7 +225,27 @@ function EvaluatorsSection() {
   const { submitted, total } = idea.evaluator_progress
   const evaluationClosed = idea.evaluation_closed_at !== null && idea.status !== 'closed'
   const headingId = useId()
+  const sectionRef = useRef<HTMLElement>(null)
   const inviteRef = useRef<HTMLButtonElement>(null)
+  // An AI evaluator's progress button goes when its run ends: if it had focus, focus
+  // "Ask AI to evaluate again" (or "Invite evaluators") rather than <body>.
+  const runStateHadFocus = useRef(false)
+  const activeRunIds = (aiRuns ?? [])
+    .filter((run) => run.kind === 'evaluate' && isActiveRun(run))
+    .map((run) => run.id)
+    .join()
+  useEffect(() => {
+    if (!runStateHadFocus.current) return
+    const active = document.activeElement
+    if (active && active !== document.body && active.isConnected) return
+    runStateHadFocus.current = false
+    focusWhenRendered(
+      () =>
+        sectionRef.current?.querySelector<HTMLElement>('[data-ask-ai-evaluate]') ??
+        inviteRef.current,
+      { force: true },
+    )
+  }, [activeRunIds])
   // "Close evaluation" and "Reopen" replace each other: keep focus on the one shown.
   const toggleRef = useRef<HTMLButtonElement>(null)
   const toggleHadFocus = useRef(false)
@@ -248,7 +270,7 @@ function EvaluatorsSection() {
   }
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-2">
+    <section ref={sectionRef} aria-labelledby={headingId} className="flex flex-col gap-2">
       <div className="flex min-h-7 items-center justify-between gap-2">
         <h2 id={headingId} className="text-sm font-medium text-primary">
           Evaluators
@@ -278,10 +300,10 @@ function EvaluatorsSection() {
                   name={evaluator.user.display_name}
                   src={evaluator.user.avatar_url}
                   isAgent={evaluator.is_ai}
+                  // The "AI" pill after the name marks it: one marker per row.
+                  agentBadge={false}
                   size="sm"
                   decorative
-                  // Room for the avatar's "AI" corner badge.
-                  className={evaluator.is_ai ? 'mr-1' : undefined}
                 />
                 <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   <span className="min-w-0 truncate text-sm text-primary">
@@ -294,6 +316,9 @@ function EvaluatorsSection() {
                   <AiRunState
                     run={activeAiRun(evaluator.user.id)}
                     onShow={(runId) => showRun(runId, setTab)}
+                    onFocusChange={(focused) => {
+                      runStateHadFocus.current = focused
+                    }}
                   />
                 ) : (
                   <EvaluatorState evaluator={evaluator} own={isMe} />
@@ -404,7 +429,16 @@ const STATE = {
 } as const
 
 /** An AI evaluator whose run is on: a spinner that takes you to the run's card. */
-function AiRunState({ run, onShow }: { run: AiRun | undefined; onShow: (runId: string) => void }) {
+function AiRunState({
+  run,
+  onShow,
+  onFocusChange,
+}: {
+  run: AiRun | undefined
+  onShow: (runId: string) => void
+  /** Focus came or went (a removed button blurs to nothing: that stays "had focus"). */
+  onFocusChange: (focused: boolean) => void
+}) {
   if (!run) return null
   const label = run.status === 'queued' ? 'AI run waiting to start' : 'AI run in progress'
   return (
@@ -416,6 +450,10 @@ function AiRunState({ run, onShow }: { run: AiRun | undefined; onShow: (runId: s
         data-ai-run-state={run.id}
         aria-label={`${label}. View progress`}
         onClick={() => onShow(run.id)}
+        onFocus={() => onFocusChange(true)}
+        onBlur={(event) => {
+          if (event.relatedTarget) onFocusChange(false)
+        }}
       >
         <Spinner className="size-3.5" />
       </Button>

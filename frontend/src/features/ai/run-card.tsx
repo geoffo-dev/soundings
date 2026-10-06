@@ -17,9 +17,9 @@ import {
   elapsed,
   elapsedWords,
   isActiveRun,
+  runErrorWords,
   runStatusLabel,
   runTitle,
-  STATUS_COPY,
   timeLeft,
 } from './ai-copy'
 import { runDomId } from './dom-ids'
@@ -44,6 +44,12 @@ function useTicker(on: boolean): number {
   return now
 }
 
+/** Focus is nowhere: on `<body>`, or on an element that has gone. */
+function focusLost(): boolean {
+  const active = document.activeElement
+  return !active || active === document.body || !active.isConnected
+}
+
 export interface RunCardProps {
   ideaKey: string
   run: AiRun
@@ -51,26 +57,27 @@ export interface RunCardProps {
   resultAction?: ReactNode
   /** Asking again after a failure, timeout or cancel ("Try again"), when allowed. */
   retry?: ReactNode
-  /** Start with the steps folded (earlier runs): the header and outcome only. */
-  collapsed?: boolean
+  /**
+   * After "Evaluation submitted": whether it counts yet (an AI evaluation is left out
+   * of the score until the owner includes it). Undefined when the viewer can't know.
+   */
+  counted?: boolean
   className?: string
 }
 
 /**
- * One AI run (contract-phase6 §3.15 "a calm run panel"): the agent and what it
- * is doing, who asked, the live steps (Soundings' own sentences from the event
- * stream, never the agent's words), the elapsed time and the deadline, and
- * Cancel; when it is over, the outcome: what it saved, or why it stopped.
+ * One AI run as one quiet row (contract-phase6 §3.15): the agent and what it does,
+ * then a single line. While it works: the current step (Soundings' own sentence
+ * from the event stream, never the agent's words), the time it has taken and has
+ * left, and Cancel. When it is over: the outcome, what it saved or why it stopped
+ * with the next step. Who asked and every step are behind "Steps".
+ *
+ * Focus stays where the person put it. When a run ends, its Cancel goes: only if
+ * focus was in this row and is now lost does it move to the row; either way the
+ * outcome is announced.
  */
-export function RunCard({
-  ideaKey,
-  run,
-  resultAction,
-  retry,
-  collapsed = false,
-  className,
-}: RunCardProps) {
-  const [open, setOpen] = useState(!collapsed)
+export function RunCard({ ideaKey, run, resultAction, retry, counted, className }: RunCardProps) {
+  const [open, setOpen] = useState(false)
   const { detail, mode } = useRunProgress(ideaKey, run, { enabled: open || isActiveRun(run) })
   // The stream may be ahead of the list (a status from an event), or behind it.
   const current = isActiveRun(run) ? { ...run, ...pickLive(detail) } : run
@@ -78,17 +85,32 @@ export function RunCard({
   const now = useTicker(active)
   const cancel = useCancelAiRun(ideaKey)
   const titleId = useId()
-  const cardRef = useRef<HTMLElement>(null)
-  // Cancel goes when the run ends: if focus was on it (now lost), keep it on the card.
-  const [mountedActive] = useState(active)
-  useEffect(() => {
-    if (mountedActive && !active) focusWhenRendered(() => cardRef.current)
-  }, [mountedActive, active])
   const stepsId = useId()
+  const cardRef = useRef<HTMLElement>(null)
+
+  // Seen ending here: its outcome is announced (a row that loads finished says nothing).
+  const [wasActive, setWasActive] = useState(active)
+  const [endedHere, setEndedHere] = useState(false)
+  if (wasActive !== active) {
+    setWasActive(active)
+    if (wasActive && !active) setEndedHere(true)
+  }
+  // Whether focus is (or was last, before it got lost) inside this row.
+  const focusInside = useRef(false)
+  useEffect(() => {
+    if (!endedHere) return
+    // Its Cancel just went. Focus moves only if it was here and fell to <body>.
+    if (focusInside.current && focusLost()) {
+      focusWhenRendered(() => cardRef.current, { force: true })
+    }
+  }, [endedHere])
+
   const latest = detail.events.at(-1)
-  const status = STATUS_COPY[current.status]
-  const label = runStatusLabel(current)
   const requester = current.requested_by?.display_name ?? 'Someone'
+  const agentName = current.agent.display_name
+  const title = runTitle(current)
+  const cancelling = current.cancel_requested
+  const outcome = active ? null : outcomeWords(current, counted)
 
   return (
     <article
@@ -96,99 +118,101 @@ export function RunCard({
       id={runDomId(run.id)}
       tabIndex={-1}
       aria-labelledby={titleId}
-      className={cn(
-        'flex scroll-mt-20 flex-col rounded-lg border bg-surface outline-offset-2',
-        className,
-      )}
+      data-run-status={current.status}
+      onFocus={() => {
+        focusInside.current = true
+      }}
+      onBlur={(event) => {
+        // Focus moved somewhere else on purpose; a removed element blurs to nothing.
+        const next = event.relatedTarget
+        if (next instanceof Node && !event.currentTarget.contains(next)) {
+          focusInside.current = false
+        }
+      }}
+      className={cn('flex scroll-mt-20 flex-col outline-offset-2', className)}
     >
-      <header className="flex items-start gap-3 px-4 pt-3 pb-2.5">
-        <Avatar name={current.agent.display_name} isAgent size="md" decorative className="mt-0.5" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+        <Avatar
+          name={agentName}
+          isAgent
+          agentBadge={false}
+          size="sm"
+          decorative
+          className="mt-0.5"
+        />
+        <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h3 id={titleId} className="min-w-0 font-medium text-primary">
-              {runTitle(current)}{' '}
-              <span className="font-normal text-muted">· {current.agent.display_name}</span>
+            <h3 id={titleId} className="min-w-0 text-sm font-medium text-primary">
+              {title} <span className="font-normal text-muted">· {agentName}</span>
             </h3>
             <AiBadge />
-            <Badge variant={status.tone === 'neutral' ? 'neutral' : status.tone}>
-              {active && !current.cancel_requested && current.status === 'running' && (
-                <Spinner className="size-3" />
-              )}
-              {label}
-            </Badge>
+            {active && (
+              <Badge variant={current.status === 'running' && !cancelling ? 'info' : 'neutral'}>
+                {!cancelling && current.status === 'running' && <Spinner className="size-3" />}
+                {runStatusLabel(current)}
+              </Badge>
+            )}
           </div>
-          <p className="text-sm text-muted">
-            Asked by {requester} <RelativeTime date={current.created_at} />
-          </p>
+          {active ? (
+            <ActiveLine run={current} latest={latest} now={now} />
+          ) : (
+            outcome && <OutcomeLine run={current} outcome={outcome} />
+          )}
         </div>
-        {collapsed && (
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {active
+            ? current.can_cancel && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  // Stays focusable while it cancels (aria-disabled), so focus isn't lost.
+                  loading={cancel.isPending || cancelling}
+                  onClick={() => cancel.mutate(current.id)}
+                  aria-label={`Cancel: ${title} by ${agentName}`}
+                >
+                  {!cancel.isPending && !cancelling && <X />}
+                  Cancel
+                </Button>
+              )
+            : (retry ?? resultAction)}
           <Button
             variant="ghost"
             size="sm"
+            className="text-muted"
             aria-expanded={open}
             aria-controls={stepsId}
             onClick={() => setOpen((value) => !value)}
           >
-            {open ? 'Hide steps' : 'Steps'}
+            Steps
             <ChevronDown
               className={cn('transition-transform duration-150', open && 'rotate-180')}
             />
           </Button>
-        )}
-      </header>
+        </div>
+      </div>
 
       {open && (
-        <div id={stepsId} className="border-t border-subtle px-4 py-3">
+        <div id={stepsId} className="flex flex-col gap-2 border-t border-subtle px-4 py-3 sm:pl-13">
+          <p className="text-xs text-muted">
+            Asked by {requester} <RelativeTime date={current.created_at} />
+            {active && current.deadline_at && <> · stops by {formatTime(current.deadline_at)}</>}
+          </p>
           <RunSteps events={detail.events} active={active} />
           {mode === 'polling' && active && (
-            <p className="mt-2 text-xs text-muted">
+            <p className="text-xs text-muted">
               Live updates aren’t available here: checking every few seconds.
             </p>
           )}
         </div>
       )}
-      {/* Each new step is announced once (Soundings' own sentences). */}
+      {/* Each new step is announced once, then how it ended (Soundings' own sentences). */}
       <p className="sr-only" aria-live="polite" aria-atomic="true">
-        {active && latest ? latest.message : ''}
+        {active
+          ? (latest?.message ?? '')
+          : endedHere && outcome
+            ? `${title} by ${agentName}: ${outcome.text}${outcome.next ? ` ${outcome.next}` : ''}`
+            : ''}
       </p>
-
-      <footer className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-subtle px-4 py-2.5 text-sm">
-        {active ? (
-          <>
-            <span className="text-secondary tabular-nums">
-              <span aria-hidden="true">
-                {elapsed(current.started_at ?? current.created_at, now)}
-              </span>
-              <span className="sr-only">
-                Running for {elapsedWords(current.started_at ?? current.created_at, now)}
-              </span>
-            </span>
-            <span className="text-muted">
-              {current.status === 'queued'
-                ? 'Waiting for a free worker'
-                : current.deadline_at
-                  ? `Stops by ${formatTime(current.deadline_at)}${timeLeft(current.deadline_at, now) ? ` · ${timeLeft(current.deadline_at, now) ?? ''}` : ''}`
-                  : 'Starting'}
-            </span>
-            {current.can_cancel && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto"
-                disabled={current.cancel_requested}
-                loading={cancel.isPending}
-                onClick={() => cancel.mutate(current.id)}
-                aria-label={`Cancel: ${runTitle(current)} by ${current.agent.display_name}`}
-              >
-                <X />
-                {current.cancel_requested ? 'Cancelling…' : 'Cancel'}
-              </Button>
-            )}
-          </>
-        ) : (
-          <Outcome run={current} resultAction={resultAction} retry={retry} />
-        )}
-      </footer>
     </article>
   )
 }
@@ -206,59 +230,123 @@ function pickLive(detail: AiRun): Partial<AiRun> {
   }
 }
 
-function Outcome({
+/** "Reading the rubric · 0:42 · 4 min left" while it works. */
+function ActiveLine({
   run,
-  resultAction,
-  retry,
+  latest,
+  now,
 }: {
   run: AiRun
-  resultAction?: ReactNode
-  retry?: ReactNode
+  latest: AiRunEvent | undefined
+  now: number
 }) {
-  const finished = run.finished_at ? <RelativeTime date={run.finished_at} /> : null
+  const since = run.started_at ?? run.created_at
+  const left = run.status === 'running' ? timeLeft(run.deadline_at, now) : null
+  const step =
+    run.status === 'queued' ? 'Waiting for a free worker' : (latest?.message ?? 'Starting')
+  return (
+    <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-secondary">
+      <span className="min-w-0">{step}</span>
+      <span aria-hidden="true" className="text-muted">
+        ·
+      </span>
+      <span className="text-muted tabular-nums">
+        <span aria-hidden="true">{elapsed(since, now)}</span>
+        <span className="sr-only">running for {elapsedWords(since, now)}</span>
+      </span>
+      {left && (
+        <>
+          <span aria-hidden="true" className="text-muted">
+            ·
+          </span>
+          <span className="text-muted">{left}</span>
+        </>
+      )}
+    </p>
+  )
+}
+
+interface Outcome {
+  tone: 'success' | 'neutral' | 'warning' | 'danger'
+  /** "Failed", "Timed out": read before the text, shown as the icon. */
+  label: string
+  text: string
+  next?: string
+}
+
+/** How a finished run ended, in a sentence (and the next step when it stopped short). */
+export function outcomeWords(run: AiRun, counted?: boolean): Outcome {
   if (run.status === 'succeeded') {
-    return (
-      <>
-        <span className="flex items-center gap-1.5 text-primary">
-          <CircleCheck aria-hidden="true" className="size-4 text-success" />
-          {run.kind === 'evaluate'
-            ? 'Evaluation submitted'
-            : run.kind === 'research'
-              ? 'Research note saved'
-              : 'Suggestion saved'}
-        </span>
-        {finished && <span className="text-muted">{finished}</span>}
-        {resultAction && <span className="ml-auto">{resultAction}</span>}
-      </>
-    )
+    const text =
+      run.kind === 'evaluate'
+        ? counted === false
+          ? 'Evaluation submitted · not in the score yet'
+          : counted
+            ? 'Evaluation submitted · counted in the score'
+            : 'Evaluation submitted'
+        : run.kind === 'research'
+          ? 'Research note saved'
+          : 'Suggestion saved'
+    return { tone: 'success', label: 'Done', text }
   }
   if (run.status === 'cancelled') {
-    return (
-      <>
-        <span className="flex items-center gap-1.5 text-secondary">
-          <Ban aria-hidden="true" className="size-4 text-muted" />
-          Cancelled
-        </span>
-        {finished && <span className="text-muted">{finished}</span>}
-        {retry && <span className="ml-auto">{retry}</span>}
-      </>
-    )
+    // A cancel that lands after the agent saved its result keeps it (contract-phase6 §3.4).
+    const kept = run.result.evaluation_id
+      ? 'its evaluation was submitted'
+      : run.result.note_id
+        ? 'its research note was saved'
+        : run.result.suggestion_id
+          ? 'its suggestion was saved'
+          : null
+    return {
+      tone: 'neutral',
+      label: 'Cancelled',
+      text: kept ? `Cancelled · ${kept}` : 'Cancelled: nothing was saved.',
+    }
   }
-  const TimedOut = run.status === 'timed_out'
+  const { what, next } = runErrorWords(run)
+  return run.status === 'timed_out'
+    ? { tone: 'warning', label: 'Timed out', text: what, next }
+    : { tone: 'danger', label: 'Failed', text: what, next }
+}
+
+function OutcomeLine({ run, outcome }: { run: AiRun; outcome: Outcome }) {
+  const Icon =
+    outcome.tone === 'success'
+      ? CircleCheck
+      : outcome.tone === 'neutral'
+        ? Ban
+        : outcome.tone === 'warning'
+          ? Clock
+          : CircleAlert
   return (
-    <>
-      <span className="flex min-w-0 items-start gap-1.5 text-primary">
-        {TimedOut ? (
-          <Clock aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
-        ) : (
-          <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
+    <p className="flex min-w-0 items-start gap-1.5 text-sm text-secondary">
+      <Icon
+        aria-hidden="true"
+        className={cn(
+          'mt-0.5 size-3.5 shrink-0',
+          outcome.tone === 'success' && 'text-success',
+          outcome.tone === 'neutral' && 'text-muted',
+          outcome.tone === 'warning' && 'text-warning',
+          outcome.tone === 'danger' && 'text-danger',
         )}
-        {run.error?.message ??
-          (TimedOut ? 'It didn’t finish in time.' : 'It stopped with an error.')}
+      />
+      <span className="min-w-0">
+        <span className="sr-only">{outcome.label}: </span>
+        <span
+          className={cn(outcome.tone !== 'success' && outcome.tone !== 'neutral' && 'text-primary')}
+        >
+          {outcome.text}
+        </span>
+        {outcome.next && <span className="text-muted"> {outcome.next}</span>}
+        {run.finished_at && (
+          <span className="text-muted">
+            {' '}
+            · <RelativeTime date={run.finished_at} />
+          </span>
+        )}
       </span>
-      {finished && <span className="text-muted">{finished}</span>}
-      {retry && <span className="ml-auto">{retry}</span>}
-    </>
+    </p>
   )
 }
 
@@ -289,6 +377,10 @@ export function RunSteps({ events, active }: { events: AiRunEvent[]; active: boo
       <ol aria-label="Steps" className="flex flex-col gap-1">
         {shown.map((event, index) => {
           const last = index === shown.length - 1
+          // A time only where it moved on: several steps in the same minute share one.
+          const time = formatTime(event.created_at)
+          const previous = shown[index - 1]
+          const sameTime = previous !== undefined && formatTime(previous.created_at) === time
           return (
             <li key={event.seq} className="flex items-start gap-2 text-sm">
               <StepIcon event={event} current={last && active} />
@@ -304,9 +396,9 @@ export function RunSteps({ events, active }: { events: AiRunEvent[]; active: boo
               </span>
               <time
                 dateTime={event.created_at}
-                className="shrink-0 text-xs text-muted tabular-nums"
+                className={cn('shrink-0 text-xs text-muted tabular-nums', sameTime && 'invisible')}
               >
-                {formatTime(event.created_at)}
+                {time}
               </time>
             </li>
           )

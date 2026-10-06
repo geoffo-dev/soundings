@@ -31,7 +31,7 @@ const isMod = (event: KeyboardEvent) => event.metaKey || event.ctrlKey
  * up, its margin threads beside it.
  */
 export function SectionRow({ section, index }: { section: ProposalSection; index: number }) {
-  const { store, permissions, modeOf, toggleSectionMode, threads, setCurrent, ideaKey } =
+  const { store, permissions, modeOf, toggleSectionMode, threads, current, setCurrent, ideaKey } =
     useProposalEditor()
   const state = useSectionSave(store, section.key)
   const headingId = useId()
@@ -47,7 +47,7 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
       data-section-key={section.key}
       aria-labelledby={headingId}
       onFocus={() => setCurrent(section.key)}
-      className="grid scroll-mt-16 gap-x-8 gap-y-4 border-b border-subtle py-7 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_17rem] lg:py-8"
+      className="group/section grid scroll-mt-16 gap-x-8 gap-y-4 border-b border-subtle py-7 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_17rem] lg:py-8"
     >
       <div className="flex min-w-0 flex-col gap-3" data-section-body="">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -62,7 +62,17 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
           <span className="text-xs text-muted tabular-nums">{wordLabel(countWords(text))}</span>
           {permissions.can_edit && state && <SectionSaveBadge state={state} />}
           <div className="ml-auto flex items-center gap-1.5">
-            <DraftWithAiButton ideaKey={ideaKey} section={section} />
+            <DraftWithAiButton
+              ideaKey={ideaKey}
+              section={section}
+              // One "Draft with AI" at a time, not eight: the current section's (in view or
+              // focused), and any other's on hover or keyboard focus. Touch: the current one.
+              className={
+                current === section.key
+                  ? undefined
+                  : 'opacity-0 group-focus-within/section:opacity-100 group-hover/section:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden'
+              }
+            />
             {permissions.can_edit && (
               <SegmentedControl
                 size="sm"

@@ -302,6 +302,7 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
         ...staticGroups,
       ],
       query,
+      { pageGroups: contextGroups.length },
     ),
     ideaResults,
   ]
@@ -334,19 +335,35 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
 const MIN_SCORE = 0.1
 
 /**
+ * An action whose keyword is exactly the query ("ai") outranks names that merely start
+ * with it (a project called "AI misc"); a page's own actions ("Ask AI to evaluate" on
+ * an idea) outrank the app's pages with the same keyword.
+ */
+const KEYWORD_BONUS = 1
+const PAGE_KEYWORD_BONUS = 2
+
+/**
  * cmdk's fuzzy scoring for the local actions (server results are already ranked):
  * drops weak matches, sorts each group, and puts the group with the best match first
- * ("sign" → Sign out before Design system). Page actions come first on a tie.
+ * ("sign" → Sign out before Design system). Page actions come first on a tie. The
+ * first `pageGroups` groups are the page's own commands.
  */
-export function rankGroups(groups: CommandGroupData[], query: string): CommandGroupData[] {
+export function rankGroups(
+  groups: CommandGroupData[],
+  query: string,
+  { pageGroups = 0 }: { pageGroups?: number } = {},
+): CommandGroupData[] {
   if (!query) return groups
+  const word = query.trim().toLowerCase()
   return groups
-    .map((group) => {
+    .map((group, index) => {
       const scored = group.actions
-        .map((action) => ({
-          action,
-          score: defaultFilter(`${action.label} ${action.hint ?? ''}`, query, action.keywords),
-        }))
+        .map((action) => {
+          const base = defaultFilter(`${action.label} ${action.hint ?? ''}`, query, action.keywords)
+          const exact = action.keywords?.some((keyword) => keyword.toLowerCase() === word)
+          const bonus = !exact ? 0 : index < pageGroups ? PAGE_KEYWORD_BONUS : KEYWORD_BONUS
+          return { action, score: base > 0 ? base + bonus : 0 }
+        })
         // Drop scattered matches ("whats" in "My work … evaluations"): they would sit
         // above the ideas that do match.
         .filter(({ score }) => score >= MIN_SCORE)

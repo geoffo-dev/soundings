@@ -49,8 +49,8 @@ class FakeMcp:
         def error(code: str) -> tuple[bool, dict[str, Any]]:
             return True, {"code": code, "message": f"refused: {code}"}
 
-        if not self.run_open:
-            return error("ai_run_not_active")
+        if not self.run_open or not args.get("run_id"):
+            return error("ai_run_not_active")  # c22: every call names its open run
         if name in ("add_comment", "create_idea"):
             return error("forbidden")
         idea = args.get("idea")

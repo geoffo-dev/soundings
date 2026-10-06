@@ -32,7 +32,8 @@ def test_defaults() -> None:
     assert settings.ai_run_timeout == timedelta(minutes=5)
     assert settings.ai_run_timeout_seconds == 300
     assert settings.ai_max_concurrent_runs == 4
-    assert settings.ai_agent_namespaces == []
+    # L8: kagent's own agents (in its namespace, kagent) aren't registrable by default.
+    assert settings.ai_agent_namespaces == ["soundings"]
     assert settings.ai_mcp_url is None
     assert settings.ai_mcp_url_effective == settings.public_base_url + "/mcp"
 
@@ -124,8 +125,7 @@ def test_concurrency_is_bounded() -> None:
 def test_agent_namespaces_are_kubernetes_names() -> None:
     assert make_settings(ai_agent_namespaces="b,a,a").ai_agent_namespaces == ["a", "b"]
     assert make_settings(ai_agent_namespaces='["kagent"]').ai_agent_namespaces == ["kagent"]
-    assert make_settings(ai_agent_namespaces="").ai_agent_namespaces == []
-    for bad in ("Soundings", "a.b", "a/b", "x" * 64, "-a"):
+    for bad in ("", " , ", "Soundings", "a.b", "a/b", "x" * 64, "-a"):  # none: no "any"
         with pytest.raises(ValidationError):
             make_settings(ai_agent_namespaces=bad)
     assert KUBERNETES_LABEL_PATTERN == r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"

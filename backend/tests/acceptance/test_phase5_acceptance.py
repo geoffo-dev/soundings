@@ -685,19 +685,22 @@ class AgentWorld:
     agent_row: Any = None
     db: Any = None
 
-    async def open_run(self, key: str, kind: AiRunKind, section: str | None = None) -> None:
+    async def open_run(self, key: str, kind: AiRunKind, section: str | None = None) -> str:
+        """An open run for the agent on ``key``; its id, which every call of the agent
+        names (``run_id``, Phase 6 c22)."""
         idea = await self.db.scalar(
             select(Idea)
             .join(Project)
             .where(Project.key == key.split("-")[0], Idea.number == int(key.split("-")[1]))
         )
-        await open_run(
+        run = await open_run(
             self.db,
             self.agent_row,
             idea,
             kind,
             section_key=ProposalSectionKey(section) if section else None,
         )
+        return str(run.id)
 
 
 @pytest.fixture
@@ -772,15 +775,16 @@ async def test_ac5_api_4_an_agents_key_works_like_a_member_and_evaluates_blind(
     world = agent_world
     key = await evaluating_idea(world, world.pat.id, str(world.agent.id))
     await evaluate_with(world.pat, key, world.criteria, 4)
-    await world.open_run(key, AiRunKind.EVALUATE)
+    run_id = await world.open_run(key, AiRunKind.EVALUATE)
     async with mcp_client(live, world.agent_secret) as client:
-        before = data(await call(client, "get_idea", idea=key))["idea"]
+        before = data(await call(client, "get_idea", idea=key, run_id=run_id))["idea"]
         assert score_data(before) == []  # blind like anyone else
         submitted = data(
             await call(
                 client,
                 "submit_evaluation",
                 idea=key,
+                run_id=run_id,
                 scores=[
                     {"criterion_id": c, "score": 2, "comment": "From the tickets."}
                     for c in world.criteria
@@ -793,12 +797,13 @@ async def test_ac5_api_4_an_agents_key_works_like_a_member_and_evaluates_blind(
         # A suggestion by an agent is `ai`, whatever the channel.
         await world.olga.send("POST", f"/ideas/{key}/status", {"status": "shortlisted"})
         await world.olga.send("POST", f"/ideas/{key}/proposal", None, 201)
-        await world.open_run(key, AiRunKind.DRAFT_SECTION, "summary")
+        run_id = await world.open_run(key, AiRunKind.DRAFT_SECTION, "summary")
         proposed = data(
             await call(
                 client,
                 "propose_proposal_section",
                 idea=key,
+                run_id=run_id,
                 section_key="summary",
                 body_md="A weekly digest of support themes for product teams.",
             )
@@ -832,13 +837,14 @@ async def test_ac5_api_4_an_agents_evaluation_is_left_out_of_the_aggregate(
     world = agent_world
     key = await evaluating_idea(world, world.pat.id, str(world.agent.id))
     await evaluate_with(world.pat, key, world.criteria, 4)
-    await world.open_run(key, AiRunKind.EVALUATE)
+    run_id = await world.open_run(key, AiRunKind.EVALUATE)
     async with mcp_client(live, world.agent_secret) as client:
         data(
             await call(
                 client,
                 "submit_evaluation",
                 idea=key,
+                run_id=run_id,
                 scores=[
                     {"criterion_id": c, "score": 1, "comment": "Rationale."} for c in world.criteria
                 ],

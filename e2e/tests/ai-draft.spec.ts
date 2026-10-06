@@ -43,9 +43,11 @@ test.describe('@ai drafting proposal sections', () => {
       await expect(page.getByTestId('proposal-editor')).toBeVisible()
       const risks = page.locator('#proposal-section-risks')
       await risks.getByRole('button', { name: 'Draft Risks with AI' }).click()
-      // In place: the agent's progress with Cancel, then its suggestion under the section.
+      // In place: the agent's progress with Cancel, then its suggestion under the section,
+      // which takes focus from the Cancel that went.
       const suggestion = risks.locator('article[id^="proposal-suggestion-"]')
       await expect(suggestion).toBeVisible({ timeout: 30_000 })
+      await expect(suggestion).toBeFocused()
       await expect(suggestion).toContainText('Proposal drafter')
       await expect(suggestion).toContainText('AI agent')
       await expect(suggestion).toContainText(`Draft by Soundings' fake agent for ${key}`)
@@ -105,11 +107,13 @@ test.describe('@ai drafting proposal sections', () => {
       await expect(summary).toContainText('Slow drafter is drafting Summary')
       await expect(summary).toContainText('Read the idea', { timeout: 30_000 })
       await cancel.click()
-      await expect(summary.getByRole('alert')).toContainText(
+      // Something you did: a status, not an alert. Focus goes from the Cancel that went
+      // to "Try again", not to <body>.
+      await expect(summary.getByRole('status')).toContainText(
         'The draft by Slow drafter was cancelled',
         { timeout: 30_000 },
       )
-      await expect(summary.getByRole('button', { name: 'Try again' })).toBeVisible()
+      await expect(summary.getByRole('button', { name: 'Try again' })).toBeFocused()
       await expect(page.locator('article[id^="proposal-suggestion-"]')).toHaveCount(0)
 
       // Not while the idea is being evaluated (c7), and never for a member.

@@ -7,6 +7,7 @@ import {
   readEvents,
   registerAgent,
   retireAgents,
+  runSteps,
   type AiRunList,
   signInAs,
   skipWithoutAi,
@@ -62,7 +63,8 @@ test.describe('@ai Ask AI to evaluate', () => {
       await page.getByRole('button', { name: 'AI actions' }).first().click()
       await expect(page.getByRole('menuitem', { name: /Research this/ })).toBeVisible()
       await page.getByRole('menuitem', { name: /Ask AI to evaluate/ }).click()
-      await expect(toast(page, 'Asked Idea evaluator to evaluate this idea')).toBeVisible()
+      // Its row on Overview says so (a toast says it only when the row is out of view).
+      await expect(page.locator('article[id^="ai-run-"]').first()).toBeVisible()
       const evaluators = details(page).getByRole('list', { name: 'Evaluators' })
       const agentRow = evaluators.getByRole('listitem').filter({ hasText: 'Idea evaluator' })
       await expect(agentRow).toBeVisible()
@@ -72,7 +74,7 @@ test.describe('@ai Ask AI to evaluate', () => {
       await streamed
       const card = page.locator('article[id^="ai-run-"]').first()
       await expect(card.getByRole('heading', { name: /Idea evaluator/ })).toBeVisible()
-      const steps = card.getByRole('list', { name: 'Steps' })
+      const steps = await runSteps(card)
       for (const step of [
         'Waiting to start',
         'Sending the request to the agent',
@@ -90,8 +92,10 @@ test.describe('@ai Ask AI to evaluate', () => {
       await expect(card).not.toContainText(AGENT_TEXT)
       await expect(agentRow.getByRole('img', { name: 'Submitted', exact: true })).toBeVisible()
 
-      // Left out of the score: unchanged.
+      // Left out of the score: unchanged, and the run and the score say so.
       expect(await scoreLine(page)).toBe(before)
+      await expect(card).toContainText('Evaluation submitted · not in the score yet')
+      await expect(details(page).getByText('1 AI evaluation not counted')).toBeVisible()
 
       // The evaluation: AI badge, "Not in score", a rationale and sources per criterion.
       await card.getByRole('button', { name: 'View the evaluation' }).click()

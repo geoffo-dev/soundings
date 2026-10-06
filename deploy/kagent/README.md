@@ -29,9 +29,14 @@ person ──"Ask AI to evaluate"──► Soundings API ──run row + job─�
   card; Test connection shows it.
 - **One key per agent**, created when a platform admin registers the agent (Admin settings
   > AI agents), shown once with a Secret manifest. It works **only on `/mcp` and only
-  during the agent's runs** (c22): on the run's idea, writing only the run's result.
-  Outside a run it does nothing, so someone talking to the agent directly in kagent's UI
-  can't use it for anything else. Agents never see other evaluators' scores (rule 9).
+  during the agent's runs** (c22): **every call names its run** (`run_id`, which the
+  run's message gives the model, as do the example agents' system messages) and reaches
+  only that run's idea, writing only the run's result. So two runs of one agent open at
+  once can't reach each other, a task that outlives its run (kagent's Python runtime
+  can't cancel) can't act through a newer one, and outside a run the key does nothing:
+  someone talking to the agent directly in kagent's UI can't use it for anything else.
+  Agents never see other evaluators' scores, and their own only in an evaluate run
+  (rule 9).
 - **Results come back through MCP**, matched to the run by the server: A2A text and
   artifacts are ignored. The run's message holds the run id, kind, idea key, section and
   the agent's name: no URL, key or idea text.
@@ -66,7 +71,8 @@ helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
 ```
 
 - **Namespaces:** agents may be registered only in `kagent.agentNamespaces` (default: the
-  release namespace, so nobody can point a run at kagent's built-in agents). kagent's agent
+  release namespace, so nobody can point a run at kagent's built-in agents). Outside the
+  chart, `SOUNDINGS_AI_AGENT_NAMESPACES` defaults to `soundings` (never "any"). kagent's agent
   pods call `/mcp` from their own namespace: with `networkPolicy.ingressFrom` set, the
   chart admits pods labelled `app.kubernetes.io/managed-by: kagent` there.
 - **Egress:** with `networkPolicy.egress.enabled`, the api (Test connection) and the worker
@@ -82,6 +88,11 @@ helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
 - **Cancel:** kagent's Python runtime can't cancel (it answers an error); the Go runtime,
   which the CRD defaults to, can. Soundings ends the run either way, and the agent's key
   stops working on it at once.
+- **What kagent keeps:** kagent stores each run's session (the message and every tool
+  result: the idea's text, its comments, the rubric) under its caller `X-User-Id:
+  soundings`, in its own database. Soundings' idea deletion, submitter erasure and
+  retention don't reach it: set kagent's own retention, or clear those sessions, to match
+  (assumed from kagent's design; no live controller here).
 
 ## What is verified (2026-10-06)
 

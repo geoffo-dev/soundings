@@ -29,6 +29,11 @@ export interface AvatarProps extends VariantProps<typeof avatar> {
   src?: string | null
   /** An AI agent (kagent): sparkle glyph and an "AI" badge. */
   isAgent?: boolean
+  /**
+   * The agent's corner "AI" badge (default on). Off where an `AiBadge` pill sits next
+   * to it: one AI marker per row.
+   */
+  agentBadge?: boolean
   className?: string
   /** Show the name in a tooltip on hover/focus. */
   tooltip?: boolean
@@ -46,6 +51,7 @@ export function Avatar({
   src,
   size,
   isAgent = false,
+  agentBadge = true,
   className,
   tooltip = false,
   decorative = false,
@@ -74,7 +80,7 @@ export function Avatar({
           {isAgent ? <Sparkles aria-hidden="true" className="size-[55%]" /> : initials(name)}
         </AvatarPrimitive.Fallback>
       </AvatarPrimitive.Root>
-      {isAgent && size !== 'xs' && (
+      {isAgent && agentBadge && size !== 'xs' && (
         <span
           aria-hidden="true"
           className="absolute -right-1.5 -bottom-1 rounded-[3px] bg-accent px-[3px] text-[0.5rem] leading-3 font-semibold text-accent-foreground ring-2 ring-surface"

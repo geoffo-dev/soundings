@@ -67,7 +67,7 @@ export function ResearchNoteItem({
         className="scroll-mt-20 rounded-lg border bg-surface outline-offset-2"
       >
         <header className="flex min-h-10 flex-wrap items-center gap-x-2 gap-y-1 pt-1.5 pr-1.5 pl-3 text-sm">
-          <Avatar name={author} isAgent size="sm" decorative className="mr-1" />
+          <Avatar name={author} isAgent agentBadge={false} size="sm" decorative />
           <h3 id={headingId} className="min-w-0 truncate text-primary">
             <span className="font-medium">Research note</span>{' '}
             <span className="text-muted">by {author}</span>

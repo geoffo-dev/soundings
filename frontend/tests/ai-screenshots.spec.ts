@@ -66,8 +66,9 @@ const shots: Shot[] = [
       outcome: 'slow',
       act: async (page) => {
         await askEvaluation(page)
+        // One line while it works: its current step.
         await expect(
-          page.getByRole('list', { name: 'Steps' }).getByText('Read the rubric'),
+          page.locator('article[id^="ai-run-"]').getByText('Read the rubric').first(),
         ).toBeVisible()
         await scrollMain(page, 260)
       },
@@ -147,7 +148,7 @@ const shots: Shot[] = [
       act: async (page) => {
         await askEvaluation(page)
         await expect(
-          page.getByRole('list', { name: 'Steps' }).getByText('Read the rubric'),
+          page.locator('article[id^="ai-run-"]').getByText('Read the rubric').first(),
         ).toBeVisible()
         await page.locator('article[id^="ai-run-"]').scrollIntoViewIfNeeded()
       },
@@ -182,7 +183,7 @@ const shots: Shot[] = [
     outcome: 'fail',
     act: async (page) => {
       await askEvaluation(page)
-      await expect(page.getByText('The agent stopped with an error.').first()).toBeVisible()
+      await expect(page.getByText('The agent ran into an error and stopped.').first()).toBeVisible()
       await scrollMain(page, 260)
     },
   },

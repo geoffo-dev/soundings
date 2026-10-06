@@ -18,7 +18,7 @@ import ssl
 from datetime import UTC, timedelta, tzinfo
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -115,6 +115,9 @@ AiProtocolName = Literal["kagent_v0_10", "kagent_v1_0"]
 ``tests/test_config_ai.py`` keeps them equal)."""
 
 KAGENT_DEFAULT_URL = "http://kagent-controller.kagent:8083"
+AI_AGENT_NAMESPACES_DEFAULT: Final = ("soundings",)
+"""Where agents may be registered when ``SOUNDINGS_AI_AGENT_NAMESPACES`` isn't set (review
+L8: never "any", which would let an admin point a run at kagent's built-in agents)."""
 """kagent's Helm default: the ``kagent-controller`` Service in namespace ``kagent``,
 A2A on port 8083 (docs/research/kagent-a2a-claude-code-frontend.md section 1)."""
 
@@ -520,10 +523,12 @@ class Settings(DatabaseSettings):
         ),
     )
     ai_agent_namespaces: Annotated[list[str], NoDecode] = Field(
-        default_factory=list,
+        default_factory=lambda: list(AI_AGENT_NAMESPACES_DEFAULT),
         description=(
-            "Kubernetes namespaces agents may be registered in (comma-separated). Empty: "
-            "any namespace."
+            "Kubernetes namespaces agents may be registered in (comma-separated, at least "
+            "one). Default: soundings, so kagent's own built-in agents (in its namespace) "
+            "can't be registered and steered by idea text; the chart sets the release "
+            "namespace unless kagent.agentNamespaces lists others."
         ),
     )
     ai_mcp_url: str | None = Field(
@@ -592,6 +597,8 @@ class Settings(DatabaseSettings):
     @field_validator("ai_agent_namespaces")
     @classmethod
     def _validate_ai_agent_namespaces(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("list at least one namespace agents may be registered in")
         for namespace in value:
             if not _KUBERNETES_LABEL.fullmatch(namespace):
                 raise ValueError(f"not a Kubernetes namespace name: {namespace!r}")

@@ -2,6 +2,7 @@ import { RadioGroup as RadioGroupPrimitive } from 'radix-ui'
 import type { ComponentProps } from 'react'
 
 import { useFieldContext } from '@/components/ui/field'
+import { pressSubmitShortcut } from '@/components/ui/submit-shortcut'
 import { cn } from '@/lib/utils'
 
 export function RadioGroup({
@@ -22,10 +23,16 @@ export function RadioGroup({
 
 export function RadioGroupItem({
   className,
+  onKeyDown,
   ...props
 }: ComponentProps<typeof RadioGroupPrimitive.Item>) {
   return (
     <RadioGroupPrimitive.Item
+      onKeyDown={(event) => {
+        onKeyDown?.(event)
+        // Mod+Enter still submits the form (Radix swallows Enter on radios).
+        if (!event.defaultPrevented) pressSubmitShortcut(event)
+      }}
       data-slot="radio-group-item"
       className={cn(
         'peer relative inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-control bg-surface',

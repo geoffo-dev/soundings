@@ -34,6 +34,8 @@ def test_evaluate_reads_then_submits_a_cited_evaluation(agent: Agent, protocol: 
     assert call["protocol"] == "2025-11-25"
     submitted = agent.mcp.arguments("submit_evaluation")
     assert submitted["idea"] == IDEA
+    # Every call names the run (c22: Soundings binds it to that run's idea).
+    assert {call["arguments"].get("run_id") for call in agent.mcp.calls if call["tool"]} == {run_id}
     assert submitted["submit"] is True
     assert submitted["recommendation"] in ("go", "maybe", "no")
     assert submitted["comment"]
@@ -210,6 +212,8 @@ def test_late_writes_after_its_run_ended(agent: Agent) -> None:
     late = agent.observations(run_id)["late"]
     assert late["tool"] == "submit_evaluation"
     assert late["error_code"] == "ai_run_not_active"
+    # It names the run that ended, so a newer run on the same idea can't take it.
+    assert agent.mcp.arguments("submit_evaluation")["run_id"] == run_id
 
 
 def test_keys_from_a_directory_are_read_per_request(

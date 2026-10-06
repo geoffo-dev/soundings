@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   a2aUrlPreview,
   labelError,
+  typingLabelError,
   remoteMcpServerManifest,
   validateAgent,
   type AgentDraft,
@@ -88,5 +89,14 @@ describe('agent rules', () => {
     expect(yaml).toContain('name: soundings-agent-idea-evaluator')
     expect(yaml).toContain('key: authorization')
     expect(yaml).not.toMatch(/sdg_/)
+  })
+
+  it('says at once what can never be a Kubernetes name, and waits for the rest', () => {
+    expect(typingLabelError('Soundings')).toBe('Kubernetes names are lower-case')
+    expect(typingLabelError('ops helper')).toBe('Kubernetes names have no spaces: use hyphens')
+    expect(typingLabelError('ops_helper')).toBe('Use lower-case letters, digits and hyphens only')
+    // A trailing hyphen is how "idea-evaluator" starts: only on leaving the field.
+    expect(typingLabelError('idea-')).toBeUndefined()
+    expect(labelError('idea-', 'name')).toBe('Start and end with a letter or digit')
   })
 })

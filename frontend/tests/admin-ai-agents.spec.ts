@@ -39,7 +39,7 @@ test('lists agents with what they do, their projects, keys and the settings in e
   await expect(evaluator).toContainText('Enabled')
   const scout = row(page, 'Market scout')
   await expect(scout).toContainText('Disabled')
-  await expect(scout).toContainText('No key: rotate to issue one')
+  await expect(scout).toContainText('Revoked when disabled')
   await expect(scout).toContainText('Viewer: can’t work there')
   const settings = page.getByRole('region', { name: 'Settings in effect' })
   await expect(settings).toContainText('http://kagent-controller.kagent:8083')
@@ -109,7 +109,43 @@ test('tests the connection: the agent card, or why it didn’t answer', async ({
   await row(page, 'Market scout').getByRole('button', { name: 'Actions for Market scout' }).click()
   await page.getByRole('menuitem', { name: 'Test connection' }).click()
   const down = page.getByRole('dialog', { name: 'Market scout didn’t answer' })
-  await expect(down).toContainText('Couldn’t reach the agent.')
+  // No answer at all: the controller, said plainly, with what to check one per line.
+  await expect(down).toContainText('Soundings couldn’t reach the kagent controller.')
+  await expect(down.getByRole('listitem')).toHaveCount(2)
+  await down.getByRole('button', { name: 'Done' }).click()
+  // Back to the row's menu button, not <body>.
+  await expect(
+    row(page, 'Market scout').getByRole('button', { name: 'Actions for Market scout' }),
+  ).toBeFocused()
+})
+
+test('says what is wrong with a namespace or name while typing, not only on submit', async ({
+  page,
+}) => {
+  await openPage(page)
+  await page.getByRole('button', { name: 'Register agent' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Register agent' })
+  const namespace = sheet.getByRole('textbox', { name: 'Namespace' })
+  await namespace.fill('Soundings team')
+  // Kept as typed (never changed silently), with the reason at once.
+  await expect(namespace).toHaveValue('Soundings team')
+  await expect(sheet.getByText('Kubernetes names have no spaces: use hyphens')).toBeVisible()
+  await namespace.fill('soundings')
+  await expect(sheet.getByText(/Kubernetes names/)).toHaveCount(0)
+  const name = sheet.getByRole('textbox', { name: 'Agent name' })
+  await name.fill('ops_helper')
+  await expect(sheet.getByText('Use lower-case letters, digits and hyphens only')).toBeVisible()
+  await name.fill('ops-')
+  await name.blur()
+  await expect(sheet.getByText('Start and end with a letter or digit')).toBeVisible()
+})
+
+test('⌘/Ctrl+Enter registers from a checkbox too', async ({ page }) => {
+  await openPage(page)
+  const sheet = await fillRegistration(page)
+  await sheet.getByRole('checkbox', { name: 'Customer Innovation' }).focus()
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(page.getByRole('dialog', { name: 'Copy the agent’s key' })).toBeVisible()
 })
 
 test('disables (runs stop, key revoked), enables, then rotates a new key', async ({ page }) => {
@@ -121,7 +157,8 @@ test('disables (runs stop, key revoked), enables, then rotates a new key', async
   await expect(confirm).toContainText('its key is revoked')
   await confirm.getByRole('button', { name: 'Disable agent' }).click()
   await expect(evaluator).toContainText('Disabled')
-  await expect(evaluator).toContainText('No key: rotate to issue one')
+  // Expected after disabling: said quietly, not as a warning.
+  await expect(evaluator).toContainText('Revoked when disabled')
 
   await evaluator.getByRole('button', { name: 'Actions for Idea evaluator' }).click()
   await page.getByRole('menuitem', { name: 'Enable' }).click()
@@ -134,7 +171,7 @@ test('disables (runs stop, key revoked), enables, then rotates a new key', async
   await dialog.getByRole('button', { name: 'Copy the agent’s key' }).click()
   await dialog.getByRole('button', { name: 'I’ve copied it' }).click()
   await expect(dialog).toHaveCount(0)
-  await expect(evaluator).not.toContainText('No key')
+  await expect(evaluator).not.toContainText('Revoked when disabled')
 })
 
 test('warns that narrowing an agent stops its runs there', async ({ page }) => {

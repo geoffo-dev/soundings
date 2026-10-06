@@ -40,6 +40,8 @@ export type AuditPart =
   | { type: 'group'; id: string }
   /** An idea id from `details`, resolved to its key; `fallback` until then (or if gone). */
   | { type: 'idea'; id: string; fallback: string }
+  /** An AI agent's id (`ai_agents.id`) from `details`: "AI agent Idea evaluator", else "an AI agent". */
+  | { type: 'agent'; id: string }
 
 const text = (value: string): AuditPart => ({ type: 'text', text: value })
 const name = (value: string): AuditPart => ({ type: 'name', text: value })
@@ -640,7 +642,10 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
             : kind === 'draft_section'
               ? `to draft ${section && section in SECTION_TITLES ? SECTION_TITLES[section as keyof typeof SECTION_TITLES] : 'a section'} of `
               : 'to work on '
-      return [actor, text(` asked an AI agent ${what}`), idea()]
+      const agentId = str(details, 'agent_id')
+      return agentId
+        ? [actor, text(' asked '), { type: 'agent', id: agentId }, text(` ${what}`), idea()]
+        : [actor, text(` asked an AI agent ${what}`), idea()]
     }
     case 'ai_run.cancel':
       if (str(details, 'rule') === 'platform.manage_agents') {
@@ -721,6 +726,7 @@ export interface NameResolver {
   user: (id: string) => string | null | undefined
   group: (id: string) => string | null | undefined
   idea?: (id: string) => string | null | undefined
+  agent?: (id: string) => string | null | undefined
 }
 
 const UNRESOLVED: NameResolver = { user: () => undefined, group: () => undefined }
@@ -731,6 +737,10 @@ export function auditText(parts: AuditPart[], names: NameResolver = UNRESOLVED):
     .map((part) => {
       if (part.type === 'text' || part.type === 'name' || part.type === 'code') return part.text
       if (part.type === 'idea') return names.idea?.(part.id) ?? part.fallback
+      if (part.type === 'agent') {
+        const agent = names.agent?.(part.id)
+        return agent ? `AI agent ${agent}` : 'an AI agent'
+      }
       const resolved = names[part.type](part.id)
       if (resolved) return resolved
       return resolved === null ? `a deleted ${part.type}` : `a ${part.type}`

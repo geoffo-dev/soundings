@@ -4,6 +4,7 @@ import { useId } from 'react'
 import type { Citation } from '@/api/types'
 import { safeWebUrl, urlHost } from '@/components/ui/markdown'
 import { cn } from '@/lib/utils'
+import { visibleText } from '@/lib/visible-text'
 
 export const SOURCES_LABEL = 'Cited by AI, not checked'
 
@@ -78,8 +79,14 @@ function SourceLink({ source }: { source: Citation }) {
   const href = safeWebUrl(source.url)
   // The browser's reading of the URL (punycode), not a host the agent wrote.
   const host = href ? urlHost(href) : null
+  // An agent wrote the title: nothing invisible, and isolated so it can't turn the host.
+  const title = visibleText(source.title)
   if (!href || !host) {
-    return <span className="[overflow-wrap:anywhere] text-secondary">{source.title}</span>
+    return (
+      <span className="[overflow-wrap:anywhere] text-secondary">
+        <bdi>{title}</bdi>
+      </span>
+    )
   }
   return (
     <span className="inline [overflow-wrap:anywhere]">
@@ -89,11 +96,13 @@ function SourceLink({ source }: { source: Citation }) {
         rel="noopener noreferrer nofollow"
         className="font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
       >
-        {source.title}
+        <bdi>{title}</bdi>
         <ExternalLink aria-hidden="true" className="ml-1 inline size-3 align-baseline" />
         <span className="sr-only"> (opens in a new tab)</span>
       </a>{' '}
-      <span className="text-xs text-muted">{host}</span>
+      <bdi dir="ltr" className="text-xs text-muted">
+        {host}
+      </bdi>
     </span>
   )
 }

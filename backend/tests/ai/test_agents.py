@@ -162,6 +162,18 @@ async def test_registration_refusals(
     assert_problem(refused, 403, "insufficient_scope")
 
 
+async def test_by_default_agents_are_registered_in_soundings_only(api: AsUser, team: Team) -> None:
+    """L8: without SOUNDINGS_AI_AGENT_NAMESPACES (outside the chart, which sets the release
+    namespace), kagent's own built-in agents in its namespace can't be registered."""
+    admin = await api(team.platform)
+
+    refused = await admin.post(AGENTS, _body(team, namespace="kagent"))
+    allowed = await admin.post(AGENTS, _body(team, namespace="soundings"))
+
+    assert_problem(refused, 422, "namespace_not_allowed")
+    assert allowed.status_code == 201, allowed.text
+
+
 @pytest.mark.settings(ai_agent_namespaces=["soundings", "agents"])
 async def test_namespaces_outside_the_allow_list_are_refused(api: AsUser, team: Team) -> None:
     admin = await api(team.platform)
@@ -213,6 +225,48 @@ async def test_the_break_glass_account_cannot_register_or_rotate(
     assert listed.json()["can_register"] is False
 
 
+@pytest.mark.settings(**BREAK_GLASS)
+async def test_the_break_glass_account_cannot_widen_an_agent(
+    client: httpx.AsyncClient, team: Team, db_session: AsyncSession
+) -> None:
+    """L5 (c20): adding a purpose or a project widens the agent's key, which is issuing
+    a key; narrowing, renaming and disabling (an emergency stop) still work."""
+    other = await make_project(db_session, slug="other", key="OTH", name="Other")
+    agent = await make_agent(
+        db_session, [team.project], key=True, purposes=[AiRunKind.EVALUATE, AiRunKind.RESEARCH]
+    )
+    signed_in = await client.post(
+        f"{API}/auth/break-glass",
+        json={"username": "emergency-admin", "password": "correct horse battery staple"},
+    )
+    assert signed_in.status_code == 200, signed_in.text
+    client.headers["X-CSRF-Token"] = client.cookies["soundings_csrf"]
+    path = f"{API}{AGENTS}/{agent.id}"
+    projects = [str(team.project.id)]
+
+    purpose = await client.patch(path, json={"purposes": ["evaluate", "draft_section"]})
+    project = await client.patch(path, json={"project_ids": [*projects, str(other.id)]})
+    unknown = await client.patch(path, json={"project_ids": [*projects, str(uuid4())]})
+    narrowed = await client.patch(path, json={"purposes": ["evaluate"], "display_name": "Bot"})
+    disabled = await client.patch(path, json={"enabled": False})
+
+    assert_problem(purpose, 403, "break_glass_account")
+    assert_problem(project, 403, "break_glass_account")
+    assert_problem(unknown, 403, "break_glass_account")  # 403 before 422
+    assert narrowed.status_code == 200, narrowed.text
+    assert narrowed.json()["purposes"] == ["evaluate"]
+    assert disabled.status_code == 200, disabled.text
+    key = await db_session.scalar(
+        select(ApiKey)
+        .where(ApiKey.user_id == agent.user.id)
+        .execution_options(populate_existing=True)
+    )
+    assert key is not None
+    assert key.scopes == ["read", "evaluate", "mcp"]
+    assert key.project_ids == [team.project.id]
+    assert key.revoked_at is not None
+
+
 # --- Updating -----------------------------------------------------------------------------
 async def test_purposes_and_projects_change_the_same_key_and_memberships(
     api: AsUser, team: Team, db_session: AsyncSession, mcp_as: McpAs
@@ -244,6 +298,12 @@ async def test_purposes_and_projects_change_the_same_key_and_memberships(
     assert moved.role is ProjectRole.MEMBER
     [update] = await _audit(db_session, "ai_agent.update")
     assert update.details["changed"] == ["purposes", "project_ids"]
+    # L4: what the agent (and so its key) may now do, not only which fields changed.
+    assert update.details["purposes"] == ["research", "draft_section"]
+    assert update.details["project_ids"] == [str(other.id)]
+    assert update.details["key_id"] == created["key"]["key"]["id"]
+    assert update.details["key_scopes"] == ["read", "write", "mcp"]
+    assert update.details["key_project_ids"] == [str(other.id)]
     assert [e.details["rule"] for e in await _audit(db_session, "project.member_remove")] == [
         "platform.manage_agents"
     ]

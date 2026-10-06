@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI
@@ -110,15 +111,16 @@ def agent_work(crew: Crew, identity: McpIdentity) -> Work:
     async def work(metadata: dict[str, Any]) -> None:
         idea = metadata["idea"]
         kind = metadata["kind"]
+        run = identity.for_run(UUID(metadata["run_id"]))  # every call names its run
         if kind == "evaluate":
-            rubric = await identity.ok("get_rubric", idea=idea)
-            seen = await identity.ok("get_idea", idea=idea)
+            rubric = await run.ok("get_rubric", idea=idea)
+            seen = await run.ok("get_idea", idea=idea)
             crew.observations.append({"score_hidden": seen["idea"]["score_hidden"]})
-            await identity.ok("submit_evaluation", **evaluation_args(crew, rubric))
+            await run.ok("submit_evaluation", **evaluation_args(crew, rubric))
         elif kind == "research":
-            seen = await identity.ok("get_idea", idea=idea)
+            seen = await run.ok("get_idea", idea=idea)
             crew.observations.append({"score_hidden": seen["idea"]["score_hidden"]})
-            await identity.ok(
+            await run.ok(
                 "add_research_note",
                 idea=idea,
                 body_md="## Findings\n\nNOTE TEXT with [a link](https://example.org/x).",
@@ -128,9 +130,9 @@ def agent_work(crew: Crew, identity: McpIdentity) -> Work:
                 ],
             )
         elif kind == "draft_section":
-            await identity.ok("get_idea", idea=idea)
-            await identity.ok("get_proposal", idea=idea)
-            await identity.ok(
+            await run.ok("get_idea", idea=idea)
+            await run.ok("get_proposal", idea=idea)
+            await run.ok(
                 "propose_proposal_section",
                 idea=idea,
                 section_key=metadata["section_key"],

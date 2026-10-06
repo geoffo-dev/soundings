@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, GitCompareArrows, History, Sparkles, X } from 'lucide-react'
+import { Check, GitCompareArrows, History, X } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 
 import { describeError, hasErrorCode } from '@/api/errors'
@@ -7,6 +7,7 @@ import { queryKeys } from '@/api/keys'
 import { useAcceptProposalSuggestion, useDiscardProposalSuggestion } from '@/api/proposals'
 import type { ProposalSection, ProposalSuggestion } from '@/api/types'
 import { offerUndo } from '@/api/undo'
+import { AiBadge } from '@/components/ui/ai-badge'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -244,11 +245,7 @@ function SuggestionCard({
             <RelativeTime date={suggestion.created_at} />
           </p>
           {ai ? (
-            <Badge variant="accent">
-              <Sparkles aria-hidden="true" />
-              AI
-              <span className="sr-only"> agent</span>
-            </Badge>
+            <AiBadge />
           ) : suggestion.source === 'mcp' ? (
             <WithTooltip
               content={`Sent from an AI assistant (an MCP client) with ${byMe ? 'your' : `${author}’s`} key`}
@@ -305,7 +302,11 @@ function SuggestionCard({
       >
         {view === 'preview' ? (
           <div className="px-3.5 py-3">
-            <Markdown nested>{suggestion.body_md}</Markdown>
+            {/* An agent's text is untrusted (contract-phase6 §1): web links with their
+                hosts only, no mailto: or mention chips. */}
+            <Markdown nested untrusted={ai}>
+              {suggestion.body_md}
+            </Markdown>
           </div>
         ) : lines.length === 0 ? (
           <p className="px-3.5 py-3 text-sm text-muted">

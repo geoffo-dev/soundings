@@ -162,7 +162,8 @@ export function useRequestAiRun(idea: string) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.activity.idea(idea) })
       }
     },
-    meta: { errorTitle: 'Couldn’t ask the AI agent' },
+    // `useAskAi` words the failure (the hourly limit says when asking works again).
+    meta: { silent: true },
   })
 }
 

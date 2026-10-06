@@ -83,7 +83,9 @@ test.describe('@ai Admin settings → AI agents', () => {
       await sheet.getByLabel('Description').fill('Scores ideas against the rubric (e2e).')
       await sheet.getByLabel('Namespace').fill('Soundings')
       await sheet.getByLabel('Agent name').fill('idea.evaluator')
-      await expect(sheet.getByLabel('Namespace')).toHaveValue('soundings') // lower-cased as typed
+      // Kept as typed, and said at once (not changed silently, not only on submit).
+      await expect(sheet.getByLabel('Namespace')).toHaveValue('Soundings')
+      await expect(sheet.getByText('Kubernetes names are lower-case')).toBeVisible()
       await sheet.getByRole('button', { name: /^Register agent/ }).click()
       // Kubernetes names only: nothing that could change the URL's host or path.
       await expect(sheet.getByText(/Use lower-case letters, digits and hyphens/)).toHaveCount(1)
@@ -202,9 +204,19 @@ test.describe('@ai Admin settings → AI agents', () => {
       fake.removeKey(agent.namespace, agent.name)
       await rowAction(page, agent.display_name, 'Test connection')
       const failed = page.getByRole('dialog', { name: `${agent.display_name} didn’t answer` })
-      await expect(failed).toContainText("Couldn't reach the agent. (HTTP 404)")
+      // The controller answered 404: it is there, the agent isn't (not "couldn't reach").
+      await expect(failed).toContainText(
+        `The kagent controller answered, but it has no ready agent ${agent.namespace}/${agent.name}.`,
+      )
       await expect(failed).toContainText('What to check')
+      await expect(failed.getByRole('listitem').first()).toContainText('exists and is Ready')
       await failed.getByRole('button', { name: 'Done' }).click()
+      // Focus back on the row's actions, not <body>.
+      await expect(
+        rowOf(page, agent.display_name).getByRole('button', {
+          name: `Actions for ${agent.display_name}`,
+        }),
+      ).toBeFocused()
 
       // Rotate: confirm, the new key once; the old one is dead on the next call.
       await rowAction(page, agent.display_name, 'Rotate key…')

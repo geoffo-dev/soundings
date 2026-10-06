@@ -1,5 +1,5 @@
 import { RotateCw, Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useCancelAiRun } from '@/api/ai'
 import type { AiAgentRef, AiRun, ProposalSection } from '@/api/types'
@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { suggestionDomId } from '@/features/proposal/suggestions'
 import { focusWhenRendered } from '@/lib/focus'
 
-import { isActiveRun } from './ai-copy'
+import { isActiveRun, runErrorWords } from './ai-copy'
 import { useAskAi, useIdeaAi } from './idea-ai'
 import { useRunProgress } from './use-run-progress'
 
@@ -30,9 +31,11 @@ import { useRunProgress } from './use-run-progress'
 export function DraftWithAiButton({
   ideaKey,
   section,
+  className,
 }: {
   ideaKey: string
   section: ProposalSection
+  className?: string
 }) {
   const ai = useIdeaAi(ideaKey)
   const { ask, pending, variables } = useAskAi(ideaKey)
@@ -55,6 +58,7 @@ export function DraftWithAiButton({
           size="sm"
           loading={asking}
           aria-label={label}
+          className={className}
           onClick={() => ask('draft_section', agent, section.key, onAsked)}
         >
           <Sparkles />
@@ -68,7 +72,7 @@ export function DraftWithAiButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" loading={asking} aria-label={label}>
+        <Button variant="ghost" size="sm" loading={asking} aria-label={label} className={className}>
           <Sparkles />
           {/* A bare sparkle says nothing on a phone: "Draft" fits beside Write / Preview. */}
           <span className="sm:hidden">Draft</span>
@@ -91,10 +95,17 @@ export function DraftWithAiButton({
   )
 }
 
+/** The DOM id of a section's "Try again" after a draft stopped (focus lands there). */
+const retryDomId = (sectionKey: string) => `draft-retry-${sectionKey}`
+
 /**
  * The section's draft run, in place: its live step while it works (Cancel), and
  * why it stopped when a run you watched fails, times out or is cancelled ("Try
  * again"). A finished draft needs nothing here: its suggestion card appears.
+ *
+ * Its Cancel goes when the run ends: if focus was on it (and is now lost), focus
+ * moves to the new suggestion, or to "Try again" (else the callout) when it
+ * stopped; anywhere else, focus stays where it is.
  */
 export function SectionDraftProgress({
   ideaKey,
@@ -117,8 +128,39 @@ export function SectionDraftProgress({
     (candidate) =>
       isActiveRun(candidate) || (watched.has(candidate.id) && !dismissed.has(candidate.id)),
   )
+  const calloutRef = useRef<HTMLDivElement>(null)
+  // Focus was on the active draft's controls (a removed Cancel blurs to nothing).
+  const hadFocus = useRef(false)
+  const ended = run !== undefined && !isActiveRun(run)
+  const runId = run?.id
+  const suggestionId = run?.result.suggestion_id ?? null
+  useEffect(() => {
+    if (!ended || !hadFocus.current) return
+    const active = document.activeElement
+    if (active && active !== document.body && active.isConnected) return
+    hadFocus.current = false
+    focusWhenRendered(
+      () =>
+        suggestionId
+          ? document.getElementById(suggestionDomId(suggestionId))
+          : (document.getElementById(retryDomId(section.key)) ?? calloutRef.current),
+      { force: true, frames: 90 },
+    )
+  }, [ended, runId, suggestionId, section.key])
+
   if (!run) return null
-  if (isActiveRun(run)) return <ActiveDraft ideaKey={ideaKey} run={run} section={section} />
+  if (isActiveRun(run)) {
+    return (
+      <ActiveDraft
+        ideaKey={ideaKey}
+        run={run}
+        section={section}
+        onFocusChange={(focused) => {
+          hadFocus.current = focused
+        }}
+      />
+    )
+  }
   if (run.status === 'succeeded') {
     return (
       <p className="sr-only" role="status">
@@ -129,9 +171,13 @@ export function SectionDraftProgress({
   const agent: AiAgentRef | undefined = ai
     .agentsFor('draft_section')
     .find((candidate) => candidate.id === run.agent.id)
+  const stopped = run.status !== 'cancelled' ? runErrorWords(run) : null
   return (
     <Callout
-      role="alert"
+      ref={calloutRef}
+      tabIndex={-1}
+      // You cancelled, or it stopped while you watched: news, not an emergency.
+      role="status"
       tone={run.status === 'cancelled' ? 'neutral' : 'warning'}
       title={
         run.status === 'cancelled'
@@ -142,6 +188,7 @@ export function SectionDraftProgress({
         <span className="flex items-center gap-1">
           {agent && ai.allowed('draft_section') && (
             <Button
+              id={retryDomId(section.key)}
               size="sm"
               variant="secondary"
               onClick={() =>
@@ -171,7 +218,7 @@ export function SectionDraftProgress({
         </span>
       }
     >
-      {run.status === 'cancelled' ? 'Nothing was suggested.' : (run.error?.message ?? '')}
+      {stopped ? `${stopped.what} ${stopped.next}` : 'Nothing was suggested.'}
     </Callout>
   )
 }
@@ -180,17 +227,26 @@ function ActiveDraft({
   ideaKey,
   run,
   section,
+  onFocusChange,
 }: {
   ideaKey: string
   run: AiRun
   section: ProposalSection
+  onFocusChange: (focused: boolean) => void
 }) {
   const { detail } = useRunProgress(ideaKey, run)
   const cancel = useCancelAiRun(ideaKey)
   const latest = detail.events.at(-1)
   const cancelling = detail.cancel_requested || run.cancel_requested
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-dashed bg-background px-3 py-2 text-sm">
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-dashed bg-background px-3 py-2 text-sm"
+      onFocus={() => onFocusChange(true)}
+      onBlur={(event) => {
+        const next = event.relatedTarget
+        if (next instanceof Node && !event.currentTarget.contains(next)) onFocusChange(false)
+      }}
+    >
       <Spinner className="size-3.5 text-accent" />
       <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium text-primary">
@@ -205,14 +261,14 @@ function ActiveDraft({
         <Button
           variant="ghost"
           size="sm"
-          disabled={cancelling}
-          loading={cancel.isPending}
+          // Stays focusable while it cancels (aria-disabled), so focus isn't lost.
+          loading={cancel.isPending || cancelling}
           data-draft-cancel={section.key}
           aria-label={`Cancel the draft of ${section.title}`}
           onClick={() => cancel.mutate(run.id)}
         >
-          <X />
-          {cancelling ? 'Cancelling…' : 'Cancel'}
+          {!cancel.isPending && !cancelling && <X />}
+          Cancel
         </Button>
       )}
     </div>

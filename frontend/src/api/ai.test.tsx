@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -100,18 +100,46 @@ describe('AI runs data layer', () => {
 })
 
 describe('RunCard', () => {
-  it('follows a run by polling where there is no EventSource, to its outcome', async () => {
-    localStorage.setItem(MOCK_AI_PACE_STORAGE_KEY, '300')
+  const finished = (overrides: Partial<AiRun> = {}): AiRun => ({
+    id: 'r-1',
+    idea_id: 'i-1',
+    kind: 'evaluate',
+    section_key: null,
+    status: 'timed_out',
+    agent: { id: 'a', display_name: 'Idea evaluator', purposes: ['evaluate'], user_id: 'u' },
+    requested_by: { id: 'u-a', display_name: 'Alice Anders', avatar_url: null, initials: 'AA' },
+    created_at: new Date(Date.now() - 600_000).toISOString(),
+    started_at: new Date(Date.now() - 590_000).toISOString(),
+    finished_at: new Date(Date.now() - 290_000).toISOString(),
+    deadline_at: null,
+    cancel_requested: false,
+    can_cancel: false,
+    error: { code: 'timed_out', message: 'The agent didn’t finish in time.' },
+    result: { evaluation_id: null, note_id: null, suggestion_id: null },
+    event_count: 0,
+    ...overrides,
+  })
+
+  async function askResearch(): Promise<AiRun> {
     const asked = await api.POST('/api/v1/ideas/{idea}/ai-runs/research', {
       params: { path: { idea: 'CUST-2' } },
       body: { agent_id: AGENTS.research },
     })
-    const run = asked.data as AiRun
+    return asked.data as AiRun
+  }
+
+  it('follows a run by polling where there is no EventSource, to its outcome', async () => {
+    localStorage.setItem(MOCK_AI_PACE_STORAGE_KEY, '300')
+    const run = await askResearch()
     render(<RunCard ideaKey="CUST-2" run={run} />, { wrapper })
     expect(
       screen.getByRole('heading', { name: /Researching · Research agent/ }),
     ).toBeInTheDocument()
+    // One line while it works; who asked and every step behind "Steps".
+    expect(screen.queryByRole('list', { name: 'Steps' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Steps' }))
     expect(await screen.findByText(/Live updates aren’t available here/)).toBeInTheDocument()
+    expect(screen.getByText(/Asked by Alice Anders/)).toBeInTheDocument()
     // Polling (2.5 s) brings the steps; the list refetch would bring the final status.
     expect(
       await screen.findByText('Wrote the research note', {}, { timeout: 6000 }),
@@ -119,31 +147,83 @@ describe('RunCard', () => {
     expect(screen.getByRole('list', { name: 'Steps' })).toHaveTextContent('Done')
   }, 10_000)
 
-  it('shows why a finished run stopped, and offers what the page passes', () => {
-    const run: AiRun = {
-      id: 'r-1',
-      idea_id: 'i-1',
-      kind: 'evaluate',
-      section_key: null,
-      status: 'timed_out',
-      agent: { id: 'a', display_name: 'Idea evaluator', purposes: ['evaluate'], user_id: 'u' },
-      requested_by: { id: 'u-a', display_name: 'Alice Anders', avatar_url: null, initials: 'AA' },
-      created_at: new Date(Date.now() - 600_000).toISOString(),
-      started_at: new Date(Date.now() - 590_000).toISOString(),
-      finished_at: new Date(Date.now() - 290_000).toISOString(),
-      deadline_at: null,
-      cancel_requested: false,
-      can_cancel: false,
-      error: { code: 'timed_out', message: 'The agent didn’t finish in time.' },
-      result: { evaluation_id: null, note_id: null, suggestion_id: null },
-      event_count: 0,
-    }
-    render(<RunCard ideaKey="CUST-2" run={run} collapsed retry={<button>Try again</button>} />, {
+  it('says why a finished run stopped, with the limit and a next step, and offers what the page passes', () => {
+    render(<RunCard ideaKey="CUST-2" run={finished()} retry={<button>Try again</button>} />, {
       wrapper,
     })
-    expect(screen.getByText('The agent didn’t finish in time.')).toBeInTheDocument()
-    expect(screen.getByText('Timed out')).toBeInTheDocument()
+    expect(screen.getByText('The agent didn’t finish within 5 minutes.')).toBeInTheDocument()
+    expect(screen.getByText(/Try again: it may have been busy/)).toBeInTheDocument()
+    expect(screen.getByText(/Timed out:/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Steps/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Steps' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('words failures by code, never as protocol output', () => {
+    render(
+      <RunCard
+        ideaKey="CUST-2"
+        run={finished({
+          status: 'failed',
+          error: {
+            code: 'agent_rejected',
+            message: 'The agent declined the request. (state rejected)',
+          },
+        })}
+      />,
+      { wrapper },
+    )
+    expect(screen.getByText('The agent turned the request down.')).toBeInTheDocument()
+    expect(screen.queryByText(/state rejected/)).not.toBeInTheDocument()
+  })
+
+  it('leaves focus where it is when a run ends, and announces how it ended', async () => {
+    localStorage.setItem(MOCK_AI_PACE_STORAGE_KEY, '5000')
+    const run = await askResearch()
+    const { rerender } = render(
+      <>
+        <textarea aria-label="Comment" />
+        <RunCard ideaKey="CUST-2" run={run} />
+      </>,
+      { wrapper },
+    )
+    const comment = screen.getByRole('textbox', { name: 'Comment' })
+    comment.focus()
+    rerender(
+      <>
+        <textarea aria-label="Comment" />
+        <RunCard
+          ideaKey="CUST-2"
+          run={{ ...run, status: 'succeeded', finished_at: new Date().toISOString() }}
+        />
+      </>,
+    )
+    await waitFor(() =>
+      expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
+        'Research by Research agent: Research note saved',
+      ),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(comment).toHaveFocus()
+  })
+
+  it('moves focus to the run when its Cancel had it and goes', async () => {
+    localStorage.setItem(MOCK_AI_PACE_STORAGE_KEY, '5000')
+    const run = await askResearch()
+    const { rerender } = render(<RunCard ideaKey="CUST-2" run={{ ...run, can_cancel: true }} />, {
+      wrapper,
+    })
+    const cancel = screen.getByRole('button', { name: /^Cancel: Researching/ })
+    cancel.focus()
+    rerender(
+      <RunCard
+        ideaKey="CUST-2"
+        run={{ ...run, status: 'cancelled', finished_at: new Date().toISOString() }}
+      />,
+    )
+    // jsdom leaves focus on a removed element: the browser would put it on <body>.
+    if (!cancel.isConnected) document.body.focus()
+    const card = document.getElementById(`ai-run-${run.id}`)
+    await waitFor(() => expect(card).toHaveFocus())
+    expect(screen.getByText('Cancelled: nothing was saved.')).toBeInTheDocument()
   })
 })

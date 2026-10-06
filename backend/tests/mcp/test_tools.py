@@ -720,7 +720,7 @@ async def test_an_agents_suggestion_is_ai(
     agent_user = await make_user(db_session, "Research Agent", service_account=True)
     agent_row = await make_agent(db_session, [team.project], user=agent_user)
     # c22: an agent writes only through its open draft run's tool, for that section.
-    await open_run(
+    run = await open_run(
         db_session,
         agent_row,
         proposal_idea,
@@ -728,11 +728,15 @@ async def test_an_agents_suggestion_is_ai(
         section_key=ProposalSectionKey.MARKET,
     )
 
-    created = await (await as_agent(agent_user, WRITE, [team.project])).ok(
-        "propose_proposal_section",
-        idea=key_of(team, proposal_idea),
-        section_key="market",
-        body_md="Mid-size retailers.",
+    created = (
+        await (await as_agent(agent_user, WRITE, [team.project]))
+        .for_run(run)
+        .ok(
+            "propose_proposal_section",
+            idea=key_of(team, proposal_idea),
+            section_key="market",
+            body_md="Mid-size retailers.",
+        )
     )
 
     assert created["suggestion"]["source"] == "ai"

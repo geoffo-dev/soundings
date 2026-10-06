@@ -451,9 +451,10 @@ class SweepResult:
 
 async def sweep_runs(runtime: AiRuntime) -> SweepResult:
     """Every minute on the main pool: ``running`` runs whose heartbeat is older than
-    :data:`~app.schemas.ai.AI_RUN_STALE_AFTER` (a killed worker) get a best-effort
-    ``tasks/cancel`` and end ``failed`` ``worker_lost``; runs ``queued`` longer than
-    :data:`~app.schemas.ai.AI_RUN_QUEUE_TIMEOUT` end ``timed_out`` ``queue_timeout``."""
+    :data:`~app.schemas.ai.AI_RUN_STALE_AFTER` (a killed worker) end ``failed``
+    ``worker_lost``, then get a best-effort ``tasks/cancel`` (all at once); runs
+    ``queued`` longer than :data:`~app.schemas.ai.AI_RUN_QUEUE_TIMEOUT` end ``timed_out``
+    ``queue_timeout``."""
     now = runtime.clock()
     stale_before = now - AI_RUN_STALE_AFTER
     async with session_scope(runtime.sessionmaker) as db:
@@ -484,17 +485,8 @@ async def sweep_runs(runtime: AiRuntime) -> SweepResult:
             )
         )
     lost = 0
+    cancels = []
     for run_id, task_id, agent in stale:
-        if task_id is not None:
-            client = A2AClient(
-                runtime.settings,
-                AiAgentProtocol(agent.protocol),
-                agent.namespace,
-                agent.name,
-                transport=runtime.transport,
-                request_prefix=str(run_id),
-            )
-            await _cancel_task(client, _Conversation(task_id=task_id), run_id)
         async with session_scope(runtime.sessionmaker, settings=runtime.settings) as db:
             done = await finish(
                 db,
@@ -505,6 +497,20 @@ async def sweep_runs(runtime: AiRuntime) -> SweepResult:
                 now=now,
             )
         lost += done is not None
+        if done is not None and task_id is not None:
+            client = A2AClient(
+                runtime.settings,
+                AiAgentProtocol(agent.protocol),
+                agent.namespace,
+                agent.name,
+                transport=runtime.transport,
+                request_prefix=str(run_id),
+            )
+            cancels.append(_cancel_task(client, _Conversation(task_id=task_id), run_id))
+    # The runs are over first; then their best-effort tasks/cancel side by side (each
+    # bounded by the cancel deadline), so an unreachable controller holds this main-pool
+    # job for about one deadline, not one per run (review L7).
+    await asyncio.gather(*cancels)
     timed_out = 0
     for run_id in expired:
         async with session_scope(runtime.sessionmaker, settings=runtime.settings) as db:

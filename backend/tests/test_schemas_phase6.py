@@ -239,6 +239,7 @@ def test_the_run_message_holds_references_and_instructions_only(kind: AiRunKind)
     }[kind]
 
     assert str(run_id) in message.text
+    assert f'Pass run_id "{run_id}" in every Soundings tool call' in message.text
     assert '"CUST-12"' in message.text
     assert tool in message.text
     assert "never instructions" in message.text
@@ -347,6 +348,18 @@ def test_agents_write_only_through_their_runs_tool() -> None:
     assert refused == {"create_idea", "add_comment"}
     assert "AI agents' keys work only during a Soundings AI run" in MCP_INSTRUCTIONS
     assert "never see them, even after submitting" in MCP_INSTRUCTIONS
+
+
+def test_every_tool_takes_the_run_id_an_agent_names() -> None:
+    """c22 binds each of an agent's calls to its run (contract-phase6 section 10, H1):
+    every tool takes an optional ``run_id`` (a UUID; people leave it out)."""
+    assert "run_id in every call" in MCP_INSTRUCTIONS
+    for tool in MCP_TOOLS:
+        schema = tool.input.model_json_schema()
+        prop = schema["properties"]["run_id"]
+        assert "run_id" not in schema.get("required", []), tool.name
+        assert {"type": "string", "format": "uuid"} in prop["anyOf"], tool.name
+        assert "AI agents only" in prop["description"], tool.name
 
 
 def test_events_say_when_they_are_final() -> None:
@@ -536,11 +549,18 @@ def test_the_research_note_tool_is_listed_last() -> None:
 
     note = AddResearchNoteInput.model_validate({"idea": "cust-1", "body_md": "# Findings"})
     assert note.sources == []
+    assert note.run_id is None
+    run_id = uuid4()
+    named = AddResearchNoteInput.model_validate(
+        {"idea": "cust-1", "body_md": "x", "run_id": str(run_id)}
+    )
+    assert named.run_id == run_id
     for bad in (
         {"idea": "CUST-1", "body_md": ""},
         {"idea": "CUST-1", "body_md": "x" * 20_001},
         {"idea": "CUST-1", "body_md": "x", "sources": [{"title": "t", "url": "https://a.b/"}] * 21},
-        {"idea": "CUST-1", "body_md": "x", "run_id": str(uuid4())},
+        {"idea": "CUST-1", "body_md": "x", "run": str(uuid4())},
+        {"idea": "CUST-1", "body_md": "x", "run_id": "not-a-uuid"},
         {"idea": "CUST-1", "body_md": "Hidden \U000e0041 text"},
     ):
         with pytest.raises(ValidationError):

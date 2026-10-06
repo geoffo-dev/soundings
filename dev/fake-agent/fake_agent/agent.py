@@ -3,9 +3,9 @@
 A run arrives as one A2A message whose ``metadata.soundings`` says what to do
 (``run_id``, ``kind``, ``idea``, ``section_key``); the text is for a model and is only
 checked for what must never be in it. The work is done through Soundings' MCP tools
-with the agent's own key, exactly as a kagent agent would call them, so Soundings'
-rules (c22 run scope, blind evaluation, result matching) are exercised for real; only
-the model is missing. Everything is deterministic.
+with the agent's own key, exactly as a kagent agent would call them (every call naming
+the run's id as ``run_id``), so Soundings' rules (c22 run scope, blind evaluation, result
+matching) are exercised for real; only the model is missing. Everything is deterministic.
 """
 
 from __future__ import annotations
@@ -94,6 +94,12 @@ def _run_from(context: RequestContext) -> Run | None:
     else:
         section = None
     return Run(run_id=run_id, kind=kind, idea=idea, section_key=section)
+
+
+def with_run(run: Run, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Every Soundings tool call names its run (``run_id``, from the run's message), as
+    the message tells a model to: Soundings binds the call to that run (c22)."""
+    return {"run_id": run.run_id, **arguments}
 
 
 def _text_of(message: Message | None) -> str:
@@ -218,7 +224,7 @@ class FakeAgentExecutor(AgentExecutor):
     async def _call(
         self, mcp: McpClient, run: Run, tool: str, arguments: dict[str, Any], phase: str = "work"
     ) -> ToolResult:
-        result = await mcp.call(tool, arguments)
+        result = await mcp.call(tool, with_run(run, arguments))
         self.observations.tool_call(run.run_id, tool, result.error_code, phase)
         return result
 
@@ -412,7 +418,7 @@ class FakeAgentExecutor(AgentExecutor):
             async with self._client() as mcp:
                 tool = WRITE_TOOLS[run.kind]
                 if run.kind == "evaluate":
-                    rubric = await mcp.call("get_rubric", {"idea": run.idea})
+                    rubric = await mcp.call("get_rubric", with_run(run, {"idea": run.idea}))
                     self.observations.tool_call(run.run_id, "get_rubric", rubric.error_code, "late")
                     arguments = evaluation_arguments(
                         run.idea, rubric.content.get("criteria") or [_placeholder_criterion()]
@@ -425,7 +431,7 @@ class FakeAgentExecutor(AgentExecutor):
                         "section_key": run.section_key,
                         "body_md": "Late text.",
                     }
-                result = await mcp.call(tool, arguments)
+                result = await mcp.call(tool, with_run(run, arguments))
                 self.observations.tool_call(run.run_id, tool, result.error_code, "late")
                 self.observations.late(run.run_id, tool, result.error_code)
         except McpTransportError as error:

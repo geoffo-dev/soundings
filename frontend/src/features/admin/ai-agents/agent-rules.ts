@@ -32,10 +32,22 @@ function singleLine(value: string): boolean {
 
 export function labelError(value: string, what: 'namespace' | 'name'): string | undefined {
   if (!value) return `Enter the kagent Agent’s ${what}`
+  const typing = typingLabelError(value)
+  if (typing) return typing
+  if (!KUBERNETES_LABEL.test(value)) return 'Start and end with a letter or digit'
+  return undefined
+}
+
+/**
+ * While typing a namespace or name: what can never become valid (a space, an
+ * upper-case letter, an underscore, too long) shows at once; the start and end
+ * rule waits for the field to be left (`labelError`).
+ */
+export function typingLabelError(value: string): string | undefined {
   if (value.length > 63) return 'Use at most 63 characters'
-  if (!KUBERNETES_LABEL.test(value)) {
-    return 'Use lower-case letters, digits and hyphens, starting and ending with a letter or digit'
-  }
+  if (/\s/.test(value)) return 'Kubernetes names have no spaces: use hyphens'
+  if (/[A-Z]/.test(value)) return 'Kubernetes names are lower-case'
+  if (/[^a-z0-9-]/.test(value)) return 'Use lower-case letters, digits and hyphens only'
   return undefined
 }
 
@@ -94,11 +106,37 @@ export function a2aUrlPreview(
   namespace: string,
   name: string,
 ): string {
-  const ns = KUBERNETES_LABEL.test(namespace) ? namespace : '{namespace}'
-  const agent = KUBERNETES_LABEL.test(name) ? name : '{name}'
+  return a2aUrlParts(kagentUrl, protocol, namespace, name)
+    .map((part) => part.text)
+    .join('')
+}
+
+/** The preview in parts, so the placeholders can look like placeholders. */
+export function a2aUrlParts(
+  kagentUrl: string,
+  protocol: AiAgentProtocol,
+  namespace: string,
+  name: string,
+): { text: string; placeholder: boolean }[] {
+  const part = (value: string, placeholder: string) =>
+    KUBERNETES_LABEL.test(value)
+      ? { text: value, placeholder: false }
+      : { text: placeholder, placeholder: true }
+  const fixed = (text: string) => ({ text, placeholder: false })
   return protocol === 'kagent_v1_0'
-    ? `${kagentUrl}/agents/${ns}/${agent}`
-    : `${kagentUrl}/api/a2a/${ns}/${agent}/`
+    ? [
+        fixed(`${kagentUrl}/agents/`),
+        part(namespace, '{namespace}'),
+        fixed('/'),
+        part(name, '{name}'),
+      ]
+    : [
+        fixed(`${kagentUrl}/api/a2a/`),
+        part(namespace, '{namespace}'),
+        fixed('/'),
+        part(name, '{name}'),
+        fixed('/'),
+      ]
 }
 
 /** Purposes and projects an edit takes away (their active runs are cancelled). */

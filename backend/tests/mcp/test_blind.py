@@ -222,9 +222,9 @@ async def test_a_service_account_evaluates_blind(
     before **or after** it submits; it works only inside an open run (c22)."""
     agent_user = await make_user(db_session, "Second Agent", service_account=True)
     agent_row = await make_agent(db_session, [team.project], user=agent_user)
-    await open_run(db_session, agent_row, evaluated, AiRunKind.EVALUATE)
+    run = await open_run(db_session, agent_row, evaluated, AiRunKind.EVALUATE)
     await add_evaluator(db_session, evaluated, agent_user)
-    agent = await as_agent(agent_user, ["read", "evaluate", "mcp"], [team.project])
+    agent = (await as_agent(agent_user, ["read", "evaluate", "mcp"], [team.project])).for_run(run)
 
     summary, detail = await look(agent, team, evaluated)
     submitted = await agent.ok(

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 import { expect, seriousViolations, test, USERS } from './support'
 
@@ -27,6 +27,13 @@ async function aiMock(page: Page, options: { pace?: number; outcome?: string } =
 const runCard = (page: Page) => page.locator('article[id^="ai-run-"]').first()
 const sidebar = (page: Page) => page.getByRole('complementary', { name: 'Idea details' })
 
+/** A run row is one line: its steps (and who asked) are behind "Steps". */
+async function openSteps(card: Locator) {
+  const toggle = card.getByRole('button', { name: 'Steps' })
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  return card.getByRole('list', { name: 'Steps' })
+}
+
 async function openIdea(page: Page, key: string, query = '') {
   await page.goto(`/ideas/${key}${query}`)
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
@@ -54,15 +61,18 @@ test('“Ask AI to evaluate”: live steps, a badged, cited evaluation left out 
 
   const card = runCard(page)
   await expect(card.getByRole('heading', { name: /Idea evaluator/ })).toBeVisible()
-  const steps = card.getByRole('list', { name: 'Steps' })
+  const steps = await openSteps(card)
   await expect(steps).toContainText('Read the rubric')
   await expect(steps).toContainText('Evaluation submitted')
-  await expect(card).toContainText('Done')
+  // Its one line says it is done, and that it doesn't count yet.
+  await expect(card).toContainText('Evaluation submitted · not in the score yet')
   await expect(card.getByText('Live updates aren’t available here')).toHaveCount(0)
   // The run held no score data, and the score didn't change.
   await expect(card).not.toContainText(/\b[1-5] out of 5\b|Rationale|example\.org/)
   await expect(sidebar(page).getByText('2 evaluations')).toBeVisible()
   await expect(evaluators.getByRole('img', { name: 'Submitted', exact: true })).toHaveCount(3)
+  // The score says an AI evaluation exists and isn't in it.
+  await expect(sidebar(page).getByText('1 AI evaluation not counted')).toBeVisible()
 
   await card.getByRole('button', { name: 'View the evaluation' }).click()
   await expect(page.getByRole('tab', { name: /^Evaluations/, selected: true })).toBeVisible()
@@ -81,10 +91,14 @@ test('“Ask AI to evaluate”: live steps, a badged, cited evaluation left out 
   })
   await include.click()
   await expect(include).toBeChecked()
+  // Saving keeps focus on the switch (pending, not disabled).
+  await expect(include).toBeFocused()
   await expect(sidebar(page).getByText('3 evaluations')).toBeVisible()
   await expect(ai).not.toContainText('Not in score')
+  await expect(sidebar(page).getByText('1 AI evaluation not counted')).toHaveCount(0)
   await include.click()
   await expect(include).not.toBeChecked()
+  await expect(include).toBeFocused()
   await expect(sidebar(page).getByText('2 evaluations')).toBeVisible()
 })
 
@@ -98,8 +112,7 @@ test('a pending evaluator sees the AI evaluator and its run, never its scores', 
   await expect(card).toContainText('Evaluation submitted')
   // No way to the evaluation itself: the tab is blind.
   await expect(card.getByRole('button', { name: 'View the evaluation' })).toHaveCount(0)
-  await card.getByRole('button', { name: /Steps/ }).click()
-  await expect(card.getByRole('list', { name: 'Steps' })).toContainText('Saved its evaluation')
+  await expect(await openSteps(card)).toContainText('Saved its evaluation')
   await expect(page.getByRole('main')).not.toContainText(/Rationale|Cited by AI|example\.org/)
   // The agent's lines in the feed carry the AI label too, as subject and as object.
   const feed = page.getByRole('list', { name: 'Activity, oldest first' })
@@ -121,16 +134,39 @@ test('cancel stops a working run; the assignment it made is taken back', async (
   await page.getByRole('button', { name: 'AI actions' }).first().click()
   await page.getByRole('menuitem', { name: /Ask AI to evaluate/ }).click()
   const card = runCard(page)
-  await expect(card.getByRole('list', { name: 'Steps' })).toContainText('Read the rubric')
+  // One line while it works: the current step.
+  await expect(card).toContainText('Read the rubric')
   // While it runs the menu offers its progress instead of a second run.
   await page.getByRole('button', { name: 'AI actions' }).first().click()
   await expect(page.getByRole('menuitem', { name: /Evaluating…/ })).toBeVisible()
   await page.keyboard.press('Escape')
 
-  await card.getByRole('button', { name: /^Cancel: Evaluating/ }).click()
-  await expect(card).toContainText('Cancelled')
+  const cancel = card.getByRole('button', { name: /^Cancel: Evaluating/ })
+  await cancel.click()
+  // Cancelling keeps focus on the button; when the run ends, focus goes to its row.
+  await expect(card).toContainText('Cancelled: nothing was saved.')
+  await expect(card).toBeFocused()
   await expect(sidebar(page).getByText('Idea evaluator')).toHaveCount(0)
   await expect(page.getByText('ended its run without an evaluation')).toBeVisible()
+})
+
+test('a run that ends while you type leaves focus where it is', async ({ page }) => {
+  await aiMock(page, { pace: 250 })
+  await openIdea(page, 'CUST-2')
+  await page.getByRole('button', { name: 'AI actions' }).first().click()
+  await page.getByRole('menuitem', { name: 'Research this' }).click()
+  await page.getByRole('menuitem', { name: 'Research agent' }).click()
+  const card = runCard(page)
+  await expect(card.getByText('Working', { exact: true })).toBeVisible()
+  const comment = page.getByRole('textbox', { name: 'Write a comment' })
+  await comment.click()
+  await page.keyboard.type('Looks promising')
+  await expect(card).toContainText('Research note saved', { timeout: 15_000 })
+  await page.keyboard.type(', thanks')
+  await expect(comment).toBeFocused()
+  await expect(comment).toHaveValue(/Looks promising, thanks/)
+  // No toast on top of a row you can see.
+  await expect(page.getByText('Follow its progress on the Overview tab')).toHaveCount(0)
 })
 
 test('a failed run says why in Soundings’ words and offers “Try again”', async ({ page }) => {
@@ -138,9 +174,13 @@ test('a failed run says why in Soundings’ words and offers “Try again”', a
   await openIdea(page, 'CUST-2')
   await sidebar(page).getByRole('button', { name: 'Ask AI to evaluate' }).click()
   const card = runCard(page)
-  await expect(card).toContainText('The agent stopped with an error.')
-  await expect(card.getByText('Failed')).toBeVisible()
+  // Plain words and a next step; the server's sentence stays in the steps.
+  await expect(card).toContainText('The agent ran into an error and stopped.')
+  await expect(card).toContainText('If it keeps failing, ask a platform admin')
   await expect(card.getByRole('button', { name: 'Try again' })).toBeVisible()
+  // Its row's progress button went: focus moved to "Ask AI to evaluate", not <body>.
+  await expect(sidebar(page).getByRole('button', { name: 'Ask AI to evaluate' })).toBeFocused()
+  await expect(await openSteps(card)).toContainText('The agent stopped with an error.')
 })
 
 test('“Research this” adds a cited research note to the feed', async ({ page }) => {
@@ -255,7 +295,7 @@ test.describe('accessibility', () => {
     await expect(page.getByRole('menuitem', { name: /Ask AI to evaluate/ })).toBeFocused()
     await page.keyboard.press('Enter')
     const card = runCard(page)
-    await expect(card.getByRole('list', { name: 'Steps' })).toContainText('Read the rubric')
+    await expect(await openSteps(card)).toContainText('Read the rubric')
     const width = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(width).toBeLessThanOrEqual(390)
     expect(await seriousViolations(page)).toEqual([])

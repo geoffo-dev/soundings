@@ -48,4 +48,16 @@ describe('rankGroups (⌘K local results)', () => {
     expect(labels('new')[0]).toBe('New idea')
     expect(labels('tools')).toEqual(['Internal Tools'])
   })
+
+  it('puts an exact keyword above names that only start with the query, page commands first', () => {
+    const withAi: CommandGroupData[] = [
+      { heading: 'AI assistance', actions: [action('Ask AI to evaluate', ['ai', 'agent'])] },
+      { heading: 'Projects', actions: [action('AI misc', ['project', 'ai-misc', 'AIM'])] },
+      { heading: 'Admin', actions: [action('AI agents', ['admin', 'kagent', 'ai'])] },
+    ]
+    const ranked = rankGroups(withAi, 'ai', { pageGroups: 1 }).flatMap((group) =>
+      group.actions.map((a) => a.label),
+    )
+    expect(ranked).toEqual(['Ask AI to evaluate', 'AI agents', 'AI misc'])
+  })
 })

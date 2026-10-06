@@ -378,3 +378,37 @@ async def test_the_card_is_summarised_as_plain_text() -> None:
     assert len(summary.skills) == 20
     assert "url" not in summary.model_dump()
     assert "evil.example" not in summary.model_dump_json()
+
+
+async def test_a_cancel_and_a_card_fetch_end_within_their_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L7: ``tasks/cancel`` is bounded as a whole by ``AI_RUN_CANCEL_TIMEOUT`` (5 s; not
+    the 10 s connect timeout plus the read), and so is the card fetch by its 5 s."""
+    import asyncio
+    import time
+
+    from app.ai import a2a
+
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(30)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(a2a, "CANCEL_DEADLINE", 0.2)
+    monkeypatch.setattr(a2a, "CARD_DEADLINE", 0.2)
+    client = A2AClient(_settings(), V03, "soundings", "a", transport=httpx.MockTransport(hang))
+
+    started = time.monotonic()
+    answered = await client.cancel_task("task-1")
+    cancel_took = time.monotonic() - started
+    started = time.monotonic()
+    with pytest.raises(A2AUnreachable):
+        await client.fetch_card()
+    card_took = time.monotonic() - started
+
+    assert answered is False
+    assert cancel_took < 2
+    assert card_took < 2
+    assert a2a.CANCEL_DEADLINE == 0.2  # the real ones: the contract's 5 s each
+    monkeypatch.undo()
+    assert a2a.CANCEL_DEADLINE == a2a.CARD_DEADLINE == 5.0

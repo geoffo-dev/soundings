@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from '@playwright/test'
 
 import type { components } from '../../../frontend/src/api/generated/schema'
 import { FakeAgent } from '../../scripts/fake-agent'
@@ -307,4 +307,14 @@ export async function aiTeam(alice: Api, name = 'AI'): Promise<AiTeam> {
       return created.key
     },
   }
+}
+
+/**
+ * The run's steps on the idea page. A run is one quiet row (its current step, or how it
+ * ended); who asked and every step are behind its "Steps" button, opened here.
+ */
+export async function runSteps(card: Locator): Promise<Locator> {
+  const toggle = card.getByRole('button', { name: 'Steps' })
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  return card.getByRole('list', { name: 'Steps' })
 }

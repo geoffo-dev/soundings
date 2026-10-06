@@ -4,6 +4,7 @@ import {
   registerAgent,
   retireAgents,
   type ResearchNote,
+  runSteps,
   signInAs,
   skipWithoutAi,
   waitRun,
@@ -42,14 +43,11 @@ test.describe('@ai research notes', () => {
         'No AI agent serves this project',
       )
       await page.getByRole('menuitem', { name: /Research this/ }).click()
-      await expect(toast(page, 'Asked Idea researcher to research this idea')).toBeVisible()
-
+      // Its row says so; a toast does only while the row is out of view.
       const card = page.locator('article[id^="ai-run-"]').first()
-      await expect(card.getByRole('list', { name: 'Steps' })).toContainText(
-        'Wrote the research note',
-        { timeout: 30_000 },
-      )
-      await expect(card).toContainText('Research note saved')
+      await expect(card).toBeVisible()
+      await expect(card).toContainText('Research note saved', { timeout: 30_000 })
+      await expect(await runSteps(card)).toContainText('Wrote the research note')
       await card.getByRole('button', { name: 'Read the note' }).click()
       const note = page.locator('article[id^="research-note-"]')
       await expect(note).toBeFocused()

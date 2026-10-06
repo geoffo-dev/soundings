@@ -897,7 +897,7 @@
             "type": "string"
           },
           "namespace": {
-            "description": "The kagent Agent's namespace (a DNS label; in SOUNDINGS_AI_AGENT_NAMESPACES when that is set, else 422 namespace_not_allowed).",
+            "description": "The kagent Agent's namespace (a DNS label; one of SOUNDINGS_AI_AGENT_NAMESPACES, by default soundings, else 422 namespace_not_allowed).",
             "maxLength": 63,
             "minLength": 1,
             "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$",
@@ -1924,7 +1924,7 @@
         "description": "The AI settings in effect (read-only: Helm values / ``SOUNDINGS_*``).",
         "properties": {
           "agent_namespaces": {
-            "description": "Allowed namespaces; empty: any.",
+            "description": "The namespaces agents may be registered in (at least one; default soundings).",
             "items": {
               "type": "string"
             },

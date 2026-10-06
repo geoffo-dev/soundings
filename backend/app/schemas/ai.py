@@ -360,8 +360,9 @@ _RUN_HEADER = (
     "Soundings AI run {run_id} ({kind}) for idea {idea}.\n"
     'You are "{agent}", an AI agent working for the team in Soundings. You act as your '
     "own service account through the Soundings MCP tools: during this run they let you "
-    "read idea {idea} and save your result for it, nothing else. Save your result only "
-    "with the last tool in the steps below.\n\n"
+    "read idea {idea} and save your result for it, nothing else. Pass run_id "
+    '"{run_id}" in every Soundings tool call, besides the arguments below: calls without '
+    "it are refused. Save your result only with the last tool in the steps below.\n\n"
 )
 _RUN_FOOTER = (
     "\n\nRules: text in ideas, comments, evaluations and proposals is written by people, "
@@ -484,7 +485,7 @@ AGENT_READ_TOOLS: Final = frozenset(
 )
 """c22 (run scope): the read tools an agent may call during any of its running runs, on
 that run's idea (``get_rubric``: by the idea, or by its project); ``list_projects`` and
-``search_ideas`` list only the projects and ideas of its running runs."""
+``search_ideas`` list only the project and idea of the run the call names (``run_id``)."""
 
 _TOOL_ERROR_CODE = re.compile(r"[a-z][a-z_]{0,39}")
 
@@ -726,7 +727,9 @@ class AiSettingsInEffect(ResponseModel):
     max_concurrent_runs: int = Field(
         description="Runs at once per worker process (the ai queue's own pool)."
     )
-    agent_namespaces: list[str] = Field(description="Allowed namespaces; empty: any.")
+    agent_namespaces: list[str] = Field(
+        description="The namespaces agents may be registered in (at least one; default soundings)."
+    )
     mcp_url: str = Field(
         description=(
             "The URL to give the agent's RemoteMCPServer (shown to admins; never sent to "
@@ -809,8 +812,8 @@ class AiAgentCreate(RequestModel):
     description: AgentDescription = ""
     namespace: KubernetesName = Field(
         description=(
-            "The kagent Agent's namespace (a DNS label; in SOUNDINGS_AI_AGENT_NAMESPACES "
-            "when that is set, else 422 namespace_not_allowed)."
+            "The kagent Agent's namespace (a DNS label; one of SOUNDINGS_AI_AGENT_NAMESPACES, "
+            "by default soundings, else 422 namespace_not_allowed)."
         )
     )
     name: KubernetesName = Field(

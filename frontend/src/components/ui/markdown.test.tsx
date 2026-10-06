@@ -95,4 +95,29 @@ describe('Markdown for agent text (untrusted)', () => {
     expect(container.querySelector('b')).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
   })
+
+  it('drops direction overrides and zero-width characters, and isolates the host', () => {
+    // A right-to-left override would show moc.elgoog.evil.example as "elpmaxe.live.google.com".
+    const { container } = render(
+      <Markdown untrusted>
+        {'See \u202E[the\u200B report](https://moc.elgoog.evil.example/x)\u2066 here'}
+      </Markdown>,
+    )
+    expect(container.textContent).not.toMatch(/[\u200B\u202E\u2066]/)
+    expect(screen.getByRole('link', { name: 'the report' })).toBeInTheDocument()
+    const host = container.querySelector('bdi[dir="ltr"]')
+    expect(host).toHaveTextContent('moc.elgoog.evil.example')
+  })
+
+  it('shows an image as a link with its host, fetching nothing', () => {
+    const { container } = render(
+      <Markdown untrusted>{'![Re-authenticate](https://evil.example/login.png)'}</Markdown>,
+    )
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Re-authenticate' })).toHaveAttribute(
+      'rel',
+      'noopener noreferrer nofollow',
+    )
+    expect(screen.getByText('(evil.example)')).toBeInTheDocument()
+  })
 })

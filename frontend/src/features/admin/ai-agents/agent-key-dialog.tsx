@@ -158,6 +158,16 @@ export function AgentKeyDialog({
                   label="the RemoteMCPServer manifest"
                 />
               </section>
+              <section aria-labelledby="agent-key-test" className="flex flex-col gap-1">
+                <h3 id="agent-key-test" className="text-sm font-medium text-primary">
+                  3. Test the connection
+                </h3>
+                <p className="text-sm text-muted">
+                  Once kagent shows the Agent as Ready, choose Test connection in{' '}
+                  {shown.agent.display_name}’s row (its actions menu). It says what to check if the
+                  agent doesn’t answer.
+                </p>
+              </section>
             </DialogBody>
             {warned ? (
               <DialogFooter className="pt-2">

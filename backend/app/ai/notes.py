@@ -24,6 +24,7 @@ from app.domain.principal import Principal
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.activity import ActivityEvent
 from app.models.ai import AiAgent, AiRun
+from app.models.base import utcnow
 from app.models.enums import IdeaStatus
 from app.schemas.activity import AI_RESEARCH_NOTE
 from app.schemas.ai import AiAgentRef, Citation, CitationIn, ResearchNote
@@ -133,6 +134,10 @@ async def delete_note(
         "body_md": "",
         "sources": [],
         "deleted": True,
+        # Who deleted it and when stay with the item (review L4; there is no audit action
+        # for it yet: a new AuditAction needs the SPA's phrase in the same change).
+        "deleted_by_id": str(principal.user_id),
+        "deleted_at": utcnow().isoformat(),
     }
     await db.flush()
 
@@ -151,7 +156,7 @@ async def write_note(
     sources: Sequence[CitationIn],
 ) -> tuple[UUID, bool]:
     """MCP ``add_research_note`` for ``run`` (the agent's open research run on the idea,
-    locked by :func:`app.ai.scope.write_run`): ``comment.create`` (the member role and the
+    locked by :func:`app.ai.scope.lock_run`): ``comment.create`` (the member role and the
     ``write`` scope; 409 archived, c19), then 409 ``idea_closed``. Returns the note's id
     and whether it replaced the run's earlier note. Attaches it to the run."""
     require(principal, Rule.COMMENT_CREATE, loaded.resource)

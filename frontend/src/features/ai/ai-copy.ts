@@ -2,6 +2,7 @@ import type {
   AiAgentProtocol,
   AiBlockedReason,
   AiRun,
+  AiRunError,
   AiRunKind,
   AiRunStatus,
   ProposalSectionKey,
@@ -112,13 +113,104 @@ export const PROTOCOL_COPY: Record<AiAgentProtocol, { label: string; detail: str
   kagent_v1_0: { label: 'kagent 1.0 (A2A 1.0)', detail: '/agents/{namespace}/{name}' },
 }
 
-/** "4 min left", "under a minute left", or null once it passed. */
+/**
+ * "4 min left", "under a minute left", or null once it passed. Rounded, never up:
+ * a one-minute limit never reads "2 min left".
+ */
 export function timeLeft(deadline: string | null, now: number): string | null {
   if (!deadline) return null
   const ms = Date.parse(deadline) - now
   if (Number.isNaN(ms) || ms <= 0) return null
-  const minutes = Math.ceil(ms / 60_000)
-  return ms < 60_000 ? 'under a minute left' : `${minutes} min left`
+  return ms < 60_000 ? 'under a minute left' : `${Math.round(ms / 60_000)} min left`
+}
+
+/**
+ * A timed-out run's limit in words ("5 minutes", "45 seconds"): from its start to its
+ * deadline while that is known, else to when it ended (the deadline plus the few
+ * seconds cancelling took: whole minutes, rounded down).
+ */
+export function runLimitWords(
+  run: Pick<AiRun, 'started_at' | 'deadline_at' | 'finished_at'>,
+): string | null {
+  const end = run.deadline_at ?? run.finished_at
+  if (!run.started_at || !end) return null
+  const seconds = (Date.parse(end) - Date.parse(run.started_at)) / 1000
+  if (!Number.isFinite(seconds) || seconds <= 0) return null
+  if (seconds < 60) return `${Math.round(seconds)} seconds`
+  const minutes = run.deadline_at ? Math.round(seconds / 60) : Math.floor(seconds / 60)
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`
+}
+
+/**
+ * Why a run stopped, and what to do about it, by its error code (contract-phase6
+ * §3.4): Soundings' own words, never the agent's. The server's sentence for the
+ * code stays in the run's steps; this is what the run's line says.
+ */
+const RUN_ERROR_COPY: Record<AiRunError, { what: string; next: string }> = {
+  ai_disabled: {
+    what: 'AI assistance was turned off before it started.',
+    next: 'Ask a platform admin if you need it back.',
+  },
+  agent_unavailable: {
+    what: 'This agent no longer works on this project.',
+    next: 'Choose another agent, or ask a platform admin to check its projects.',
+  },
+  agent_unreachable: {
+    what: 'Soundings couldn’t reach the agent.',
+    next: 'Try again in a few minutes. If it keeps happening, ask a platform admin to test its connection.',
+  },
+  agent_protocol_error: {
+    what: 'Soundings couldn’t understand the agent’s answer.',
+    next: 'Ask a platform admin to check the agent’s protocol setting.',
+  },
+  agent_rejected: {
+    what: 'The agent turned the request down.',
+    next: 'Try again later. If it keeps refusing, ask a platform admin to check the agent.',
+  },
+  agent_failed: {
+    what: 'The agent ran into an error and stopped.',
+    next: 'Try again. If it keeps failing, ask a platform admin to check the agent.',
+  },
+  agent_needs_input: {
+    what: 'The agent asked a question, and a run can’t answer one.',
+    next: 'Try again. If it keeps asking, its instructions may need a change.',
+  },
+  no_result: {
+    what: 'The agent finished without saving anything.',
+    next: 'Try again.',
+  },
+  timed_out: {
+    what: 'The agent didn’t finish in time.',
+    next: 'Try again: it may have been busy.',
+  },
+  queue_timeout: {
+    what: 'It waited too long for a free worker.',
+    next: 'Try again in a few minutes.',
+  },
+  worker_lost: {
+    what: 'The worker running it stopped before it finished.',
+    next: 'Try again.',
+  },
+  internal_error: {
+    what: 'Something went wrong on our side.',
+    next: 'Try again. If it keeps happening, let an admin know.',
+  },
+}
+
+/** A stopped run's reason and next step ("The agent didn’t finish within 5 minutes."). */
+export function runErrorWords(
+  run: Pick<AiRun, 'status' | 'error' | 'started_at' | 'deadline_at' | 'finished_at'>,
+): { what: string; next: string } {
+  const code = run.error?.code ?? (run.status === 'timed_out' ? 'timed_out' : 'internal_error')
+  const copy = RUN_ERROR_COPY[code] as { what: string; next: string } | undefined
+  if (!copy) {
+    return { what: run.error?.message ?? 'It stopped with an error.', next: 'Try again.' }
+  }
+  if (code === 'timed_out') {
+    const limit = runLimitWords(run)
+    if (limit) return { ...copy, what: `The agent didn’t finish within ${limit}.` }
+  }
+  return copy
 }
 
 /** "0:42", "12:05", "1:02:09" since `from` (tabular, for the run card). */

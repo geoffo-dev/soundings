@@ -2,6 +2,7 @@ import { FileSearch, Gauge, Sparkles } from 'lucide-react'
 import { useCallback } from 'react'
 
 import { useIdeaAiRuns, useRequestAiRun } from '@/api/ai'
+import { describeError, hasErrorCode, isApiError } from '@/api/errors'
 import type { AiAgentRef, AiBlockedReason, AiRun, AiRunKind, ProposalSectionKey } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import type { CommandAction } from '@/components/ui/command-palette'
@@ -20,6 +21,7 @@ import { toast } from '@/components/ui/toaster'
 import { WithTooltip } from '@/components/ui/tooltip'
 import type { IdeaTab } from '@/features/idea/idea-search'
 import { useCommands } from '@/lib/command-registry'
+import { formatTime } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 
 import { BLOCKED_COPY, isActiveRun, KIND_COPY, SECTION_TITLES } from './ai-copy'
@@ -98,10 +100,52 @@ export function showRun(runId: string, setTab?: (tab: IdeaTab) => void) {
   focusWhenRendered(() => document.getElementById(runDomId(runId)), { force: true, frames: 60 })
 }
 
+/** Whether an element is on screen now (the run's row, after asking). */
+function onScreen(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect()
+  return rect.bottom > 0 && rect.top < window.innerHeight && rect.height > 0
+}
+
+/** Calls `then(element)` once `find()` renders (a few frames), or `then(null)`. */
+function whenRendered(
+  find: () => HTMLElement | null,
+  then: (element: HTMLElement | null) => void,
+  frames = 12,
+) {
+  const attempt = (left: number) => {
+    const element = find()
+    if (element || left <= 0) then(element)
+    else window.requestAnimationFrame(() => attempt(left - 1))
+  }
+  window.requestAnimationFrame(() => attempt(frames))
+}
+
 /**
- * Asks an agent; the toast says so with "View progress" (the run card may be
- * off-screen or on another tab). A repeated ask while the run is active
- * answers with that run (200): the toast says it is already running.
+ * Why asking failed, in words (the toast): the hourly limit says what it is and
+ * when asking works again (contract-phase6 §3.3: 20 requests a person an hour).
+ */
+export function describeAskError(error: unknown): { title: string; description?: string } {
+  if (isApiError(error) && error.status === 429 && hasErrorCode(error, 'too_many_attempts')) {
+    const seconds = error.retryAfterSeconds
+    return {
+      title: 'You can ask AI agents 20 times an hour',
+      description:
+        seconds !== undefined
+          ? `Try again after ${formatTime(Date.now() + seconds * 1000)}.`
+          : 'Try again later this hour.',
+    }
+  }
+  const { title, description } = describeError(error)
+  return {
+    title: 'Couldn’t ask the AI agent',
+    description: [title, description].filter(Boolean).join('. '),
+  }
+}
+
+/**
+ * Asks an agent. Unless its row is already in view, a toast says so with "View
+ * progress" (the row may be off-screen or on another tab). A repeated ask while the
+ * run is active answers with that run (200): the toast says it is already running.
  */
 export function useAskAi(ideaKey: string, setTab?: (tab: IdeaTab) => void) {
   const request = useRequestAiRun(ideaKey)
@@ -123,20 +167,32 @@ export function useAskAi(ideaKey: string, setTab?: (tab: IdeaTab) => void) {
               : kind === 'research'
                 ? 'to research this idea'
                 : `to draft ${sectionKey ? SECTION_TITLES[sectionKey] : 'a section'}`
-          toast.message(
-            existing
-              ? `${agent.display_name} is already working on this`
-              : `Asked ${agent.display_name} ${what}`,
-            {
-              description:
-                kind === 'draft_section'
-                  ? 'Its suggestion appears under the section when it is done.'
-                  : 'Follow its progress on the Overview tab.',
-              ...(kind === 'draft_section'
-                ? {}
-                : { action: { label: 'View progress', onClick: () => showRun(run.id, setTab) } }),
+          const title = existing
+            ? `${agent.display_name} is already working on this`
+            : `Asked ${agent.display_name} ${what}`
+          if (kind === 'draft_section') {
+            toast.message(title, {
+              description: 'Its suggestion appears under the section when it is done.',
+            })
+            return
+          }
+          // The row in view says it all (and announces its steps): no toast on top.
+          whenRendered(
+            () => document.getElementById(runDomId(run.id)),
+            (row) => {
+              if (row && onScreen(row)) return
+              toast.message(title, {
+                description: 'Follow its progress on the Overview tab.',
+                action: { label: 'View progress', onClick: () => showRun(run.id, setTab) },
+              })
             },
           )
+        },
+        onError: (error) => {
+          // A 401 signs you out (the query client); everything else says why here.
+          if (isApiError(error) && error.status === 401) return
+          const { title, description } = describeAskError(error)
+          toast.error(title, { description })
         },
       },
     )
@@ -240,7 +296,12 @@ export function AiMenu({
     <DropdownMenu>
       <WithTooltip content="Ask an AI agent">
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" aria-label="AI actions">
+          <Button
+            variant="outline"
+            aria-label="AI actions"
+            // Phones: a quiet icon among vote, watch and more (the primary action is below).
+            className="max-sm:size-7 max-sm:border-transparent max-sm:bg-transparent max-sm:px-0 max-sm:text-secondary"
+          >
             <Sparkles />
             <span className="max-sm:sr-only">AI</span>
           </Button>
@@ -293,6 +354,7 @@ export function AskAiToEvaluateButton({
         size="sm"
         className="-ml-2 self-start text-secondary"
         loading={pending}
+        data-ask-ai-evaluate=""
         onClick={() => ask('evaluate', agent, undefined, onAsked)}
       >
         <Sparkles />
@@ -308,6 +370,7 @@ export function AskAiToEvaluateButton({
           size="sm"
           className="-ml-2 self-start text-secondary"
           loading={pending}
+          data-ask-ai-evaluate=""
         >
           <Sparkles />
           {label}

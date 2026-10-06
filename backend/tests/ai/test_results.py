@@ -6,12 +6,14 @@ and the ``tool_called`` / ``result_recorded`` events."""
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import AuditLog
+from app.models.ai import AiRun
 from app.models.base import utcnow
 from app.models.enums import AiRunKind, EvaluatorState
 from app.models.idea import Idea
@@ -39,9 +41,11 @@ async def _evaluated(crew: Crew, db: AsyncSession) -> None:
     await add_evaluator(db, crew.idea, crew.agent.user)
 
 
-async def _submit(crew: Crew, mcp_as: McpAs, *, score: int = 4, **changes: Any) -> dict[str, Any]:
+async def _submit(
+    crew: Crew, mcp_as: McpAs, run: AiRun, *, score: int = 4, **changes: Any
+) -> dict[str, Any]:
     assert crew.agent.key is not None
-    agent = mcp_as(crew.agent.key)
+    agent = mcp_as(crew.agent.key).for_run(run)
     rubric = await agent.ok("get_rubric", idea=crew.ref)
     args = evaluation_args(crew, rubric, score=score) | changes
     return await agent.ok("submit_evaluation", **args)
@@ -64,10 +68,10 @@ async def test_an_ai_evaluation_is_left_out_until_someone_includes_it(
     api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
     await _evaluated(crew, db_session)
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
     before = await _score(api, crew)
 
-    await _submit(crew, mcp_as, score=5)
+    await _submit(crew, mcp_as, run, score=5)
     listed = ok(await (await api(crew.team.owner)).get(f"/ideas/{crew.ref}/evaluations"))
     [ai] = [e for e in listed["items"] if e["is_ai"]]
     left_out = await _score(api, crew)
@@ -107,20 +111,20 @@ async def test_a_changed_re_submission_leaves_the_aggregate_again(
     api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
     await _evaluated(crew, db_session)
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
-    await _submit(crew, mcp_as, score=5)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    await _submit(crew, mcp_as, run, score=5)
     listed = ok(await (await api(crew.team.owner)).get(f"/ideas/{crew.ref}/evaluations"))
     [ai] = [e for e in listed["items"] if e["is_ai"]]
     path = f"/ideas/{crew.ref}/evaluations/{ai['id']}/include-in-aggregate"
     owner = await api(crew.team.owner)
     ok(await owner.put(path, {"include": True}))
 
-    text_only = await _submit(crew, mcp_as, score=5, comment="A clearer summary.")
+    text_only = await _submit(crew, mcp_as, run, score=5, comment="A clearer summary.")
     still = ok(await owner.get(f"/ideas/{crew.ref}/evaluations"))
-    changed = await _submit(crew, mcp_as, score=3)
+    changed = await _submit(crew, mcp_as, run, score=3)
     reset = ok(await owner.get(f"/ideas/{crew.ref}/evaluations"))
     ok(await owner.put(path, {"include": True}))
-    recommendation = await _submit(crew, mcp_as, score=3, recommendation="no")
+    recommendation = await _submit(crew, mcp_as, run, score=3, recommendation="no")
     reset_again = ok(await owner.get(f"/ideas/{crew.ref}/evaluations"))
 
     assert text_only["evaluation"]["state"] == changed["evaluation"]["state"] == "submitted"
@@ -143,8 +147,8 @@ async def test_the_toggle_refusals(
     api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
     await _evaluated(crew, db_session)
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
-    await _submit(crew, mcp_as)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    await _submit(crew, mcp_as, run)
     owner = await api(crew.team.owner)
     listed = ok(await owner.get(f"/ideas/{crew.ref}/evaluations"))
     ai = next(e for e in listed["items"] if e["is_ai"])
@@ -183,9 +187,13 @@ async def test_a_draft_ai_evaluation_is_404_for_the_toggle(
     api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
     await add_evaluator(db_session, crew.idea, crew.agent.user)
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
     assert crew.agent.key is not None
-    await mcp_as(crew.agent.key).ok("submit_evaluation", idea=crew.ref, scores=[], submit=False)
+    await (
+        mcp_as(crew.agent.key)
+        .for_run(run)
+        .ok("submit_evaluation", idea=crew.ref, scores=[], submit=False)
+    )
     from app.models.evaluation import Evaluation
 
     draft = await db_session.scalar(
@@ -205,9 +213,9 @@ async def test_an_ai_evaluator_must_give_a_rationale_for_every_score(
     crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
     await add_evaluator(db_session, crew.idea, crew.agent.user)
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
     assert crew.agent.key is not None
-    agent = mcp_as(crew.agent.key)
+    agent = mcp_as(crew.agent.key).for_run(run)
     rubric = await agent.ok("get_rubric", idea=crew.ref)
     args = evaluation_args(crew, rubric)
     args["scores"][0]["comment"] = "   "
@@ -246,9 +254,9 @@ async def test_sources_are_stored_as_plain_ascii(
     api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs, url: str, stored: str
 ) -> None:
     await add_evaluator(db_session, crew.idea, crew.agent.user)
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
     assert crew.agent.key is not None
-    agent = mcp_as(crew.agent.key)
+    agent = mcp_as(crew.agent.key).for_run(run)
     rubric = await agent.ok("get_rubric", idea=crew.ref)
     args = evaluation_args(crew, rubric)
     args["scores"][0]["sources"] = [{"title": "International", "url": url}]
@@ -275,11 +283,15 @@ async def test_sources_are_stored_as_plain_ascii(
 async def test_unsafe_source_urls_are_refused(
     crew: Crew, db_session: AsyncSession, mcp_as: McpAs, url: str
 ) -> None:
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
     assert crew.agent.key is not None
 
-    code = await mcp_as(crew.agent.key).fails(
-        "add_research_note", idea=crew.ref, body_md="x", sources=[{"title": "t", "url": url}]
+    code = (
+        await mcp_as(crew.agent.key)
+        .for_run(run)
+        .fails(
+            "add_research_note", idea=crew.ref, body_md="x", sources=[{"title": "t", "url": url}]
+        )
     )
 
     assert code == "validation_error"
@@ -291,7 +303,7 @@ async def test_a_research_note_is_written_replaced_read_and_deleted(
 ) -> None:
     run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
     assert crew.agent.key is not None
-    agent = mcp_as(crew.agent.key)
+    agent = mcp_as(crew.agent.key).for_run(run)
     sources = [{"title": "Study", "url": "https://example.org/study"}]
 
     first = await agent.ok("add_research_note", idea=crew.ref, body_md="First", sources=sources)
@@ -335,6 +347,12 @@ async def test_a_research_note_is_written_replaced_read_and_deleted(
     assert [(n["note"]["deleted"], n["actor"]["id"]) for n in notes] == [
         (True, str(crew.agent.user.id))
     ]
+    from app.models.activity import ActivityEvent
+
+    stored = await db_session.get(ActivityEvent, UUID(note_id), populate_existing=True)
+    assert stored is not None
+    assert stored.payload["deleted_by_id"] == str(crew.team.owner.id)  # who deleted it (L4)
+    assert stored.payload["deleted_at"]
     assert_problem(
         await (await api(crew.team.owner)).get(f"/ideas/{crew.ref}/research-notes/{run.id}"),
         404,
@@ -351,7 +369,7 @@ async def test_a_research_note_needs_an_open_idea(
 ) -> None:
     from app.models.enums import IdeaStatus, Resolution
 
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
     await db_session.execute(
         update(Idea)
         .where(Idea.id == crew.idea.id)
@@ -361,38 +379,43 @@ async def test_a_research_note_needs_an_open_idea(
     assert crew.agent.key is not None
 
     assert (
-        await mcp_as(crew.agent.key).fails("add_research_note", idea=crew.ref, body_md="x")
+        await mcp_as(crew.agent.key)
+        .for_run(run)
+        .fails("add_research_note", idea=crew.ref, body_md="x")
         == "idea_closed"
     )
 
 
 # --- Run events from MCP calls --------------------------------------------------------------------
-async def test_an_agents_calls_become_soundings_sentences_on_its_open_runs(
+async def test_an_agents_calls_become_soundings_sentences_on_the_run_they_name(
     crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
     await add_evaluator(db_session, crew.idea, crew.agent.user)
+    other = await make_idea(db_session, crew.team.project, title="Another idea")
     evaluate = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
     research = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
     assert crew.agent.key is not None
-    agent = mcp_as(crew.agent.key)
+    agent = mcp_as(crew.agent.key).for_run(evaluate)
+    researcher = mcp_as(crew.agent.key).for_run(research)
 
     await agent.ok("get_idea", idea=crew.ref)
     await agent.ok("list_projects")
     await agent.ok("search_ideas")
     await agent.fails("add_comment", idea=crew.ref, body_md="Hello")
     await agent.fails("propose_proposal_section", idea=crew.ref, section_key="risks", body_md="x")
+    await agent.fails("get_idea", idea=f"CUST-{other.number}")  # another idea: no event
     await agent.ok("submit_evaluation", idea=crew.ref, scores=[], submit=False)
     await agent.call("not_a_tool")
+    await researcher.ok("get_idea", idea=crew.ref)
+    await mcp_as(crew.agent.key).fails("get_idea", idea=crew.ref)  # no run named: no event
 
     assert [e.message for e in await events(db_session, evaluate.id)] == [
         "Read the idea",
         "Commented: forbidden",
+        "Suggested section text: ai_run_not_active",
         "Saved its evaluation",  # a draft: no result_recorded
     ]
-    assert [e.message for e in await events(db_session, research.id)] == [
-        "Read the idea",
-        "Commented: forbidden",
-    ]
+    assert [e.message for e in await events(db_session, research.id)] == ["Read the idea"]
     assert (await run_row(db_session, evaluate.id)).evaluation_id is None
 
 
@@ -404,7 +427,11 @@ async def test_nothing_is_attached_or_recorded_after_a_cancel_request(
     )
     assert crew.agent.key is not None
 
-    code = await mcp_as(crew.agent.key).fails("add_research_note", idea=crew.ref, body_md="Late")
+    code = (
+        await mcp_as(crew.agent.key)
+        .for_run(run)
+        .fails("add_research_note", idea=crew.ref, body_md="Late")
+    )
 
     assert code == "ai_run_not_active"
     assert (await run_row(db_session, run.id)).activity_event_id is None
@@ -414,10 +441,14 @@ async def test_nothing_is_attached_or_recorded_after_a_cancel_request(
 async def test_the_call_is_audited_once_as_mcp_call(
     crew: Crew, db_session: AsyncSession, mcp_as: McpAs
 ) -> None:
-    await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
     assert crew.agent.key is not None
 
-    await mcp_as(crew.agent.key).ok("add_research_note", idea=crew.ref, body_md="NOTE BODY")
+    await (
+        mcp_as(crew.agent.key)
+        .for_run(run)
+        .ok("add_research_note", idea=crew.ref, body_md="NOTE BODY")
+    )
 
     [entry] = [
         a
@@ -426,3 +457,81 @@ async def test_the_call_is_audited_once_as_mcp_call(
     ]
     assert entry.actor_id == crew.agent.user.id
     assert "NOTE BODY" not in str(entry.details)
+
+
+# --- M2: agent text carries no invisible or direction characters ---------------------------
+HIDDEN_TEXT = "\u202e\u200b\u2066\u2069\u200e\ufeff\u2060"
+"""A right-to-left override, a zero-width space, a bidi isolate and its end, a
+left-to-right mark, a byte order mark and a word joiner (tag characters are refused
+for everyone, before this)."""
+
+
+async def test_an_agents_text_is_stored_without_invisible_characters(
+    api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
+) -> None:
+    """The review's M2: ``[google.com](https://moc.elgoog.evil.example)`` with U+202E
+    rendered its host reversed. Agent-written Markdown and comments lose such characters
+    before they are validated and stored (ZWJ and ZWNJ, which scripts and emoji need,
+    stay)."""
+    trick = f"[google.com](https://evil.example) {HIDDEN_TEXT[0]}moc.elgoog{HIDDEN_TEXT[1:]} \u200d"
+    await add_evaluator(db_session, crew.idea, crew.agent.user)
+    research = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
+    evaluate = await open_run(db_session, crew.agent, crew.idea, AiRunKind.EVALUATE)
+    assert crew.agent.key is not None
+    researcher = mcp_as(crew.agent.key).for_run(research)
+    evaluator = mcp_as(crew.agent.key).for_run(evaluate)
+
+    note = await researcher.ok("add_research_note", idea=crew.ref, body_md=trick)
+    rubric = await evaluator.ok("get_rubric", idea=crew.ref)
+    args = evaluation_args(crew, rubric)
+    args["comment"] = trick
+    args["scores"][0]["comment"] = trick
+    await evaluator.ok("submit_evaluation", **args)
+    only_hidden = await researcher.fails("add_research_note", idea=crew.ref, body_md=HIDDEN_TEXT)
+
+    clean = "[google.com](https://evil.example) moc.elgoog \u200d"
+    owner = await api(crew.team.owner)
+    stored = ok(await owner.get(f"/ideas/{crew.ref}/research-notes/{note['note_id']}"))
+    assert stored["body_md"] == clean
+    [ai] = [e for e in ok(await owner.get(f"/ideas/{crew.ref}/evaluations"))["items"] if e["is_ai"]]
+    assert ai["comment"] == clean
+    assert ai["scores"][0]["comment"] == clean
+    assert only_hidden == "validation_error"  # nothing left to save
+    tagged = await researcher.fails("add_research_note", idea=crew.ref, body_md="a\U000e0041")
+    assert tagged == "validation_error"  # as for anyone
+
+
+async def test_an_agents_draft_is_stored_without_invisible_characters(
+    api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
+) -> None:
+    from app.models.enums import IdeaStatus, ProposalSectionKey
+
+    await db_session.execute(
+        update(Idea).where(Idea.id == crew.idea.id).values(status=IdeaStatus.SHORTLISTED)
+    )
+    await db_session.commit()
+    owner = await api(crew.team.owner)
+    ok(await owner.post(f"/ideas/{crew.ref}/proposal"), 201)
+    run = await open_run(
+        db_session,
+        crew.agent,
+        crew.idea,
+        AiRunKind.DRAFT_SECTION,
+        section_key=ProposalSectionKey.RISKS,
+    )
+    assert crew.agent.key is not None
+
+    created = (
+        await mcp_as(crew.agent.key)
+        .for_run(run)
+        .ok(
+            "propose_proposal_section",
+            idea=crew.ref,
+            section_key="risks",
+            body_md=f"Risk {HIDDEN_TEXT}one.\n\n- two",
+        )
+    )
+
+    assert created["suggestion"]["body_md"] == "Risk one.\n\n- two"
+    listed = ok(await owner.get(f"/ideas/{crew.ref}/proposal/suggestions"))
+    assert [s["body_md"] for s in listed["items"]] == ["Risk one.\n\n- two"]

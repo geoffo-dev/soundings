@@ -34,10 +34,12 @@ import { KIND_COPY, PROTOCOL_COPY, PURPOSE_ORDER } from '@/features/ai/ai-copy'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import {
-  a2aUrlPreview,
+  a2aUrlParts,
   DESCRIPTION_MAX,
   DISPLAY_NAME_MAX,
+  labelError,
   narrowing,
+  typingLabelError,
   validateAgent,
   type AgentDraft,
   type AgentErrors,
@@ -195,6 +197,8 @@ function AgentForm({
           onSuccess: (created) => {
             onDone()
             onRegistered(created)
+            // The key dialog holds it now: not the mutation cache too (contract-phase6 §3.1).
+            register.reset()
           },
           onError,
         },
@@ -222,6 +226,14 @@ function AgentForm({
 
   const dropped = agent ? narrowing(agent, draft) : { purposes: [], projects: [] }
   const allowed = settings.agent_namespaces
+  // Namespace and name: what can never be valid shows while typing, the rest on leaving.
+  const labelFieldError = (key: 'namespace' | 'name') =>
+    errors[key] ?? (editing ? undefined : typingLabelError(draft[key]))
+  const checkLabel = (key: 'namespace' | 'name') => {
+    if (editing || !draft[key]) return
+    const found = labelError(draft[key], key)
+    if (found) setErrors((previous) => ({ ...previous, [key]: found }))
+  }
 
   return (
     <form
@@ -273,14 +285,14 @@ function AgentForm({
             <Field
               label="Namespace"
               required
-              error={errors.namespace}
+              error={labelFieldError('namespace')}
               id="agent-namespace"
               description={
                 editing
                   ? 'Can’t change: register another agent.'
                   : allowed.length > 0
                     ? `Allowed: ${allowed.join(', ')}`
-                    : 'Any namespace'
+                    : 'Any namespace. Lower-case letters, digits and hyphens.'
               }
             >
               <Input
@@ -288,28 +300,36 @@ function AgentForm({
                 maxLength={63}
                 disabled={editing}
                 autoComplete="off"
+                autoCapitalize="none"
                 spellCheck={false}
-                className="font-mono"
+                // Not monospace: Chromium clips a mono font's underscore inside an input at
+                // 1x (DejaVu Sans Mono), so "ops_helper" read as "ops helper".
                 placeholder="soundings"
-                onChange={(event) => set('namespace', event.target.value.trim().toLowerCase())}
+                onChange={(event) => set('namespace', event.target.value)}
+                onBlur={() => checkLabel('namespace')}
               />
             </Field>
             <Field
               label="Agent name"
               required
-              error={errors.name}
+              error={labelFieldError('name')}
               id="agent-name"
-              description={editing ? 'Can’t change.' : 'The kagent Agent’s metadata.name.'}
+              description={
+                editing
+                  ? 'Can’t change.'
+                  : 'The kagent Agent’s metadata.name. Lower-case letters, digits and hyphens.'
+              }
             >
               <Input
                 value={draft.name}
                 maxLength={63}
                 disabled={editing}
                 autoComplete="off"
+                autoCapitalize="none"
                 spellCheck={false}
-                className="font-mono"
                 placeholder="idea-evaluator"
-                onChange={(event) => set('name', event.target.value.trim().toLowerCase())}
+                onChange={(event) => set('name', event.target.value)}
+                onBlur={() => checkLabel('name')}
               />
             </Field>
           </div>
@@ -357,7 +377,17 @@ function AgentForm({
             <span className="min-w-0">
               Soundings will call{' '}
               <code className="font-mono text-xs break-all text-primary">
-                {a2aUrlPreview(settings.kagent_url, draft.protocol, draft.namespace, draft.name)}
+                {a2aUrlParts(settings.kagent_url, draft.protocol, draft.namespace, draft.name).map(
+                  (part, index) =>
+                    part.placeholder ? (
+                      // Not filled in yet (or not valid): a placeholder, not part of the URL.
+                      <span key={index} className="text-muted italic">
+                        {part.text}
+                      </span>
+                    ) : (
+                      part.text
+                    ),
+                )}
               </code>
               : the controller URL in effect, never one typed here.
             </span>

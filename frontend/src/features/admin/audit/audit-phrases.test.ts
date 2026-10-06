@@ -576,6 +576,18 @@ describe('audit sentences', () => {
         }),
       ),
     ).toBe('Alice Anders asked an AI agent to draft Risks of CUST-7')
+    // With its agent: named once the screen resolves it, "an AI agent" until then.
+    const asked = describeAuditEntry(
+      entry('ai_run.request', { ...onIdea, details: { kind: 'research', agent_id: 'ag-1' } }),
+    )
+    expect(auditText(asked)).toBe('Alice Anders asked an AI agent to research CUST-7')
+    expect(
+      auditText(asked, {
+        user: () => undefined,
+        group: () => undefined,
+        agent: (id) => (id === 'ag-1' ? 'Research agent' : undefined),
+      }),
+    ).toBe('Alice Anders asked AI agent Research agent to research CUST-7')
     expect(say(entry('ai_run.cancel', { ...onIdea, details: { rule: 'ai.cancel_run' } }))).toBe(
       'Alice Anders cancelled an AI run on CUST-7',
     )

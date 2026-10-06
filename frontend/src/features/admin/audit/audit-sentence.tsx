@@ -1,4 +1,5 @@
 import { isNotFound, useAdminGroupName, useAdminUserName, useIdeaKey } from '@/api/admin'
+import { useAiAgents } from '@/api/ai-agents'
 import type { AuditEntry } from '@/api/types'
 
 import { describeAuditEntry, type AuditPart } from './audit-phrases'
@@ -34,7 +35,21 @@ function Part({ part }: { part: AuditPart }) {
       return <GroupName id={part.id} />
     case 'idea':
       return <IdeaKey id={part.id} fallback={part.fallback} />
+    case 'agent':
+      return <AgentName id={part.id} />
   }
+}
+
+/** "AI agent Idea evaluator" from the registered agents (platform admins); else "an AI agent". */
+function AgentName({ id }: { id: string }) {
+  const query = useAiAgents()
+  const agent = query.data?.items.find((item) => item.id === id)
+  if (!agent) return 'an AI agent'
+  return (
+    <>
+      AI agent <span className="font-medium text-primary">{agent.display_name}</span>
+    </>
+  )
 }
 
 function Resolved({
