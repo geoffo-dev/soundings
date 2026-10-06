@@ -10,7 +10,8 @@
 # Areas: backend (make -C backend check), frontend (npm --prefix frontend run check),
 # helm (deploy/: helm lint + template, via the alpine/helm container),
 # e2e (npm run check: tsc + prettier), scripts (bash -n, shellcheck when installed or its
-# image is pulled; scripts/ and e2e/scripts/).
+# image is pulled; scripts/ and e2e/scripts/), fake-agent (dev/fake-agent: make check,
+# ruff + mypy + pytest).
 # Areas whose directory or toolchain is missing are skipped with a note.
 set -uo pipefail
 
@@ -26,7 +27,7 @@ if [ ! -t 0 ]; then
   while IFS= read -r -t 0.2 _; do :; done
 fi
 
-all_areas=(backend frontend helm e2e scripts)
+all_areas=(backend frontend helm e2e scripts fake-agent)
 areas=()
 if [ $# -gt 0 ]; then
   areas=("$@")
@@ -37,6 +38,7 @@ else
   for area in "${all_areas[@]}"; do
     case "$area" in
       helm) prefix="deploy/" ;;
+      fake-agent) prefix="dev/fake-agent/" ;;
       *) prefix="$area/" ;;
     esac
     if grep -q "^\"\?$prefix" <<<"$changed"; then areas+=("$area"); fi
@@ -44,7 +46,7 @@ else
 fi
 
 if [ ${#areas[@]} -eq 0 ]; then
-  echo "check-task: no changes in backend/, frontend/, deploy/, e2e/ or scripts/; nothing to check"
+  echo "check-task: no changes in backend/, frontend/, deploy/, e2e/, scripts/ or dev/fake-agent/; nothing to check"
   exit 0
 fi
 
@@ -139,6 +141,12 @@ check_scripts() {
   run scripts scripts_checks
 }
 
+check_fake_agent() {
+  [ -f dev/fake-agent/Makefile ] || { skip fake-agent "no dev/fake-agent/Makefile"; return; }
+  have uv || { skip fake-agent "uv not installed"; return; }
+  run fake-agent make -C dev/fake-agent check
+}
+
 for area in "${areas[@]}"; do
   case "$area" in
     backend) check_backend ;;
@@ -146,6 +154,7 @@ for area in "${areas[@]}"; do
     helm | deploy) check_helm ;;
     e2e) check_e2e ;;
     scripts) check_scripts ;;
+    fake-agent) check_fake_agent ;;
     *) echo "check-task: unknown area '$area' (known: ${all_areas[*]})" >&2; exit 1 ;;
   esac
 done

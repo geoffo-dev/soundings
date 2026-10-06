@@ -1,0 +1,31 @@
+# AI runs against a kagent controller outside the default place: its own URL and a bearer
+# token (kagent's trusted-proxy mode), agents allowed in two namespaces, a shorter run
+# timeout in seconds, kagent 1.0 as the default protocol, and egress NetworkPolicies that
+# let the api and worker reach only the controller's namespace on its port. No example
+# agents (kagent.examples off): the operator manages their own Agent resources.
+baseUrls:
+  - https://ideas.example.com
+features:
+  ai: true
+kagent:
+  enabled: true
+  namespace: ai-platform
+  controllerUrl: http://kagent-controller.ai-platform.svc.cluster.local:9083
+  existingTokenSecret: kagent-token
+  agentNamespaces: [ideas-agents, research-agents]
+ai:
+  runTimeout: 600
+  maxConcurrentRuns: 2
+  defaultProtocol: kagent_v1_0
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  egress:
+    enabled: true
+    kagent:
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-platform

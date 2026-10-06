@@ -48,6 +48,9 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
     case 'evaluator_added':
       return `invited ${item.evaluator?.display_name ?? 'someone'} to evaluate`
     case 'evaluator_removed':
+      // No actor: an AI run that assigned its agent ended without its evaluation
+      // (contract-phase6 §3.3); the agent is the line's subject (activityActor).
+      if (!item.actor) return 'ended its run without an evaluation and was taken off the evaluators'
       return `removed ${item.evaluator?.display_name ?? 'an evaluator'} as evaluator`
     case 'evaluation_submitted':
       return 'submitted an evaluation'
@@ -59,16 +62,22 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
       return item.to_due_at
         ? `set the due date to ${formatDate(item.to_due_at)}`
         : 'cleared the due date'
+    case 'ai_research_note':
+      // The actor is the agent; someone else deleted it (the agent never deletes).
+      return item.note.deleted ? 'wrote a research note, since deleted' : 'wrote a research note'
   }
 }
 
 /**
  * Actor name for an event. A public submission has no actor: the name its
- * sender gave (as the idea's header shows it), else "A visitor"; anything else
- * without an actor is "Someone".
+ * sender gave (as the idea's header shows it), else "A visitor"; an evaluator
+ * taken off by an AI run that ended without its evaluation is the agent itself;
+ * anything else without an actor is "Someone".
  */
 export function activityActor(item: ActivityItem, submitterName?: string | null): string {
   if (item.actor) return item.actor.display_name
+  // An AI run that ended without its evaluation took its agent off the evaluators.
+  if (item.type === 'evaluator_removed') return item.evaluator?.display_name ?? 'An AI agent'
   if (item.type !== 'idea_created') return 'Someone'
   const name = submitterName?.trim()
   return name === undefined || name === '' ? 'A visitor' : name

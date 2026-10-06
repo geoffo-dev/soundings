@@ -1,0 +1,2 @@
+# Local state of the dev tools (git-ignored): the fake agent's keys (make ai-smoke).
+.fake-agent-keys/

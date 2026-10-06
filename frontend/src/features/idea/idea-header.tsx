@@ -25,7 +25,7 @@ const LIMITS = { title: 200, summary: 500 }
  * Key and submitter, vote / watch / more; then the title and summary
  * (click to edit for people allowed to) with the page's one primary action.
  */
-export function IdeaHeader({ primary }: { primary: ReactNode }) {
+export function IdeaHeader({ primary, ai }: { primary: ReactNode; ai?: ReactNode }) {
   const { idea, ideaKey } = useIdeaPage()
   const update = useUpdateIdea(ideaKey)
   const canEdit = idea.permissions.can_edit
@@ -46,6 +46,8 @@ export function IdeaHeader({ primary }: { primary: ReactNode }) {
           <VoteButton />
           {/* An idea waiting for review is read-only, watching included (c19). */}
           {!idea.held_for && <WatchButton />}
+          {/* Phones: the AI menu sits with the other actions (the primary is at the bottom). */}
+          {ai && <span className="sm:hidden">{ai}</span>}
           <MoreMenu />
         </div>
       </div>
@@ -79,7 +81,12 @@ export function IdeaHeader({ primary }: { primary: ReactNode }) {
             <p className="py-0.5 text-lg [overflow-wrap:anywhere] text-secondary">{idea.summary}</p>
           </InlineText>
         </div>
-        {primary && <div className="hidden shrink-0 pt-1 sm:block">{primary}</div>}
+        {(primary ?? ai) && (
+          <div className="hidden shrink-0 items-center gap-2 pt-1 sm:flex">
+            {ai}
+            {primary}
+          </div>
+        )}
       </div>
     </header>
   )

@@ -359,10 +359,14 @@ _NEW_AGENT: dict[str, Any] = {
 }
 
 # operation_id -> a valid request for every operation still answered with 501. Every
-# Phase 1-5 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
+# Phase 1-6 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
 # tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
-# tests/moderation, tests/api_keys, tests/mcp). Delete a row when you implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+# tests/moderation, tests/api_keys, tests/mcp, tests/ai). Delete a row when you
+# implement it.
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+
+# Phase 6 operations (tests/ai): a valid request each, for the shape and session checks.
+PHASE6_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     # --- Phase 6: Admin settings -> AI agents (session only) ----------------------------
     "list_ai_agents": ("/api/v1/admin/ai-agents", None),
     "register_ai_agent": ("/api/v1/admin/ai-agents", _NEW_AGENT),
@@ -616,6 +620,7 @@ def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
     assert set(PHASE2_REQUESTS) <= set(_METHODS)
     assert set(PHASE3_REQUESTS) <= set(_METHODS)
+    assert set(PHASE6_REQUESTS) <= set(_METHODS)
 
 
 async def test_openapi_lists_every_operation(client: httpx.AsyncClient) -> None:
@@ -714,7 +719,7 @@ async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
 
 
 async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
-    requests = PHASE2_REQUESTS | PHASE4_REQUESTS | PHASE5_REQUESTS | STUBS
+    requests = PHASE2_REQUESTS | PHASE4_REQUESTS | PHASE5_REQUESTS | PHASE6_REQUESTS | STUBS
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
         url, body = requests[operation_id]
         response = await client.request(_METHODS[operation_id], url, json=body)
@@ -1228,7 +1233,7 @@ _RUN_REQUESTS = ("request_ai_evaluation", "request_ai_research", "request_ai_sec
 async def test_invalid_phase6_requests_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS[operation_id]
+    valid_url, valid_body = PHASE6_REQUESTS[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -1244,7 +1249,7 @@ async def test_a_malformed_last_event_id_is_rejected(
     client: httpx.AsyncClient, last_event_id: str
 ) -> None:
     """EventSource sends back the ids the stream set (event seqs); anything else is 422."""
-    url, _ = STUBS["stream_ai_run_events"]
+    url, _ = PHASE6_REQUESTS["stream_ai_run_events"]
 
     response = await client.get(url, headers={"Last-Event-ID": last_event_id})
 
@@ -1267,11 +1272,12 @@ async def test_a_malformed_last_event_id_is_rejected(
 async def test_valid_agent_registrations_reach_the_endpoint(
     client: httpx.AsyncClient, body: dict[str, Any]
 ) -> None:
-    url, _ = STUBS["register_ai_agent"]
+    url, _ = PHASE6_REQUESTS["register_ai_agent"]
 
     response = await client.post(url, json=body)
 
-    assert response.status_code == 501, response.text
+    # Past validation, the endpoint itself answers (a non-admin: 403).
+    assert response.status_code == 403, response.text
 
 
 def test_the_event_stream_documents_its_content_type(app: FastAPI) -> None:
@@ -1291,7 +1297,7 @@ def test_run_requests_are_idempotent_in_the_contract(app: FastAPI) -> None:
     """A request while the same run is active answers 200 with it; a new run is 201."""
     paths = app.openapi()["paths"]
     for operation_id in _RUN_REQUESTS:
-        url, _ = STUBS[operation_id]
+        url, _ = PHASE6_REQUESTS[operation_id]
         template = url.replace("/CUST-12/", "/{idea}/")
         responses = paths[template]["post"]["responses"]
         run = {"$ref": "#/components/schemas/AiRun"}

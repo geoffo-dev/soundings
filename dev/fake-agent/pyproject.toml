@@ -1,0 +1,71 @@
+[project]
+name = "soundings-fake-agent"
+version = "0.1.0"
+description = "A deterministic stand-in for kagent's A2A endpoint and agents, for Soundings' dev, e2e, CI and k3s runs."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # The A2A server (JSON-RPC, SSE streaming, task store, cancel) for both protocol
+    # versions on one endpoint: 1.2.1 is the release research R2 verified, and its v0.3
+    # compatibility layer serves the 0.3 methods kagent-adk 0.10.2 speaks.
+    "a2a-sdk[http-server]==1.2.1",
+    # The MCP calls to Soundings (JSON-RPC over HTTP) and the ASGI server; both already
+    # come with a2a-sdk / are the usual pair for Starlette.
+    "httpx>=0.28",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+fake-agent = "fake_agent.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    # Types for google.protobuf (a2a-sdk's 1.0 types are protobuf messages).
+    "types-protobuf>=5.29",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "fake_agent"
+module-root = ""
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "S", "BLE", "A", "C4", "DTZ", "T20", "RET", "SIM", "PT", "ASYNC", "RUF", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+# A script for an isolated environment with a2a-sdk 0.3 (prints its checks).
+"compat/**" = ["S101", "T201", "PT018"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+files = ["fake_agent", "tests"]
+exclude = ["compat/"]
+
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Sockets of streams still open when a test's uvicorn thread shuts down are reported as
+# unraisable ResourceWarnings at random later tests: harness noise, not the agent's.
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:google.*",
+    "ignore::ResourceWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -25,6 +25,7 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "ai_research_note": "#/components/schemas/AiResearchNoteActivity",
                   "comment": "#/components/schemas/CommentActivity",
                   "due_date_changed": "#/components/schemas/DueDateChangedActivity",
                   "evaluation_closed": "#/components/schemas/EvaluationClosedActivity",
@@ -72,6 +73,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/DueDateChangedActivity"
+                },
+                {
+                  "$ref": "#/components/schemas/AiResearchNoteActivity"
                 }
               ]
             },
@@ -1346,6 +1350,55 @@
         "title": "AiPermissions",
         "type": "object"
       },
+      "AiResearchNoteActivity": {
+        "description": "Phase 6: a research note an AI agent wrote for a \"Research this\" run (actor: the\nagent's service account; the SPA's ``describeActivity`` says \"wrote a research note\",\nor \"deleted a research note\" once ``note.deleted``). Stored as an ``activity_events``\nrow of type :data:`AI_RESEARCH_NOTE` whose payload is ``{run_id, agent_id, body_md,\nsources: [{title, url}]}`` (a deleted note keeps ``run_id`` and ``agent_id`` and gets\n``deleted: true``, ``body_md: \"\"``, ``sources: []``). Never holds score data\n(contract-phase6 sections 3.8 and 5).",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who did it; null if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea_id": {
+            "format": "uuid",
+            "title": "Idea Id",
+            "type": "string"
+          },
+          "note": {
+            "$ref": "#/components/schemas/ResearchNote"
+          },
+          "type": {
+            "const": "ai_research_note",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "idea_id",
+          "created_at",
+          "actor",
+          "type",
+          "note"
+        ],
+        "title": "AiResearchNoteActivity",
+        "type": "object"
+      },
       "AiRun": {
         "description": "One AI run. Holds no score data: safe for everyone who may view the idea.",
         "properties": {
@@ -2246,7 +2299,12 @@
           "branding.update",
           "api_key.create",
           "api_key.revoke",
-          "mcp.call"
+          "mcp.call",
+          "ai_agent.register",
+          "ai_agent.update",
+          "ai_run.request",
+          "ai_run.cancel",
+          "evaluation.include_ai"
         ],
         "title": "AuditAction",
         "type": "string"
@@ -3941,6 +3999,7 @@
       "EvaluationScore": {
         "properties": {
           "comment": {
+            "description": "The evaluator's note; an AI evaluator's rationale.",
             "title": "Comment",
             "type": "string"
           },
@@ -3955,12 +4014,21 @@
             "minimum": 1.0,
             "title": "Score",
             "type": "integer"
+          },
+          "sources": {
+            "description": "Phase 6: the sources an AI evaluator cited for this criterion (at most 5; empty for people). Untrusted and not checked: show them as \"Cited by AI, not checked\", plain links with their host.",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Sources",
+            "type": "array"
           }
         },
         "required": [
           "criterion_id",
           "score",
-          "comment"
+          "comment",
+          "sources"
         ],
         "title": "EvaluationScore",
         "type": "object"
@@ -8714,7 +8782,7 @@
             "type": "string"
           },
           "can_delete": {
-            "description": "comment.delete_any: project and platform admins.",
+            "description": "ai.delete_note: the idea's owner and project and platform admins.",
             "title": "Can Delete",
             "type": "boolean"
           },
@@ -10405,6 +10473,7 @@
               {
                 "discriminator": {
                   "mapping": {
+                    "ai_research_note": "#/components/schemas/AiResearchNoteActivity",
                     "comment": "#/components/schemas/CommentActivity",
                     "due_date_changed": "#/components/schemas/DueDateChangedActivity",
                     "evaluation_closed": "#/components/schemas/EvaluationClosedActivity",
@@ -10452,6 +10521,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/DueDateChangedActivity"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AiResearchNoteActivity"
                   }
                 ]
               },
@@ -19418,7 +19490,7 @@
     },
     "/api/v1/ideas/{idea}/research-notes/{note_id}": {
       "delete": {
-        "description": "comment.delete_any (project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived.",
+        "description": "ai.delete_note (the idea's owner and project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived, awaiting_moderation.",
         "operationId": "delete_research_note",
         "parameters": [
           {

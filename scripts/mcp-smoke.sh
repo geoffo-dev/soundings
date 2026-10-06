@@ -16,7 +16,7 @@
 #   3. carol creates a key (read, evaluate, mcp; Customer Innovation only) and a read-only
 #      key; her session cookie alone gets 401 at /mcp.
 #   4. With the key: initialize (no session id), notifications/initialized, tools/list
-#      (the nine tools), list_projects (Customer Innovation only), search_ideas and
+#      (the ten tools), list_projects (Customer Innovation only), search_ideas and
 #      get_idea (blind: no score, no evaluations, no aggregate while carol hasn't
 #      submitted), get_rubric, submit_evaluation, then get_idea shows alice's evaluation
 #      and the aggregate. Refused: an Internal Tools idea (not_found: outside the key's
@@ -241,10 +241,10 @@ status="$(post "$key_auth" '{"jsonrpc":"2.0","method":"notifications/initialized
 
 status="$(post "$key_auth" "$(request tools/list)")"
 tools="$(jq -c '[.result.tools[].name] | sort' "$work/body" 2>/dev/null || echo '[]')"
-want='["add_comment","create_idea","get_idea","get_proposal","get_rubric","list_projects","propose_proposal_section","search_ideas","submit_evaluation"]'
+want='["add_comment","add_research_note","create_idea","get_idea","get_proposal","get_rubric","list_projects","propose_proposal_section","search_ideas","submit_evaluation"]'
 [ "$status" = "200" ] && [ "$tools" = "$want" ] &&
-  jq -e '[.result.tools[] | select(.inputSchema and .outputSchema)] | length == 9' "$work/body" >/dev/null &&
-  ok "tools/list: the nine tools, each with input and output schemas" ||
+  jq -e '[.result.tools[] | select(.inputSchema and .outputSchema)] | length == 10' "$work/body" >/dev/null &&
+  ok "tools/list: the ten tools (SPEC's nine and Phase 6's add_research_note), each with input and output schemas" ||
   fail "tools/list: $status $tools"
 
 out="$(tool list_projects '{}')"

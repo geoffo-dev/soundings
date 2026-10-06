@@ -75,6 +75,19 @@ jobs:
       - uses: actions/checkout@v4
       - run: scripts/check-task.sh helm scripts
 
+  # The fake kagent agent (dev/fake-agent): ruff, mypy --strict, pytest, including a2a-sdk
+  # 0.3.23's own client (kagent-adk 0.10.2's A2A library) against it, and its image.
+  fake-agent:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "uv==0.8.17"
+      - run: make -C dev/fake-agent install check
+      - run: make fake-agent-image
+
   # The generated API contract must match the backend: `make gen-api` leaves no diff.
   contract:
     runs-on: ubuntu-24.04
@@ -109,11 +122,13 @@ jobs:
           if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
           else echo "No e2e/ yet: nothing to run."; fi
       # Builds the image and runs Postgres + the app (dev login, demo data, the
-      # break-glass admin as in the local e2e stack) on :8000, the worker, and Mailpit
-      # (inbox and API on :8026, container soundings-demo-mailpit).
+      # break-glass admin as in the local e2e stack) on :8000, the worker, Mailpit
+      # (inbox and API on :8026, container soundings-demo-mailpit) and, for AI assistance,
+      # the fake kagent agent (:8027) with "Idea evaluator" registered.
       - if: steps.e2e.outputs.present == 'true'
         run: make demo
         env:
+          DEMO_AI: "1"
           DEMO_BREAK_GLASS_PASSWORD: e2e-break-glass-password
           # Every spec sends the public form from this runner (as in the local stack).
           DEMO_PUBLIC_PER_IP: "1000"
@@ -136,14 +151,25 @@ jobs:
           E2E_MAILPIT_URL: http://localhost:8026
           # The SMTP-outage specs stop and start it (e2e/scripts/mailpit.ts).
           E2E_MAILPIT_CONTAINER: soundings-demo-mailpit
+          # The AI specs hand keys to the fake agent and read what it saw.
+          E2E_FAKE_AGENT_URL: http://127.0.0.1:8027
+          E2E_FAKE_AGENT_KEYS_DIR: dev/.fake-agent-keys
       # The MCP server against the same image (after the specs: it adds and deletes a test
       # idea): a key, the tools, blind evaluation, the key's project, revoke -> 401.
       - if: steps.e2e.outputs.present == 'true'
         run: scripts/mcp-smoke.sh http://localhost:8000
+      # AI assistance against the same image: an agent, "Ask AI to evaluate" (badged, cited,
+      # out of the aggregate), research, a draft, a cancel, the key outside its runs.
+      - if: steps.e2e.outputs.present == 'true'
+        run: scripts/ai-smoke.sh http://localhost:8000
+        env:
+          AI_FAKE_KEYS_DIR: dev/.fake-agent-keys
+          AI_FAKE_URL: http://127.0.0.1:8027
       - if: failure() && steps.e2e.outputs.present == 'true'
         run: |
           docker logs soundings-demo-app
           docker logs soundings-demo-worker
+          docker logs soundings-demo-fake-agent || true
       - if: always() && steps.e2e.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -196,6 +222,63 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-sso
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+
+  # AI assistance (Phase 6) against the working tree: e2e/scripts/start-stack.sh with
+  # E2E_AI=1 runs the fake kagent agent (dev/fake-agent) as the API's kagent controller and
+  # registers "Idea evaluator" through the API; the specs tagged @ai (QA), then
+  # scripts/ai-smoke.sh (the SPEC Phase 6 acceptance through the API, the worker, A2A and
+  # /mcp) against the same stack.
+  e2e-ai:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - id: e2e
+        run: |
+          if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "No e2e/ yet: nothing to run."; fi
+      - if: steps.e2e.outputs.present == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: steps.e2e.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: steps.e2e.outputs.present == 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PDF_APT_PACKAGES
+          pip install "uv==0.8.17"
+          uv sync --locked --project backend
+          uv sync --locked --project dev/fake-agent
+          npm --prefix frontend ci
+          npm --prefix e2e ci
+          npx --prefix e2e playwright install --with-deps chromium
+      - if: steps.e2e.outputs.present == 'true'
+        run: npm --prefix e2e run test -- --grep @ai --pass-with-no-tests
+        env:
+          E2E_AI: "1"
+          E2E_PREFIX: ci-
+          E2E_KEEP_STACK: "1"
+      - if: steps.e2e.outputs.present == 'true'
+        run: scripts/ai-smoke.sh http://localhost:8100
+        env:
+          AI_FAKE_KEYS_DIR: e2e/.stack/fake-agent-keys
+          AI_FAKE_URL: http://127.0.0.1:8183
+      - if: failure() && steps.e2e.outputs.present == 'true'
+        run: |
+          tail -n 100 e2e/.stack/api.log
+          tail -n 100 e2e/.stack/worker.log
+          tail -n 100 e2e/.stack/fake-agent.log
+      - if: always() && steps.e2e.outputs.present == 'true'
+        run: E2E_AI=1 E2E_PREFIX=ci- e2e/scripts/stop-stack.sh
+      - if: always() && steps.e2e.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-ai
           path: |
             e2e/playwright-report
             e2e/test-results

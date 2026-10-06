@@ -63,3 +63,36 @@ describe('Markdown links', () => {
     expect(screen.getByRole('heading', { level: 6, name: 'Five' })).toHaveClass('font-semibold')
   })
 })
+
+describe('Markdown for agent text (untrusted)', () => {
+  it('keeps http and https links only, each with its host, opening safely', () => {
+    render(
+      <Markdown untrusted>
+        {
+          '[source](https://example.org/a) [mail](mailto:a@example.org) [js](javascript:alert(1)) [rel](/ideas/CUST-1) [look](https://xn--mnchen-3ya.example/x)'
+        }
+      </Markdown>,
+    )
+    const link = screen.getByRole('link', { name: 'source' })
+    expect(link).toHaveAttribute('href', 'https://example.org/a')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer nofollow')
+    expect(screen.getByText('(example.org)')).toBeInTheDocument()
+    expect(screen.getByText('(xn--mnchen-3ya.example)')).toBeInTheDocument()
+    for (const name of ['mail', 'js', 'rel']) {
+      expect(screen.queryByRole('link', { name })).toBeNull()
+      expect(screen.getByText(name)).toBeInTheDocument()
+    }
+  })
+
+  it('never turns mention tokens or raw HTML into anything', () => {
+    const { container } = render(
+      <Markdown untrusted>
+        {'Ask @[Alice](user:10000000-0000-4000-8000-000000000002) <b>now</b>'}
+      </Markdown>,
+    )
+    expect(container.querySelector('[data-mention]')).toBeNull()
+    expect(container.querySelector('b')).toBeNull()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+})

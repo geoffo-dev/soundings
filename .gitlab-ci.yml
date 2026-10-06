@@ -151,6 +151,23 @@ contract:types:
         exit 1
       }
 
+# The fake kagent agent (dev/fake-agent, dev and CI only): ruff, mypy --strict, pytest,
+# including a2a-sdk 0.3.23's own client (kagent-adk 0.10.2's A2A library) against it.
+fake-agent:test:
+  stage: test
+  image: ${PYTHON_IMAGE}
+  cache:
+    key:
+      files: [dev/fake-agent/uv.lock]
+      prefix: fake-agent
+    paths: [.cache/uv, .cache/pip]
+  before_script:
+    - *ca-bundle
+    - pip install "uv==${UV_VERSION}"
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends make >/dev/null
+  script:
+    - make -C dev/fake-agent install check
+
 helm:lint:
   stage: lint
   image:
@@ -505,7 +522,9 @@ e2e:sso:
 # sign-on through the ingress against Keycloak in the cluster, email to Mailpit in
 # the cluster with egress NetworkPolicies (an invited evaluator's email; an SMTP outage
 # while Mailpit is scaled to 0, then delivery once it is back), and the MCP server
-# through the ingress and from another namespace (API keys, tools, revoke).
+# through the ingress and from another namespace (API keys, tools, revoke), and AI
+# assistance against Soundings' fake kagent agent in kagent's place with kagent v0.10.2's
+# CRDs (the example agents validated and created; an AI evaluation end to end).
 k3s:install-upgrade:
   extends: .dind
   stage: deploy-test
@@ -522,10 +541,17 @@ k3s:install-upgrade:
     - export K3S_EXTRA_CA="${CI_BUILD_CA:-}"
     # docker:cli is Alpine without bash/curl; use an image that has them when offline.
     - command -v bash >/dev/null && command -v curl >/dev/null && command -v jq >/dev/null ||
-      apk add --no-cache bash curl tar jq
+      apk add --no-cache bash curl tar jq git make
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     - docker pull "$IMAGE_REPOSITORY:$IMAGE_TAG"
     - docker tag "$IMAGE_REPOSITORY:$IMAGE_TAG" soundings:ci
+    # The fake kagent agent's image (dev/fake-agent), built here: tests only, never pushed.
+    - |
+      ca_flag=""
+      if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then ca_flag="--secret id=build_ca,src=$CI_BUILD_CA"; fi
+      docker build $ca_flag ${PIP_INDEX_URL:+--build-arg PIP_INDEX_URL=$PIP_INDEX_URL} \
+        ${UV_DEFAULT_INDEX:+--build-arg UV_DEFAULT_INDEX=$UV_DEFAULT_INDEX} \
+        --build-arg PYTHON_IMAGE="$PYTHON_IMAGE" -t soundings-fake-agent:ci dev/fake-agent
   script:
     - scripts/k3s-up.sh
     - scripts/k3s-load-image.sh soundings:ci
@@ -543,9 +569,14 @@ k3s:install-upgrade:
     # Email: Mailpit in the cluster, SMTP and egress policies on top of SSO. MCP: the API
     # admits only Traefik and kagent's namespace; a key through the ingress (acceptance,
     # revoke -> 401) and an MCP SDK client in a pod of namespace kagent (mcp-smoke.sh).
+    # AI: kagent v0.10.2's CRDs (git tag; the example manifests dry-run against them) and
+    # the fake kagent as kagent/kagent-controller:8083; the release with features.ai,
+    # egress policies and kagent.examples, then ai-smoke.sh through the ingress.
     - scripts/k3s-mailpit.sh
-    - SSO=1 SMTP=1 MCP=1 scripts/k3s-install.sh --set image.tag=ci
-    - SSO=1 SMTP=1 MCP=1 scripts/k3s-smoke.sh
+    - scripts/k3s-kagent-crds.sh install
+    - FAKE_AGENT_IMAGE=soundings-fake-agent:ci scripts/k3s-fake-agent.sh
+    - SSO=1 SMTP=1 MCP=1 AI=1 scripts/k3s-install.sh --set image.tag=ci
+    - SSO=1 SMTP=1 MCP=1 AI=1 scripts/k3s-smoke.sh
     - IMAGE_TAG=ci scripts/k3s-test-external-db.sh
   after_script:
     - scripts/k3s-down.sh || true

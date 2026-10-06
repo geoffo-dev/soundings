@@ -152,7 +152,7 @@ describe('admin API keys', () => {
   it('lists every key with its owner, filters and a total', async () => {
     await signIn(USERS.priya)
     const all = await api.GET('/api/v1/admin/api-keys')
-    expect(all.data?.total).toBe(7)
+    expect(all.data?.total).toBe(8) // Phase 6 adds Idea evaluator's key
     const agent = all.data?.items.find((key) => key.owner.id === PHASE5_USERS.agent)
     expect(agent).toMatchObject({ owner_is_service_account: true, created_by: { id: USERS.priya } })
     const dormant = await api.GET('/api/v1/admin/api-keys', {

@@ -14,11 +14,12 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Response, status
+from fastapi import APIRouter, Path, Request, Response, status
 
+from app.ai import agents
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
+from app.db import SessionDep
 from app.schemas.ai import (
     AiAgent,
     AiAgentCreate,
@@ -47,8 +48,10 @@ _ADMIN = "Platform admins (platform.manage_agents, session only). "
     ),
     responses=problems(401, 403),
 )
-async def list_ai_agents(principal: PrincipalDep) -> AiAgentList:
-    raise NotImplementedProblem
+async def list_ai_agents(
+    request: Request, principal: PrincipalDep, session: SessionDep
+) -> AiAgentList:
+    return await agents.list_agents(session, principal, request.app.state.settings)
 
 
 @router.post(
@@ -70,10 +73,14 @@ async def list_ai_agents(principal: PrincipalDep) -> AiAgentList:
     responses=problems(401, 403, 409, 422),
 )
 async def register_ai_agent(
-    principal: PrincipalDep, body: AiAgentCreate, response: Response
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    body: AiAgentCreate,
+    response: Response,
 ) -> CreatedAiAgent:
     response.headers["Cache-Control"] = "no-store"
-    raise NotImplementedProblem
+    return await agents.register_agent(session, principal, request.app.state.settings, body)
 
 
 @router.get(
@@ -83,8 +90,10 @@ async def register_ai_agent(
     description=_ADMIN + "One agent, as in the list.",
     responses=problems(401, 403, 404),
 )
-async def get_ai_agent(principal: PrincipalDep, agent_id: AgentId) -> AiAgent:
-    raise NotImplementedProblem
+async def get_ai_agent(
+    request: Request, principal: PrincipalDep, session: SessionDep, agent_id: AgentId
+) -> AiAgent:
+    return await agents.get_agent(session, principal, request.app.state.settings, agent_id)
 
 
 @router.patch(
@@ -104,9 +113,13 @@ async def get_ai_agent(principal: PrincipalDep, agent_id: AgentId) -> AiAgent:
     responses=problems(401, 403, 404, 422),
 )
 async def update_ai_agent(
-    principal: PrincipalDep, agent_id: AgentId, body: AiAgentUpdate
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    agent_id: AgentId,
+    body: AiAgentUpdate,
 ) -> AiAgent:
-    raise NotImplementedProblem
+    return await agents.update_agent(session, principal, request.app.state.settings, agent_id, body)
 
 
 @router.post(
@@ -124,10 +137,14 @@ async def update_ai_agent(
     responses=problems(401, 403, 404),
 )
 async def rotate_ai_agent_key(
-    principal: PrincipalDep, agent_id: AgentId, response: Response
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    agent_id: AgentId,
+    response: Response,
 ) -> RotatedAiAgentKey:
     response.headers["Cache-Control"] = "no-store"
-    raise NotImplementedProblem
+    return await agents.rotate_key(session, principal, request.app.state.settings, agent_id)
 
 
 @router.post(
@@ -142,5 +159,15 @@ async def rotate_ai_agent_key(
     ),
     responses=problems(401, 403, 404, 429),
 )
-async def test_ai_agent(principal: PrincipalDep, agent_id: AgentId) -> AiAgentTest:
-    raise NotImplementedProblem
+async def test_ai_agent(
+    request: Request, principal: PrincipalDep, session: SessionDep, agent_id: AgentId
+) -> AiAgentTest:
+    app = request.app
+    return await agents.probe_agent(
+        session,
+        principal,
+        app.state.settings,
+        agent_id,
+        app=app,
+        transport=getattr(app.state, "ai_transport", None),
+    )

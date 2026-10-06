@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { useIdeaAiRuns } from '@/api/ai'
 import { describeError } from '@/api/errors'
 import {
   useRemoveEvaluator,
@@ -30,7 +31,8 @@ import {
   useVolunteerAsOwner,
 } from '@/api/ideas'
 import { useProjectTags } from '@/api/projects'
-import type { IdeaEvaluator } from '@/api/types'
+import type { AiRun, IdeaEvaluator } from '@/api/types'
+import { AiBadge } from '@/components/ui/ai-badge'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,9 +45,11 @@ import {
 import { Field } from '@/components/ui/field'
 import { ProgressTicks } from '@/components/ui/progress-ticks'
 import { RelativeTime } from '@/components/ui/relative-time'
+import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TagInput } from '@/components/ui/tag-input'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { AskAiToEvaluateButton, showRun, submittedEvaluatorIds } from '@/features/ai/idea-ai'
 import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
 import { SHORTCUTS } from '@/lib/shortcuts'
@@ -203,7 +207,16 @@ function OwnerField() {
 }
 
 function EvaluatorsSection() {
-  const { idea, ideaKey, me, openDialog } = useIdeaPage()
+  const { idea, ideaKey, me, openDialog, setTab } = useIdeaPage()
+  // Phase 6: an AI evaluator's row says while its run is working (no score data).
+  const aiRuns = useIdeaAiRuns(ideaKey).data?.items
+  const activeAiRun = (userId: string) =>
+    aiRuns?.find(
+      (run) =>
+        run.kind === 'evaluate' &&
+        run.agent.user_id === userId &&
+        (run.status === 'queued' || run.status === 'running'),
+    )
   const remove = useRemoveEvaluator(ideaKey)
   const setClosed = useSetEvaluationClosed(ideaKey)
   const { permissions } = idea
@@ -267,12 +280,24 @@ function EvaluatorsSection() {
                   isAgent={evaluator.is_ai}
                   size="sm"
                   decorative
+                  // Room for the avatar's "AI" corner badge.
+                  className={evaluator.is_ai ? 'mr-1' : undefined}
                 />
-                <span className="min-w-0 flex-1 truncate text-sm text-primary">
-                  {evaluator.user.display_name}
-                  {isMe && <span className="text-muted"> (you)</span>}
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <span className="min-w-0 truncate text-sm text-primary">
+                    {evaluator.user.display_name}
+                    {isMe && <span className="text-muted"> (you)</span>}
+                  </span>
+                  {evaluator.is_ai && <AiBadge />}
                 </span>
-                <EvaluatorState evaluator={evaluator} own={isMe} />
+                {evaluator.is_ai && activeAiRun(evaluator.user.id) ? (
+                  <AiRunState
+                    run={activeAiRun(evaluator.user.id)}
+                    onShow={(runId) => showRun(runId, setTab)}
+                  />
+                ) : (
+                  <EvaluatorState evaluator={evaluator} own={isMe} />
+                )}
                 {removable && (
                   <WithTooltip content="Remove evaluator">
                     <Button
@@ -309,6 +334,11 @@ function EvaluatorsSection() {
           Invite evaluators
         </Button>
       )}
+      <AskAiToEvaluateButton
+        ideaKey={ideaKey}
+        setTab={setTab}
+        submittedIds={submittedEvaluatorIds(idea.evaluators)}
+      />
 
       {(total > 0 || idea.evaluation_due_at) && (
         <dl className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-3 text-sm">
@@ -372,6 +402,26 @@ const STATE = {
   draft: { Icon: CircleDashed, className: 'text-warning', label: 'Draft saved (only you see it)' },
   invited: { Icon: Circle, className: 'text-control', label: 'Not submitted yet' },
 } as const
+
+/** An AI evaluator whose run is on: a spinner that takes you to the run's card. */
+function AiRunState({ run, onShow }: { run: AiRun | undefined; onShow: (runId: string) => void }) {
+  if (!run) return null
+  const label = run.status === 'queued' ? 'AI run waiting to start' : 'AI run in progress'
+  return (
+    <WithTooltip content={`${label}: view progress`}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="-mr-1 text-accent"
+        data-ai-run-state={run.id}
+        aria-label={`${label}. View progress`}
+        onClick={() => onShow(run.id)}
+      >
+        <Spinner className="size-3.5" />
+      </Button>
+    </WithTooltip>
+  )
+}
 
 /** A tick per evaluator: submitted ✓, your own draft, or not yet — icon plus accessible text. */
 function EvaluatorState({ evaluator, own }: { evaluator: IdeaEvaluator; own: boolean }) {

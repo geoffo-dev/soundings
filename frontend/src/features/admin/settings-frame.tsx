@@ -17,6 +17,7 @@ export const SETTINGS_PAGES = [
   { to: '/settings/email', label: 'Email', admin: true },
   { to: '/settings/branding', label: 'Branding', admin: true },
   { to: '/settings/all-api-keys', label: 'All API keys', short: 'All keys', admin: true },
+  { to: '/settings/ai-agents', label: 'AI agents', short: 'AI', admin: true },
   { to: '/settings/audit', label: 'Audit log', admin: true },
 ] as const
 
@@ -25,7 +26,7 @@ export const SETTINGS_PAGES = [
  * page with a row of sections, like project settings. Everyone has Account
  * (profile, appearance, projects they manage), Notifications (email
  * preferences) and API keys (theirs); platform admins also get Users, Groups,
- * Sign-in (SSO), Email, Branding, All API keys and the Audit log, after a
+ * Sign-in (SSO), Email, Branding, All API keys, AI agents and the Audit log, after a
  * divider. Anyone else never sees the admin sections (and their URLs are a 404).
  */
 export function SettingsFrame({ children }: { children: ReactNode }) {

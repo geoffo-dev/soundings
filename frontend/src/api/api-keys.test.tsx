@@ -141,9 +141,9 @@ describe('admin keys', () => {
       () => ({ list: useAdminApiKeys(), revoke: useRevokeAdminApiKey() }),
       { wrapper },
     )
-    await waitFor(() => expect(result.current.list.data?.pages[0]?.total).toBe(7))
+    await waitFor(() => expect(result.current.list.data?.pages[0]?.total).toBe(8))
     act(() => result.current.revoke.mutate(API_KEYS.agent))
-    await waitFor(() => expect(result.current.list.data?.pages[0]?.total).toBe(6))
+    await waitFor(() => expect(result.current.list.data?.pages[0]?.total).toBe(7))
     expect(
       result.current.list.data?.pages.flatMap((page) => page.items).map((key) => key.id),
     ).not.toContain(API_KEYS.agent)

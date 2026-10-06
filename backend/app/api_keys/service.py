@@ -55,11 +55,13 @@ __all__ = [
     "InvalidProjectProblem",
     "TooManyApiKeysProblem",
     "create_my_key",
+    "describe_key",
     "issue_key",
     "list_admin_keys",
     "list_my_keys",
     "revoke_admin_key",
     "revoke_all_for_user",
+    "revoke_key",
     "revoke_my_key",
 ]
 
@@ -151,6 +153,23 @@ def _fields(
     }
 
 
+async def describe_key(db: AsyncSession, key: ApiKey, owner: User) -> schemas.ApiKey:
+    """``key`` as the API shows it (never the secret), for code that lists one key next
+    to something else (Phase 6: an agent's key in Admin settings -> AI agents)."""
+    projects = await _project_refs(db, key.project_ids or ())
+    viewable = await _viewable(db, owner, projects)
+    return schemas.ApiKey(**_fields(key, owner, projects, viewable, utcnow()))
+
+
+async def revoke_key(
+    db: AsyncSession, key: ApiKey, *, actor: Principal, rule: Rule, reason: str | None = None
+) -> None:
+    """Revoke ``key`` (locked by the caller) if it isn't revoked yet, audited
+    ``api_key.revoke`` with ``rule`` (Phase 6: disabling or rotating an agent's key)."""
+    if key.revoked_at is None:
+        await _revoke(db, key, actor=actor, rule=rule, reason=reason)
+
+
 def _user_ref(user: User) -> UserRef:
     return UserRef(id=user.id, display_name=user.display_name, avatar_url=user.avatar_url)
 
@@ -216,10 +235,15 @@ async def issue_key(
     creator: Principal,
     created_auth_method: AuthMethod,
     body: ApiKeyCreate,
+    rule: Rule = Rule.API_KEY_MANAGE_OWN,
+    check_projects: bool = True,
 ) -> tuple[ApiKey, str]:
     """Create a key for ``owner`` and return it with the full key string (show it once,
-    never store or log it). The caller has authorised ``creator`` (``api_key.manage_own``
-    for their own key; Phase 6: ``platform.manage_agents`` for an agent's).
+    never store or log it). The caller has authorised ``creator`` by ``rule``
+    (``api_key.manage_own`` for their own key; Phase 6: ``platform.manage_agents`` for an
+    agent's), which the audit entry names. ``check_projects=False``: the caller has
+    checked the restriction itself (an agent's key is restricted to the projects the agent
+    serves, whatever role its service account has there now: c10 decides per project).
 
     Every restricted project must be one the **owner** can view now (else 422
     ``invalid_project``, without saying which). Under a ``FOR NO KEY UPDATE`` lock on
@@ -227,7 +251,7 @@ async def issue_key(
     must still be active (401 otherwise: nothing is created), hold fewer than 25 keys
     that aren't revoked (409 ``too_many_api_keys``) and no such key of the same name in
     any case (409 ``api_key_name_taken``)."""
-    if body.project_ids is not None:
+    if body.project_ids is not None and check_projects:
         wanted = set(body.project_ids)
         viewable = set(
             await db.scalars(
@@ -285,7 +309,7 @@ async def issue_key(
         target_type="user",
         target_id=owner.id,
         details={
-            "rule": Rule.API_KEY_MANAGE_OWN,
+            "rule": rule,
             "key_id": row.id,
             "prefix": key_prefix(row.lookup_id),
             "scopes": list(row.scopes),

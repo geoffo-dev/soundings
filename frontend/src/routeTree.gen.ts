@@ -30,6 +30,7 @@ import { Route as AppSettingsNotificationsRouteImport } from './routes/_app/sett
 import { Route as AppPSlugIndexRouteImport } from './routes/_app/p.$slug.index'
 import { Route as AppPSlugReviewRouteImport } from './routes/_app/p.$slug.review'
 import { Route as AppPSlugSettingsRouteImport } from './routes/_app/p.$slug.settings'
+import { Route as AppSettingsAdminAiAgentsRouteImport } from './routes/_app/settings._admin.ai-agents'
 import { Route as AppSettingsAdminAllApiKeysRouteImport } from './routes/_app/settings._admin.all-api-keys'
 import { Route as AppSettingsAdminAuditRouteImport } from './routes/_app/settings._admin.audit'
 import { Route as AppSettingsAdminBrandingRouteImport } from './routes/_app/settings._admin.branding'
@@ -144,6 +145,12 @@ const AppPSlugSettingsRoute = AppPSlugSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppPSlugRoute,
 } as any)
+const AppSettingsAdminAiAgentsRoute =
+  AppSettingsAdminAiAgentsRouteImport.update({
+    id: '/ai-agents',
+    path: '/ai-agents',
+    getParentRoute: () => AppSettingsAdminRoute,
+  } as any)
 const AppSettingsAdminAllApiKeysRoute =
   AppSettingsAdminAllApiKeysRouteImport.update({
     id: '/all-api-keys',
@@ -214,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AppSettingsIndexRoute
   '/p/$slug/review': typeof AppPSlugReviewRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/settings/ai-agents': typeof AppSettingsAdminAiAgentsRoute
   '/settings/all-api-keys': typeof AppSettingsAdminAllApiKeysRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
   '/settings/branding': typeof AppSettingsAdminBrandingRoute
@@ -242,6 +250,7 @@ export interface FileRoutesByTo {
   '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/p/$slug/review': typeof AppPSlugReviewRoute
   '/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/settings/ai-agents': typeof AppSettingsAdminAiAgentsRoute
   '/settings/all-api-keys': typeof AppSettingsAdminAllApiKeysRoute
   '/settings/audit': typeof AppSettingsAdminAuditRoute
   '/settings/branding': typeof AppSettingsAdminBrandingRoute
@@ -275,6 +284,7 @@ export interface FileRoutesById {
   '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/p/$slug/review': typeof AppPSlugReviewRoute
   '/_app/p/$slug/settings': typeof AppPSlugSettingsRoute
+  '/_app/settings/_admin/ai-agents': typeof AppSettingsAdminAiAgentsRoute
   '/_app/settings/_admin/all-api-keys': typeof AppSettingsAdminAllApiKeysRoute
   '/_app/settings/_admin/audit': typeof AppSettingsAdminAuditRoute
   '/_app/settings/_admin/branding': typeof AppSettingsAdminBrandingRoute
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/p/$slug/review'
     | '/p/$slug/settings'
+    | '/settings/ai-agents'
     | '/settings/all-api-keys'
     | '/settings/audit'
     | '/settings/branding'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/p/$slug/review'
     | '/p/$slug/settings'
+    | '/settings/ai-agents'
     | '/settings/all-api-keys'
     | '/settings/audit'
     | '/settings/branding'
@@ -367,6 +379,7 @@ export interface FileRouteTypes {
     | '/_app/settings/'
     | '/_app/p/$slug/review'
     | '/_app/p/$slug/settings'
+    | '/_app/settings/_admin/ai-agents'
     | '/_app/settings/_admin/all-api-keys'
     | '/_app/settings/_admin/audit'
     | '/_app/settings/_admin/branding'
@@ -539,6 +552,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPSlugSettingsRouteImport
       parentRoute: typeof AppPSlugRoute
     }
+    '/_app/settings/_admin/ai-agents': {
+      id: '/_app/settings/_admin/ai-agents'
+      path: '/ai-agents'
+      fullPath: '/settings/ai-agents'
+      preLoaderRoute: typeof AppSettingsAdminAiAgentsRouteImport
+      parentRoute: typeof AppSettingsAdminRoute
+    }
     '/_app/settings/_admin/all-api-keys': {
       id: '/_app/settings/_admin/all-api-keys'
       path: '/all-api-keys'
@@ -619,6 +639,7 @@ const AppSettingsAdminUsersRouteWithChildren =
   )
 
 interface AppSettingsAdminRouteChildren {
+  AppSettingsAdminAiAgentsRoute: typeof AppSettingsAdminAiAgentsRoute
   AppSettingsAdminAllApiKeysRoute: typeof AppSettingsAdminAllApiKeysRoute
   AppSettingsAdminAuditRoute: typeof AppSettingsAdminAuditRoute
   AppSettingsAdminBrandingRoute: typeof AppSettingsAdminBrandingRoute
@@ -630,6 +651,7 @@ interface AppSettingsAdminRouteChildren {
 }
 
 const AppSettingsAdminRouteChildren: AppSettingsAdminRouteChildren = {
+  AppSettingsAdminAiAgentsRoute: AppSettingsAdminAiAgentsRoute,
   AppSettingsAdminAllApiKeysRoute: AppSettingsAdminAllApiKeysRoute,
   AppSettingsAdminAuditRoute: AppSettingsAdminAuditRoute,
   AppSettingsAdminBrandingRoute: AppSettingsAdminBrandingRoute,

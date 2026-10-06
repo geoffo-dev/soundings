@@ -99,7 +99,9 @@ test('KB-09: the owner picker: type a name, press Enter', async ({ page, api }) 
   await page.keyboard.press('Enter')
   await expect(dialog).toBeHidden()
   await expect(details(page).getByRole('button', { name: /^Owner: Kenji Watanabe/ })).toBeVisible()
-  expect((await alice.idea(idea.key)).owner?.display_name).toBe(PEOPLE.kenji)
+  // The sidebar shows the new owner as soon as it is picked (optimistic); the save lands
+  // a moment later, which a loaded machine stretches.
+  await expect.poll(async () => (await alice.idea(idea.key)).owner?.display_name).toBe(PEOPLE.kenji)
 })
 
 test('KB-10: Invite: type, Enter picks, ⌘/Ctrl+Enter invites', async ({ page, api }) => {

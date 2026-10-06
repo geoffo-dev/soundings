@@ -6,7 +6,8 @@ import { expect, seriousViolations, test } from './support'
  * Project settings → Members with groups (contract-phase2 §3.7): people with a
  * direct role, groups with a role, and everyone with access and why. Alice is
  * the only direct admin of Internal Tools; the group "Tools members" (6 people,
- * Kofi Boateng and Lena Novak only through it) has the member role there.
+ * Kofi Boateng and Lena Novak only through it) has the member role there; the
+ * disabled AI agent Market scout is a viewer (Phase 6).
  */
 
 const toast = (page: Page, text: string | RegExp) =>
@@ -42,7 +43,7 @@ test('shows who has access and why', async ({ page }) => {
   await expect(access(page)).toHaveCount(0)
   await showAccess(page)
   await expect(groupRow(page, 'Tools members')).toContainText('Group · 6 people')
-  await expect(page.getByText('7 people, each with the highest of their roles')).toBeVisible()
+  await expect(page.getByText('8 people, each with the highest of their roles')).toBeVisible()
   await expect(accessRow(page, 'Kofi Boateng')).toContainText('Member')
   await expect(accessRow(page, 'Kofi Boateng')).toContainText('via Tools members')
   await expect(accessRow(page, 'Alice Anders')).toContainText('Direct · via Tools members (member)')

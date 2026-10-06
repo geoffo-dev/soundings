@@ -41,6 +41,8 @@ import type {
 } from './proposals'
 import type { MockPublicForm, MockPublicSubmission } from './public'
 import type { MockSuggestion } from './suggestions'
+import type { MockAiAgent, MockAiRun, MockAiRunEvent, MockAiSettings, MockCitation } from './ai'
+import { seedPhase6 } from './phase6-fixtures'
 
 export interface MockUser {
   id: string
@@ -185,6 +187,8 @@ export interface MockScore {
   criterion_id: string
   score: number | null
   comment: string
+  /** Phase 6: an AI evaluator's cited sources (people never cite). */
+  sources?: MockCitation[]
 }
 
 export interface MockEvaluation {
@@ -223,6 +227,8 @@ export type MockEventType =
   | 'evaluation_reopened'
   | 'due_date_changed'
   | 'comment'
+  /** Phase 6: an AI research note (payload: run_id, agent_id, body_md, sources, deleted). */
+  | 'ai_research_note'
 
 export interface MockEvent {
   id: string
@@ -333,6 +339,17 @@ export interface MockDb {
   /* Phase 5 (contract-phase5; records in api-keys.ts, suggestions.ts) */
   apiKeys: MockApiKey[]
   proposalSuggestions: MockSuggestion[]
+  /* Phase 6 (contract-phase6; records in ai.ts) */
+  aiSettings: MockAiSettings
+  aiAgents: MockAiAgent[]
+  aiRuns: MockAiRun[]
+  aiRunEvents: MockAiRunEvent[]
+  /** Run requests (ms) per user id, for the 20-an-hour limit. */
+  aiRequests: Record<string, number[]>
+  /** Test connections (ms) per admin, for the 10-a-minute limit. */
+  aiTests: Record<string, number[]>
+  /** Open event streams per user id (5 at most). */
+  aiStreams: Record<string, number>
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -346,6 +363,8 @@ export interface DbOptions {
   email?: 'default' | 'off' | 'failing'
   /** Phase 4: `off` = the instance switch for public submission is off. */
   publicSubmission?: 'default' | 'off'
+  /** Phase 6: `off` = `features.ai` is off (runs can't start). */
+  ai?: 'default' | 'off'
 }
 
 /* ------------------------------------------------------------------ */
@@ -375,6 +394,7 @@ export const ID_KIND = {
   phase4: 'e',
   /** Phase 5: API keys, proposal suggestions, the agent and other Phase 5 people. */
   phase5: 'f',
+  /** Phase 6 fixtures use `f` too, numbered from 0x300 (phase6-fixtures.ts). */
 } as const
 
 const HOUR = 3_600_000
@@ -1175,6 +1195,7 @@ export function createDb({
   dataset = 'default',
   email = 'default',
   publicSubmission = 'default',
+  ai = 'default',
 }: DbOptions = {}): MockDb {
   const rand = prng(20260930)
   const iso = (ms: number) => new Date(ms).toISOString()
@@ -1232,6 +1253,22 @@ export function createDb({
     brandAssets: [],
     apiKeys: [],
     proposalSuggestions: [],
+    aiSettings: {
+      enabled: ai !== 'off',
+      kagent_url: 'http://kagent-controller.kagent:8083',
+      kagent_token_set: false,
+      default_protocol: 'kagent_v0_10',
+      run_timeout_seconds: 300,
+      max_concurrent_runs: 4,
+      agent_namespaces: ['soundings', 'kagent-agents'],
+      mcp_url: 'http://soundings.soundings.svc.cluster.local:8000/mcp',
+    },
+    aiAgents: [],
+    aiRuns: [],
+    aiRunEvents: [],
+    aiRequests: {},
+    aiTests: {},
+    aiStreams: {},
     seq: 1_000_000,
   }
 
@@ -1519,6 +1556,7 @@ export function createDb({
   seedNotifications(db, { users: USERS, nextId })
   seedPhase4(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase5(db, { users: USERS, projects: PROJECTS, nextId })
+  seedPhase6(db, { users: USERS, projects: PROJECTS, nextId })
   return db
 }
 
@@ -1533,6 +1571,7 @@ export function getDb(): MockDb {
     dataset: readDatasetPreference(),
     email: readEmailPreference(),
     publicSubmission: readPublicPreference(),
+    ai: readAiPreference(),
   })
   return current
 }
@@ -1575,6 +1614,20 @@ function readPublicPreference(): 'default' | 'off' {
   try {
     return typeof localStorage !== 'undefined' &&
       localStorage.getItem(MOCK_PUBLIC_STORAGE_KEY) === 'off'
+      ? 'off'
+      : 'default'
+  } catch {
+    return 'default'
+  }
+}
+
+/** `localStorage['soundings-mock-ai']`: `off` turns AI assistance off for the instance. */
+export const MOCK_AI_STORAGE_KEY = 'soundings-mock-ai'
+
+function readAiPreference(): 'default' | 'off' {
+  try {
+    return typeof localStorage !== 'undefined' &&
+      localStorage.getItem(MOCK_AI_STORAGE_KEY) === 'off'
       ? 'off'
       : 'default'
   } catch {

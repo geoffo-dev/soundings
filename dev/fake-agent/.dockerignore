@@ -1,0 +1,6 @@
+**
+!pyproject.toml
+!uv.lock
+!README.md
+!fake_agent/
+**/__pycache__/

@@ -467,8 +467,64 @@ users: [mcp.md](mcp.md).
 
 ## AI assistance [Phase 6]
 
+When your platform admin has registered AI agents (kagent) for a project, an idea's owner
+and the admins can ask one for help. Agents can do three things: **evaluate** an idea
+against the rubric, **research** it, and **draft** a proposal section. Whatever an agent
+writes carries an **AI** badge, and it is shown as text from outside Soundings: links
+only to web pages, opened in a new tab, and every source it cites is labelled **"Cited by
+AI, not checked"** (it may have invented it). Check the facts before you rely on them.
+
+An agent works only on the idea you asked about, and only while its run lasts: once the
+run ends (done, cancelled or out of time) it can't read or change anything. It never sees
+anyone else's scores or evaluation comments, not even after it has submitted its own.
+
 ### "Ask AI to evaluate" and the AI badge
+
+On an idea you own (or as an admin), open the **AI** menu next to the main action, or use
+**Ask AI to evaluate** under the evaluators (also in ⌘K). The agent joins the evaluators
+with an AI badge, and a run card appears on the Overview tab under **AI runs**: its steps
+as they happen ("Read the rubric", "Read the idea", "Saved its evaluation"), how long it
+has taken and when it will be stopped, and **Cancel**. Everyone who can see the idea can
+watch the card, but it never shows scores, so pending evaluators stay blind. The card
+updates live and falls back to refreshing on its own if live updates aren't available.
+
+When it is done, **View the evaluation** opens the agent's card on the Evaluations tab:
+a score per criterion, each with its **rationale** and the **sources** it cited, its
+recommendation and a summary. A run that fails, times out or is cancelled says why in
+plain words and offers **Try again**; if it ended without an evaluation, the agent is
+taken off the evaluators again (the activity feed says so). Asking again while a run is
+working just shows that run. Once the agent has submitted, the button reads **Ask AI to
+evaluate again**: a new evaluation replaces its old one. Each person can ask for 20 runs
+an hour.
+
+**"Not in score": what excluded means.** An AI evaluation is **left out of the score** by
+default: the aggregate, the number of evaluations, the per-criterion means, the
+disagreement flag and the board's ranking count people only. The agent's scores still
+show in the comparison table and on its card, marked "not in score", so you can read and
+compare them. If you find its evaluation sound, switch **Include in score** on its card
+(owner and admins): the aggregate then counts it like a person's, and you can switch it
+off again at any time (Undo is offered). If the agent re-evaluates and changes any score
+or its recommendation, it is left out again until someone includes it again.
+
 ### "Research this" and "Draft section"
+
+**Research this** (the AI menu or ⌘K) asks an agent for a short research note: what it
+found about the idea, open questions and numbered sources. The note appears in the
+activity feed with the AI badge, in a box of its own, readable by everyone who can see
+the idea. The owner and admins can **Delete** it (after confirming; there is no undo):
+the feed then shows that a research note was deleted.
+
+In the proposal editor, **Draft with AI** (on phones **Draft**) on a section asks an agent
+to suggest text for that section. While it works, the section shows its progress with
+Cancel; when it is done, its text arrives as a **suggestion** under the section, with the
+AI badge and the changes highlighted, like any other suggestion (see
+[Suggestions](#suggestions-phase-5)): **Accept** puts it into the section, **Discard**
+drops it. Drafting works while the idea is Shortlisted or In proposal and its proposal
+has been started.
+
+When an AI action is greyed out, it says why: AI assistance is off, no agent serves this
+project, the idea or its evaluation is closed, the project is archived, the idea is
+waiting for moderation, or the proposal hasn't been started.
 
 ## For project admins [Phase 1–4]
 
@@ -702,6 +758,32 @@ key's start: pasting a whole leaked key works, and only its start is ever search
 Filter by state; a user's admin page links to their keys. **Revoke** stops a key at once.
 "Sign out everywhere" ends a person's sessions but not their keys; deactivating them
 revokes those too.
+
+### AI agents [Phase 6]
+
+**Settings → AI agents** (platform admins) registers kagent agents and shows the AI
+settings in effect (read-only, from the deployment: whether AI is on, the kagent
+controller's address, the run time limit, the default protocol and the MCP address agents
+use). **Register agent** asks for a name people will see ("Idea evaluator"), an optional
+description, the kagent Agent's **namespace** and **name** (as in Kubernetes), the
+protocol (kagent 0.10 or 1.0), **what it does** (evaluate, research, draft proposal
+sections) and **which projects** it serves. Under the fields, "Soundings will call …"
+shows the one address runs go to: it is built from the controller address in effect and
+the namespace and name, never typed.
+
+Registering creates the agent's account (it shows with an AI badge, never signs in, can't
+own ideas or be a project admin) and its **key**, shown **once** with the Kubernetes
+Secret to apply and the agent's MCP server entry: hand them to whoever runs kagent, then
+choose **I've copied it**. The key only works while one of the agent's runs is open, on
+that run's idea. **Test connection** fetches the agent's card through the controller and
+shows its name, skills and A2A versions, or why it didn't answer. **Change** edits the
+name, description, protocol, purposes and projects (taking a purpose or project away
+cancels its runs there; the key follows without a new Secret); **Rotate key** replaces the
+key (the old one stops at once: apply the new Secret); **Disable** revokes the key and
+cancels its runs (enabling it again needs a new key). Agents are never deleted, so their
+evaluations and notes keep their author. Each row shows the agent's runs in progress and
+when its key was last used; **Runs and changes in the audit log** opens the log filtered to
+AI. Project admins can remove an agent from their project (Members) and add it back.
 
 ### Audit log
 

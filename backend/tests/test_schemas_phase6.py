@@ -66,6 +66,7 @@ from app.schemas.mcp import (
     ADD_RESEARCH_NOTE,
     MCP_INSTRUCTIONS,
     MCP_TOOLS,
+    RESEARCH_NOTE_INSTRUCTION,
     UNTRUSTED,
     AddResearchNoteInput,
     McpCitation,
@@ -523,13 +524,15 @@ def test_score_entries_return_sources_marked_untrusted() -> None:
     assert all(UNTRUSTED in schema["properties"][name]["description"] for name in ("title", "url"))
 
 
-def test_the_research_note_tool_is_agreed_but_not_yet_listed() -> None:
-    """Backend appends it to MCP_TOOLS with its handler (contract-phase6 section 5)."""
+def test_the_research_note_tool_is_listed_last() -> None:
+    """Joined MCP_TOOLS with its handler at integration (contract-phase6 section 5)."""
     assert ADD_RESEARCH_NOTE.name == "add_research_note"
     assert (ADD_RESEARCH_NOTE.rule, ADD_RESEARCH_NOTE.scope) == ("comment.create", "write")
     assert not ADD_RESEARCH_NOTE.read_only
     assert ADD_RESEARCH_NOTE.idempotent
-    assert ADD_RESEARCH_NOTE.name not in {tool.name for tool in MCP_TOOLS}
+    assert MCP_TOOLS[-1] is ADD_RESEARCH_NOTE
+    assert len(MCP_TOOLS) == 10
+    assert RESEARCH_NOTE_INSTRUCTION in MCP_INSTRUCTIONS
 
     note = AddResearchNoteInput.model_validate({"idea": "cust-1", "body_md": "# Findings"})
     assert note.sources == []
@@ -544,8 +547,8 @@ def test_the_research_note_tool_is_agreed_but_not_yet_listed() -> None:
             AddResearchNoteInput.model_validate(bad)
 
 
-def test_the_research_note_item_joins_the_feed_at_integration() -> None:
+def test_the_research_note_item_is_in_the_feed() -> None:
     assert AI_RESEARCH_NOTE == "ai_research_note"
-    assert AI_RESEARCH_NOTE not in ACTIVITY_TYPES
+    assert AI_RESEARCH_NOTE in ACTIVITY_TYPES
     assert AiResearchNoteActivity.model_fields["type"].annotation is not None
-    assert "AiResearchNoteActivity" not in str(ActivityItem)
+    assert "AiResearchNoteActivity" in str(ActivityItem)

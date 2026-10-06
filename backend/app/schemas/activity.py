@@ -122,20 +122,19 @@ class DueDateChangedActivity(_ActivityBase):
 
 class AiResearchNoteActivity(_ActivityBase):
     """Phase 6: a research note an AI agent wrote for a "Research this" run (actor: the
-    agent's service account). **Agreed, not yet in** :data:`ActivityItem`: it joins the
-    union at integration, with the SPA's ``describeActivity`` case (contract-phase6
-    section 6). Stored as an ``activity_events`` row of type :data:`AI_RESEARCH_NOTE`
-    whose payload is ``{run_id, agent_id, body_md, sources: [{title, url}]}`` (a deleted
-    note keeps ``run_id`` and ``agent_id`` and gets ``deleted: true``, ``body_md: ""``,
-    ``sources: []``). Never holds score data."""
+    agent's service account; the SPA's ``describeActivity`` says "wrote a research note",
+    or "deleted a research note" once ``note.deleted``). Stored as an ``activity_events``
+    row of type :data:`AI_RESEARCH_NOTE` whose payload is ``{run_id, agent_id, body_md,
+    sources: [{title, url}]}`` (a deleted note keeps ``run_id`` and ``agent_id`` and gets
+    ``deleted: true``, ``body_md: ""``, ``sources: []``). Never holds score data
+    (contract-phase6 sections 3.8 and 5)."""
 
     type: Literal["ai_research_note"]
     note: ResearchNote
 
 
 AI_RESEARCH_NOTE = "ai_research_note"
-"""``activity_events.type`` of a research note (Phase 6; not in :data:`ACTIVITY_TYPES`
-until integration)."""
+"""``activity_events.type`` of a research note (Phase 6)."""
 
 
 ActivityItem = Annotated[
@@ -149,7 +148,8 @@ ActivityItem = Annotated[
     | EvaluationSubmittedActivity
     | EvaluationClosedActivity
     | EvaluationReopenedActivity
-    | DueDateChangedActivity,
+    | DueDateChangedActivity
+    | AiResearchNoteActivity,
     Field(discriminator="type"),
 ]
 """One feed entry; branch on ``type``."""
@@ -166,8 +166,9 @@ ACTIVITY_TYPES: tuple[str, ...] = (
     "evaluation_closed",
     "evaluation_reopened",
     "due_date_changed",
+    AI_RESEARCH_NOTE,
 )
-"""Every ``activity_events.type`` value in Phase 1."""
+"""Every ``activity_events.type`` value (Phase 1, plus Phase 6's research notes)."""
 
 
 class ActivityPage(Page[ActivityItem]):

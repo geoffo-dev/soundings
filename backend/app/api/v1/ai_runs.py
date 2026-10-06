@@ -1,6 +1,7 @@
 """AI runs on an idea: "Ask AI to evaluate", "Research this", "Draft section", their
 progress (live over SSE, or by polling), cancel; including an AI evaluation in the
-aggregate; deleting a research note (SPEC section 9; contract-phase6 sections 2 and 3).
+aggregate; deleting a research note (SPEC section 9; contract-phase6 sections 2 and 3;
+``ai.delete_note``: the owner and admins, the lead's decision on review item C4).
 
 Rules (role matrix section J): ``ai.request_evaluation`` (c6, c10), ``ai.research`` (c5,
 c10), ``ai.draft_section`` (c7, c10): the owner and project/platform admins;
@@ -13,16 +14,20 @@ no score data). ``evaluation.include_ai``: the owner and admins. Order of checks
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, status
 
+from app.ai import notes, runs, sse
+from app.ai.runs import _load_run
+from app.api.deps import not_activity
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.errors import NotImplementedProblem
-from app.models.enums import AiRunKind
+from app.db import SessionDep
+from app.models.enums import AiRunKind, AiRunStatus
 from app.schemas.ai import (
     AI_RUN_LIST_DEFAULT,
     AI_RUN_LIST_MAX,
@@ -35,6 +40,7 @@ from app.schemas.ai import (
     ResearchNote,
 )
 from app.schemas.evaluations import Evaluation
+from app.services import ideas
 
 router = APIRouter(prefix="/ideas/{idea}", tags=["ai"])
 
@@ -74,12 +80,36 @@ _REQUEST_ERRORS = (
     responses=problems(401, 404),
 )
 async def list_idea_ai_runs(
+    request: Request,
     principal: PrincipalDep,
+    session: SessionDep,
     idea: IdeaParam,
     kind: Annotated[AiRunKind | None, Query(description="Only runs of this kind.")] = None,
     limit: Annotated[int, Query(ge=1, le=AI_RUN_LIST_MAX)] = AI_RUN_LIST_DEFAULT,
 ) -> AiRunList:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await runs.list_runs(
+        session, principal, request.app.state.settings, loaded, kind=kind, limit=limit
+    )
+
+
+async def _request(
+    request: Request,
+    response: Response,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: str,
+    kind: AiRunKind,
+    agent_id: UUID,
+    section_key: Any = None,
+) -> AiRun:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    run, created = await runs.request_run(
+        session, principal, request.app.state.settings, loaded, kind, agent_id, section_key
+    )
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return run
 
 
 @router.post(
@@ -99,9 +129,16 @@ async def list_idea_ai_runs(
     responses={**_CREATED_OR_EXISTING, **problems(401, 403, 404, 409, 422, 429)},
 )
 async def request_ai_evaluation(
-    principal: PrincipalDep, idea: IdeaParam, body: AiRunRequest
+    request: Request,
+    response: Response,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: AiRunRequest,
 ) -> AiRun:
-    raise NotImplementedProblem
+    return await _request(
+        request, response, principal, session, idea, AiRunKind.EVALUATE, body.agent_id
+    )
 
 
 @router.post(
@@ -118,9 +155,16 @@ async def request_ai_evaluation(
     responses={**_CREATED_OR_EXISTING, **problems(401, 403, 404, 409, 422, 429)},
 )
 async def request_ai_research(
-    principal: PrincipalDep, idea: IdeaParam, body: AiRunRequest
+    request: Request,
+    response: Response,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: AiRunRequest,
 ) -> AiRun:
-    raise NotImplementedProblem
+    return await _request(
+        request, response, principal, session, idea, AiRunKind.RESEARCH, body.agent_id
+    )
 
 
 @router.post(
@@ -138,9 +182,23 @@ async def request_ai_research(
     responses={**_CREATED_OR_EXISTING, **problems(401, 403, 404, 409, 422, 429)},
 )
 async def request_ai_section_draft(
-    principal: PrincipalDep, idea: IdeaParam, body: AiSectionDraftRequest
+    request: Request,
+    response: Response,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: AiSectionDraftRequest,
 ) -> AiRun:
-    raise NotImplementedProblem
+    return await _request(
+        request,
+        response,
+        principal,
+        session,
+        idea,
+        AiRunKind.DRAFT_SECTION,
+        body.agent_id,
+        body.section_key,
+    )
 
 
 @router.get(
@@ -153,8 +211,11 @@ async def request_ai_section_draft(
     ),
     responses=problems(401, 404),
 )
-async def get_ai_run(principal: PrincipalDep, idea: IdeaParam, run_id: RunId) -> AiRunDetail:
-    raise NotImplementedProblem
+async def get_ai_run(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, run_id: RunId
+) -> AiRunDetail:
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await runs.get_run(session, principal, loaded, run_id)
 
 
 @router.post(
@@ -169,14 +230,19 @@ async def get_ai_run(principal: PrincipalDep, idea: IdeaParam, run_id: RunId) ->
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def cancel_ai_run(principal: PrincipalDep, idea: IdeaParam, run_id: RunId) -> AiRun:
-    raise NotImplementedProblem
+async def cancel_ai_run(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, run_id: RunId
+) -> AiRun:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await runs.cancel_run(session, principal, loaded, run_id)
 
 
 @router.get(
     "/ai-runs/{run_id}/events",
     operation_id="stream_ai_run_events",
     response_class=Response,
+    # Watching a run isn't activity: the stream doesn't keep the session alive.
+    dependencies=[Depends(not_activity)],
     summary="Live AI run progress (SSE)",
     description=(
         "idea.view: a text/event-stream of the run's events after Last-Event-ID (or "
@@ -205,7 +271,9 @@ async def cancel_ai_run(principal: PrincipalDep, idea: IdeaParam, run_id: RunId)
     },
 )
 async def stream_ai_run_events(
+    request: Request,
     principal: PrincipalDep,
+    session: SessionDep,
     idea: IdeaParam,
     run_id: RunId,
     last_event_id: Annotated[
@@ -222,7 +290,19 @@ async def stream_ai_run_events(
         Query(ge=0, le=1_000_000, description="Replay events after this seq (header wins)."),
     ] = None,
 ) -> Response:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    run = await _load_run(session, loaded, run_id)
+    cursor = last_event_id if last_event_id is not None else (after or 0)
+    if run.status not in (AiRunStatus.QUEUED, AiRunStatus.RUNNING) and cursor >= run.event_count:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    app = request.app
+    hub = sse.get_hub(app)
+    hub.open_stream(principal.user_id)
+    recheck = partial(sse.still_allowed, app, request, principal, loaded.idea.id, run.id)
+    return sse.EventStreamResponse(
+        sse.event_stream(hub, app.state.sessionmaker, run.id, cursor, recheck),
+        on_close=partial(hub.close_stream, principal.user_id),
+    )
 
 
 @router.put(
@@ -241,11 +321,13 @@ async def stream_ai_run_events(
 )
 async def set_evaluation_inclusion(
     principal: PrincipalDep,
+    session: SessionDep,
     idea: IdeaParam,
     evaluation_id: EvaluationId,
     body: EvaluationInclusionUpdate,
 ) -> Evaluation:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await runs.set_inclusion(session, principal, loaded, evaluation_id, body.include)
 
 
 @router.get(
@@ -261,9 +343,10 @@ async def set_evaluation_inclusion(
     responses=problems(401, 404),
 )
 async def get_research_note(
-    principal: PrincipalDep, idea: IdeaParam, note_id: NoteId
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, note_id: NoteId
 ) -> ResearchNote:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await notes.get_note(session, principal, loaded, note_id)
 
 
 @router.delete(
@@ -272,11 +355,14 @@ async def get_research_note(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a research note",
     description=(
-        "comment.delete_any (project and platform admins): removes an AI research note's "
-        "text and sources; the feed shows that a note was deleted. Idempotent. 409 "
-        "project_archived."
+        "ai.delete_note (the idea's owner and project and platform admins): removes an AI "
+        "research note's text and sources; the feed shows that a note was deleted. "
+        "Idempotent. 409 project_archived, awaiting_moderation."
     ),
     responses=problems(401, 403, 404, 409),
 )
-async def delete_research_note(principal: PrincipalDep, idea: IdeaParam, note_id: NoteId) -> None:
-    raise NotImplementedProblem
+async def delete_research_note(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, note_id: NoteId
+) -> None:
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await notes.delete_note(session, principal, loaded, note_id)

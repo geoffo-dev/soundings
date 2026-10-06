@@ -1,6 +1,10 @@
 import { CloudOff, ListChecks, PencilLine, TriangleAlert } from 'lucide-react'
 
 import { useEvaluations } from '@/api/evaluations'
+import { AiBadge } from '@/components/ui/ai-badge'
+import { AiInclusionControl } from '@/features/ai/ai-evaluation'
+import { evaluationCardDomId } from '@/features/ai/dom-ids'
+import { SourceList } from '@/features/ai/sources'
 import type { AggregateScore, Evaluation, RubricCriterion } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -181,6 +185,8 @@ function Comparison({
                   <span className="sr-only">
                     {name}
                     {evaluation.evaluator.id === me.id ? ' (you)' : ''}
+                    {evaluation.is_ai ? ', AI agent' : ''}
+                    {evaluation.include_in_aggregate ? '' : ', not counted in the score'}
                   </span>
                   <Avatar
                     name={name}
@@ -191,13 +197,24 @@ function Comparison({
                     decorative
                     className="mx-auto"
                   />
-                  {/* Initials alone need a hover, which touch screens don't have. */}
+                  {/* Initials alone need a hover, which touch screens don't have. A
+                      person goes by their first name; an agent's name is all one name
+                      ("Idea evaluator", not "Idea"). */}
                   <span
                     aria-hidden="true"
-                    className="mx-auto mt-0.5 block max-w-20 truncate text-xs font-normal text-secondary"
+                    title={evaluation.is_ai ? name : undefined}
+                    className="mx-auto mt-0.5 block max-w-24 truncate text-xs font-normal text-secondary"
                   >
-                    {name.split(' ')[0]}
+                    {evaluation.is_ai ? name : name.split(' ')[0]}
                   </span>
+                  {!evaluation.include_in_aggregate && (
+                    <span
+                      aria-hidden="true"
+                      className="mx-auto block text-xs font-normal whitespace-nowrap text-muted"
+                    >
+                      not in score
+                    </span>
+                  )}
                 </th>
               )
             })}
@@ -282,21 +299,28 @@ function EvaluationCard({
   evaluation: Evaluation
   rubric: RubricCriterion[]
 }) {
-  const { me } = useIdeaPage()
+  const { me, ideaKey } = useIdeaPage()
   const name = evaluation.evaluator.display_name
   const isMe = evaluation.evaluator.id === me.id
   const headingId = `evaluation-${evaluation.id}`
+  const ai = evaluation.is_ai
+  // An AI evaluator gives a rationale (and sources) for every criterion: show them all.
   const commented = rubric.flatMap((criterion) => {
     const entry = evaluation.scores.find((s) => s.criterion_id === criterion.id)
-    return entry?.comment ? [{ criterion, entry }] : []
+    return entry && (entry.comment || entry.sources.length > 0 || ai) ? [{ criterion, entry }] : []
   })
   return (
-    <article aria-labelledby={headingId} className="rounded-lg border bg-surface">
+    <article
+      id={evaluationCardDomId(evaluation.id)}
+      tabIndex={-1}
+      aria-labelledby={headingId}
+      className="scroll-mt-20 rounded-lg border bg-surface outline-offset-2"
+    >
       <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-subtle px-4 py-3">
         <Avatar
           name={name}
           src={evaluation.evaluator.avatar_url}
-          isAgent={evaluation.is_ai}
+          isAgent={ai}
           size="sm"
           decorative
         />
@@ -304,9 +328,9 @@ function EvaluationCard({
           {name}
           {isMe && <span className="font-normal text-muted"> (you)</span>}
         </h3>
+        {ai && <AiBadge />}
         <RecommendationBadge value={evaluation.recommendation} />
-        {evaluation.is_ai && <Badge variant="accent">AI</Badge>}
-        {!evaluation.include_in_aggregate && <Badge variant="outline">Excluded from score</Badge>}
+        {!evaluation.include_in_aggregate && <Badge variant="outline">Not in score</Badge>}
         <span className="ml-auto flex items-center gap-2 text-sm text-muted">
           {evaluation.edited_at && (
             <WithTooltip content={`Edited ${formatDateTime(evaluation.edited_at)}`}>
@@ -321,6 +345,7 @@ function EvaluationCard({
           </span>
         </span>
       </header>
+      {ai && <AiInclusionControl ideaKey={ideaKey} evaluation={evaluation} />}
       {/* The scores are in the table above: the card is for what people wrote. */}
       {commented.length > 0 && (
         <dl className="flex flex-col divide-y divide-subtle">
@@ -334,7 +359,18 @@ function EvaluationCard({
                   label={`${criterion.name}: ${entry.score} out of 5`}
                 />
               </dt>
-              <dd className="text-sm whitespace-pre-line text-primary">{entry.comment}</dd>
+              <dd className="flex flex-col gap-1.5">
+                {entry.comment ? (
+                  <p className="text-sm [overflow-wrap:anywhere] whitespace-pre-line text-primary">
+                    {ai && <span className="mr-1.5 text-xs font-medium text-muted">Rationale</span>}
+                    {entry.comment}
+                  </p>
+                ) : (
+                  ai && <p className="text-sm text-muted">No rationale given.</p>
+                )}
+                {/* Only AI evaluators cite sources (people never do). */}
+                {ai && <SourceList sources={entry.sources} compact />}
+              </dd>
             </div>
           ))}
         </dl>
@@ -349,9 +385,17 @@ function EvaluationCard({
             commented.length > 0 && 'border-t border-subtle',
           )}
         >
-          <p className="text-xs font-medium text-muted">Overall comment</p>
-          <p className="text-sm whitespace-pre-line text-primary">{evaluation.comment}</p>
+          <p className="text-xs font-medium text-muted">{ai ? 'Summary' : 'Overall comment'}</p>
+          <p className="text-sm [overflow-wrap:anywhere] whitespace-pre-line text-primary">
+            {evaluation.comment}
+          </p>
         </div>
+      )}
+      {ai && (
+        <p className="border-t border-subtle px-4 py-2 text-xs text-muted">
+          Written by an AI agent. Its sources are cited by AI, not checked: an agent can get them
+          wrong.
+        </p>
       )}
     </article>
   )

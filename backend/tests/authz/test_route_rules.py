@@ -173,7 +173,7 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "stream_ai_run_events": ("idea.view",),
     "set_evaluation_inclusion": ("evaluation.include_ai", "evaluation.view_others"),
     "get_research_note": ("idea.view",),
-    "delete_research_note": ("comment.delete_any",),
+    "delete_research_note": ("ai.delete_note",),
 }
 
 

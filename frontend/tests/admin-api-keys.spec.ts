@@ -3,9 +3,10 @@ import type { Page } from '@playwright/test'
 import { expect, seriousViolations, test, USERS } from './support'
 
 /**
- * Admin settings → API keys (contract-phase5 §3.10) against the mock: seven keys
- * that aren't revoked, among them the Research agent's (a service account, key
- * created by Priya), Mateo Rossi's dormant one and Alice's expired "Old laptop".
+ * Admin settings → API keys (contract-phase5 §3.10) against the mock: eight keys
+ * that aren't revoked, among them the Research agent's and Idea evaluator's
+ * (service accounts, keys created by Priya), Mateo Rossi's dormant one and
+ * Alice's expired "Old laptop".
  */
 
 test.use({ signedInAs: USERS.priya })
@@ -28,9 +29,9 @@ test('lists every key with its owner, scopes, projects, use, expiry and state', 
   page,
 }) => {
   await open(page)
-  await expect(page.getByText('7 keys')).toBeVisible()
-  await expect(table(page).getByRole('row')).toHaveCount(8)
-  const agent = keyRow(page, 'kagent research-agent')
+  await expect(page.getByText('8 keys')).toBeVisible()
+  await expect(table(page).getByRole('row')).toHaveCount(9)
+  const agent = keyRow(page, 'kagent soundings/research-agent')
   await expect(agent).toContainText('Research agent')
   await expect(agent).toContainText('AI agent')
   // The owner has a line to themselves: their name is never cut off (the key name gives way).
@@ -77,7 +78,7 @@ test('a pasted whole key is searched by its prefix only: never in the URL or a r
   await search.fill('sdg_Cl4uDeD3sk7')
   await expect(page.getByRole('heading', { name: 'No keys match' })).toBeVisible()
   await page.getByRole('button', { name: 'Clear filters' }).click()
-  await expect(page.getByText('7 keys')).toBeVisible()
+  await expect(page.getByText('8 keys')).toBeVisible()
   await search.fill('mateo')
   await expect(table(page).getByRole('row')).toHaveCount(2)
 })
@@ -108,7 +109,7 @@ test('filters by state, and by owner from their admin page', async ({ page }) =>
   await expect(page.getByText('3 keys')).toBeVisible()
   await expect(page.locator('[data-slot="filter-value-chip"]')).toContainText('Alice Anders')
   await page.getByRole('button', { name: 'Remove Owner filter' }).click()
-  await expect(page.getByText('7 keys')).toBeVisible()
+  await expect(page.getByText('8 keys')).toBeVisible()
 })
 
 test('revokes anyone’s key after a confirm that names it; focus moves to the next key', async ({
@@ -124,10 +125,12 @@ test('revokes anyone’s key after a confirm that names it; focus moves to the n
   await confirm.getByRole('button', { name: 'Revoke key' }).click()
   await expect(toast(page, 'Bob Chen’s key “Jira sync” revoked')).toBeVisible()
   await expect(keyRow(page, 'Jira sync')).toHaveCount(0)
-  await expect(page.getByText('6 keys')).toBeVisible()
-  await expect(keyRow(page, 'kagent research-agent').locator('[data-row-id]')).toBeFocused()
+  await expect(page.getByText('7 keys')).toBeVisible()
+  await expect(
+    keyRow(page, 'kagent soundings/research-agent').locator('[data-row-id]'),
+  ).toBeFocused()
   // An agent's key: only an admin can make it a new one.
-  await keyRow(page, 'kagent research-agent')
+  await keyRow(page, 'kagent soundings/research-agent')
     .getByRole('button', { name: /^Revoke Research agent’s key/ })
     .click()
   await expect(page.getByRole('alertdialog')).toContainText(
@@ -174,7 +177,7 @@ test('shows an error with a retry when the keys can’t load', async ({ page }) 
   await expect(page.getByText('Couldn’t load API keys')).toBeVisible({ timeout: 10_000 })
   await page.evaluate(() => localStorage.removeItem('soundings-mock-fail'))
   await page.getByRole('button', { name: 'Try again' }).click()
-  await expect(page.getByText('7 keys')).toBeVisible()
+  await expect(page.getByText('8 keys')).toBeVisible()
 })
 
 test('⌘K finds the page', async ({ page }) => {
@@ -213,7 +216,7 @@ test.describe('on a phone', () => {
 
   test('keys become cards without sideways scrolling', async ({ page }) => {
     await open(page)
-    await expect(keyRow(page, 'kagent research-agent')).toBeVisible()
+    await expect(keyRow(page, 'kagent soundings/research-agent')).toBeVisible()
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)

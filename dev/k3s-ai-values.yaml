@@ -1,0 +1,30 @@
+# AI assistance on the local k3s cluster, layered on dev/k3s-values.yaml by
+# `make k3s-install AI=1` (scripts/k3s-install.sh). kagent itself is not installed (no
+# controller image or model here): Soundings' fake agent (scripts/k3s-fake-agent.sh)
+# answers where kagent's controller would, kagent/kagent-controller:8083, so the default
+# kagent.controllerUrl works unchanged. The API admits only the ingress controller
+# (Traefik, in kube-system), kagent's namespace and kagent's agent pods; egress is
+# restricted too, so AI runs prove the worker's rule to the controller's port.
+# With kagent's CRDs in the cluster (scripts/k3s-kagent-crds.sh), k3s-install.sh also
+# turns on kagent.examples: the example Agents and RemoteMCPServers are created for real
+# (no controller acts on them). `make k3s-smoke AI=1` then runs scripts/ai-smoke.sh.
+features:
+  ai: true
+
+kagent:
+  enabled: true
+  namespace: kagent
+  agents:
+    modelConfig: soundings-model
+
+ai:
+  # Short enough for a smoke test's slow run; the app's default is PT5M.
+  runTimeout: PT2M
+
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+  egress:
+    enabled: true

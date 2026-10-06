@@ -80,6 +80,17 @@ export const AUDIT_CATEGORIES = [
     label: 'API keys and MCP',
     actions: ['api_key.create', 'api_key.revoke', 'mcp.call'],
   },
+  {
+    id: 'ai',
+    label: 'AI agents and runs',
+    actions: [
+      'ai_agent.register',
+      'ai_agent.update',
+      'ai_run.request',
+      'ai_run.cancel',
+      'evaluation.include_ai',
+    ],
+  },
 ] as const satisfies readonly { id: string; label: string; actions: readonly AuditAction[] }[]
 
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number]['id']

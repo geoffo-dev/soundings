@@ -63,6 +63,8 @@ test('filters by kind of action, person, project and days', async ({ page }) => 
   await expect(page).toHaveURL(new RegExp(`actor=${USERS.priya}`))
   await expect(page.getByRole('button', { name: /^Who\s+Priya Natarajan/ })).toBeVisible()
   await expect(entries(page).getByText(/^Alice Anders/)).toHaveCount(0)
+  // Older than the first screenful (the list is virtualised).
+  await page.locator('main').evaluate((m) => m.scrollBy(0, 1200))
   await expect(entries(page).getByText(/Priya Natarajan created group Contractors/)).toBeVisible()
 
   await page.getByRole('button', { name: /^Project/ }).click()

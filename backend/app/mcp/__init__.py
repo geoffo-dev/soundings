@@ -1,13 +1,14 @@
 """The MCP server at ``/mcp`` (SPEC section 8; contract-phase5 sections 3.5, 3.6 and 4;
 ADR 0013): stateless streamable HTTP with JSON responses, authenticated by API keys,
-nine tools that call the same services and policy as the REST API, every call audited.
+ten tools (SPEC section 8's nine and Phase 6's add_research_note) that call the same
+services and policy as the REST API, every call audited.
 
 * :mod:`.guard`: ``POST /mcp`` (Origin, the key, the key's rate, c15), then the SDK.
 * :mod:`.server`: the SDK's low-level ``Server`` (the catalogue and one dispatcher) and
   its stateless transport, whose ``run()`` lives in the app's lifespan.
 * :mod:`.dispatcher`: every ``tools/call``: validate, write cap, check the key again,
   run, map errors, audit; results without invisible text (:mod:`.text`).
-* :mod:`.tools`: the nine tools over the REST services.
+* :mod:`.tools`: the ten tools over the REST services (c22 for agents: app.ai.scope).
 * :mod:`.audit`: ``mcp.call`` entries and their 90-day cleanup.
 * :mod:`.context`: the authenticated request the tools read.
 

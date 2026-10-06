@@ -16,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.activity import ActivityEvent, AuditLog, Comment
 from app.models.base import utcnow
 from app.models.enums import (
+    AiRunKind,
     EvaluatorState,
     IdeaStatus,
     NotificationType,
     ProjectRole,
     ProjectVisibility,
+    ProposalSectionKey,
     Recommendation,
 )
 from app.models.evaluation import Evaluation
@@ -31,6 +33,7 @@ from app.models.proposal import ProposalSuggestion
 from app.models.public import PublicSubmission
 from app.schemas.mcp import MCP_TEXT_LIMIT, MCP_TOOLS
 from app.services.scoring import recompute_aggregates
+from tests.ai.helpers import make_agent, open_run
 from tests.factories import add_evaluator, make_idea, make_project, make_user
 from tests.mcp.conftest import AsAgent, AsUser, Team, full_scores, ok
 
@@ -715,10 +718,15 @@ async def test_an_agents_suggestion_is_ai(
     as_agent: AsAgent, team: Team, proposal_idea: Idea, db_session: AsyncSession
 ) -> None:
     agent_user = await make_user(db_session, "Research Agent", service_account=True)
-    db_session.add(
-        ProjectMember(project_id=team.project.id, user_id=agent_user.id, role=ProjectRole.MEMBER)
+    agent_row = await make_agent(db_session, [team.project], user=agent_user)
+    # c22: an agent writes only through its open draft run's tool, for that section.
+    await open_run(
+        db_session,
+        agent_row,
+        proposal_idea,
+        AiRunKind.DRAFT_SECTION,
+        section_key=ProposalSectionKey.MARKET,
     )
-    await db_session.commit()
 
     created = await (await as_agent(agent_user, WRITE, [team.project])).ok(
         "propose_proposal_section",
@@ -800,7 +808,11 @@ async def everything(api: AsUser, team: Team, db_session: AsyncSession) -> dict[
     }
 
 
-@pytest.mark.parametrize("tool", [tool.name for tool in MCP_TOOLS])
+@pytest.mark.parametrize(
+    # add_research_note is for agents during a research run only (tests/ai/test_scope.py).
+    "tool",
+    [tool.name for tool in MCP_TOOLS if tool.name != "add_research_note"],
+)
 async def test_every_tool_needs_its_scope(
     as_agent: AsAgent, team: Team, everything: dict[str, Any], tool: str
 ) -> None:

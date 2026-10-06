@@ -186,7 +186,11 @@ features:
   # <baseUrl>/<project>/submit (Settings > Public form). false: every public form,
   # tracking link and confirmation link answers 404, and no project can turn one on.
   publicSubmission: true
-  # -- AI assistance through kagent (Phase 6). Needs kagent in the cluster.
+  # -- AI assistance through kagent (Phase 6): "Ask AI to evaluate", "Research this" and
+  # "Draft section" start runs that the worker sends to a registered kagent agent over
+  # A2A (kagent.controllerUrl); the agent works through /mcp with its own key. false: no
+  # run starts and the idea page hides the AI actions (agents can still be registered in
+  # Admin settings > AI agents). deploy/kagent/README.md has the walkthrough.
   ai: false
 
 # Anti-abuse limits of the public form (features.publicSubmission). The form also has a
@@ -216,10 +220,11 @@ branding:
   # app's 1 MiB request limit).
   maxUploadBytes: 524288
 
-# kagent integration: AI agents in the cluster use Soundings' MCP server (/mcp, with a
-# service account's API key); Phase 6 adds the AI evaluator and research assistant that
-# the worker starts over A2A. deploy/kagent/README.md has the manifests, the key and
-# what has been verified against which kagent version.
+# kagent integration (kagent 0.10.x, CRD group kagent.dev): the worker starts AI runs at
+# kagent's controller over A2A (features.ai), and the agents use Soundings' MCP server
+# (/mcp) with their own service account's key, which Admin settings > AI agents creates
+# when an admin registers the agent. deploy/kagent/README.md has the manifests, the key
+# and what has been verified against which kagent version.
 kagent:
   # -- kagent runs in this cluster and uses Soundings. When networkPolicy.ingressFrom
   # restricts the API, kagent's namespace (below) is then allowed to reach it too: the
@@ -227,20 +232,80 @@ kagent:
   enabled: false
   # -- Namespace where kagent runs.
   namespace: kagent
+  # -- kagent's controller (its A2A endpoint): an http(s) origin without a path. Every AI
+  # run goes to <controllerUrl>/api/a2a/<namespace>/<name>/ (or /agents/<namespace>/<name>
+  # for kagent 1.0), built from the registered agent's namespace and name; nothing else
+  # is ever called. Empty: http://kagent-controller.<kagent.namespace>:8083 (kagent's own
+  # chart with release name "kagent").
+  controllerUrl: ""
+  # -- Existing Secret (release namespace) with a bearer token for the controller, for
+  # kagent's trusted-proxy auth mode (sent as Authorization: Bearer <token>; api and
+  # worker pods). Empty: no token (kagent's default auth mode, unsecure).
+  existingTokenSecret: ""
+  tokenSecretKey: token
+  # -- Namespaces agents may be registered in. Empty: the release namespace only (where
+  # the example agents run), so nobody can point a run at kagent's built-in agents in
+  # kagent.namespace. kagent's agent pods call /mcp from these namespaces: with
+  # kagent.enabled and networkPolicy.ingressFrom set, their pods (label
+  # app.kubernetes.io/managed-by: kagent) are admitted to the API.
+  agentNamespaces: []
   # -- Also render the example kagent resources (kagent 0.10, kagent.dev/v1alpha2; needs
-  # kagent.enabled and kagent's CRDs): a RemoteMCPServer "<fullname>-mcp" in the release
-  # namespace pointing at this release's /mcp through its Service, usable by agents in
-  # the release namespace and in kagent.namespace.
+  # kagent.enabled and kagent's CRDs) in the release namespace: the agents below, each
+  # with its own RemoteMCPServer "<agent>-mcp" reading its key from its keySecret, and,
+  # when mcp.keySecret is set, the shared RemoteMCPServer "<fullname>-mcp" (Phase 5).
   examples: false
   mcp:
-    # -- Existing Secret (release namespace) whose key `keySecretKey` holds the whole
-    # Authorization header kagent sends: "Bearer sdg_...", a service account's API key
-    # with the read, evaluate and mcp scopes, restricted to the projects the agents
-    # serve. Required with examples.
+    # -- Optional (Phase 5): an existing Secret (release namespace) whose key
+    # `keySecretKey` holds a whole Authorization header, "Bearer sdg_...", for a shared
+    # RemoteMCPServer "<fullname>-mcp" (e.g. a person's key for their own kagent agents).
+    # An AI agent's key works only during its runs (c22): the agents below use their own.
     keySecret: ""
     keySecretKey: authorization
     # -- How long kagent waits for the MCP server (connect and each call), e.g. 30s.
     timeout: 30s
+  # Example Agents (with kagent.examples): Declarative, streaming, one skill per purpose,
+  # their tools from Soundings' MCP server. Register each in Admin settings > AI agents
+  # (namespace = the release namespace, name = "<fullname>-evaluator" /
+  # "<fullname>-researcher") and apply the Secret manifest it shows once: it is named as
+  # keySecret's default below, so the RemoteMCPServer finds it unchanged.
+  agents:
+    # -- Name of an existing kagent ModelConfig (release namespace) the agents use, e.g.
+    # one for Anthropic or OpenAI with its API key Secret. Required with the agents.
+    modelConfig: ""
+    evaluator:
+      # -- "<fullname>-evaluator": get_rubric, get_idea, then submit_evaluation with a
+      # rationale and sources per criterion (shown with an AI badge, left out of the
+      # aggregate by default).
+      enabled: true
+      # -- Secret with "Bearer sdg_..." under keySecretKey. Empty:
+      # "soundings-agent-<fullname>-evaluator", the name registration's manifest uses.
+      keySecret: ""
+      keySecretKey: authorization
+    researcher:
+      # -- "<fullname>-researcher": get_idea and get_proposal, then add_research_note
+      # ("Research this") or propose_proposal_section ("Draft section"). Without a web
+      # tool its sources come from the model's memory (shown "Cited by AI, not checked").
+      enabled: true
+      keySecret: ""
+      keySecretKey: authorization
+
+# AI runs (features.ai): how the worker runs them.
+ai:
+  # -- How long a run may take once it has started (ISO 8601 duration or seconds, 30
+  # seconds to 1 hour); then the worker asks the agent to cancel and the run ends
+  # timed_out.
+  runTimeout: PT5M
+  # -- Runs talking to agents at the same time per worker pod (1-50): a pool of their
+  # own, so email and notifications never wait behind AI runs; the rest wait, first in,
+  # first out. The worker's database pool grows by this many connections.
+  maxConcurrentRuns: 4
+  # -- Protocol of a newly registered agent unless the admin picks one: kagent_v0_10
+  # (A2A 0.3 at /api/a2a/<ns>/<name>/, kagent 0.10.x) or kagent_v1_0 (A2A 1.0 at
+  # /agents/<ns>/<name>, kagent 1.0).
+  defaultProtocol: kagent_v0_10
+  # -- The MCP URL shown to admins for an agent's RemoteMCPServer (never sent to
+  # agents). Empty: this release's Service, http://<fullname>.<namespace>.svc.cluster.local:<port>/mcp.
+  mcpUrl: ""
 
 otel:
   # -- OTLP/HTTP base URL for traces, e.g. http://otel-collector.observability:4318.
@@ -296,7 +361,8 @@ api:
 worker:
   enabled: true
   replicas: 1
-  # -- Jobs (emails, agent runs) processed in parallel per worker pod.
+  # -- Email, notification and scheduled jobs processed in parallel per worker pod (AI
+  # runs have a pool of their own: ai.maxConcurrentRuns).
   concurrency: 4
   # -- Time for running jobs to finish on shutdown.
   terminationGracePeriodSeconds: 60
@@ -474,8 +540,8 @@ networkPolicy:
   # controller's namespace, e.g. [{namespaceSelector: {matchLabels:
   # {kubernetes.io/metadata.name: ingress-nginx}}}]. Empty: any source, so any pod in
   # the cluster can reach the API directly and choose its own X-Forwarded-For. Pods of
-  # this release are always allowed, and kagent.namespace when kagent.enabled. Other
-  # in-cluster MCP clients (agents in other namespaces) call
+  # this release are always allowed, and with kagent.enabled kagent.namespace and kagent's
+  # agent pods in kagent.agentNamespaces. Other in-cluster MCP clients call
   # http://<fullname>.<namespace>.svc.cluster.local/mcp: add their namespace here.
   ingressFrom: []
   # -- Who may scrape the metrics port (e.g. the Prometheus namespace), as peers.
@@ -483,8 +549,9 @@ networkPolicy:
   metricsFrom: []
   # Egress: off by default (the app may connect anywhere). On, the api and worker pods
   # may only reach DNS (port 53), the database, and: the worker the SMTP server (when
-  # smtp.host is set), the api the IdP (when oidc.issuer is set), both the OTLP
-  # endpoint (when otel.endpoint is set) and the rules in `extra`. Each destination is a
+  # smtp.host is set), the api the IdP (when oidc.issuer is set), both kagent's
+  # controller (when features.ai or kagent.enabled) and the OTLP endpoint (when
+  # otel.endpoint is set), and the rules in `extra`. Each destination is a
   # list of NetworkPolicy peers (`to`); empty means any address, on that port only.
   # Policies see the destination pod's port: for an in-cluster server whose Service maps
   # ports (e.g. 25 -> 2525), set `port` to the pod's port.
@@ -505,7 +572,14 @@ networkPolicy:
       to: []
       # -- Empty: the issuer URL's port (443 for https).
       port: ""
-    # -- Extra NetworkPolicyEgressRule objects for the api and worker pods, e.g. kagent.
+    kagent:
+      # -- Peers of kagent's controller (api: test connection; worker: AI runs), when
+      # features.ai or kagent.enabled, e.g. [{namespaceSelector: {matchLabels:
+      # {kubernetes.io/metadata.name: kagent}}}]. Empty: any address.
+      to: []
+      # -- Empty: kagent.controllerUrl's port (8083 by default).
+      port: ""
+    # -- Extra NetworkPolicyEgressRule objects for the api and worker pods.
     extra: []
 
 # Prometheus Operator ServiceMonitor scraping the Service's "metrics" port.

@@ -49,16 +49,26 @@ from fastapi import FastAPI
 from mcp import Client, MCPError
 from mcp.client.streamable_http import streamable_http_client
 from mcp_types import CallToolResult, TextContent
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api_keys.service import issue_key
 from app.config import Settings
 from app.domain.principal import Principal
-from app.models.enums import ApiKeyScope, AuthMethod, ProjectRole
+from app.models.enums import (
+    AiRunKind,
+    ApiKeyScope,
+    AuthMethod,
+    ProjectRole,
+    ProposalSectionKey,
+)
+from app.models.idea import Idea
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.api_keys import API_KEY_PATTERN, ApiKeyCreate
 from app.schemas.mcp import MCP_INSTRUCTIONS, MCP_SERVER_NAME
 from app.seed import run_seed
+from tests.ai.helpers import make_agent, open_run
 from tests.factories import make_project, make_user
 
 API = "/api/v1"
@@ -72,6 +82,7 @@ TOOLS = {
     "add_comment",
     "submit_evaluation",
     "propose_proposal_section",
+    "add_research_note",  # Phase 6: agents only, during a research run
 }
 CUST, TOOLS_PROJECT = "customer-innovation", "internal-tools"
 # Text only the tool arguments carry: it must never reach a log record or the audit.
@@ -356,7 +367,7 @@ async def test_ac5_api_1_an_mcp_key_searches_and_evaluates_only_where_it_reaches
     assert secret[17:] not in listed.text
     assert [k["id"] for k in ok(listed)["items"]] == [key_id]
 
-    # 2. The MCP client connects with the key: nine tools, only Customer Innovation,
+    # 2. The MCP client connects with the key: ten tools, only Customer Innovation,
     #    only CUST-n awaits her, blind.
     async with mcp_client(live, secret) as client:
         assert client.server_info is not None
@@ -364,7 +375,7 @@ async def test_ac5_api_1_an_mcp_key_searches_and_evaluates_only_where_it_reaches
         assert client.instructions == MCP_INSTRUCTIONS
         listed_tools = (await client.list_tools()).tools
         assert {tool.name for tool in listed_tools} == TOOLS
-        assert len(listed_tools) == 9
+        assert len(listed_tools) == 10
 
         projects = data(await call(client, "list_projects"))["projects"]
         assert [(p["slug"], p["my_role"]) for p in projects] == [(CUST, "member")]
@@ -660,8 +671,9 @@ async def test_ac5_api_3_deactivating_the_owner_revokes_their_keys(
 @dataclass
 class AgentWorld:
     """A project with an admin (Ada), an owner (Olga), a person evaluator (Pat) and an AI
-    agent (a service account, member), and the agent's key (read, write, evaluate, mcp)
-    issued by Ada as Phase 6's Admin -> AI agents will."""
+    agent (a service account, member, with its Phase 6 agent row), and the agent's key
+    (read, write, evaluate, mcp) issued by Ada as Admin -> AI agents does. Phase 6 (c22):
+    the key works only during an open run, so ``open_run(key, kind)`` opens one."""
 
     ada: Person
     olga: Person
@@ -670,6 +682,22 @@ class AgentWorld:
     agent_secret: str
     slug: str
     criteria: list[str]
+    agent_row: Any = None
+    db: Any = None
+
+    async def open_run(self, key: str, kind: AiRunKind, section: str | None = None) -> None:
+        idea = await self.db.scalar(
+            select(Idea)
+            .join(Project)
+            .where(Project.key == key.split("-")[0], Idea.number == int(key.split("-")[1]))
+        )
+        await open_run(
+            self.db,
+            self.agent_row,
+            idea,
+            kind,
+            section_key=ProposalSectionKey(section) if section else None,
+        )
 
 
 @pytest.fixture
@@ -702,12 +730,23 @@ async def agent_world(live: str, db_session: AsyncSession) -> AsyncIterator[Agen
         ),
     )
     await db_session.commit()
+    agent_row = await make_agent(db_session, [project], user=agent, name="research-agent")
     ada = await sign_in(live, ada_user)
     olga = await sign_in(live, olga_user)
     pat = await sign_in(live, pat_user)
     try:
         rubric = (await ada.get(f"/projects/{project.slug}"))["rubric"]
-        yield AgentWorld(ada, olga, pat, agent, secret, project.slug, [c["id"] for c in rubric])
+        yield AgentWorld(
+            ada,
+            olga,
+            pat,
+            agent,
+            secret,
+            project.slug,
+            [c["id"] for c in rubric],
+            agent_row=agent_row,
+            db=db_session,
+        )
     finally:
         for person in (ada, olga, pat):
             await person.http.aclose()
@@ -733,6 +772,7 @@ async def test_ac5_api_4_an_agents_key_works_like_a_member_and_evaluates_blind(
     world = agent_world
     key = await evaluating_idea(world, world.pat.id, str(world.agent.id))
     await evaluate_with(world.pat, key, world.criteria, 4)
+    await world.open_run(key, AiRunKind.EVALUATE)
     async with mcp_client(live, world.agent_secret) as client:
         before = data(await call(client, "get_idea", idea=key))["idea"]
         assert score_data(before) == []  # blind like anyone else
@@ -753,6 +793,7 @@ async def test_ac5_api_4_an_agents_key_works_like_a_member_and_evaluates_blind(
         # A suggestion by an agent is `ai`, whatever the channel.
         await world.olga.send("POST", f"/ideas/{key}/status", {"status": "shortlisted"})
         await world.olga.send("POST", f"/ideas/{key}/proposal", None, 201)
+        await world.open_run(key, AiRunKind.DRAFT_SECTION, "summary")
         proposed = data(
             await call(
                 client,
@@ -763,13 +804,17 @@ async def test_ac5_api_4_an_agents_key_works_like_a_member_and_evaluates_blind(
             )
         )
         assert proposed["suggestion"]["source"] == "ai"
-    # c21: an agent never volunteers as owner (the project allows volunteers).
+    # An agent never volunteers as owner: c21 in the policy, and since Phase 6 its key
+    # never reaches REST at all (c22: MCP only).
     async with key_client(live, world.agent_secret) as rest:
         other = await world.olga.send(
             "POST", f"/projects/{world.slug}/ideas", {"title": "Unowned", "summary": "x"}, 201
         )
         volunteered = await rest.post(f"{API}/ideas/{other['key']}/volunteer")
-        assert (volunteered.status_code, volunteered.json()["code"]) == (403, "forbidden")
+        assert (volunteered.status_code, volunteered.json()["code"]) == (
+            403,
+            "insufficient_scope",
+        )
 
 
 async def evaluate_with(person: Person, key: str, criteria: list[str], score: int) -> None:
@@ -787,13 +832,16 @@ async def test_ac5_api_4_an_agents_evaluation_is_left_out_of_the_aggregate(
     world = agent_world
     key = await evaluating_idea(world, world.pat.id, str(world.agent.id))
     await evaluate_with(world.pat, key, world.criteria, 4)
+    await world.open_run(key, AiRunKind.EVALUATE)
     async with mcp_client(live, world.agent_secret) as client:
         data(
             await call(
                 client,
                 "submit_evaluation",
                 idea=key,
-                scores=[{"criterion_id": c, "score": 1} for c in world.criteria],
+                scores=[
+                    {"criterion_id": c, "score": 1, "comment": "Rationale."} for c in world.criteria
+                ],
                 recommendation="no",
             )
         )

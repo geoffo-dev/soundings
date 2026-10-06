@@ -107,7 +107,7 @@ not repeated. "Session only" = never through an API key (role matrix §5).
 | `GET /ideas/{idea}/ai-runs/{run_id}/events` | `stream_ai_run_events` | `idea.view` | `Last-Event-ID` header or `?after=` → `text/event-stream` of `AiRunEvent`, or 204 (§3.6) | 404; 429 (5 streams per person) |
 | `PUT /ideas/{idea}/evaluations/{evaluation_id}/include-in-aggregate` | `set_evaluation_inclusion` | `evaluation.include_ai` (+ the evaluation visible: `evaluation.view_others`) | `EvaluationInclusionUpdate {include}` → `Evaluation`; idempotent; audited `evaluation.include_ai` (§3.7) | 403; 404 (a draft, another idea's, or any while you are a pending evaluator); 409 `not_ai_evaluation`, `project_archived`, `awaiting_moderation` |
 | `GET /ideas/{idea}/research-notes/{note_id}` | `get_research_note` | `idea.view` | → `ResearchNote` (§3.8) | 404 |
-| `DELETE /ideas/{idea}/research-notes/{note_id}` | `delete_research_note` | `comment.delete_any` | → 204; idempotent; clears the text and sources (the feed shows "deleted a research note") | 403; 404; 409 `project_archived` |
+| `DELETE /ideas/{idea}/research-notes/{note_id}` | `delete_research_note` | `ai.delete_note` (§10) | → 204; idempotent; clears the text and sources (the feed shows "deleted a research note") | 403; 404; 409 `project_archived` |
 
 API keys: the admin routes are session only (403 `insufficient_scope`); the run requests,
 cancel, the toggle and note delete need `write` (`ai.*`, `evaluation.include_ai`,
@@ -605,7 +605,7 @@ non-final events are dropped).
   evaluation comments (rule 9), so a note can't quote them to a pending evaluator; the
   instructions forbid scores and go/no in notes (the agent's own opinion could still
   appear: accepted, documented risk).
-- **Deleting** (`comment.delete_any`: project and platform admins) clears the text and
+- **Deleting** (`ai.delete_note`: the idea's owner, project and platform admins; §10) clears the text and
   sources (`deleted: true`), keeps the item ("deleted a research note"); idempotent.
 
 ### 3.9 Section drafts
@@ -917,7 +917,8 @@ Simpler option chosen each time; the lead may revisit (also in
 | kagent's MCP client (go-sdk v1.6.1) against `/mcp` | **verified** (the library kagent pins) | Phase 5 |
 | A2A endpoint layout `/api/a2a/{ns}/{name}/` on the controller (port 8083), card at `.well-known/agent-card.json`, `A2A-Version` selecting 0.3 or 1.0 method names (other values 400), `X-User-Id`, `contextId` = session | from **source** (v0.10.2), not a live controller | research R2 §1 |
 | A2A 0.3 and 1.0 wire shapes, streaming order, `final` (0.3 only), cancel, error codes −32001/−32002/−32004 | **verified** against an a2a-sdk 1.2.1 server with a kagent-identical card; kagent's a2a-go v2.3.1 checked in source | research R2 §1–2 |
-| The fake agent end to end through Soundings (message, stream, MCP calls, results, cancel, timeout) | to be **verified** this phase (platform, qa) | §3.12 |
+| The fake agent end to end through Soundings (message, stream, MCP calls, results, cancel, timeout, worker shutdown, every misbehaviour suffix, A2A 0.3 and 1.0) | **verified against the fake** (2026-10-06): backend acceptance (`test_phase6_acceptance.py`), `E2E_AI=1` e2e, `make ai-smoke`, `make demo DEMO_AI=1`, `make k3s-smoke AI=1` (the fake as `kagent/kagent-controller:8083`, through Traefik and the NetworkPolicies); the fake's 0.3 wire format checked with a2a-sdk 0.3.23's client (kagent-adk 0.10.2's library). Not kagent's controller | §3.12, `deploy/kagent/README.md` |
+| The example manifests (`deploy/kagent/*.yaml`, the chart's `kagent.examples`) | **verified** against kagent v0.10.2's CRDs from the git tag (server-side dry run, and created for real) in k3s v1.31; the chart itself can't be pulled here (ghcr blobs blocked) | `make k3s-kagent-crds` |
 | The controller proxying to agent pods, `tasks/get` from kagent's database, streaming through the controller, its behaviour on a duplicate `messageId` | **assumed** (source reading only) | — |
 | kagent 1.0: path `/agents/{ns}/{name}`, card under it, `A2A-Version: 1.0` required | **assumed** from the pre-release's main branch (alpha5); re-check when 1.0 ships | research R2 §1 |
 | The Python runtime can't cancel (`NotImplementedError`, answered −32603; the Go runtime can) | from the kagent-adk 0.10.2 wheel (contract review); handled (any cancel answer is fine) | research R2 §1 |
@@ -974,3 +975,9 @@ Builders record additive contract changes here (date, change, why), then run
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-10-06 | **Integration step (§5), done by backend first thing:** `ActivityItem` gains `AiResearchNoteActivity` (`ACTIVITY_TYPES` and `PAYLOAD_KEYS` gain `ai_research_note`); `EvaluationScore` gains `sources: [Citation]` (empty for people); `AuditAction` gains `ai_agent.register`, `ai_agent.update`, `ai_run.request`, `ai_run.cancel`, `evaluation.include_ai`; `MCP_TOOLS` gains `add_research_note` (ten tools; `MCP_INSTRUCTIONS` gains `RESEARCH_NOTE_INSTRUCTION`'s bullet) with its handler. `make gen-api` rerun. | Lead's build notes: the §5 items land in this build, before the frontend's screens |
+| 2026-10-06 | New rule **`ai.delete_note`** (role matrix table J: PA Y, PAd Y, Mem/Vwr/NMi 403, NMp 404, Pub 401, `+Own` +; an idea write: archived 409, c19; key scope `write`). `delete_research_note` and `ResearchNote.can_delete` use it instead of `comment.delete_any`, so the idea's owner may delete an AI note too (descriptions changed, no field changed). | Lead's decision on review item C4 |
+| 2026-10-06 | `rotate_ai_agent_key` answers **409 `ai_unavailable`** ("reactivate the service account first") when the agent's service account is deactivated (a key can't be issued to an inactive owner; before, the key service's 401 would have reached the admin). No schema change. | Found while building rotation (§2 listed 403 and 404 only) |
+| 2026-10-06 | Integration, no schema change: `AiRun.cancel_requested` is true only while the run is active ("Cancelling" until it ends), so a queued run cancelled at once answers `cancel_requested: false` (the mock already did). The SPA labels an agent's feed lines with the AI badge from data it already has (the idea's AI evaluators and the runs' agents), so `UserRef` needs no `is_ai`. | QA nit; QA visual list |
+| 2026-10-06 | Implementation notes, no contract change: an agent's key is restricted to the agent's projects whatever role its service account has there now (c10 decides per project), so `issue_key` skips the "owner can view" check for agents' keys; `tool_called` events of a **write** tool go to the agent's open run of that tool's kind on the idea (the run the call attaches to, or would); `result_recorded` is written right after the `tool_called` event, after the tool's transaction, so the stream reads "Saved its evaluation" then "Evaluation submitted"; non-final events are never added to a run that already ended. | Recorded for reviewers |
+

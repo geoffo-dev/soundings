@@ -318,6 +318,28 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'Someone already decided on this suggestion',
     description: 'It was accepted or discarded a moment ago.',
   },
+  // Phase 6: AI assistance (contract-phase6 §6)
+  ai_unavailable: {
+    title: 'That AI agent isn’t available here now',
+    description: 'AI assistance may be off, or the agent no longer serves this project.',
+  },
+  ai_run_finished: { title: 'This run has already ended' },
+  not_ai_evaluation: {
+    title: 'Only AI evaluations can be left out of the score',
+    description: 'People’s evaluations always count.',
+  },
+  agent_taken: {
+    title: 'That agent is already registered',
+    description: 'Each kagent namespace and name can be registered once.',
+  },
+  too_many_agents: {
+    title: 'Soundings has 50 AI agents',
+    description: 'Disable agents you no longer use before registering another.',
+  },
+  namespace_not_allowed: {
+    title: 'Agents can’t be registered in that namespace',
+    description: 'Use one of the namespaces listed under Settings in effect.',
+  },
   network_error: { title: 'Can’t reach the server', description: 'Check your connection.' },
 }
 

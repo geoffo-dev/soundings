@@ -7,6 +7,7 @@
 #   SSO=1 scripts/k3s-install.sh                    # + dev/k3s-sso-values.yaml (Keycloak)
 #   SMTP=1 scripts/k3s-install.sh                   # + dev/k3s-smtp-values.yaml (Mailpit)
 #   MCP=1 scripts/k3s-install.sh                    # + dev/k3s-mcp-values.yaml (agents' access)
+#   AI=1 scripts/k3s-install.sh                     # + dev/k3s-ai-values.yaml (AI runs)
 #
 #   RELEASE    release name (default soundings)     NAMESPACE  (default soundings)
 #   VALUES     values file under deploy/helm/ or dev/ TIMEOUT   helm --timeout (default 10m)
@@ -16,6 +17,10 @@
 #              dev/k3s-smtp-values.yaml (SMTP, time zone, egress NetworkPolicies)
 #   MCP        1: adds dev/k3s-mcp-values.yaml (kagent.enabled; the API admits only
 #              Traefik and the kagent namespace), for `scripts/k3s-smoke.sh` with MCP=1
+#   AI         1: adds dev/k3s-ai-values.yaml (features.ai, kagent.enabled, egress
+#              NetworkPolicies) for the fake kagent (scripts/k3s-fake-agent.sh first),
+#              and kagent.examples when kagent's CRDs are installed
+#              (scripts/k3s-kagent-crds.sh), for `scripts/k3s-smoke.sh` with AI=1
 # Extra arguments are passed to helm.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/k3s-env.sh
@@ -28,6 +33,7 @@ TIMEOUT="${TIMEOUT:-10m}"
 SSO="${SSO:-0}"
 SMTP="${SMTP:-0}"
 MCP="${MCP:-0}"
+AI="${AI:-0}"
 
 require_k3s
 case "$VALUES" in
@@ -66,6 +72,19 @@ if [ "$MCP" = "1" ]; then
   values_label="$values_label + dev/k3s-mcp-values.yaml"
 fi
 
+ai_args=()
+if [ "$AI" = "1" ]; then
+  kubectl -n kagent get deploy/kagent-controller >/dev/null 2>&1 ||
+    log "note: no fake kagent in the cluster yet (scripts/k3s-fake-agent.sh): AI runs will fail agent_unreachable"
+  ai_args=(--values dev/k3s-ai-values.yaml)
+  values_label="$values_label + dev/k3s-ai-values.yaml"
+  if kubectl get crd agents.kagent.dev >/dev/null 2>&1; then
+    # The example Agents and RemoteMCPServers, created for real against kagent's CRDs.
+    ai_args+=(--set kagent.examples=true)
+    values_label="$values_label + kagent.examples"
+  fi
+fi
+
 # An edge rate limit for the public form's API (dev/k3s/public-ratelimit.yaml), attached
 # through the chart's second Ingress, when Traefik's CRDs are there (k3s ships them).
 edge_args=()
@@ -82,6 +101,7 @@ helm upgrade --install "$RELEASE" deploy/helm \
   ${sso_args[@]+"${sso_args[@]}"} \
   ${smtp_args[@]+"${smtp_args[@]}"} \
   ${mcp_args[@]+"${mcp_args[@]}"} \
+  ${ai_args[@]+"${ai_args[@]}"} \
   ${edge_args[@]+"${edge_args[@]}"} \
   --set "baseUrls[0]=http://localhost:$K3S_HTTP_PORT" \
   --wait --timeout "$TIMEOUT" \

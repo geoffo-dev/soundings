@@ -14,8 +14,10 @@ import { expect, request, type APIRequestContext, type APIResponse } from '@play
  */
 
 export const PROTOCOL_VERSION = '2025-11-25'
+/** `tools/list`, sorted: ten since Phase 6 (`add_research_note`: agents only, in a research run). */
 export const TOOL_NAMES = [
   'add_comment',
+  'add_research_note',
   'create_idea',
   'get_idea',
   'get_proposal',

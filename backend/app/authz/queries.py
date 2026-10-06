@@ -157,11 +157,14 @@ def score_visible(
     """``score.view_aggregate`` (and ``evaluation.view_others``) for a viewable idea.
 
     False for a pending evaluator, whatever their role: blind evaluation (role
-    matrix section 3). Combine with :func:`viewable_ideas`; this does not re-check view.
+    matrix section 3), and for a service account everywhere (rule 9). Combine with
+    :func:`viewable_ideas`; this does not re-check view.
     """
     if not _may_read(principal):
         return false()
     assert principal is not None  # noqa: S101 - narrowed by _may_read
+    if principal.user.is_service_account:
+        return false()  # rule 9: AI agents never see others' score data
     # NOT IN over a non-null column: a hashed subplan, evaluated once per query.
     return idea_id.not_in(pending_ideas(principal))
 

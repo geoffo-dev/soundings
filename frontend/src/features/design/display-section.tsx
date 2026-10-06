@@ -2,6 +2,7 @@ import { CircleDashed, Tag, TriangleAlert, UserRound, Users } from 'lucide-react
 import { useMemo, useState } from 'react'
 
 import { Avatar, AvatarGroup } from '@/components/ui/avatar'
+import { AiBadge } from '@/components/ui/ai-badge'
 import { Badge, CountBadge } from '@/components/ui/badge'
 import { AddFilterChip, FilterChip, FilterValueChip } from '@/components/ui/filter-chip'
 import { Kbd, KbdShortcut } from '@/components/ui/kbd'
@@ -74,6 +75,11 @@ export function BadgesSection() {
             <Badge variant="info">Public</Badge>
             <Badge variant="solid">AI</Badge>
           </div>
+          <Example label="AiBadge: work an AI agent did (reads “AI agent”)">
+            <div className="flex items-center gap-2 text-sm text-primary">
+              Idea evaluator <AiBadge />
+            </div>
+          </Example>
           <div className="flex items-center gap-3 text-sm text-secondary">
             My work <CountBadge>4</CountBadge>
           </div>

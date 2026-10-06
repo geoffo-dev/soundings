@@ -16,13 +16,21 @@
 # key's project restriction and scopes, the audit trail, revoke -> 401; and an MCP SDK
 # client in a pod of the "kagent" namespace calling the Service URL, before and after
 # the revoke: scripts/k3s-mcp-client.sh), plus, when the API's NetworkPolicy restricts
-# ingressFrom, a pod in another namespace that can't connect. Then `helm test` (which
-# also calls /mcp through the Service: 401 without a key).
+# ingressFrom, a pod in another namespace that can't connect; with AI=1, AI assistance
+# against the fake kagent in the cluster (scripts/ai-smoke.sh through the ingress: an
+# agent registered, its Secret manifest applied and its key given to the fake, test
+# connection, "Ask AI to evaluate" watched over SSE by a pending evaluator, the AI
+# evaluation left out of the aggregate and included on request, research, a section
+# draft, a cancelled slow run, the key refused outside its runs), the example kagent
+# resources against kagent's CRDs when installed, and a pod in an agent namespace
+# without kagent's label that can't reach /mcp. Then `helm test` (which also calls /mcp
+# through the Service: 401 without a key).
 #
 #   RELEASE / NAMESPACE as for k3s-install.sh
 #   SSO=1             also the SSO checks (after `make k3s-keycloak k3s-install SSO=1`)
 #   SMTP=1            also the email checks (after `make k3s-mailpit k3s-install SMTP=1`)
 #   MCP=1             also the MCP checks (after `make k3s-install MCP=1`)
+#   AI=1              also the AI checks (after `make k3s-fake-agent k3s-install AI=1`)
 #   K3S_CONNECT_HOST  where the ingress port is reachable when not on localhost (CI with
 #                     docker:dind: "docker"); requests still carry Host: localhost:<port>.
 set -euo pipefail
@@ -249,6 +257,44 @@ if [ "${MCP:-0}" = "1" ]; then
       MCP_CLIENT_NAMESPACE=mcp-outsider "$(dirname "$0")/k3s-mcp-client.sh" || failed=1
   else
     ok "networkPolicy.ingressFrom is empty: any namespace may reach /mcp (not checked)"
+  fi
+fi
+
+if [ "${AI:-0}" = "1" ]; then
+  here="$(cd "$(dirname "$0")" && pwd)"
+  export RELEASE NAMESPACE
+  # The agent the chart's kagent.examples renders, <fullname>-evaluator: registered under
+  # that name, its Secret is the one the example's RemoteMCPServer reads, and the fake
+  # answers where kagent would serve that Agent.
+  fullname="${deployment##*/}"
+  fullname="${fullname%-api}"
+  CONNECT_HOST="${K3S_CONNECT_HOST:-}" AI_AGENT_NAMESPACE="$NAMESPACE" \
+    AI_AGENT_NAME="${AI_AGENT_NAME:-$fullname-evaluator}" \
+    AI_KEY_HOOK="$here/k3s-fake-agent.sh key" \
+    AI_OBSERVATIONS="$here/k3s-fake-agent.sh observations" \
+    "$here/ai-smoke.sh" "$BASE_URL" || failed=1
+  if kubectl get crd agents.kagent.dev >/dev/null 2>&1; then
+    "$here/k3s-kagent-crds.sh" check || failed=1
+    agents="$(kubectl -n "$NAMESPACE" get agents.kagent.dev,remotemcpservers.kagent.dev \
+      -l "app.kubernetes.io/instance=$RELEASE" -o name 2>/dev/null | tr '\n' ' ')"
+    if [ -n "$agents" ]; then
+      ok "the chart's example kagent resources exist: $agents"
+    else
+      fail "no example kagent resources (kagent.examples) in $NAMESPACE"
+    fi
+  fi
+  # kagent's agent pods (label app.kubernetes.io/managed-by: kagent) in the agents'
+  # namespace (by default the release's) reach /mcp; other pods there don't.
+  policy_from="$(kubectl -n "$NAMESPACE" get networkpolicy \
+    -l "app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=api" \
+    -o jsonpath='{.items[0].spec.ingress[0].from}' 2>/dev/null || true)"
+  if grep -q 'app.kubernetes.io/managed-by' <<<"$policy_from"; then
+    MCP_KEY=none MCP_EXPECT=unauthorized MCP_CLIENT_NAMESPACE="$NAMESPACE" \
+      MCP_CLIENT_LABELS=app.kubernetes.io/managed-by=kagent "$here/k3s-mcp-client.sh" || failed=1
+    MCP_KEY=none MCP_EXPECT=blocked MCP_CLIENT_NAMESPACE="$NAMESPACE" \
+      "$here/k3s-mcp-client.sh" || failed=1
+  else
+    fail "the API's NetworkPolicy doesn't admit kagent's agent pods ($policy_from)"
   fi
 fi
 

@@ -71,8 +71,10 @@ SPEC_TOOLS = [
     "add_comment",
     "submit_evaluation",
     "propose_proposal_section",
+    "add_research_note",
 ]
-"""SPEC section 8's tools, in role matrix section 6's order."""
+"""SPEC section 8's tools, in role matrix section 6's order, then Phase 6's research note
+tool (ten)."""
 
 
 # --- API keys --------------------------------------------------------------------------

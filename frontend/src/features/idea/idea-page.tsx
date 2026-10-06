@@ -25,6 +25,8 @@ import { Skeleton, SkeletonGroup, SkeletonIdeaPage } from '@/components/ui/skele
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/components/ui/toaster'
+import { AiRunsSection } from '@/features/ai/ai-runs-section'
+import { AiMenu, submittedEvaluatorIds, useAiCommands } from '@/features/ai/idea-ai'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
 import { useTyping } from '@/lib/focus'
@@ -175,6 +177,8 @@ function LoadedIdeaPage({
   }
 
   useIdeaCommands(page)
+  const submittedIds = submittedEvaluatorIds(idea.evaluators)
+  useAiCommands(ideaKey, setTab, submittedIds)
 
   const volunteer = useVolunteerAsOwner(ideaKey)
   const setClosed = useSetEvaluationClosed(ideaKey)
@@ -242,7 +246,10 @@ function LoadedIdeaPage({
           )}
         >
           <div className="flex min-w-0 flex-col gap-5">
-            <IdeaHeader primary={primaryButton()} />
+            <IdeaHeader
+              primary={primaryButton()}
+              ai={<AiMenu ideaKey={ideaKey} setTab={setTab} submittedIds={submittedIds} />}
+            />
             <MobileSummary onOpenDetails={() => setDetailsOpen(true)} always={wide} />
             <Tabs value={tab} onValueChange={(value) => setTab(value as IdeaTab)}>
               <TabsList aria-label="Idea sections">
@@ -275,6 +282,7 @@ function LoadedIdeaPage({
               </TabsList>
               <TabsContent value="overview" className="flex flex-col gap-10">
                 <DescriptionSection />
+                <AiRunsSection />
                 <ActivitySection />
               </TabsContent>
               <TabsContent value="evaluations">

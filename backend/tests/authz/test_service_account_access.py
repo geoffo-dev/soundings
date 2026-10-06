@@ -172,8 +172,9 @@ async def test_an_agents_key_never_reaches_an_internal_project_without_a_role(
     got = await _tool(app, key, "get_idea", idea=idea_key)
     rubric = await _tool(app, key, "get_rubric", project=world.tools.slug)
 
-    slugs = [project["slug"] for project in projects["structuredContent"]["projects"]]
-    assert slugs == ["customer-innovation"]
+    # Phase 6 (c22): without an open run an agent lists nothing at all; an idea it can't
+    # see stays not_found (checked before the run scope).
+    assert projects["structuredContent"]["projects"] == []
     assert found["structuredContent"]["items"] == []
     for result in (got, rubric):
         assert result["isError"] is True
@@ -184,10 +185,9 @@ async def test_an_agents_key_never_reaches_an_internal_project_without_a_role(
         project = await http.get(f"{API}/projects/{world.tools.slug}")
         by_key = await http.get(f"{API}/ideas/{idea_key}")
 
-    assert listed.status_code == 200, listed.text
-    assert [item["slug"] for item in listed.json()] == ["customer-innovation"]
-    problem(project, 404, "not_found")
-    problem(by_key, 404, "not_found")
+    # And its key never reaches REST (c22: MCP only).
+    for response in (listed, project, by_key):
+        problem(response, 403, "insufficient_scope")
 
 
 async def test_an_agents_key_can_not_be_restricted_to_an_internal_project_without_a_role(

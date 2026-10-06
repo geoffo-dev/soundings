@@ -10,6 +10,7 @@ const isExternal = (href: string | undefined) => !!href && /^https?:/i.test(href
 
 const URL_SCHEME = /^([A-Za-z][A-Za-z0-9+.-]*):/
 const LINK_SCHEMES = new Set(['http', 'https', 'mailto'])
+const WEB_SCHEMES = new Set(['http', 'https'])
 
 /**
  * The links Markdown may keep: absolute `http`, `https` and `mailto` URLs only,
@@ -21,6 +22,26 @@ const LINK_SCHEMES = new Set(['http', 'https', 'mailto'])
 export function safeMarkdownUrl(url: string): string | null {
   const scheme = URL_SCHEME.exec(url)?.[1]?.toLowerCase()
   return scheme && LINK_SCHEMES.has(scheme) ? url : null
+}
+
+/**
+ * For text an AI agent wrote (contract-phase6 §1 "AI text is untrusted"): absolute
+ * `http` and `https` URLs only, no `mailto:` (an agent mustn't start an email
+ * from someone). Everything else stays as text.
+ */
+export function safeWebUrl(url: string): string | null {
+  const scheme = URL_SCHEME.exec(url)?.[1]?.toLowerCase()
+  return scheme && WEB_SCHEMES.has(scheme) ? url : null
+}
+
+/** A URL's host as the browser reads it: ASCII (punycode), so a look-alike can't pass. */
+export function urlHost(url: string): string | null {
+  try {
+    const host = new URL(url).hostname
+    return host || null
+  } catch {
+    return null
+  }
 }
 
 const linkClass =
@@ -285,13 +306,47 @@ export interface MarkdownProps {
   mentionSelfId?: string
   /** Section text under an h2 section title (proposals): headings start at h3. */
   nested?: boolean
+  /**
+   * Text an AI agent wrote (research notes): http/https links only, each with its
+   * host shown after it; no mention chips (agents can't mention anyone).
+   */
+  untrusted?: boolean
 }
 
-export function Markdown({ children, className, mentionSelfId, nested = false }: MarkdownProps) {
+/** Agent links: new tab, never followed for ranking, the host after the text. */
+const untrustedLinks: Components = {
+  a: ({ node: _node, href, children, ...props }) => {
+    const host = href ? urlHost(href) : null
+    if (!href || !host) return <span>{children}</span>
+    return (
+      <>
+        <a
+          href={href}
+          className={linkClass}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          {...props}
+        >
+          {children}
+        </a>
+        <span className="text-sm text-muted"> ({host})</span>
+      </>
+    )
+  },
+}
+
+export function Markdown({
+  children,
+  className,
+  mentionSelfId,
+  nested = false,
+  untrusted = false,
+}: MarkdownProps) {
   const withMentions = useMemo<Components>(
     () => ({
       ...components,
       ...(nested ? nestedHeadings : {}),
+      ...(untrusted ? untrustedLinks : {}),
       span: ({ node: _node, children: content, ...props }) => {
         const userId = (props as Record<string, unknown>)['data-mention']
         if (typeof userId !== 'string') return <span {...props}>{content}</span>
@@ -308,7 +363,7 @@ export function Markdown({ children, className, mentionSelfId, nested = false }:
         )
       },
     }),
-    [mentionSelfId, nested],
+    [mentionSelfId, nested, untrusted],
   )
   return (
     <div
@@ -316,9 +371,9 @@ export function Markdown({ children, className, mentionSelfId, nested = false }:
       className={cn('text-base [overflow-wrap:anywhere] text-primary', className)}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMentions]}
+        remarkPlugins={untrusted ? [remarkGfm] : [remarkGfm, remarkMentions]}
         skipHtml
-        urlTransform={safeMarkdownUrl}
+        urlTransform={untrusted ? safeWebUrl : safeMarkdownUrl}
         components={withMentions}
       >
         {children}

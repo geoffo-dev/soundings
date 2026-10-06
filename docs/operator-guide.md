@@ -842,49 +842,171 @@ a Secret, as kagent will (`scripts/k3s-mcp-client.sh`).
 
 ## kagent integration [Phase 6]
 
-Phase 5 prepares it; Phase 6 adds the agents, their UI and the A2A runs. Agents use the
-MCP server above with a **service account's** key, under the same rules as people (blind
-evaluation, the key's projects and scopes, every call audited); a service account never
-owns an idea or holds the admin role, and its evaluations are left out of the aggregate by
-default. Details and what has been verified: [`deploy/kagent/README.md`](../deploy/kagent/README.md).
+AI assistance (SPEC section 9) uses [kagent](https://kagent.dev) agents for two jobs: the
+**AI evaluator** ("Ask AI to evaluate": a cited evaluation with an AI badge, left out of
+the aggregate unless the idea's owner or an admin includes it) and the **research and
+drafting assistant** ("Research this": a cited research note; "Draft section": a proposal
+suggestion the owner accepts or discards). It is **off by default** and optional: without
+it nothing in Soundings needs kagent.
+
+How a run works: a person asks on the idea page; the API writes a run row and a job on the
+worker's `ai` queue; the worker sends **one A2A message** to kagent's controller at
+`<controllerUrl>/api/a2a/<namespace>/<name>/` (kagent 0.10, A2A 0.3) or
+`/agents/<namespace>/<name>` (kagent 1.0, `A2A-Version: 1.0`), streams the task's status,
+and ends the run when the task does, at the deadline (`ai.runTimeout`, then A2A
+`tasks/cancel`) or when someone cancels. The agent does the work through Soundings'
+**MCP server** (`/mcp`) with **its own service account's key**: `get_rubric`, `get_idea`,
+then `submit_evaluation`, `add_research_note` or `propose_proposal_section`. Soundings
+attaches that result to the run; A2A text is ignored. Progress reaches browsers over
+Server-Sent Events from the API (falls back to polling). Design: ADR 0014; contract:
+`docs/api/contract-phase6.md`; manifests and the full walkthrough:
+[`deploy/kagent/README.md`](../deploy/kagent/README.md).
+
+Security properties to rely on:
+
+- **URLs are built, never given.** Soundings calls only `SOUNDINGS_KAGENT_URL` (Helm
+  `kagent.controllerUrl`, an origin validated at start-up) + a fixed path + the agent's
+  namespace and name (DNS labels, optionally limited to `kagent.agentNamespaces`).
+  Nothing typed in the UI, sent by an agent or found in an agent card can make it call
+  another host; redirects are never followed and proxy variables are ignored.
+- **Prompts carry no secrets:** the message holds the run id, kind, idea key, section and
+  the agent's name, never a key, URL or idea text.
+- **An agent's key works only inside its runs (c22):** only on `/mcp` (every REST route
+  answers 403), only on the idea of one of its open runs, writing only that run's result.
+  After a run ends (done, cancelled, timed out, worker restart) the key does nothing.
+- **Agents are blind:** they never see other evaluators' scores or comments, before or
+  after submitting. Everything an agent writes is shown labelled AI and treated as
+  untrusted text (sanitised Markdown, http/https links only, sources "Cited by AI, not
+  checked").
+
+### Enabling AI assistance
+
+```sh
+helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
+  --set features.ai=true --set kagent.enabled=true
+```
+
+| Value (env) | Default | Meaning |
+|---|---|---|
+| `features.ai` (`SOUNDINGS_AI_ENABLED`) | `false` | The switch. Off: no run starts (409 `ai_unavailable`), queued runs fail, the idea page hides the AI actions; Admin settings → AI agents still works |
+| `kagent.controllerUrl` (`SOUNDINGS_KAGENT_URL`) | `http://kagent-controller.<kagent.namespace>:8083` | kagent's controller, an http(s) origin without a path |
+| `kagent.existingTokenSecret` / `tokenSecretKey` (`SOUNDINGS_KAGENT_TOKEN`) | empty | Bearer token for kagent's `trusted-proxy` auth mode (api and worker pods) |
+| `kagent.agentNamespaces` (`SOUNDINGS_AI_AGENT_NAMESPACES`) | the release namespace | Where agents may be registered; keeps runs away from kagent's built-in agents |
+| `ai.runTimeout` (`SOUNDINGS_AI_RUN_TIMEOUT`) | `PT5M` | Deadline once a run has started (30 s to 1 h) |
+| `ai.maxConcurrentRuns` (`SOUNDINGS_AI_MAX_CONCURRENT_RUNS`) | `4` | Runs at once per worker pod, in a pool of their own (email and the schedules never wait behind them); the worker's database pool grows by this many |
+| `ai.defaultProtocol` (`SOUNDINGS_AI_DEFAULT_PROTOCOL`) | `kagent_v0_10` | Protocol of a new agent unless the admin picks one |
+| `ai.mcpUrl` (`SOUNDINGS_AI_MCP_URL`) | the release's Service URL + `/mcp` | Shown to admins for the agents' `RemoteMCPServer`; never sent to agents |
+
+AI runs need the **worker** (`soundings worker`): without it runs stay queued and expire
+after 30 minutes. Each person may ask for 20 runs an hour; one run is active per idea,
+agent and kind (a repeated request returns it). A worker that stops mid-run ends its runs
+`worker_lost` and tells the agent to cancel.
 
 ### Checking the installed kagent version
 
-The manifests target kagent **0.10.x** (`kagent.dev/v1alpha2`); the 1.0 line changes the
-API group version and the Agent kinds. Check what is installed before enabling them:
+The manifests target kagent **0.10.x** (`kagent.dev/v1alpha2`; kagent-adk 0.10.2 speaks
+A2A 0.3 only, so register agents with protocol `kagent_v0_10`). kagent 1.0 (pre-release)
+moves to `api.kagent.dev/v1alpha3`, new Agent kinds and the `/agents/<ns>/<name>` A2A
+path. Check before enabling anything:
 
 ```sh
-kubectl get crd | grep kagent
-kubectl explain remotemcpservers.kagent.dev.spec --recursive | head -40
-kubectl -n kagent get agents,rmcps
+kubectl get crd | grep kagent           # agents.kagent.dev: 0.10; agents.api.kagent.dev: 1.0
+kubectl explain agents.spec.declarative --api-version=kagent.dev/v1alpha2
+kubectl -n soundings get agents,rmcps
 ```
 
-### Registering agents and service-account API keys
+### Registering agents, service accounts and their Secret
 
-Phase 6's Admin → AI agents creates the service account and its key (scopes `read`,
-`evaluate`, `mcp`, plus `write` for suggestions and comments), restricted to the projects
-the agent serves: one agent account shared by projects that must not see each other is a
-path for prompt injection, so register one agent per project there. Project admins add the
-agent as a member (never admin). Put the key in a Secret as the whole header value,
-`Bearer sdg_…` (kagent sends it as is). Revoking the key, or deactivating the account,
-cuts the agent off at its next call.
+1. **Create the kagent Agent** (below) in an allowed namespace, with a `ModelConfig`.
+2. **Register it** in Soundings: Admin settings → AI agents → Register agent (platform
+   admins, signed in; not the break-glass account): display name, the Agent's namespace
+   and name, protocol, purposes (evaluate, research, draft sections) and projects. This
+   creates the agent's **service account** (`agent-<id>@soundings.invalid`, never signs
+   in, never owns ideas, never a project admin), makes it a member of those projects and
+   creates **one key** whose scopes follow the purposes and whose projects follow the
+   agent (no expiry; changing the agent changes the key, no new Secret needed).
+3. **Apply the Secret** it shows once (`soundings-agent-<name>`, key `authorization`, the
+   whole header `Bearer sdg_…`) in the agent's namespace, and point the Agent's
+   `RemoteMCPServer` at it (the dialog also shows that manifest, with the MCP URL in
+   effect). The key is never shown again; Soundings keeps only a fingerprint.
+4. **Test connection** fetches the agent card through the controller (10 a minute per
+   admin) and shows the agent's name, skills and A2A versions, or the HTTP status.
+
+**Rotate key** issues a new key and revokes the old one at once (apply the new Secret;
+runs fail until you do). **Disable** revokes the key and cancels the agent's runs;
+enabling it again needs a rotation. Deactivating the service account (Admin → Users) also
+revokes its key. Agents are never deleted. Every registration, change, rotation, run
+request, cancel and "include in score" is in the audit log (category AI), and every MCP
+call an agent makes is an `mcp.call` entry with its key.
+
+**Reach:** an agent's key can act only inside its runs, but while a run is open, anyone
+who can message that kagent agent directly could steer it on that idea. Keep kagent's UI
+and A2A endpoint inside the cluster (kagent's default auth mode, `unsecure`, trusts every
+caller; use `trusted-proxy` with `kagent.existingTokenSecret` where you can), and register
+separate agents for projects that must not share one.
 
 ### Example manifests (`deploy/kagent/`)
 
-`deploy/kagent/remote-mcp-server.yaml` (apply by hand) and the chart's `kagent.examples`
-render a `RemoteMCPServer` pointing at the release's Service URL, reading the header from
-`kagent.mcp.keySecret` / `.keySecretKey` (both need `kagent.enabled`, which also admits
-kagent's namespace through the NetworkPolicy):
+- `deploy/kagent/agents.yaml`: by hand, for kagent 0.10 in namespace `soundings`: a
+  `ModelConfig`, and for `idea-evaluator` and `idea-researcher` each a placeholder key
+  Secret (replace it with the one registration shows), a `RemoteMCPServer` reading it and
+  a Declarative, streaming `Agent` with its Soundings tools and standing rules.
+- The chart's `kagent.examples=true` (needs `kagent.enabled` and kagent's CRDs) renders
+  the same two agents as `<fullname>-evaluator` and `<fullname>-researcher`, each with its
+  own `RemoteMCPServer` reading `soundings-agent-<fullname>-evaluator` / `-researcher`,
+  the names registration's Secret uses; set `kagent.agents.modelConfig`:
 
-```sh
-kubectl -n soundings create secret generic soundings-agent-key \
-  --from-literal=authorization="Bearer sdg_..."
-helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
-  --set kagent.enabled=true --set kagent.examples=true \
-  --set kagent.mcp.keySecret=soundings-agent-key
-```
+  ```sh
+  helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
+    --set kagent.examples=true --set kagent.agents.modelConfig=soundings-model
+  ```
 
-The example `Agent` manifests (evaluator and researcher) come with Phase 6.
+- `deploy/kagent/remote-mcp-server.yaml` (Phase 5, `kagent.mcp.keySecret`): a shared
+  `RemoteMCPServer` with one **person's** key for their own kagent agents. An AI agent's
+  key doesn't work there outside its runs.
+- `deploy/kagent/fake-agent-byo.yaml`: Soundings' deterministic test agent as a `type:
+  BYO` Agent, for a test cluster that has kagent but no model.
+
+### NetworkPolicy
+
+With `networkPolicy.ingressFrom` set (recommended), `kagent.enabled` admits kagent's
+namespace and, in `kagent.agentNamespaces`, pods labelled
+`app.kubernetes.io/managed-by: kagent` (kagent's agent pods) to the API; other pods there
+are dropped. With `networkPolicy.egress.enabled`, the api (Test connection) and the
+worker (runs) may also reach kagent's controller port (`networkPolicy.egress.kagent.to`
+narrows the peers, `.port` overrides 8083). The agents reach `/mcp` through the Service
+URL (`http://<fullname>.<namespace>.svc.cluster.local:<port>/mcp`); exposing `/mcp`
+through the ingress is not needed for them.
+
+### What is verified against kagent, and what isn't (2026-10-06)
+
+| | Against | Status |
+|---|---|---|
+| Every manifest in `deploy/kagent/` and the chart's `kagent.examples` resources | kagent **v0.10.2**'s real CRDs (git tag v0.10.2) in k3s v1.31: `make k3s-kagent-crds` (server-side dry run), created for real by `make k3s-install AI=1` | **verified** (the API server applied defaults and refused invalid fields) |
+| kagent's MCP client (go-sdk v1.6.1) against `/mcp` | the library kagent pins | **verified** (Phase 5) |
+| The whole loop: register, Test connection, A2A 0.3 and 1.0 streaming, `tasks/get` polling, cancel, deadline, worker shutdown, results through `/mcp`, c22, blind agents, SSE through Traefik, NetworkPolicies, two API replicas | Soundings' **fake agent** (`dev/fake-agent`, on a2a-sdk 1.2.1's server; its 0.3 wire format checked with a2a-sdk 0.3.23's client, kagent-adk 0.10.2's library) standing in for kagent's controller: backend acceptance, `E2E_AI=1` e2e, `make demo DEMO_AI=1`, `make ai-smoke`, `make k3s-smoke AI=1` | **verified against the fake** |
+| kagent's controller proxying A2A to agent pods, its task store for `tasks/get`, its handling of `A2A-Version`, `RemoteMCPServer` `headersFrom` resolution at runtime, kagent 1.0's layout | kagent's source and docs only (its chart can't be pulled on our build network) | **not verified live** |
+| A model following the run message (tool order, real citations, no scores in notes) | no LLM here | **assumed**; the server enforces the rules (c22, blind, limits, result matching) regardless |
+
+To close the gap on your cluster: install kagent 0.10.x, apply `fake-agent-byo.yaml`
+(the fake behind kagent's real controller, no model needed), register it and run "Ask AI
+to evaluate"; then swap in a Declarative agent with your `ModelConfig`.
+
+### Troubleshooting runs
+
+A run's card (and `GET /api/v1/ideas/{idea}/ai-runs/{id}`) says why it ended, as a code
+with Soundings' own sentence: `agent_unreachable` (no connection to the controller, or
+5xx / 404, after two retries: check `kagent.controllerUrl`, the egress policy, the
+Agent's namespace and name), `agent_unavailable` (the agent was disabled, lost the
+project or purpose, or has no usable key when the run started), `agent_protocol_error`
+(the controller answered something other than A2A: wrong protocol for the kagent
+version?), `agent_rejected`, `agent_failed` and `agent_needs_input` (the agent's task
+ended so: its logs are in kagent), `no_result` (the task completed without recording its
+result through MCP: often a missing or stale key Secret, or a model that ignored its
+instructions), `timed_out` (raise `ai.runTimeout` or use a faster model),
+`queue_timeout` (no worker picked it up for 30 minutes), `worker_lost` (the worker
+stopped mid-run), `ai_disabled` and `internal_error` (logged with its traceback). Worker
+logs carry run ids, error classes and HTTP statuses, never prompts, keys or agent text.
 
 ## Operations [Phase 1, 7]
 

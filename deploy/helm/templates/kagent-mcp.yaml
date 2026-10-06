@@ -1,11 +1,13 @@
 {{- /*
-Example kagent resources (kagent.enabled and kagent.examples, off by default): register
-this release's MCP server with kagent 0.10 (CRD group kagent.dev, v1alpha2), so agents
-can list and call Soundings' tools. Checked against the v0.10.2 CRD (see
+The shared example RemoteMCPServer (kagent.enabled, kagent.examples and kagent.mcp.keySecret;
+Phase 5): this release's MCP server registered with kagent 0.10 (CRD group kagent.dev,
+v1alpha2) with one key for every agent that references it, e.g. a person's key for their
+own kagent agents. The AI agents of Phase 6 have their own (kagent-agents.yaml): an
+agent's key works only during its runs. Checked against the v0.10.2 CRD (see
 deploy/kagent/README.md for what is verified). The API key is never in values: the
 operator creates kagent.mcp.keySecret from the key Soundings shows once.
 */ -}}
-{{- if and .Values.kagent.enabled .Values.kagent.examples }}
+{{- if and .Values.kagent.enabled .Values.kagent.examples .Values.kagent.mcp.keySecret }}
 {{- $fullname := include "soundings.fullname" . }}
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer

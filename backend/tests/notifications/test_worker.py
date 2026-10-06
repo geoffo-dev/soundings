@@ -20,11 +20,16 @@ pytestmark = pytest.mark.usefixtures("team")
 
 
 def test_the_jobs_are_registered() -> None:
-    assert TASK_MODULES == ["app.email.tasks"]
+    assert TASK_MODULES == ["app.email.tasks", "app.ai.tasks"]
     procrastinate_app.perform_import_paths()  # type: ignore[no-untyped-call]
-    assert {"send_email", "sweep_outbox", "notification_schedule", "remove_old_jobs"} <= set(
-        procrastinate_app.tasks
-    )
+    assert {
+        "send_email",
+        "sweep_outbox",
+        "notification_schedule",
+        "remove_old_jobs",
+        "run_ai",
+        "sweep_ai_runs",
+    } <= set(procrastinate_app.tasks)
     periodic = {
         task.task.name: task.cron
         for task in procrastinate_app.periodic_registry.periodic_tasks.values()
@@ -33,9 +38,13 @@ def test_the_jobs_are_registered() -> None:
         "sweep_outbox": "* * * * *",
         "notification_schedule": "0 * * * *",
         "remove_old_jobs": "17 3 * * *",
+        "sweep_ai_runs": "* * * * *",
     }
     assert procrastinate_app.tasks["send_email"].queue == "email"
     assert procrastinate_app.tasks["notification_schedule"].queue == "notifications"
+    # Phase 6: runs on the ai queue (the worker's own pool); the sweep on the main pool.
+    assert procrastinate_app.tasks["run_ai"].queue == "ai"
+    assert procrastinate_app.tasks["sweep_ai_runs"].queue == "notifications"
 
 
 async def test_the_worker_sends_queued_mail_and_keeps_no_finished_jobs(

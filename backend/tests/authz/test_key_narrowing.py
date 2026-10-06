@@ -15,9 +15,11 @@ from fastapi import FastAPI
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.authz import IdeaFacts, ProjectFacts, Resource, Rule, authorize
+from app.domain.principal import Principal
 from app.models.activity import AuditLog
 from app.models.api_key import ApiKey
-from app.models.enums import EvaluatorState, HoldReason, IdeaStatus
+from app.models.enums import EvaluatorState, HoldReason, IdeaStatus, ProjectRole
 from app.models.idea import Idea
 from app.models.project import Project
 from app.services.scoring import recompute_aggregates
@@ -302,13 +304,22 @@ async def test_deleting_and_moderating_ideas_need_a_session(
 async def test_a_service_account_never_volunteers_as_owner(
     app: FastAPI, world: World, db_session: AsyncSession
 ) -> None:
+    """c21 (a property of the principal) refuses it in the policy; through REST an agent's
+    key is refused before that by c22 (Phase 6: agents' keys are MCP only)."""
     idea = await make_idea(db_session, world.cust, status=IdeaStatus.NEW)
     key = await make_key(db_session, world.bot, scopes=["read", "write"])
 
     async with key_client(app, key) as http:
         response = await http.post(f"{API}/ideas/{idea.id}/volunteer")
 
-    problem(response, 403, "forbidden")
+    problem(response, 403, "insufficient_scope")
+    project = ProjectFacts(id=world.cust.id, visibility=world.cust.visibility)
+    decision = authorize(
+        Principal(user=world.bot),
+        Rule.IDEA_VOLUNTEER_OWNER,
+        Resource(project=project, role=ProjectRole.MEMBER, idea=IdeaFacts.of(idea)),
+    )
+    assert (decision.status, decision.code, decision.condition) == (403, "forbidden", "c21")
 
 
 # --- Writes through a key are audited as such -----------------------------------------------------

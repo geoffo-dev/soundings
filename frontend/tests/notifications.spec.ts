@@ -115,7 +115,10 @@ test('the "?" sheet lists the inbox shortcut', async ({ page }) => {
 test('loading and error states', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('soundings-mock-fail', '/me/notifications'))
   await page.goto('/notifications')
-  await expect(page.getByRole('alert')).toContainText('Couldn’t load your notifications')
+  // Shown after the client's retries (about 3 s): allow for a loaded machine.
+  await expect(page.getByRole('alert')).toContainText('Couldn’t load your notifications', {
+    timeout: 10_000,
+  })
   await page.evaluate(() => localStorage.removeItem('soundings-mock-fail'))
   await page.getByRole('button', { name: 'Try again' }).click()
   await expect(page.getByRole('heading', { level: 2, name: 'Today' })).toBeVisible()

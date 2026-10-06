@@ -64,3 +64,15 @@ its Python runtime can't cancel, its UI and A2A endpoint are unauthenticated by 
 - Without an output schema, rationale quality and citations depend on the model and its
   system message; the server enforces only shape (rationale present, ≤ 5 http(s)
   sources per criterion).
+
+## Notes from the build (2026-10-06)
+
+- The A2A client is hand-written on httpx (no a2a-sdk in the backend): four calls, our
+  own size limits, no redirects or proxies. a2a-sdk 1.2.1 is used only by the fake agent.
+- The worker runs the `ai` queue in a procrastinate pool of its own next to the email and
+  notification pool, in one process; the database pool is sized for both.
+- `ai.delete_note` (the idea's owner and admins) replaced `comment.delete_any` for
+  research notes. Other build-time calls: [decisions.md](../decisions.md), "Phase 6 build
+  and integration"; contract changes: contract-phase6 §10.
+- Verified against kagent: the example manifests against v0.10.2's real CRDs. Everything
+  else about the loop is verified against the fake agent only (contract-phase6 §8).

@@ -699,3 +699,52 @@ done; italic notes below say what changed).
 |---|---|---|
 | The `ai_research_note` activity item, `EvaluationScore.sources`, five `AuditAction` values and the tenth MCP tool are agreed and modelled now but land in one integration step with the SPA (contract-phase6 §5). | Proposed | They break the SPA's exhaustive maps and mocks, or need their handler (Phases 3–5 precedent). |
 | The contract adds the new operations to identity's and backend's meta-test tables (`ROUTE_KEY_ACCESS`, `test_route_rules.py`, the guard tests' exclusions, `DOMAIN_TABLES`). | Proposed | Otherwise `make check-backend` fails on stub routes and new tables (Phase 5 precedent). |
+
+## 2026-10-06 · Phase 6 build and integration
+
+Calls made while building and integrating AI assistance. Contract changes are listed in
+[contract-phase6.md §10](api/contract-phase6.md#10-changes-after-the-contract) ("Builders'
+changes"); what is verified against kagent and what only against the fake agent is in
+[contract-phase6.md §8](api/contract-phase6.md#8-verified-vs-assumed-kagent) and
+[`deploy/kagent/README.md`](../deploy/kagent/README.md#what-is-verified-2026-10-06). The
+test plan, with every case ID: [test-plans/phase-6.md](test-plans/phase-6.md).
+
+### Runs, A2A and the worker
+
+| Decision | Status | Why |
+|---|---|---|
+| The A2A client is hand-written on httpx (0.3 `message/stream`, `tasks/get`, `tasks/cancel`; 1.0 `SendStreamingMessage`, `GetTask`, `CancelTask` with `A2A-Version: 1.0`): SSE parsing capped at 1 MiB per event, cards at 64 KiB, no redirects, no cookies, `trust_env=False`, an explicit SSL context; card URLs are never followed. | Decided | No new backend dependency (a2a-sdk would bring its own HTTP stack and server pieces for four calls); every limit is ours. |
+| The worker runs two procrastinate pools in one process: `email` + `notifications` (`worker_concurrency`) and `ai` (`SOUNDINGS_AI_MAX_CONCURRENT_RUNS`); one signal handler stops both; the database pool is concurrency + AI runs + 4. `sweep_ai_runs` is a periodic job on `notifications`. | Decided | Contract review M3: email and the schedules never wait behind a five-minute AI run. |
+| State changes are compare-and-set with an event log of at most 200 events per run, the final one included; nothing but the final event once a run has ended. A `tool_called` event of a write tool goes to the open run of that tool's kind on the idea; `result_recorded` is written after the tool's transaction. | Decided | Races between the worker, cancel, the sweep and the agent's own calls resolve to one outcome; the stream reads "Saved its evaluation" then "Evaluation submitted". |
+| A worker that receives SIGTERM ends its runs `worker_lost` at once and sends `tasks/cancel` (verified: 0.15 s, one cancel at the fake). | Decided | Contract review S2: no resuming, nothing sent twice. |
+| `AiRun.cancel_requested` is true only while the run is active. | Decided (integration) | QA nit: a queued run cancelled at once answered "Cancelling" on a cancelled run. |
+
+### Agents, keys and rules
+
+| Decision | Status | Why |
+|---|---|---|
+| New rule `ai.delete_note` (the idea's owner, project admins, platform admins) for research notes, instead of `comment.delete_any`. | Decided (lead) | Contract review C4: the owner who asked for a note should be able to remove a harmful one. |
+| On REST an agent's key gets 403 `insufficient_scope` (c22) before Phase 5's c21 answers; on MCP every tool checks c22 and writes go only through the run kind's tool. Service accounts are blind everywhere (rule 9, in the policy and `queries.score_visible`). | Decided | One refusal for every REST route; agents never carry scores to pending evaluators. |
+| Sources are accepted only from AI evaluators; an agent's submission needs a rationale (comment) for every scored criterion; a re-submission that changes a score or the recommendation resets "include in score". | Decided | Contract §3.7. |
+| `rotate_ai_agent_key` answers 409 `ai_unavailable` while the agent's service account is deactivated; an agent key's project restriction skips the "owner can view" check (c10 decides per project). | Decided | A key can't be issued to an inactive owner; an agent may be a viewer in a project for a while. |
+| Helm: the switch is `SOUNDINGS_AI_ENABLED` (the chart had `SOUNDINGS_FEATURE_AI`, which the app never read); `kagent.mcp.keySecret` is optional because each example agent has its own `RemoteMCPServer` reading the Secret registration shows; the worker's egress gets kagent's controller port. | Decided | One key per agent; the shared Phase 5 `RemoteMCPServer` is for a person's key. |
+
+### Screens
+
+| Decision | Status | Why |
+|---|---|---|
+| The AI menu is hidden, not disabled, when AI is off or the person may not ask; an action that can't be done now is disabled with its reason in plain words. | Decided | Members and viewers have nothing to ask; the owner learns why. |
+| One label for the evaluate action everywhere (menu, evaluators list, ⌘K): "Ask AI to evaluate again" once every agent offered has submitted. | Decided (integration) | QA: the menu and the list said different things for the same agent. |
+| The AI badge is on every activity line by or about an agent ("Idea evaluator [AI] submitted an evaluation", "Alice invited Idea evaluator [AI] to evaluate"), from data the page has (the idea's AI evaluators, the runs' agents): no `is_ai` on `UserRef`. The comparison table heads an agent's column with its full name. | Decided (integration) | Contract §1: AI work labelled wherever it appears; "Idea" (the first word) read as a person. |
+| The register sheet's URL preview shows `{namespace}` / `{name}` for anything the API would refuse; the key dialog opens focused on itself (Radix focused the copy icon, whose tooltip covered the header); "Draft with AI" reads "Draft" on phones; the admin list refetches on every visit, after a run is asked for or ends, and every 30 s while an agent has runs in progress. | Decided (integration) | QA's visual list. |
+| A deleted research note reads "wrote a research note, since deleted"; the admin page has no per-agent run history (no endpoint): it shows active runs and links to the audit log filtered to AI. | Decided | Simple; the audit log already has every run request and cancel. |
+
+### Platform and testing
+
+| Decision | Status | Why |
+|---|---|---|
+| Soundings' fake agent (`dev/fake-agent`, a2a-sdk 1.2.1's server) stands in for kagent's controller in dev, e2e, CI and k3s: kagent v0.10.2's paths (and 1.0's), a card, streaming, `tasks/get`, `tasks/cancel`, a real MCP session with the agent's own key, behaviours by name suffix, observations without keys or text. | Decided | No kagent or LLM here; everything but the model and kagent's proxy is exercised for real. |
+| kagent's CRDs come from its v0.10.2 git tag (`make k3s-kagent-crds`), not its chart. | Decided | ghcr's blob host is refused on this network; the CRDs are the files the kagent-crds chart packages. |
+| The e2e stack (`E2E_AI=1`) registers "Idea evaluator" after every seed; AI specs are `@ai`, each with its own project, idea owner and agents. | Decided | 20 run requests per person an hour: one shared owner hit the limit in the first full run. |
+| The backend acceptance runs the real fake agent as a subprocess (`uv`); `SOUNDINGS_TEST_FAKE_AGENT=0` skips it. CI's backend job has uv, so it runs there. | Decided | The whole loop over TCP in `make check-backend`. |
+| AAK-03 waits for "Sign out everywhere"'s confirmation to close before asserting the sheet's button is gone. | Decided (integration) | While the confirmation is open the sheet is outside the accessibility tree, so the check passed before the sessions ended and `/auth/me` still answered 200 under load. |

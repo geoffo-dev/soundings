@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Pencil,
   Sparkle,
+  Sparkles,
   Trash2,
   UserMinus,
   UserPlus,
@@ -23,8 +24,11 @@ import {
   useIdeaActivity,
   useUpdateComment,
 } from '@/api/activity'
+import { useIdeaAiRuns } from '@/api/ai'
 import { useIdeaSubmission } from '@/api/submissions'
-import type { ActivityItem, CommentActivity } from '@/api/types'
+import { ResearchNoteItem } from '@/features/ai/research-note'
+import type { ActivityItem, CommentActivity, IdeaDetail } from '@/api/types'
+import { AiBadge } from '@/components/ui/ai-badge'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -109,6 +113,8 @@ export function ActivitySection() {
                     item={entry.item}
                     highlighted={entry.item.comment.id === highlighted}
                   />
+                ) : entry.item.type === 'ai_research_note' && !entry.item.note.deleted ? (
+                  <ResearchNoteItem key={entry.item.id} item={entry.item} ideaKey={ideaKey} />
                 ) : (
                   <EventItem key={entry.item.id} entry={entry} />
                 ),
@@ -190,17 +196,74 @@ const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> =
   evaluation_closed: <Lock />,
   evaluation_reopened: <LockOpen />,
   due_date_changed: <CalendarClock />,
+  ai_research_note: <Sparkles />,
+}
+
+/**
+ * The idea's AI agents by service-account id (its AI evaluators and the agents
+ * of its runs, from data the page already has): their lines in the feed carry
+ * the AI badge too (contract-phase6 §1 "AI text is untrusted": labelled
+ * wherever its work appears).
+ */
+function useIdeaAgents(ideaKey: string, idea: IdeaDetail): Map<string, string> {
+  const runs = useIdeaAiRuns(ideaKey).data
+  const agents = new Map<string, string>()
+  for (const evaluator of idea.evaluators) {
+    if (evaluator.is_ai) agents.set(evaluator.user.id, evaluator.user.display_name)
+  }
+  for (const agent of [...(runs?.agents ?? []), ...(runs?.items.map((run) => run.agent) ?? [])]) {
+    agents.set(agent.user_id, agent.display_name)
+  }
+  return agents
+}
+
+/** The line's text with the AI badge after each agent it names ("invited Idea evaluator [AI] to evaluate"). */
+function WithAgentBadges({ text, names }: { text: string; names: readonly string[] }) {
+  const parts: ReactNode[] = []
+  let rest = text
+  for (;;) {
+    let at = -1
+    let name = ''
+    for (const candidate of names) {
+      const index = candidate ? rest.indexOf(candidate) : -1
+      if (index !== -1 && (at === -1 || index < at)) {
+        at = index
+        name = candidate
+      }
+    }
+    if (at === -1) break
+    // Spaces around the badge, not margins: read aloud, it is a word of its own.
+    parts.push(rest.slice(0, at + name.length), ' ', <AiBadge key={parts.length} />)
+    rest = rest.slice(at + name.length)
+  }
+  parts.push(rest)
+  return <>{parts}</>
 }
 
 /** One quiet line: icon, "Alice moved it from New to Evaluating", time. */
 function EventItem({ entry }: { entry: ActivityEntry }) {
   const { statusLabel, idea, ideaKey } = useIdeaPage()
+  const agents = useIdeaAgents(ideaKey, idea)
   const { item } = entry
   // A public idea's "sent it through the public form" names its sender, like the header.
   const submitter = useIdeaSubmission(ideaKey, {
     enabled: idea.via_public_form && item.type === 'idea_created' && !item.actor,
   }).data?.name
   const icon = item.type === 'comment' ? <MessageSquare /> : EVENT_ICONS[item.type]
+  const evaluator =
+    item.type === 'evaluator_added' || item.type === 'evaluator_removed' ? item.evaluator : null
+  // The line's subject is an agent: it acted, or (no actor) its run took it off.
+  const actorIsAgent = item.actor
+    ? agents.has(item.actor.id)
+    : item.type === 'evaluator_removed' && Boolean(evaluator && agents.has(evaluator.id))
+  // Agents the line names after the verb (invited, removed), when someone else acted.
+  const namedAgents = item.actor
+    ? entry.invited
+      ? entry.invited.filter((name) => [...agents.values()].includes(name))
+      : evaluator && agents.has(evaluator.id)
+        ? [evaluator.display_name]
+        : []
+    : []
   return (
     <li className="relative flex items-start gap-2.5 py-1.5 text-sm">
       <span
@@ -211,7 +274,12 @@ function EventItem({ entry }: { entry: ActivityEntry }) {
       </span>
       <p className="min-w-0 pt-0.5 text-secondary">
         <span className="font-medium text-primary">{activityActor(item, submitter)}</span>{' '}
-        {describeEntry(entry, statusLabel)}
+        {actorIsAgent && (
+          <>
+            <AiBadge />{' '}
+          </>
+        )}
+        <WithAgentBadges text={describeEntry(entry, statusLabel)} names={namedAgents} />
         <span aria-hidden="true" className="text-muted">
           {' '}
           ·{' '}

@@ -18,13 +18,16 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import notes
 from app.authz import Resource, Rule, can
 from app.domain.principal import Principal
 from app.models.activity import ActivityEvent, Comment
 from app.pagination import InvalidCursorProblem, decode_cursor, encode_cursor
 from app.schemas.activity import (
+    AI_RESEARCH_NOTE,
     ActivityItem,
     ActivityPage,
+    AiResearchNoteActivity,
     CommentActivity,
     CommentBody,
     DueDateChangedActivity,
@@ -38,6 +41,7 @@ from app.schemas.activity import (
     OwnerChangedActivity,
     StatusChangedActivity,
 )
+from app.schemas.ai import ResearchNote
 from app.schemas.users import UserRef
 from app.services.sql import any_of
 from app.services.summaries import user_refs
@@ -74,6 +78,7 @@ def _item(
     event: ActivityEvent,
     users: Mapping[UUID, UserRef],
     comment: CommentBody | None,
+    note: ResearchNote | None = None,
 ) -> ActivityItem | None:
     payload = event.payload
     base: dict[str, Any] = {
@@ -138,6 +143,12 @@ def _item(
                 to_due_at=_datetime(payload["to_due_at"]),
                 **base,
             )
+        case "ai_research_note":
+            return (
+                None
+                if note is None
+                else AiResearchNoteActivity(type="ai_research_note", note=note, **base)
+            )
     return None  # a type from a later phase: clients skip it too
 
 
@@ -158,6 +169,11 @@ async def activity_items(
     if comment_ids:
         found = await db.scalars(select(Comment).where(any_of(Comment.id, comment_ids)))
         comments = {comment.id: comment for comment in found}
+    agents = (
+        await notes.agent_refs(db, notes.note_agent_ids(events))
+        if any(event.type == AI_RESEARCH_NOTE for event in events)
+        else {}
+    )
     items = []
     for event in events:
         comment = comments.get(event.comment_id) if event.comment_id else None
@@ -166,7 +182,12 @@ async def activity_items(
             if comment is not None
             else None
         )
-        item = _item(event, users, body)
+        note = (
+            notes.note_out(principal, event, agents, resource_for(event.idea_id))
+            if event.type == AI_RESEARCH_NOTE and event.idea_id is not None
+            else None
+        )
+        item = _item(event, users, body, note)
         if item is not None:
             items.append(item)
     return items

@@ -34,10 +34,12 @@ import json
 import logging
 from collections.abc import Mapping
 from typing import Any, Final
+from uuid import UUID
 
 import mcp_types as types
 from pydantic import BaseModel, ValidationError
 
+from app.ai import results as ai_results
 from app.api_keys.verify import reload_api_key
 from app.auth.key_auth import refuse_reloaded_key, take_key_write
 from app.db import session_scope
@@ -162,11 +164,16 @@ async def _refused(request: McpRequest, tool: McpTool, code: str, raw: object) -
     )
 
 
+def _target_idea(target: AuditTarget) -> UUID | None:
+    return target.target_id if target.target_type == "idea" else None
+
+
 async def _run(
     request: McpRequest, tool: McpTool, args: BaseModel, raw: dict[str, Any]
 ) -> types.CallToolResult:
     app = request.app
     target = AuditTarget()
+    context: ToolContext | None = None
     try:
         async with session_scope(app.state.sessionmaker, settings=app.state.settings) as db:
             principal = await _live_principal(db, request.principal, app.state.settings)
@@ -183,10 +190,22 @@ async def _run(
                 code=None,
                 target=target,
             )
+        # Phase 6: an agent's progress events, after the tool's transaction (results.py).
+        await ai_results.record_call(
+            app,
+            request.principal,
+            tool=tool.name,
+            idea_id=_target_idea(target),
+            error_code=None,
+            recorded=context.recorded,
+        )
         return success_result(output)
     except ProblemError as problem:
         code, message = problem.code, _problem_message(problem)
         decision = _decision(problem)
+        await ai_results.record_call(
+            app, request.principal, tool=tool.name, idea_id=_target_idea(target), error_code=code
+        )
     except asyncio.CancelledError:
         _audit_cancelled(request, tool, target, raw)
         raise

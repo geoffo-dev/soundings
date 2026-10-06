@@ -10,11 +10,13 @@
 #   MCP_KEY=sdg_... MCP_EXPECT=ok scripts/k3s-mcp-client.sh
 #
 #   MCP_KEY            the API key (read from the environment, never from arguments)
-#   MCP_EXPECT         ok: initialize (the handshake kagent's Go SDK uses), the nine
+#   MCP_EXPECT         ok: initialize (the handshake kagent's Go SDK uses), the ten
 #                      tools, search_ideas (MCP_QUERY, if set, must find MCP_EXPECT_KEY);
 #                      unauthorized: POST /mcp answers 401 (a revoked key);
 #                      blocked: the NetworkPolicy drops the connection (DNS still works)
 #   MCP_CLIENT_NAMESPACE  namespace of the client pod (default kagent; created if missing)
+#   MCP_CLIENT_LABELS  extra pod labels, key=value[,key=value] (e.g.
+#                      app.kubernetes.io/managed-by=kagent: what kagent's agent pods carry)
 #   RELEASE / NAMESPACE   the Soundings release (defaults soundings / soundings)
 # Needs jq. Removes its pod and Secret afterwards, and the namespace if it created it.
 set -euo pipefail
@@ -81,7 +83,8 @@ URL, EXPECT = os.environ["MCP_URL"], os.environ["MCP_EXPECT"]
 HEADERS = {"Authorization": os.environ["MCP_AUTHORIZATION"]}
 QUERY, WANT_KEY = os.environ.get("MCP_QUERY", ""), os.environ.get("MCP_EXPECT_KEY", "")
 TOOLS = {"list_projects", "search_ideas", "get_idea", "create_idea", "add_comment",
-         "submit_evaluation", "get_rubric", "get_proposal", "propose_proposal_section"}
+         "submit_evaluation", "get_rubric", "get_proposal", "propose_proposal_section",
+         "add_research_note"}
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
     "protocolVersion": "2025-06-18", "capabilities": {},
     "clientInfo": {"name": "k3s-mcp-client", "version": "1"}}}
@@ -117,7 +120,7 @@ async def main() -> None:
         challenge = response.headers.get("www-authenticate", "")
         if response.status_code != 401 or not challenge.startswith("Bearer"):
             sys.exit(f"FAIL with the revoked key: {response.status_code} {challenge!r}, want 401")
-        print(f"ok  revoked key from the cluster: 401 ({challenge})")
+        print(f"ok  an unknown or revoked key from the cluster: 401 ({challenge})")
         return
     async with httpx2.AsyncClient(headers=HEADERS, timeout=30) as http:
         # "legacy": the initialize handshake, which kagent's Go SDK client uses.
@@ -138,13 +141,16 @@ async def main() -> None:
 asyncio.run(main())
 PY
 
+labels="$(jq -nc --arg l "${MCP_CLIENT_LABELS:-}" \
+  '[$l | split(",")[] | select(length > 0) | split("=") | {(.[0]): .[1]}] | add // {}')"
 restricted='{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
   "capabilities": {"drop": ["ALL"]}}'
 jq -n --arg name "$pod" --arg image "$image" --arg pull "$pull" --arg secret "$secret" \
   --arg url "$url" --arg expect "$EXPECT" --arg query "${MCP_QUERY:-}" \
-  --arg want "${MCP_EXPECT_KEY:-}" --arg script "$client_py" --argjson sc "$restricted" '
+  --arg want "${MCP_EXPECT_KEY:-}" --arg script "$client_py" --argjson sc "$restricted" \
+  --argjson labels "$labels" '
   {apiVersion: "v1", kind: "Pod",
-   metadata: {name: $name, labels: {"app.kubernetes.io/name": "mcp-smoke-client"}},
+   metadata: {name: $name, labels: ({"app.kubernetes.io/name": "mcp-smoke-client"} + $labels)},
    spec: {restartPolicy: "Never", automountServiceAccountToken: false, enableServiceLinks: false,
      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001,
        seccompProfile: {type: "RuntimeDefault"}},

@@ -44,6 +44,9 @@ PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
     "evaluation_reopened": frozenset(),
     "due_date_changed": frozenset({"from_due_at", "to_due_at"}),
     "comment": frozenset(),
+    # Phase 6: the note itself (agent text, untrusted; never score data). Deleting it
+    # clears body_md and sources and adds deleted: true (app.ai.notes).
+    "ai_research_note": frozenset({"run_id", "agent_id", "body_md", "sources"}),
 }
 """The stored payload keys per event type (ids are resolved to users by the API)."""
 
@@ -60,6 +63,11 @@ def _stored(value: object) -> Any:
         return value.isoformat()
     if isinstance(value, list | tuple):
         return [_stored(item) for item in value]
+    if isinstance(value, Mapping):
+        # A research note's sources: [{title, url}] (strings only).
+        if not all(isinstance(key, str) and isinstance(item, str) for key, item in value.items()):
+            raise TypeError("activity payload objects hold strings only")
+        return dict(value)
     if value is None or isinstance(value, bool | str):
         return value
     raise TypeError(f"activity payloads hold ids, enums, dates, flags and names, not {value!r}")

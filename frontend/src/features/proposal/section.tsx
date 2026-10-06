@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { describeError } from '@/api/errors'
+import { DraftWithAiButton, SectionDraftProgress } from '@/features/ai/draft-with-ai'
 import { formatTime } from '@/lib/dates'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
@@ -30,7 +31,8 @@ const isMod = (event: KeyboardEvent) => event.metaKey || event.ctrlKey
  * up, its margin threads beside it.
  */
 export function SectionRow({ section, index }: { section: ProposalSection; index: number }) {
-  const { store, permissions, modeOf, toggleSectionMode, threads, setCurrent } = useProposalEditor()
+  const { store, permissions, modeOf, toggleSectionMode, threads, setCurrent, ideaKey } =
+    useProposalEditor()
   const state = useSectionSave(store, section.key)
   const headingId = useId()
   const fieldRef = useRef<HTMLTextAreaElement>(null)
@@ -60,6 +62,7 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
           <span className="text-xs text-muted tabular-nums">{wordLabel(countWords(text))}</span>
           {permissions.can_edit && state && <SectionSaveBadge state={state} />}
           <div className="ml-auto flex items-center gap-1.5">
+            <DraftWithAiButton ideaKey={ideaKey} section={section} />
             {permissions.can_edit && (
               <SegmentedControl
                 size="sm"
@@ -77,6 +80,8 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
             <MobileCommentsButton sectionKey={section.key} title={section.title} />
           </div>
         </div>
+
+        <SectionDraftProgress ideaKey={ideaKey} section={section} />
 
         {state?.status === 'conflict' && state.conflict && (
           <ConflictPrompt sectionKey={section.key} theirs={state.conflict} yours={state.draft} />

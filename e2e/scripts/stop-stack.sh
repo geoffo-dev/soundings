@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stop what start-stack.sh started: the `soundings api` and `soundings worker` processes
-# (by their pid files only, never by pattern), the Postgres and Mailpit containers and,
+# and the fake kagent agent (by their pid files only, never by pattern), the Postgres and
+# Mailpit containers and,
 # from an E2E_SSO=1 run, the Keycloak container (whatever E2E_SSO is now). Safe to run
 # twice.
 set -euo pipefail
@@ -10,6 +11,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$here/stack-env.sh"
 
 stop_app
+stop_process fake-agent
 
 if docker inspect "$pg_container" >/dev/null 2>&1; then
   log "removing $pg_container"

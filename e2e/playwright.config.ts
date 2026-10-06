@@ -39,6 +39,13 @@ import { defineConfig, devices } from '@playwright/test'
  * bearer key, no cookie, an X-Forwarded-For address of their own so refused keys don't
  * add up on 127.0.0.1). Nothing new to run. `npm run screenshots:phase5`
  * (SCREENSHOTS=phase-5) runs screenshots/phase-5.spec.ts (docs/screenshots/phase-5/).
+ *
+ * Phase 6: AI specs are tagged @ai and skip unless AI assistance is on and Soundings' fake
+ * kagent agent answers (`E2E_AI=1` starts it next to the local stack; against
+ * `E2E_BASE_URL` set E2E_FAKE_AGENT_URL and E2E_FAKE_AGENT_KEYS_DIR). Each registers agents
+ * of its own (tests/support/ai.ts), so they run side by side. `npm run
+ * screenshots:phase6` (SCREENSHOTS=phase-6, E2E_AI=1) runs screenshots/phase-6.spec.ts
+ * (docs/screenshots/phase-6/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -52,7 +59,9 @@ const screenshotSpec =
         ? /screenshots\/phase-4\.spec\.ts$/
         : process.env.SCREENSHOTS === 'phase-5'
           ? /screenshots\/phase-5\.spec\.ts$/
-          : /screenshots\/phase-1\.spec\.ts$/
+          : process.env.SCREENSHOTS === 'phase-6'
+            ? /screenshots\/phase-6\.spec\.ts$/
+            : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/

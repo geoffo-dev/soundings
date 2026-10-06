@@ -22,6 +22,7 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *              ['notifications', 'preferences'] · ['notifications', 'unsubscribe', token]
  *   proposals  ['proposals', KEY, 'view' | 'threads' | 'suggestions']
  *   apiKeys    ['api-keys', 'mine'] (admin: ['admin', 'api-keys', 'list', filters])
+ *   ai         ['ai', KEY, 'runs'] · ['ai', KEY, 'run', runId] (admin: ['admin', 'ai-agents'])
  *   public     ['public', 'project', slug] · ['public', 'track', token] (public pages, no session)
  *   branding   ['branding', 'effective'] · ['branding', 'global'] · ['branding', 'project', slug]
  *   submissions ['submissions', 'form', slug] · ['submissions', 'moderation', slug] ·
@@ -142,6 +143,16 @@ export const queryKeys = {
     apiKeys: () => ['admin', 'api-keys'] as const,
     apiKeyList: (filters: Record<string, unknown>) =>
       ['admin', 'api-keys', 'list', filters] as const,
+    /** Phase 6: Admin settings → AI agents (`api/ai-agents.ts`). */
+    aiAgents: () => ['admin', 'ai-agents'] as const,
+  },
+  /** Phase 6: an idea's AI runs (`api/ai.ts`): the list (with permissions) and one run's events. */
+  ai: {
+    all: ['ai'] as const,
+    idea: (idea: string) => ['ai', ideaCacheId(idea)] as const,
+    runs: (idea: string) => ['ai', ideaCacheId(idea), 'runs'] as const,
+    run: (idea: string, runId: string) =>
+      ['ai', ideaCacheId(idea), 'run', runId.toLowerCase()] as const,
   },
   /** Phase 5: your API keys (`api/api-keys.ts`). */
   apiKeys: {

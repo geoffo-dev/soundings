@@ -1070,7 +1070,9 @@ class ResearchNote(ResponseModel):
     body_md: str = Field(description="Empty when deleted.")
     sources: list[Citation]
     deleted: bool
-    can_delete: bool = Field(description="comment.delete_any: project and platform admins.")
+    can_delete: bool = Field(
+        description="ai.delete_note: the idea's owner and project and platform admins."
+    )
 
 
 ResearchNoteBody = Annotated[

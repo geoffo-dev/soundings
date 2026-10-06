@@ -26,7 +26,8 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 | `docs/api/contract-phase*.md`, `docs/erd.md` | The current API contract and data model |
 | `docs/wireframes/` | Low-fi wireframes of the seven screens (`index.html` shows all) |
 | `docs/research/` | Verified library, kagent, A2A and Claude Code facts (with caveats) |
-| `docs/mcp.md` | Connecting MCP clients (Claude Code, Claude Desktop, SDKs) with a key; the tools; safety |
+| `docs/mcp.md` | Connecting MCP clients (Claude Code, Claude Desktop, SDKs) with a key; the ten tools; safety; how Soundings' own AI agents use it (c22) |
+| `deploy/kagent/README.md` | kagent integration: how a run flows, the manifests, what is verified against real kagent vs the fake agent |
 | `docs/phase-summaries/` | What each phase built, its evidence, review outcomes and known issues |
 
 ## Repository layout
@@ -43,14 +44,19 @@ backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the whe
                       (pdf.py, pdf_child.py), app/templates/pdf/, app/assets/fonts/ (woff2)
   app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention
   app/services/branding.py brand_assets.py moderation.py  branding (cached), images, queue
+  app/ai/             AI runs (Phase 6): registry (agents.py), runs.py, runner.py + tasks.py (the
+                      worker's `ai` queue), a2a.py (hand-written A2A 0.3/1.0 client), scope.py (c22),
+                      results.py, notes.py, transitions.py (compare-and-set + events), sse.py
 frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 4
   src/api/generated/  openapi.json + schema.d.ts (lead, generated)
   src/components/ui/  design system; /design shows it (dev only)
-deploy/helm/      Helm chart          deploy/kagent/  example agent manifests
-dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit;
-                  k3s/ (Mailpit, Keycloak manifests), k3s-*-values.yaml
+deploy/helm/      Helm chart          deploy/kagent/  example kagent 0.10 manifests (agents, BYO fake)
+dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit, the fake agent
+                  (profile `ai`); k3s/ (Mailpit, Keycloak, fake-agent manifests), k3s-*-values.yaml
+  fake-agent/       Soundings' deterministic fake kagent agent (a2a-sdk 1.2.1 server; calls /mcp
+                      back with the agent's key; own uv project, Makefile, Dockerfile; dev/CI/k3s only)
 e2e/              Playwright e2e against the real stack + review screenshots (qa)
-scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers
+scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers, *-smoke.sh
 docs/             ADRs, role matrix, ownership, wireframes, guides (user, operator, mcp), research,
                   test-plans/phase-N.md (qa), screenshots/phase-N/ (real-stack review
                   screenshots, light/dark/390 px; the frontend's mock ones in mock/;
@@ -67,17 +73,18 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 
 | Target | What it does |
 |---|---|
-| `make check` | Every check: `check-backend check-frontend check-helm check-scripts` |
+| `make check` | Every check: `check-backend check-frontend check-helm check-scripts check-fake-agent` |
 | `make check-backend` | `make -C backend check`: ruff, mypy --strict, pytest (needs Docker) |
 | `make check-frontend` | `npm --prefix frontend run check`: tsc, eslint + prettier, vitest, build |
 | `make check-helm` | `helm lint --strict` + `helm template` for defaults and `deploy/helm/ci/*-values.yaml`, via the helm container |
 | `make check-scripts` | `bash -n` + shellcheck (when available) on `scripts/` |
-| `scripts/check-task.sh [area…]` | The TaskCompleted gate by hand: `backend frontend helm e2e scripts` (e2e = `npm --prefix e2e run check`); no args = areas with uncommitted changes, `CHECK_TASK_ALL=1` = all |
+| `make check-fake-agent` | `make -C dev/fake-agent check`: ruff, mypy --strict, pytest (~25 s; includes a2a-sdk 0.3.23's own client in an isolated uv env) |
+| `scripts/check-task.sh [area…]` | The TaskCompleted gate by hand: `backend frontend helm e2e scripts fake-agent` (e2e = `npm --prefix e2e run check`); no args = areas with uncommitted changes, `CHECK_TASK_ALL=1` = all |
 | `make dev-up` / `dev-down` / `dev-logs` | Dev services via `docker compose -f dev/docker-compose.yml` |
 | `make dev` | Prints how to run API, worker and SPA against the dev services |
 | `make seed` | Migrate + load the demo data into `SOUNDINGS_DATABASE_URL` (default: the dev compose DB); a no-op once there are projects, `RESET=1` wipes app data first. Who's who: `dev/README.md` |
 | `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`): Ubuntu 24.04 base with Ubuntu's Python 3.12 and Pango, so PDF export works (the build fails if WeasyPrint can't render). Internal mirror: `IMAGE_BUILD_ARGS="--build-arg UBUNTU_MIRROR=http://…/ubuntu"`; `RUNTIME_APT_PACKAGES` only adds packages |
-| `make demo` / `demo-down` | Build the image and run it with Postgres, the worker, Mailpit (inbox http://localhost:8026), dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_MAILPIT_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`, `DEMO_SMTP=0` in-app only, `DEMO_TIMEZONE=`, `DEMO_PUBLIC_PER_IP=` public submissions per address and hour; containers run read-only with a `/tmp` tmpfs and no capabilities; `scripts/demo.sh`) / remove it all |
+| `make demo` / `demo-down` | Build the image and run it with Postgres, the worker, Mailpit (inbox http://localhost:8026), dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_MAILPIT_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`, `DEMO_SMTP=0` in-app only, `DEMO_TIMEZONE=`, `DEMO_PUBLIC_PER_IP=` public submissions per address and hour; `DEMO_AI=1` also builds and runs the fake agent on :8027 with AI on, keys in `dev/.fake-agent-keys`; containers run read-only with a `/tmp` tmpfs and no capabilities; `scripts/demo.sh`) / remove it all |
 | `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work, a break-glass sign-in when available, and `public-smoke`) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`). `k3s-up.sh` lowers the kubelet's disk eviction to 1 GiB free (`K3S_EVICTION_HARD`; the percentage defaults evicted every pod here); `dev/k3s/public-ratelimit.yaml` puts a Traefik rate limit in front of `/api/v1/public` |
 | `make k3s-mailpit` · `k3s-install SMTP=1` · `k3s-smoke SMTP=1` | Mailpit in the cluster (`scripts/k3s-mailpit.sh up\|scale 0\|1\|down`; SMTP `mailpit.mailpit.svc.cluster.local:1025`, inbox http://mailpit.localhost:18081), install with `dev/k3s-smtp-values.yaml` (SMTP, time zone, egress policies), then `scripts/email-smoke.sh` through the ingress (invite → email with the evaluate link; Mailpit scaled to 0 → queued → delivered once). `SSO=1 SMTP=1` combines both (CI) |
 | `make k3s-keycloak` · `k3s-install SSO=1` · `k3s-smoke SSO=1` | Keycloak with the dev realm in the cluster (`scripts/k3s-keycloak.sh up\|down`; issuer `http://keycloak.localhost:18081/realms/soundings` for browser and pods; creates Secret `soundings-oidc`), then install with `dev/k3s-sso-values.yaml` and run `scripts/sso-smoke.sh` through the ingress |
@@ -85,6 +92,8 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make email-smoke` | `scripts/email-smoke.sh $(EMAIL_BASE_URL)` (default :8000) against an app with dev login, the worker and Mailpit (`MAILPIT_URL`, default :8025; `MAILPIT_CONTAINER`, default the dev compose one; `MAILPIT_OUTAGE=0` skips the outage step); needs `jq` |
 | `make mcp-smoke` | `scripts/mcp-smoke.sh $(MCP_BASE_URL)` (default :8000): curl JSON-RPC at `/mcp` with the demo data and dev login: 405/401/`/.well-known` 404 anonymously, then carol's key (read, evaluate, mcp; Customer Innovation only), the nine tools, blind `search_ideas` / `get_idea`, `submit_evaluation`, `not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the audit entries, revoke → 401 at the next call and on REST; creates and deletes a test idea; needs `jq`. `MCP_CLIENT_HOOK` runs another client with the key (k3s) |
 | `make k3s-install MCP=1` · `k3s-smoke MCP=1` | `dev/k3s-mcp-values.yaml` (`kagent.enabled`; the API admits only Traefik and the `kagent` namespace), then `mcp-smoke` through the ingress plus `scripts/k3s-mcp-client.sh`: the official Python SDK in a pod in namespace `kagent` with its key from a Secret (`Bearer sdg_…`) calling the Service URL, and a pod in another namespace refused by the NetworkPolicy. CI runs `SSO=1 SMTP=1 MCP=1` |
+| `make ai-smoke` | `scripts/ai-smoke.sh $(AI_BASE_URL)` (default :8000) against an app with AI on, dev login, the worker and the fake agent (`AI_FAKE_URL`, default :8083; `AI_FAKE_KEYS_DIR`, default `dev/.fake-agent-keys`): register an agent (key once), hand the fake its key, Test connection, "Ask AI to evaluate" watched over SSE by a pending evaluator (no score data, 204 after the end), the AI evaluation out of the aggregate then included, research note, section draft, a cancelled `-slow` run, the agent's key refused on REST and outside runs; `AI_PROTOCOL=kagent_v1_0` runs it over A2A 1.0; needs `jq` |
+| `make fake-agent-image` · `make k3s-fake-agent` · `make k3s-kagent-crds` · `k3s-install AI=1` · `k3s-smoke AI=1` | The fake agent's image (`FAKE_AGENT_IMAGE`, default `soundings-fake-agent:dev`); the fake in k3s as `kagent/kagent-controller:8083` (so the default `controllerUrl` works); kagent v0.10.2's CRDs (from the git tag, cloned into `.k3s/`) plus a server-side dry run of every kagent manifest; install with `dev/k3s-ai-values.yaml` (AI on, `kagent.examples` when the CRDs exist) and run `ai-smoke` through the ingress. CI's k3s job runs `SSO=1 SMTP=1 MCP=1 AI=1` |
 | `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then deletes the idea. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
@@ -104,6 +113,17 @@ child, read back with `pypdf` (a dev dependency). PDF tests need Pango on the ho
 is installed here; CI installs it or runs on the Ubuntu image), else they skip.
 `test_phase5_acceptance.py` (about 50 s) runs the app behind a real uvicorn with the demo
 data and drives the contract §3.9 story with the official `mcp` client over TCP.
+`test_phase6_acceptance.py` (about a minute) runs the app on uvicorn, the worker's two
+procrastinate pools in the same event loop, and the real `dev/fake-agent` as a subprocess
+(`uv run --project dev/fake-agent`, synced on first use) calling back into `/mcp`: it needs
+`uv`; `SOUNDINGS_TEST_FAKE_AGENT=0` skips it. AI tests (`tests/ai/`) use
+`helpers.py` (`make_agent(db, …, user=…)` registers an agent with its service account and
+key through the service layer, `open_run(db, agent, idea, kind)` puts a run in `running`
+so its key may act, `run_row`, `events`), the `crew`, `kagent` (`fake_kagent.py`: an A2A
+server on `httpx.MockTransport`) and `ai_runtime` fixtures; `app.ai.runner.AiRuntime`
+holds the timing seams (deadline, heartbeat, poll, retries, clock, `transport`) and
+`app.state.ai_transport` replaces the network for Test connection. Agents' keys are
+MCP-only (REST: 403), so tests of agents go through `/mcp` with an open run.
 API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
 layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
 `make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
@@ -144,7 +164,15 @@ mock: fixtures in `src/mocks/phase5-fixtures.ts` (Alice's three keys, Mateo's do
 the Research agent's key, four pending suggestions on CUST-3; `frontend/README.md`);
 ⌘K has "API keys" (everyone) and "All API keys" (platform admins). Phase 5 mock
 screenshots: `SCREENSHOTS=1 npx playwright test api-keys-screenshots` →
-`docs/screenshots/phase-5/mock/`.
+`docs/screenshots/phase-5/mock/`. Phase 6 mock (`src/mocks/ai.ts`, `phase6-fixtures.ts`,
+`frontend/README.md`): Idea evaluator, the Research agent and a disabled Market scout;
+CUST-7 has an AI evaluation left out of the score (Alice pending), CUST-4 a research note
+and a timed-out run, CUST-2 none (ask away); a pretend worker walks new runs through the
+real steps and streams them as SSE. Knobs: `soundings-mock-ai=off`,
+`soundings-mock-ai-outcome` = `fail|timeout|no_result|unreachable|slow|queued`,
+`soundings-mock-ai-pace` (ms per step); agents named `*-down`/`*-broken` fail Test
+connection. Phase 6 mock screenshots: `SCREENSHOTS=1 npx playwright test ai-screenshots` →
+`docs/screenshots/phase-6/mock/`.
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -205,18 +233,33 @@ queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators.
 `api.createApiKey(...)`, revoking them when they end (25 per user). Specs that end
 someone's sessions or deactivate them create that person (`newPerson`).
 `screenshots:phase5` writes `docs/screenshots/phase-5/` (7 screens × 1440 light/dark and
-390; the shown key is revoked at once). Contract rules not built yet are pinned as
+390; the shown key is revoked at once).
+**AI (Phase 6):** `E2E_AI=1` also starts the fake agent (`uv run`, no container) on
+127.0.0.1:`E2E_FAKE_AGENT_PORT` (8183) as the API's kagent controller, turns AI on with
+`E2E_AI_RUN_TIMEOUT` (PT1M) and after every seed registers "Idea evaluator"
+(`soundings/idea-evaluator`, `E2E_AI_AGENT`; `E2E_AI_PROVISION=0` skips) through the API,
+writing its key to `E2E_FAKE_AGENT_KEYS_DIR` (default `<state dir>/fake-agent-keys`). AI
+specs are tagged `@ai` and skip without it (`-- --grep @ai` runs only them, as CI's
+`e2e-ai` job). They use `tests/support/ai.ts` (`aiTeam(alice)`: a project of their own
+with its **own idea owner**, because each person may ask for 20 runs an hour;
+`registerAgent`, `requestRun`, `waitRun`, `retireAgents`) and `e2e/scripts/fake-agent.ts`
+(`FakeAgent.giveKey()`, `.waitFor()`, observations; against `E2E_BASE_URL` set
+`E2E_FAKE_AGENT_URL` and `E2E_FAKE_AGENT_KEYS_DIR`, relative paths from the repo root).
+The fake's behaviour follows the agent name's suffix (`-slow -fails -silent -asks -rejects
+-blind-probe -strays -late -no-cancel -unavailable -drops -lingers`; `dev/fake-agent/README.md`).
+`screenshots:phase6` (E2E_AI=1) writes `docs/screenshots/phase-6/` (11 screens × 1440
+light/dark and 390 light). Contract rules not built yet are pinned as
 expected failures (`test.fail(true, …)` in Playwright, `@pytest.mark.xfail(strict=True)`
 in pytest), which fail loudly once fixed: then delete the mark.
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
-`docs/test-plans/phase-1.md` … `phase-5.md`.
+`docs/test-plans/phase-1.md` … `phase-6.md`.
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
 Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000 (and
-`/metrics` on 9090 unless `--reload`), Vite 5173, Playwright 5174, e2e stack 8100
-(Postgres 55433, Keycloak 8180, Mailpit 8125 / SMTP 1125), `make demo` Mailpit 8026,
-k3s API 16443, k3s ingress 18081. Dev logins, the demo
+`/metrics` on 9090 unless `--reload`), Vite 5173, Playwright 5174, fake agent 8083, e2e
+stack 8100 (Postgres 55433, Keycloak 8180, Mailpit 8125 / SMTP 1125, fake agent 8183),
+`make demo` Mailpit 8026 and fake agent 8027, k3s API 16443, k3s ingress 18081. Dev logins, the demo
 people and groups, and the Keycloak users are in `dev/README.md`.
 
 **SSO in development** (`dev/README.md` has the walkthrough): `make dev-up` (Keycloak
@@ -235,6 +278,13 @@ points the backend at the compose Mailpit (`SOUNDINGS_SMTP_HOST=localhost`, port
 API and read mail at http://localhost:8025. Without `SOUNDINGS_SMTP_HOST` the app is
 in-app only and platform admins see the "Email isn't set up" banner. Templates:
 `uv run soundings email-preview -o /tmp/emails` and open `index.html`.
+
+**AI in development** (`dev/README.md` "AI: the fake kagent"): `dev/.env.example` turns AI
+on and points `SOUNDINGS_KAGENT_URL` at :8083; run the worker (runs need it) and `make -C
+dev/fake-agent run`, then `make ai-smoke`, or register an agent in Admin settings → AI
+agents and write its key to `dev/.fake-agent-keys/<namespace>.<name>` as `Bearer sdg_…`
+(the fake re-reads it per request; without a key the agent is 404). What the fake saw of a
+run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or LLM here.
 
 ## Conventions
 
@@ -396,6 +446,29 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   characters). A service account with no role is a private non-member everywhere
   (internal projects too), and its `search_users` finds only co-members. Key responses
   carry `unavailable_project_count` (and admin `projects[].owner_can_view`).
+- **AI assistance** (contract-phase6, role matrix section J, ADR 0014): runs are rows
+  (`ai_runs`, `ai_run_events`) executed by `run_ai` on the worker's own `ai` queue and
+  pool (`SOUNDINGS_AI_MAX_CONCURRENT_RUNS`; email and the schedules never wait behind
+  them); state changes are compare-and-set (`app/ai/transitions.py`, lock order project →
+  idea → run), a run has a hard deadline (`tasks/cancel`, then `timed_out`), cancel is
+  cooperative, a stopping worker ends its runs `worker_lost`; one active run per idea +
+  agent + kind (+ section) by a partial unique index (repeat = 200 with that run); 20
+  requests per person an hour. The A2A URL is only ever `agent_a2a_url(kagent_url,
+  protocol, namespace, name)`: no URL field, no redirects, card URLs ignored,
+  `trust_env=False`. The A2A message (`run_message`) holds references and instructions,
+  never keys, URLs or idea text; A2A text and artifacts are ignored: results come back
+  through MCP as the agent's service account and are matched to the run. **c22**: an
+  agent's key is MCP-only (REST 403 `insufficient_scope`) and works only on the idea of
+  one of its open runs, writing only through the run kind's tool (`AGENT_RUN_WRITE_TOOLS`).
+  **Rule 9**: service accounts are always blind (`queries.score_visible`, the policy).
+  AI evaluations are excluded from aggregates until `set_evaluation_inclusion`; a changed
+  re-submission resets it. Run events and lists carry no score data and only Soundings'
+  fixed sentences (never agent text). SSE (`app/ai/sse.py`): one poller per run per
+  process, `Last-Event-ID` replay, 204 after the final event, 5 streams per person, a
+  re-check every 30 s; the SPA falls back to polling `get_ai_run`. Agent text in the SPA
+  is `<Markdown untrusted>` (http/https links only, `rel="noopener noreferrer nofollow"`,
+  host shown), with `AiBadge` wherever an agent's work appears (evaluator rows, cards,
+  comparison columns, notes, suggestions, feed lines).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -410,7 +483,11 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   `testcontainers/ryuk:0.11.0`, `ubuntu:24.04` (the image's base).
 - **Blocked hosts:** quay.io, get.helm.sh, GitHub release downloads, ui.shadcn.com,
   kagent.dev, modelcontextprotocol.io, deb.debian.org (the image uses Ubuntu's
-  archive.ubuntu.com, which works). pypi.org, registry.npmjs.org and code.claude.com
+  archive.ubuntu.com, which works), and ghcr's blob host
+  `pkg-containers.githubusercontent.com` (`oci://ghcr.io/...` answers the manifest, so
+  kagent's Helm chart and images can't be pulled; `make k3s-kagent-crds` takes the CRDs
+  from kagent's git tag instead). The Docker daemon's own proxy setting is stale, so
+  `docker pull ghcr.io/...` fails too. pypi.org, registry.npmjs.org and code.claude.com
   work. To check a library's API, read the installed source.
 - **TLS proxy:** outbound HTTPS is intercepted; the CA bundle is
   `/root/.ccr/ca-bundle.crt` (`SSL_CERT_FILE`). `make image` passes it as a BuildKit
@@ -472,9 +549,15 @@ in-app only and platform admins see the "Email isn't set up" banner. Templates:
   Ingress path loses to `/`: use `Prefix`.
 - **Undo inside sheets:** a toast's Undo can't be clicked while a modal sheet is open
   (the sheet blocks outside clicks), so destructive actions in sheets confirm instead.
+- **Fake agent:** the compose service (profile `ai`) reaches the API on the host, so run
+  the API with `SOUNDINGS_HOST=0.0.0.0`; it needs `SOUNDINGS_DEV_FAKE_AGENT_USER`. a2a-sdk
+  1.2.1's 0.3 adapter answers every A2A error as −32603: the fake maps them back to 0.3's
+  codes (−32001, −32002). There is no kagent controller or LLM here: anything "verified"
+  for AI is against the fake unless it says kagent's CRDs.
 - **Library pins that matter:** TypeScript 5.9.x (7.x breaks typescript-eslint and
   openapi-typescript), MSW 2.15, `mcp` 2.x (2.2: the low-level `Server`, not `FastMCP`), WeasyPrint 70
-  (new URL-fetcher API), Python `altcha` 2.x with the `altcha@3` widget. OIDC is httpx +
+  (new URL-fetcher API), Python `altcha` 2.x with the `altcha@3` widget, `a2a-sdk[http-server]`
+1.2.1 (the fake agent only; the backend's A2A client is hand-written on httpx). OIDC is httpx +
   `joserfc` (no Authlib: `authlib.jose` is deprecated and its Starlette client isn't used).
 - **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
   stop what you start, never kill other agents' processes or containers.
@@ -637,3 +720,30 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   the in-cluster SDK client, upgrade to two API replicas and smoke:
   [docs/phase-summaries/phase-5.md](docs/phase-summaries/phase-5.md) (known issues and
   deferred items there). Stop for the human's review before Phase 6.
+- **Phase 6** (kagent AI assistance): Admin settings → AI agents registers kagent agents
+  (namespace/name, protocol `kagent_v0_10` or `kagent_v1_0`, purposes, projects) with a
+  service account and one key (shown once with its Secret and `RemoteMCPServer`; rotate,
+  disable revokes, Test connection fetches the card); "Ask AI to evaluate", "Research
+  this" and "Draft with AI" start durable runs (`ai_runs`, `ai_run_events`) that the
+  worker's own `ai` pool sends over A2A (hand-written httpx client, URL built from
+  `SOUNDINGS_KAGENT_URL` + namespace/name only) with a deadline, cooperative cancel
+  (`tasks/cancel`), retries before a task exists, the sweep and `worker_lost`; agents act
+  back through `/mcp` (ten tools: `add_research_note`), confined by c22 (MCP only, open
+  runs only, one write tool per kind) and always blind (rule 9); AI evaluations carry a
+  rationale and cited sources per criterion, an AI badge everywhere, and are left out of
+  the aggregate until the owner or an admin includes them (a changed re-submission is left
+  out again); research notes in the feed (`ai.delete_note`), drafts as Phase 5
+  suggestions; live progress over SSE (replay, 204 at the end, polling fallback); Helm
+  `features.ai`, `kagent.*`, `ai.*`, example Agents/`RemoteMCPServer`s, NetworkPolicy for
+  agent pods and egress to the controller. No kagent controller or LLM here: Soundings'
+  fake agent (`dev/fake-agent`) stands in, and the manifests are checked against kagent
+  v0.10.2's real CRDs. Integration (2026-10-06): QA's visual list and nits fixed (one
+  evaluate label, agent names and AI badges in the comparison and the feed, the URL
+  preview, key dialog focus, "Draft" on phones, admin list refresh, `cancel_requested`
+  only while active, AAK-03's race, `demo.sh down` removes its key); every check green:
+  backend (6260 tests), frontend check + test:pw, e2e in all three modes (default, SSO,
+  `E2E_AI=1`), `make image`, `make k3s-install AI=1 MCP=1` + `k3s-smoke AI=1 MCP=1` with
+  that image. Guides: user guide "AI assistance" and "AI agents", operator guide "kagent
+  integration", `docs/mcp.md` §5; test plan `docs/test-plans/phase-6.md`; screenshots
+  `docs/screenshots/phase-6/` (+ `mock/`); decisions `docs/decisions.md` (Phase 6). Next:
+  the security and UX reviews.

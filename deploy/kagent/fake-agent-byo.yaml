@@ -1,0 +1,61 @@
+# Soundings' deterministic fake agent (dev/fake-agent) as a kagent "BYO" Agent: for a
+# cluster that has kagent 0.10.x but no model provider, to exercise kagent's real
+# controller (its A2A proxy, task store and cancel) with Soundings' real runs. Test
+# clusters only. kagent runs the image as the agent's pod and proxies A2A 0.3 to its
+# root on port 8080 (kagent's BYO contract, from its v0.10.2 source); FAKE_AGENT_BYO
+# makes the fake serve that one agent there. Checked with a server-side dry run against
+# kagent v0.10.2's CRDs; NOT yet run by a live controller (README.md).
+#
+# 1. make -C dev/fake-agent image, and push soundings-fake-agent:dev where the cluster
+#    pulls from (or import it into the node); set the image below.
+# 2. Register "Fake evaluator" in Soundings (namespace soundings, name fake-evaluator,
+#    purposes as you like) and apply the Secret manifest it shows once.
+# 3. kubectl apply -f deploy/kagent/fake-agent-byo.yaml
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: fake-evaluator
+  namespace: soundings
+spec:
+  type: BYO
+  description: Soundings' deterministic fake agent (tests only; calls Soundings' MCP tools, no model).
+  byo:
+    deployment:
+      image: soundings-fake-agent:dev
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: FAKE_AGENT_PORT
+          value: "8080"
+        - name: FAKE_AGENT_BYO
+          value: soundings/fake-evaluator
+        - name: FAKE_AGENT_MCP_URL
+          value: http://soundings.soundings.svc.cluster.local:80/mcp
+        # Registration's Secret as it is ("Bearer sdg_..." under authorization), mounted
+        # as the file the fake looks for: <namespace>.<name>.
+        - name: FAKE_AGENT_KEYS_DIR
+          value: /etc/fake-agent/keys
+      volumes:
+        - name: keys
+          secret:
+            secretName: soundings-agent-fake-evaluator
+            items:
+              - key: authorization
+                path: soundings.fake-evaluator
+      volumeMounts:
+        - name: keys
+          mountPath: /etc/fake-agent/keys
+          readOnly: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]

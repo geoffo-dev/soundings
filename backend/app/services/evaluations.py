@@ -26,6 +26,7 @@ from app.models.evaluation import Evaluation, EvaluationScore
 from app.models.idea import IdeaEvaluator
 from app.models.project import RubricCriterion
 from app.models.user import User
+from app.schemas.ai import Citation
 from app.schemas.common import FieldError
 from app.schemas.evaluations import (
     Evaluation as EvaluationOut,
@@ -58,6 +59,8 @@ __all__ = [
 
 _MISSING_SCORE: Final = "Score this criterion."
 _MISSING_RECOMMENDATION: Final = "Choose a recommendation."
+_MISSING_RATIONALE: Final = "Give your rationale for this score."
+_ONLY_AI_CITES: Final = "Only AI evaluators cite sources."
 
 
 async def _rubric(db: AsyncSession, loaded: LoadedIdea) -> list[RubricCriterion]:
@@ -307,6 +310,23 @@ async def save_my_evaluation(
             422, "unknown_criterion", detail="A criterion is not in this project's rubric."
         )
     given = {score.criterion_id: score for score in body.scores}
+    agent = principal.user.is_service_account
+    cited = [score for score in body.scores if getattr(score, "sources", None)]
+    if cited and not agent:
+        # Phase 6: only AI evaluators cite sources (MCP McpScoreIn.sources).
+        raise ProblemError(
+            422,
+            "validation_error",
+            detail=_ONLY_AI_CITES,
+            errors=[
+                FieldError(
+                    loc=["body", "scores", str(score.criterion_id), "sources"],
+                    msg=_ONLY_AI_CITES,
+                    type="value_error",
+                )
+                for score in cited
+            ],
+        )
     evaluation = await _mine(db, loaded, principal.user_id)
     already_submitted = evaluation is not None and evaluation.status is EvaluationStatus.SUBMITTED
     if body.submit:
@@ -317,6 +337,19 @@ async def save_my_evaluation(
             for criterion in rubric
             if criterion.id not in given or given[criterion.id].score is None
         ]
+        if agent:
+            # An AI evaluator's per-criterion comment is its rationale: required.
+            errors.extend(
+                FieldError(
+                    loc=["body", "scores", str(criterion.id), "comment"],
+                    msg=_MISSING_RATIONALE,
+                    type="missing",
+                )
+                for criterion in rubric
+                if criterion.id in given
+                and given[criterion.id].score is not None
+                and not given[criterion.id].comment.strip()
+            )
         if body.recommendation is None:
             errors.append(
                 FieldError(
@@ -334,6 +367,21 @@ async def save_my_evaluation(
         )
 
     now = utcnow()
+    include_reset = False
+    if agent and already_submitted and evaluation is not None and evaluation.include_in_aggregate:
+        # Phase 6 (contract section 3.7): a changed score or recommendation leaves the
+        # aggregate again until someone includes it after reading it; text alone doesn't.
+        saved = await db.execute(
+            select(EvaluationScore.criterion_id, EvaluationScore.score).where(
+                EvaluationScore.evaluation_id == evaluation.id,
+                EvaluationScore.criterion_id.in_(list(active)),
+            )
+        )
+        before = {row.criterion_id: row.score for row in saved}
+        after = {score.criterion_id: score.score for score in body.scores}
+        if before != after or evaluation.recommendation != body.recommendation:
+            evaluation.include_in_aggregate = False
+            include_reset = True
     if evaluation is None:
         evaluation = Evaluation(
             id=uuid4(),
@@ -373,6 +421,10 @@ async def save_my_evaluation(
                         "criterion_id": score.criterion_id,
                         "score": score.score,
                         "comment": score.comment,
+                        "sources": [
+                            {"title": source.title, "url": source.url}
+                            for source in getattr(score, "sources", None) or ()
+                        ],
                     }
                     for score in body.scores
                 ]
@@ -395,12 +447,37 @@ async def save_my_evaluation(
             project_id=idea.project_id,
             details={"rule": Rule.EVALUATION_SUBMIT_OWN, "evaluation_id": evaluation.id},
         )
+    elif include_reset:
+        await audit.record(
+            db,
+            "evaluation.submit",
+            actor=principal,
+            target_type="idea",
+            target_id=idea.id,
+            project_id=idea.project_id,
+            details={
+                "rule": Rule.EVALUATION_SUBMIT_OWN,
+                "evaluation_id": evaluation.id,
+                "include_reset": True,
+            },
+        )
     if body.submit:
         await _refresh_aggregate(db, loaded)
     await db.flush()
     result = await my_evaluation(db, principal, loaded)
     assert result is not None  # noqa: S101 - we just saved it
     return result
+
+
+def _citations(stored: object) -> list[Citation]:
+    """An AI evaluator's stored sources (``[{title, url}]``; empty for people)."""
+    if not isinstance(stored, list):
+        return []
+    return [
+        Citation(title=str(item.get("title", "")), url=str(item.get("url", "")))
+        for item in stored
+        if isinstance(item, dict)
+    ]
 
 
 # --- Everyone's (blind-filtered) -------------------------------------------------------------
@@ -437,7 +514,10 @@ async def list_evaluations(
                 comment=evaluation.comment,
                 scores=[
                     EvaluationScoreOut(
-                        criterion_id=s.criterion_id, score=s.score, comment=s.comment
+                        criterion_id=s.criterion_id,
+                        score=s.score,
+                        comment=s.comment,
+                        sources=_citations(s.sources),
                     )
                     for s in scores.get(evaluation.id, [])
                     if s.score is not None

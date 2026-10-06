@@ -158,6 +158,10 @@ test('AAK-03: “Sign out everywhere” ends sessions but not keys, and links to
     })
     await expect(confirm).toContainText('API keys keep working')
     await confirm.getByRole('button', { name: 'Sign out everywhere' }).click()
+    // The confirmation closes once the sessions are gone (while it is open the sheet is
+    // hidden from the accessibility tree, so its button "isn't there" before then too).
+    await expect(confirm).toBeHidden()
+    await expect(sheet.getByText('Not signed in anywhere.')).toBeVisible()
     await expect(sheet.getByRole('button', { name: 'Sign out everywhere' })).toHaveCount(0)
     // The session is gone; the key still works.
     expect((await person.raw('GET', '/auth/me')).status()).toBe(401)

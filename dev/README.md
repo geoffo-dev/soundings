@@ -20,6 +20,7 @@ make dev          # how to run the backend and frontend dev servers against it
 | Keycloak realm (issuer) | http://localhost:8080/realms/soundings | |
 | Mailpit inbox + API | http://localhost:8025 (`/api/v1/messages`) | |
 | Mailpit SMTP | `localhost:1025`, no TLS; any username/password is accepted | |
+| Fake kagent agent (AI, optional) | http://localhost:8083 (`/api/a2a/<ns>/<name>/`, `/_fake/observations`) | keys in `dev/.fake-agent-keys` |
 
 Ports clash with something else? Change them in `dev/.env` (below), and the URLs that
 use them.
@@ -336,6 +337,46 @@ call (it creates and deletes a test idea). Checked on 2026-10-02 against this se
 the key snippet and `claude mcp add` above with Claude Code 2.1.287 (`claude mcp get
 soundings`: Connected), `mcp-remote` 0.14.3 over stdio, the Python SDK (`mcp` 2.2) and
 the Go SDK that kagent 0.10 uses (`go-sdk` 1.6.1).
+
+## AI: the fake kagent
+
+There is no kagent or model here, so AI assistance (Phase 6) runs against Soundings'
+deterministic fake agent ([`fake-agent/README.md`](fake-agent/README.md)): it answers in
+kagent v0.10.2's A2A layout and, for each run, calls `/mcp` with the agent's own key
+(`get_rubric`, `get_idea`, `submit_evaluation` with a rationale and two sources per
+criterion; a research note; a section draft). Everything else is the real app: the
+worker's A2A client, deadlines and cancel, the run scope (c22), blind evaluation, SSE.
+
+```sh
+# dev/.env (from .env.example) turns AI on and points SOUNDINGS_KAGENT_URL at :8083
+make -C backend dev                         # API (other shells: the worker, the SPA)
+make -C backend worker                      # AI runs need the worker
+make -C dev/fake-agent run                  # the fake on :8083; keys in dev/.fake-agent-keys
+#   or: make fake-agent-image && docker compose -f dev/docker-compose.yml --profile ai up -d
+#       (then the API must listen beyond loopback: SOUNDINGS_HOST=0.0.0.0 make -C backend dev)
+make ai-smoke                               # register an agent (as alice), hand it its key,
+                                            # test connection, "Ask AI to evaluate" watched by
+                                            # a pending evaluator over SSE, the AI evaluation out
+                                            # of the aggregate / included, research, a draft, a
+                                            # cancelled slow run, the key refused outside runs
+```
+
+By hand: Admin settings → AI agents → Register agent (namespace `soundings`, any name,
+purposes, Customer Innovation), copy the key it shows once and give it to the fake:
+`printf 'Bearer %s\n' "$KEY" > dev/.fake-agent-keys/soundings.<name>` (the fake re-reads
+it on every request; without a key the agent is "not found"). Test connection shows its
+card. Then "Ask AI to evaluate" on a Customer Innovation idea. What the agent does
+depends on its name's suffix: `-slow` works until cancelled or the deadline, `-fails`,
+`-silent` (finishes without a result), `-asks`, `-rejects`, `-blind-probe`, `-strays`,
+`-late`, `-no-cancel`, `-unavailable`, `-drops` (the README). What it saw of a run:
+`curl -s localhost:8083/_fake/observations/<run id> | jq`.
+
+The e2e stack does the same with `E2E_AI=1` (fake on :8183, an agent "Idea evaluator",
+`soundings/idea-evaluator`, registered after every seed; `e2e/scripts/fake-agent.ts` for
+specs), k3s with `make k3s-fake-agent k3s-install AI=1 k3s-smoke AI=1` (the fake as
+`kagent/kagent-controller:8083`). kagent's own CRDs (v0.10.2) go into k3s with `make
+k3s-kagent-crds`, which also dry-runs every kagent manifest against them
+([`../deploy/kagent/README.md`](../deploy/kagent/README.md)).
 
 ## Local Kubernetes (k3s in Docker)
 

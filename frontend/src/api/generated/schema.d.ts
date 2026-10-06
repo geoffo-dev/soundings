@@ -1485,7 +1485,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a research note
-         * @description comment.delete_any (project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived.
+         * @description ai.delete_note (the idea's owner and project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived, awaiting_moderation.
          */
         delete: operations["delete_research_note"];
         options?: never;
@@ -2428,7 +2428,7 @@ export interface components {
          */
         ActivityPage: {
             /** Items */
-            items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"])[];
+            items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"])[];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -3048,6 +3048,41 @@ export interface components {
             research_blocked_by: components["schemas"]["AiBlockedReason"] | null;
         };
         /**
+         * AiResearchNoteActivity
+         * @description Phase 6: a research note an AI agent wrote for a "Research this" run (actor: the
+         *     agent's service account; the SPA's ``describeActivity`` says "wrote a research note",
+         *     or "deleted a research note" once ``note.deleted``). Stored as an ``activity_events``
+         *     row of type :data:`AI_RESEARCH_NOTE` whose payload is ``{run_id, agent_id, body_md,
+         *     sources: [{title, url}]}`` (a deleted note keeps ``run_id`` and ``agent_id`` and gets
+         *     ``deleted: true``, ``body_md: ""``, ``sources: []``). Never holds score data
+         *     (contract-phase6 sections 3.8 and 5).
+         */
+        AiResearchNoteActivity: {
+            /** @description Who did it; null if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Idea Id
+             * Format: uuid
+             */
+            idea_id: string;
+            note: components["schemas"]["ResearchNote"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ai_research_note";
+        };
+        /**
          * AiRun
          * @description One AI run. Holds no score data: safe for everyone who may view the idea.
          */
@@ -3495,7 +3530,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -4308,7 +4343,10 @@ export interface components {
         };
         /** EvaluationScore */
         EvaluationScore: {
-            /** Comment */
+            /**
+             * Comment
+             * @description The evaluator's note; an AI evaluator's rationale.
+             */
             comment: string;
             /**
              * Criterion Id
@@ -4320,6 +4358,11 @@ export interface components {
              * @description Rubric score, 1 (low) to 5 (high).
              */
             score: number;
+            /**
+             * Sources
+             * @description Phase 6: the sources an AI evaluator cited for this criterion (at most 5; empty for people). Untrusted and not checked: show them as "Cited by AI, not checked", plain links with their host.
+             */
+            sources: components["schemas"]["Citation"][];
         };
         /**
          * EvaluationSubmittedActivity
@@ -6698,7 +6741,7 @@ export interface components {
             body_md: string;
             /**
              * Can Delete
-             * @description comment.delete_any: project and platform admins.
+             * @description ai.delete_note: the idea's owner and project and platform admins.
              */
             can_delete: boolean;
             /** Deleted */
@@ -7491,7 +7534,7 @@ export interface components {
         WorkRecentIdea: {
             idea: components["schemas"]["IdeaSummary"];
             /** Latest Activity */
-            latest_activity: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"]) | null;
+            latest_activity: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"]) | null;
         };
     };
     responses: never;

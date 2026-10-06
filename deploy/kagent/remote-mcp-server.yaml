@@ -1,18 +1,23 @@
-# Register Soundings' MCP server with kagent 0.10 (CRD group kagent.dev, v1alpha2) by
-# hand, for agents in kagent's own namespace (the kagent UI creates them there). The
-# Helm chart renders the same RemoteMCPServer in the release namespace instead with
-# kagent.enabled=true and kagent.examples=true (README.md).
+# A shared RemoteMCPServer for Soundings' MCP server in kagent's own namespace (Phase 5),
+# applied by hand, for agents you build in kagent's UI with one key between them, e.g. a
+# person's API key (their own access, narrowed by the key's scopes and projects). The
+# Helm chart renders the same in the release namespace with kagent.enabled,
+# kagent.examples and kagent.mcp.keySecret.
 #
-# 1. In Soundings, a platform admin creates the agents' service account and its API key
-#    (scopes read, evaluate, mcp; add write for proposal suggestions and comments;
-#    restricted to the projects the agents serve). The key is shown once.
+# Not for Soundings' AI evaluator and research assistant: an AI agent's key (Admin
+# settings > AI agents) works only during that agent's runs (c22), so each of them gets
+# a RemoteMCPServer of its own with its own key: agents.yaml, or the chart's
+# kagent.examples.
+#
+# 1. In Soundings, create the key (Settings > API keys; scopes as the agents need, e.g.
+#    read and mcp; restricted to the projects they may read). It is shown once.
 # 2. Put it in the Secret below, then apply this file:
 #      kubectl -n kagent create secret generic soundings-mcp-key \
 #        --from-literal=authorization="Bearer sdg_..."      # or edit stringData below
 #      kubectl apply -f deploy/kagent/remote-mcp-server.yaml
 # 3. kubectl -n kagent get rmcps soundings  -> ACCEPTED True, and status.discoveredTools
-#    should list the nine tools once kagent's controller has connected (not yet seen
-#    with a live kagent: README.md, "What is verified").
+#    should list the ten tools once kagent's controller has connected (not yet seen with
+#    a live kagent: README.md, "What is verified").
 #
 # Change "soundings.soundings" in the URL to <service>.<namespace> of your release
 # (`kubectl get svc -l app.kubernetes.io/name=soundings -A`). With the chart's
@@ -37,7 +42,7 @@ spec:
   description: >-
     Soundings ideas pipeline: search and read ideas, rubrics and proposals, submit
     blind evaluations, comment, and suggest proposal sections, as the API key's
-    service account.
+    owner.
   protocol: STREAMABLE_HTTP
   # The Service inside the cluster (/mcp is exempt from the app's Host check, so it
   # needn't be one of the release's baseUrls). Port 80 is the chart's service.port.

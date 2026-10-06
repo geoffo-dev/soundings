@@ -93,3 +93,42 @@ describe('public submissions', () => {
     )
   })
 })
+
+describe('AI assistance (Phase 6)', () => {
+  const agent = person('u-agent', 'Idea evaluator')
+  it('reads an AI evaluator taken off after its run as the agent’s line, not “Someone”', () => {
+    const item = {
+      id: 'e-ai-1',
+      idea_id: 'i-1',
+      type: 'evaluator_removed',
+      actor: null,
+      created_at: '2026-10-06T09:00:00Z',
+      evaluator: agent,
+    } as ActivityItem
+    expect(`${activityActor(item)} ${describeActivity(item)}`).toBe(
+      'Idea evaluator ended its run without an evaluation and was taken off the evaluators',
+    )
+  })
+
+  it('describes research notes, and deleted ones without blaming the agent', () => {
+    const note = (deleted: boolean) =>
+      ({
+        id: 'e-ai-2',
+        idea_id: 'i-1',
+        type: 'ai_research_note',
+        actor: agent,
+        created_at: '2026-10-06T09:00:00Z',
+        note: {
+          id: 'e-ai-2',
+          run_id: 'r-1',
+          agent: null,
+          body_md: deleted ? '' : 'Text',
+          sources: [],
+          deleted,
+          can_delete: false,
+        },
+      }) as ActivityItem
+    expect(describeActivity(note(false))).toBe('wrote a research note')
+    expect(describeActivity(note(true))).toBe('wrote a research note, since deleted')
+  })
+})

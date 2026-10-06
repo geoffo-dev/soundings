@@ -44,9 +44,23 @@ E2E_TIMEZONE="${E2E_TIMEZONE:-Europe/London}"
 # overrides the proof-of-work cost (the app's default, 5000, when unset).
 E2E_PUBLIC_PER_IP="${E2E_PUBLIC_PER_IP:-1000}"
 E2E_ALTCHA_COST="${E2E_ALTCHA_COST:-}"
+# AI assistance (Phase 6): E2E_AI=1 runs Soundings' fake kagent agent (dev/fake-agent,
+# `uv run`, no container) on 127.0.0.1:$E2E_FAKE_AGENT_PORT in kagent's A2A layout, turns
+# AI on in the API and worker (SOUNDINGS_KAGENT_URL pointing at it, runs limited to
+# E2E_AI_RUN_TIMEOUT), and after every seed registers E2E_AI_AGENT (<namespace>/<name>,
+# all three purposes, Customer Innovation) through the API as alice, writing its key to
+# $E2E_FAKE_AGENT_KEYS_DIR/<namespace>.<name>, where the fake reads it (E2E_AI_PROVISION=0:
+# no agent; specs register their own and hand over keys with scripts/fake-agent.ts).
+E2E_AI="${E2E_AI:-0}"
+E2E_FAKE_AGENT_PORT="${E2E_FAKE_AGENT_PORT:-8183}"
+E2E_FAKE_AGENT_URL="http://127.0.0.1:${E2E_FAKE_AGENT_PORT}"
+E2E_FAKE_AGENT_KEYS_DIR="${E2E_FAKE_AGENT_KEYS_DIR:-$E2E_STATE_DIR/fake-agent-keys}"
+E2E_AI_RUN_TIMEOUT="${E2E_AI_RUN_TIMEOUT:-PT1M}"
+E2E_AI_AGENT="${E2E_AI_AGENT:-soundings/idea-evaluator}"
+E2E_AI_PROVISION="${E2E_AI_PROVISION:-1}"
 # What the running API and worker were started with (start-stack.sh restarts them when
 # this changes).
-stack_mode="sso=$E2E_SSO kc=$E2E_KC_PORT break_glass=$E2E_BREAK_GLASS smtp=$E2E_SMTP mailpit=$E2E_MAILPIT_SMTP_PORT tz=$E2E_TIMEZONE public_per_ip=$E2E_PUBLIC_PER_IP altcha_cost=$E2E_ALTCHA_COST"
+stack_mode="sso=$E2E_SSO kc=$E2E_KC_PORT break_glass=$E2E_BREAK_GLASS smtp=$E2E_SMTP mailpit=$E2E_MAILPIT_SMTP_PORT tz=$E2E_TIMEZONE public_per_ip=$E2E_PUBLIC_PER_IP altcha_cost=$E2E_ALTCHA_COST ai=$E2E_AI fake_agent=$E2E_FAKE_AGENT_PORT ai_timeout=$E2E_AI_RUN_TIMEOUT"
 
 # Every `soundings` command below talks to this database. Development mode: the dev
 # login works and `seed` is allowed.
@@ -105,6 +119,14 @@ app_env() {
     export SOUNDINGS_OIDC_CLIENT_SECRET=soundings-dev-secret
     export SOUNDINGS_OIDC_GROUPS_CLAIM=groups
     export SOUNDINGS_OIDC_EXTERNAL_ID_CLAIM=employee_no
+  fi
+  unset SOUNDINGS_AI_ENABLED SOUNDINGS_KAGENT_URL SOUNDINGS_KAGENT_TOKEN SOUNDINGS_AI_RUN_TIMEOUT \
+    SOUNDINGS_AI_MCP_URL SOUNDINGS_AI_AGENT_NAMESPACES SOUNDINGS_AI_DEFAULT_PROTOCOL
+  if [ "$E2E_AI" = "1" ]; then
+    export SOUNDINGS_AI_ENABLED=true
+    export SOUNDINGS_KAGENT_URL="$E2E_FAKE_AGENT_URL"
+    export SOUNDINGS_AI_RUN_TIMEOUT="$E2E_AI_RUN_TIMEOUT"
+    export SOUNDINGS_AI_MCP_URL="$E2E_URL/mcp"
   fi
   unset SOUNDINGS_SMTP_HOST SOUNDINGS_SMTP_PORT SOUNDINGS_SMTP_SECURITY SOUNDINGS_SMTP_FROM \
     SOUNDINGS_SMTP_FROM_NAME SOUNDINGS_SMTP_REPLY_TO SOUNDINGS_SMTP_USERNAME \
@@ -210,6 +232,65 @@ stop_process() {
     kill -KILL -- "-$pid" 2>/dev/null || true
   fi
   rm -f "$pid_file"
+}
+
+# --- The fake kagent agent (E2E_AI=1) ------------------------------------------------
+fake_agent_ready() {
+  curl -fsS --noproxy '*' --max-time 2 -o /dev/null "$E2E_FAKE_AGENT_URL/healthz" 2>/dev/null
+}
+
+# Start it (from dev/fake-agent with uv; pid and log in $E2E_STATE_DIR) unless it runs.
+start_fake_agent() {
+  mkdir -p "$E2E_FAKE_AGENT_KEYS_DIR"
+  chmod 700 "$E2E_FAKE_AGENT_KEYS_DIR"
+  if process_running fake-agent && fake_agent_ready; then return 0; fi
+  stop_process fake-agent
+  log "starting the fake kagent agent on $E2E_FAKE_AGENT_URL (log: $E2E_STATE_DIR/fake-agent.log)"
+  (
+    cd "$repo/dev/fake-agent" || exit 1
+    FAKE_AGENT_HOST=127.0.0.1 FAKE_AGENT_PORT="$E2E_FAKE_AGENT_PORT" \
+      FAKE_AGENT_MCP_URL="$E2E_URL/mcp" FAKE_AGENT_KEYS_DIR="$E2E_FAKE_AGENT_KEYS_DIR" \
+      setsid nohup uv run --quiet fake-agent >"$E2E_STATE_DIR/fake-agent.log" 2>&1 &
+    echo $! >"$E2E_STATE_DIR/fake-agent.pid"
+  )
+  for _ in $(seq 1 60); do
+    if fake_agent_ready; then return 0; fi
+    sleep 0.5
+  done
+  tail -n 40 "$E2E_STATE_DIR/fake-agent.log" >&2 || true
+  die "the fake kagent agent does not answer on $E2E_FAKE_AGENT_URL"
+}
+
+# Forget every key (a fresh seed has no agents) and what the fake saw.
+reset_fake_agent() {
+  rm -f "$E2E_FAKE_AGENT_KEYS_DIR"/* 2>/dev/null || true
+  curl -fsS --noproxy '*' --max-time 5 -X DELETE -o /dev/null "$E2E_FAKE_AGENT_URL/_fake/observations" || true
+}
+
+# Register E2E_AI_AGENT through the API as alice (dev login) and give its key to the fake.
+provision_ai_agent() {
+  [ "$E2E_AI_PROVISION" = "1" ] || return 0
+  command -v jq >/dev/null || die "E2E_AI=1 needs jq to register the agent"
+  local namespace="${E2E_AI_AGENT%%/*}" name="${E2E_AI_AGENT#*/}" jar body alice project status
+  jar="$(mktemp)" body="$(mktemp)"
+  local c=(curl -sS --noproxy '*' --max-time 15 -b "$jar" -c "$jar")
+  alice="$("${c[@]}" "$E2E_URL/api/v1/auth/dev/users" | jq -r '.[] | select(.email == "alice@example.com") | .id')"
+  "${c[@]}" -o /dev/null -H 'Content-Type: application/json' -d "{\"user_id\":\"$alice\"}" \
+    "$E2E_URL/api/v1/auth/dev/login"
+  project="$("${c[@]}" "$E2E_URL/api/v1/projects/customer-innovation" | jq -r .id)"
+  status="$("${c[@]}" -o "$body" -w '%{http_code}' -H 'Content-Type: application/json' \
+    -H "X-CSRF-Token: $(awk '$6 ~ /soundings_csrf$/ { print $7 }' "$jar")" \
+    --data-binary "$(jq -nc --arg ns "$namespace" --arg n "$name" --arg p "$project" \
+      '{display_name: "Idea evaluator", description: "The e2e stack'"'"'s fake kagent agent (E2E_AI=1).",
+        namespace: $ns, name: $n, purposes: ["evaluate", "research", "draft_section"], project_ids: [$p]}')" \
+    "$E2E_URL/api/v1/admin/ai-agents" || true)"
+  if [ "$status" != "201" ]; then
+    rm -f "$jar" "$body"
+    die "registering the AI agent $E2E_AI_AGENT answered $status (E2E_AI_PROVISION=0 skips it)"
+  fi
+  (umask 077 && jq -r '"Bearer " + .key.secret' "$body" >"$E2E_FAKE_AGENT_KEYS_DIR/$namespace.$name")
+  log "AI agent $E2E_AI_AGENT registered ($(jq -r .agent.id "$body")); its key is with the fake agent"
+  rm -f "$jar" "$body"
 }
 
 # The API and the worker.

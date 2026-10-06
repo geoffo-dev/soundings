@@ -78,6 +78,12 @@ class AuditAction(StrEnum):
     API_KEY_CREATE = "api_key.create"
     API_KEY_REVOKE = "api_key.revoke"
     MCP_CALL = "mcp.call"
+    # AI assistance through kagent (contract-phase6 section 3.10)
+    AI_AGENT_REGISTER = "ai_agent.register"
+    AI_AGENT_UPDATE = "ai_agent.update"
+    AI_RUN_REQUEST = "ai_run.request"
+    AI_RUN_CANCEL = "ai_run.cancel"
+    EVALUATION_INCLUDE_AI = "evaluation.include_ai"
 
 
 class AuditEntry(ResponseModel):

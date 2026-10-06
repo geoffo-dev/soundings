@@ -519,6 +519,96 @@ describe('audit sentences', () => {
     ).toBe('Alice Anders’s key was refused by the MCP server: it doesn’t allow AI assistants (MCP)')
   })
 
+  it('describes AI agents, runs and the include toggle without agent text', () => {
+    const agentTarget = {
+      target_type: 'user' as const,
+      target_id: 'u-agent',
+      target_label: 'Idea evaluator',
+    }
+    const onIdea = {
+      target_type: 'idea' as const,
+      target_id: 'i-7',
+      target_label: 'CUST-7',
+      project: CUST,
+    }
+    expect(
+      say(
+        entry('ai_agent.register', {
+          actor: PRIYA,
+          actor_id: PRIYA.id,
+          ...agentTarget,
+          details: {
+            namespace: 'soundings',
+            name: 'idea-evaluator',
+            purposes: ['research', 'evaluate'],
+          },
+        }),
+      ),
+    ).toBe(
+      'Priya Natarajan registered AI agent Idea evaluator (soundings/idea-evaluator) for evaluation and research',
+    )
+    expect(
+      say(
+        entry('ai_agent.update', {
+          ...agentTarget,
+          details: { changed: ['enabled'], enabled: false },
+        }),
+      ),
+    ).toBe(
+      'Alice Anders disabled AI agent Idea evaluator, which stopped its runs and revoked its key',
+    )
+    expect(
+      say(
+        entry('ai_agent.update', {
+          ...agentTarget,
+          details: { changed: ['purposes', 'project_ids'] },
+        }),
+      ),
+    ).toBe('Alice Anders changed the purposes and projects of AI agent Idea evaluator')
+    expect(say(entry('ai_run.request', { ...onIdea, details: { kind: 'evaluate' } }))).toBe(
+      'Alice Anders asked an AI agent to evaluate CUST-7',
+    )
+    expect(
+      say(
+        entry('ai_run.request', {
+          ...onIdea,
+          details: { kind: 'draft_section', section_key: 'risks' },
+        }),
+      ),
+    ).toBe('Alice Anders asked an AI agent to draft Risks of CUST-7')
+    expect(say(entry('ai_run.cancel', { ...onIdea, details: { rule: 'ai.cancel_run' } }))).toBe(
+      'Alice Anders cancelled an AI run on CUST-7',
+    )
+    expect(
+      say(
+        entry('evaluation.include_ai', {
+          ...onIdea,
+          details: { evaluator_id: 'u-carol', include: true },
+        }),
+      ),
+    ).toBe('Alice Anders counted Carol Chen’s evaluation of CUST-7 in the score')
+    expect(
+      say(
+        entry('evaluation.include_ai', {
+          ...onIdea,
+          details: { evaluator_id: 'u-carol', include: false },
+        }),
+      ),
+    ).toBe('Alice Anders left Carol Chen’s evaluation of CUST-7 out of the score')
+    expect(
+      say(
+        entry('evaluator.remove', {
+          ...onIdea,
+          actor: null,
+          actor_id: null,
+          details: { evaluator_id: 'u-carol', reason: 'ai_run_ended' },
+        }),
+      ),
+    ).toBe(
+      'Carol Chen was taken off the evaluators of CUST-7: its AI run ended without an evaluation',
+    )
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -569,6 +659,11 @@ describe('audit categories', () => {
       'api_key.create': true,
       'api_key.revoke': true,
       'mcp.call': true,
+      'ai_agent.register': true,
+      'ai_agent.update': true,
+      'ai_run.request': true,
+      'ai_run.cancel': true,
+      'evaluation.include_ai': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

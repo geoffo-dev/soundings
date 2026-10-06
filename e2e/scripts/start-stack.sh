@@ -14,6 +14,11 @@
 #      scripts/mailpit.ts (`node scripts/mailpit.ts list|show|clear|stop|start` from a
 #      shell). E2E_SMTP=0: no SMTP (in-app notifications only).
 #
+# E2E_AI=1 adds Soundings' fake kagent agent (dev/fake-agent, `uv run`) on
+# 127.0.0.1:$E2E_FAKE_AGENT_PORT (8183) as the API's kagent controller, AI on, and the agent
+# E2E_AI_AGENT (soundings/idea-evaluator, "Idea evaluator", Customer Innovation) registered
+# through the API after every seed with its key handed to the fake (stack-env.sh).
+#
 # E2E_SSO=1 adds Keycloak 26 ($E2E_PREFIX-kc on http://localhost:$E2E_KC_PORT) with a
 # fresh copy of the dev realm on every start (users and groups as committed, this
 # stack's origin allowed as redirect URI), and points the API at it: issuer
@@ -44,6 +49,9 @@
 #   E2E_MAILPIT_SMTP_PORT  SMTP (1125)            E2E_TIMEZONE  instance zone (Europe/London)
 #   E2E_PUBLIC_PER_IP  public submissions per address and hour (1000; the app's is 10)
 #   E2E_ALTCHA_COST    ALTCHA proof-of-work cost (unset: the app's default, 5000)
+#   E2E_AI        1: the fake kagent agent + AI on   E2E_FAKE_AGENT_PORT  its port (8183)
+#   E2E_AI_RUN_TIMEOUT  runs' deadline (PT1M)        E2E_AI_AGENT  soundings/idea-evaluator
+#   E2E_AI_PROVISION  0: register no agent           E2E_FAKE_AGENT_KEYS_DIR  (.stack/fake-agent-keys)
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -86,6 +94,14 @@ if [ "$E2E_SMTP" = "1" ]; then
   clear_mailpit
 fi
 
+# --- 1d. The fake kagent agent (E2E_AI=1); its keys go with the old seed ---------------
+if [ "$E2E_AI" = "1" ]; then
+  start_fake_agent
+  reset_fake_agent
+else
+  stop_process fake-agent
+fi
+
 # --- 2. Schema and demo data -----------------------------------------------------------
 (
   cd "$repo/backend"
@@ -108,6 +124,7 @@ if app_ready; then
       log "starting soundings worker (log: $E2E_STATE_DIR/worker.log)"
       start_process worker uv run --quiet soundings worker
     fi
+    [ "$E2E_AI" != "1" ] || provision_ai_agent
     log "the app already answers on $E2E_URL: reseeded, not restarted"
     exit 0
   fi
@@ -144,6 +161,7 @@ for _ in $(seq 1 60); do
       tail -n 40 "$E2E_STATE_DIR/worker.log" >&2 || true
       die "the worker stopped (log: $E2E_STATE_DIR/worker.log)"
     }
+    [ "$E2E_AI" != "1" ] || provision_ai_agent
     log "ready: $E2E_URL"
     exit 0
   fi

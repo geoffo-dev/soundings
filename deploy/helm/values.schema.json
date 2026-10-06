@@ -463,6 +463,112 @@
               "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
             }
           }
+        },
+        "controllerUrl": {
+          "type": "string",
+          "pattern": "^(https?://[a-z0-9]([-a-z0-9.]*[a-z0-9])?(:[0-9]{1,5})?)?$",
+          "description": "kagent's controller: an http(s) origin without a path, lower case. Empty: http://kagent-controller.<kagent.namespace>:8083."
+        },
+        "existingTokenSecret": {
+          "type": "string",
+          "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+          "maxLength": 253
+        },
+        "tokenSecretKey": {
+          "type": "string",
+          "pattern": "^[-._a-zA-Z0-9]+$",
+          "maxLength": 253
+        },
+        "agentNamespaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+          },
+          "maxItems": 50,
+          "uniqueItems": true,
+          "description": "Namespaces agents may be registered in. Empty: the release namespace."
+        },
+        "agents": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "modelConfig": {
+              "type": "string",
+              "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+              "maxLength": 253
+            },
+            "evaluator": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "keySecret": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+                  "maxLength": 253
+                },
+                "keySecretKey": {
+                  "type": "string",
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "maxLength": 253
+                }
+              }
+            },
+            "researcher": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "keySecret": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+                  "maxLength": 253
+                },
+                "keySecretKey": {
+                  "type": "string",
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "maxLength": 253
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runTimeout": {
+          "type": [
+            "string",
+            "integer"
+          ],
+          "pattern": "^(P([0-9]+W)?([0-9]+D)?(T([0-9]+H)?([0-9]+M)?([0-9]+S)?)?|[0-9]+)$",
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "ISO 8601 duration (e.g. PT5M) or seconds, 30 seconds to 1 hour"
+        },
+        "maxConcurrentRuns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "defaultProtocol": {
+          "type": "string",
+          "enum": [
+            "kagent_v0_10",
+            "kagent_v1_0"
+          ]
+        },
+        "mcpUrl": {
+          "type": "string",
+          "pattern": "^(https?://[^\\s?#@]+)?$"
         }
       }
     },
@@ -1201,6 +1307,32 @@
                 },
                 "port": {
                   "description": "Destination port of the IdP. Empty: the issuer URL's port.",
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^([1-9][0-9]{0,4})?$"
+                    }
+                  ]
+                }
+              }
+            },
+            "kagent": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "to": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "port": {
+                  "description": "Destination port of kagent's controller pods. Empty: kagent.controllerUrl's port.",
                   "anyOf": [
                     {
                       "type": "integer",

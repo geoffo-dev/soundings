@@ -220,3 +220,23 @@ EMAILS_CANCELLED = Counter(
 EMAILS_QUEUED = Gauge(
     "soundings_emails_queued", "Emails waiting to be sent (set by the worker's sweep)."
 )
+
+
+# --- AI runs (contract-phase6) ------------------------------------------------------------
+AI_RUNS_REQUESTED = Counter(
+    "soundings_ai_runs_requested_total", "AI runs requested (new runs only), by kind.", ["kind"]
+)
+AI_RUNS_FINISHED = Counter(
+    "soundings_ai_runs_finished_total",
+    "AI runs that ended, by kind and final status.",
+    ["kind", "status"],
+)
+AI_RUN_DURATION = Histogram(
+    "soundings_ai_run_duration_seconds",
+    "Time from a run's start to its end, by kind.",
+    ["kind"],
+    buckets=(1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+)
+AI_RUN_EVENT_STREAMS = Gauge(
+    "soundings_ai_run_event_streams", "Open AI run event streams (SSE) in this API process."
+)

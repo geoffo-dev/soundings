@@ -160,8 +160,11 @@ test('PR4-02: margin threads: comment, reply, resolve, reopen, delete', async ({
   const collapsed = bobMargin.getByRole('button', { name: /^Resolved · Carol Chen/ })
   await expect(collapsed).toBeVisible()
   await expect(collapsed).toHaveAttribute('aria-expanded', 'false')
+  // The margin collapses the thread at once (optimistic); the save lands a moment later.
+  await expect
+    .poll(async () => (await alice.threads(key))[0]?.resolved_by?.display_name)
+    .toBe('Bob Brown')
   const [resolved] = await alice.threads(key)
-  expect(resolved?.resolved_by?.display_name).toBe('Bob Brown')
 
   // Bob can't delete Carol's comment (403 not_author); an admin could.
   const bobApi = await api('bob')

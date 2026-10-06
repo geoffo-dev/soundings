@@ -49,6 +49,7 @@ import type {
   MockProject,
   MockUser,
 } from './db'
+import { citationOut, researchNoteOut } from './ai'
 import type { MockAuthMethod } from './session'
 
 export const STATUSES: IdeaStatus[] = ['new', 'evaluating', 'shortlisted', 'proposal', 'closed']
@@ -648,7 +649,15 @@ export function evaluationOut(db: MockDb, evaluation: MockEvaluation): Evaluatio
     scores: criteria.flatMap((criterion) => {
       const score = evaluation.scores.find((s) => s.criterion_id === criterion.id)
       return score && score.score !== null
-        ? [{ criterion_id: criterion.id, score: score.score, comment: score.comment }]
+        ? [
+            {
+              criterion_id: criterion.id,
+              score: score.score,
+              comment: score.comment,
+              // Phase 6: an AI evaluator's cited sources (empty for people).
+              sources: (score.sources ?? []).map(citationOut),
+            },
+          ]
         : []
     }),
   }
@@ -752,6 +761,8 @@ export function activityItem(db: MockDb, event: MockEvent, user: MockUser): Acti
         from_due_at: str('from_due_at'),
         to_due_at: str('to_due_at'),
       }
+    case 'ai_research_note':
+      return { ...base, type: 'ai_research_note', note: researchNoteOut(db, event, user) }
   }
 }
 

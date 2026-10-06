@@ -139,7 +139,11 @@ export function revokeKey(
   db: MockDb,
   key: MockApiKey,
   actor: MockUser,
-  rule: 'api_key.manage_own' | 'api_key.manage_any' | 'platform.manage_users',
+  rule:
+    | 'api_key.manage_own'
+    | 'api_key.manage_any'
+    | 'platform.manage_users'
+    | 'platform.manage_agents',
   reason?: 'deactivated',
 ): void {
   if (key.revoked_at !== null) return

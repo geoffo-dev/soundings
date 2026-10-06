@@ -119,10 +119,26 @@ MCP server (MCP clients and AI agents)
    networkPolicy.ingressFrom restricts the API: {{ if .Values.kagent.enabled }}kagent's namespace ({{ .Values.kagent.namespace }}) is allowed;
    add {{ else }}add {{ end }}the namespaces of other in-cluster MCP clients to it.
 {{- end }}
-{{- if and .Values.kagent.enabled .Values.kagent.examples }}
+{{- if and .Values.kagent.enabled .Values.kagent.examples .Values.kagent.mcp.keySecret }}
    kagent: RemoteMCPServer {{ $fullname }}-mcp sends the Authorization header from
-   Secret {{ .Values.kagent.mcp.keySecret }} (key {{ .Values.kagent.mcp.keySecretKey }}), which must hold "Bearer sdg_..."
-   (a service account's key: read, evaluate, mcp). Check: kubectl -n {{ .Release.Namespace }} get rmcps
+   Secret {{ .Values.kagent.mcp.keySecret }} (key {{ .Values.kagent.mcp.keySecretKey }}), which must hold "Bearer sdg_...".
+   Check: kubectl -n {{ .Release.Namespace }} get rmcps
+{{- end }}
+{{- if .Values.features.ai }}
+
+AI assistance (features.ai, kagent)
+   Runs go to {{ include "soundings.kagentUrl" . }} (A2A); agents may be registered in
+   namespace(s) {{ include "soundings.agentNamespaces" . }}. Register each agent in Admin settings > AI agents
+   and apply the Secret manifest it shows once (soundings-agent-<name>, in the agent's namespace).
+{{- if and .Values.kagent.enabled .Values.kagent.examples }}
+{{- range $role := list "evaluator" "researcher" }}
+{{- if (index $.Values.kagent.agents $role).enabled }}
+   Example agent: namespace {{ $.Release.Namespace }}, name {{ include "soundings.exampleAgentName" (dict "ctx" $ "agent" $role) }} (key Secret {{ include "soundings.exampleAgentKeySecret" (dict "ctx" $ "agent" $role) }})
+{{- end }}
+{{- end }}
+   Check: kubectl -n {{ .Release.Namespace }} get agents,rmcps
+{{- end }}
+   Then Test connection on that page. Runs: at most {{ int .Values.ai.maxConcurrentRuns }} per worker pod, {{ include "soundings.duration" .Values.ai.runTimeout }} each.
 {{- end }}
 
 Check the release: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

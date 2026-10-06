@@ -20,7 +20,8 @@ owner of a closed idea hears ``409 idea_closed`` rather than ``403``.
 
 Blind evaluation (✱) is part of the policy: ``evaluation.view_others`` and
 ``score.view_aggregate`` are denied with ``hidden=True`` for a pending evaluator
-(assigned, not submitted), whatever their role. Hidden is not an error: callers
+(assigned, not submitted), whatever their role, and always for a service account (an AI
+agent: role matrix section 3 rule 9). Hidden is not an error: callers
 null the data and set ``score_hidden`` (use :func:`can`, not :func:`require`).
 
 Everything here is pure (no I/O); :mod:`app.authz.loaders` builds :class:`Resource`
@@ -524,6 +525,7 @@ FROZEN_WHILE_HELD: Final = frozenset(
         Rule.AI_REQUEST_EVALUATION,
         Rule.AI_RESEARCH,
         Rule.AI_DRAFT_SECTION,
+        Rule.AI_DELETE_NOTE,
     }
 )
 """c19 (contract-phase4 section 3.6): every idea write on an idea held for moderation
@@ -609,6 +611,7 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     _row(Rule.AI_RESEARCH, _I,   "Y (c5, c10)",   "Y (c5, c10)", "403",          "403",   "403",   "404", "401", owner="+ (c5, c10)", idea_write=_W),
     _row(Rule.AI_DRAFT_SECTION, _I, "Y (c7, c10)", "Y (c7, c10)", "403",         "403",   "403",   "404", "401", owner="+ (c7, c10)", idea_write=_W),
     _row(Rule.AI_CANCEL_RUN, _I, "Y",             "Y",          "403",           "403",   "403",   "404", "401", owner="+"),
+    _row(Rule.AI_DELETE_NOTE, _I, "Y",            "Y",          "403",           "403",   "403",   "404", "401", owner="+", idea_write=_W),
 )
 # fmt: on
 
@@ -829,8 +832,15 @@ def authorize(
         return _deny(rule, 403)
 
     decision = best_decision(_evaluate_grant(principal, spec, grant, resource) for grant in grants)
-    if decision.allowed and spec.blind and idea is not None and idea.pending_evaluator:
+    if (
+        decision.allowed
+        and spec.blind
+        and idea is not None
+        and (idea.pending_evaluator or principal.user.is_service_account)
+    ):
         # ✱: no role lifts blind evaluation, and it applies to demoted evaluators too.
+        # Rule 9: an AI agent's service account is blind on every idea, before and after
+        # it submits, so nothing it writes can carry others' scores to anyone.
         return Decision(rule, False, 403, "forbidden", condition="blind", hidden=True)
     return decision
 

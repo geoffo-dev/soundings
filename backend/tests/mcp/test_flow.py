@@ -53,7 +53,7 @@ async def test_search_and_evaluate_only_where_the_key_reaches_then_revoke(
 
     async with connect(secret) as client:
         # 2. Nine tools; only Customer Innovation; only CUST-n awaits, blind.
-        assert len((await client.list_tools()).tools) == 9
+        assert len((await client.list_tools()).tools) == 10
         projects = data(await call(client, "list_projects"))["projects"]
         assert [p["key"] for p in projects] == ["CUST"]
         awaiting = data(await call(client, "search_ideas", awaiting_my_evaluation=True))["items"]

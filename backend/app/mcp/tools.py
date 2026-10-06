@@ -1,5 +1,5 @@
-"""The nine MCP tools (contract-phase5 section 4.3), each a thin adapter over the services
-the REST endpoints use.
+"""The MCP tools (contract-phase5 section 4.3, and Phase 6's ``add_research_note``), each a
+thin adapter over the services the REST endpoints use.
 
 Every tool gets a :class:`ToolContext` (the unit of work, the key's principal, the
 settings and the audit target) and its validated ``*Input`` model, and returns its
@@ -15,6 +15,12 @@ evaluator. Two things are stricter than REST, on purpose:
   text waiting for review must not reach an agent.
 * **Results are bounded** (the latest comments and evaluations, long texts cut with
   ``truncated``) and carry no public submitter's name.
+* **AI agents act only inside their runs** (c22, :mod:`app.ai.scope`): after the idea is
+  found (``not_found`` first), an agent's call must target the idea of one of its open
+  runs (``ai_run_not_active``), lists show only those ideas, and its only write is the
+  run kind's tool, whose result is attached to the run (:mod:`app.ai.results`).
+  ``create_idea`` and ``add_comment`` are ``forbidden`` for agents. Rule 9: agents see
+  no other evaluator's score data (the policy treats them as pending evaluators).
 
 The write tools pass their input model, a subclass of the REST request model, to the
 REST service as its body, so limits and cross-field rules can't drift.
@@ -31,6 +37,9 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import notes as ai_notes
+from app.ai import results as ai_results
+from app.ai import scope as ai_scope
 from app.authz import (
     ASSIGNABLE_ROLES,
     Decision,
@@ -48,7 +57,15 @@ from app.domain.idea_keys import parse_idea_key
 from app.domain.principal import Principal
 from app.mcp.audit import AuditTarget
 from app.models.activity import Comment
-from app.models.enums import IdeaStatus, Recommendation, SuggestionSource
+from app.models.enums import (
+    AiRunKind,
+    EvaluationStatus,
+    EvaluatorState,
+    IdeaStatus,
+    Recommendation,
+    SuggestionSource,
+)
+from app.models.evaluation import Evaluation, EvaluationScore
 from app.models.idea import Idea
 from app.models.project import Project, RubricCriterion, project_effective_roles
 from app.models.public import PublicSubmission
@@ -62,6 +79,8 @@ from app.schemas.mcp import (
     MCP_TEXT_LIMIT,
     AddCommentInput,
     AddCommentOutput,
+    AddResearchNoteInput,
+    AddResearchNoteOutput,
     CreateIdeaInput,
     CreateIdeaOutput,
     GetIdeaInput,
@@ -72,6 +91,7 @@ from app.schemas.mcp import (
     GetRubricOutput,
     ListProjectsInput,
     ListProjectsOutput,
+    McpCitation,
     McpComment,
     McpEvaluation,
     McpEvaluator,
@@ -116,6 +136,9 @@ class ToolContext:
     principal: Principal
     settings: Settings
     target: AuditTarget = field(default_factory=AuditTarget)
+    recorded: list[tuple[UUID, AiRunKind]] = field(default_factory=list)
+    """Runs this call attached a result to (an agent's write): the dispatcher adds their
+    ``result_recorded`` events after the transaction."""
 
 
 ToolFunction = Callable[[ToolContext, Any], Awaitable[McpOutput]]
@@ -197,7 +220,36 @@ async def _public_ideas(db: AsyncSession, idea_ids: Iterable[UUID]) -> set[UUID]
     return set(found)
 
 
-def _my_out(mine: MyEvaluation, names: dict[UUID, str]) -> McpMyEvaluation:
+def _citations(stored: object) -> list[McpCitation]:
+    if not isinstance(stored, list):
+        return []
+    return [
+        McpCitation(title=str(item.get("title", "")), url=str(item.get("url", "")))
+        for item in stored
+        if isinstance(item, dict)
+    ]
+
+
+async def _own_sources(
+    db: AsyncSession, principal: Principal, idea_id: UUID
+) -> dict[UUID, list[McpCitation]]:
+    """An AI evaluator's own cited sources per criterion (people cite none)."""
+    if not ai_scope.is_agent(principal):
+        return {}
+    rows = await db.execute(
+        select(EvaluationScore.criterion_id, EvaluationScore.sources)
+        .join(Evaluation, Evaluation.id == EvaluationScore.evaluation_id)
+        .where(Evaluation.idea_id == idea_id, Evaluation.evaluator_id == principal.user_id)
+    )
+    return {criterion_id: _citations(sources) for criterion_id, sources in rows}
+
+
+def _my_out(
+    mine: MyEvaluation,
+    names: dict[UUID, str],
+    sources: dict[UUID, list[McpCitation]] | None = None,
+) -> McpMyEvaluation:
+    sources = sources or {}
     return McpMyEvaluation(
         state=mine.state,
         editable=mine.editable,
@@ -210,6 +262,7 @@ def _my_out(mine: MyEvaluation, names: dict[UUID, str]) -> McpMyEvaluation:
                 criterion=names.get(score.criterion_id, ""),
                 score=score.score,
                 comment=score.comment,
+                sources=sources.get(score.criterion_id, []),
             )
             for score in mine.scores
         ],
@@ -226,6 +279,9 @@ async def list_projects(ctx: ToolContext, args: ListProjectsInput) -> ListProjec
     found = await projects.list_projects(
         ctx.db, ctx.principal, include_archived=args.include_archived
     )
+    if ai_scope.is_agent(ctx.principal):  # c22: only its open runs' projects
+        allowed = set(await ctx.db.scalars(ai_scope.open_run_projects(ctx.principal)))
+        found = [project for project in found if project.id in allowed]
     return ListProjectsOutput(
         projects=[
             McpProject(
@@ -288,6 +344,8 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
     principal = ctx.principal
     _require_read(principal, Rule.IDEA_VIEW)
     where: list[ColumnElement[bool]] = [listed_ideas(principal)]
+    if ai_scope.is_agent(principal):  # c22: only its open runs' ideas
+        where.append(Idea.id.in_(ai_scope.open_run_ideas(principal)))
     if args.project is not None:
         project, _ = await load_project(ctx.db, principal, args.project)
         ctx.target.project(project.id)
@@ -374,6 +432,10 @@ async def _evaluations_out(
                         criterion=names.get(score.criterion_id, ""),
                         score=score.score,
                         comment=score.comment,
+                        sources=[
+                            McpCitation(title=source.title, url=source.url)
+                            for source in score.sources
+                        ],
                     )
                     for score in evaluation.scores
                 ],
@@ -420,6 +482,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
     comments, bounded; no public submitter's name."""
     db, principal = ctx.db, ctx.principal
     loaded = await _idea(ctx, args.idea)
+    await ai_scope.require_open_run(db, principal, loaded.idea.id)
     require(principal, Rule.IDEA_VIEW, loaded.resource)  # the key's read scope
     detail = await ideas.idea_detail(db, principal, loaded)
     names = {c.id: c.name for c in await _criteria(db, loaded.project.id)}
@@ -474,7 +537,11 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
                 )
                 for evaluator in detail.evaluators
             ],
-            my_evaluation=_my_out(mine, names) if mine else None,
+            my_evaluation=(
+                _my_out(mine, names, await _own_sources(db, principal, loaded.idea.id))
+                if mine
+                else None
+            ),
             aggregate=detail.aggregate,
             evaluation_count=evaluation_count,
             evaluations=others,
@@ -494,11 +561,17 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
 async def get_rubric(ctx: ToolContext, args: GetRubricInput) -> GetRubricOutput:
     """``project.view``: the active criteria of a project, or of an idea's project."""
     if args.project is not None:
+        if ai_scope.is_agent(ctx.principal):
+            # c22 before the rule: an agent reads only the rubric of an open run's project.
+            project, _ = await load_project(ctx.db, ctx.principal, args.project, None)
+            ctx.target.project(project.id)
+            await ai_scope.require_open_run_in_project(ctx.db, ctx.principal, project.id)
         project, _ = await load_project(ctx.db, ctx.principal, args.project)
         ctx.target.project(project.id)
     else:
         assert args.idea is not None  # noqa: S101 - the input model needs one of the two
         loaded = await _idea(ctx, args.idea)
+        await ai_scope.require_open_run(ctx.db, ctx.principal, loaded.idea.id)
         require(ctx.principal, Rule.PROJECT_VIEW, loaded.resource)
         project = loaded.project
     criteria = await _criteria(ctx.db, project.id)
@@ -514,6 +587,7 @@ async def get_proposal(ctx: ToolContext, args: GetProposalInput) -> GetProposalO
     """``proposal.view``: the proposal (null until started; no margin comments, no
     score line) and whether suggesting works now."""
     loaded = await _idea(ctx, args.idea)
+    await ai_scope.require_open_run(ctx.db, ctx.principal, loaded.idea.id)
     view = await proposal_service.proposal_view(ctx.db, ctx.principal, loaded)
     proposal = view.proposal
     return GetProposalOutput(
@@ -537,6 +611,10 @@ async def get_proposal(ctx: ToolContext, args: GetProposalInput) -> GetProposalO
 async def create_idea(ctx: ToolContext, args: CreateIdeaInput) -> CreateIdeaOutput:
     """Exactly REST ``create_idea``: ``idea.create`` on the project, New, the creator
     watches it, activity and notifications as in the app."""
+    if ai_scope.is_agent(ctx.principal):  # c22: agents never create ideas
+        project, _ = await load_project(ctx.db, ctx.principal, args.project, None)
+        ctx.target.project(project.id)
+        raise ai_scope.refuse_agent_write()
     project, _ = await load_project(ctx.db, ctx.principal, args.project, Rule.IDEA_CREATE)
     ctx.target.project(project.id)
     idea = await ideas.create_idea(ctx.db, ctx.principal, project, args)
@@ -549,6 +627,8 @@ async def add_comment(ctx: ToolContext, args: AddCommentInput) -> AddCommentOutp
     """Exactly REST ``create_comment`` (the idea's lock, @mentions, watching,
     notifications)."""
     loaded = await _idea(ctx, args.idea, for_update=True)
+    if ai_scope.is_agent(ctx.principal):  # c22: agents never comment (nor @mention)
+        raise ai_scope.refuse_agent_write()
     item = await comments.create_comment(ctx.db, ctx.principal, loaded, args)
     body, truncated = cut(item.comment.body_md)
     author = (await _users(ctx.db, [ctx.principal.user_id])).get(ctx.principal.user_id)
@@ -572,9 +652,25 @@ async def submit_evaluation(
     """Exactly REST ``save_my_evaluation`` under the idea's lock: the arguments replace
     what was saved; ``submit`` (default true here) submits."""
     loaded = await _idea(ctx, args.idea, for_update=True)
+    run = await ai_scope.write_run(ctx.db, ctx.principal, "submit_evaluation", loaded.idea.id)
     mine = await evaluations.save_my_evaluation(ctx.db, ctx.principal, loaded, args)
+    if run is not None and args.submit and mine.state is EvaluatorState.SUBMITTED:
+        evaluation_id = await ctx.db.scalar(
+            select(Evaluation.id).where(
+                Evaluation.idea_id == loaded.idea.id,
+                Evaluation.evaluator_id == ctx.principal.user_id,
+                Evaluation.status == EvaluationStatus.SUBMITTED,
+            )
+        )
+        if evaluation_id is not None and await ai_results.attach(
+            ctx.db, run, evaluation_id=evaluation_id
+        ):
+            ctx.recorded.append((run.id, run.kind))
     names = {c.id: c.name for c in await _criteria(ctx.db, loaded.project.id)}
-    return SubmitEvaluationOutput(idea=_idea_ref(ctx, loaded), evaluation=_my_out(mine, names))
+    sources = await _own_sources(ctx.db, ctx.principal, loaded.idea.id)
+    return SubmitEvaluationOutput(
+        idea=_idea_ref(ctx, loaded), evaluation=_my_out(mine, names, sources)
+    )
 
 
 # --- propose_proposal_section -------------------------------------------------------------
@@ -584,14 +680,37 @@ async def propose_proposal_section(
     """Exactly REST ``create_proposal_suggestion`` with ``source`` ``mcp`` (``ai`` for a
     service account)."""
     loaded = await _idea(ctx, args.idea, for_update=True)
+    run = await ai_scope.write_run(
+        ctx.db, ctx.principal, "propose_proposal_section", loaded.idea.id, args.section_key
+    )
     created = await suggestions.create_suggestion(
         ctx.db, ctx.principal, loaded, args, channel=SuggestionSource.MCP
     )
+    if run is not None and await ai_results.attach(
+        ctx.db, run, suggestion_id=created.suggestion.id
+    ):
+        ctx.recorded.append((run.id, run.kind))
     return ProposeProposalSectionOutput(
         idea=_idea_ref(ctx, loaded),
         suggestion=McpProposalSuggestion.model_validate(created.suggestion.model_dump()),
         replaced_suggestion_id=created.replaced_id,
     )
+
+
+# --- add_research_note (Phase 6) -------------------------------------------------------------
+async def add_research_note(ctx: ToolContext, args: AddResearchNoteInput) -> AddResearchNoteOutput:
+    """An agent's research note for its open research run on the idea (c22; people:
+    ``forbidden``), stored as an ``ai_research_note`` activity item and attached to the
+    run; calling it again in the same run replaces the note."""
+    loaded = await _idea(ctx, args.idea, for_update=True)
+    run = await ai_scope.write_run(ctx.db, ctx.principal, "add_research_note", loaded.idea.id)
+    if run is None:  # pragma: no cover - write_run refuses people for this tool
+        raise ai_scope.refuse_agent_write()
+    note_id, replaced = await ai_notes.write_note(
+        ctx.db, ctx.principal, loaded, run, body_md=args.body_md, sources=args.sources
+    )
+    ctx.recorded.append((run.id, run.kind))
+    return AddResearchNoteOutput(idea=_idea_ref(ctx, loaded), note_id=note_id, replaced=replaced)
 
 
 TOOLS: Final[dict[str, ToolFunction]] = {
@@ -604,5 +723,6 @@ TOOLS: Final[dict[str, ToolFunction]] = {
     "add_comment": add_comment,
     "submit_evaluation": submit_evaluation,
     "propose_proposal_section": propose_proposal_section,
+    "add_research_note": add_research_note,
 }
 """Each catalogue tool (:data:`app.schemas.mcp.MCP_TOOLS`) and its implementation."""

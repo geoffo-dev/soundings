@@ -56,6 +56,12 @@ const ADMIN_PAGES = [
     to: '/settings/all-api-keys',
     keywords: ['keys', 'tokens', 'mcp', 'agents', 'revoke'],
   },
+  {
+    id: 'ai-agents',
+    label: 'AI agents',
+    to: '/settings/ai-agents',
+    keywords: ['kagent', 'ai', 'agents', 'a2a', 'evaluator', 'research'],
+  },
   { id: 'audit', label: 'Audit log', to: '/settings/audit', keywords: ['history', 'log'] },
 ] as const
 

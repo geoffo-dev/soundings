@@ -101,7 +101,7 @@ async def test_tools_list_is_exactly_the_catalogue(connect: Connect, secret: str
         assert tool.annotations.read_only_hint is spec.read_only
         assert tool.annotations.destructive_hint is (spec.name == "submit_evaluation")
         assert tool.annotations.idempotent_hint is (
-            spec.read_only or spec.name == "submit_evaluation"
+            spec.read_only or spec.name in {"submit_evaluation", "add_research_note"}
         )
         assert tool.annotations.open_world_hint is False
 

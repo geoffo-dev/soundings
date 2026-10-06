@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
+from app.ai.sse import get_hub
 from app.api import docs, health
 from app.api.v1 import api_router
 from app.config import Settings, get_settings
@@ -76,7 +77,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with open_job_queue(settings) as job_queue, mcp.run():
                 app.state.job_queue = job_queue
                 freeze_startup_heap()
-                yield
+                try:
+                    yield
+                finally:
+                    # AI run event pollers (one per run with open streams; app.ai.sse).
+                    await get_hub(app).close()
         finally:
             await engine.dispose()
             if tracer_provider is not None:

@@ -1,5 +1,5 @@
 """The MCP server's contract (SPEC section 8; contract-phase5 section 4): server
-metadata, the nine tools with their rule and scope, their argument models (each tool's
+metadata, the ten tools with their rule and scope, their argument models (each tool's
 ``inputSchema``) and result models (each tool's ``outputSchema``, returned as
 ``structuredContent``), and the error shape.
 
@@ -199,6 +199,8 @@ never see them, even after submitting. That is expected; don't ask for them.
 - Contribute: create_idea, add_comment, and propose_proposal_section, which only \
 suggests text: the idea's owner accepts or discards it. Changes are limited to 30 a \
 minute per key.
+- Research (AI agents, during a research run only): add_research_note writes a cited \
+note into the idea's activity feed; calling it again in the same run replaces it.
 - AI agents' keys work only during a Soundings AI run, on that run's idea: the run's \
 message names the one tool that records its result; everything else is refused \
 (ai_run_not_active, forbidden).
@@ -728,8 +730,8 @@ RESEARCH_NOTE_INSTRUCTION: Final = (
     "- Research (AI agents, during a research run only): add_research_note writes a cited "
     "note into the idea's activity feed; calling it again in the same run replaces it."
 )
-"""The ``MCP_INSTRUCTIONS`` bullet that lands with :data:`ADD_RESEARCH_NOTE`
-(contract-phase6 section 5)."""
+"""The ``MCP_INSTRUCTIONS`` bullet about :data:`ADD_RESEARCH_NOTE` (contract-phase6
+section 5; part of the instructions since the tool joined the catalogue)."""
 
 
 # --- The catalogue -------------------------------------------------------------------------
@@ -757,7 +759,7 @@ class McpTool:
     output: type[McpOutput]
 
 
-MCP_TOOLS: Final[tuple[McpTool, ...]] = (
+_SPEC_TOOLS: Final[tuple[McpTool, ...]] = (
     McpTool(
         name="list_projects",
         title="List projects",
@@ -918,10 +920,12 @@ ADD_RESEARCH_NOTE: Final = McpTool(
     input=AddResearchNoteInput,
     output=AddResearchNoteOutput,
 )
-"""Phase 6's tenth tool. **Agreed, not yet in** :data:`MCP_TOOLS`: backend appends it
-(and :data:`RESEARCH_NOTE_INSTRUCTION` to :data:`MCP_INSTRUCTIONS`) in the change that
-adds its handler to ``app.mcp.tools.TOOLS`` and the tests' catalogue
-(contract-phase6 section 5)."""
+"""Phase 6's tenth tool (contract-phase6 section 4), with its handler in
+``app.mcp.tools.TOOLS``."""
+
+MCP_TOOLS: Final[tuple[McpTool, ...]] = (*_SPEC_TOOLS, ADD_RESEARCH_NOTE)
+"""The catalogue, in this order: SPEC section 8's nine tools (role matrix section 6), then
+Phase 6's ``add_research_note``."""
 
 
 def tool_by_name(name: str) -> McpTool | None:

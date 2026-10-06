@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import (
+    AiRunKind,
     EvaluatorState,
     HoldReason,
     IdeaStatus,
@@ -23,6 +24,7 @@ from app.models.idea import Idea
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.services.scoring import recompute_aggregates
+from tests.ai.helpers import make_agent, open_run
 from tests.factories import add_evaluator, make_idea, make_user
 from tests.mcp.conftest import AsAgent, AsUser, Team, full_scores, ok
 
@@ -216,11 +218,11 @@ async def test_sort_by_score_puts_the_hidden_idea_last(
 async def test_a_service_account_evaluates_blind(
     as_agent: AsAgent, team: Team, evaluated: Idea, db_session: AsyncSession
 ) -> None:
+    """Phase 6 (role matrix section 3 rule 9): an agent never sees others' score data,
+    before **or after** it submits; it works only inside an open run (c22)."""
     agent_user = await make_user(db_session, "Second Agent", service_account=True)
-    db_session.add(
-        ProjectMember(project_id=team.project.id, user_id=agent_user.id, role=ProjectRole.MEMBER)
-    )
-    await db_session.commit()
+    agent_row = await make_agent(db_session, [team.project], user=agent_user)
+    await open_run(db_session, agent_row, evaluated, AiRunKind.EVALUATE)
     await add_evaluator(db_session, evaluated, agent_user)
     agent = await as_agent(agent_user, ["read", "evaluate", "mcp"], [team.project])
 
@@ -228,15 +230,15 @@ async def test_a_service_account_evaluates_blind(
     submitted = await agent.ok(
         "submit_evaluation",
         idea=key_of(team, evaluated),
-        scores=full_scores(team, 4),
+        scores=[score | {"comment": "Because."} for score in full_scores(team, 4)],
         recommendation="go",
     )
     after = (await agent.ok("get_idea", idea=key_of(team, evaluated)))["idea"]
 
     assert_blind(summary, detail)
     assert submitted["evaluation"]["state"] == "submitted"
-    assert after["score_hidden"] is False
-    assert after["evaluation_count"] == 3  # the others: yours is my_evaluation
+    assert_blind(summary, after)
+    assert after["my_evaluation"]["state"] == "submitted"
 
 
 # --- Holds ------------------------------------------------------------------------------------

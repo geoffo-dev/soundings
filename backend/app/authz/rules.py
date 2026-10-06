@@ -79,6 +79,7 @@ class Rule(StrEnum):
     AI_RESEARCH = "ai.research"
     AI_DRAFT_SECTION = "ai.draft_section"
     AI_CANCEL_RUN = "ai.cancel_run"
+    AI_DELETE_NOTE = "ai.delete_note"
 
 
 _READ: Final = frozenset(
@@ -118,6 +119,7 @@ _WRITE: Final = frozenset(
         Rule.AI_RESEARCH,
         Rule.AI_DRAFT_SECTION,
         Rule.AI_CANCEL_RUN,
+        Rule.AI_DELETE_NOTE,
     }
 )
 

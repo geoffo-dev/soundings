@@ -100,6 +100,7 @@ MATRIX: dict[str, tuple[str, ...]] = {
     "ai.research": ("Y (c5, c10)", "Y (c5, c10)", "403", "403", "403", "404", "401", "+ (c5, c10)", "·"),
     "ai.draft_section": ("Y (c7, c10)", "Y (c7, c10)", "403", "403", "403", "404", "401", "+ (c7, c10)", "·"),
     "ai.cancel_run": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
+    "ai.delete_note": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
 }
 
 # Role matrix section 4: the response when each condition fails (c1, c14 and c15 have two
@@ -135,6 +136,7 @@ IDEA_WRITES = {
     "evaluation.submit_own", "evaluation.close", "evaluation.include_ai",
     "idea.change_status", "idea.moderate", "proposal.write", "proposal.comment",
     "proposal.suggest_section", "ai.request_evaluation", "ai.research", "ai.draft_section",
+    "ai.delete_note",
 }
 # fmt: on
 

@@ -3,6 +3,7 @@ import type { RequestHandler } from 'msw'
 import { activityHandlers } from './activity'
 import { adminHandlers } from './admin'
 import { adminEmailHandlers } from './admin-email'
+import { aiHandlers } from './ai'
 import { apiKeyHandlers } from './api-keys'
 import { authHandlers } from './auth'
 import { brandingHandlers } from './branding'
@@ -43,4 +44,6 @@ export const handlers: RequestHandler[] = [
   // Phase 5 (contract-phase5)
   ...apiKeyHandlers,
   ...suggestionHandlers,
+  // Phase 6 (contract-phase6)
+  ...aiHandlers,
 ]

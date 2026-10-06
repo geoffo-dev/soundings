@@ -159,11 +159,15 @@ def require_key_scope(principal: Principal, scope: ApiKeyScope) -> None:
 
 def check_route_for_key(principal: Principal, operation_id: str | None) -> None:
     """The route-level gate for a request authenticated by an API key (see the module
-    docstring): ``read`` routes need the ``read`` scope, ``session`` and ``public``
-    routes and unknown operations are refused, ``policy`` routes are left to the
-    policy. Sessions always pass."""
+    docstring): a service account's key is refused everywhere (c22: MCP only), ``read``
+    routes need the ``read`` scope, ``session`` and ``public`` routes and unknown
+    operations are refused, ``policy`` routes are left to the policy. Sessions always
+    pass."""
     if principal.auth == "session":
         return
+    if principal.user.is_service_account:
+        # c22 (run scope): an AI agent's key works on /mcp only, never on REST.
+        raise InsufficientScopeProblem
     access = ROUTE_KEY_ACCESS.get(operation_id or "")
     if access is KeyAccess.POLICY:
         return

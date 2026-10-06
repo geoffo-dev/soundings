@@ -201,6 +201,36 @@ Configuration
 {{- if gt (len $hostPort) 1 }}{{ last $hostPort }}{{ else if eq $url.scheme "http" }}80{{ else }}443{{ end }}
 {{- end }}
 
+{{/* kagent's controller URL (A2A): kagent.controllerUrl, else kagent's chart default. */}}
+{{- define "soundings.kagentUrl" -}}
+{{- .Values.kagent.controllerUrl | default (printf "http://kagent-controller.%s:8083" (.Values.kagent.namespace | default "kagent")) }}
+{{- end }}
+
+{{/* Namespaces agents may be registered in: kagent.agentNamespaces, else the release's. */}}
+{{- define "soundings.agentNamespaces" -}}
+{{- .Values.kagent.agentNamespaces | default (list .Release.Namespace) | join "," }}
+{{- end }}
+
+{{/* The Service URL of /mcp (what agents' RemoteMCPServers use; shown to admins). */}}
+{{- define "soundings.mcpServiceUrl" -}}
+{{- printf "http://%s.%s.svc.cluster.local:%v/mcp" (include "soundings.fullname" .) .Release.Namespace .Values.service.port }}
+{{- end }}
+
+{{/* AI runs and kagent are in use: kagent's controller is reached (egress, token). */}}
+{{- define "soundings.kagentInUse" -}}
+{{- if or .Values.features.ai .Values.kagent.enabled }}true{{ end }}
+{{- end }}
+
+{{/* An example agent's (dict "ctx" $ "agent" "evaluator") name and key Secret. */}}
+{{- define "soundings.exampleAgentName" -}}
+{{- printf "%s-%s" (include "soundings.fullname" .ctx) .agent }}
+{{- end }}
+
+{{- define "soundings.exampleAgentKeySecret" -}}
+{{- $values := index .ctx.Values.kagent.agents .agent }}
+{{- $values.keySecret | default (printf "soundings-agent-%s" (include "soundings.exampleAgentName" .)) }}
+{{- end }}
+
 {{/*
 A duration value (ISO 8601 such as PT12H, or a number of seconds) as the ISO 8601
 string the app parses: 3600 -> PT3600S (the app reads only ISO 8601 durations).
@@ -237,7 +267,13 @@ SOUNDINGS_PUBLIC_SUBMISSIONS_PER_PROJECT: {{ int .Values.publicSubmission.perPro
 SOUNDINGS_ALTCHA_COST: {{ int .Values.publicSubmission.altcha.cost | quote }}
 SOUNDINGS_ALTCHA_EXPIRY: {{ include "soundings.duration" .Values.publicSubmission.altcha.expiry | quote }}
 SOUNDINGS_BRANDING_MAX_UPLOAD_BYTES: {{ int .Values.branding.maxUploadBytes | quote }}
-SOUNDINGS_FEATURE_AI: {{ .Values.features.ai | quote }}
+SOUNDINGS_AI_ENABLED: {{ .Values.features.ai | quote }}
+SOUNDINGS_KAGENT_URL: {{ include "soundings.kagentUrl" . | quote }}
+SOUNDINGS_AI_DEFAULT_PROTOCOL: {{ .Values.ai.defaultProtocol | quote }}
+SOUNDINGS_AI_RUN_TIMEOUT: {{ include "soundings.duration" .Values.ai.runTimeout | quote }}
+SOUNDINGS_AI_MAX_CONCURRENT_RUNS: {{ int .Values.ai.maxConcurrentRuns | quote }}
+SOUNDINGS_AI_AGENT_NAMESPACES: {{ include "soundings.agentNamespaces" . | quote }}
+SOUNDINGS_AI_MCP_URL: {{ .Values.ai.mcpUrl | default (include "soundings.mcpServiceUrl" .) | quote }}
 SOUNDINGS_BREAK_GLASS_ENABLED: {{ .Values.breakGlass.enabled | quote }}
 {{- with .Values.otel.endpoint }}
 SOUNDINGS_OTEL_ENDPOINT: {{ . | quote }}
@@ -309,6 +345,8 @@ password and extraEnv (e.g. PGSSLROOTCERT), none of the app's other secrets.
 Secrets of the api and worker pods: (dict "ctx" . "signIn" true) for the api (the sign-in
 secrets), (dict "ctx" . "smtp" true) for the worker (the SMTP credentials: only the
 worker sends mail; the api gets SOUNDINGS_SMTP_*_SET flags in the ConfigMap instead).
+Both get kagent's controller token (kagent.existingTokenSecret): the api for test
+connection, the worker for runs.
 */}}
 {{- define "soundings.secretEnv" -}}
 {{- $signIn := .signIn -}}
@@ -323,6 +361,13 @@ worker sends mail; the api gets SOUNDINGS_SMTP_*_SET flags in the ConfigMap inst
 {{- include "soundings.databasePasswordEnv" . }}
 {{- if $signIn }}
 {{- include "soundings.signInSecretEnv" . }}
+{{- end }}
+{{- if and (include "soundings.kagentInUse" .) .Values.kagent.existingTokenSecret }}
+- name: SOUNDINGS_KAGENT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.kagent.existingTokenSecret }}
+      key: {{ .Values.kagent.tokenSecretKey }}
 {{- end }}
 {{- if and $smtp .Values.smtp.host }}
 {{- if .Values.smtp.existingSecret }}
@@ -536,7 +581,8 @@ Egress (networkPolicy.egress.enabled)
 
 {{/*
 Egress rules of the api or worker pods: DNS, the database, the worker's SMTP server,
-the api's IdP, the OTLP endpoint, then networkPolicy.egress.extra. A destination's `to`
+the api's IdP, kagent's controller (both, with features.ai or kagent.enabled), the OTLP
+endpoint, then networkPolicy.egress.extra. A destination's `to`
 peers, when empty, mean any address (on that port only).
 Usage: include "soundings.egressRules" (dict "ctx" $ "component" "worker")
 */}}
@@ -579,6 +625,15 @@ Usage: include "soundings.egressRules" (dict "ctx" $ "component" "worker")
     - port: {{ int (toString $egress.oidc.port | default (include "soundings.urlPort" $ctx.Values.oidc.issuer)) }}
       protocol: TCP
   {{- with $egress.oidc.to }}
+  to:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if include "soundings.kagentInUse" $ctx }}
+- ports:
+    - port: {{ int (toString $egress.kagent.port | default (include "soundings.urlPort" (include "soundings.kagentUrl" $ctx))) }}
+      protocol: TCP
+  {{- with $egress.kagent.to }}
   to:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -645,8 +700,14 @@ Validation (errors a JSON schema cannot express)
 {{- if and .Values.kagent.examples (not .Values.kagent.enabled) }}
 {{- fail "kagent.examples needs kagent.enabled=true (and kagent's CRDs in the cluster)" }}
 {{- end }}
-{{- if and .Values.kagent.enabled .Values.kagent.examples (not .Values.kagent.mcp.keySecret) }}
-{{- fail "kagent.mcp.keySecret is required with kagent.examples: an existing Secret whose key kagent.mcp.keySecretKey holds \"Bearer <the agents' API key>\"" }}
+{{- if and .Values.kagent.examples (or .Values.kagent.agents.evaluator.enabled .Values.kagent.agents.researcher.enabled) (not .Values.kagent.agents.modelConfig) }}
+{{- fail "kagent.agents.modelConfig is required with kagent.examples: the name of an existing kagent ModelConfig in the release namespace (or turn off kagent.agents.evaluator.enabled and .researcher.enabled)" }}
+{{- end }}
+{{- if and .Values.kagent.examples .Values.kagent.agentNamespaces (not (has .Release.Namespace .Values.kagent.agentNamespaces)) }}
+{{- fail (printf "kagent.examples renders its agents in the release namespace (%s): add it to kagent.agentNamespaces, or they can't be registered" .Release.Namespace) }}
+{{- end }}
+{{- if and .Values.kagent.existingTokenSecret (not .Values.kagent.tokenSecretKey) }}
+{{- fail "kagent.tokenSecretKey is required with kagent.existingTokenSecret" }}
 {{- end }}
 {{- if and .Values.demo.seed (not .Values.devLogin) }}
 {{- fail "demo.seed needs devLogin=true: demo data is only loaded in development mode" }}

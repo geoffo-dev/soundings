@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import Field, field_validator
 
 from app.models.enums import EvaluatorState, Recommendation
+from app.schemas.ai import Citation
 from app.schemas.base import RequestModel, ResponseModel, Score
 from app.schemas.rubric import MAX_CRITERIA
 from app.schemas.users import UserRef
@@ -26,7 +27,14 @@ __all__ = [
 class EvaluationScore(ResponseModel):
     criterion_id: UUID
     score: Score
-    comment: str
+    comment: str = Field(description="The evaluator's note; an AI evaluator's rationale.")
+    sources: list[Citation] = Field(
+        description=(
+            "Phase 6: the sources an AI evaluator cited for this criterion (at most 5; "
+            'empty for people). Untrusted and not checked: show them as "Cited by AI, not '
+            'checked", plain links with their host.'
+        )
+    )
 
 
 class Evaluation(ResponseModel):

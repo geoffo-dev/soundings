@@ -60,20 +60,27 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `timezone` | `UTC` | IANA time zone of the organisation: digests and reminders follow it, emails show dates in it. |
 | `notifications.digestHour` / `.reminderDays` | `8` / `[2, 0]` | Hour (0-23, in `timezone`) of daily digests and reminders; evaluation reminders N days before the due date (0 = on the day, at most 5 values, `[]` = none). |
 | `breakGlass.enabled` / `.existingSecret` | `true` / `""` | Local platform admin for the first sign-in and SSO outages, available only while `oidc.issuer` is empty (keys `username`, `password`, 16+ characters). Empty secret: user `admin`, random 24-character password. |
-| `features.publicSubmission` / `.ai` | `true` / `false` | Allow projects to turn on their public form (`<baseUrl>/<project>/submit`); `false`: every public form, tracking and confirmation link answers 404. AI assistance via kagent. See [Public submission](#public-submission). |
+| `features.publicSubmission` / `.ai` | `true` / `false` | Allow projects to turn on their public form (`<baseUrl>/<project>/submit`); `false`: every public form, tracking and confirmation link answers 404. See [Public submission](#public-submission). `ai`: AI assistance through kagent ("Ask AI to evaluate", "Research this", "Draft section"); see [AI assistance](#ai-assistance-kagent). |
 | `publicSubmission.perIpPerHour` / `.perProjectPerHour` | `10` / `100` | Public submissions per client address (IPv6: /64) per hour, counted **per API pod**; per project per hour from everyone (in the database). |
 | `publicSubmission.altcha.cost` / `.expiry` | `5000` / `PT30M` | ALTCHA proof of work: PBKDF2 iterations per attempt (1000-1000000); how long a challenge stays valid (1 minute to 1 day). |
 | `branding.maxUploadBytes` | `524288` | Largest logo or favicon upload (16 KiB-900 KiB, under the 1 MiB request limit). |
-| `kagent.enabled` / `.namespace` | `false` / `kagent` | kagent runs in the cluster and uses Soundings' MCP server: with `networkPolicy.ingressFrom` set, its namespace may reach the API too. Phase 6: AI runs over A2A. See [`deploy/kagent/README.md`](../kagent/README.md). |
-| `kagent.examples` | `false` | Also render the example `RemoteMCPServer` `<fullname>-mcp` (kagent 0.10, `kagent.dev/v1alpha2`; needs `kagent.enabled` and kagent's CRDs) pointing at this release's `/mcp` through its Service. |
-| `kagent.mcp.keySecret` / `.keySecretKey` / `.timeout` | `""` / `authorization` / `30s` | Existing Secret (release namespace) whose key holds the whole header kagent sends, `Bearer sdg_...` (a service account's key: `read`, `evaluate`, `mcp`; restricted to the agents' projects); required with `examples`. kagent's timeout per call. |
+| `kagent.enabled` / `.namespace` | `false` / `kagent` | kagent runs in the cluster and uses Soundings' MCP server: with `networkPolicy.ingressFrom` set, its namespace and its agent pods (label `app.kubernetes.io/managed-by: kagent`) in `agentNamespaces` may reach the API. See [`deploy/kagent/README.md`](../kagent/README.md). |
+| `kagent.controllerUrl` | `""` | kagent's controller (A2A), an http(s) origin without a path. Empty: `http://kagent-controller.<kagent.namespace>:8083`. Runs go to `<url>/api/a2a/<ns>/<name>/` (or `/agents/<ns>/<name>`), built from the agent's namespace and name. |
+| `kagent.existingTokenSecret` / `.tokenSecretKey` | `""` / `token` | Secret with a bearer token for kagent's `trusted-proxy` auth mode (api and worker pods). Empty: none. |
+| `kagent.agentNamespaces` | `[]` | Namespaces agents may be registered in. Empty: the release namespace only. |
+| `kagent.examples` | `false` | Also render kagent 0.10 resources (`kagent.dev/v1alpha2`; needs `kagent.enabled` and kagent's CRDs): the agents below, each with its own `RemoteMCPServer` `<agent>-mcp`, and with `mcp.keySecret` the shared `<fullname>-mcp`. |
+| `kagent.mcp.keySecret` / `.keySecretKey` / `.timeout` | `""` / `authorization` / `30s` | Optional shared `RemoteMCPServer` (Phase 5): an existing Secret holding a whole `Bearer sdg_...` header. kagent's timeout per MCP call (all the examples). |
+| `kagent.agents.modelConfig` | `""` | An existing kagent `ModelConfig` (release namespace) for the example agents; required with `examples` while an agent is enabled. |
+| `kagent.agents.evaluator` / `.researcher` (`.enabled`, `.keySecret`, `.keySecretKey`) | `true`, `""`, `authorization` | The example agents `<fullname>-evaluator` and `<fullname>-researcher`; `keySecret` empty: `soundings-agent-<agent name>`, the Secret registration's manifest creates. |
+| `ai.runTimeout` / `.maxConcurrentRuns` | `PT5M` / `4` | How long a run may take once started (30 s-1 h, ISO 8601 or seconds); runs at once per worker pod (1-50; their own pool, email never waits; the worker's database pool grows by as much). |
+| `ai.defaultProtocol` / `.mcpUrl` | `kagent_v0_10` / `""` | Protocol of a new agent (`kagent_v0_10`: A2A 0.3; `kagent_v1_0`: A2A 1.0); the MCP URL shown to admins for agents' `RemoteMCPServer` (empty: the Service URL). |
 | `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics` (`metrics.port`). |
 | `extraEnv` / `extraEnvFrom` | `[]` | Extra env for api, worker and migration containers. |
 | `extraVolumes` / `extraVolumeMounts` | `[]` | Extra volumes, e.g. a DB CA for `sslmode=verify-full` (+ `PGSSLROOTCERT`). |
 | `api.replicas` / `.resources` | `1` / 100m, 256Mi-1Gi | API size (replicas ignored with autoscaling); the PDF renderer may use half the memory limit. |
 | `api.startupProbe` / `.livenessProbe` / `.readinessProbe` | `/healthz` / `/healthz` / `/readyz` | Full Probe objects; `{}` disables one. |
 | `api.podAnnotations` / `.topologySpreadConstraints` | `{}` / `[]` | |
-| `worker.enabled` / `.replicas` / `.concurrency` | `true` / `1` / `4` | Background worker; jobs per pod. |
+| `worker.enabled` / `.replicas` / `.concurrency` | `true` / `1` / `4` | Background worker; email, notification and scheduled jobs per pod (AI runs: `ai.maxConcurrentRuns`). |
 | `worker.terminationGracePeriodSeconds` / `.resources` / `.livenessProbe` / `.podAnnotations` | `60` / 50m, 192Mi-512Mi / `{}` / `{}` | |
 | `migrations.activeDeadlineSeconds` / `.backoffLimit` / `.waitForDatabaseSeconds` / `.resources` | `900` / `2` / `300` / small | Migration Job, init containers and the demo seed Job. |
 | `autoscaling.enabled` / `.minReplicas` / `.maxReplicas` / `.targetCPUUtilizationPercentage` | `false` / `2` / `6` / `75` | HPA for the API. |
@@ -98,10 +105,11 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
 | `externalDatabase.sslmode` | `require` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. |
 | `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace, plus the namespaces of in-cluster MCP clients (kagent's is added with `kagent.enabled`). |
-| `networkPolicy.egress.enabled` | `false` | Also restrict the api and worker pods' egress to DNS, the database, SMTP (worker), the IdP (api), OTLP and `extra` (see [Security](#security)). |
+| `networkPolicy.egress.enabled` | `false` | Also restrict the api and worker pods' egress to DNS, the database, SMTP (worker), the IdP (api), kagent's controller (both, with `features.ai` or `kagent.enabled`), OTLP and `extra` (see [Security](#security)). |
 | `networkPolicy.egress.smtp.to` / `.port` | `[]` / `""` | Peers of the SMTP server (empty: any address) and its pods' port (empty: the SMTP port). |
 | `networkPolicy.egress.database.to` / `.oidc.to` / `.oidc.port` | `[]` / `[]` / `""` | Peers of an external database and of the IdP (empty: any address); the IdP's port (empty: the issuer's). |
-| `networkPolicy.egress.extra` | `[]` | More egress rules (NetworkPolicyEgressRule objects) for the api and worker pods, e.g. kagent. |
+| `networkPolicy.egress.kagent.to` / `.port` | `[]` / `""` | Peers of kagent's controller (empty: any address) and its pods' port (empty: `controllerUrl`'s, 8083). |
+| `networkPolicy.egress.extra` | `[]` | More egress rules (NetworkPolicyEgressRule objects) for the api and worker pods. |
 | `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` / `.labels` | `false` / `30s` / `10s` / `{}` | Prometheus Operator scrape of the Service's `metrics` port. |
 
 ## Migrations: why two paths
@@ -173,7 +181,10 @@ variables: `ENVIRONMENT` (`production`, or `development` with `devLogin`),
 `SESSION_IDLE_TIMEOUT`, `SESSION_MAX_AGE` (ISO 8601), `WORKER_CONCURRENCY`,
 `OTEL_ENDPOINT`, `PUBLIC_SUBMISSION_ENABLED`, `PUBLIC_SUBMISSIONS_PER_IP`,
 `PUBLIC_SUBMISSIONS_PER_PROJECT`, `ALTCHA_COST`, `ALTCHA_EXPIRY` (ISO 8601),
-`BRANDING_MAX_UPLOAD_BYTES`, `FEATURE_AI`, `BREAK_GLASS_ENABLED`,
+`BRANDING_MAX_UPLOAD_BYTES`, `AI_ENABLED`, `KAGENT_URL`, `AI_DEFAULT_PROTOCOL`,
+`AI_RUN_TIMEOUT` (ISO 8601), `AI_MAX_CONCURRENT_RUNS`, `AI_AGENT_NAMESPACES`
+(comma-separated: `kagent.agentNamespaces` or the release namespace), `AI_MCP_URL`,
+`BREAK_GLASS_ENABLED`,
 `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_GROUPS_CLAIM`, `OIDC_EXTERNAL_ID_CLAIM`,
 `OIDC_EXTERNAL_ID_KIND`, `OIDC_MATCH_VERIFIED_EMAIL`, `OIDC_AUTO_CREATE_USERS`,
 `OIDC_SCOPES` (comma-separated; all `OIDC_*` only when `oidc.issuer` is set), `TIMEZONE`,
@@ -188,7 +199,9 @@ Secrets arrive as env vars from Secrets: `SOUNDINGS_SECRET_KEY` and
 `SOUNDINGS_DATABASE_PASSWORD` in both; in the **api pods only** (the worker signs nobody
 in) `SOUNDINGS_OIDC_CLIENT_SECRET`, `SOUNDINGS_BREAK_GLASS_USERNAME` and
 `SOUNDINGS_BREAK_GLASS_PASSWORD`; in the **worker pods only** (the api sends no mail)
-`SOUNDINGS_SMTP_USERNAME` and `SOUNDINGS_SMTP_PASSWORD`. Service links are disabled in every pod (a Service
+`SOUNDINGS_SMTP_USERNAME` and `SOUNDINGS_SMTP_PASSWORD`; in both, with
+`kagent.existingTokenSecret`, `SOUNDINGS_KAGENT_TOKEN`. With `features.ai` the worker
+also gets `SOUNDINGS_DATABASE_POOL_SIZE` (5 + `ai.maxConcurrentRuns`). Service links are disabled in every pod (a Service
 named `soundings` would otherwise inject `SOUNDINGS_PORT=tcp://...`). The session
 cookies' `Secure` flag is automatic (always set in production); `SOUNDINGS_COOKIE_SECURE`
 in `extraEnv` overrides it (`false` is refused in production).
@@ -493,10 +506,46 @@ and every tool call is audited (`mcp.call`). Connecting a client:
   per key a minute. Agents see only projects their service account has a role in
   (internal projects too), and tool results carry no invisible Unicode (tag
   characters, zero-width and bidi controls are removed).
-- **kagent.** `kagent.examples` registers the server with kagent 0.10 as a
-  `RemoteMCPServer` that reads the agents' key from `kagent.mcp.keySecret`;
+- **kagent.** AI agents' keys work only during their runs ([AI
+  assistance](#ai-assistance-kagent)); `kagent.mcp.keySecret` registers a shared
+  `RemoteMCPServer` for other kagent agents with one key.
   [`deploy/kagent/README.md`](../kagent/README.md) has the manifests and what has been
   verified against which kagent version.
+
+## AI assistance (kagent)
+
+With `features.ai`, "Ask AI to evaluate", "Research this" and "Draft section" start runs
+that the **worker** sends to a registered kagent agent over A2A; the agent works through
+`/mcp` with its own service account's key and its result is attached to the run (an
+evaluation with an AI badge, left out of the aggregate until the idea's owner includes
+it; a research note; a proposal suggestion). Progress reaches the browser over SSE
+(`GET /api/v1/ideas/<idea>/ai-runs/<run>/events`, through the same Ingress: the app sends
+`X-Accel-Buffering: no` and a keep-alive every 15 s, so ingress-nginx's default 60 s read
+timeout is enough; Traefik streams as is); the page falls back to polling.
+
+1. kagent 0.10.x in the cluster (its controller's Service `kagent-controller` in
+   `kagent.namespace`, A2A on 8083, or set `kagent.controllerUrl`).
+2. `--set features.ai=true --set kagent.enabled=true`; with kagent's `trusted-proxy`
+   auth, `kagent.existingTokenSecret`.
+3. A platform admin registers each agent in Admin settings → AI agents (namespace in
+   `kagent.agentNamespaces`, by default the release's; name; purposes; projects). The key
+   is shown once with a Secret manifest `soundings-agent-<name>`: apply it in the agent's
+   namespace.
+4. The agents: `kagent.examples` with `kagent.agents.modelConfig` renders
+   `<fullname>-evaluator` and `<fullname>-researcher` (Declarative, streaming, the
+   standing rules as system message, Soundings' tools), each with a `RemoteMCPServer`
+   reading that Secret; or write your own (`deploy/kagent/agents.yaml`).
+
+- **Only the configured controller is ever called:** the A2A URL is `controllerUrl` + a
+  fixed path + the agent's namespace and name; no redirects, no proxy from the
+  environment, agent cards never redirect runs.
+- **Runs** have a deadline (`ai.runTimeout`), a pool of their own per worker pod
+  (`ai.maxConcurrentRuns`; the rest wait in order), are cancelled cleanly (A2A
+  `tasks/cancel`) on request, at the deadline and when the worker stops (`helm upgrade`:
+  they end "worker lost"; ask again), and a sweep ends runs whose worker died.
+- **Network:** with `networkPolicy.ingressFrom`, kagent's namespace and its agent pods in
+  `kagent.agentNamespaces` are admitted to the API; with `networkPolicy.egress.enabled`,
+  the api and worker may reach the controller's port (`networkPolicy.egress.kagent`).
 
 ## Air-gapped installs
 
@@ -520,8 +569,11 @@ SMTP via existingSecret, HPA, NetworkPolicy, ServiceMonitor), `ci/smtp-values.ya
 (implicit TLS on the default port, a CA bundle ConfigMap, credentials in values, time
 zone and reminders, egress NetworkPolicies), `ci/sso-values.yaml`
 (Entra ID-shaped SSO: `oid` external ID, no email matching, two hostnames, generated
-break-glass), `ci/gateway-values.yaml` (Gateway API) and `ci/demo-values.yaml` (dev
-login + demo seed Job with NetworkPolicies) are linted and rendered in CI.
+break-glass), `ci/gateway-values.yaml` (Gateway API), `ci/demo-values.yaml` (dev
+login + demo seed Job with NetworkPolicies), `ci/kagent-values.yaml` (AI on, the example
+agents with their own and the shared `RemoteMCPServer`s) and `ci/ai-values.yaml` (a
+controller elsewhere with a token, two agent namespaces, kagent 1.0 by default, egress
+to the controller only) are linted and rendered in CI.
 `scripts/k3s-smoke.sh` also signs in through the ingress when the dev login is on
 (session + CSRF) and reads My work, and when break-glass is available signs in with the
 credentials from its Secret (as `NOTES.txt` says) after a wrong password is refused.
@@ -574,3 +626,23 @@ make k3s-smoke MCP=1                    # + scripts/mcp-smoke.sh through the ing
 ```
 
 `SSO=1 SMTP=1 MCP=1` combines all three (CI does).
+
+AI assistance end to end on k3s, with Soundings' fake kagent agent (`dev/fake-agent`)
+where kagent's controller would be (`kagent/kagent-controller:8083`, so the default
+`kagent.controllerUrl` works unchanged) and kagent's v0.10.2 CRDs (no controller or
+model: neither can run here):
+
+```sh
+make k3s-kagent-crds                    # kagent v0.10.2's CRDs + a server-side dry run of
+                                        # deploy/kagent/*.yaml and the chart's kagent.examples
+make k3s-fake-agent                     # the fake kagent (image soundings-fake-agent:dev)
+make k3s-install AI=1                   # + dev/k3s-ai-values.yaml (features.ai, kagent.enabled,
+                                        # egress policies; kagent.examples with the CRDs)
+make k3s-smoke AI=1                     # + scripts/ai-smoke.sh through the ingress: register an
+                                        # agent, its Secret applied and its key given to the fake,
+                                        # test connection, "Ask AI to evaluate" streamed to a pending
+                                        # evaluator, the AI evaluation out of the aggregate and
+                                        # included on request, research, a draft, a cancelled run,
+                                        # the key refused outside its runs; the CRD dry run; kagent's
+                                        # agent pods admitted to /mcp by their label, other pods not
+```

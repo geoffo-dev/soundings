@@ -7,7 +7,10 @@ Desktop, an assistant in your editor or a kagent agent, uses it to search ideas,
 proposals, comment and submit evaluations **as you**, through a personal API key.
 
 This page is for people connecting a client. Operators: [operator-guide.md](operator-guide.md#api-keys-and-mcp-phase-5).
-The precise contract is [contract-phase5.md §3.5 and §4](api/contract-phase5.md#35-the-mcp-endpoint-transport).
+The precise contract is [contract-phase5.md §3.5 and §4](api/contract-phase5.md#35-the-mcp-endpoint-transport)
+(Phase 6's additions: [contract-phase6.md §4](api/contract-phase6.md#4-mcp-additions)).
+Soundings' own AI agents, which kagent runs for "Ask AI to evaluate", "Research this" and
+"Draft with AI", use this server too, with keys of their own: [section 5](#5-soundings-ai-agents-kagent).
 
 ## 1. Create a key
 
@@ -127,7 +130,7 @@ client calls `search_ideas` with `awaiting_my_evaluation`, then `get_rubric` and
 
 ## 3. The tools
 
-Nine tools, always listed (a tool the key's scopes don't allow answers
+Ten tools, always listed (a tool the key's scopes don't allow answers
 `insufficient_scope`). Ideas are referenced by key (`CUST-12`, any case) or id; projects
 by their URL name (slug).
 
@@ -142,6 +145,7 @@ by their URL name (slug).
 | `add_comment` | `write` | A comment on an idea, with @mentions as in the app; people are notified as usual. |
 | `submit_evaluation` | `evaluate` | Saves your evaluation: a 1-5 score for every criterion, a recommendation (`go`, `maybe`, `no`) and a comment. Submits by default (`submit: false` saves a draft); the arguments replace what was saved. Only if you were asked to evaluate the idea and evaluation is open. |
 | `propose_proposal_section` | `write` | Suggests the whole new text of one proposal section. It is only a suggestion: the idea's owner sees it in the proposal editor and accepts or discards it. A newer suggestion of yours for the same section replaces the older one. |
+| `add_research_note` | `write` | Phase 6, **for Soundings' AI agents only**: saves the research note of a "Research this" run (Markdown and up to 20 cited sources) into the idea's activity feed. Anyone else's key gets `forbidden`. |
 
 Results are structured JSON (`structuredContent`, snake_case, with an `outputSchema` per
 tool) plus the same JSON as text. Errors are results with `isError: true`, text
@@ -198,3 +202,47 @@ a header ([operator guide](operator-guide.md#api-keys-and-mcp-phase-5)).
 - **Keep the key secret.** It is shown once and stored only as a fingerprint. It starts
   with `sdg_` so secret scanners can spot it (`sdg_[A-Za-z0-9]{12}_[A-Za-z0-9]{40}`); an
   admin can find a leaked key by its first 16 characters in Settings → All API keys.
+
+## 5. Soundings' AI agents (kagent)
+
+Phase 6's AI assistance runs kagent agents that use this same server, not as a person but
+as **the agent's own service account**. A platform admin registers each agent in Admin
+settings → AI agents, which creates its key (shown once, with a Kubernetes Secret holding
+`Authorization: Bearer sdg_…` for the agent's `RemoteMCPServer`). Operators:
+[operator guide](operator-guide.md#kagent-integration-phase-6) and
+[`deploy/kagent/README.md`](../deploy/kagent/README.md).
+
+An agent's key differs from a person's in what it may do (contract-phase6 §3.5, c22, role
+matrix §3 rule 9):
+
+- **Only inside a run.** It works on `/mcp` only (every REST route answers 403
+  `insufficient_scope`), and there only while one of the agent's runs is open: on that
+  run's idea, and writing only that run's result. Outside a run `list_projects` and
+  `search_ideas` return nothing, and the other tools answer `not_found` or
+  `ai_run_not_active`; after a cancel, the deadline or a worker restart the key does
+  nothing more. So someone who reaches the agent directly in kagent can't use the key for
+  anything else.
+- **One write tool per kind of run.** An evaluate run may call `submit_evaluation` (each
+  score with a non-empty `comment`, its rationale, and up to 5 `sources`, `{title, url}`
+  with http/https URLs), a research run `add_research_note`, a section-draft run
+  `propose_proposal_section` for its section only; `create_idea` and `add_comment` are
+  refused (`forbidden`). The result is attached to the run.
+- **Always blind.** For an agent every idea reads as it does for a pending evaluator, before
+  and after it submits (`score_hidden: true`, no aggregate, no other evaluations or their
+  comments); it sees only its own evaluation. So nothing an agent writes can carry someone
+  else's scores to a pending evaluator, and people's evaluation comments never reach a
+  model provider.
+- **Left out of the score.** Its evaluation appears with an AI badge and is left out of the
+  aggregate until the idea's owner or an admin includes it; a re-submission that changes a
+  score or the recommendation is left out again.
+- **What the agent is told.** Each run's A2A message holds the run id, kind, idea key,
+  section and the agent's name, plus standing instructions; never a key, a URL or idea
+  text. The agent reads the idea through `get_idea` (text labelled untrusted) and must use
+  the MCP server its operator configured.
+- **Recorded.** Every call is an `mcp.call` audit entry with the agent's key, and its
+  results (the evaluation, note or suggestion) appear in the app with an AI badge.
+
+There is no kagent or model on the build machine: the whole loop is tested with
+Soundings' deterministic fake agent (`dev/fake-agent`), which speaks kagent v0.10.2's A2A
+layout and really calls these tools with its key. kagent's own controller and a model
+have not been run against Soundings yet (operator guide, "What is verified").

@@ -87,6 +87,7 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
 | `/settings/branding` (platform admins)                                         | `routes/_app/settings._admin.branding.tsx`                                              | `features/branding/global-branding-page`                                              | frontend (P4)    |
 | `/settings/api-keys` (everyone: your keys, "For developers and AI assistants") | `routes/_app/settings.api-keys.tsx`                                                     | `features/api-keys/api-keys-page`                                                     | frontend         |
 | `/settings/all-api-keys?q=&state=&user_id=` (platform admins)                  | `routes/_app/settings._admin.all-api-keys.tsx`                                          | `features/api-keys/admin-api-keys-page`                                               | frontend         |
+| `/settings/ai-agents` (platform admins: kagent agents, AI settings in effect)  | `routes/_app/settings._admin.ai-agents.tsx`                                             | `features/admin/ai-agents/ai-agents-page`                                             | frontend (P6)    |
 | `/design`                                                                      | `routes/design.tsx`                                                                     | `features/design` (dev only)                                                          | —                |
 
 - **Admin settings** (`settings._admin.tsx`, platform admins): its `beforeLoad` throws `notFound()`
@@ -94,7 +95,7 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   they never show on that 404. Every settings page renders `SettingsFrame`
   (`features/admin/settings-frame.tsx`): the "Settings" heading and the section row Account ·
   Notifications · API keys, then (platform admins only, after a divider) Users · Groups · Sign-in
-  (SSO) · Email · Branding · All API keys · Audit log.
+  (SSO) · Email · Branding · All API keys · AI agents · Audit log.
 - **API keys (Phase 5, contract-phase5 §3.10):** `features/api-keys/`. Settings → API keys lists
   your keys (prefix, scope chips, all four as one "Full access" chip, projects, expiry, last use;
   Dormant/Expired badges), "Create
@@ -128,6 +129,46 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   suggested text first and "⟨Owner⟩ decides whether to use it". The editor bar has "N
   suggestions" (jumps to the first), the outline counts them per section, and the idea page's
   Proposal tab shows the count to whoever may decide.
+- **AI assistance (Phase 6, contract-phase6 §3.15):** `features/ai/`. The idea page's **AI** menu
+  (`idea-ai.tsx`: beside the primary action; in the top row on phones) offers "Ask AI to evaluate"
+  and "Research this" to the owner and admins only (`AiRunList.permissions`; hidden for everyone
+  else and while `ai_enabled` is false), straight to the one agent or with a choice of several,
+  disabled with the `*_blocked_by` reason in plain words (`BLOCKED_COPY` in `ai-copy.ts`), and
+  "Evaluating… view progress" while a run is active (⌘K has the same, `useAiCommands`). The
+  evaluators list has "Ask AI to evaluate" (or "…again") and the AI evaluator's row (AI badge; a
+  spinner button to its run while it works). Runs live on the Overview tab (`ai-runs-section.tsx`):
+  every active run as a `RunCard` (`run-card.tsx`: agent, who asked, the live steps, elapsed time and
+  "Stops by", Cancel; then the outcome with "View the evaluation" / "Read the note" / "Open the
+  proposal" or the error sentence and "Try again"), runs that finished while you watched, then the
+  three latest others folded to their outcome. Steps are the server's own sentences, never agent
+  text; each new one is announced politely. Progress streams over SSE (`api/ai-stream.ts`,
+  `use-run-progress.ts`: one EventSource per shown run, closed after the final event; a refused or
+  repeatedly failing stream falls back to polling `get_ai_run` every 2.5 s and says so); when a run
+  ends, `runFinished` refetches the run, the list and what its kind changed. The Evaluations tab's
+  AI card (`ai-evaluation.tsx`, `features/idea/evaluations-tab.tsx`): AI badge, "Not in score", the
+  "Include in score" switch (`can_include_ai`, Undo toast; read-only text for everyone else),
+  "Rationale" per criterion with its sources (`SourceList compact`), the summary; the comparison
+  table marks AI columns "not in score". Research notes in the feed (`research-note.tsx`): untrusted
+  Markdown (`<Markdown untrusted>`), numbered sources under "Cited by AI, not checked", Delete for
+  `note.can_delete` (confirmed: no undo); a deleted note reads "wrote a research note, since deleted";
+  an `evaluator_removed` without an actor reads "Idea evaluator ended its run without an evaluation
+  and was taken off the evaluators". The proposal editor's "Draft with AI" per section
+  (`draft-with-ai.tsx`, `can_draft_section`): progress in place with Cancel, the AI suggestion card
+  (Phase 5) when done, a callout with "Try again" when it fails. Admin settings → AI agents
+  (`features/admin/ai-agents/`): settings in effect (a banner while AI is off; the MCP URL to copy),
+  the agents (kagent `namespace/name`, protocol, purposes, projects with "Viewer" / "Removed", key
+  prefix and last use or "No key", state, active runs), Register / Change (`agent-form-sheet.tsx`,
+  rules in `agent-rules.ts`: Kubernetes names only, the built A2A URL previewed, narrowing warns
+  that runs stop), the key shown once (`agent-key-dialog.tsx`: key, the Secret manifest and the
+  agent's own RemoteMCPServer, "I've copied it" asks once; the mutation is `reset()` after), Test
+  connection (the card's name, A2A versions, streaming, skills, or why not), Rotate key (confirmed),
+  Disable (confirmed: runs stop, key revoked) and Enable (then "Rotate key" in its toast); "Runs and
+  changes in the audit log" opens `/settings/audit?action=ai`.
+- **Untrusted text (agents):** `Markdown untrusted` keeps http/https links only (no `mailto:`),
+  opens them with `rel="noopener noreferrer nofollow"` in a new tab with the host after each
+  (`urlHost`: the browser's ASCII/punycode reading), drops raw HTML and never makes mention chips.
+  `SourceList` shows sources the same way. `AiBadge` (`components/ui/ai-badge.tsx`, on `/design`)
+  marks AI work everywhere and reads "AI agent".
 - **Notifications (Phase 3):** the bell in the top bar (`features/notifications/notification-bell`)
   polls `GET /me/notifications/summary` about once a minute while the tab is visible and on
   focus (the poll doesn't keep the session alive; a 401 is handled like any other); a popover on
@@ -247,6 +288,9 @@ One module per area, each exporting `…QueryOptions` (for loaders and prefetchi
 | `proposals.ts`     | `useProposal(key)` (the tab: proposal or null + permissions), `useProposalThreads(key)` (margin threads; deferred deletes filtered)                                                                                                             | `useCreateProposal` (Shortlisted → Proposal), `saveProposalSection` (plain function: the editor's autosave store calls it, 409 `proposal_conflict` carries `current`), `useCreateProposalThread`, `useReplyToProposalThread` (optimistic), `useSetProposalThreadResolved` (optimistic), `useDeleteProposalComment` (deferred, Undo), `useExportProposal` / `downloadProposal` (fetch + blob) |
 | `public.ts`        | `usePublicProject(slug)`, `useTrackedSubmission(token)` (POST: the token stays out of URLs), `fetchAltchaChallenge(slug)` (no session, no CSRF)                                                                                                 | `useSubmitPublicIdea`, `useSetSubmissionUpdates`, `useResendVerificationEmail`, `useEraseTrackedSubmission`, `useVerifySubmissionEmail` (all silent: the pages say what happened)                                                                                                                                                                                                            |
 | `branding.ts`      | `useEffectiveBranding` (GET /branding, refetched on focus at most every 5 min), `useGlobalBranding`, `useProjectBranding(slug)`                                                                                                                 | `useUpdateBranding(scope)` (complete profile; the shell re-themes on a global save), `useUploadBrandAsset(scope)` / `uploadBrandAsset` (the raw PNG or SVG as the body)                                                                                                                                                                                                                      |
+| `ai.ts`            | `useIdeaAiRuns(key)` (runs, `agents`, `permissions`), `useAiRun(key, runId, { poll })` (the stream's fallback)                                                                                                                                  | `useRequestAiRun` (`{ run, existing }`: 201 new, 200 the active one), `useCancelAiRun`, `useSetEvaluationInclusion` (optimistic), `useDeleteResearchNote`; `runFinished(queryClient, key, run)` refetches by kind                                                                                                                                                                            |
+| `ai-stream.ts`     | `openRunStream({ idea, runId, after, onEvent, onFallback })` (EventSource; the only API use outside `client.ts`), `parseRunEvent`, `applyRunEvent`                                                                                              |                                                                                                                                                                                                                                                                                                                                                                                              |
+| `ai-agents.ts`     | `useAiAgents` (Admin settings → AI agents)                                                                                                                                                                                                      | `useRegisterAiAgent` (silent; the key once: `reset()` after), `useUpdateAiAgent`, `useRotateAiAgentKey` (`reset()` after), `useTestAiAgent`                                                                                                                                                                                                                                                  |
 | `submissions.ts`   | `usePublicFormSettings(slug)`, `useModerationQueue(slug)` (infinite, oldest first), `useModerationCount(slug)`, `useIdeaSubmission(key)`                                                                                                        | `useUpdatePublicFormSettings` (PATCH of what changed), `useModerate()` (approve / reject wait for their Undo toast), `useEraseSubmitter(key)` (confirm first: no undo)                                                                                                                                                                                                                       |
 
 Conventions:
@@ -365,6 +409,21 @@ backend and its tests are.
   Problem from Bob (against an older version) and Benefits / revenue from the Research agent. The
   audit log has key and `mcp.call` entries. Deactivating a user revokes their keys; the
   break-glass account can't create one (c20).
+- **Phase 6 fixtures** (`phase6-fixtures.ts`; rules, the pretend worker and SSE in `ai.ts`; handlers
+  `handlers/ai.ts`): **Idea evaluator** (`soundings/idea-evaluator`, evaluate + research; Customer
+  Innovation and Sustainability), the **Research agent** (`soundings/research-agent`, research +
+  draft; Phase 5's service account and key) and **Market scout** (`kagent-agents/market-scout`, A2A
+  1.0; disabled, no key, a viewer in Internal Tools). **CUST-7** (owner Carol; Alice pending) has
+  Idea evaluator's submitted evaluation with rationale and sources, left out of the score; **CUST-4**
+  has a research note and a run that timed out (its assignment taken back); **CUST-3**'s AI Benefits
+  suggestion came from a draft run; **CUST-2** (owner Alice) has no runs: ask away. New runs are
+  walked through the real worker's steps by timers, with the fake agent's results (an AI evaluation,
+  a research note, a suggestion) written as it would through MCP; `GET …/events` streams them as
+  `text/event-stream` (replay after `Last-Event-ID` / `?after=`, 204 once over). Knobs:
+  `soundings-mock-ai` = `off` (AI assistance off), `soundings-mock-ai-outcome` = `fail`, `timeout`,
+  `no_result`, `unreachable`, `slow` (works until cancelled) or `queued` (never starts),
+  `soundings-mock-ai-pace` = ms per step (default 900; 5 under Node). Agents named `*-down` or
+  `*-broken` fail Test connection.
 - **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
   Customer Innovation (also in the user menu → Switch user → Mock data);
   `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);
@@ -414,8 +473,8 @@ nothing MSW-related ends up in `dist/`.
   out; `seriousViolations(page)` runs axe. Wait for the page's heading before pressing
   shortcuts. `PW_PORT=5191 npm run test:pw` to use another port.
 - Review screenshots against the mock: `SCREENSHOTS=1 npx playwright test <name>-screenshots`
-  (Phase 5: `api-keys-screenshots` → `docs/screenshots/phase-5/mock/`; `SCREENSHOT_DIR`
-  overrides).
+  (Phase 5: `api-keys-screenshots` → `docs/screenshots/phase-5/mock/`; Phase 6: `ai-screenshots` →
+  `docs/screenshots/phase-6/mock/`; `SCREENSHOT_DIR` overrides).
 - Two Playwright runs at once share `test-results/` (pass `--output=<own dir>`). The Vite
   dev server reloads open pages whenever someone saves a file; the server `test:pw` starts has
   that off (`VITE_NO_HMR=1`), but one you started yourself and Playwright reuses has not.

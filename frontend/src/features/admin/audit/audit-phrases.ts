@@ -1,4 +1,5 @@
 import type { ApiKeyScope, AuditAction, AuditEntry, ProjectRole } from '@/api/types'
+import { purposeWords, SECTION_TITLES } from '@/features/ai/ai-copy'
 import { SCOPE_COPY } from '@/features/api-keys/key-rules'
 import {
   CLOSED_RESOLUTIONS,
@@ -147,6 +148,16 @@ const BRANDING_FIELDS: Record<string, string> = {
   favicon_asset_id: 'favicon',
   logo: 'logo',
   favicon: 'favicon',
+}
+
+/** AI agent fields (`ai_agent.update` details.changed). */
+const AGENT_FIELDS: Record<string, string> = {
+  display_name: 'name',
+  description: 'description',
+  protocol: 'protocol',
+  purposes: 'purposes',
+  project_ids: 'projects',
+  enabled: 'state',
 }
 
 function fieldWords(fields: string[], words: Record<string, string>): string {
@@ -487,6 +498,15 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
     case 'evaluator.add':
       return [actor, text(' asked '), evaluator(), text(' to evaluate '), idea()]
     case 'evaluator.remove':
+      // Phase 6 (contract-phase6 §3.3): no actor when an AI run ended without its evaluation.
+      if (!entry.actor_id && str(details, 'reason') === 'ai_run_ended') {
+        return [
+          evaluator(),
+          text(' was taken off the evaluators of '),
+          idea(),
+          text(': its AI run ended without an evaluation'),
+        ]
+      }
       return [actor, text(' removed '), evaluator(), text(' as an evaluator of '), idea()]
     case 'evaluation.submit':
       return [actor, text(' submitted an evaluation of '), idea()]
@@ -571,6 +591,86 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
         ...(ownKey ? [] : [text(' of '), targetUser]),
       ]
     }
+    /* AI agents and runs (contract-phase6 §3.10): never prompts, agent text or keys */
+    case 'ai_agent.register': {
+      const namespace = str(details, 'namespace')
+      const agentName = str(details, 'name')
+      const purposes = purposeWords(list(details, 'purposes'))
+      return [
+        actor,
+        text(' registered AI agent '),
+        targetUser,
+        ...(namespace && agentName
+          ? [text(' ('), mono(`${namespace}/${agentName}`), text(')')]
+          : []),
+        ...(purposes ? [text(` for ${purposes}`)] : []),
+      ]
+    }
+    case 'ai_agent.update': {
+      const changed = list(details, 'changed')
+      if (changed.includes('enabled') && details.enabled === false) {
+        return [
+          actor,
+          text(' disabled AI agent '),
+          targetUser,
+          text(', which stopped its runs and revoked its key'),
+        ]
+      }
+      if (changed.includes('enabled') && details.enabled === true) {
+        return [actor, text(' enabled AI agent '), targetUser]
+      }
+      return [
+        actor,
+        text(
+          changed.length
+            ? ` changed the ${fieldWords(changed, AGENT_FIELDS)} of AI agent `
+            : ' changed AI agent ',
+        ),
+        targetUser,
+      ]
+    }
+    case 'ai_run.request': {
+      const kind = str(details, 'kind')
+      const section = str(details, 'section_key')
+      const what =
+        kind === 'evaluate'
+          ? 'to evaluate '
+          : kind === 'research'
+            ? 'to research '
+            : kind === 'draft_section'
+              ? `to draft ${section && section in SECTION_TITLES ? SECTION_TITLES[section as keyof typeof SECTION_TITLES] : 'a section'} of `
+              : 'to work on '
+      return [actor, text(` asked an AI agent ${what}`), idea()]
+    }
+    case 'ai_run.cancel':
+      if (str(details, 'rule') === 'platform.manage_agents') {
+        return [
+          actor,
+          text(' stopped an AI run on '),
+          idea(),
+          text(' by changing or disabling its agent'),
+        ]
+      }
+      return [actor, text(' cancelled an AI run on '), idea()]
+    case 'evaluation.include_ai':
+      return details.include === false
+        ? [
+            actor,
+            text(' left '),
+            detailUser('evaluator_id'),
+            text('’s evaluation of '),
+            idea(),
+            text(' out of the score'),
+          ]
+        : [
+            actor,
+            text(' counted '),
+            detailUser('evaluator_id'),
+            text('’s evaluation of '),
+            idea(),
+            text(' in the score'),
+          ]
+
     case 'mcp.call': {
       const tool = str(details, 'tool')
       const code = str(details, 'code')

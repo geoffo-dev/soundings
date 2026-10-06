@@ -207,6 +207,7 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "ai.research",
         "ai.draft_section",
         "ai.cancel_run",
+        "ai.delete_note",
     }
     assert {str(rule) for rule in SESSION_ONLY_RULES} == {
         "project.create",

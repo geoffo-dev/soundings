@@ -342,13 +342,15 @@ finds none (404). `api_key.*` are session-only rules (section 5).
 | `ai.research` | "Research this": a cited note in the activity feed | Y (c5, c10) | Y (c5, c10) | 403 | 403 | 403 | 404 | 401 | + (c5, c10) | · |
 | `ai.draft_section` | "Draft section" in the proposal editor | Y (c7, c10) | Y (c7, c10) | 403 | 403 | 403 | 404 | 401 | + (c7, c10) | · |
 | `ai.cancel_run` | Cancel a running AI job on the idea | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
+| `ai.delete_note` | Delete an AI research note (clears its text and sources) | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
 
 Notes ([contract-phase6 §3.5](api/contract-phase6.md#35-authorisation-role-matrix-section-j)):
 
 - **Watching** a run (the idea's run list, a run with its events, the SSE stream) needs
   only `idea.view`. Runs, events and permission flags never carry score data, so pending
   evaluators may watch; an open stream re-checks the principal and `idea.view` every 30
-  seconds. Reading a research note is `idea.view`; deleting one is `comment.delete_any`.
+  seconds. Reading a research note is `idea.view`; deleting one is `ai.delete_note`
+  (the idea's owner and project/platform admins; lead decision on review item C4).
 - **c10 names one agent:** it must be enabled, have the run's kind among its purposes,
   serve the idea's project with a service account that is active and has effective role
   **member** there, and hold an active key; and AI must be on for the instance. The

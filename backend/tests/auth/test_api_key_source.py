@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import event, select, update
@@ -43,6 +44,7 @@ from tests.api_keys.helpers import (
 )
 from tests.conftest import Login
 from tests.factories import make_idea
+from tests.mcp.conftest import headers, rpc
 
 ME = f"{API}/auth/me"
 UNAUTHORIZED_DETAIL = (
@@ -111,10 +113,24 @@ async def test_a_valid_key_acts_as_its_owner(
 async def test_a_service_accounts_key_works_without_ever_signing_in(
     app: FastAPI, world: World, db_session: AsyncSession
 ) -> None:
-    key = await make_key(db_session, world.bot, scopes=["read"])
+    """Phase 6 (c22): REST refuses an agent's key with 403 ``insufficient_scope`` after
+    the key check (not 401: the key itself is good) and ``/mcp`` accepts it."""
+    key = await make_key(db_session, world.bot, scopes=["read", "mcp"])
     assert (await db_session.get(User, world.bot.id)).last_seen_at is None  # type: ignore[union-attr]
 
-    assert (await me(app, key)).status_code == 200
+    rest = await me(app, key)
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
+    ) as http:
+        mcp = await http.post(
+            "/mcp",
+            json=rpc("tools/call", {"name": "list_projects", "arguments": {}}),
+            headers=headers(key),
+        )
+
+    assert (rest.status_code, rest.json()["code"]) == (403, "insufficient_scope")
+    assert mcp.status_code == 200, mcp.text
+    assert mcp.json()["result"]["isError"] is False
 
 
 # --- Refused: one answer for every reason ----------------------------------------------------

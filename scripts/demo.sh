@@ -18,6 +18,11 @@
 #   DEMO_TIMEZONE   instance time zone of digests, reminders and dates in emails (UTC)
 #   DEMO_PUBLIC_PER_IP  public-form submissions per client address and hour (the app's
 #                   default, 10, when unset; CI's e2e sends more from one address)
+#   DEMO_AI=1       AI assistance against Soundings' fake kagent agent ($DEMO_NAME-fake-agent,
+#                   image FAKE_AGENT_IMAGE, default soundings-fake-agent:dev: `make
+#                   fake-agent-image`; observations on localhost:$DEMO_FAKE_AGENT_PORT, 8027),
+#                   and "Idea evaluator" (soundings/idea-evaluator) registered with its key
+#                   handed over in dev/.fake-agent-keys (git-ignored)
 #   POSTGRES_IMAGE  (default postgres:16-alpine)   MAILPIT_IMAGE  (axllent/mailpit:latest)
 # Development mode only: fixed database password, no TLS, anyone can sign in as anyone.
 set -euo pipefail
@@ -29,6 +34,11 @@ DEMO_BIND_ADDRESS="${DEMO_BIND_ADDRESS:-127.0.0.1}"
 DEMO_MAILPIT_PORT="${DEMO_MAILPIT_PORT:-8026}"
 DEMO_SMTP="${DEMO_SMTP:-1}"
 DEMO_TIMEZONE="${DEMO_TIMEZONE:-UTC}"
+DEMO_AI="${DEMO_AI:-0}"
+DEMO_FAKE_AGENT_PORT="${DEMO_FAKE_AGENT_PORT:-8027}"
+FAKE_AGENT_IMAGE="${FAKE_AGENT_IMAGE:-soundings-fake-agent:dev}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+keys_dir="$REPO_ROOT/dev/.fake-agent-keys"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16-alpine}"
 MAILPIT_IMAGE="${MAILPIT_IMAGE:-axllent/mailpit:latest}"
 network="$DEMO_NAME"
@@ -36,6 +46,7 @@ db="$DEMO_NAME-db"
 app="$DEMO_NAME-app"
 worker="$DEMO_NAME-worker"
 mailpit="$DEMO_NAME-mailpit"
+fake_agent="$DEMO_NAME-fake-agent"
 url="http://localhost:$DEMO_PORT"
 mailpit_url="http://localhost:$DEMO_MAILPIT_PORT"
 
@@ -58,6 +69,10 @@ fi
 if [ -n "${DEMO_BREAK_GLASS_PASSWORD:-}" ]; then
   app_env+=(-e SOUNDINGS_BREAK_GLASS_ENABLED=true -e SOUNDINGS_BREAK_GLASS_USERNAME=admin
     -e "SOUNDINGS_BREAK_GLASS_PASSWORD=$DEMO_BREAK_GLASS_PASSWORD")
+fi
+if [ "$DEMO_AI" = "1" ]; then
+  app_env+=(-e SOUNDINGS_AI_ENABLED=true -e "SOUNDINGS_KAGENT_URL=http://$fake_agent:8083"
+    -e "SOUNDINGS_AI_MCP_URL=http://$app:8000/mcp")
 fi
 if [ -n "${DEMO_PUBLIC_PER_IP:-}" ]; then
   app_env+=(-e "SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP=$DEMO_PUBLIC_PER_IP")
@@ -118,6 +133,20 @@ up() {
     fi
   fi
 
+  if [ "$DEMO_AI" = "1" ]; then
+    docker image inspect "$FAKE_AGENT_IMAGE" >/dev/null 2>&1 ||
+      die "image '$FAKE_AGENT_IMAGE' not found (run: make fake-agent-image)"
+    mkdir -p "$keys_dir"
+    chmod 700 "$keys_dir"
+    docker rm -f "$fake_agent" >/dev/null 2>&1 || true
+    log "starting the fake kagent agent '$fake_agent' (keys in $keys_dir)"
+    # As this user: the keys are files only their owner may read.
+    docker run -d --name "$fake_agent" --network "$network" "${hardening[@]}" \
+      --user "$(id -u):$(id -g)" -p "$DEMO_BIND_ADDRESS:$DEMO_FAKE_AGENT_PORT:8083" \
+      -e "FAKE_AGENT_MCP_URL=http://$app:8000/mcp" -e FAKE_AGENT_KEYS_DIR=/keys \
+      -v "$keys_dir:/keys:ro" "$FAKE_AGENT_IMAGE" >/dev/null
+  fi
+
   log "migrating and seeding the demo data ($IMAGE)"
   quietly soundings wait-for-db --timeout 60 >/dev/null
   quietly soundings migrate >/dev/null
@@ -148,6 +177,10 @@ up() {
         printf '    Email: off (DEMO_SMTP=0): in-app notifications only\n'
       fi
       printf '    MCP: %s/mcp with a key from Settings > API keys (dev/README.md, "MCP clients")\n' "$url"
+      if [ "$DEMO_AI" = "1" ]; then
+        provision_agent
+        printf '    AI: "Ask AI to evaluate" on a Customer Innovation idea (the fake agent: http://localhost:%s/_fake/observations)\n' "$DEMO_FAKE_AGENT_PORT"
+      fi
       printf '    Logs: docker logs -f %s (or %s)    Stop: make demo-down\n' "$app" "$worker"
       return 0
     fi
@@ -157,10 +190,42 @@ up() {
   die "the app did not become ready on $url"
 }
 
+# "Idea evaluator" (soundings/idea-evaluator) for the fake agent: registered as alice, or
+# on a kept database enabled with a new key; the key goes to $keys_dir only.
+provision_agent() {
+  command -v jq >/dev/null || die "DEMO_AI=1 needs jq"
+  local jar body api="$url/api/v1" alice project status id
+  jar="$(mktemp)" body="$(mktemp)"
+  local c=(curl -sS --noproxy '*' --max-time 15 -b "$jar" -c "$jar")
+  alice="$("${c[@]}" "$api/auth/dev/users" | jq -r '.[] | select(.email == "alice@example.com") | .id')"
+  "${c[@]}" -o /dev/null -H 'Content-Type: application/json' -d "{\"user_id\":\"$alice\"}" "$api/auth/dev/login"
+  local w=("${c[@]}" -o "$body" -w '%{http_code}' -H 'Content-Type: application/json'
+    -H "X-CSRF-Token: $(awk '$6 ~ /soundings_csrf$/ { print $7 }' "$jar")")
+  project="$("${c[@]}" "$api/projects/customer-innovation" | jq -r .id)"
+  status="$("${w[@]}" --data-binary "$(jq -nc --arg p "$project" '{display_name: "Idea evaluator",
+    description: "Soundings'"'"' fake kagent agent (make demo DEMO_AI=1).", namespace: "soundings",
+    name: "idea-evaluator", purposes: ["evaluate", "research", "draft_section"], project_ids: [$p]}')" \
+    "$api/admin/ai-agents" || true)"
+  if [ "$status" = "409" ]; then
+    id="$("${c[@]}" "$api/admin/ai-agents" | jq -r '.items[] | select(.namespace == "soundings" and .name == "idea-evaluator") | .id')"
+    "${w[@]}" -X PATCH --data-binary '{"enabled": true}' "$api/admin/ai-agents/$id" >/dev/null || true
+    status="$("${w[@]}" -X POST "$api/admin/ai-agents/$id/key" || true)"
+  fi
+  if [ "$status" = "201" ]; then
+    (umask 077 && jq -r '"Bearer " + .key.secret' "$body" >"$keys_dir/soundings.idea-evaluator")
+    printf '    AI agent: "Idea evaluator" (soundings/idea-evaluator), its key with the fake agent\n'
+  else
+    printf '    AI agent: registering it answered %s (see Admin settings > AI agents)\n' "$status"
+  fi
+  rm -f "$jar" "$body"
+}
+
 down() {
-  log "removing $app, $worker, $mailpit, $db and network $network"
-  docker rm -f -v "$app" "$worker" "$mailpit" "$db" >/dev/null 2>&1 || true
+  log "removing $app, $worker, $mailpit, $fake_agent, $db and network $network"
+  docker rm -f -v "$app" "$worker" "$mailpit" "$fake_agent" "$db" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
+  # The key `up` handed to the fake agent: its database is gone, so the key is dead too.
+  rm -f "$keys_dir/soundings.idea-evaluator"
 }
 
 case "${1:-up}" in

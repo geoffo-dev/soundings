@@ -1,7 +1,8 @@
 {{- /*
-Ingress: the API accepts traffic on its HTTP port from ingressFrom peers (plus
-kagent's namespace when kagent.enabled: its controller lists the MCP tools and its
-agents call /mcp) and on its metrics port from metricsFrom peers (each: anyone when
+Ingress: the API accepts traffic on its HTTP port from ingressFrom peers (plus, when
+kagent.enabled, kagent's namespace, whose controller lists the MCP tools, and kagent's
+agent pods, label app.kubernetes.io/managed-by: kagent, in kagent.agentNamespaces, which
+call /mcp) and on its metrics port from metricsFrom peers (each: anyone when
 the list is empty; this release's pods always), the worker accepts nothing, and the
 bundled Postgres only accepts this release's app pods and Jobs.
 Egress (networkPolicy.egress.enabled, off by default: IdP, SMTP, kagent and the
@@ -13,6 +14,12 @@ only DNS, the database and their own destinations ("soundings.egressRules").
 {{- $httpFrom := .Values.networkPolicy.ingressFrom }}
 {{- if and $httpFrom .Values.kagent.enabled }}
 {{- $httpFrom = append $httpFrom (dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .Values.kagent.namespace))) }}
+{{- /* kagent's agent pods call /mcp from their own namespace, not the controller's. */}}
+{{- range (include "soundings.agentNamespaces" . | splitList ",") }}
+{{- if ne . $.Values.kagent.namespace }}
+{{- $httpFrom = append $httpFrom (dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .)) "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/managed-by" "kagent"))) }}
+{{- end }}
+{{- end }}
 {{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

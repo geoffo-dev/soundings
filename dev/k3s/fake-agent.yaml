@@ -1,0 +1,99 @@
+# Soundings' fake kagent (dev/fake-agent; dev and CI only) in the local k3s cluster, in
+# the place of kagent's controller: namespace "kagent", Service "kagent-controller", A2A
+# on port 8083, so the release's default SOUNDINGS_KAGENT_URL
+# (http://kagent-controller.kagent:8083) works unchanged. It serves every agent that has
+# a key in Secret "fake-agent-keys" (one entry "<namespace>.<name>" per agent, holding
+# "Bearer sdg_..."; scripts/k3s-fake-agent.sh key adds one) and calls the release's /mcp
+# through its Service with that key, as a kagent agent's RemoteMCPServer would.
+# Applied by scripts/k3s-fake-agent.sh, which fills in __IMAGE__ and __MCP_URL__.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kagent
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagent-controller
+  namespace: kagent
+  labels:
+    app.kubernetes.io/name: fake-kagent
+    app.kubernetes.io/part-of: soundings-dev
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fake-kagent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fake-kagent
+        app.kubernetes.io/part-of: soundings-dev
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fake-agent
+          image: __IMAGE__
+          imagePullPolicy: Never
+          env:
+            - name: FAKE_AGENT_PORT
+              value: "8083"
+            - name: FAKE_AGENT_MCP_URL
+              value: __MCP_URL__
+            - name: FAKE_AGENT_KEYS_DIR
+              value: /etc/fake-agent/keys
+          ports:
+            - name: a2a
+              containerPort: 8083
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: a2a
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: keys
+              mountPath: /etc/fake-agent/keys
+              readOnly: true
+      volumes:
+        - name: keys
+          secret:
+            secretName: fake-agent-keys
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagent-controller
+  namespace: kagent
+  labels:
+    app.kubernetes.io/name: fake-kagent
+spec:
+  selector:
+    app.kubernetes.io/name: fake-kagent
+  ports:
+    - name: a2a
+      port: 8083
+      targetPort: a2a
