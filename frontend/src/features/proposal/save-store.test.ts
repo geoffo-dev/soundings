@@ -43,6 +43,40 @@ describe('ProposalSaveStore', () => {
     return { store, onSaved }
   }
 
+  it('settles a section: a waiting autosave goes now, a save in flight finishes', async () => {
+    let finish: (() => void) | undefined
+    const save = vi.fn<SaveFn>(
+      (key, body, base) =>
+        new Promise((resolve) => {
+          finish = () => resolve(section(key, body, base + 1))
+        }),
+    )
+    const { store } = setup(save)
+    store.edit('summary', 'Hello, typed')
+    const settled = store.settle('summary')
+    // Sent at once, not after the debounce.
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(store.get('summary')?.status).toBe('saving')
+    let done = false
+    void settled.then(() => (done = true))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(done).toBe(false)
+    finish?.()
+    await settled
+    expect(store.get('summary')).toMatchObject({ status: 'saved', base: 4 })
+    // Nothing to do: returns at once.
+    await store.settle('summary')
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('settles with the error when the save fails (the text is still unsaved)', async () => {
+    const save = vi.fn<SaveFn>(() => Promise.reject(new Error('offline')))
+    const { store } = setup(save)
+    store.edit('summary', 'Hello, typed')
+    await store.settle('summary')
+    expect(store.get('summary')?.status).toBe('error')
+  })
+
   it('holds the autosave while a suggestion is accepted, and replaces the text after', async () => {
     const save = vi.fn<SaveFn>((key, body, base) => Promise.resolve(section(key, body, base + 1)))
     const { store, onSaved } = setup(save)

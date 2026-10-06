@@ -13,10 +13,12 @@ export function CodeSnippet({
   code,
   label,
   className,
+  onCopied,
 }: {
   code: string
   label: string
   className?: string
+  onCopied?: (value: string) => void
 }) {
   const id = useId()
   return (
@@ -31,7 +33,7 @@ export function CodeSnippet({
         <code>{code}</code>
       </pre>
       <div className="absolute top-1.5 right-1.5">
-        <CopyButton value={code} label={label} />
+        <CopyButton value={code} label={label} onCopied={onCopied} />
       </div>
     </figure>
   )
@@ -44,6 +46,7 @@ export function CopyLine({
   className,
   id,
   wrap = false,
+  onCopied,
 }: {
   value: string
   label: string
@@ -51,6 +54,7 @@ export function CopyLine({
   id?: string
   /** Show all of it on several lines (a key) instead of cutting it off. */
   wrap?: boolean
+  onCopied?: (value: string) => void
 }) {
   return (
     <span
@@ -69,7 +73,7 @@ export function CopyLine({
       >
         {value}
       </code>
-      <CopyButton value={value} label={label} />
+      <CopyButton value={value} label={label} onCopied={onCopied} />
     </span>
   )
 }

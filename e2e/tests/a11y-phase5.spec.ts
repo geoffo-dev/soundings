@@ -90,7 +90,7 @@ async function openCreate(page: Page, data: Prepared) {
   await page.getByRole('button', { name: 'Create key' }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Create API key' })
   await dialog.getByLabel('Name').fill(`Axe ${data.run}`)
-  await dialog.getByRole('button', { name: 'AI evaluator' }).click()
+  await dialog.getByRole('button', { name: 'Evaluate with an assistant' }).click()
   await dialog.getByText('Only these projects').click()
   await dialog.getByRole('checkbox', { name: data.projectName }).click()
   return dialog
@@ -178,7 +178,7 @@ const SCREENS: Screen[] = [
     open: async (page, data) => {
       await page.goto(`/ideas/${data.proposalKey}?tab=proposal`)
       await expect(page.getByRole('heading', { name: '1 suggestion for Summary' })).toBeVisible()
-      await expect(page.getByText('via MCP')).toBeVisible()
+      await expect(page.getByText('via assistant')).toBeVisible()
     },
   },
   {
@@ -253,6 +253,10 @@ test('K5-01: a key can be created, copied and closed with the keyboard only', as
   await page.keyboard.press('ControlOrMeta+Enter')
   const reveal = page.getByRole('dialog', { name: 'Copy your new key' })
   await expect(reveal.getByRole('button', { name: 'Copy key' })).toBeFocused()
+  // Not copied: the first Esc asks (focus on its Copy key), the second closes.
+  await page.keyboard.press('Escape')
+  await expect(reveal.getByRole('alert')).toContainText('You haven’t copied the key')
+  await expect(reveal.getByRole('button', { name: 'Copy key' }).last()).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(reveal).toHaveCount(0)
   await expect(

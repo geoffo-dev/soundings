@@ -33,6 +33,11 @@ test('lists every key with its owner, scopes, projects, use, expiry and state', 
   const agent = keyRow(page, 'kagent research-agent')
   await expect(agent).toContainText('Research agent')
   await expect(agent).toContainText('AI agent')
+  // The owner has a line to themselves: their name is never cut off (the key name gives way).
+  const ownerLink = agent.getByRole('link', { name: /^Research agent/ })
+  expect(
+    await ownerLink.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+  ).toBe(true)
   await expect(agent).toContainText('Created by Priya Natarajan')
   await expect(agent).toContainText('sdg_R3s3archAg3n')
   await expect(agent).toContainText('Customer Innovation')
@@ -62,6 +67,12 @@ test('a pasted whole key is searched by its prefix only: never in the URL or a r
   expect(page.url()).not.toContain(WHOLE_KEY.slice(17))
   expect(requests.some((url) => url.includes(WHOLE_KEY.slice(17)))).toBe(false)
 
+  // Half a key (pasted short, or being typed): the secret part goes nowhere either.
+  await search.fill(WHOLE_KEY.slice(0, 30))
+  await expect(page).toHaveURL(/q=sdg_Cl4uDeD3sk7p(&|$)/)
+  await expect(page.getByRole('status').filter({ hasText: 'That’s part of a key' })).toBeVisible()
+  expect(requests.some((url) => url.includes(WHOLE_KEY.slice(17, 30)))).toBe(false)
+
   // Names and owners match in part; a near-miss prefix matches nothing.
   await search.fill('sdg_Cl4uDeD3sk7')
   await expect(page.getByRole('heading', { name: 'No keys match' })).toBeVisible()
@@ -74,6 +85,15 @@ test('a pasted whole key is searched by its prefix only: never in the URL or a r
 test('filters by state, and by owner from their admin page', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: /^State/ }).click()
+  // Two-line options: every line inside its row, nothing overlapping.
+  const options = page.getByRole('option')
+  await expect(options).toHaveCount(3)
+  for (const option of await options.all()) {
+    expect(
+      await option.evaluate((element) => element.scrollHeight <= element.clientHeight + 1),
+    ).toBe(true)
+  }
+  expect(await seriousViolations(page)).toEqual([])
   await page.getByRole('option', { name: /Dormant/ }).click()
   await expect(page).toHaveURL(/state=dormant/)
   await expect(table(page).getByRole('row')).toHaveCount(2)
@@ -106,6 +126,14 @@ test('revokes anyone’s key after a confirm that names it; focus moves to the n
   await expect(keyRow(page, 'Jira sync')).toHaveCount(0)
   await expect(page.getByText('6 keys')).toBeVisible()
   await expect(keyRow(page, 'kagent research-agent').locator('[data-row-id]')).toBeFocused()
+  // An agent's key: only an admin can make it a new one.
+  await keyRow(page, 'kagent research-agent')
+    .getByRole('button', { name: /^Revoke Research agent’s key/ })
+    .click()
+  await expect(page.getByRole('alertdialog')).toContainText(
+    'an admin would need to create a new key for this agent',
+  )
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
   // The audit log has it (in-app navigation: a page load resets the mock).
   await page
     .getByRole('navigation', { name: 'Settings sections' })

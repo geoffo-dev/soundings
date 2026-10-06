@@ -37,7 +37,7 @@ async function createDialog(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Create key' }).click()
   const dialog = page.getByRole('dialog', { name: 'Create API key' })
   await dialog.getByLabel('Name').fill('Claude Code')
-  await dialog.getByRole('button', { name: 'AI evaluator' }).click()
+  await dialog.getByRole('button', { name: 'Evaluate with an assistant' }).click()
 }
 
 async function secretDialog(page: Page) {
@@ -111,7 +111,9 @@ const shots: Shot[] = [
     path: '/settings/api-keys',
     scheme: 'light',
     act: async (page) => {
-      await page.getByRole('heading', { name: 'Connect an MCP client' }).scrollIntoViewIfNeeded()
+      const toggle = page.getByRole('button', { name: 'For developers and AI assistants' })
+      await toggle.click()
+      await toggle.scrollIntoViewIfNeeded()
     },
   },
   {

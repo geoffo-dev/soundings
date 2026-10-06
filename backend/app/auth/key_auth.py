@@ -6,12 +6,17 @@ identically.
 * :func:`bearer_token`: the token of ``Authorization: Bearer <token>`` (scheme in any
   case), or ``None`` without such a header (other schemes, e.g. ``Basic`` from an
   ingress, are ignored).
-* :func:`authenticate_api_key`: :func:`app.api_keys.verify.check_api_key`, then on a
-  refusal 401 (:class:`ApiKeyUnauthorizedProblem`, one body for every reason) counted
-  per client address, or 429 once the address is past
+* :func:`authenticate_api_key`: :func:`app.api_keys.verify.verify_api_key` (the check
+  and the throttled ``last_used_at`` update in one short transaction of their own, so a
+  request never holds two connections), then on a refusal 401
+  (:class:`ApiKeyUnauthorizedProblem`, one body for every reason) counted per client
+  address, or 429 once the address is past
   :data:`~app.schemas.api_keys.API_KEY_FAILURES_PER_MINUTE` failures in a minute (only
-  failing keys: a valid key from that address still works). On success the throttled
-  ``last_used_at`` update.
+  failing keys: a valid key from that address still works). Given the request's
+  session, the principal is then rebuilt in it (:func:`reload_api_key`), so the routes
+  get an owner loaded in their own unit of work.
+* :func:`refuse_reloaded_key`: the refusal for a key that passed the check but no longer
+  holds when it is read again (an MCP tool's transaction).
 * :func:`limit_key_request`: at most :data:`API_KEY_REQUESTS_PER_MINUTE` requests per
   key (REST and ``/mcp`` together) and, for writes, :data:`API_KEY_WRITES_PER_MINUTE`
   (429 ``too_many_attempts`` with ``Retry-After``).
@@ -33,7 +38,7 @@ from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api_keys.verify import KeyCheck, check_api_key, touch_last_used
+from app.api_keys.verify import KeyCheck, reload_api_key, verify_api_key
 from app.auth.throttle import get_throttle
 from app.domain.principal import Principal
 from app.errors import ProblemError
@@ -53,6 +58,7 @@ __all__ = [
     "authenticate_api_key",
     "bearer_token",
     "limit_key_request",
+    "refuse_reloaded_key",
     "take_key_write",
 ]
 
@@ -125,16 +131,39 @@ def _refuse(app: Any, check: KeyCheck, client: str) -> ProblemError:
     return ApiKeyUnauthorizedProblem()
 
 
-async def authenticate_api_key(app: Any, db: AsyncSession, token: str, *, client: str) -> Principal:
+async def authenticate_api_key(
+    app: Any, token: str, *, client: str, db: AsyncSession | None = None
+) -> Principal:
     """The key's principal, or raise 401 (:class:`ApiKeyUnauthorizedProblem`) / 429 (a
     failing key from an address over the failure limit). ``client`` is
     :func:`app.auth.throttle.client_key` of the request. ``app`` gives the settings,
-    the session maker (for ``last_used_at``) and the throttles."""
-    check = await check_api_key(db, token, settings=app.state.settings)
-    if check.principal is None:
+    the session maker and the throttles.
+
+    Without ``db`` the principal's owner comes from the check's own (closed) session:
+    enough to decide ``mcp.connect`` and the rates; whatever reads or writes data must
+    rebuild it in its own transaction (:func:`reload_api_key`, as the MCP dispatcher
+    does). With ``db`` (the request's session, which must hold no connection yet) it is
+    rebuilt there at once."""
+    settings = app.state.settings
+    check = await verify_api_key(app.state.sessionmaker, token, settings=settings)
+    if check.principal is None or check.key_id is None:
         raise _refuse(app, check, client)
-    await touch_last_used(app.state.sessionmaker, check)
-    return check.principal
+    if db is None:
+        return check.principal
+    live = await reload_api_key(db, check.key_id, settings=settings)
+    if live.principal is None:
+        raise refuse_reloaded_key(live)
+    return live.principal
+
+
+def refuse_reloaded_key(check: KeyCheck) -> ProblemError:
+    """The 401 for a key refused when read again after the request was let in (logged
+    like every refusal; not counted per address: the secret was right)."""
+    fields: dict[str, object] = {"reason": check.refusal, "stage": "reload"}
+    if check.key_id is not None:
+        fields["api_key_id"] = str(check.key_id)
+    logger.info("api key refused", extra=fields)
+    return ApiKeyUnauthorizedProblem()
 
 
 def _key_id(principal: Principal) -> str:

@@ -29,6 +29,7 @@ import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
 import {
+  accessSummary,
   EXPIRY_CHOICES,
   expiresAt,
   expiryDateBounds,
@@ -44,6 +45,8 @@ import {
 
 const NAME_ID = 'create-key-name'
 const NAME_MAX = 80
+const SUMMARY_ID = 'create-key-summary'
+const SCOPES_ERROR_ID = 'create-key-scopes-error'
 
 export type CreateKeyMutation = ReturnType<typeof useCreateApiKey>
 
@@ -99,6 +102,11 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
   const bounds = expiryDateBounds()
   const expiresValue = expiresAt(expiry, date)
   const preset = presetOf(scopes)
+  const chosen = (projects.data ?? []).filter((project) => projectIds.includes(project.id))
+  const summary = accessSummary(
+    { scopes, restricted: restrict === 'some', projects: chosen, expires_at: expiresValue },
+    { noProjects: 'only in the projects you choose' },
+  )
   const clear = (field: keyof FormErrors) => {
     if (errors[field] || errors.form)
       setErrors((e) => ({ ...e, [field]: undefined, form: undefined }))
@@ -193,7 +201,6 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
             maxLength={NAME_MAX}
             autoComplete="off"
             spellCheck={false}
-            placeholder="Claude Desktop"
             onChange={(event) => {
               setName(event.target.value.replace(/[\r\n]+/g, ' '))
               clear('name')
@@ -201,7 +208,10 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
           />
         </Field>
 
-        <fieldset className="flex flex-col gap-3" aria-describedby="create-key-scopes-error">
+        <fieldset
+          className="flex flex-col gap-3"
+          aria-describedby={errors.scopes ? SCOPES_ERROR_ID : undefined}
+        >
           <legend className="mb-1.5 text-sm font-medium text-primary">Scopes</legend>
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Presets">
             <span aria-hidden="true" className="mr-1 text-sm text-muted">
@@ -266,11 +276,11 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
           </ul>
           {mcpWithoutTools(scopes) && (
             <Callout tone="warning" role="status" title="This key can connect, but do nothing">
-              MCP tools act through Read, Write or Evaluate. Add at least Read.
+              An assistant acts through Read, Write or Evaluate. Add at least Read.
             </Callout>
           )}
           {errors.scopes && (
-            <p id="create-key-scopes-error" role="alert" className="text-sm text-danger">
+            <p id={SCOPES_ERROR_ID} role="alert" className="text-sm text-danger">
               {errors.scopes}
             </p>
           )}
@@ -333,6 +343,11 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
               help="Everything else is invisible to the key, even where you have access."
             />
           </RadioGroup>
+          {restrict === 'all' && scopes.includes('mcp') && (
+            <p className="text-sm text-muted">
+              An assistant reads whatever its key can reach: keep it to the projects it needs.
+            </p>
+          )}
           {restrict === 'some' && (
             <ProjectChoices
               loading={projects.isPending}
@@ -348,7 +363,12 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
           )}
         </Field>
       </DialogBody>
-      <DialogFooter className="sm:border-t sm:border-subtle sm:pt-4">
+      {/* What the choices above add up to, in plain words; updates as they change. */}
+      <p id={SUMMARY_ID} className="border-t border-subtle px-5 pt-3 text-sm text-secondary">
+        <span className="font-medium text-primary">This key can </span>
+        {summary}.
+      </p>
+      <DialogFooter className="pt-3 in-data-[mobile=fullscreen]:max-sm:border-t-0">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
@@ -356,6 +376,7 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
           type="submit"
           variant="primary"
           loading={create.isPending}
+          aria-describedby={SUMMARY_ID}
           aria-keyshortcuts={ariaKeys(SHORTCUTS.submitForm.keys)}
         >
           Create key

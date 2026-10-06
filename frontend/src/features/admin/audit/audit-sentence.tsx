@@ -25,6 +25,9 @@ function Part({ part }: { part: AuditPart }) {
       return part.text
     case 'name':
       return <span className="font-medium text-primary">{part.text}</span>
+    case 'code':
+      // Read character by character (l and I differ): monospace, not bold.
+      return <code className="font-mono text-xs text-primary">{part.text}</code>
     case 'user':
       return <UserName id={part.id} />
     case 'group':

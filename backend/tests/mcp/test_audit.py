@@ -4,8 +4,10 @@ their own entries; nothing secret or personal in entries or logs; the 90-day cle
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
@@ -13,15 +15,18 @@ from uuid import uuid4
 import httpx2
 import pytest
 from fastapi import FastAPI
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api_keys.tokens import hash_key
+from app.api_keys.verify import verify_api_key
 from app.auth.key_auth import KEY_WRITE_THROTTLE
 from app.auth.throttle import Throttle
 from app.config import Settings
-from app.mcp import tools
+from app.mcp import dispatcher, tools
 from app.mcp.audit import delete_expired_calls
+from app.mcp.context import McpRequest
 from app.models.activity import AuditLog, Comment
 from app.models.api_key import ApiKey
 from app.models.base import utcnow
@@ -29,6 +34,7 @@ from app.models.enums import IdeaStatus
 from app.models.idea import Idea
 from app.models.project import Project
 from app.notifications.schedule import run_schedule
+from app.schemas.mcp import McpTool, tool_by_name
 from tests.factories import add_evaluator, make_idea
 from tests.mcp.conftest import (
     AsAgent,
@@ -133,6 +139,78 @@ async def test_every_outcome_is_audited_once(
     # The idea exists, so a denial names it too; the crash had found nothing yet but the
     # project is named by its argument.
     assert [e.target_id for e in logged] == [None, None, idea.id, idea.id, idea.id, team.project.id]
+
+
+async def test_a_validator_that_crashes_is_audited_as_an_internal_error(
+    as_agent: AsAgent, team: Team, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review L1: an input model raising anything but ``ValidationError`` used to escape
+    the dispatcher (and its entry)."""
+
+    class Exploding(BaseModel):
+        project: str | None = None
+
+        @field_validator("project")
+        @classmethod
+        def _boom(cls, value: str | None) -> str | None:
+            raise TypeError("a bug in a validator")
+
+    real = tool_by_name
+
+    def patched(name: str) -> McpTool | None:
+        tool = real(name)
+        return replace(tool, input=Exploding) if tool and name == "get_rubric" else tool
+
+    monkeypatch.setattr(dispatcher, "tool_by_name", patched)
+    agent = await as_agent(team.member, ["read", "mcp"])
+
+    assert await agent.fails("get_rubric", project=team.slug) == "internal_error"
+
+    logged = await entries(db_session)
+    assert [summary(e) for e in logged] == [
+        ("get_rubric", "project.view", "deny", "internal_error")
+    ]
+    assert logged[0].target_id == team.project.id
+
+
+async def test_a_cancelled_call_is_audited(
+    app: FastAPI,
+    make_key: MakeKey,
+    team: Team,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review L1: a call cancelled while its tool runs (the client went away) is rolled
+    back and still leaves its entry, written from a task of its own."""
+    started = asyncio.Event()
+
+    async def hang(ctx: tools.ToolContext, args: Any) -> Any:
+        ctx.target.project(team.project.id)
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setitem(tools.TOOLS, "get_rubric", hang)
+    secret = await make_key(team.member)
+    check = await verify_api_key(app.state.sessionmaker, secret, settings=app.state.settings)
+    assert check.principal is not None
+    request = McpRequest(app=app, principal=check.principal)
+
+    running = asyncio.create_task(
+        dispatcher.call_tool(request, "get_rubric", {"project": team.slug})
+    )
+    await asyncio.wait_for(started.wait(), 5)
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+    for _ in range(50):
+        logged = await entries(db_session)
+        if logged:
+            break
+        await asyncio.sleep(0.1)
+    assert [summary(e) for e in logged] == [("get_rubric", "project.view", "allow", "cancelled")]
+    assert logged[0].target_id == team.project.id
+    assert logged[0].actor_id == team.member.id
 
 
 async def test_a_denied_write_leaves_only_its_entry(

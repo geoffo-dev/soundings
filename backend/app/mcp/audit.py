@@ -3,10 +3,12 @@
 One entry per ``tools/call``, whatever the outcome, written by the dispatcher
 (:mod:`app.mcp.dispatcher`): in the tool's own transaction when the call commits,
 otherwise in a short transaction of its own after the rollback, so denials and failures
-are kept. A request refused by c15 (a key without the ``mcp`` scope) is one entry too,
-whatever its JSON-RPC method. Entries carry the tool, its rule, the decision and the
-error code, plus ``auth`` and ``api_key_id`` (added by :func:`app.services.audit.record`);
-never the arguments (queries, idea text and comments may hold personal data).
+are kept. Requests the guard refuses before the SDK, whatever their JSON-RPC method
+(c15: a key without the ``mcp`` scope; the key's request budget), get an entry without
+a tool, at most one per key and refusal a minute (:mod:`app.mcp.guard`). Entries carry
+the tool, its rule, the decision and the error code, plus ``auth`` and ``api_key_id``
+(added by :func:`app.services.audit.record`); never the arguments (queries, idea text
+and comments may hold personal data).
 
 The hourly cleanup deletes entries older than :data:`MCP_AUDIT_RETENTION`
 (:func:`delete_expired_calls`); what a call changed keeps its own entries for good.
@@ -23,7 +25,6 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz.rules import Rule
 from app.db import session_scope
 from app.domain.idea_keys import IdeaKey, parse_idea_ref
 from app.domain.principal import Principal
@@ -41,7 +42,7 @@ __all__ = [
     "delete_expired_calls",
     "record_call",
     "record_call_separately",
-    "record_connect_refusal",
+    "record_door_refusal",
 ]
 
 logger = logging.getLogger(__name__)
@@ -144,17 +145,14 @@ async def record_call_separately(
         logger.exception("mcp call audit failed", extra={"tool": tool, "code": code})
 
 
-async def record_connect_refusal(app: Any, principal: Principal) -> None:
-    """c15: a key without the ``mcp`` scope reached ``/mcp`` (403 ``insufficient_scope``),
-    whatever its JSON-RPC method: one entry, no tool."""
-    await record_call_separately(
-        app,
-        principal,
-        tool=None,
-        rule=Rule.MCP_CONNECT.value,
-        decision="deny",
-        code="insufficient_scope",
-    )
+async def record_door_refusal(
+    app: Any, principal: Principal, *, rule: str | None, code: str
+) -> None:
+    """A request the guard refused before the SDK, whatever its JSON-RPC method: c15 (a
+    key without the ``mcp`` scope: ``rule`` ``mcp.connect``, ``insufficient_scope``) or
+    the key's request budget (no rule, ``too_many_attempts``). One entry, no tool; the
+    guard calls this at most once per key and code a minute."""
+    await record_call_separately(app, principal, tool=None, rule=rule, decision="deny", code=code)
 
 
 async def delete_expired_calls(db: AsyncSession, now: datetime) -> None:

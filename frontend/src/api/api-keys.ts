@@ -8,7 +8,7 @@
  *   useRevokeApiKey()            your key (confirm first: no undo)
  *   useAdminApiKeys(filters)     every key that isn't revoked (infinite, newest first)
  *   useRevokeAdminApiKey()       any key (platform admins; confirm first)
- *   keySearchTerm(text)          a pasted whole key cut to its prefix (never sent whole)
+ *   keySearchTerm(text)          a pasted key, whole or in part, cut to its prefix (no secret is sent)
  */
 import {
   infiniteQueryOptions,
@@ -29,20 +29,30 @@ import type { AdminApiKeyPage, ApiKeyCreate, ApiKeyList, ApiKeyState } from '@/a
 /** A whole Soundings key (`API_KEY_PATTERN`). */
 export const API_KEY_PATTERN = /^sdg_[A-Za-z0-9]{12}_[A-Za-z0-9]{40}$/
 const KEY_IN_TEXT = /sdg_([A-Za-z0-9]{12})_[A-Za-z0-9]{40}/
+/** A prefix followed by `_` and any of the secret: a whole key, or one half pasted or typed. */
+const SECRET_IN_TEXT = /sdg_([A-Za-z0-9]{12})_[A-Za-z0-9]+/
+/** The same, also with nothing after the `_` yet (searched as the prefix). */
+const PREFIX_AND_REST = /sdg_([A-Za-z0-9]{12})_[A-Za-z0-9]*/
 
 /**
- * What an admin search may send: a pasted whole key (alone, or inside other
- * text such as "Bearer sdg_…") becomes its prefix (`sdg_` + lookup id), so a
- * secret never goes into a URL, a log or the history (contract-phase5 §3.10).
+ * What an admin search may send: a pasted key (alone, or inside other text
+ * such as "Bearer sdg_…"), whole or cut off, becomes its prefix (`sdg_` +
+ * lookup id), so no part of a secret goes into a URL, a log or the history
+ * (contract-phase5 §3.10). Everything after the prefix's `_` is secret.
  */
 export function keySearchTerm(text: string): string {
-  const match = KEY_IN_TEXT.exec(text)
+  const match = PREFIX_AND_REST.exec(text)
   return match ? `sdg_${match[1] ?? ''}` : text
 }
 
 /** True when the text holds a whole key (the search says it used only the prefix). */
 export function containsWholeKey(text: string): boolean {
   return KEY_IN_TEXT.test(text)
+}
+
+/** True when the text holds any of a key's secret part, whole or not. */
+export function containsKeySecret(text: string): boolean {
+  return SECRET_IN_TEXT.test(text)
 }
 
 /* ------------------------------------------------------------------ */

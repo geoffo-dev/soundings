@@ -408,6 +408,39 @@ async def test_archived_projects_take_no_suggestions_or_decisions(
         assert_problem(response, 409, "project_archived")
 
 
+@pytest.mark.parametrize("closed_by", ["archived", "c7"])
+async def test_a_base_version_above_the_section_is_422_before_the_409s(
+    api: AsUser,
+    team: Team,
+    started: str,
+    idea: Idea,
+    db_session: AsyncSession,
+    closed_by: str,
+) -> None:
+    """Contract check order (401 -> 404 -> 403 -> 422 -> 409; review nit): the body's own
+    422 comes before the policy's conflicts (an archived project, c7). A viewer's 403 still
+    comes first."""
+    if closed_by == "archived":
+        statement = (
+            update(Project)
+            .where(Project.id == team.project.id)
+            .values(archived_at=Project.created_at)
+        )
+    else:
+        statement = update(Idea).where(Idea.id == idea.id).values(status=IdeaStatus.EVALUATING)
+    await db_session.execute(statement)
+    await db_session.commit()
+    ahead = {"section_key": "risks", "body_md": "x", "base_version": 2}
+
+    member = await api(team.member)
+    viewer = await api(team.viewer)
+
+    assert_problem(await member.post(url(started), ahead), 422, "validation_error")
+    assert_problem(await viewer.post(url(started), ahead), 403, "forbidden")
+    conflict = "project_archived" if closed_by == "archived" else "proposal_not_available"
+    assert_problem(await member.post(url(started), {**ahead, "base_version": 1}), 409, conflict)
+
+
 async def test_an_idea_held_for_moderation_takes_no_suggestions(
     api: AsUser, team: Team, started: str, idea: Idea, db_session: AsyncSession
 ) -> None:

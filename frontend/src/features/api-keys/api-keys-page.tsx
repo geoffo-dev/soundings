@@ -1,5 +1,5 @@
 import { CloudOff, KeyRound, Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { useCreateApiKey, useMyApiKeys, useRevokeApiKey } from '@/api/api-keys'
 import type { ApiKey, ApiKeyList } from '@/api/types'
@@ -16,14 +16,16 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from '@/components/ui/toaster'
+import { WithTooltip } from '@/components/ui/tooltip'
 import { AdminPageHeader, SettingsFrame } from '@/features/admin/settings-frame'
-import { formatShortDate } from '@/lib/dates'
+import { formatDateTime, formatShortDate } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
+import { cn } from '@/lib/utils'
 
 import { ConnectMcpSection } from './connect-mcp'
 import { CreateKeyDialog } from './create-key-dialog'
-import { KeyExpiry, KeyLastUsed, KeyProjects, KeyStateBadge, ScopeBadges } from './key-parts'
+import { KeyAccess, KeyExpiry, KeyLastUsed, KeyProjects, KeyStateBadge } from './key-parts'
 import { RevokeKeyDialog } from './revoke-key-dialog'
 import { SecretDialog } from './secret-dialog'
 
@@ -41,6 +43,8 @@ export function ApiKeysPage() {
   const [creating, setCreating] = useState(false)
   const list = query.data
   const empty = list?.items.length === 0
+  // c20: the break-glass account can't have keys (the only other reason is the limit).
+  const breakGlass = Boolean(list && !list.can_create && list.items.length < list.max_keys)
 
   const createButton = (
     <Button
@@ -59,22 +63,32 @@ export function ApiKeysPage() {
     <SettingsFrame>
       <AdminPageHeader
         title="API keys"
-        description="Use the Soundings API or connect an MCP client, such as an AI assistant, as yourself. A key never does more than you can, and only what its scopes allow."
+        description="Let a script or an AI assistant work in Soundings as you. A key does only what you allow when you create it, never more than you can, until it expires or you revoke it."
         actions={list && !empty ? createButton : undefined}
       />
-      {list && !list.can_create && (
+      {list && !list.can_create && !(breakGlass && empty) && (
         <Callout id="api-keys-limit" role="status" title={limitReason(list)} />
       )}
       {list ? (
         empty ? (
-          <EmptyState
-            size="compact"
-            className="rounded-lg border"
-            icon={<KeyRound />}
-            title="No API keys yet"
-            description="Create one to use the API or connect an MCP client."
-            action={createButton}
-          />
+          breakGlass ? (
+            <EmptyState
+              size="compact"
+              className="rounded-lg border"
+              icon={<KeyRound />}
+              title="No API keys for the break-glass account"
+              description="A key would outlive the emergency. Sign in with your own account to create keys."
+            />
+          ) : (
+            <EmptyState
+              size="compact"
+              className="rounded-lg border"
+              icon={<KeyRound />}
+              title="No API keys yet"
+              description="Create one to let a script or an AI assistant work in Soundings as you."
+              action={createButton}
+            />
+          )
         ) : (
           <KeysTable keys={list.items} />
         )
@@ -134,19 +148,25 @@ function limitReason(list: ApiKeyList): string {
   return 'The break-glass account can’t create API keys. Sign in with your own account to create one.'
 }
 
-function KeysTable({ keys }: { keys: ApiKey[] }) {
+function KeysTable({ keys: listed }: { keys: ApiKey[] }) {
   const revoke = useRevokeApiKey()
   const [revoking, setRevoking] = useState<ApiKey | null>(null)
+  // Expired keys last: they no longer work, so the ones that do come first.
+  const keys = useMemo(
+    () => [...listed].sort((a, b) => Number(a.state === 'expired') - Number(b.state === 'expired')),
+    [listed],
+  )
 
   const confirm = () => {
     if (!revoking) return
     const index = keys.findIndex((key) => key.id === revoking.id)
     const next = keys[index + 1] ?? keys[index - 1]
-    const name = revoking.name
+    const { name, state } = revoking
     revoke.mutate(revoking.id, {
       onSuccess: () => {
         setRevoking(null)
-        toast.success(`“${name}” revoked`, { description: 'It stopped working immediately.' })
+        if (state === 'expired') toast.success(`“${name}” removed`)
+        else toast.success(`“${name}” revoked`, { description: 'It stopped working immediately.' })
         // The row is gone: focus its neighbour, or "Create key" when it was the last.
         focusWhenRendered(
           () =>
@@ -168,7 +188,7 @@ function KeysTable({ keys }: { keys: ApiKey[] }) {
         <TableHeader>
           <TableRow>
             <TableHead>Key</TableHead>
-            <TableHead className="w-48">Scopes</TableHead>
+            <TableHead className="w-48">Can</TableHead>
             <TableHead className="w-40">Projects</TableHead>
             <TableHead className="w-28">Expires</TableHead>
             <TableHead className="w-28">Last used</TableHead>
@@ -178,49 +198,61 @@ function KeysTable({ keys }: { keys: ApiKey[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {keys.map((key) => (
-            <TableRow key={key.id} className="@3xl:h-15">
-              <TableCell primary className="min-w-0">
-                <div
-                  tabIndex={-1}
-                  {...{ [ROW_ID_ATTRIBUTE]: key.id }}
-                  className="flex min-w-0 flex-col gap-0.5 rounded-sm outline-offset-2"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-medium text-primary">{key.name}</span>
-                    {key.state === 'dormant' && <KeyStateBadge state="dormant" />}
-                  </span>
-                  <span className="truncate text-xs text-muted">
-                    <code className="font-mono">{key.prefix}…</code> · created{' '}
-                    {formatShortDate(key.created_at)}
-                  </span>
-                </div>
-              </TableCell>
-              <TableCell label="Scopes">
-                <ScopeBadges scopes={key.scopes} />
-              </TableCell>
-              <TableCell label="Projects" className="min-w-0">
-                <KeyProjects apiKey={key} />
-              </TableCell>
-              <TableCell label="Expires">
-                <KeyExpiry apiKey={key} />
-              </TableCell>
-              <TableCell label="Last used">
-                <KeyLastUsed at={key.last_used_at} />
-              </TableCell>
-              <TableCell className="@max-3xl:basis-full @max-3xl:items-start @3xl:text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="@max-3xl:-ml-2.5"
-                  aria-label={`Revoke ${key.name}`}
-                  onClick={() => setRevoking(key)}
-                >
-                  Revoke
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+          {keys.map((key) => {
+            const expired = key.state === 'expired'
+            return (
+              <TableRow key={key.id} className="@3xl:h-15">
+                <TableCell primary className="min-w-0">
+                  <div
+                    tabIndex={-1}
+                    {...{ [ROW_ID_ATTRIBUTE]: key.id }}
+                    className="flex min-w-0 flex-col gap-0.5 rounded-sm outline-offset-2"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          'truncate font-medium',
+                          expired ? 'text-secondary' : 'text-primary',
+                        )}
+                      >
+                        {key.name}
+                      </span>
+                      {key.state === 'dormant' && <KeyStateBadge state="dormant" />}
+                    </span>
+                    <span className="truncate text-xs text-muted">
+                      <code className="font-mono">{key.prefix}…</code> · created{' '}
+                      <WithTooltip content={formatDateTime(key.created_at)}>
+                        <time dateTime={key.created_at}>{formatShortDate(key.created_at)}</time>
+                      </WithTooltip>
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell label="Can">
+                  <KeyAccess scopes={key.scopes} muted={expired} />
+                </TableCell>
+                <TableCell label="Projects" className="min-w-0">
+                  <KeyProjects apiKey={key} />
+                </TableCell>
+                <TableCell label="Expires">
+                  <KeyExpiry apiKey={key} />
+                </TableCell>
+                <TableCell label="Last used">
+                  <KeyLastUsed at={key.last_used_at} />
+                </TableCell>
+                <TableCell className="@max-3xl:basis-full @max-3xl:items-start @3xl:text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="@max-3xl:-ml-2.5"
+                    aria-label={`${expired ? 'Remove' : 'Revoke'} ${key.name}`}
+                    onClick={() => setRevoking(key)}
+                  >
+                    {expired ? 'Remove' : 'Revoke'}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
       <RevokeKeyDialog

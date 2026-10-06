@@ -23,12 +23,19 @@ import { Markdown } from '@/components/ui/markdown'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { toast } from '@/components/ui/toaster'
+import { WithTooltip } from '@/components/ui/tooltip'
 import { focusWhenRendered } from '@/lib/focus'
 import { cn } from '@/lib/utils'
 
 import { useProposalEditor } from './editor-context'
 import { useSectionSave } from './save-store'
-import { hasContent, sectionDomId, suggestionDiff, type SuggestionLine } from './text'
+import {
+  hasContent,
+  sectionDomId,
+  suggestionDiff,
+  type DiffPart,
+  type SuggestionLine,
+} from './text'
 
 /** The DOM id of a suggestion card (focus moves between them). */
 export function suggestionDomId(id: string): string {
@@ -77,31 +84,38 @@ function SuggestionCard({
   suggestion: ProposalSuggestion
   section: ProposalSection
 }) {
-  const { store, ideaKey, suggestionPermissions, suggestions, me } = useProposalEditor()
+  const { store, ideaKey, idea, suggestionPermissions, suggestions, me } = useProposalEditor()
   const queryClient = useQueryClient()
   const state = useSectionSave(store, section.key)
   const accept = useAcceptProposalSuggestion(ideaKey)
   const discard = useDiscardProposalSuggestion(ideaKey)
   const [theirs, setTheirs] = useState<ProposalSection | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // Accept waits for the section's own autosave first (then nothing is unsaved to ask about).
+  const [settling, setSettling] = useState(false)
   const titleId = useId()
 
   // What the suggestion would replace: the text on screen, or what someone saved meanwhile.
   const current = theirs?.body_md ?? state?.draft ?? section.body_md
-  const baseVersion = theirs?.version ?? state?.base ?? section.version
   const lines = useMemo(() => suggestionDiff(current, suggestion.body_md), [current, suggestion])
-  const [view, setView] = useState<View>(hasContent(current) ? 'changes' : 'preview')
-  const unsaved = Boolean(state && (state.draft !== state.saved || state.status === 'conflict'))
+  const decides = suggestionPermissions.can_decide
+  // Deciders compare; everyone else reads what is proposed (a raw-Markdown diff helps no reader).
+  const [view, setView] = useState<View>(decides && hasContent(current) ? 'changes' : 'preview')
   const saving = state?.status === 'saving'
   const ai = suggestion.source === 'ai'
   const author = authorName(suggestion)
   const byMe = suggestion.author?.id === me.id
+  const whose = byMe ? 'Your' : `${author}’s`
 
-  /** After the card goes: the next suggestion of this section, else the section's text. */
+  /**
+   * After the card goes, like working through a queue: the next pending
+   * suggestion in template order (this section's first, then the following
+   * sections', then from the top), else the section's text.
+   */
   const focusAfter = () => {
-    const siblings = suggestions.get(section.key) ?? []
-    const index = siblings.findIndex((item) => item.id === suggestion.id)
-    const next = siblings[index + 1] ?? siblings[index - 1]
+    const queue = [...suggestions.values()].flat()
+    const index = queue.findIndex((item) => item.id === suggestion.id)
+    const next = queue[index + 1] ?? queue.find((item) => item.id !== suggestion.id)
     focusWhenRendered(
       () => {
         const card = next && document.getElementById(suggestionDomId(next.id))
@@ -118,7 +132,10 @@ function SuggestionCard({
 
   const run = () => {
     setConfirming(false)
-    const before = state?.draft ?? section.body_md
+    // Read now, not at render: an autosave may have finished since.
+    const latest = store.get(section.key)
+    const before = latest?.draft ?? section.body_md
+    const baseVersion = theirs?.version ?? latest?.base ?? section.version
     store.holdSave(section.key)
     accept.mutate(
       { suggestionId: suggestion.id, baseVersion },
@@ -160,15 +177,45 @@ function SuggestionCard({
     )
   }
 
-  const onAccept = () => {
-    if (unsaved && !theirs) setConfirming(true)
+  const onAccept = async () => {
+    if (theirs) {
+      run()
+      return
+    }
+    // Typing still waiting for its autosave: send it first. Accept has Undo, so a
+    // question is needed only when the text really couldn't be saved.
+    setSettling(true)
+    try {
+      await store.settle(section.key)
+    } finally {
+      setSettling(false)
+    }
+    const latest = store.get(section.key)
+    const unsaved = Boolean(latest && (latest.draft !== latest.saved || latest.status !== 'saved'))
+    if (unsaved) setConfirming(true)
     else run()
   }
 
   const onDiscard = () => {
     focusAfter()
-    discard(suggestion, byMe ? 'Your suggestion discarded' : `${author}’s suggestion discarded`)
+    discard(
+      suggestion,
+      byMe ? 'Your suggestion discarded' : `${author}’s suggestion discarded`,
+      // Undo brings the card back: focus goes back to it.
+      () =>
+        focusWhenRendered(() => document.getElementById(suggestionDomId(suggestion.id)), {
+          force: true,
+        }),
+    )
   }
+
+  /** Who may accept it, for everyone who can't. */
+  const decider =
+    idea.status !== 'shortlisted' && idea.status !== 'proposal'
+      ? 'It can be accepted while the idea is Shortlisted or in Proposal.'
+      : idea.owner && idea.owner.id !== me.id
+        ? `${idea.owner.display_name} decides whether to use it.`
+        : 'The idea’s owner or an admin decides whether to use it.'
 
   const who =
     theirs?.updated_by?.id === me.id ? 'You' : (theirs?.updated_by?.display_name ?? 'Someone')
@@ -203,7 +250,14 @@ function SuggestionCard({
               <span className="sr-only"> agent</span>
             </Badge>
           ) : suggestion.source === 'mcp' ? (
-            <Badge variant="outline">via MCP</Badge>
+            <WithTooltip
+              content={`Sent from an AI assistant (an MCP client) with ${byMe ? 'your' : `${author}’s`} key`}
+            >
+              <Badge variant="outline">
+                via assistant
+                <span className="sr-only">, sent from an AI assistant with their key</span>
+              </Badge>
+            </WithTooltip>
           ) : null}
         </div>
         <SegmentedControl
@@ -240,7 +294,11 @@ function SuggestionCard({
       {/* Long suggestions scroll here; focusable so the keyboard can scroll it too. */}
       <div
         role="region"
-        aria-label={view === 'preview' ? 'Suggested text' : 'Changes'}
+        aria-label={
+          view === 'preview'
+            ? `${whose} suggested text for ${section.title}`
+            : `${whose} suggested changes to ${section.title}`
+        }
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
         tabIndex={0}
         className="max-h-80 overflow-y-auto focus-visible:-outline-offset-2"
@@ -258,8 +316,11 @@ function SuggestionCard({
         )}
       </div>
 
-      {suggestionPermissions.can_decide && (
+      {decides ? (
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-subtle px-3 py-2">
+          {ai && (
+            <p className="mr-auto text-xs text-muted">Written by an AI agent: check the facts.</p>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -273,15 +334,17 @@ function SuggestionCard({
           <Button
             variant="secondary"
             size="sm"
-            loading={accept.isPending}
-            disabled={saving}
-            onClick={onAccept}
+            loading={accept.isPending || settling}
+            disabled={saving && !settling}
+            onClick={() => void onAccept()}
             aria-label={`${theirs ? 'Accept anyway' : 'Accept'}: ${byMe ? 'your' : `${author}’s`} suggestion for ${section.title}`}
           >
             <Check />
             {theirs ? 'Accept anyway' : 'Accept'}
           </Button>
         </footer>
+      ) : (
+        <footer className="border-t border-subtle px-3 py-2 text-xs text-muted">{decider}</footer>
       )}
 
       <Dialog open={confirming} onOpenChange={setConfirming}>
@@ -289,8 +352,8 @@ function SuggestionCard({
           <DialogHeader>
             <DialogTitle>Replace your unsaved changes?</DialogTitle>
             <DialogDescription>
-              You’re editing {section.title}. Accepting replaces the whole section with the
-              suggestion, including what you haven’t saved yet.
+              Your latest changes to {section.title} couldn’t be saved. Accepting replaces the whole
+              section with the suggestion, including what isn’t saved.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="pt-5">
@@ -346,10 +409,39 @@ function DiffLines({ lines }: { lines: SuggestionLine[] }) {
             {line.kind !== 'same' && (
               <span className="sr-only">{line.kind === 'added' ? 'Added: ' : 'Removed: '}</span>
             )}
-            <span className="min-w-0 flex-1">{line.text}</span>
+            <span className="min-w-0 flex-1">
+              {line.parts ? <WordParts parts={line.parts} kind={line.kind} /> : line.text}
+            </span>
           </p>
         ),
       )}
     </div>
+  )
+}
+
+/**
+ * An edited line, word by word: what the other side doesn't have is marked
+ * (deleted or inserted, read as such by assistive tech that supports it) in a
+ * stronger tone than its line.
+ */
+function WordParts({ parts, kind }: { parts: DiffPart[]; kind: SuggestionLine['kind'] }) {
+  return parts.map((part, index) =>
+    !part.changed ? (
+      <span key={index}>{part.text}</span>
+    ) : kind === 'removed' ? (
+      <del
+        key={index}
+        className="rounded-xs bg-danger/20 text-primary no-underline dark:bg-danger/40"
+      >
+        {part.text}
+      </del>
+    ) : (
+      <ins
+        key={index}
+        className="rounded-xs bg-success/25 text-primary no-underline dark:bg-success/40"
+      >
+        {part.text}
+      </ins>
+    ),
   )
 }

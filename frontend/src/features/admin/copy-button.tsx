@@ -36,7 +36,16 @@ export async function copyText(value: string): Promise<boolean> {
 }
 
 /** An icon button that copies `value` ("Copy redirect URI"), with a short "Copied" check. */
-export function CopyButton({ value, label }: { value: string; label: string }) {
+export function CopyButton({
+  value,
+  label,
+  onCopied,
+}: {
+  value: string
+  label: string
+  /** After a successful copy (the new-key dialog notes that the key was copied). */
+  onCopied?: (value: string) => void
+}) {
   const [copied, setCopied] = useState(false)
   const timer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(timer.current), [])
@@ -55,6 +64,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
               return
             }
             setCopied(true)
+            onCopied?.(value)
             window.clearTimeout(timer.current)
             timer.current = window.setTimeout(() => setCopied(false), 1500)
           })

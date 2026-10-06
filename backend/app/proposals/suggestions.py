@@ -31,7 +31,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import Rule, can, require
+from app.authz import Rule, authorize, can, require
 from app.domain.principal import Principal
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
@@ -186,10 +186,14 @@ async def create_suggestion(
     channel: SuggestionSource,
 ) -> CreatedSuggestion:
     """``proposal.suggest_section`` (c7). ``loaded`` must hold the idea's ``FOR UPDATE``
-    lock (``load_idea(..., for_update=True)``). 404 without a proposal; 422 for a
-    ``base_version`` above the section's; 409 ``too_many_suggestions`` past 50 pending."""
+    lock (``load_idea(..., for_update=True)``). 404 without a proposal; 403 for a role
+    that may not suggest; 422 for a ``base_version`` above the section's; then the
+    policy's 409s (c7, archived; the contract's check order puts them after the body's
+    422) and 409 ``too_many_suggestions`` past 50 pending."""
     proposal = await require_proposal(db, loaded)
-    require(principal, Rule.PROPOSAL_SUGGEST_SECTION, loaded.resource)
+    decision = authorize(principal, Rule.PROPOSAL_SUGGEST_SECTION, loaded.resource)
+    if not decision.allowed and decision.status != 409:
+        raise decision.problem()
     current = await db.scalar(
         select(SectionRow.version).where(
             SectionRow.proposal_id == proposal.id, SectionRow.key == body.section_key
@@ -200,6 +204,8 @@ async def create_suggestion(
     base_version = current if body.base_version is None else body.base_version
     if base_version > current:
         raise BaseVersionAheadProblem
+    if not decision.allowed:
+        raise decision.problem()
     now = utcnow()
     replaced_id = await db.scalar(
         update(SuggestionRow)

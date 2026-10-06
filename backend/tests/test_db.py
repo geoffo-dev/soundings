@@ -120,3 +120,20 @@ async def test_session_scope_rolls_back_on_error(widgets: AsyncEngine) -> None:
 
 def test_naming_convention_is_applied() -> None:
     assert ScratchBase.metadata.tables["test_widget"].primary_key.name == "pk_test_widget"
+
+
+async def test_database_errors_never_carry_bound_parameters(app: FastAPI) -> None:
+    """Review nit: a failing statement's message (logged with the traceback) names its
+    parameters' placeholders, never their values, which may be people's text."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+
+    secret = "Zebra-7731-personal-detail"
+    with pytest.raises(DBAPIError) as raised:
+        async with session_scope(app.state.sessionmaker) as db:
+            await db.execute(
+                text("SELECT 1 / (length(:secret) - length(:secret))"), {"secret": secret}
+            )
+
+    assert "division by zero" in str(raised.value)
+    assert secret not in str(raised.value)

@@ -22,9 +22,11 @@ const toast = (page: Page, text: string | RegExp) =>
 
 const CAROL_SUMMARY_END = 'about **£48,000 a month** at 2,000 boxes.'
 
+const proposalTab = (page: Page) => page.getByRole('tab', { name: /^Proposal/ })
+
 async function openProposal(page: Page) {
   await page.goto('/ideas/CUST-3?tab=proposal')
-  await expect(page.getByRole('tab', { name: 'Proposal', selected: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /^Proposal/, selected: true })).toBeVisible()
   await expect(page.getByTestId('proposal-editor')).toBeVisible()
 }
 
@@ -52,20 +54,29 @@ test('shows pending suggestions by their section, with who, how and what they ch
 }) => {
   await openProposal(page)
   await expect(page.getByRole('button', { name: /^4 suggestions/ })).toBeVisible()
+  // The owner sees what waits for them on the tab itself.
+  await expect(proposalTab(page)).toHaveAccessibleName(/^Proposal\s*, 4 suggestions to decide on$/)
   const outline = page.getByRole('navigation', { name: 'Outline' })
   await expect(outline.getByRole('link', { name: /^Summary.*2 suggestions/ })).toBeVisible()
 
   const summary = section(page, '1. Summary')
   await expect(summary.getByRole('heading', { name: '2 suggestions for Summary' })).toBeVisible()
   const carol = card(page, 'Carol Díaz')
-  await expect(carol).toContainText('via MCP')
+  await expect(carol).toContainText('via assistant')
+  // Each card's scroll area says whose and which section it is.
+  await expect(
+    carol.getByRole('region', { name: 'Carol Díaz’s suggested changes to Summary' }),
+  ).toBeVisible()
   // The diff names what goes and what comes, not by colour alone.
   await expect(carol.getByText('Removed:').first()).toBeAttached()
   await expect(carol.getByText('Added:').first()).toBeAttached()
   await expect(carol).toContainText('6 points')
   const agent = card(page, 'Research agent').first()
-  // The AI badge ("AI", read as "AI agent").
+  // The AI badge ("AI", read as "AI agent"), and a reminder to check its facts.
   await expect(agent).toContainText('AI agent')
+  await expect(agent).toContainText('check the facts')
+  // An edited line shows which words changed, not just a whole new paragraph.
+  await expect(carol.locator('ins').first()).toBeAttached()
 
   // Switch to the suggested text, rendered as Markdown.
   await carol.getByRole('radio', { name: 'Suggested text' }).click()
@@ -130,12 +141,14 @@ test('discarding hides it at once, with Undo; the request goes when the toast cl
     .getByRole('button', { name: 'Undo' })
     .click()
   await expect(benefits.getByRole('article')).toHaveCount(1)
+  // Undo brings the card back with focus on it.
+  await expect(benefits.getByRole('article')).toBeFocused()
   expect(await pendingIds(page)).toHaveLength(4)
 
   await discard()
   await expect(benefits.getByRole('article')).toHaveCount(0)
-  // Focus lands on the section's text (no other suggestion there).
-  await expect(page.getByRole('textbox', { name: 'Benefits / revenue' })).toBeFocused()
+  // Like a queue: none after it, so focus goes to the first one still waiting (Summary).
+  await expect(card(page, 'Carol Díaz')).toBeFocused()
   // The toast closes by itself after 6 s; then the discard is sent.
   expect(await pendingIds(page)).toHaveLength(4)
   await expect.poll(() => pendingIds(page), { timeout: 15_000 }).toHaveLength(3)
@@ -174,6 +187,27 @@ test('a section saved meanwhile: the card says so, compares with that text, Acce
   expect(after.version).toBe(version + 2)
   expect(after.body).toContain(CAROL_SUMMARY_END)
   await expect(page.getByRole('textbox', { name: 'Summary' })).toHaveValue(after.body)
+})
+
+test('typing just before Accept: the autosave goes first, no question, Undo brings it back', async ({
+  page,
+}) => {
+  await openProposal(page)
+  const summary = page.getByRole('textbox', { name: 'Summary' })
+  await summary.fill('Typed a moment ago.')
+  // Accept straight away, while the autosave still waits.
+  await card(page, 'Carol Díaz')
+    .getByRole('button', { name: 'Accept: Carol Díaz’s suggestion for Summary' })
+    .click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  await expect(toast(page, 'Carol Díaz’s suggestion accepted')).toBeVisible()
+  expect((await storedSection(page, 'summary')).body).toContain(CAROL_SUMMARY_END)
+  await toast(page, 'Carol Díaz’s suggestion accepted')
+    .getByRole('button', { name: 'Undo' })
+    .click()
+  await expect
+    .poll(async () => (await storedSection(page, 'summary')).body)
+    .toBe('Typed a moment ago.')
 })
 
 test('unsaved edits in the section: accepting asks first', async ({ page }) => {
@@ -222,10 +256,13 @@ test.describe('as Carol (a member)', () => {
 
   test('sees what is waiting, her own as "You", but can’t decide', async ({ page }) => {
     await openProposal(page)
-    await expect(card(page, 'You')).toContainText('via MCP')
+    await expect(card(page, 'You')).toContainText('via assistant')
     await expect(card(page, 'Research agent').first()).toBeVisible()
     await expect(page.getByRole('button', { name: /^Accept/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Discard/ })).toHaveCount(0)
+    // Who decides, and no count on the tab: nothing waits for her.
+    await expect(card(page, 'You')).toContainText('Alice Anders decides whether to use it.')
+    await expect(proposalTab(page)).toHaveAccessibleName('Proposal')
   })
 })
 
@@ -236,6 +273,10 @@ test.describe('as a viewer (Emma)', () => {
     await openProposal(page)
     await expect(card(page, 'Carol Díaz')).toBeVisible()
     await expect(page.getByRole('button', { name: /^Accept/ })).toHaveCount(0)
+    // Readers get the proposed text first, not a raw-Markdown diff.
+    await expect(
+      card(page, 'Carol Díaz').getByRole('radio', { name: 'Suggested text' }),
+    ).toBeChecked()
   })
 })
 
@@ -267,6 +308,8 @@ test.describe('on a phone', () => {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)
+    // The jump button says what the number is.
+    await expect(page.getByRole('button', { name: /^4 suggestions/ })).toContainText('4 to review')
     await agent
       .getByRole('button', { name: 'Accept: Research agent’s suggestion for Summary' })
       .tap()

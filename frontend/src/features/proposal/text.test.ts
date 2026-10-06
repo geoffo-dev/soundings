@@ -6,6 +6,7 @@ import {
   hasContent,
   markdownExcerpt,
   suggestionDiff,
+  wordDiff,
   wordLabel,
 } from './text'
 
@@ -89,5 +90,49 @@ describe('suggestionDiff', () => {
       { kind: 'added', text: 'More' },
     ])
     expect(suggestionDiff('Same', 'Same')).toEqual([])
+  })
+
+  it('points at the words that changed inside an edited line', () => {
+    const lines = suggestionDiff(
+      'Add a Starter tier for teams of up to ten people.',
+      'Add a monthly Starter tier for teams of two to ten people.',
+    )
+    expect(lines).toEqual([
+      {
+        kind: 'removed',
+        text: 'Add a Starter tier for teams of up to ten people.',
+        parts: [
+          { text: 'Add a Starter tier for teams of ', changed: false },
+          { text: 'up', changed: true },
+          { text: ' to ten people.', changed: false },
+        ],
+      },
+      {
+        kind: 'added',
+        text: 'Add a monthly Starter tier for teams of two to ten people.',
+        parts: [
+          { text: 'Add a ', changed: false },
+          { text: 'monthly ', changed: true },
+          { text: 'Starter tier for teams of ', changed: false },
+          { text: 'two', changed: true },
+          { text: ' to ten people.', changed: false },
+        ],
+      },
+    ])
+  })
+
+  it('leaves lines with nothing in common whole, and pairs lines in order', () => {
+    expect(wordDiff('alpha beta', 'gamma delta')).toBeUndefined()
+    const lines = suggestionDiff('one two\nthree four', 'one 2\nthree 4\nfive')
+    const parts = lines.map((line) => ('parts' in line ? line.parts?.length : undefined))
+    expect(lines.map((line) => line.kind)).toEqual([
+      'removed',
+      'removed',
+      'added',
+      'added',
+      'added',
+    ])
+    // one two → one 2, three four → three 4; "five" is new as a whole.
+    expect(parts).toEqual([2, 2, 2, 2, undefined])
   })
 })

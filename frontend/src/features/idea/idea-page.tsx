@@ -10,6 +10,7 @@ import {
   useVolunteerAsOwner,
 } from '@/api/ideas'
 import { useMarkIdeaNotificationsRead } from '@/api/notifications'
+import { useProposalSuggestions } from '@/api/proposals'
 import { useProject } from '@/api/projects'
 import type { IdeaDetail, IdeaSummary } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
@@ -211,6 +212,12 @@ function LoadedIdeaPage({
     )
 
   const { submitted, total } = idea.evaluator_progress
+  const pendingSuggestions = usePendingSuggestionCount(
+    ideaKey,
+    idea,
+    me.id,
+    project?.permissions.can_manage,
+  )
 
   return (
     <IdeaPageProvider value={page}>
@@ -253,7 +260,18 @@ function LoadedIdeaPage({
                     </>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="proposal">Proposal</TabsTrigger>
+                <TabsTrigger value="proposal">
+                  Proposal
+                  {pendingSuggestions > 0 && (
+                    <>
+                      <CountBadge aria-hidden="true">{pendingSuggestions}</CountBadge>
+                      <span className="sr-only">
+                        , {pendingSuggestions}{' '}
+                        {pendingSuggestions === 1 ? 'suggestion' : 'suggestions'} to decide on
+                      </span>
+                    </>
+                  )}
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="overview" className="flex flex-col gap-10">
                 <DescriptionSection />
@@ -469,4 +487,24 @@ export function IdeaNotFound() {
       }
     />
   )
+}
+
+/**
+ * Pending proposal suggestions for whoever decides on them (contract-phase5
+ * §3.4: the owner and admins, while the idea is Shortlisted or in Proposal), for
+ * the Proposal tab's count: an assistant's suggestion shouldn't sit unseen.
+ * Asked only of people who may decide; 0 for everyone else, and while the idea
+ * has no proposal (the list is 404 then).
+ */
+function usePendingSuggestionCount(
+  ideaKey: string,
+  idea: IdeaDetail,
+  meId: string,
+  managesProject: boolean | undefined,
+): number {
+  const open = idea.status === 'shortlisted' || idea.status === 'proposal'
+  const mayDecide = open && (idea.owner?.id === meId || managesProject === true)
+  const suggestions = useProposalSuggestions(ideaKey, { enabled: mayDecide })
+  const data = suggestions.data
+  return mayDecide && data?.permissions.can_decide ? data.items.length : 0
 }

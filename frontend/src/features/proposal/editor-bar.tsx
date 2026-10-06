@@ -92,6 +92,8 @@ function SuggestionsJump() {
     >
       <GitCompareArrows />
       {all.length}
+      {/* Phones have less room: still a word, so "⇆ 3" doesn't have to be guessed. */}
+      <span className="sm:hidden"> to review</span>
       <span className="hidden sm:inline">{all.length === 1 ? ' suggestion' : ' suggestions'}</span>
     </Button>
   )

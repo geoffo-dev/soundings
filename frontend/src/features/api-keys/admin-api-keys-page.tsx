@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 
 import { useAdminUserName } from '@/api/admin'
 import {
+  containsKeySecret,
   containsWholeKey,
   keySearchTerm,
   useAdminApiKeys,
@@ -11,7 +12,6 @@ import {
 } from '@/api/api-keys'
 import type { AdminApiKey } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandList } from '@/components/ui/command'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -63,8 +63,8 @@ export function AdminApiKeysPage({
   const searchRef = useRef<HTMLInputElement>(null)
   useShortcut('focusFilters', () => searchRef.current?.focus())
   const owner = useAdminUserName(search.user_id)
-  // A whole key was pasted: say that only its prefix was searched (until the next search).
-  const [cutKey, setCutKey] = useState(false)
+  // A key was pasted: say that only its prefix was searched (until the next search).
+  const [cutKey, setCutKey] = useState<'whole' | 'part' | null>(null)
 
   return (
     <>
@@ -79,9 +79,17 @@ export function AdminApiKeysPage({
       >
         <SearchField
           value={search.q}
-          // A pasted whole key never reaches the URL or the API: only its prefix.
+          // A pasted key, whole or in part, never reaches the URL or the API: only its prefix.
           onChange={(q) => {
-            setCutKey(q !== undefined && containsWholeKey(q))
+            setCutKey(
+              q === undefined
+                ? null
+                : containsWholeKey(q)
+                  ? 'whole'
+                  : containsKeySecret(q)
+                    ? 'part'
+                    : null,
+            )
             onSearchChange({ q: q === undefined ? undefined : keySearchTerm(q) })
           }}
           label="Search API keys"
@@ -106,17 +114,13 @@ export function AdminApiKeysPage({
                         key={state}
                         value={state}
                         checked={search.state === state}
+                        description={STATE_LABELS[state].description}
                         onSelect={() => {
                           onSearchChange({ state: search.state === state ? undefined : state })
                           close()
                         }}
                       >
-                        <span className="flex flex-col">
-                          <span>{STATE_LABELS[state].label}</span>
-                          <span className="text-xs text-muted">
-                            {STATE_LABELS[state].description}
-                          </span>
-                        </span>
+                        {STATE_LABELS[state].label}
                       </FilterMenuOption>
                     ))}
                   </CommandGroup>
@@ -136,8 +140,9 @@ export function AdminApiKeysPage({
       </div>
       {cutKey && search.q && (
         <p role="status" className="-mt-2 text-sm text-muted">
-          You pasted a whole key: only its prefix, <code className="font-mono">{search.q}</code>,
-          was searched. The secret part never left this page.
+          {cutKey === 'whole' ? 'You pasted a whole key' : 'That’s part of a key'}: only its prefix,{' '}
+          <code className="font-mono">{search.q}</code>, was searched. The secret part never left
+          this page.
         </p>
       )}
       <KeysList
@@ -163,9 +168,10 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
     revoke.mutate(revoking.id, {
       onSuccess: () => {
         setRevoking(null)
-        toast.success(`${owner.display_name}’s key “${name}” revoked`, {
-          description: 'It stopped working immediately.',
-        })
+        toast.success(
+          `${owner.display_name}’s key “${name}” ${revoking.state === 'expired' ? 'removed' : 'revoked'}`,
+          revoking.state === 'expired' ? {} : { description: 'It stopped working immediately.' },
+        )
         focusWhenRendered(
           () =>
             (next &&
@@ -260,8 +266,8 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
           <TableHeader>
             <TableRow>
               <TableHead>Key and owner</TableHead>
-              <TableHead className="w-48">Scopes</TableHead>
-              <TableHead className="w-44">Projects</TableHead>
+              <TableHead className="w-40">Scopes</TableHead>
+              <TableHead className="w-36">Projects</TableHead>
               <TableHead className="w-28">Last used</TableHead>
               <TableHead className="w-28">Expires</TableHead>
               <TableHead className="w-20">
@@ -291,6 +297,7 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
       <RevokeKeyDialog
         apiKey={revoking}
         ownerName={revoking?.owner.display_name}
+        ownerIsAgent={revoking?.owner_is_service_account}
         pending={revoke.isPending}
         onCancel={() => setRevoking(null)}
         onConfirm={confirm}
@@ -302,7 +309,12 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
 function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => void }) {
   const owner = apiKey.owner
   const agent = apiKey.owner_is_service_account
+  const expired = apiKey.state === 'expired'
   const createdBySomeoneElse = apiKey.created_by && apiKey.created_by.id !== owner.id
+  const created =
+    createdBySomeoneElse && apiKey.created_by
+      ? `Created by ${apiKey.created_by.display_name}, ${formatDateTime(apiKey.created_at)}`
+      : `Created ${formatDateTime(apiKey.created_at)}`
   return (
     <TableRow className="@3xl:h-15">
       <TableCell primary className="min-w-0">
@@ -319,11 +331,19 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => voi
             {...{ [ROW_ID_ATTRIBUTE]: apiKey.id }}
             className="flex min-w-0 flex-col gap-0.5 rounded-sm outline-offset-2"
           >
+            {/* The key name gives way; the prefix stays whole (it finds a leaked key). */}
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate font-medium text-primary">{apiKey.name}</span>
-              {apiKey.state === 'dormant' && <KeyStateBadge state="dormant" audience="admin" />}
+              <span
+                className={cn('truncate font-medium', expired ? 'text-secondary' : 'text-primary')}
+              >
+                {apiKey.name}
+              </span>
+              <WithTooltip content={created}>
+                <code className="shrink-0 font-mono text-xs text-muted">{apiKey.prefix}</code>
+              </WithTooltip>
             </span>
-            <span className="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-muted">
+            {/* The owner's line (the avatar marks an AI agent); "Dormant" is about them. */}
+            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
               <Link
                 to="/settings/users/$userId"
                 params={{ userId: owner.id }}
@@ -331,25 +351,15 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => voi
                 className="min-w-0 truncate text-secondary hover:text-primary hover:underline"
               >
                 {owner.display_name}
+                {agent && <span className="sr-only"> (AI agent)</span>}
               </Link>
-              {agent && (
-                <Badge variant="accent" className="h-4 shrink-0 px-1">
-                  AI agent
-                </Badge>
-              )}
-              <span aria-hidden="true" className="shrink-0">
-                ·
-              </span>
-              {/* The prefix stays whole (it finds a leaked key); a long name gives way. */}
-              <code className="shrink-0 font-mono">{apiKey.prefix}</code>
+              {apiKey.state === 'dormant' && <KeyStateBadge state="dormant" audience="admin" />}
             </span>
-            <span className="truncate text-xs text-muted">
+            <span className="sr-only">
               {createdBySomeoneElse && apiKey.created_by
                 ? `Created by ${apiKey.created_by.display_name}, `
                 : 'Created '}
-              <WithTooltip content={formatDateTime(apiKey.created_at)}>
-                <time dateTime={apiKey.created_at}>{formatShortDate(apiKey.created_at)}</time>
-              </WithTooltip>
+              {formatShortDate(apiKey.created_at)}
             </span>
           </div>
         </div>
@@ -371,10 +381,10 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: AdminApiKey; onRevoke: () => voi
           variant="ghost"
           size="sm"
           className="@max-3xl:-ml-2.5"
-          aria-label={`Revoke ${owner.display_name}’s key ${apiKey.name}`}
+          aria-label={`${expired ? 'Remove' : 'Revoke'} ${owner.display_name}’s key ${apiKey.name}`}
           onClick={onRevoke}
         >
-          Revoke
+          {expired ? 'Remove' : 'Revoke'}
         </Button>
       </TableCell>
     </TableRow>

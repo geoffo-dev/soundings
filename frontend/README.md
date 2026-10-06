@@ -62,32 +62,32 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
 
 ### Routes
 
-| URL                                                                       | Route file                                                                              | Renders                                                                               | Owner            |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------- |
-| `/login?next=&error=&signed_out=1&expired=1`                              | `routes/login.tsx`                                                                      | `features/auth/login-page`                                                            | frontend-access  |
-| `/`                                                                       | `routes/_app/index.tsx`                                                                 | `features/work/my-work-page`                                                          | foundation       |
-| `/p/$slug?view=board\|list&status=…`                                      | `routes/_app/p.$slug.tsx` (layout: loads the project, 404, crumb) + `p.$slug.index.tsx` | `features/project/project-page`                                                       | frontend-project |
-| `/p/$slug/settings`                                                       | `routes/_app/p.$slug.settings.tsx`                                                      | `features/project/project-settings-page`                                              | frontend-project |
-| `/ideas/$ideaKey?tab=overview\|evaluations\|proposal&evaluate=1`          | `routes/_app/ideas.$ideaKey.tsx`                                                        | `features/idea/idea-page`                                                             | frontend-idea    |
-| `/settings`                                                               | `routes/_app/settings.tsx` (layout, crumb) + `settings.index.tsx`                       | `features/settings/settings-page`                                                     | foundation       |
-| `/settings/users?q=&status=&admins=1&unlinked=1` (+ `/$userId` sheet)     | `routes/_app/settings._admin.users.tsx`, `settings._admin.users.$userId.tsx`            | `features/admin/users/*`                                                              | frontend-admin   |
-| `/settings/groups`, `/settings/groups/$groupId`                           | `routes/_app/settings._admin.groups.index.tsx`, `settings._admin.groups.$groupId.tsx`   | `features/admin/groups/*`                                                             | frontend-admin   |
-| `/settings/sso`                                                           | `routes/_app/settings._admin.sso.tsx`                                                   | `features/admin/sso/sso-page`                                                         | frontend-admin   |
-| `/settings/audit?actor=&action=&project=&from=&to=&target=`               | `routes/_app/settings._admin.audit.tsx`                                                 | `features/admin/audit/*`                                                              | frontend-admin   |
-| `/settings/email?status=failed,queued\|all&type=`                         | `routes/_app/settings._admin.email.tsx`                                                 | `features/admin/email/email-page`                                                     | frontend (P3)    |
-| `/settings/notifications`                                                 | `routes/_app/settings.notifications.tsx`                                                | `features/notifications/preferences-page`                                             | frontend (P3)    |
-| `/notifications?unread=1`                                                 | `routes/_app/notifications.tsx`                                                         | `features/notifications/notifications-page`                                           | frontend (P3)    |
-| `/unsubscribe?token=` (public, no sign-in)                                | `routes/unsubscribe.tsx`                                                                | `features/notifications/unsubscribe-page`                                             | frontend (P3)    |
-| `/$slug/submit` (public, no sign-in, project branding)                    | `routes/$slug.submit.tsx`                                                               | `features/public/submit-page`                                                         | frontend (P4)    |
-| `/track#<token>` (public; the token stays in the fragment)                | `routes/track.tsx`                                                                      | `features/public/track-page`                                                          | frontend (P4)    |
-| `/verify#<token>` (public; posts only on the Confirm click)               | `routes/verify.tsx`                                                                     | `features/public/verify-page`                                                         | frontend (P4)    |
-| `/$slug/verify#<token>` (as emails link it: the project's branding first) | `routes/$slug.verify.tsx`                                                               | `features/public/verify-page`                                                         | frontend (P4)    |
-| `/p/$slug/review` (project admins: the moderation queue)                  | `routes/_app/p.$slug.review.tsx`                                                        | `features/moderation/moderation-page`                                                 | frontend (P4)    |
-| `/p/$slug/settings?tab=public-form\|branding` (project admins)            | `routes/_app/p.$slug.settings.tsx`                                                      | `features/public/public-form-settings`, `features/branding/project-branding-settings` | frontend (P4)    |
-| `/settings/branding` (platform admins)                                    | `routes/_app/settings._admin.branding.tsx`                                              | `features/branding/global-branding-page`                                              | frontend (P4)    |
-| `/settings/api-keys` (everyone: your keys, "Connect an MCP client")       | `routes/_app/settings.api-keys.tsx`                                                     | `features/api-keys/api-keys-page`                                                     | frontend         |
-| `/settings/all-api-keys?q=&state=&user_id=` (platform admins)             | `routes/_app/settings._admin.all-api-keys.tsx`                                          | `features/api-keys/admin-api-keys-page`                                               | frontend         |
-| `/design`                                                                 | `routes/design.tsx`                                                                     | `features/design` (dev only)                                                          | —                |
+| URL                                                                            | Route file                                                                              | Renders                                                                               | Owner            |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------- |
+| `/login?next=&error=&signed_out=1&expired=1`                                   | `routes/login.tsx`                                                                      | `features/auth/login-page`                                                            | frontend-access  |
+| `/`                                                                            | `routes/_app/index.tsx`                                                                 | `features/work/my-work-page`                                                          | foundation       |
+| `/p/$slug?view=board\|list&status=…`                                           | `routes/_app/p.$slug.tsx` (layout: loads the project, 404, crumb) + `p.$slug.index.tsx` | `features/project/project-page`                                                       | frontend-project |
+| `/p/$slug/settings`                                                            | `routes/_app/p.$slug.settings.tsx`                                                      | `features/project/project-settings-page`                                              | frontend-project |
+| `/ideas/$ideaKey?tab=overview\|evaluations\|proposal&evaluate=1`               | `routes/_app/ideas.$ideaKey.tsx`                                                        | `features/idea/idea-page`                                                             | frontend-idea    |
+| `/settings`                                                                    | `routes/_app/settings.tsx` (layout, crumb) + `settings.index.tsx`                       | `features/settings/settings-page`                                                     | foundation       |
+| `/settings/users?q=&status=&admins=1&unlinked=1` (+ `/$userId` sheet)          | `routes/_app/settings._admin.users.tsx`, `settings._admin.users.$userId.tsx`            | `features/admin/users/*`                                                              | frontend-admin   |
+| `/settings/groups`, `/settings/groups/$groupId`                                | `routes/_app/settings._admin.groups.index.tsx`, `settings._admin.groups.$groupId.tsx`   | `features/admin/groups/*`                                                             | frontend-admin   |
+| `/settings/sso`                                                                | `routes/_app/settings._admin.sso.tsx`                                                   | `features/admin/sso/sso-page`                                                         | frontend-admin   |
+| `/settings/audit?actor=&action=&project=&from=&to=&target=`                    | `routes/_app/settings._admin.audit.tsx`                                                 | `features/admin/audit/*`                                                              | frontend-admin   |
+| `/settings/email?status=failed,queued\|all&type=`                              | `routes/_app/settings._admin.email.tsx`                                                 | `features/admin/email/email-page`                                                     | frontend (P3)    |
+| `/settings/notifications`                                                      | `routes/_app/settings.notifications.tsx`                                                | `features/notifications/preferences-page`                                             | frontend (P3)    |
+| `/notifications?unread=1`                                                      | `routes/_app/notifications.tsx`                                                         | `features/notifications/notifications-page`                                           | frontend (P3)    |
+| `/unsubscribe?token=` (public, no sign-in)                                     | `routes/unsubscribe.tsx`                                                                | `features/notifications/unsubscribe-page`                                             | frontend (P3)    |
+| `/$slug/submit` (public, no sign-in, project branding)                         | `routes/$slug.submit.tsx`                                                               | `features/public/submit-page`                                                         | frontend (P4)    |
+| `/track#<token>` (public; the token stays in the fragment)                     | `routes/track.tsx`                                                                      | `features/public/track-page`                                                          | frontend (P4)    |
+| `/verify#<token>` (public; posts only on the Confirm click)                    | `routes/verify.tsx`                                                                     | `features/public/verify-page`                                                         | frontend (P4)    |
+| `/$slug/verify#<token>` (as emails link it: the project's branding first)      | `routes/$slug.verify.tsx`                                                               | `features/public/verify-page`                                                         | frontend (P4)    |
+| `/p/$slug/review` (project admins: the moderation queue)                       | `routes/_app/p.$slug.review.tsx`                                                        | `features/moderation/moderation-page`                                                 | frontend (P4)    |
+| `/p/$slug/settings?tab=public-form\|branding` (project admins)                 | `routes/_app/p.$slug.settings.tsx`                                                      | `features/public/public-form-settings`, `features/branding/project-branding-settings` | frontend (P4)    |
+| `/settings/branding` (platform admins)                                         | `routes/_app/settings._admin.branding.tsx`                                              | `features/branding/global-branding-page`                                              | frontend (P4)    |
+| `/settings/api-keys` (everyone: your keys, "For developers and AI assistants") | `routes/_app/settings.api-keys.tsx`                                                     | `features/api-keys/api-keys-page`                                                     | frontend         |
+| `/settings/all-api-keys?q=&state=&user_id=` (platform admins)                  | `routes/_app/settings._admin.all-api-keys.tsx`                                          | `features/api-keys/admin-api-keys-page`                                               | frontend         |
+| `/design`                                                                      | `routes/design.tsx`                                                                     | `features/design` (dev only)                                                          | —                |
 
 - **Admin settings** (`settings._admin.tsx`, platform admins): its `beforeLoad` throws `notFound()`
   for anyone else (the ordinary 404, no admin request sent); admin crumbs come from loaders so
@@ -104,18 +104,27 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   `mcp-remote` with a header file, as `docs/mcp.md`) / curl with the key filled in; code blocks
   wrap long lines instead of scrolling; it never goes into a toast, URL, storage or draft, and the create mutation is `reset()`
   once the dialog has closed, so the secret leaves React Query's cache), Revoke (confirmed: no
-  undo) and "Connect an MCP client" (`connect-mcp`, `snippets.ts`). Admin settings → All API keys
-  (`admin-api-keys-page`): every key with its owner (AI badge for service accounts), a state
-  filter, `?user_id=` (linked from a user's sheet and the "Sign out everywhere" confirmation), and
-  search where a pasted whole key is cut to its prefix (`keySearchTerm` in `api/api-keys.ts`)
-  before it reaches the URL or a request.
+  undo; an expired key is "Remove"d) and "For developers and AI assistants" (`connect-mcp`,
+  `snippets.ts`; folded until opened). What a key can do is said in plain words everywhere
+  (`accessLabel` / `accessSummary` in `key-rules.ts`): the list's "Can" column, a live "This key
+  can …" line above the create dialog's buttons, and "Treat it like a password: anyone who has it
+  can act as you: …" on the new key. The new-key dialog's "I've copied it" (or Esc, ×) asks once
+  when nothing with the key was copied. Within 7 days of its expiry a key says "in 3 days" in a
+  warning tone. Admin settings → All API keys (`admin-api-keys-page`): every key with its owner
+  (the avatar marks an agent), a state filter, `?user_id=` (linked from a user's sheet and the
+  "Sign out everywhere" confirmation), and search where a pasted key, whole or in part, is cut to
+  its prefix (`keySearchTerm` in `api/api-keys.ts`) before it reaches the URL or a request.
 - **Proposal suggestions (Phase 5, contract-phase5 §3.4):** `features/proposal/suggestions.tsx`
   shows each section's pending suggestions under its text (author, AI badge for `source: ai`,
-  "via MCP", when, a line diff or the suggested text, "the section has changed since"), with
-  Accept (a versioned save from the version on screen; asks first over unsaved edits; a 409
+  "via assistant" for `mcp`, when, a line diff with the changed words marked (`wordDiff` in
+  `text.ts`) or the suggested text, "the section has changed since"), with Accept (a waiting
+  autosave goes first, `store.settle`; asks only over text that couldn't be saved; a 409
   `proposal_conflict` shows the saved text and offers "Accept anyway"; Undo puts the old text
-  back) and Discard (deferred, with Undo) for the owner and admins. The editor bar has "N
-  suggestions" (jumps to the first) and the outline counts them per section.
+  back) and Discard (deferred, with Undo, which focuses the card again) for the owner and admins;
+  focus then moves to the next pending suggestion in template order. Everyone else reads the
+  suggested text first and "⟨Owner⟩ decides whether to use it". The editor bar has "N
+  suggestions" (jumps to the first), the outline counts them per section, and the idea page's
+  Proposal tab shows the count to whoever may decide.
 - **Notifications (Phase 3):** the bell in the top bar (`features/notifications/notification-bell`)
   polls `GET /me/notifications/summary` about once a minute while the tab is visible and on
   focus (the poll doesn't keep the session alive; a 401 is handled like any other); a popover on
@@ -345,10 +354,11 @@ backend and its tests are.
   public submission off for the instance. With mock latency on, a PDF export takes 1.2 s.
 - **Phase 5 fixtures** (`phase5-fixtures.ts`; rules in `api-keys.ts`, `suggestions.ts`; handlers
   `handlers/api-keys.ts`, `handlers/suggestions.ts`): **Alice** has three keys ("Claude Desktop":
-  read, evaluate, mcp, Customer Innovation only; "Weekly report script"; "Old laptop", expired);
+  read, evaluate, mcp, Customer Innovation only; "Weekly report script", expiring in 3 days;
+  "Old laptop", expired);
   Priya, Bob, **Mateo Rossi** (hasn't signed in for 41 days: his key is `dormant`) and the
   **Research agent** (a service account; its key was created by Priya) have one each. **CUST-3**'s
-  proposal has four pending suggestions: Summary from Carol (via MCP) and the Research agent (AI),
+  proposal has four pending suggestions: Summary from Carol (via an assistant, MCP) and the Research agent (AI),
   Problem from Bob (against an older version) and Benefits / revenue from the Research agent. The
   audit log has key and `mcp.call` entries. Deactivating a user revokes their keys; the
   break-glass account can't create one (c20).

@@ -87,13 +87,13 @@ test.describe('AC5-01: the SPEC acceptance in the browser', () => {
     const { inside, outside, ideaIn, ideaOut } = await twoProjects(alice, await api('bob'))
     const name = `Claude Desktop ${uniqueSuffix()}`
 
-    // 1. Carol creates "Claude Desktop" (AI evaluator: read, evaluate, mcp) for one project.
+    // 1. Carol creates "Claude Desktop" (Evaluate with an assistant: read, evaluate, mcp) for one project.
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await signIn(page, 'carol')
     await openKeys(page)
     const created = await createInUi(page, {
       name,
-      preset: 'AI evaluator',
+      preset: 'Evaluate with an assistant',
       project: inside.name,
       expiry: '30 days',
     })
@@ -106,10 +106,11 @@ test.describe('AC5-01: the SPEC acceptance in the browser', () => {
     await expect(reveal).toContainText('you won’t see it again')
     await expect(reveal.getByRole('button', { name: 'Copy key' })).toBeFocused()
     await reveal.getByRole('button', { name: 'Copy key' }).click()
-    await expect(reveal.getByText('Copied')).toBeVisible()
+    await expect(reveal.getByText('Copied', { exact: true })).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(created.secret)
     await expect(reveal.locator('pre')).toContainText(`Bearer ${created.secret}`)
-    await reveal.getByRole('button', { name: 'Done' }).click()
+    // Copied, so "I've copied it" closes at once.
+    await reveal.getByRole('button', { name: 'I’ve copied it' }).click()
     await expect(reveal).toHaveCount(0)
 
     // Never again: the row shows the prefix, has focus, and the secret is gone from the
@@ -278,10 +279,12 @@ test('AK-01: a name you already use (any case) is refused on the field; free aga
   await openKeys(page)
   const again = await createInUi(page, { name: name.toUpperCase(), preset: 'Read only' })
   expect(again.secret).not.toBe(first.secret)
-  await page
-    .getByRole('dialog', { name: 'Copy your new key' })
-    .getByRole('button', { name: 'Done' })
-    .click()
+  // Never copied: closing asks once.
+  const reveal = page.getByRole('dialog', { name: 'Copy your new key' })
+  await reveal.getByRole('button', { name: 'I’ve copied it' }).click()
+  await expect(reveal.getByRole('alert')).toContainText('You haven’t copied the key')
+  await reveal.getByRole('button', { name: 'Close without copying' }).click()
+  await expect(reveal).toHaveCount(0)
   await expect(keyRow(page, name.toUpperCase())).toContainText('All projects')
   await me.revokeApiKey(again.id)
 })
@@ -445,8 +448,12 @@ test('AK-05: the break-glass account can’t create keys (c20)', async ({ page }
   expect(signedIn.status()).toBe(200)
   try {
     await openKeys(page)
-    await expect(page.getByText('The break-glass account can’t create API keys')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Create key' })).toBeDisabled()
+    // One explanation, and no button to press.
+    await expect(
+      page.getByRole('heading', { name: 'No API keys for the break-glass account' }),
+    ).toBeVisible()
+    await expect(page.getByText('Sign in with your own account to create keys.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Create key' })).toHaveCount(0)
     const { cookies } = await page.context().storageState()
     const csrf = cookies.find((cookie) => /soundings_csrf$/.test(cookie.name))?.value ?? ''
     const refused = await page.request.post('/api/v1/me/api-keys', {

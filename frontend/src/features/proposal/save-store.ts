@@ -42,6 +42,7 @@ export const AUTOSAVE_DELAY_MS = 800
 export class ProposalSaveStore {
   private sections = new Map<ProposalSectionKey, SectionSaveState>()
   private timers = new Map<ProposalSectionKey, ReturnType<typeof setTimeout>>()
+  private inflight = new Map<ProposalSectionKey, Promise<void>>()
   private listeners = new Set<() => void>()
   private version = 0
   private disposed = false
@@ -133,8 +134,23 @@ export class ProposalSaveStore {
     }
     const text = current.draft
     this.set(key, { status: 'saving', error: null })
+    const done = this.send(key, text, current.base, keepalive)
+    this.inflight.set(key, done)
     try {
-      const section = await this.save(key, text, current.base, { keepalive })
+      await done
+    } finally {
+      if (this.inflight.get(key) === done) this.inflight.delete(key)
+    }
+  }
+
+  private async send(
+    key: ProposalSectionKey,
+    text: string,
+    base: number,
+    keepalive: boolean,
+  ): Promise<void> {
+    try {
+      const section = await this.save(key, text, base, { keepalive })
       this.onSaved(section)
       const latest = this.sections.get(key)
       if (!latest) return
@@ -157,6 +173,21 @@ export class ProposalSaveStore {
         }
       }
       this.set(key, { status: 'error', error: isApiError(error) ? error : null })
+    }
+  }
+
+  /**
+   * Waits until the section's typing is on the server: its waiting autosave is
+   * sent now and a save in flight finishes (accepting a suggestion asks about
+   * unsaved text only when there really is some). Ends saved, or with the
+   * error or conflict that stopped it.
+   */
+  async settle(key: ProposalSectionKey): Promise<void> {
+    for (let round = 0; round < 5; round++) {
+      const status = this.sections.get(key)?.status
+      if (status === 'saving') await this.inflight.get(key)
+      else if (status === 'dirty') await this.saveNow(key)
+      else return
     }
   }
 

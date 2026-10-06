@@ -9,7 +9,8 @@ import { useEffect, useState } from 'react'
  * `focusWhenRendered(find)` waits for the next frames until `find()` returns
  * the element the action produced (React renders after the click handler) and
  * focuses it, scrolled into view. It leaves focus alone if the person has
- * already moved it somewhere else meanwhile, unless `force` is set.
+ * already moved it somewhere else meanwhile, unless `force` is set (which also
+ * wins over the toaster returning focus after a toast's Undo).
  */
 export function focusWhenRendered(
   find: () => HTMLElement | null | undefined,
@@ -23,6 +24,10 @@ export function focusWhenRendered(
     const target = find()
     if (target?.isConnected) {
       target.focus({ preventScroll: true })
+      // From a toast's Undo the toaster hands focus back to where it was before the toast
+      // was used as soon as focus leaves it. Without `force` that wins (the moderation
+      // queue relies on it); with `force` a second focus stays.
+      if (force && document.activeElement !== target) target.focus({ preventScroll: true })
       // jsdom has no scrollIntoView.
       if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' })
       return

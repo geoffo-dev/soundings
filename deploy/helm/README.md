@@ -352,6 +352,15 @@ app ignores them until the issuer is unset.
   SNAT), give the ingress controller's Service `externalTrafficPolicy: Local` or let
   it trust the load balancer's headers, and raise `trustedProxyHops` if that load
   balancer appends its own entry.
+- **No `Authorization: Bearer` header from the proxy.** The app reads every
+  `Authorization: Bearer …` header as an API key (a bad one is 401, never a fall-through
+  to the session cookie), so a forward-auth or OAuth2 proxy in front of the app that adds
+  its own bearer token (oauth2-proxy's `--pass-authorization-header` or
+  `--set-authorization-header`, an ingress `auth-response-headers: Authorization`, an
+  identity-aware proxy that injects an ID token) makes every browser request 401 and
+  counts the proxy's address towards the failed-key throttle. Don't forward such a header
+  upstream (pass identity in `X-Auth-Request-*` or not at all); `Basic` and other schemes
+  are ignored. Sign-in to Soundings itself is OIDC: it doesn't need an auth proxy.
 - `/metrics` is served only on `metrics.port` (Service port `metrics`), never on the app
   port, so the ingress and HTTPRoute (which route `http` only) do not expose it.
 - The app refuses requests for hosts that are not in `baseUrls`, so a spoofed `Host`
@@ -468,7 +477,8 @@ and every tool call is audited (`mcp.call`). Connecting a client:
   without a key).
 - **Keys are not sessions.** "Sign out everywhere" leaves a person's keys working;
   revoking a key, its expiry or deactivating its owner (which revokes all their keys)
-  cuts access at the next request. A person's keys also pause while they haven't signed
+  cuts access at the next request, and each MCP tool call checks the key again when it
+  runs (a request let in before the revoke runs nothing after it). A person's keys also pause while they haven't signed
   in for 30 days (group changes in the IdP only apply at sign-in), and work again at
   their next sign-in. Service accounts' keys never pause. Keys made in a dev-login
   session stop when `devLogin` is turned off, SSO-made keys while SSO isn't configured;
@@ -478,7 +488,11 @@ and every tool call is audited (`mcp.call`). Connecting a client:
   address comes through `trustedProxies`: a pod calling the Service directly from the
   default private ranges could choose it, another reason to narrow `trustedProxies` to
   the ingress controller's pods ([Security](#security)). `mcp.call` audit entries are
-  kept 90 days.
+  kept 90 days; requests refused before a tool runs (a key without the `mcp` scope, a
+  key over its request budget) count towards that budget and leave at most one entry
+  per key a minute. Agents see only projects their service account has a role in
+  (internal projects too), and tool results carry no invisible Unicode (tag
+  characters, zero-width and bidi controls are removed).
 - **kagent.** `kagent.examples` registers the server with kagent 0.10 as a
   `RemoteMCPServer` that reads the agents' key from `kagent.mcp.keySecret`;
   [`deploy/kagent/README.md`](../kagent/README.md) has the manifests and what has been

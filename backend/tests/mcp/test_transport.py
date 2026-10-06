@@ -186,25 +186,27 @@ async def test_a_session_cookie_alone_is_never_accepted(
     assert response.headers["www-authenticate"] == 'Bearer realm="soundings"'
 
 
-async def test_a_key_without_the_mcp_scope_is_403_and_audited(
+async def test_a_key_without_the_mcp_scope_is_403_and_audited_once_a_minute(
     raw: httpx2.AsyncClient, make_key: MakeKey, team: Team, db_session: AsyncSession
 ) -> None:
+    """c15 whatever the JSON-RPC method; one entry per key a minute (review M2)."""
     secret = await make_key(team.member, ["read", "evaluate"])
+    other = await make_key(team.viewer, ["read"])
 
     listing = await raw.post("/mcp", json=rpc("tools/list"), headers=headers(secret))
     calling = await raw.post(
         "/mcp", json=rpc("tools/call", {"name": "list_projects"}), headers=headers(secret)
     )
+    again = await raw.post("/mcp", json=rpc("tools/list"), headers=headers(other))
 
-    for response in (listing, calling):
+    for response in (listing, calling, again):
         problem(response, 403, "insufficient_scope")
         assert response.headers["www-authenticate"] == (
             'Bearer error="insufficient_scope", scope="mcp"'
         )
     entries = await mcp_calls(db_session)
-    assert len(entries) == 2
+    assert [entry.actor_id for entry in entries] == [team.member.id, team.viewer.id]
     for entry in entries:
-        assert entry.actor_id == team.member.id
         assert entry.target_id is None
         assert {k: entry.details[k] for k in ("tool", "rule", "decision", "code", "auth")} == {
             "tool": None,
@@ -214,6 +216,54 @@ async def test_a_key_without_the_mcp_scope_is_403_and_audited(
             "auth": "api_key",
         }
         assert entry.details["api_key_id"]
+
+
+async def test_refusals_of_a_key_without_mcp_count_towards_its_request_budget(
+    app: FastAPI, raw: httpx2.AsyncClient, make_key: MakeKey, team: Team, db_session: AsyncSession
+) -> None:
+    """Review M2: 360 refused requests a minute used to be 360 audit rows; now the key's
+    budget (shared with REST) stops them, and each refusal is audited once a minute."""
+    name, _, window = KEY_REQUEST_THROTTLE
+    app.state.throttles = {name: Throttle(3, window)}
+    secret = await make_key(team.member, ["read"])
+
+    responses = [
+        await raw.post("/mcp", json=rpc("tools/list", id=n), headers=headers(secret))
+        for n in range(6)
+    ]
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 429, 429, 429]
+    problem(responses[-1], 429, "too_many_attempts")
+    rest = await raw.get("/api/v1/projects", headers={"Authorization": f"Bearer {secret}"})
+    problem(rest, 429, "too_many_attempts")
+    entries = await mcp_calls(db_session)
+    assert [(e.details["tool"], e.details["rule"], e.details["code"]) for e in entries] == [
+        (None, "mcp.connect", "insufficient_scope"),
+        (None, None, "too_many_attempts"),
+    ]
+    assert {entry.details["decision"] for entry in entries} == {"deny"}
+
+
+async def test_a_key_over_its_request_budget_is_audited_once_a_minute(
+    app: FastAPI, raw: httpx2.AsyncClient, secret: str, team: Team, db_session: AsyncSession
+) -> None:
+    """Review L1: the request budget's 429 at /mcp leaves one entry per key a minute."""
+    name, _, window = KEY_REQUEST_THROTTLE
+    app.state.throttles = {name: Throttle(1, window)}
+    call_once = rpc("tools/call", {"name": "list_projects", "arguments": {}})
+
+    first = await raw.post("/mcp", json=call_once, headers=headers(secret))
+    refused = [await raw.post("/mcp", json=call_once, headers=headers(secret)) for _ in range(4)]
+
+    assert first.status_code == 200, first.text
+    for response in refused:
+        problem(response, 429, "too_many_attempts")
+    entries = await mcp_calls(db_session)
+    assert [(e.details["tool"], e.details["code"], e.details["decision"]) for e in entries] == [
+        ("list_projects", None, "allow"),
+        (None, "too_many_attempts", "deny"),
+    ]
+    assert entries[1].actor_id == team.member.id
 
 
 async def test_revoking_cuts_the_next_request_mid_session(

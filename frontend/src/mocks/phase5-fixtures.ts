@@ -5,7 +5,8 @@
  *
  * - **Alice** has three keys: "Claude Desktop" (read, evaluate, mcp; Customer
  *   Innovation only; never expires), "Weekly report script" (read; expires in
- *   60 days) and "Old laptop" (read, write; expired 5 days ago).
+ *   3 days: shown "in 3 days", in a warning tone) and "Old laptop" (read, write;
+ *   expired 5 days ago).
  * - **Priya**, **Bob** and **Mateo Rossi** (a person who hasn't signed in for 41
  *   days: his key is `dormant`) have one each; the **Research agent**
  *   (`PHASE5_USERS.agent`, a service account) has the key Priya made for it.
@@ -144,7 +145,7 @@ export function seedPhase5(
       { projects: [projects.cust], createdAgo: 12 * DAY, usedAgo: 2 * HOUR },
     ),
     key(API_KEYS.weeklyReport, users.alice, 'Weekly report script', 'Wk1yRep0rt5x', ['read'], {
-      expiresIn: 60 * DAY,
+      expiresIn: 3 * DAY,
       createdAgo: 40 * DAY,
       usedAgo: 3 * DAY,
     }),

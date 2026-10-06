@@ -91,18 +91,25 @@ export function FilterMenu({
   )
 }
 
-/** A checkable row in a filter menu. */
+/**
+ * A checkable row in a filter menu. With a `description` the row grows to two
+ * lines (the label, then the description muted), instead of overflowing the
+ * menu's one-line row height.
+ */
 export function FilterMenuOption({
   value,
   checked,
   onSelect,
   children,
+  description,
   keywords,
 }: {
   value: string
   checked: boolean
   onSelect: () => void
   children: ReactNode
+  /** A second, muted line under the label. */
+  description?: ReactNode
   keywords?: string[]
 }) {
   return (
@@ -111,9 +118,16 @@ export function FilterMenuOption({
       keywords={keywords}
       onSelect={onSelect}
       aria-checked={checked}
-      className="gap-2"
+      className={cn('gap-2', description !== undefined && 'h-auto py-1.5 sm:h-auto')}
     >
-      {children}
+      {description !== undefined ? (
+        <span className="flex min-w-0 flex-col">
+          <span>{children}</span>
+          <span className="text-xs text-muted">{description}</span>
+        </span>
+      ) : (
+        children
+      )}
       <Check
         aria-hidden="true"
         className={cn('ml-auto text-accent!', checked ? 'opacity-100' : 'opacity-0')}

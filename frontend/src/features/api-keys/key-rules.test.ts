@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  abilitiesPhrase,
+  accessLabel,
+  accessSummary,
   canonicalScopes,
   expiresAt,
+  expiresSoon,
   expiryDateBounds,
   mcpWithoutTools,
   presetOf,
@@ -128,5 +132,61 @@ describe('examples', () => {
     expect(mcpOnly).toContain('https://x.test/mcp')
     expect(mcpOnly).toContain('"method":"tools/list"')
     expect(mcpOnly).toContain('Accept: application/json')
+  })
+})
+
+describe('what a key can do, in plain words', () => {
+  it('names the scopes as abilities, stronger for keys that change things', () => {
+    expect(accessLabel(['read'])).toEqual({ label: 'Read only', assistants: false, changes: false })
+    expect(accessLabel(['read', 'evaluate', 'mcp'])).toEqual({
+      label: 'Read and evaluate',
+      assistants: true,
+      changes: true,
+    })
+    expect(accessLabel(['read', 'write', 'evaluate', 'mcp']).label).toBe(
+      'Read, change and evaluate',
+    )
+    expect(accessLabel(['mcp']).label).toBe('Nothing yet')
+  })
+
+  it('says it as a sentence: what, where and until when', () => {
+    expect(abilitiesPhrase(['read', 'write', 'evaluate', 'mcp'])).toBe(
+      'read everything you can see, change ideas, comments and proposals, and submit your evaluations, also through AI assistants',
+    )
+    expect(abilitiesPhrase(['mcp'])).toBe('connect an AI assistant, but do nothing else')
+    expect(
+      accessSummary({
+        scopes: ['read', 'evaluate'],
+        restricted: true,
+        projects: [{ name: 'Customer Innovation' }],
+        expires_at: null,
+      }),
+    ).toBe(
+      'read everything you can see and submit your evaluations, only in Customer Innovation, until you revoke it',
+    )
+    expect(
+      accessSummary(
+        { scopes: ['read'], restricted: true, projects: [], expires_at: undefined },
+        { noProjects: 'only in the projects you choose' },
+      ),
+    ).toBe(
+      'read everything you can see, only in the projects you choose, until the date you choose',
+    )
+    expect(
+      accessSummary({
+        scopes: ['read'],
+        restricted: true,
+        projects: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+        expires_at: null,
+      }),
+    ).toContain('only in 3 projects')
+  })
+
+  it('warns within a week of the expiry, not after it', () => {
+    const now = Date.parse('2026-10-06T12:00:00Z')
+    expect(expiresSoon('2026-10-08T12:00:00Z', now)).toBe(true)
+    expect(expiresSoon('2026-10-20T12:00:00Z', now)).toBe(false)
+    expect(expiresSoon('2026-10-05T12:00:00Z', now)).toBe(false)
+    expect(expiresSoon(null, now)).toBe(false)
   })
 })

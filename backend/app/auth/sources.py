@@ -79,7 +79,9 @@ class ApiKeySource:
         token = bearer_token(request.headers.get("authorization"))
         if token is None:
             return None
-        principal = await authenticate_api_key(request.app, db, token, client=client_key(request))
+        principal = await authenticate_api_key(
+            request.app, token, client=client_key(request), db=db
+        )
         limit_key_request(request.app, principal, write=request.method in UNSAFE_METHODS)
         return principal
 

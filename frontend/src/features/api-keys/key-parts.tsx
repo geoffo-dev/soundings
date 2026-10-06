@@ -2,12 +2,12 @@ import { Clock, Moon } from 'lucide-react'
 
 import type { ApiKey, ApiKeyScope, ApiKeyState } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
-import { RelativeTime } from '@/components/ui/relative-time'
+import { RelativeTime, useNow } from '@/components/ui/relative-time'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { formatDateTime, formatShortDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
-import { presetOf, SCOPE_COPY } from './key-rules'
+import { accessLabel, expiresSoon, presetOf, SCOPE_COPY } from './key-rules'
 
 /**
  * The scopes as quiet chips, in canonical order. All four are one "Full access"
@@ -40,6 +40,38 @@ export function ScopeBadges({
         ))
       )}
     </span>
+  )
+}
+
+/**
+ * What the key can do in plain words, for a list: "Read and evaluate", then
+ * "Also through AI assistants". Keys that can change anything read stronger
+ * than read-only ones. The scope names follow for assistive tech and on hover.
+ */
+export function KeyAccess({
+  scopes,
+  muted = false,
+}: {
+  scopes: readonly ApiKeyScope[]
+  /** An expired key: everything quiet. */
+  muted?: boolean
+}) {
+  const { label, assistants, changes } = accessLabel(scopes)
+  const names = scopes.map((scope) => SCOPE_COPY[scope].label).join(', ')
+  return (
+    <WithTooltip content={`Scopes: ${names}`}>
+      <span className="flex min-w-0 flex-col text-sm">
+        <span
+          className={cn(
+            muted ? 'text-muted' : changes ? 'font-medium text-primary' : 'text-secondary',
+          )}
+        >
+          {label}
+        </span>
+        {assistants && <span className="text-xs text-muted">Also through AI assistants</span>}
+        <span className="sr-only">. Scopes: {names}</span>
+      </span>
+    </WithTooltip>
   )
 }
 
@@ -94,9 +126,20 @@ export function KeyProjects({ apiKey }: { apiKey: Pick<ApiKey, 'restricted' | 'p
   )
 }
 
-/** "Never", the expiry date, or "Expired" with the date it stopped. */
+/**
+ * "Never", the expiry date, "in 2 days" in a warning tone within a week of
+ * it, or "Expired" with the date it stopped.
+ */
 export function KeyExpiry({ apiKey }: { apiKey: Pick<ApiKey, 'expires_at' | 'state'> }) {
+  const now = useNow()
   if (!apiKey.expires_at) return <span className="text-sm text-muted">Never</span>
+  if (apiKey.state !== 'expired' && expiresSoon(apiKey.expires_at, now)) {
+    return (
+      <span className="text-sm font-medium text-warning">
+        <RelativeTime date={apiKey.expires_at} />
+      </span>
+    )
+  }
   const date = (
     <WithTooltip content={formatDateTime(apiKey.expires_at)}>
       <time dateTime={apiKey.expires_at} className="tabular-nums">

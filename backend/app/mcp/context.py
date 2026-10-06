@@ -23,8 +23,11 @@ __all__ = ["McpRequest", "bound", "current_request"]
 
 @dataclass(frozen=True, slots=True)
 class McpRequest:
-    """One authenticated ``/mcp`` request: the key's principal (its owner, live, narrowed
-    by the key) and the FastAPI app (settings, session maker, throttles)."""
+    """One authenticated ``/mcp`` request: the key's principal as the guard admitted it
+    (its owner, narrowed by the key) and the FastAPI app (settings, session maker,
+    throttles). The principal decides the request's rates and names the actor of
+    refusals; a tool runs with the principal rebuilt in its own transaction
+    (:mod:`app.mcp.dispatcher`), never with this snapshot."""
 
     app: Any
     principal: Principal

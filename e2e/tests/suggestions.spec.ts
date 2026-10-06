@@ -7,7 +7,7 @@ import { KeyClient } from './support/mcp'
 /**
  * Proposal suggestions from an MCP client to the owner's editor, against the real stack
  * (contract-phase5 §3.4, §4.3 `propose_proposal_section`): Carol's key suggests a
- * section's text; Bob, the owner, sees it by its section ("via MCP", what it changes)
+ * section's text; Bob, the owner, sees it by its section ("via assistant", what it changes)
  * and accepts it (a normal versioned save) or discards it (after its Undo toast);
  * members and viewers see it read-only; one pending suggestion per author and section;
  * a section saved since says so. Test plan: SG-*.
@@ -111,7 +111,7 @@ test('SG-01: an MCP suggestion reaches the owner’s editor; accepting saves it 
     const summary = region(page, '1. Summary')
     await expect(summary.getByRole('heading', { name: '1 suggestion for Summary' })).toBeVisible()
     const carol = card(page, 'Carol Chen')
-    await expect(carol).toContainText('via MCP')
+    await expect(carol).toContainText('via assistant')
     await expect(carol.getByText('Removed:').first()).toBeAttached()
     await expect(carol.getByText('Added:').first()).toBeAttached()
     await carol.getByRole('radio', { name: 'Suggested text' }).click()
@@ -265,7 +265,7 @@ test('SG-04: members and viewers see suggestions read-only; viewers can’t sugg
     for (const person of ['dave', 'erin'] as const) {
       const page = await editor(browser, person, s.key)
       const carol = card(page, 'Carol Chen')
-      await expect(carol).toContainText('via MCP')
+      await expect(carol).toContainText('via assistant')
       await expect(carol.getByRole('button', { name: /^Accept/ })).toHaveCount(0)
       await expect(carol.getByRole('button', { name: /^Discard/ })).toHaveCount(0)
       await page.context().close()

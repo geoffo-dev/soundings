@@ -1,4 +1,5 @@
-import type { AuditAction, AuditEntry, ProjectRole } from '@/api/types'
+import type { ApiKeyScope, AuditAction, AuditEntry, ProjectRole } from '@/api/types'
+import { SCOPE_COPY } from '@/features/api-keys/key-rules'
 import {
   CLOSED_RESOLUTIONS,
   defaultStatusLabel,
@@ -30,6 +31,8 @@ export type AuditPart =
   | { type: 'text'; text: string }
   /** A name the API resolved (shown emphasised). */
   | { type: 'name'; text: string }
+  /** An identifier read character by character (a key's prefix, a tool): monospace. */
+  | { type: 'code'; text: string }
   /** A user id from `details`, resolved by the screen. */
   | { type: 'user'; id: string }
   /** A group id from `details`, resolved by the screen. */
@@ -39,6 +42,7 @@ export type AuditPart =
 
 const text = (value: string): AuditPart => ({ type: 'text', text: value })
 const name = (value: string): AuditPart => ({ type: 'name', text: value })
+const mono = (value: string): AuditPart => ({ type: 'code', text: value })
 
 type Details = Record<string, unknown>
 
@@ -152,7 +156,7 @@ function fieldWords(fields: string[], words: Record<string, string>): string {
 /** A key by its public prefix (`sdg_` + lookup id), or "a key" for older entries. */
 function keyPrefix(details: Details): AuditPart {
   const prefix = str(details, 'prefix')
-  return prefix ? name(prefix) : text('(prefix not recorded)')
+  return prefix ? mono(prefix) : text('(prefix not recorded)')
 }
 
 const KEY_DATE = new Intl.DateTimeFormat('en-GB', {
@@ -161,9 +165,14 @@ const KEY_DATE = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
 })
 
-/** "read, evaluate and mcp; 1 project; expires 2 Jan 2027" for `api_key.create`. */
+/**
+ * "Read, Evaluate and AI assistants (MCP); 1 project; expires 2 Jan 2027" for
+ * `api_key.create`: the scopes as the key screens name them.
+ */
 function keyTerms(details: Details): string {
-  const scopes = list(details, 'scopes')
+  const scopes = list(details, 'scopes').map((scope) =>
+    scope in SCOPE_COPY ? SCOPE_COPY[scope as ApiKeyScope].label : scope,
+  )
   const projects = list(details, 'project_ids')
   const expires = str(details, 'expires_at')
   const date = expires ? new Date(expires) : null
@@ -541,7 +550,7 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
         text(' created API key '),
         keyPrefix(details),
         ...(forSomeoneElse ? [text(' for '), targetUser] : []),
-        text(` (${keyTerms(details)})`),
+        text(`: ${keyTerms(details)}`),
       ]
     }
     case 'api_key.revoke': {
@@ -580,7 +589,7 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
           ...owner,
           text(
             !code || code === 'insufficient_scope'
-              ? ' was refused by the MCP server: it has no mcp scope'
+              ? ' was refused by the MCP server: it doesn’t allow AI assistants (MCP)'
               : ` was refused by the MCP server${outcome}`,
           ),
         ]
@@ -594,7 +603,7 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       return [
         ...owner,
         text(tool === 'unknown' ? ' called an unknown tool' : ' called '),
-        ...(tool === 'unknown' ? [] : [name(tool)]),
+        ...(tool === 'unknown' ? [] : [mono(tool)]),
         ...on,
         text(outcome),
       ]
@@ -620,7 +629,7 @@ const UNRESOLVED: NameResolver = { user: () => undefined, group: () => undefined
 export function auditText(parts: AuditPart[], names: NameResolver = UNRESOLVED): string {
   return parts
     .map((part) => {
-      if (part.type === 'text' || part.type === 'name') return part.text
+      if (part.type === 'text' || part.type === 'name' || part.type === 'code') return part.text
       if (part.type === 'idea') return names.idea?.(part.id) ?? part.fallback
       const resolved = names[part.type](part.id)
       if (resolved) return resolved

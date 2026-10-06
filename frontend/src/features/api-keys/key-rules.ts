@@ -1,4 +1,5 @@
 import type { ApiKeyScope } from '@/api/types'
+import { formatDate } from '@/lib/dates'
 
 /**
  * The words and the small rules of API keys in the SPA (contract-phase5 §3.1,
@@ -24,9 +25,9 @@ export const SCOPE_COPY: Record<ApiKeyScope, { label: string; description: strin
     description: 'Save and submit your own evaluations, blind like in the app.',
   },
   mcp: {
-    label: 'MCP',
+    label: 'AI assistants (MCP)',
     description:
-      'Connect an MCP client, such as an AI assistant, at /mcp. On its own it can’t do anything: its tools also need Read, Write or Evaluate.',
+      'Lets an AI assistant, such as Claude, connect with this key. On its own it can’t do anything: the assistant also needs Read, Write or Evaluate.',
   },
 }
 
@@ -79,15 +80,16 @@ export const SCOPE_PRESETS: readonly {
   },
   {
     value: 'mcp',
-    label: 'MCP client',
+    label: 'Read with an assistant',
     scopes: ['read', 'mcp'],
     description: 'An AI assistant that searches and reads ideas for you.',
   },
   {
+    // Not SPEC §9's AI evaluator (a service account, left out of the aggregate): yours.
     value: 'evaluator',
-    label: 'AI evaluator',
+    label: 'Evaluate with an assistant',
     scopes: ['read', 'evaluate', 'mcp'],
-    description: 'An assistant that also submits your evaluations.',
+    description: 'An assistant that also submits evaluations as you: they count as yours.',
   },
   {
     value: 'full',
@@ -152,4 +154,97 @@ export function expiresAt(
   const [year, month, day] = date.split('-').map(Number)
   const end = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, 23, 59, 0, 0)
   return Number.isNaN(end.getTime()) ? undefined : end.toISOString()
+}
+
+/* ------------------------------------------------------------------ */
+/* What a key can do, in plain words (the create dialog, rows, the key) */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The scopes as short plain words for a list ("Read and evaluate"), with
+ * `assistants` when AI assistants may use it too and `changes` when it can
+ * change anything (write or evaluate: the riskier keys read stronger).
+ */
+export function accessLabel(scopes: readonly ApiKeyScope[]): {
+  label: string
+  assistants: boolean
+  changes: boolean
+} {
+  const has = (scope: ApiKeyScope) => scopes.includes(scope)
+  const write = has('write')
+  const evaluate = has('evaluate')
+  const label = !has('read')
+    ? 'Nothing yet'
+    : write && evaluate
+      ? 'Read, change and evaluate'
+      : write
+        ? 'Read and change'
+        : evaluate
+          ? 'Read and evaluate'
+          : 'Read only'
+  return { label, assistants: has('mcp'), changes: write || evaluate }
+}
+
+/** What the key lets its holder do, completing "can …" ("read everything you can see"). */
+export function abilitiesPhrase(scopes: readonly ApiKeyScope[]): string {
+  const has = (scope: ApiKeyScope) => scopes.includes(scope)
+  if (!has('read'))
+    return has('mcp') ? 'connect an AI assistant, but do nothing else' : 'do nothing yet'
+  const parts = ['read everything you can see']
+  if (has('write')) parts.push('change ideas, comments and proposals')
+  if (has('evaluate')) parts.push('submit your evaluations')
+  const last = parts.pop() ?? ''
+  const joined = parts.length
+    ? `${parts.join(', ')}${parts.length > 1 ? ',' : ''} and ${last}`
+    : last
+  return has('mcp') ? `${joined}, also through AI assistants` : joined
+}
+
+/** Where: "in every project you can open", "only in Customer Innovation", "only in 3 projects". */
+export function projectsPhrase(
+  restricted: boolean,
+  projects: readonly { name: string }[],
+  none = 'in no project',
+): string {
+  if (!restricted) return 'in every project you can open'
+  if (projects.length === 0) return none
+  if (projects.length === 1) return `only in ${projects[0]?.name ?? ''}`
+  if (projects.length === 2)
+    return `only in ${projects[0]?.name ?? ''} and ${projects[1]?.name ?? ''}`
+  return `only in ${String(projects.length)} projects`
+}
+
+/** Until when: "until you revoke it" or "until Wed 5 Nov or until you revoke it". */
+export function untilPhrase(expiresAt: string | null | undefined, now = new Date()): string {
+  if (expiresAt === undefined) return 'until the date you choose'
+  if (expiresAt === null) return 'until you revoke it'
+  return `until ${formatDate(expiresAt, { now })} or until you revoke it`
+}
+
+/**
+ * The whole plain summary, e.g. "read everything you can see and submit your
+ * evaluations, also through AI assistants, only in Customer Innovation, until
+ * Wed 5 Nov or until you revoke it" (after "This key can" or "anyone who has
+ * it can act as you:").
+ */
+export function accessSummary(
+  key: {
+    scopes: readonly ApiKeyScope[]
+    restricted: boolean
+    projects: readonly { name: string }[]
+    expires_at: string | null | undefined
+  },
+  { now = new Date(), noProjects }: { now?: Date; noProjects?: string } = {},
+): string {
+  return `${abilitiesPhrase(key.scopes)}, ${projectsPhrase(key.restricted, key.projects, noProjects)}, ${untilPhrase(key.expires_at, now)}`
+}
+
+/** Within this long of its expiry a key's date turns into "in 2 days", in a warning tone. */
+export const EXPIRY_WARNING_MS = 7 * DAY_MS
+
+/** Whether an active key expires soon (within 7 days). */
+export function expiresSoon(expiresAt: string | null, now = Date.now()): boolean {
+  if (!expiresAt) return false
+  const left = new Date(expiresAt).getTime() - now
+  return left > 0 && left <= EXPIRY_WARNING_MS
 }

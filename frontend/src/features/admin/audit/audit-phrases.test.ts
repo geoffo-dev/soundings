@@ -431,7 +431,7 @@ describe('audit sentences', () => {
         }),
       ),
     ).toBe(
-      'Alice Anders created API key sdg_Ab12Cd34Ef56 (read, evaluate and mcp; 1 project; expires 2 Jan 2027)',
+      'Alice Anders created API key sdg_Ab12Cd34Ef56: Read, Evaluate and AI assistants (MCP); 1 project; expires 2 Jan 2027',
     )
     expect(
       say(
@@ -445,7 +445,7 @@ describe('audit sentences', () => {
         }),
       ),
     ).toBe(
-      'Priya Natarajan created API key sdg_Zz for Research agent (read; all projects; never expires)',
+      'Priya Natarajan created API key sdg_Zz for Research agent: Read; all projects; never expires',
     )
     expect(
       say(
@@ -516,7 +516,7 @@ describe('audit sentences', () => {
     )
     expect(
       call({ tool: null, rule: 'mcp.connect', decision: 'deny', code: 'insufficient_scope' }),
-    ).toBe('Alice Anders’s key was refused by the MCP server: it has no mcp scope')
+    ).toBe('Alice Anders’s key was refused by the MCP server: it doesn’t allow AI assistants (MCP)')
   })
 
   it('falls back to the raw action for unknown actions', () => {

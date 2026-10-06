@@ -740,6 +740,10 @@ def _column(principal: Principal, spec: RuleSpec, resource: Resource) -> Column:
             return Column.MEM
         case ProjectRole.VIEWER:
             return Column.VWR
+    if principal.user.is_service_account:
+        # A service account needs a real project role (role matrix section 1,
+        # contract-phase5 section 3.7): never the internal-project non-member.
+        return Column.NMP
     return Column.NMI if _project(resource).visibility is ProjectVisibility.INTERNAL else Column.NMP
 
 

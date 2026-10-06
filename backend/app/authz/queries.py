@@ -78,21 +78,21 @@ def effective_role(
 
 def visible_projects(principal: Principal | None) -> ColumnElement[bool]:
     """``project.view`` over ``projects``: every project for a platform admin; else
-    projects with an effective role, plus internal ones; narrowed to an API key's
-    projects."""
+    projects with an effective role, plus internal ones for a person (a service account
+    needs a role: contract-phase5 section 3.7); narrowed to an API key's projects."""
     if not _may_read(principal):
         return false()
     assert principal is not None  # noqa: S101 - narrowed by _may_read
     clause: ColumnElement[bool]
+    has_role = exists().where(
+        _roles.c.project_id == Project.id, _roles.c.user_id == principal.user_id
+    )
     if principal.is_platform_admin:
         clause = true()
+    elif principal.user.is_service_account:
+        clause = has_role
     else:
-        clause = or_(
-            Project.visibility == ProjectVisibility.INTERNAL,
-            exists().where(
-                _roles.c.project_id == Project.id, _roles.c.user_id == principal.user_id
-            ),
-        )
+        clause = or_(Project.visibility == ProjectVisibility.INTERNAL, has_role)
     if principal.project_ids is not None:
         clause = and_(clause, Project.id.in_(principal.project_ids))
     return clause

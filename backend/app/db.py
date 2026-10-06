@@ -50,6 +50,9 @@ def create_engine(settings: Settings, *, application_name: str = "soundings") ->
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_pool_size,
         pool_pre_ping=True,
+        # Error messages (logged with tracebacks) never show bound values: they may be
+        # people's text, emails or tokens.
+        hide_parameters=True,
         connect_args={"application_name": application_name},
     )
 

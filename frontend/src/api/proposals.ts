@@ -11,7 +11,7 @@
  *   useExportProposal(key)           Markdown / PDF download through fetch + blob
  *   useProposalSuggestions(key)      Phase 5: pending suggestions + can_suggest / can_decide
  *   useAcceptProposalSuggestion(key) a versioned section save (409 proposal_conflict inline)
- *   useDiscardProposalSuggestion(key) deferred, Undo
+ *   useDiscardProposalSuggestion(key) deferred, Undo (with a callback when it comes back)
  */
 import {
   MutationObserver,
@@ -411,12 +411,20 @@ export function useAcceptProposalSuggestion(idea: string) {
 export function useDiscardProposalSuggestion(idea: string) {
   const queryClient = useQueryClient()
   return useCallback(
-    (suggestion: ProposalSuggestion, title = 'Suggestion discarded') => {
+    (
+      suggestion: ProposalSuggestion,
+      title = 'Suggestion discarded',
+      /** After Undo (or a failed discard) brought it back: e.g. focus its card. */
+      onRestore?: () => void,
+    ) => {
       const key = hiddenSuggestion(suggestion.id)
       return deferUntilToastCloses({
         title,
         hide: () => hideItem(key),
-        restore: () => unhideItem(key),
+        restore: () => {
+          unhideItem(key)
+          onRestore?.()
+        },
         commit: async ({ keepalive }) => {
           await unwrap(
             api.POST('/api/v1/ideas/{idea}/proposal/suggestions/{suggestion_id}/discard', {

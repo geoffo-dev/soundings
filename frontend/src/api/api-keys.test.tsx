@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  containsKeySecret,
   containsWholeKey,
   keySearchTerm,
   useAdminApiKeys,
@@ -52,6 +53,16 @@ describe('keySearchTerm', () => {
     expect(containsWholeKey(`Bearer ${WHOLE_KEY}`)).toBe(true)
     expect(keySearchTerm('sdg_Ab12Cd34Ef56')).toBe('sdg_Ab12Cd34Ef56')
     expect(keySearchTerm('claude')).toBe('claude')
+  })
+
+  it('cuts a key whose secret is only partly there (half pasted, or still being typed)', () => {
+    expect(keySearchTerm('sdg_Ab12Cd34Ef56_Z')).toBe('sdg_Ab12Cd34Ef56')
+    expect(keySearchTerm(`Bearer ${WHOLE_KEY.slice(0, 30)}`)).toBe('sdg_Ab12Cd34Ef56')
+    expect(containsWholeKey(WHOLE_KEY.slice(0, 30))).toBe(false)
+    expect(containsKeySecret(WHOLE_KEY.slice(0, 30))).toBe(true)
+    // Nothing of the secret yet: searched as the prefix, and nothing was cut off.
+    expect(keySearchTerm('sdg_Ab12Cd34Ef56_')).toBe('sdg_Ab12Cd34Ef56')
+    expect(containsKeySecret('sdg_Ab12Cd34Ef56_')).toBe(false)
   })
 })
 
