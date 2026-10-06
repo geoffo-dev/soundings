@@ -996,6 +996,19 @@ export const aiHandlers = [
         sources: [],
         deleted: true,
       }
+      recordAudit(
+        db,
+        user,
+        'ai_note.delete',
+        { type: 'idea', id: idea.id },
+        {
+          rule: 'ai.delete_note',
+          note_id: event.id,
+          run_id: event.payload.run_id,
+          agent_id: event.payload.agent_id,
+        },
+        idea.project_id,
+      )
     }
     return noContent()
   }),

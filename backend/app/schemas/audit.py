@@ -84,6 +84,7 @@ class AuditAction(StrEnum):
     AI_RUN_REQUEST = "ai_run.request"
     AI_RUN_CANCEL = "ai_run.cancel"
     EVALUATION_INCLUDE_AI = "evaluation.include_ai"
+    AI_NOTE_DELETE = "ai_note.delete"
 
 
 class AuditEntry(ResponseModel):

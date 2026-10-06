@@ -89,6 +89,7 @@ export const AUDIT_CATEGORIES = [
       'ai_run.request',
       'ai_run.cancel',
       'evaluation.include_ai',
+      'ai_note.delete',
     ],
   },
 ] as const satisfies readonly { id: string; label: string; actions: readonly AuditAction[] }[]

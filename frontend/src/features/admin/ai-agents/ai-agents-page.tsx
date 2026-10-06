@@ -699,9 +699,7 @@ function SettingsInEffect({ settings }: { settings: AiSettingsInEffect }) {
         <dt className="text-muted">Runs at once</dt>
         <dd>{settings.max_concurrent_runs} per worker</dd>
         <dt className="text-muted">Namespaces</dt>
-        <dd>
-          {settings.agent_namespaces.length > 0 ? settings.agent_namespaces.join(', ') : 'Any'}
-        </dd>
+        <dd>{settings.agent_namespaces.join(', ')}</dd>
         <dt className="text-muted">MCP URL for agents</dt>
         <dd className="flex min-w-0 flex-col gap-1">
           <CopyLine value={settings.mcp_url} label="the MCP URL" />

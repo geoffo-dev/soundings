@@ -475,33 +475,45 @@ only to web pages, opened in a new tab, and every source it cites is labelled **
 AI, not checked"** (it may have invented it). Check the facts before you rely on them.
 
 An agent works only on the idea you asked about, and only while its run lasts: once the
-run ends (done, cancelled or out of time) it can't read or change anything. It never sees
-anyone else's scores or evaluation comments, not even after it has submitted its own.
+run ends (done, cancelled or out of time) it can't read or change anything, and two runs
+of the same agent can't reach each other's ideas. It never sees anyone else's scores or
+evaluation comments, not even after it has submitted its own, and it sees its own
+evaluation only while it is evaluating (so a research note or a draft can't repeat its
+scores).
 
 ### "Ask AI to evaluate" and the AI badge
 
 On an idea you own (or as an admin), open the **AI** menu next to the main action, or use
 **Ask AI to evaluate** under the evaluators (also in ⌘K). The agent joins the evaluators
-with an AI badge, and a run card appears on the Overview tab under **AI runs**: its steps
-as they happen ("Read the rubric", "Read the idea", "Saved its evaluation"), how long it
-has taken and when it will be stopped, and **Cancel**. Everyone who can see the idea can
-watch the card, but it never shows scores, so pending evaluators stay blind. The card
-updates live and falls back to refreshing on its own if live updates aren't available.
+with an AI badge, and a row appears on the Overview tab under **AI runs**: one quiet row
+per agent and kind of work, showing its latest run on one line: while it works, the
+current step ("Read the rubric", "Read the idea", "Saved its evaluation"), how long it
+has taken and about how long it has left, and **Cancel**. **Steps** opens who asked,
+when it will be stopped and every step so far; older runs fold under **History (N)**.
+Everyone who can see the idea can watch, but a run never shows scores, so pending
+evaluators stay blind. The row updates live and falls back to refreshing on its own if
+live updates aren't available. When a run ends, your focus stays where you left it (a
+screen reader announces how it ended).
 
-When it is done, **View the evaluation** opens the agent's card on the Evaluations tab:
-a score per criterion, each with its **rationale** and the **sources** it cited, its
-recommendation and a summary. A run that fails, times out or is cancelled says why in
-plain words and offers **Try again**; if it ended without an evaluation, the agent is
-taken off the evaluators again (the activity feed says so). Asking again while a run is
-working just shows that run. Once the agent has submitted, the button reads **Ask AI to
-evaluate again**: a new evaluation replaces its old one. Each person can ask for 20 runs
-an hour.
+When it is done, the row reads "Evaluation submitted · not in the score yet" and **View
+the evaluation** opens the agent's card on the Evaluations tab: a score per criterion,
+each with its **rationale** and the **sources** it cited, its recommendation and a
+summary. A run that fails, times out or is cancelled says why in plain words with what
+to do next ("The agent didn't finish within 5 minutes. Try again: it may have been
+busy."), and the latest row offers **Try again** (Soundings' own record of what happened
+stays under Steps). If it ended without an evaluation, the agent is taken off the
+evaluators again (the activity feed says so). Asking again while a run is working just
+shows that run. Once the agent has submitted, the button reads **Ask AI to evaluate
+again**: a new evaluation replaces its old one, and its card says "Re-evaluated". Each
+person can ask for 20 runs an hour; past that, Soundings says when you can ask again.
 
 **"Not in score": what excluded means.** An AI evaluation is **left out of the score** by
 default: the aggregate, the number of evaluations, the per-criterion means, the
-disagreement flag and the board's ranking count people only. The agent's scores still
-show in the comparison table and on its card, marked "not in score", so you can read and
-compare them. If you find its evaluation sound, switch **Include in score** on its card
+disagreement flag and the board's ranking count people only. Under the score, "1 AI
+evaluation not counted · Review" says so and takes you to it. The agent's scores still
+show in the comparison table (its column muted, with dashed score chips; the Mean column
+says "counted") and on its card, marked "not in score", so you can read and compare
+them. If you find its evaluation sound, switch **Include in score** on its card
 (owner and admins): the aggregate then counts it like a person's, and you can switch it
 off again at any time (Undo is offered). If the agent re-evaluates and changes any score
 or its recommendation, it is left out again until someone includes it again.
@@ -512,12 +524,14 @@ or its recommendation, it is left out again until someone includes it again.
 found about the idea, open questions and numbered sources. The note appears in the
 activity feed with the AI badge, in a box of its own, readable by everyone who can see
 the idea. The owner and admins can **Delete** it (after confirming; there is no undo):
-the feed then shows that a research note was deleted.
+the feed then shows that a research note was deleted, and the audit log records who
+deleted it.
 
-In the proposal editor, **Draft with AI** (on phones **Draft**) on a section asks an agent
+In the proposal editor, **Draft with AI** (on phones **Draft**) on the section you are
+working on (other sections show it when you point at them or tab to them) asks an agent
 to suggest text for that section. While it works, the section shows its progress with
-Cancel; when it is done, its text arrives as a **suggestion** under the section, with the
-AI badge and the changes highlighted, like any other suggestion (see
+Cancel; when it is done, its text arrives as a **suggestion** under the section (focus
+moves to it), with the AI badge and the changes highlighted, like any other suggestion (see
 [Suggestions](#suggestions-phase-5)): **Accept** puts it into the section, **Discard**
 drops it. Drafting works while the idea is Shortlisted or In proposal and its proposal
 has been started.
@@ -763,9 +777,10 @@ revokes those too.
 
 **Settings → AI agents** (platform admins) registers kagent agents and shows the AI
 settings in effect (read-only, from the deployment: whether AI is on, the kagent
-controller's address, the run time limit, the default protocol and the MCP address agents
-use). **Register agent** asks for a name people will see ("Idea evaluator"), an optional
-description, the kagent Agent's **namespace** and **name** (as in Kubernetes), the
+controller's address, the run time limit, the default protocol, the namespaces agents may
+run in and the MCP address agents use). **Register agent** asks for a name people will see
+("Idea evaluator"), an optional description, the kagent Agent's **namespace** (one of
+those in effect) and **name** (as in Kubernetes, lower case: mistakes show as you type), the
 protocol (kagent 0.10 or 1.0), **what it does** (evaluate, research, draft proposal
 sections) and **which projects** it serves. Under the fields, "Soundings will call …"
 shows the one address runs go to: it is built from the controller address in effect and
@@ -774,13 +789,17 @@ the namespace and name, never typed.
 Registering creates the agent's account (it shows with an AI badge, never signs in, can't
 own ideas or be a project admin) and its **key**, shown **once** with the Kubernetes
 Secret to apply and the agent's MCP server entry: hand them to whoever runs kagent, then
-choose **I've copied it**. The key only works while one of the agent's runs is open, on
-that run's idea. **Test connection** fetches the agent's card through the controller and
-shows its name, skills and A2A versions, or why it didn't answer. **Change** edits the
+choose **I've copied it** (the dialog's last step is to test the connection). The key only
+works while one of the agent's runs is open, on that run's idea. **Test connection**
+fetches the agent's card through the controller and shows its name, skills and A2A
+versions, or why it didn't answer with a list of what to check, most likely first (a
+404 means the controller answered but has no ready agent by that name). **Change** edits the
 name, description, protocol, purposes and projects (taking a purpose or project away
 cancels its runs there; the key follows without a new Secret); **Rotate key** replaces the
 key (the old one stops at once: apply the new Secret); **Disable** revokes the key and
-cancels its runs (enabling it again needs a new key). Agents are never deleted, so their
+cancels its runs (enabling it again needs a new key; a disabled agent's key reads "Revoked
+when disabled"). The break-glass account may rename, narrow or disable an agent, but not
+give it more purposes or projects. Agents are never deleted, so their
 evaluations and notes keep their author. Each row shows the agent's runs in progress and
 when its key was last used; **Runs and changes in the audit log** opens the log filtered to
 AI. Project admins can remove an agent from their project (Members) and add it back.
@@ -791,9 +810,11 @@ Every sign-in (and refused sign-in, with the reason), admin change, project memb
 and group grant change, owner and evaluator assignment, submitted evaluation, closing
 and reopening of evaluation, status change, idea deletion, test email and email retry,
 approval, rejection and erasure of public submissions (an erasure by the sender or by the
-retention rules has no actor), branding changes, API keys created and revoked, and every
+retention rules has no actor), branding changes, API keys created and revoked, every
 MCP tool call (under "API keys and MCP": the tool, allowed or denied, and the key, never
-what was asked; these entries are kept for 90 days), newest first, one sentence each, for
+what was asked; these entries are kept for 90 days), and AI agents registered and
+changed, AI runs asked for and cancelled, AI evaluations counted or left out and research
+notes deleted (under "AI agents and runs", naming the agent), newest first, one sentence each, for
 example "Priya Natarajan added Lena Novak to group Tools members". Filter by who did it, what kind of action,
 project, dates, or "About" a user or group; "Details" shows the raw fields. Entries
 name ids, never emails, tokens or claims, and each records how the person had signed in

@@ -607,6 +607,25 @@ describe('audit sentences', () => {
         }),
       ),
     ).toBe('Alice Anders left Carol Chen’s evaluation of CUST-7 out of the score')
+    const noteDeleted = describeAuditEntry(
+      entry('ai_note.delete', {
+        ...onIdea,
+        details: { rule: 'ai.delete_note', note_id: 'n-1', run_id: 'r-1', agent_id: 'ag-1' },
+      }),
+    )
+    expect(auditText(noteDeleted)).toBe(
+      'Alice Anders deleted a research note by an AI agent on CUST-7',
+    )
+    expect(
+      auditText(noteDeleted, {
+        user: () => undefined,
+        group: () => undefined,
+        agent: (id) => (id === 'ag-1' ? 'Research agent' : undefined),
+      }),
+    ).toBe('Alice Anders deleted a research note by AI agent Research agent on CUST-7')
+    expect(say(entry('ai_note.delete', { ...onIdea, details: { rule: 'ai.delete_note' } }))).toBe(
+      'Alice Anders deleted an AI research note on CUST-7',
+    )
     expect(
       say(
         entry('evaluator.remove', {
@@ -676,6 +695,7 @@ describe('audit categories', () => {
       'ai_run.request': true,
       'ai_run.cancel': true,
       'evaluation.include_ai': true,
+      'ai_note.delete': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

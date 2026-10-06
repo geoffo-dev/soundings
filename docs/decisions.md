@@ -748,3 +748,34 @@ test plan, with every case ID: [test-plans/phase-6.md](test-plans/phase-6.md).
 | The e2e stack (`E2E_AI=1`) registers "Idea evaluator" after every seed; AI specs are `@ai`, each with its own project, idea owner and agents. | Decided | 20 run requests per person an hour: one shared owner hit the limit in the first full run. |
 | The backend acceptance runs the real fake agent as a subprocess (`uv`); `SOUNDINGS_TEST_FAKE_AGENT=0` skips it. CI's backend job has uv, so it runs there. | Decided | The whole loop over TCP in `make check-backend`. |
 | AAK-03 waits for "Sign out everywhere"'s confirmation to close before asserting the sheet's button is gone. | Decided (integration) | While the confirmation is open the sheet is outside the accessibility tree, so the check passed before the sessions ended and `/auth/me` still answered 200 under load. |
+
+## 2026-10-06 · Phase 6 review and final verification
+
+What the security and UX reviews changed, and the lead's calls on what the fixers left
+open. Details and tests:
+[phase-summaries/phase-6.md](phase-summaries/phase-6.md#review-findings-and-outcomes);
+contract changes in [contract-phase6.md §10](api/contract-phase6.md#10-changes-after-the-contract).
+
+### Security
+
+| Decision | Status | Why |
+|---|---|---|
+| Every MCP tool takes an optional `run_id`; for an agent it is required and binds the call to that open run's idea, checked before any idea is looked up (another idea, existing or not, is `ai_run_not_active`; `create_idea` / `add_comment` are `forbidden` before any lookup). People's calls ignore it. | Decided (lead accepted, H1 option 2) | Review H1: two runs of one agent open at once could reach each other's ideas (a private project's included). "One run per agent at a time" was rejected: kagent-adk 0.10.2 can't cancel, so a task outliving its run would act through the next one, and a killed worker's job would hold the agent's lock. Also fixes N1 (an agent could tell which ideas exist). |
+| An agent sees its own evaluation (`my_evaluation`) only in its evaluate run. | Decided | Review M1: a research note or draft could carry the agent's scores to a pending evaluator. |
+| An agent's note, comment and rationales lose bidi controls and zero-width characters before they are validated and stored; the SPA isolates agent hosts and link text (`<bdi dir="ltr">`) and strips the same characters on display. | Decided | Review M2: hidden text in model output could reorder what people read. |
+| `ai_agent.update` records the new purposes, projects and key scopes; deleting a research note is audited as `ai_note.delete` (ids only). | Decided (lead: the new action) | Review L4. |
+| The break-glass account can't widen an agent (add a purpose or project): 403 `break_glass_account`; narrowing, renaming and disabling still work. | Decided | Review L5, c20: widening changes what a key can do. |
+| At most 100 open SSE streams per API process (then 429 and the SPA polls); `tasks/cancel` and the card fetch are bounded as a whole at 5 s; the sweep ends lost runs first, then cancels them side by side. | Decided | Review L6, L7. |
+| `SOUNDINGS_AI_AGENT_NAMESPACES` defaults to `soundings` and must list at least one namespace. | Decided | Review L8: "any" let an admin register kagent's built-in agents. |
+| kagent's session store keeps what agents read, outside Soundings' deletion, erasure and retention: documented in the operator guide and `deploy/kagent/README.md`, not worked around. | Decided | Review N2: it is kagent's database. |
+
+### UX
+
+| Decision | Status | Why |
+|---|---|---|
+| The SPA words a run's error by `error.code` in plain words with a next step ("The agent didn't finish within 1 minute. Try again: it may have been busy."); the server's fixed sentence appears only under **Steps**. The server keeps its "(state X)" suffix, which appears only there. | Decided (lead) | UX M4: errors read like protocol output; the server sentence stays useful for operators. |
+| One row per agent and kind with its latest run; who asked and every step behind "Steps"; older runs under "History (N)"; only the latest row offers "Try again"; draft runs stay in the proposal editor. | Decided | UX M3: the cards were noisy and piled up. |
+| "1 AI evaluation not counted · Review" under the score; the comparison table mutes the AI column and labels Mean "counted". | Decided | UX M2: an excluded AI evaluation wasn't visibly left out. |
+| **Declined:** a "would be 3.6 with AI" preview of the aggregate including AI evaluations. | Declined (lead) | Simple beats configurable: it would copy the weighted-aggregate maths into the SPA or add another server field; including the evaluation (with Undo) shows the real number. |
+| Focus stays where the person put it when a run ends (only a lost focus moves to the row); busy buttons are `aria-disabled` + `aria-busy` instead of `disabled`, so they keep focus; a dialog opened while a menu closes returns focus to the menu's button. | Decided | UX B1, M1. |
+| The admin page's "Namespaces" shows the list in effect (never "Any"). | Decided (lead) | It can no longer be empty. |

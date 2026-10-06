@@ -834,7 +834,7 @@ every client looks like the ingress controller and shares one failure budget.
 ### Checking it
 
 `make mcp-smoke` (`scripts/mcp-smoke.sh <base URL>`, needs dev login and the demo data)
-runs the acceptance with curl: a key, `initialize`, the nine tools, blind results,
+runs the acceptance with curl: a key, `initialize`, the ten tools listed, blind results,
 `not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the
 audit entries, then revoke and 401 on the next call. On k3s, `make k3s-install MCP=1` and
 `make k3s-smoke MCP=1` also run an MCP client in a pod of another namespace with its key in
@@ -866,16 +866,19 @@ Security properties to rely on:
 
 - **URLs are built, never given.** Soundings calls only `SOUNDINGS_KAGENT_URL` (Helm
   `kagent.controllerUrl`, an origin validated at start-up) + a fixed path + the agent's
-  namespace and name (DNS labels, optionally limited to `kagent.agentNamespaces`).
+  namespace and name (DNS labels, always limited to the allowed namespaces:
+  `kagent.agentNamespaces`, else the release namespace).
   Nothing typed in the UI, sent by an agent or found in an agent card can make it call
   another host; redirects are never followed and proxy variables are ignored.
 - **Prompts carry no secrets:** the message holds the run id, kind, idea key, section and
   the agent's name, never a key, URL or idea text.
 - **An agent's key works only inside its runs (c22):** only on `/mcp` (every REST route
-  answers 403), only on the idea of one of its open runs, writing only that run's result.
-  After a run ends (done, cancelled, timed out, worker restart) the key does nothing.
+  answers 403), and every call must name its open run (`run_id`, from the run's message):
+  it then reaches only that run's idea, writing only that run's result. Two runs of one
+  agent open at once can't reach each other. After a run ends (done, cancelled, timed
+  out, worker restart) calls naming it do nothing, even while a newer run is open.
 - **Agents are blind:** they never see other evaluators' scores or comments, before or
-  after submitting. Everything an agent writes is shown labelled AI and treated as
+  after submitting, and see their own evaluation only in their evaluate run. Everything an agent writes is shown labelled AI and treated as
   untrusted text (sanitised Markdown, http/https links only, sources "Cited by AI, not
   checked").
 
@@ -891,7 +894,7 @@ helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
 | `features.ai` (`SOUNDINGS_AI_ENABLED`) | `false` | The switch. Off: no run starts (409 `ai_unavailable`), queued runs fail, the idea page hides the AI actions; Admin settings → AI agents still works |
 | `kagent.controllerUrl` (`SOUNDINGS_KAGENT_URL`) | `http://kagent-controller.<kagent.namespace>:8083` | kagent's controller, an http(s) origin without a path |
 | `kagent.existingTokenSecret` / `tokenSecretKey` (`SOUNDINGS_KAGENT_TOKEN`) | empty | Bearer token for kagent's `trusted-proxy` auth mode (api and worker pods) |
-| `kagent.agentNamespaces` (`SOUNDINGS_AI_AGENT_NAMESPACES`) | the release namespace | Where agents may be registered; keeps runs away from kagent's built-in agents |
+| `kagent.agentNamespaces` (`SOUNDINGS_AI_AGENT_NAMESPACES`) | the release namespace (the app's own default without the chart: `soundings`) | Where agents may be registered, at least one (an empty list is refused at start-up, never "any"); keeps runs away from kagent's built-in agents in kagent's own namespace |
 | `ai.runTimeout` (`SOUNDINGS_AI_RUN_TIMEOUT`) | `PT5M` | Deadline once a run has started (30 s to 1 h) |
 | `ai.maxConcurrentRuns` (`SOUNDINGS_AI_MAX_CONCURRENT_RUNS`) | `4` | Runs at once per worker pod, in a pool of their own (email and the schedules never wait behind them); the worker's database pool grows by this many |
 | `ai.defaultProtocol` (`SOUNDINGS_AI_DEFAULT_PROTOCOL`) | `kagent_v0_10` | Protocol of a new agent unless the admin picks one |
@@ -935,15 +938,23 @@ kubectl -n soundings get agents,rmcps
 **Rotate key** issues a new key and revokes the old one at once (apply the new Secret;
 runs fail until you do). **Disable** revokes the key and cancels the agent's runs;
 enabling it again needs a rotation. Deactivating the service account (Admin → Users) also
-revokes its key. Agents are never deleted. Every registration, change, rotation, run
-request, cancel and "include in score" is in the audit log (category AI), and every MCP
-call an agent makes is an `mcp.call` entry with its key.
+revokes its key. Agents are never deleted. Every registration, change (with the new purposes, projects
+and key scopes), rotation, run request, cancel, "include in score" and research-note
+deletion is in the audit log (category "AI agents and runs"), and every MCP call an agent
+makes is an `mcp.call` entry with its key.
 
 **Reach:** an agent's key can act only inside its runs, but while a run is open, anyone
 who can message that kagent agent directly could steer it on that idea. Keep kagent's UI
 and A2A endpoint inside the cluster (kagent's default auth mode, `unsecure`, trusts every
 caller; use `trusted-proxy` with `kagent.existingTokenSecret` where you can), and register
 separate agents for projects that must not share one.
+
+**kagent keeps what its agents read.** kagent stores each run's session (the task, its
+messages and tool calls, so the idea text and comments the agent read through MCP) in
+its own database. That copy is outside Soundings: deleting an idea, erasing a public
+submitter's details and Soundings' retention schedules don't reach it. Apply kagent's own
+retention (or clean its database) if your data rules need it, and keep its database as
+protected as Soundings'.
 
 ### Example manifests (`deploy/kagent/`)
 
@@ -994,8 +1005,9 @@ to evaluate"; then swap in a Declarative agent with your `ModelConfig`.
 
 ### Troubleshooting runs
 
-A run's card (and `GET /api/v1/ideas/{idea}/ai-runs/{id}`) says why it ended, as a code
-with Soundings' own sentence: `agent_unreachable` (no connection to the controller, or
+A run's row on the idea page says why it ended in plain words with a next step (its
+**Steps** show Soundings' fixed sentence, including the A2A state where there is one);
+`GET /api/v1/ideas/{idea}/ai-runs/{id}` has the code and that sentence: `agent_unreachable` (no connection to the controller, or
 5xx / 404, after two retries: check `kagent.controllerUrl`, the egress policy, the
 Agent's namespace and name), `agent_unavailable` (the agent was disabled, lost the
 project or purpose, or has no usable key when the run started), `agent_protocol_error`

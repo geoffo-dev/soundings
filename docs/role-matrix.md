@@ -78,9 +78,10 @@ it immediately.
   agent's purposes, restriction = its projects;
   [contract-phase6 §3.1](api/contract-phase6.md#31-agents-their-service-accounts-and-keys));
   disabling the agent revokes its key. **Its key works only inside the agent's runs
-  (c22, run scope):** on `/mcp` only (REST: 403 `insufficient_scope`), on the idea of a
-  `running` run nobody asked to cancel, writing only through that run kind's tool. It
-  **never sees others' score data** (section 3 rule 9). Since it is never an owner or
+  (c22, run scope):** on `/mcp` only (REST: 403 `insufficient_scope`); every call names
+  its run (`run_id`) and reaches only that run's idea while it is `running` and nobody
+  asked to cancel it, writing only through that run kind's tool. It **never sees others'
+  score data**, and its own only inside its evaluate run (section 3 rule 9). Since it is never an owner or
   admin it can't start AI runs (table J).
 - **Break-glass admin:** the one local account whose credentials come from a K8s
   Secret, a platform admin (column PA). Usable only while SSO is not configured; every
@@ -368,7 +369,7 @@ Notes ([contract-phase6 §3.5](api/contract-phase6.md#35-authorisation-role-matr
   scope): `evaluation.submit_own` during an open evaluate run (they are assigned
   evaluators), `proposal.suggest_section` during an open draft run for that section, and
   `comment.create` during an open research run for MCP `add_research_note`; reads only
-  on an open run's idea; `create_idea`, `add_comment` and REST never. Section 3 applies
+  on the named open run's idea; `create_idea`, `add_comment` and REST never. Section 3 applies
   to them, with rule 9: they never see others' score data.
 - `platform.manage_agents` (table H) is session only; registering an agent and rotating
   its key also need c20 (403 `break_glass_account`).
@@ -423,8 +424,10 @@ Rules:
    (`score_hidden: true`; no aggregate, `n`, others' evaluations or their comments;
    unscored for sorting and filters), through every surface (`get_idea`,
    `search_ideas`, the shared queries; REST is refused to them anyway, c22). They see
-   their own evaluation. So the agent evaluates blind, and nothing it writes (a research
-   note, a suggestion, a rationale) can carry others' scores to a pending evaluator.
+   their own evaluation **only inside their evaluate run** on that idea (`get_idea`'s
+   `my_evaluation` is null in research and draft runs). So the agent evaluates blind, and
+   nothing it writes (a research note, a suggestion, a rationale) can carry anyone's
+   scores to a pending evaluator.
 10. **The aggregate's included set** is submitted evaluations with
     `include_in_aggregate = true`; AI evaluations are excluded by default
     (`evaluation.include_ai` changes that). Visibility (rules 1–5) is about all
@@ -460,7 +463,7 @@ evaluations and one AI evaluation present.
 | c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, and to `idea.watch`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
 | c20 | The principal is not the break-glass account (a key would outlive the emergency and keep working after SSO is configured; contract-phase5 §3.1). Covers agents' keys too (Phase 6) | 403 `break_glass_account` |
 | c21 | The principal is a person, not a service account. Not written in the cells (a property of the principal, like c20); applies to `idea.volunteer_owner` (contract-phase5 §3.7) | 403 `forbidden` |
-| c22 | **Run scope** (a property of the principal, like c20/c21; not written in the cells). For a service-account principal: REST is refused; every MCP tool must target the idea of an **open run** of its agent (`running`, no cancel request; `get_rubric` also by that idea's project; `list_projects` / `search_ideas` list only those); the only write is the open run's kind's tool (evaluate → `submit_evaluation`, research → `add_research_note`, draft_section → `propose_proposal_section` for the run's section); `create_idea` and `add_comment` never. For people: `add_research_note` is refused (contract-phase6 §3.5) | REST → 403 `insufficient_scope`; no open run (or another kind / section) → `ai_run_not_active`; `create_idea`, `add_comment` by an agent, `add_research_note` by a person → `forbidden` |
+| c22 | **Run scope** (a property of the principal, like c20/c21; not written in the cells). For a service-account principal: REST is refused; every MCP call **names its run** (`run_id`, required for agents) and must be an **open run** of its agent (`running`, no cancel request), checked **before any idea is looked up**; every tool must target that run's idea (`get_rubric` also by its project; `list_projects` / `search_ideas` list only that run's project / idea); the only write is the named run's kind's tool (evaluate → `submit_evaluation`, research → `add_research_note`, draft_section → `propose_proposal_section` for the run's section); `create_idea` and `add_comment` never. For people: `run_id` is ignored and `add_research_note` is refused (contract-phase6 §3.5) | REST → 403 `insufficient_scope`; no `run_id`, a run that isn't open, another idea (existing or not), another kind or section → `ai_run_not_active`; `create_idea`, `add_comment` by an agent, `add_research_note` by a person → `forbidden` |
 
 ## 5. API keys
 
@@ -570,11 +573,13 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   tool results carry no invisible characters.
 
 - **Phase 6:** for a service account every tool applies c22 (the run scope: targets,
-  filtered lists, the one write tool) and rule 9 (no others' score data, ever);
+  filtered lists, the one write tool, all bound to the run named by `run_id`) and rule 9
+  (no others' score data, ever; its own only in its evaluate run);
   `submit_evaluation` takes per-criterion `sources` from service accounts only (people:
   `validation_error`) and needs an AI evaluator's rationale (the comment) on every
-  scored criterion; every call of a known tool by an agent on an open run's idea adds a
-  `tool_called` event (Soundings' sentence for the tool only) to that run
+  scored criterion; every call of a known tool by an agent that names its open run and
+  that run's idea adds a `tool_called` event (Soundings' sentence for the tool only) to
+  that run
   ([contract-phase6 §4](api/contract-phase6.md#4-mcp-additions)).
 
 ## 7. Writing the tests
@@ -611,10 +616,12 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   table J for every column and the owner overlay (also demoted), each part of c10, c5 /
   c6 / c7, c19, archived and held ideas; a service account's key can't request a run;
   `evaluation.include_ai` with a pending evaluator (404), a person's evaluation (409) and
-  a draft (404); c22 for every MCP tool (no open run, another idea, another kind or
-  section, after cancel, timeout and `worker_lost`; `create_idea` / `add_comment`
-  forbidden; REST refused to agents; `add_research_note` by people); rule 9 for agents
-  before and after submitting; the event stream for every column (404 / 401) and with
+  a draft (404); c22 for every MCP tool (no open run, no `run_id`, another of the
+  agent's open runs, another idea whether it exists or not, another kind or section,
+  after cancel, timeout and `worker_lost`, even with a newer run open; `create_idea` /
+  `add_comment` forbidden; REST refused to agents; `add_research_note` by people); rule
+  9 for agents before and after submitting, and their own evaluation only in evaluate
+  runs; the event stream for every column (404 / 401) and with
   access removed mid-stream; a pending evaluator's stream and run responses hold no score
   data; `platform.manage_agents` refused to keys and non-admins, c20 on register and
   rotate.

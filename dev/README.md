@@ -330,7 +330,7 @@ with `mcp-headers.txt` (mode 600) holding one line, `Authorization: Bearer sdg_â
 
 **Checks.** `make mcp-smoke` (`scripts/mcp-smoke.sh`, against `MCP_BASE_URL`, default
 :8000, with the demo data and dev login) runs the SPEC acceptance with curl JSON-RPC:
-carol's key, `initialize`, the nine tools, blind `search_ideas` / `get_idea`,
+carol's key, `initialize`, the ten tools listed, blind `search_ideas` / `get_idea`,
 `submit_evaluation`, `not_found` outside the key's project, `insufficient_scope`
 without `write`, a foreign `Origin`, the audit entries, then revoke â†’ 401 at the next
 call (it creates and deletes a test idea). Checked on 2026-10-02 against this server:

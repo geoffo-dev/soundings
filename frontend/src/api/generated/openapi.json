@@ -2304,7 +2304,8 @@
           "ai_agent.update",
           "ai_run.request",
           "ai_run.cancel",
-          "evaluation.include_ai"
+          "evaluation.include_ai",
+          "ai_note.delete"
         ],
         "title": "AuditAction",
         "type": "string"
@@ -19490,7 +19491,7 @@
     },
     "/api/v1/ideas/{idea}/research-notes/{note_id}": {
       "delete": {
-        "description": "ai.delete_note (the idea's owner and project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived, awaiting_moderation.",
+        "description": "ai.delete_note (the idea's owner and project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent; audited as ai_note.delete (ids only). 409 project_archived, awaiting_moderation.",
         "operationId": "delete_research_note",
         "parameters": [
           {

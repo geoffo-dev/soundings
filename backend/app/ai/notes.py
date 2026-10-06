@@ -5,8 +5,9 @@ service account) whose payload holds ``{run_id, agent_id, body_md, sources: [{ti
 url}]}``: Markdown and cited sources written by an AI agent, untrusted, rendered
 sanitised with an AI label. One per run: calling ``add_research_note`` again in the same
 run replaces it. No notifications, mentions or emails. Deleting (``ai.delete_note``:
-the idea's owner and admins) clears the text and sources and keeps the item ("deleted a
-research note"). Never score data: the agent never sees others' scores (rule 9).
+the idea's owner and admins) clears the text and sources, keeps the item ("deleted a
+research note") and is audited as ``ai_note.delete`` (ids only, never the note's text).
+Never score data: the agent never sees others' scores (rule 9).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from app.models.base import utcnow
 from app.models.enums import IdeaStatus
 from app.schemas.activity import AI_RESEARCH_NOTE
 from app.schemas.ai import AiAgentRef, Citation, CitationIn, ResearchNote
-from app.services import activity
+from app.services import activity, audit
 from app.services.ideas import LoadedIdea
 
 __all__ = [
@@ -122,7 +123,8 @@ async def get_note(
 async def delete_note(
     db: AsyncSession, principal: Principal, loaded: LoadedIdea, note_id: UUID
 ) -> None:
-    """``DELETE``: 404 (not this idea's note) -> 403 -> 409 (archived, c19); idempotent."""
+    """``DELETE``: 404 (not this idea's note) -> 403 -> 409 (archived, c19); idempotent.
+    Audited as ``ai_note.delete`` the first time (review L4)."""
     event = await _load(db, loaded, note_id, for_update=True)
     require(principal, Rule.AI_DELETE_NOTE, loaded.resource)
     payload = dict(event.payload or {})
@@ -134,11 +136,24 @@ async def delete_note(
         "body_md": "",
         "sources": [],
         "deleted": True,
-        # Who deleted it and when stay with the item (review L4; there is no audit action
-        # for it yet: a new AuditAction needs the SPA's phrase in the same change).
+        # Who deleted it and when stay with the item too (review L4).
         "deleted_by_id": str(principal.user_id),
         "deleted_at": utcnow().isoformat(),
     }
+    await audit.record(
+        db,
+        "ai_note.delete",
+        actor=principal,
+        target_type="idea",
+        target_id=loaded.idea.id,
+        project_id=loaded.idea.project_id,
+        details={
+            "rule": Rule.AI_DELETE_NOTE,
+            "note_id": event.id,
+            "run_id": _uuid(payload.get("run_id")),
+            "agent_id": _uuid(payload.get("agent_id")),
+        },
+    )
     await db.flush()
 
 

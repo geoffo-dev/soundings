@@ -28,6 +28,12 @@ export function focusWhenRendered(
       // was used as soon as focus leaves it. Without `force` that wins (the moderation
       // queue relies on it); with `force` a second focus stays.
       if (force && document.activeElement !== target) target.focus({ preventScroll: true })
+      // A dialog that is closing (or about to) keeps its focus trap until it has gone,
+      // which pulls focus back to its busy button (focusable while pending): try again.
+      if (document.activeElement !== target && trappedBy(document.activeElement, target)) {
+        if (--left > 0) window.requestAnimationFrame(attempt)
+        return
+      }
       // jsdom has no scrollIntoView.
       if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' })
       return
@@ -35,6 +41,12 @@ export function focusWhenRendered(
     if (--left > 0) window.requestAnimationFrame(attempt)
   }
   window.requestAnimationFrame(attempt)
+}
+
+/** `element` is in a dialog or sheet that `target` is outside of (its focus trap holds). */
+function trappedBy(element: Element | null, target: HTMLElement): boolean {
+  const overlay = element?.closest('[data-slot="dialog-content"], [data-slot="sheet-content"]')
+  return Boolean(overlay && !overlay.contains(target))
 }
 
 /** Focus is where the action left it, or was lost (its element removed, or `<body>`). */

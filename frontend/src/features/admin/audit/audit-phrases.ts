@@ -675,6 +675,19 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
             idea(),
             text(' in the score'),
           ]
+    case 'ai_note.delete': {
+      // The note's text never reaches the audit log: name the agent when it still exists.
+      const agentId = str(details, 'agent_id')
+      return agentId
+        ? [
+            actor,
+            text(' deleted a research note by '),
+            { type: 'agent', id: agentId },
+            text(' on '),
+            idea(),
+          ]
+        : [actor, text(' deleted an AI research note on '), idea()]
+    }
 
     case 'mcp.call': {
       const tool = str(details, 'tool')

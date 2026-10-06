@@ -357,7 +357,8 @@ async def get_research_note(
     description=(
         "ai.delete_note (the idea's owner and project and platform admins): removes an AI "
         "research note's text and sources; the feed shows that a note was deleted. "
-        "Idempotent. 409 project_archived, awaiting_moderation."
+        "Idempotent; audited as ai_note.delete (ids only). 409 project_archived, "
+        "awaiting_moderation."
     ),
     responses=problems(401, 403, 404, 409),
 )

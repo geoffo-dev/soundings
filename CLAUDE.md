@@ -37,7 +37,7 @@ backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the whe
                   tests/ — uv, Python 3.12; app/seed/ is the demo story (`soundings seed`)
   app/schemas/      API contract (lead)          app/authz/ app/auth/ app/api_keys/ (identity)
   app/mcp/            the MCP server at /mcp: guard (Origin, key, c15, rate), SDK server,
-                      one tools/call dispatcher (audit), the nine tools over the REST services
+                      one tools/call dispatcher (audit), the ten tools over the REST services
   app/notifications/  fan-out, preferences, digests, reminders, mentions, inbox, unsubscribe
   app/email/          outbox, worker tasks, SMTP, rendering; app/templates/email/ (Jinja2)
   app/proposals/      sections, margin threads, suggestions, Markdown, exports; PDF child process
@@ -90,7 +90,7 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make k3s-keycloak` · `k3s-install SSO=1` · `k3s-smoke SSO=1` | Keycloak with the dev realm in the cluster (`scripts/k3s-keycloak.sh up\|down`; issuer `http://keycloak.localhost:18081/realms/soundings` for browser and pods; creates Secret `soundings-oidc`), then install with `dev/k3s-sso-values.yaml` and run `scripts/sso-smoke.sh` through the ingress |
 | `make sso-smoke` | `scripts/sso-smoke.sh $(SSO_BASE_URL)` (default :8000, the `make dev` API with `dev/.env`): alice signs in through Keycloak with curl, then the Phase 2 acceptance (managed group → private project; removed in Keycloak → 404 at next sign-in); needs `jq`, cleans up |
 | `make email-smoke` | `scripts/email-smoke.sh $(EMAIL_BASE_URL)` (default :8000) against an app with dev login, the worker and Mailpit (`MAILPIT_URL`, default :8025; `MAILPIT_CONTAINER`, default the dev compose one; `MAILPIT_OUTAGE=0` skips the outage step); needs `jq` |
-| `make mcp-smoke` | `scripts/mcp-smoke.sh $(MCP_BASE_URL)` (default :8000): curl JSON-RPC at `/mcp` with the demo data and dev login: 405/401/`/.well-known` 404 anonymously, then carol's key (read, evaluate, mcp; Customer Innovation only), the nine tools, blind `search_ideas` / `get_idea`, `submit_evaluation`, `not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the audit entries, revoke → 401 at the next call and on REST; creates and deletes a test idea; needs `jq`. `MCP_CLIENT_HOOK` runs another client with the key (k3s) |
+| `make mcp-smoke` | `scripts/mcp-smoke.sh $(MCP_BASE_URL)` (default :8000): curl JSON-RPC at `/mcp` with the demo data and dev login: 405/401/`/.well-known` 404 anonymously, then carol's key (read, evaluate, mcp; Customer Innovation only), `tools/list` (the ten tools), SPEC's nine tools called, blind `search_ideas` / `get_idea`, `submit_evaluation`, `not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the audit entries, revoke → 401 at the next call and on REST; creates and deletes a test idea; needs `jq`. `MCP_CLIENT_HOOK` runs another client with the key (k3s) |
 | `make k3s-install MCP=1` · `k3s-smoke MCP=1` | `dev/k3s-mcp-values.yaml` (`kagent.enabled`; the API admits only Traefik and the `kagent` namespace), then `mcp-smoke` through the ingress plus `scripts/k3s-mcp-client.sh`: the official Python SDK in a pod in namespace `kagent` with its key from a Secret (`Bearer sdg_…`) calling the Service URL, and a pod in another namespace refused by the NetworkPolicy. CI runs `SSO=1 SMTP=1 MCP=1` |
 | `make ai-smoke` | `scripts/ai-smoke.sh $(AI_BASE_URL)` (default :8000) against an app with AI on, dev login, the worker and the fake agent (`AI_FAKE_URL`, default :8083; `AI_FAKE_KEYS_DIR`, default `dev/.fake-agent-keys`): register an agent (key once), hand the fake its key, Test connection, "Ask AI to evaluate" watched over SSE by a pending evaluator (no score data, 204 after the end), the AI evaluation out of the aggregate then included, research note, section draft, a cancelled `-slow` run, the agent's key refused on REST and outside runs; `AI_PROTOCOL=kagent_v1_0` runs it over A2A 1.0; needs `jq` |
 | `make fake-agent-image` · `make k3s-fake-agent` · `make k3s-kagent-crds` · `k3s-install AI=1` · `k3s-smoke AI=1` | The fake agent's image (`FAKE_AGENT_IMAGE`, default `soundings-fake-agent:dev`); the fake in k3s as `kagent/kagent-controller:8083` (so the default `controllerUrl` works); kagent v0.10.2's CRDs (from the git tag, cloned into `.k3s/`) plus a server-side dry run of every kagent manifest; install with `dev/k3s-ai-values.yaml` (AI on, `kagent.examples` when the CRDs exist) and run `ai-smoke` through the ingress. CI's k3s job runs `SSO=1 SMTP=1 MCP=1 AI=1` |
@@ -123,7 +123,8 @@ so its key may act, `run_row`, `events`), the `crew`, `kagent` (`fake_kagent.py`
 server on `httpx.MockTransport`) and `ai_runtime` fixtures; `app.ai.runner.AiRuntime`
 holds the timing seams (deadline, heartbeat, poll, retries, clock, `transport`) and
 `app.state.ai_transport` replaces the network for Test connection. Agents' keys are
-MCP-only (REST: 403), so tests of agents go through `/mcp` with an open run.
+MCP-only (REST: 403), so tests of agents go through `/mcp` with an open run that each
+call names: `mcp_as(key).for_run(run)` passes its `run_id` (`tests/mcp/conftest.py`).
 API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
 layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
 `make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
@@ -355,7 +356,9 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   Tailwind values); loading, empty and error states, dark mode, keyboard, 390 px for
   every screen; API only through `src/api/client.ts`. Dialogs and sheets restore focus
   themselves (`components/ui/return-focus.ts`; `onCloseAutoFocus` only picks a
-  replacement when the opener is gone);
+  replacement when the opener is gone); a busy `Button loading` stays focusable
+  (`aria-disabled` + `aria-busy`), so `lib/focus.ts` `focusWhenRendered` keeps trying
+  while a closing dialog's focus trap pulls focus back to it;
   server-filtered cmdk lists use `useTopResult` so Enter picks the visible top row, and
   pass empty/loading/error messages as `CommandList empty` (outside the listbox).
   Sheets open focused on themselves; closing one opened from a list row returns focus
@@ -458,14 +461,23 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   `trust_env=False`. The A2A message (`run_message`) holds references and instructions,
   never keys, URLs or idea text; A2A text and artifacts are ignored: results come back
   through MCP as the agent's service account and are matched to the run. **c22**: an
-  agent's key is MCP-only (REST 403 `insufficient_scope`) and works only on the idea of
-  one of its open runs, writing only through the run kind's tool (`AGENT_RUN_WRITE_TOOLS`).
-  **Rule 9**: service accounts are always blind (`queries.score_visible`, the policy).
+  agent's key is MCP-only (REST 403 `insufficient_scope`); every call names its open run
+  (`run_id`, required for agents, ignored for people; `app/ai/scope.py`), checked before
+  any idea is looked up (another idea, existing or not: `ai_run_not_active`), and reaches
+  only that run's idea, writing only through the run kind's tool (`AGENT_RUN_WRITE_TOOLS`).
+  **Rule 9**: service accounts are always blind (`queries.score_visible`, the policy) and
+  see their own evaluation only in their evaluate run. An agent's text loses bidi and
+  zero-width characters before it is stored. Agents register only in
+  `SOUNDINGS_AI_AGENT_NAMESPACES` (default `soundings`, never empty); the break-glass
+  account can't widen an agent; deleting a research note is audited `ai_note.delete`.
   AI evaluations are excluded from aggregates until `set_evaluation_inclusion`; a changed
   re-submission resets it. Run events and lists carry no score data and only Soundings'
   fixed sentences (never agent text). SSE (`app/ai/sse.py`): one poller per run per
-  process, `Last-Event-ID` replay, 204 after the final event, 5 streams per person, a
-  re-check every 30 s; the SPA falls back to polling `get_ai_run`. Agent text in the SPA
+  process, `Last-Event-ID` replay, 204 after the final event, 5 streams per person and
+  100 per API process, a re-check every 30 s; the SPA falls back to polling `get_ai_run`.
+  The SPA shows one run row per agent and kind (`features/ai/run-card.tsx`; steps behind
+  "Steps", older runs under "History"), words errors by `error.code` (`runErrorWords`)
+  and keeps the server's sentence under Steps. Agent text in the SPA
   is `<Markdown untrusted>` (http/https links only, `rel="noopener noreferrer nofollow"`,
   host shown), with `AiBadge` wherever an agent's work appears (evaluator rows, cards,
   comparison columns, notes, suggestions, feed lines).

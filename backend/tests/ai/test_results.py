@@ -353,6 +353,20 @@ async def test_a_research_note_is_written_replaced_read_and_deleted(
     assert stored is not None
     assert stored.payload["deleted_by_id"] == str(crew.team.owner.id)  # who deleted it (L4)
     assert stored.payload["deleted_at"]
+    # Audited once (the repeat changes nothing), with ids only: never the note's text.
+    audited = list(
+        await db_session.scalars(select(AuditLog).where(AuditLog.action == "ai_note.delete"))
+    )
+    assert [(e.actor_id, e.target_type, e.target_id, e.project_id) for e in audited] == [
+        (crew.team.owner.id, "idea", crew.idea.id, crew.idea.project_id)
+    ]
+    assert {key: audited[0].details[key] for key in ("rule", "note_id", "run_id", "agent_id")} == {
+        "rule": "ai.delete_note",
+        "note_id": note_id,
+        "run_id": str(run.id),
+        "agent_id": str(crew.agent.id),
+    }
+    assert "Second" not in str(audited[0].details)
     assert_problem(
         await (await api(crew.team.owner)).get(f"/ideas/{crew.ref}/research-notes/{run.id}"),
         404,

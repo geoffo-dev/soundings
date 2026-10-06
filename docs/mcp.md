@@ -132,7 +132,8 @@ client calls `search_ideas` with `awaiting_my_evaluation`, then `get_rubric` and
 
 Ten tools, always listed (a tool the key's scopes don't allow answers
 `insufficient_scope`). Ideas are referenced by key (`CUST-12`, any case) or id; projects
-by their URL name (slug).
+by their URL name (slug). Every tool also takes an optional `run_id`: it is for
+Soundings' AI agents only (section 5); people leave it out, and it is ignored for them.
 
 | Tool | Scope | What it does |
 |---|---|---|
@@ -215,13 +216,17 @@ settings → AI agents, which creates its key (shown once, with a Kubernetes Sec
 An agent's key differs from a person's in what it may do (contract-phase6 §3.5, c22, role
 matrix §3 rule 9):
 
-- **Only inside a run.** It works on `/mcp` only (every REST route answers 403
-  `insufficient_scope`), and there only while one of the agent's runs is open: on that
-  run's idea, and writing only that run's result. Outside a run `list_projects` and
-  `search_ideas` return nothing, and the other tools answer `not_found` or
-  `ai_run_not_active`; after a cancel, the deadline or a worker restart the key does
-  nothing more. So someone who reaches the agent directly in kagent can't use the key for
-  anything else.
+- **Only inside a run, and only the run it names.** It works on `/mcp` only (every REST
+  route answers 403 `insufficient_scope`), and there only while one of the agent's runs
+  is open. **Every call passes that run's id as `run_id`** (the run's message starts
+  "Soundings AI run <id>"); the call then reaches only that run's idea and writes only
+  that run's result. Without `run_id`, or naming a run that has ended, another kind of
+  run or another idea (whether it exists or not), a tool answers `ai_run_not_active`
+  before anything is looked up; `list_projects` and `search_ideas` list only the named
+  run's project and idea. After a cancel, the deadline or a worker restart the run stays
+  over, even while a newer run on the same idea is open. So two runs of one agent can't
+  reach each other's ideas, and someone who reaches the agent directly in kagent can't
+  use the key for anything else.
 - **One write tool per kind of run.** An evaluate run may call `submit_evaluation` (each
   score with a non-empty `comment`, its rationale, and up to 5 `sources`, `{title, url}`
   with http/https URLs), a research run `add_research_note`, a section-draft run
@@ -229,9 +234,12 @@ matrix §3 rule 9):
   refused (`forbidden`). The result is attached to the run.
 - **Always blind.** For an agent every idea reads as it does for a pending evaluator, before
   and after it submits (`score_hidden: true`, no aggregate, no other evaluations or their
-  comments); it sees only its own evaluation. So nothing an agent writes can carry someone
-  else's scores to a pending evaluator, and people's evaluation comments never reach a
-  model provider.
+  comments); it sees its own evaluation only in its evaluate run (`my_evaluation` is null
+  in research and draft runs). So nothing an agent writes can carry anyone's scores to a
+  pending evaluator, and people's evaluation comments never reach a model provider.
+- **Plain text only.** Bidi controls and zero-width characters are removed from an
+  agent's note, comment and rationale before they are stored (text that was only those
+  is refused); the app shows agent hosts and links isolated from the text around them.
 - **Left out of the score.** Its evaluation appears with an AI badge and is left out of the
   aggregate until the idea's owner or an admin includes it; a re-submission that changes a
   score or the recommendation is left out again.

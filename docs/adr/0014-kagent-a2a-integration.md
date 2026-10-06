@@ -28,9 +28,11 @@ its Python runtime can't cancel, its UI and A2A endpoint are unauthenticated by 
   `submit_evaluation` (per-criterion rationale and sources), `add_research_note` or
   `propose_proposal_section`. The server attaches the result to the active run; A2A
   text is ignored. Blind evaluation, holds, limits and audit apply unchanged, plus two
-  agent rules: **c22, run scope** (the key works on `/mcp` only, on the idea of a
-  `running` run nobody asked to cancel, writing only through the run kind's tool) and
-  **rule 9** (agents never see others' score data, before or after submitting).
+  agent rules: **c22, run scope** (the key works on `/mcp` only; every call names its
+  run with `run_id` and reaches only that run's idea while it is `running` and nobody
+  asked to cancel it, writing only through the run kind's tool) and **rule 9** (agents
+  never see others' score data, before or after submitting, and see their own only
+  inside their evaluate run).
 - **Runs are rows.** `ai_runs` (status, deadline, heartbeat, cancel request, A2A task id,
   sanitised error, result reference) and `ai_run_events` (numbered, Soundings' own
   sentences) are executed by a procrastinate job on its own `ai` queue and worker pool
@@ -76,3 +78,25 @@ its Python runtime can't cancel, its UI and A2A endpoint are unauthenticated by 
   and integration"; contract changes: contract-phase6 §10.
 - Verified against kagent: the example manifests against v0.10.2's real CRDs. Everything
   else about the loop is verified against the fake agent only (contract-phase6 §8).
+
+## Notes from the reviews (2026-10-06)
+
+- **Each call names its run** (security review H1, accepted). c22 first bound an agent's
+  calls to "an open run on that idea", so two runs of one agent open at once (an evaluate
+  run on a private project's idea and a research run elsewhere) could reach each other's
+  ideas. Every MCP tool now takes an optional `run_id`, required for agents, and the
+  named run is checked before any idea is looked up (which also stops an agent telling
+  which ideas exist, N1). Chosen over "one run per agent at a time" because kagent-adk
+  0.10.2 can't cancel: a task that outlives its run would act through the agent's next
+  run, and a killed worker's job would hold the agent's lock with nothing in Soundings to
+  release it. A run that ended stays ended even while a newer run on the same idea is
+  open.
+- **Rule 9 narrowed** (M1): an agent sees its own evaluation only in its evaluate run, so
+  a research note or a draft can't carry its scores to a pending evaluator.
+- **Namespaces** (L8): `SOUNDINGS_AI_AGENT_NAMESPACES` defaults to `soundings` and is
+  never empty, so kagent's built-in agents in its own namespace can't be registered.
+- **kagent's session store** (N2): kagent keeps each run's session (what the agent read
+  through MCP, idea text included) in its own database, outside Soundings' deletion,
+  erasure and retention; the operator guide says so.
+- Deleting a research note is audited (`ai_note.delete`); the SPA words run errors by
+  `error.code` and keeps the server's fixed sentence under "Steps".

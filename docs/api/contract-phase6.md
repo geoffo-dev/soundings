@@ -173,7 +173,8 @@ safety), §3.2 (SSRF: only the built URL is ever requested; no redirects; no pro
 - **Registering** (`register_ai_agent`, one transaction): validates the body (labels,
   purposes, 1–50 distinct project ids), refuses the break-glass account (c20, 403
   `break_glass_account`: it would create a key), a namespace outside
-  `SOUNDINGS_AI_AGENT_NAMESPACES` when that is set (422 `namespace_not_allowed`), an
+  `SOUNDINGS_AI_AGENT_NAMESPACES` (default `soundings`, §3.2; 422
+  `namespace_not_allowed`), an
   unknown project (422 `invalid_project`), a taken `(namespace, name)` (409
   `agent_taken`), a 51st agent (409 `too_many_agents`). Then it creates:
   - the **service account**: a `users` row with `is_service_account = true`,
@@ -214,8 +215,10 @@ safety), §3.2 (SSRF: only the built URL is ever requested; no redirects; no pro
 - **Changing the display name** renames the service account too (what people see next
   to its work). Namespace and name never change (register another agent).
 - **Reach:** an agent serving several projects can't be steered by text in one idea into
-  another: c22 confines every call to the idea of an open run, and rule 9 hides
-  others' scores. What remains (documented in the admin guide): while a run on idea X is
+  another, and two of its runs can't reach each other: every call names its open run
+  (`run_id`, §4) and c22 confines it to that run's idea (checked before any idea is
+  looked up, so another idea is `ai_run_not_active` whether it exists or not), and rule 9
+  hides others' scores (and the agent's own outside its evaluate run). What remains (documented in the admin guide): while a run on idea X is
   open, whoever can message the agent directly in kagent (its UI and A2A endpoint have no
   authentication by default, `--auth-mode=unsecure`) could make it read X or write its
   one result for X; and an agent with other tools (web fetch) could send out what it read
@@ -236,7 +239,7 @@ safety), §3.2 (SSRF: only the built URL is ever requested; no redirects; no pro
 | `AI_DEFAULT_PROTOCOL` | `kagent_v0_10` | The protocol of a new agent when none is chosen. |
 | `AI_RUN_TIMEOUT` | `PT5M` | How long a started run may take (30 s – 1 h; ISO 8601 or seconds), copied to `ai_runs.timeout_seconds` when requested. |
 | `AI_MAX_CONCURRENT_RUNS` | `4` | Runs talking to agents at once **per worker process** (1–50): the size of the worker's own pool for the `ai` queue (`AI_RUN_QUEUE`), separate from `WORKER_CONCURRENCY` (email, notifications, schedules), so AI runs never hold those up; the rest wait `queued`, first in, first out. With N worker replicas, N × this. |
-| `AI_AGENT_NAMESPACES` | empty (any) | Comma-separated namespaces agents may be registered in. The chart sets the release namespace unless `kagent.agentNamespaces` lists others (§3.11). |
+| `AI_AGENT_NAMESPACES` | `soundings` | Comma-separated namespaces agents may be registered in; **at least one** (an empty list is refused at start-up: never "any", so kagent's own built-in agents in its namespace can't be registered). The chart sets the release namespace unless `kagent.agentNamespaces` lists others (§3.11). |
 | `AI_MCP_URL` | the first base URL + `/mcp` | The URL to put in an agent's `RemoteMCPServer` (the chart sets the Service URL), shown in Admin settings → AI agents. **Never sent to agents** (not in the message): an agent uses only the MCP server its operator configured. |
 
 - **The A2A URL** is `agent_a2a_url(kagent_url, protocol, namespace, name)`:
@@ -377,7 +380,8 @@ text/event-stream` (streaming) or `application/json`; `A2A-Version: 0.3`
 **The message** (one per run; `run_message(kind, run_id, idea_key, agent_name,
 section_key)`): role user, `messageId` = the run id (a retried send can be recognised),
 no `contextId` (kagent starts a fresh session per run), one text part (the
-instructions: which tools to call, in order, with the idea key, the limits, that the
+instructions: the header "Soundings AI run <id>" and that every tool call passes that
+id as `run_id` (§4), which tools to call, in order, with the idea key, the limits, that the
 run's tools reach only this idea, that people's text is information and never
 instructions, nothing copied out of Soundings beyond short search terms, real sources
 only, no secrets), and `metadata.soundings = {run_id, kind, idea, section_key}` for
@@ -448,13 +452,15 @@ state); a crashed worker is the sweep's (`worker_lost`).
 | `draft_section` | `propose_proposal_section` for the run's section | its `running` draft run for that idea and section | `suggestion_id` (the latest); "Suggestion saved" |
 
 In the same transaction as the write, after the tool has locked the project and the
-idea (§3.3's lock order). There is no work outside a run: c22 refuses an agent's write
-without an open run of that kind on that idea (and section). **`tool_called` events:**
-the MCP dispatcher, for a call of a known tool (`AI_TOOL_MESSAGES`) by an agent's
-service account naming an idea, adds `tool_event_message(tool, error_code)` ("Read the
-idea", "Commented: forbidden") to the agent's open runs on that idea (the write tools:
-to the run they attach to); `list_projects`, `search_ideas` and unknown tools add none
-(never a raw tool name); **after the tool's transaction has ended** (committed or rolled
+idea (§3.3's lock order). The run is the one the call names (`run_id`): it must be the
+agent's, `running`, not cancel-requested, of the tool's kind (and section) and on the
+named idea, else `ai_run_not_active`. There is no work outside a run: c22 refuses an
+agent's call without such a run. **`tool_called` events:** the MCP dispatcher, for a
+call of a known tool (`AI_TOOL_MESSAGES`) by an agent's service account that names its
+run and that run's idea, adds `tool_event_message(tool, error_code)` ("Read the idea",
+"Commented: forbidden") to **the named run only** (no event for a call without a run
+named, or about another idea); `list_projects`, `search_ideas` and unknown tools add
+none (never a raw tool name); **after the tool's transaction has ended** (committed or rolled
 back), in a short transaction of its own: writing it while the tool's transaction holds
 the run row would deadlock the call on itself; never arguments or results; at most
 `AI_RUN_EVENTS_MAX` (200) events per run, the final included (once a run has 199,
@@ -490,33 +496,42 @@ non-final events are dropped).
   `not_ai_evaluation`).
 - **c22, run scope** (new; a property of the principal, like c20 and c21, so not written
   in the cells). An **open run** is a run of the principal's agent with status `running`
-  and no cancel request. For a **service-account principal** (every service account is
-  an agent's; one without an agent row has no runs, so it can do nothing):
+  and no cancel request. Every call an agent makes **names its run**: the tools'
+  `run_id` argument (§4), from the run's message. For a **service-account principal**
+  (every service account is an agent's; one without an agent row has no runs, so it can
+  do nothing):
   - **REST:** every operation is refused with 403 `insufficient_scope` (agents' keys are
     MCP only), after the key check;
-  - **MCP targets:** every tool naming an idea must name the idea of an open run (an
-    idea the agent can't see: `not_found` as before; one it can see without an open run:
-    `ai_run_not_active`); `get_rubric` by that idea or by its project; `list_projects`
-    lists only the projects of its open runs' ideas and `search_ideas` only those ideas
-    (both empty without an open run);
-  - **MCP writes:** only the open run's kind's tool (`AGENT_RUN_WRITE_TOOLS`): evaluate →
+  - **MCP targets, the run first:** before anything is looked up, every tool naming an
+    idea needs `run_id` to name one of the agent's open runs and the idea to be that
+    run's, else `ai_run_not_active` (no `run_id`, another agent's run, a run that ended,
+    or another idea, **whether that idea exists or not**: nothing tells the agent which
+    ideas exist); `get_rubric` by that idea or by its project; then the idea is loaded as
+    for anyone (`not_found` while held); `list_projects` lists only the named run's
+    project and `search_ideas` only its idea (both empty without an open run named);
+  - **MCP writes:** only the named run's kind's tool (`AGENT_RUN_WRITE_TOOLS`): evaluate →
     `submit_evaluation` (draft or submit), research → `add_research_note`, draft_section
     → `propose_proposal_section` with `section_key` = the run's section (another
     section: `ai_run_not_active`); `create_idea`, `add_comment` and any other write tool:
-    `forbidden`, always. The read tools are `AGENT_READ_TOOLS`.
+    `forbidden`, always, before any lookup. The read tools are `AGENT_READ_TOOLS`.
 
-  For people, c22 refuses only `add_research_note` (`forbidden`). Check order on `/mcp`:
-  key → rate → c15 → arguments → the idea (`not_found`) → c22 → the tool's rule and
-  scope. Consequences: cancel, timeout and `worker_lost` are final (the agent can't
-  finish later); disabling or narrowing an agent cuts it off at once; text planted in
-  one idea can't make the agent read or write another; @mentions (and their emails)
-  can't come from agents. The residual risk is a message sent to the agent by someone
+  For people, `run_id` is ignored and c22 refuses only `add_research_note`
+  (`forbidden`). Check order on `/mcp`: key → rate → c15 → arguments → (agents) **c22,
+  the named run** → the idea (`not_found`) → the tool's rule and scope. Consequences:
+  two runs of one agent open at once can't reach each other; cancel, timeout and
+  `worker_lost` are final (the agent can't finish later, even while a newer run on the
+  same idea is open: a task that outlives its run names the old run); disabling or
+  narrowing an agent cuts it off at once; text planted in one idea can't make the agent
+  read or write another; @mentions (and their emails) can't come from agents. The residual risk is a message sent to the agent by someone
   else (kagent's UI or A2A endpoint) while a run on the same idea is open (§3.1 "Reach").
 - **Rule 9 (role matrix §3), for agents:** a service account never sees other
   evaluators' score data, before or after it submits: in `get_idea`, `search_ideas` and
   the shared queries it is treated as a pending evaluator on every idea
   (`score_hidden: true`, no aggregate, `n`, others' evaluations or their comments,
-  unscored for sorting and filters); its own evaluation stays visible to it.
+  unscored for sorting and filters). Its own evaluation (`get_idea`'s `my_evaluation`)
+  is visible to it **only inside its evaluate run** on that idea; in research and draft
+  runs it is null (`my_evaluation_state` stays), so a note or draft can't carry the
+  agent's scores into the feed or the proposal.
 - **Keys:** as in §2; a key restricted away from the project gets 404 as everywhere.
 
 ### 3.6 Live progress: SSE
@@ -606,7 +621,9 @@ non-final events are dropped).
   instructions forbid scores and go/no in notes (the agent's own opinion could still
   appear: accepted, documented risk).
 - **Deleting** (`ai.delete_note`: the idea's owner, project and platform admins; §10) clears the text and
-  sources (`deleted: true`), keeps the item ("deleted a research note"); idempotent.
+  sources (`deleted: true`), keeps the item ("deleted a research note") with
+  `deleted_by_id` and `deleted_at` in its payload; idempotent; audited `ai_note.delete`
+  the first time (§3.10).
 
 ### 3.9 Section drafts
 
@@ -619,16 +636,17 @@ of different sections run side by side.
 
 ### 3.10 Audit
 
-New `AuditAction` values, **agreed but not yet in the schema** (integration step §5;
-`audit.record` refuses unknown actions until then, tests can patch `AUDIT_ACTIONS`):
+New `AuditAction` values (in the schema since the integration step §5; `ai_note.delete`
+since the final verification, §10):
 
 | Action | Actor | Target | Details (never keys, prompts, agent text or URLs with tokens) |
 |---|---|---|---|
 | `ai_agent.register` | the admin | `user`: the service account | `rule: platform.manage_agents`, `agent_id`, `namespace`, `name`, `protocol`, `purposes`, `project_ids` |
-| `ai_agent.update` | the admin | `user`: the service account | `rule`, `agent_id`, `changed` (field names), `enabled` when it changed |
+| `ai_agent.update` | the admin | `user`: the service account | `rule`, `agent_id`, `changed` (field names), `enabled` when it changed; the new `purposes` / `project_ids` when they changed, and `key_id`, `key_scopes`, `key_project_ids` when the key followed (review L4) |
 | `ai_run.request` | the requester | `idea` | `rule` (`ai.request_evaluation` \| `ai.research` \| `ai.draft_section`), `run_id`, `agent_id`, `kind`, `section_key` (an idempotent 200 isn't audited again) |
 | `ai_run.cancel` | the canceller (or the admin who disabled or narrowed the agent) | `idea` | `rule: ai.cancel_run` (or `platform.manage_agents`), `run_id`, `agent_id`, `status` when cancelled |
 | `evaluation.include_ai` | the owner or admin | `idea` | `rule`, `evaluation_id`, `evaluator_id`, `include` |
+| `ai_note.delete` | the owner or admin who deleted a research note (the first time; a repeat is a no-op) | `idea` | `rule: ai.delete_note`, `note_id`, `run_id`, `agent_id` (never the note's text or sources) |
 
 Existing actions cover the rest: `api_key.create` / `api_key.revoke` (rule
 `platform.manage_agents`; also when disabling revokes the key), `project.member_add` /
@@ -815,23 +833,28 @@ against kagent):
   AI to evaluate" and "Research this" (one agent: direct; several: pick one), disabled
   with the reason `permissions.*_blocked_by` gives (`AiBlockedReason`: "AI assistance is
   off", "No AI agent serves this project", "Evaluation is closed", "Waiting for
-  moderation", …); a calm run panel (who asked, the agent,
-  live steps, elapsed time and the deadline, Cancel) that streams with SSE and falls
-  back to polling; recent runs collapsed with their outcome and error sentence.
+  moderation", …); a calm run panel that streams with SSE and falls back to polling:
+  one row per agent and kind with its latest run on one line (the current step,
+  elapsed time and time left, Cancel; or the outcome in plain words by `error.code`
+  with a next step and "Try again"), who asked, the deadline and every step (with the
+  server's sentence) behind "Steps", older runs under "History (N)" (review M3, M4).
 - **Evaluators list and Evaluations tab:** the AI badge; the run's state on the AI
   evaluator's row while active; the AI evaluation card: "Rationale" per criterion, its
   sources as links with hosts under "Cited by AI, not checked", "Not in score" chip and
   the "Include in score" switch (`can_include_ai`; disabled with
   `include_ai_blocked_by`), a line explaining the default (and that a changed
-  re-submission is left out again).
+  re-submission is left out again); under the score "1 AI evaluation not counted ·
+  Review", and in the comparison table the AI column muted with Mean labelled "counted"
+  (review M2).
 - **Activity feed** (integration): research notes with the AI label, sanitised
   Markdown (http/https links only), numbered sources under "Cited by AI, not checked",
   "Delete" for admins; `evaluator_removed` without an actor reads as the AI run ending
   without an evaluation ("Idea evaluator's run ended without an evaluation; it was
   taken off the evaluators").
 - **Proposal editor:** "Draft with AI" per section (owner and admins, c7; disabled with
-  `draft_section_blocked_by`), progress in place, and the suggestion appearing with its
-  AI badge (Phase 5's cards).
+  `draft_section_blocked_by`; shown on the current section, the others on hover or
+  focus), progress in place, and the suggestion appearing with its AI badge (Phase 5's
+  cards).
 - Loading, empty and error states, keyboard, dark mode and 390 px as everywhere.
 
 ## 4. MCP additions
@@ -842,12 +865,14 @@ The models are in `app/schemas/mcp.py`; nothing here is in OpenAPI.
 |---|---|
 | `submit_evaluation` scores | `McpScoreIn(MyScoreIn)` adds `sources: [CitationIn]` (0–5; `title` one line 1–200, `url` http(s) ≤ 2,048 without credentials, spaces, control, zero-width or bidi characters, stored as plain ASCII with a punycode host). **Service accounts only:** a person's key sending any source → `validation_error` ("Only AI evaluators cite sources."). A service account's submission needs a comment (rationale) on every scored criterion → `evaluation_incomplete`. |
 | `McpScoreEntry` | adds `sources: [McpCitation {title, url}]` (marked `UNTRUSTED`; empty for people) in `get_idea` and `submit_evaluation` results. |
-| c22 in every tool | For a service-account principal (§3.5): targets limited to the ideas of its open runs (`ai_run_not_active`), `list_projects` / `search_ideas` filtered to them, writes only through `AGENT_RUN_WRITE_TOOLS[run.kind]` (`create_idea`, `add_comment`: `forbidden`). `MCP_INSTRUCTIONS` gain a bullet saying so. |
-| Rule 9 in `get_idea` / `search_ideas` | For a service account: `score_hidden: true`, `score` / `aggregate` null, `evaluation_count` 0, `evaluations` empty, `high_disagreement` false, before and after it submits; `my_evaluation` is its own. |
+| `run_id` in every tool | Every tool's input gains an optional `run_id` (`RunIdArg`, a UUID; `RUN_ID_DESCRIPTION`). For an agent's service account it is **required**: it names the open run the call belongs to (from the run's message header "Soundings AI run <id>"). People leave it out; it is ignored for them. |
+| c22 in every tool | For a service-account principal (§3.5), checked **before any lookup**: a tool naming an idea (or `get_rubric` a project) must name the named run's idea (project), else `ai_run_not_active` whether the other idea exists or not; `list_projects` / `search_ideas` list only the named run's project / idea (nothing without one); writes only through `AGENT_RUN_WRITE_TOOLS[run.kind]` for that run (`create_idea`, `add_comment`: `forbidden` before any lookup). `MCP_INSTRUCTIONS` and the run message say to pass `run_id`. |
+| Rule 9 in `get_idea` / `search_ideas` | For a service account: `score_hidden: true`, `score` / `aggregate` null, `evaluation_count` 0, `evaluations` empty, `high_disagreement` false, before and after it submits; `my_evaluation` is its own **only in its evaluate run** (null in research and draft runs; `my_evaluation_state` stays). |
+| Agents' text | An agent's `body_md`, `comment` and `scores[].comment` lose `app/mcp/text.py`'s `HIDDEN` characters (bidi controls, zero-width, ...) before they are validated again and stored; text that was only those is `validation_error`; Unicode tag characters stay refused for everyone. |
 | `add_research_note` (new, `ADD_RESEARCH_NOTE`) | Rule `comment.create` + c22, scope `write`; not read-only, idempotent. Input `AddResearchNoteInput {idea, body_md (1–20,000), sources (0–20)}` (unknown arguments refused); output `AddResearchNoteOutput {idea, note_id, replaced}`. Errors: `forbidden` (a person, or an agent without the member role), `ai_run_not_active` (no running research run on the idea for this agent, or it is being cancelled), `not_found`, `validation_error`, `project_archived`, `idea_closed`. Audited `mcp.call` like every tool. |
 | Instructions | `MCP_INSTRUCTIONS`' evaluate bullet now mentions rationale and sources and that agents never see others' scores; a new bullet says agents' keys work only during a run; `RESEARCH_NOTE_INSTRUCTION` is appended when the tool lands. |
 | Catalogue | `MCP_TOOLS` stays nine until backend adds the handler (`app.mcp.tools.TOOLS`) and appends `ADD_RESEARCH_NOTE` to `MCP_TOOLS` (a lead-approved one-line change in `app/schemas/mcp.py`) in the same change, updating `tests/mcp` and `tests/test_schemas_phase5.py`'s `SPEC_TOOLS` (ten). |
-| Run events | Each call of a known tool by an agent's service account on an open run's idea adds a `tool_called` event (`tool_event_message`, after the tool's transaction; §3.4). |
+| Run events | Each call of a known tool by an agent's service account that names its open run and that run's idea adds a `tool_called` event to **that run** (`tool_event_message`, after the tool's transaction; §3.4). |
 
 ## 5. Integration step (agreed, lands with the SPA)
 
@@ -981,4 +1006,5 @@ Builders record additive contract changes here (date, change, why), then run
 | 2026-10-06 | Integration, no schema change: `AiRun.cancel_requested` is true only while the run is active ("Cancelling" until it ends), so a queued run cancelled at once answers `cancel_requested: false` (the mock already did). The SPA labels an agent's feed lines with the AI badge from data it already has (the idea's AI evaluators and the runs' agents), so `UserRef` needs no `is_ai`. | QA nit; QA visual list |
 | 2026-10-06 | Implementation notes, no contract change: an agent's key is restricted to the agent's projects whatever role its service account has there now (c10 decides per project), so `issue_key` skips the "owner can view" check for agents' keys; `tool_called` events of a **write** tool go to the agent's open run of that tool's kind on the idea (the run the call attaches to, or would); `result_recorded` is written right after the `tool_called` event, after the tool's transaction, so the stream reads "Saved its evaluation" then "Evaluation submitted"; non-final events are never added to a run that already ended. | Recorded for reviewers |
 | 2026-10-06 | **Security review fixes (backend), additive:** (H1, N1) every MCP tool's input gains an optional **`run_id`** (`RunIdArg`, UUID; `MCP_INSTRUCTIONS` and `run_message`'s header say to pass it): for an agent's service account it is **required** and binds the call to that open run — before anything is looked up, a tool naming an idea (or `get_rubric` a project) must name the run's idea (project), else `ai_run_not_active` whether the other idea exists or not; `list_projects` / `search_ideas` list only the run's project / idea (nothing without an open run named); writes only through the run kind's tool (another kind or section: `ai_run_not_active`); `create_idea` / `add_comment`: `forbidden` before any lookup. Check order on `/mcp` for agents: key → rate → c15 → arguments → **c22 (the named run)** → the idea (`not_found` while held) → the rule. People: `run_id` is ignored. `tool_called` events go to the named run when the call was about its idea (no event without a run named, or for another idea). (M1, rule 9) an agent's `get_idea` shows `my_evaluation` only in an evaluate run (null in research and draft runs; `my_evaluation_state` stays). (M2) an agent's `body_md`, `comment` and `scores[].comment` lose `app/mcp/text.py`'s `HIDDEN` characters (bidi controls, zero-width, ...) before they are validated again and stored (text that was only those: `validation_error`; tag characters stay refused for everyone). (L4) `ai_agent.update` details add `purposes`, `project_ids` (the new values when changed) and `key_id`, `key_scopes`, `key_project_ids` (when the key followed); a deleted research note keeps `deleted_by_id` and `deleted_at` in its payload (no audit action yet: needs a new `AuditAction` with the SPA's phrase). (L5, c20) `update_ai_agent` that **adds** a purpose or a project is 403 `break_glass_account` for the break-glass account (before the 422 for an unknown project); narrowing, renaming and disabling still work. (L6) at most 100 open SSE streams per API process for everyone together (`app.ai.sse.STREAMS_PER_PROCESS`; past it 429 `too_many_attempts`, the SPA polls). (L7) `tasks/cancel` and the card fetch are each bounded as a whole by their 5 s (`asyncio.timeout`, not connect + read); the sweep ends its lost runs first, then sends their cancels side by side. (L8) `SOUNDINGS_AI_AGENT_NAMESPACES` defaults to **`soundings`** and must list at least one namespace (no "any"; §3.2's table said "empty (any)"); descriptions of `AiAgentCreate.namespace` and `AiSettingsInEffect.agent_namespaces` changed; `make gen-api` rerun (descriptions only). | Phase 6 security and code review (H1, M1, M2, L4–L8, N1); H1 option 2 (bind each call to its run) over option 1 (one run per agent at a time), because kagent-adk 0.10.2 can't cancel: a task that outlives its run would otherwise act through the agent's next run |
+| 2026-10-06 | **Final verification (lead decisions), additive:** H1 accepted as built; §3.1 "Reach", §3.2 (namespace default), §3.4 (the run message's `run_id`, `tool_called` to the named run), §3.5 (c22 with `run_id`, the check order, rule 9's own evaluation in evaluate runs only), §3.10 and §4 now say so. `AuditAction` gains **`ai_note.delete`** (target the idea; details `rule: ai.delete_note`, `note_id`, `run_id`, `agent_id`; never the note's text), recorded by `app/ai/notes.py:delete_note` the first time a note is deleted (review L4's remainder); `delete_research_note`'s description says so. The SPA phrases it "deleted a research note by AI agent X on CUST-7", in the "AI agents and runs" category. `make gen-api` rerun (the enum and one description). | Review L4; lead's decision 2 at the final verification |
 

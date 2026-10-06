@@ -1485,7 +1485,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a research note
-         * @description ai.delete_note (the idea's owner and project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent. 409 project_archived, awaiting_moderation.
+         * @description ai.delete_note (the idea's owner and project and platform admins): removes an AI research note's text and sources; the feed shows that a note was deleted. Idempotent; audited as ai_note.delete (ids only). 409 project_archived, awaiting_moderation.
          */
         delete: operations["delete_research_note"];
         options?: never;
@@ -3530,7 +3530,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
