@@ -226,7 +226,17 @@ class VerificationRequest(RequestModel):
 
 
 class TrackedStatusChange(ResponseModel):
-    status: IdeaStatus
+    """A change of the status the submitter sees. Phase 8: never ``research``: an idea in
+    Research is reported as the status before Research in its project's lifecycle (``new``
+    before evaluation, ``shortlisted`` before the proposal;
+    ``app.schemas.research.public_status``), so a move that doesn't change the reported
+    status or resolution (New -> Research, Shortlisted -> Research and back) is left out."""
+
+    status: IdeaStatus = Field(
+        description=(
+            "Never research (Phase 8: reported as the status before it, new or shortlisted)."
+        )
+    )
     resolution: Resolution | None
     status_label: str = Field(description="The project's label (closed: the resolution's).")
     at: datetime
@@ -255,11 +265,21 @@ class TrackedSubmission(ResponseModel):
             '"Waiting for review"; null: with the team.'
         )
     )
-    status: IdeaStatus
+    status: IdeaStatus = Field(
+        description=(
+            "Never research: Phase 8 reports an idea in Research as the status before it in "
+            "the project's lifecycle (new before evaluation, shortlisted before the "
+            "proposal), with that status's label."
+        )
+    )
     resolution: Resolution | None
     status_label: str
     history: list[TrackedStatusChange] = Field(
-        description="Status changes since it reached the team, oldest first."
+        description=(
+            "Changes of the status shown here since it reached the team, oldest first "
+            "(Research counts as the status before it; moves that change nothing shown "
+            "are left out)."
+        )
     )
     email_hint: str | None = Field(
         description='The address on file, masked ("j•••@example.org"); null if none.'

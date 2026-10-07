@@ -32,6 +32,7 @@ from app.models.enums import (
     ProjectVisibility,
     ProposalSectionKey,
     Recommendation,
+    ResearchStep,
     Resolution,
     SuggestionSource,
     SuggestionStatus,
@@ -52,9 +53,11 @@ from app.models.proposal import (
     ProposalComment,
     ProposalSection,
     ProposalSuggestion,
+    ProposalTemplateSection,
     ProposalThread,
 )
 from app.models.public import AltchaUsedChallenge, ConfirmationEmailSend, PublicSubmission
+from app.models.research import ResearchAnswer, ResearchChecklistItem
 from app.models.user import User, UserExternalId, UserIdentity, UserSession
 
 __all__ = [
@@ -112,9 +115,13 @@ __all__ = [
     "ProposalSection",
     "ProposalSectionKey",
     "ProposalSuggestion",
+    "ProposalTemplateSection",
     "ProposalThread",
     "PublicSubmission",
     "Recommendation",
+    "ResearchAnswer",
+    "ResearchChecklistItem",
+    "ResearchStep",
     "Resolution",
     "RubricCriterion",
     "SuggestionSource",

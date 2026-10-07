@@ -17,6 +17,7 @@ from app.models.enums import EvaluatorState, HoldReason, IdeaStatus, Resolution
 from app.schemas.base import RequestModel, ResponseModel, SingleLine, TagName
 from app.schemas.common import Page
 from app.schemas.projects import ProjectRef
+from app.schemas.research import ResearchOverride, ResearchProgress
 from app.schemas.users import UserRef
 
 __all__ = [
@@ -45,6 +46,8 @@ __all__ = [
     "OwnerAssign",
     "RecommendationCounts",
     "ResolutionCounts",
+    "SimilarIdea",
+    "SimilarIdeas",
     "StatusChange",
     "VoteState",
     "WatchState",
@@ -178,6 +181,23 @@ class IdeaPermissions(IdeaSummaryPermissions):
     can_comment: bool = Field(description="comment.create")
     can_vote: bool = Field(description="idea.vote")
     can_delete: bool = Field(description="idea.delete")
+    can_answer_research: bool = Field(
+        default=False,
+        description=(
+            "Phase 8: idea.answer_research: answer, edit and clear research checklist items "
+            "(the owner and admins; false while the project's step is off)."
+        ),
+    )
+    invite_blocked_by_research: bool = Field(
+        default=False,
+        description=(
+            "Phase 8: inviting evaluators now would be refused (409 research_incomplete): "
+            "the research step is before evaluation, the idea (New or Research) has no "
+            'evaluator yet and required checklist items are open. Say so next to "Invite '
+            'evaluators" (and "Ask AI to evaluate"); admins may invite anyway '
+            "(IdeaResearch.permissions.can_override)."
+        ),
+    )
 
 
 # --- Responses -----------------------------------------------------------------------
@@ -204,6 +224,16 @@ class IdeaSummary(IdeaRef):
     created_at: datetime
     last_activity_at: datetime = Field(
         description='The latest activity event ("updated"); sort=updated uses it.'
+    )
+    research: ResearchProgress | None = Field(
+        default=None,
+        description=(
+            'Phase 8: the research checklist at a glance ("2/3" on cards), only for an idea '
+            "in Research or in the status right before it (New when Research comes before "
+            "evaluation, Shortlisted when it comes before the proposal) while the project's "
+            "research step is on; null otherwise (step off, past Research, closed). Holds "
+            "no score data."
+        ),
     )
     permissions: IdeaSummaryPermissions
 
@@ -247,7 +277,9 @@ class IdeaPage(Page[IdeaSummary]):
 
 
 class BoardColumn(ResponseModel):
-    status: IdeaStatus
+    status: IdeaStatus = Field(
+        description="research only in projects whose research step is on (Phase 8)."
+    )
     label: str
     count: int = Field(description="All ideas in this column matching the filters.")
     resolution_counts: ResolutionCounts | None = Field(
@@ -266,7 +298,8 @@ class BoardColumn(ResponseModel):
 
 
 class Board(ResponseModel):
-    """One column per status, always all five, in lifecycle order."""
+    """One column per status of the project's lifecycle, in its order: five, or six with
+    Research at the project's research step (Phase 8; ``Project.lifecycle``)."""
 
     columns: list[BoardColumn]
 
@@ -318,8 +351,14 @@ class IdeaUpdate(RequestModel):
         return None if tags is None else _dedupe_tags(tags)
 
 
-class StatusChange(RequestModel):
-    """Move an idea. ``resolution`` is required for ``closed`` and forbidden otherwise."""
+class StatusChange(ResearchOverride):
+    """Move an idea. ``resolution`` is required for ``closed`` and forbidden otherwise.
+
+    Phase 8: ``research`` only while the project's research step is on (else 409
+    ``research_step_off``); a move into a status after Research from one before it (or
+    reopening a closed idea into one, when it was closed from New, Research or a status
+    before it) while required checklist items are open is 409 ``research_incomplete``
+    unless an admin sends ``override_research``."""
 
     status: IdeaStatus
     resolution: Resolution | None = None
@@ -358,8 +397,12 @@ DueAt = Annotated[AwareDatetime, AfterValidator(_near_now)]
 """A request's due date: with an offset, at most a year ago and five years ahead."""
 
 
-class EvaluatorsAdd(RequestModel):
-    """Invite evaluators. Users already assigned are ignored."""
+class EvaluatorsAdd(ResearchOverride):
+    """Invite evaluators. Users already assigned are ignored.
+
+    Phase 8: with a research step before evaluation, the first invite of an idea in New or
+    Research while required checklist items are open is 409 ``research_incomplete`` unless
+    an admin sends ``override_research``."""
 
     user_ids: list[UUID] = Field(min_length=1, max_length=20)
     due_at: DueAt | None = Field(
@@ -376,3 +419,28 @@ class EvaluationDueDate(RequestModel):
     """``PUT`` body: the complete new value (``null`` clears the due date)."""
 
     due_at: DueAt | None = Field(description="New due date, or null for none.")
+
+
+# --- Phase 8: "Similar ideas" on the Research panel (contract-phase8 section 3.7) ------
+class SimilarIdea(IdeaRef):
+    """An idea whose title or summary is like this one's, in any project you can view.
+    No score data (blind rules are unaffected)."""
+
+    summary: str
+    owner: UserRef | None = Field(description="Whom to ask about it.")
+    last_activity_at: datetime
+    similarity: float = Field(
+        ge=0,
+        le=1,
+        description="pg_trgm similarity, 2 decimal places (the higher of title and summary).",
+    )
+
+
+class SimilarIdeas(ResponseModel):
+    items: list[SimilarIdea] = Field(
+        description=(
+            "At most 5, most similar first (similarity >= 0.3), never the idea itself or a "
+            "held idea; ideas you can view in every project you can view, archived ones "
+            "included."
+        )
+    )

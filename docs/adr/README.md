@@ -20,6 +20,7 @@ go in [../decisions.md](../decisions.md) instead.
 | [0012](0012-branding-and-uploaded-images.md) | Branding profiles and uploaded images stored in the database | Proposed |
 | [0013](0013-api-keys-and-mcp-server.md) | API keys as a principal source; an MCP server built on the REST services | Accepted |
 | [0014](0014-kagent-a2a-integration.md) | kagent over A2A with URLs built from one controller origin; results through MCP; runs as durable records with SSE progress | Proposed |
+| [0015](0015-proposal-templates-and-research-step.md) | Per-project proposal templates (key rows, no FK) and an optional research step with a checklist gate | Proposed |
 
 ## Writing a new ADR
 

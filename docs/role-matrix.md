@@ -182,8 +182,8 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
   intro and branding, and the submitter's own idea and status
   ([contract-phase4 §3.5–3.7](api/contract-phase4.md#35-the-public-form)).
 - **Held ideas are listed nowhere:** an idea held for email confirmation or moderation
-  is in no list, board, search, count, tag list, My work, inbox or notification, for any
-  role. That is a property of lists, not a rule: `idea.view` (c12) still lets project and
+  is in no list, board, search, count, tag list, My work, inbox, notification or (Phase 8)
+  "Similar ideas" result, for any role. That is a property of lists, not a rule: `idea.view` (c12) still lets project and
   platform admins open an idea held for moderation by its link and in the moderation
   queue (`idea.moderate`).
 
@@ -232,7 +232,8 @@ evaluator overlay grants it; an admin who is also an assigned evaluator gets it 
 +Evl. Admins bypass c3 because they could assign themselves anyway; a platform admin
 still needs a real project role to become owner (c4). c21 (a service account can't
 volunteer) is not written in the cells: like c20 it is a property of the principal.
-Which status transitions are valid is a domain rule (backend), not authorisation.
+Which status transitions are valid is a domain rule (backend), not authorisation;
+so is the Phase 8 research gate (table K), whose override is a rule.
 
 ### D. Evaluation visibility (blind evaluation, section 3)
 
@@ -257,10 +258,13 @@ including platform admins and the owner, can see another person's **draft**.
 
 Notes ([contract-phase4 §3.1–3.4](api/contract-phase4.md#31-proposal-lifecycle-and-permissions)):
 
-- One proposal per idea over the fixed template. `proposal.write` covers starting it
-  (which moves a Shortlisted idea to Proposal: the owner and admins also hold
+- One proposal per idea over its **project's template** (Phase 8: edited with
+  `project.edit_proposal_template`; [contract-phase8 §2](api/contract-phase8.md#2-per-project-proposal-templates)).
+  `proposal.write` covers starting it (which moves a Shortlisted idea, or one in Research
+  before a proposal step, to Proposal: the owner and admins also hold
   `idea.change_status`) and saving sections; c7 makes it read-only outside Shortlisted
-  and Proposal, where it stays viewable, commentable and exportable.
+  and Proposal (and Research before a proposal step), where it stays viewable,
+  commentable and exportable. Starting it is guarded by the research gate (table K).
 - `proposal.comment` covers opening margin threads, replying, resolving and reopening
   them. Deleting a margin comment is `comment.edit_own` (your own, c2) or
   `comment.delete_any` (admins). No edits, notifications or @mentions in Phase 4.
@@ -281,9 +285,17 @@ Notes ([contract-phase4 §3.1–3.4](api/contract-phase4.md#31-proposal-lifecycl
 |---|---|---|---|---|---|---|---|---|---|---|
 | `project.manage_members` | Add or remove users and groups (group grants), change their roles | Y (c11) | Y (c11) | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.edit_rubric` | Edit rubric criteria (3–6: name, description, weight, inverted, guidance) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
-| `project.rename_status_labels` | Rename status labels (the stages themselves are fixed) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+| `project.rename_status_labels` | Rename status labels (the stages themselves are fixed; Research exists only with the research step) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 | `project.edit_settings` | Name, description, visibility, volunteer owners, evaluation window, public form (on/off, moderation, email verification, intro), project branding override and its images, archive | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
 | `public.erase_submitter` | See a public submitter's contact details (email, confirmed, wants updates); erase their name, address and tracking link but keep the idea | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+| `project.edit_proposal_template` | Edit the project's proposal template (1–12 sections: add, remove, rename, reorder, title and hint; restore removed sections) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+| `project.edit_research` | Set the research step (off, before evaluation, before proposal) and edit the research checklist (1–10 items: title, hint, required; restore removed items) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+
+Notes (Phase 8, [contract-phase8](api/contract-phase8.md)): reading the template and
+the research settings is `project.view`. Both rules are session only (section 5), like
+the rubric, and not idea writes: they work in an archived project. Changing the research
+step while ideas are in Research is 409 `ideas_in_research` (a domain rule, not a
+condition). Neither ever moves an idea.
 
 ### G. Public submission
 
@@ -394,6 +406,39 @@ Notes ([contract-phase6 §3.5](api/contract-phase6.md#35-authorisation-role-matr
 - `platform.manage_agents` (table H) is session only; registering an agent and rotating
   its key also need c20 (403 `break_glass_account`).
 
+### K. The research step (Phase 8)
+
+| Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `idea.answer_research` | Answer, edit or clear the idea's research checklist items | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · |
+| `idea.research_override` | "Move anyway": take the idea past Research with required items open (a flag on the guarded request) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
+
+Notes ([contract-phase8 §3](api/contract-phase8.md#3-the-research-step)):
+
+- **Reading** the checklist, the answers and "Similar ideas" is `idea.view`: they hold no
+  score data, so pending evaluators read them too (section 3 is unaffected). "Similar
+  ideas" lists only ideas the principal passes `idea.view` on, inside a key's projects,
+  never held ones (section 2c).
+- **The gate is a domain rule**, not a condition: a status change into a status after
+  Research from one that isn't, an idea's first evaluator (or "Ask AI to evaluate")
+  before an evaluation step, and starting a proposal before a proposal step answer 409
+  `research_incomplete` while a required item has no answer (after the rule's own
+  conditions and the other 409s). `idea.research_override` is checked only when the
+  request carries `override_research: true` (403 otherwise, even if nothing would block),
+  together with the request's own rule; an allowed override is audited
+  `idea.research_override`. Moving back, or to Closed, is never guarded; reopening a
+  closed idea counts from the status it was closed from (an idea that was past Research
+  reopens freely). The check lives in one place (`ideas.change_status` and one research
+  helper), with no bypass.
+- `idea.answer_research` is an idea write (409 `project_archived`; c19
+  `awaiting_moderation`); while the project's step is off it is 409 `research_step_off`
+  (a domain rule). `idea.research_override` is session only (section 5): an API key
+  sending the flag gets 403 `insufficient_scope`.
+- **Agents never answer** (c22: REST is refused to service accounts, and no MCP tool
+  answers); `get_idea` shows them the checklist, read only.
+- The owner overlay grants `idea.answer_research` (the owner does the research) but not
+  the override: only project and platform admins decide to skip it.
+
 ## 3. Blind evaluation: exact visibility rules
 
 Definitions, for one idea *I* and one principal *P* (see also
@@ -462,13 +507,13 @@ evaluations and one AI evaluation present.
 
 | Id | Condition | Response when it fails |
 |---|---|---|
-| c1 | The principal submitted the idea, and its status is `new` | not submitter → 403 `not_submitter`; status ≠ new → 409 `idea_not_new` |
+| c1 | The principal submitted the idea, and its status is `new` (Phase 8: an idea moved into Research is no longer the submitter's to edit, like one moved to Evaluating) | not submitter → 403 `not_submitter`; status ≠ new → 409 `idea_not_new` |
 | c2 | The principal wrote the comment | 403 `not_author` |
 | c3 | The project allows volunteer owners (`allow_volunteer_owners`, default true) | 403 `volunteering_disabled` |
 | c4 | The user being assigned (owner or evaluator) has effective role `member` or `admin` in the project; an **owner** is also a person, not a service account (an AI agent can be an evaluator, never an owner) | 422 `assignee_not_eligible` |
 | c5 | The idea's status is not `closed` | 409 `idea_closed` |
 | c6 | Evaluation is open: idea not `closed` and evaluation not closed | 409 `evaluation_closed` |
-| c7 | The idea's status is `shortlisted` or `proposal` | 409 `proposal_not_available` |
+| c7 | The idea's status is `shortlisted` or `proposal`, or (Phase 8) `research` while the project's research step is `before_proposal` | 409 `proposal_not_available` |
 | c8 | Public submission is on for the instance (`SOUNDINGS_PUBLIC_SUBMISSION_ENABLED`) and for the project, the project isn't archived and its slug isn't reserved (`RESERVED_SLUGS`, older projects only) | 404 (the same for an unknown project) |
 | c9 | The request carries a valid token for this submission, and public submission is on for the instance: a tracking token whose hash matches a submission that isn't erased, or (confirming only) a confirmation-link token with a valid signature and expiry for a submission that isn't erased and still has that address | 404 (unknown, erased, expired and invalid alike) |
 | c10 | AI is enabled (Helm feature toggle, `SOUNDINGS_AI_ENABLED`) and the agent named in the request is suitable: enabled, the run's kind among its purposes, serving the idea's project, its service account active with effective role `member` there, and an active key (contract-phase6 §3.5) | 409 `ai_unavailable` |
@@ -496,7 +541,7 @@ projects.**
 | Scope | Grants the rules |
 |---|---|
 | `read` | `project.view`, `idea.view`, `user.search`, `evaluation.view_own`, `evaluation.view_others`, `score.view_aggregate`, `proposal.view`, `proposal.export` |
-| `write` | `idea.create`, `idea.edit_own`, `idea.edit_any`, `comment.*`, `idea.vote`, `idea.watch`, `idea.volunteer_owner`, `idea.release_owner`, `idea.assign_owner`, `evaluator.manage`, `idea.set_due_date`, `evaluation.close`, `evaluation.include_ai`, `idea.change_status`, `proposal.write`, `proposal.comment`, `proposal.suggest_section`, `ai.*` (not `idea.delete` or `idea.moderate`: session only); a `write` key always has `read` too |
+| `write` | `idea.create`, `idea.edit_own`, `idea.edit_any`, `comment.*`, `idea.vote`, `idea.watch`, `idea.volunteer_owner`, `idea.release_owner`, `idea.assign_owner`, `evaluator.manage`, `idea.set_due_date`, `evaluation.close`, `evaluation.include_ai`, `idea.change_status`, `proposal.write`, `proposal.comment`, `proposal.suggest_section`, `ai.*`, `idea.answer_research` (Phase 8) (not `idea.delete` or `idea.moderate`: session only); a `write` key always has `read` too |
 | `evaluate` | `evaluation.submit_own`; an `evaluate` key always has `read` too |
 | `mcp` | `mcp.connect` only; tools also need the scope of their own rule |
 
@@ -520,7 +565,8 @@ projects.**
 - **Session only** (never through an API key, whatever its scopes; 403
   `insufficient_scope`): `project.create`, `project.manage_members`,
   `project.edit_rubric`, `project.rename_status_labels`, `project.edit_settings`,
-  `public.erase_submitter`, `idea.delete` and `idea.moderate` (irreversible: a hard
+  `project.edit_proposal_template`, `project.edit_research`, `idea.research_override`
+  (Phase 8: a key's `override_research: true` is refused), `public.erase_submitter`, `idea.delete` and `idea.moderate` (irreversible: a hard
   delete, a rejection that deletes), `platform.*`, `api_key.*`, `self.manage_profile`,
   and the inbox routes (list, unread count, mark read: a person's reading state).
 - **Signed-in routes without a rule of their own** (`get_me`, My work, owned ideas,
@@ -566,12 +612,12 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
 |---|---|---|
 | `list_projects` | `project.view` (as a filter) | `read` |
 | `search_ideas` | `idea.view` (as a filter); score fields per `score.view_aggregate` | `read` |
-| `get_idea` | `idea.view`; evaluations and aggregate per `evaluation.view_others` / `score.view_aggregate`; your own per `evaluation.view_own` | `read` |
+| `get_idea` | `idea.view`; evaluations and aggregate per `evaluation.view_others` / `score.view_aggregate`; your own per `evaluation.view_own`; Phase 8: the research checklist and answers (read only) | `read` |
 | `get_rubric` | `project.view` | `read` |
-| `get_proposal` | `proposal.view` | `read` |
+| `get_proposal` | `proposal.view` (Phase 8: the project's template sections) | `read` |
 | `create_idea` | `idea.create` | `write` |
 | `add_comment` | `comment.create` | `write` |
-| `propose_proposal_section` | `proposal.suggest_section` | `write` |
+| `propose_proposal_section` | `proposal.suggest_section` (Phase 8: a key of the project's template, else `unknown_section`) | `write` |
 | `submit_evaluation` | `evaluation.submit_own` | `evaluate` |
 | `add_research_note` (Phase 6, lands with its handler) | `comment.create` + c22 | `write` |
 
@@ -645,6 +691,15 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   access removed mid-stream; a pending evaluator's stream and run responses hold no score
   data; `platform.manage_agents` refused to keys and non-admins, c20 on register and
   rotate.
+- Phase 8 ([contract-phase8 §6](api/contract-phase8.md#6-minimum-tests-tests-first)):
+  `project.edit_proposal_template`, `project.edit_research`, `idea.answer_research` and
+  `idea.research_override` for every column and overlay (a demoted owner can't answer;
+  c5; archived and held ideas), through keys (answering needs `write`; the three
+  session-only rules refuse every key; an agent's key never answers); c7 with Research
+  before a proposal step; the gate on every guarded path (status change and board drag,
+  first invite, "Ask AI to evaluate", starting a proposal, reopening from Closed) for
+  owners, admins with and without the override, and keys; held ideas never in "Similar
+  ideas".
 - Phase 4: table E for every column and overlay (a demoted owner can't write; c7 on
   start and save; archived → 409); c8 for each of its parts (instance switch, project
   setting, archived, reserved slug, unknown slug: identical 404s); c9 with unknown,

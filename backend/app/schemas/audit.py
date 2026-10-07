@@ -58,10 +58,15 @@ class AuditAction(StrEnum):
     PROJECT_GROUP_GRANT_UPDATE = "project.group_grant_update"
     PROJECT_GROUP_GRANT_REMOVE = "project.group_grant_remove"
     PROJECT_RUBRIC_REPLACE = "project.rubric_replace"
+    # Phase 8: proposal templates and the research step (contract-phase8 section 5)
+    PROJECT_PROPOSAL_TEMPLATE_REPLACE = "project.proposal_template_replace"
+    PROJECT_RESEARCH_STEP_CHANGE = "project.research_step_change"
+    PROJECT_RESEARCH_CHECKLIST_REPLACE = "project.research_checklist_replace"
     # Ideas, assignments and evaluations
     IDEA_DELETE = "idea.delete"
     IDEA_OWNER_CHANGE = "idea.owner_change"
     IDEA_STATUS_CHANGE = "idea.status_change"
+    IDEA_RESEARCH_OVERRIDE = "idea.research_override"  # Phase 8: "Move anyway"
     EVALUATOR_ADD = "evaluator.add"
     EVALUATOR_REMOVE = "evaluator.remove"
     EVALUATION_SUBMIT = "evaluation.submit"

@@ -25,12 +25,14 @@ from app.ai.runs import _load_run
 from app.api.deps import not_activity
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
+from app.api.v1.research_gate import GATE_DESCRIPTION, research_gate_conflict
 from app.api.v1.responses import problems
 from app.db import SessionDep
 from app.models.enums import AiRunKind, AiRunStatus
 from app.schemas.ai import (
     AI_RUN_LIST_DEFAULT,
     AI_RUN_LIST_MAX,
+    AiEvaluationRequest,
     AiRun,
     AiRunDetail,
     AiRunList,
@@ -124,9 +126,19 @@ async def _request(
         "evaluation) and queues a run: the agent reads the idea and the "
         "rubric through MCP and submits an evaluation with a rationale and sources per "
         "criterion, shown with an AI badge and left out of the aggregate until someone "
-        "includes it. 201 with the new run, or 200 with the active one." + _REQUEST_ERRORS
+        "includes it. 201 with the new run, or 200 with the active one."
+        + _REQUEST_ERRORS
+        + " Phase 8: with a research step before evaluation, asking for an idea's first "
+        "evaluator in New or Research is guarded by the research checklist (after c10)."
+        + GATE_DESCRIPTION
     ),
-    responses={**_CREATED_OR_EXISTING, **problems(401, 403, 404, 409, 422, 429)},
+    responses={
+        **_CREATED_OR_EXISTING,
+        **problems(401, 403, 404, 422, 429),
+        **research_gate_conflict(
+            "ai_unavailable, evaluation_closed, project_archived, awaiting_moderation"
+        ),
+    },
 )
 async def request_ai_evaluation(
     request: Request,
@@ -134,7 +146,7 @@ async def request_ai_evaluation(
     principal: PrincipalDep,
     session: SessionDep,
     idea: IdeaParam,
-    body: AiRunRequest,
+    body: AiEvaluationRequest,
 ) -> AiRun:
     return await _request(
         request, response, principal, session, idea, AiRunKind.EVALUATE, body.agent_id
@@ -173,8 +185,10 @@ async def request_ai_research(
     status_code=status.HTTP_201_CREATED,
     summary="Draft a proposal section with AI",
     description=(
-        "ai.draft_section (the owner and admins; c7: Shortlisted or Proposal). 404 when the "
-        "idea has no proposal yet. Queues a run: the agent reads the idea and the proposal "
+        "ai.draft_section (the owner and admins; c7: Shortlisted or Proposal, Phase 8: or "
+        "Research before a proposal step). 404 when the idea has no proposal yet; 422 "
+        "unknown_section for a key the project's template doesn't have (or a removed "
+        "section's). Queues a run: the agent reads the idea and the proposal "
         "and suggests the whole text of the section (propose_proposal_section, source ai), "
         "which the owner accepts or discards. 201 with the new run, or 200 with the active "
         "one for the same section." + _REQUEST_ERRORS

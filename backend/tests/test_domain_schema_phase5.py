@@ -206,8 +206,8 @@ async def test_suggestions_are_one_pending_per_author_and_section(
     cases: list[tuple[dict[str, object], str]] = [
         (_suggestion(proposal_id, user_id), "uq_proposal_suggestions_pending_author_section"),
         (
-            _suggestion(proposal_id, user_id, section="appendix"),
-            "ck_proposal_suggestions_section_key",
+            _suggestion(proposal_id, user_id, section="Appendix"),
+            "ck_proposal_suggestions_section_key_format",
         ),
         (
             _suggestion(proposal_id, user_id, section="cost", source="web"),

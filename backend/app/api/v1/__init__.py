@@ -19,7 +19,7 @@ never the bare user; schemas from ``app/schemas`` (lead-owned contract); errors 
 cursor pagination (``app.pagination``); every route has an explicit, stable
 snake_case ``operation_id`` equal to the function name (the TypeScript client and
 MSW mocks depend on it). The contracts are summarised in docs/api/contract-phase1.md
-to contract-phase6.md (the MCP server at ``/mcp`` is not part of this router).
+to contract-phase8.md (the MCP server at ``/mcp`` is not part of this router).
 """
 
 from fastapi import APIRouter
@@ -45,8 +45,10 @@ from app.api.v1 import (
     project_groups,
     projects,
     proposal_suggestions,
+    proposal_templates,
     proposals,
     public,
+    research,
     search,
     submissions,
     unsubscribe,
@@ -77,8 +79,10 @@ api_router.include_router(notifications.router)
 api_router.include_router(project_groups.router)
 api_router.include_router(projects.router)
 api_router.include_router(proposal_suggestions.router)
+api_router.include_router(proposal_templates.router)
 api_router.include_router(proposals.router)
 api_router.include_router(public.router)
+api_router.include_router(research.router)
 api_router.include_router(search.router)
 api_router.include_router(submissions.router)
 api_router.include_router(unsubscribe.router)

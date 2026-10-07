@@ -13,6 +13,7 @@ from pydantic.json_schema import models_json_schema
 from app.errors import PROBLEM_CONTENT_TYPE
 from app.schemas.common import Problem, ValidationProblem
 from app.schemas.proposals import ProposalConflictProblem
+from app.schemas.research import IdeasInResearchProblem, ResearchIncompleteProblem
 
 API_DESCRIPTION = """\
 Soundings REST API.
@@ -55,10 +56,16 @@ def build_openapi(app: FastAPI) -> dict[str, Any]:
     )
     components.update(definitions.get("$defs", {}))
     # 409 proposal_conflict carries the section as it is now (contract-phase4 section
-    # 3.2); the route references it by name. Models routes already use (ProposalSection,
-    # UserRef) keep FastAPI's schema.
+    # 3.2); Phase 8's research_incomplete its open items and ideas_in_research its count
+    # (contract-phase8 section 3). The routes reference them by name. Models routes
+    # already use (ProposalSection, UserRef) keep FastAPI's schema.
     _, definitions = models_json_schema(
-        [(ProposalConflictProblem, "serialization")], ref_template=_SCHEMA_REF
+        [
+            (ProposalConflictProblem, "serialization"),
+            (ResearchIncompleteProblem, "serialization"),
+            (IdeasInResearchProblem, "serialization"),
+        ],
+        ref_template=_SCHEMA_REF,
     )
     for name, definition in definitions.get("$defs", {}).items():
         components.setdefault(name, definition)

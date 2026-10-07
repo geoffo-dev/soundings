@@ -8,8 +8,9 @@ from uuid import UUID
 
 from pydantic import AfterValidator, Field
 
-from app.models.enums import IdeaStatus, ProjectRole, ProjectVisibility, Resolution
+from app.models.enums import IdeaStatus, ProjectRole, ProjectVisibility, ResearchStep, Resolution
 from app.schemas.base import PROJECT_KEY_PATTERN, SLUG_PATTERN, RequestModel, ResponseModel
+from app.schemas.research import lifecycle
 from app.schemas.rubric import RubricCriterion
 from app.schemas.users import UserRef
 
@@ -32,6 +33,7 @@ __all__ = [
 
 DEFAULT_STATUS_LABELS: dict[IdeaStatus | Resolution, str] = {
     IdeaStatus.NEW: "New",
+    IdeaStatus.RESEARCH: "Research",
     IdeaStatus.EVALUATING: "Evaluating",
     IdeaStatus.SHORTLISTED: "Shortlisted",
     IdeaStatus.PROPOSAL: "Proposal",
@@ -40,7 +42,9 @@ DEFAULT_STATUS_LABELS: dict[IdeaStatus | Resolution, str] = {
     Resolution.REJECTED: "Rejected",
     Resolution.PARKED: "Parked",
 }
-"""Labels used when a project has no override (keys match ``projects.status_labels``)."""
+"""Labels used when a project has no override (keys match ``projects.status_labels``), in
+the canonical order. Phase 8 adds Research (renameable like the others; shown only while
+the project's research step is on)."""
 
 Label = Annotated[str, Field(min_length=1, max_length=24)]
 
@@ -78,6 +82,9 @@ class StatusLabels(ResponseModel):
     """
 
     new: str
+    research: str = Field(
+        description="Phase 8: the Research status (used only while the research step is on)."
+    )
     evaluating: str
     shortlisted: str
     proposal: str
@@ -91,6 +98,7 @@ class StatusLabelsUpdate(RequestModel):
     """Rename labels. Omitted fields are unchanged; ``null`` resets to the default."""
 
     new: Label | None = None
+    research: Label | None = None
     evaluating: Label | None = None
     shortlisted: Label | None = None
     proposal: Label | None = None
@@ -107,7 +115,10 @@ class ProjectPermissions(ResponseModel):
     """
 
     can_manage: bool = Field(
-        description="Edit settings, rubric and members (project or platform admin)."
+        description=(
+            "Edit settings, rubric, members, the proposal template and the research step "
+            "and checklist (project or platform admin; Phase 8 adds the last two)."
+        )
     )
     can_create_ideas: bool = Field(
         description=(
@@ -139,6 +150,21 @@ class ProjectSummary(ProjectRef):
             "admins); null for everyone else. Phase 7: the sidebar's review counts come "
             "from here, not from one moderation request per project."
         )
+    )
+    research_step: ResearchStep = Field(
+        default=ResearchStep.OFF,
+        description=(
+            "Phase 8: off, before_evaluation or before_proposal (project settings -> "
+            "Research). While off there is no Research status, column or checklist."
+        ),
+    )
+    lifecycle: list[IdeaStatus] = Field(
+        default_factory=lambda: list(lifecycle(ResearchStep.OFF)),
+        description=(
+            "Phase 8: the project's statuses in board order (closed last): the board's "
+            "columns, the status menu and the filter chips. Five, or six with research at "
+            "the step's position."
+        ),
     )
 
 

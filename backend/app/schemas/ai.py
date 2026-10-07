@@ -59,13 +59,13 @@ from app.models.enums import (
     AiRunStatus,
     ApiKeyScope,
     ProjectRole,
-    ProposalSectionKey,
 )
 from app.models.evaluation import EVALUATION_SOURCES_MAX
 from app.schemas.api_keys import MAX_KEY_PROJECTS, ApiKey, CreatedApiKey
 from app.schemas.base import RequestModel, ResponseModel, SingleLine
 from app.schemas.projects import ProjectRef
-from app.schemas.proposals import PROPOSAL_TEMPLATE
+from app.schemas.proposals import SECTION_KEY_PATTERN, SectionKey
+from app.schemas.research import ResearchOverride
 from app.schemas.users import UserRef
 
 __all__ = [
@@ -116,6 +116,7 @@ __all__ = [
     "AiAgentTest",
     "AiAgentUpdate",
     "AiBlockedReason",
+    "AiEvaluationRequest",
     "AiPermissions",
     "AiRun",
     "AiRunDetail",
@@ -398,9 +399,9 @@ _RUN_INSTRUCTIONS: Final[dict[AiRunKind, str]] = {
         "or no."
     ),
     AiRunKind.DRAFT_SECTION: (
-        'Draft the "{section_title}" section ({section_key}) of the proposal for idea '
-        "{idea}:\n"
-        '1. Call get_idea and get_proposal with idea "{idea}".\n'
+        'Draft the proposal section with key "{section_key}" for idea {idea}:\n'
+        '1. Call get_idea and get_proposal with idea "{idea}" (the section with that key '
+        "has its title and hint there).\n"
         "2. Write the whole new text of that section in Markdown (at most 20,000 "
         "characters), building on what is there.\n"
         '3. Call propose_proposal_section once, with idea "{idea}", section_key '
@@ -416,19 +417,22 @@ def run_message(
     run_id: UUID,
     idea_key: str,
     agent_name: str,
-    section_key: ProposalSectionKey | None = None,
+    section_key: str | None = None,
 ) -> AiRunMessage:
-    """The A2A message for a run (contract-phase6 section 3.4)."""
+    """The A2A message for a run (contract-phase6 section 3.4). Phase 8: a draft names
+    its section by key only (``[a-z][a-z0-9_]*``): titles are project admins' text, which
+    stays out of an agent's instructions (ADR 0014); the agent reads the title and hint in
+    ``get_proposal``, marked untrusted."""
     if (kind is AiRunKind.DRAFT_SECTION) != (section_key is not None):
         raise ValueError("section_key is required for draft_section runs, and only for them")
-    titles = {section.key: section.title for section in PROPOSAL_TEMPLATE}
+    if section_key is not None and not re.fullmatch(SECTION_KEY_PATTERN, section_key):
+        raise ValueError("section_key must be a section key")
     values = {
         "run_id": str(run_id),
         "kind": kind.value,
         "idea": idea_key,
         "agent": agent_name,
-        "section_key": section_key.value if section_key else "",
-        "section_title": titles[section_key] if section_key else "",
+        "section_key": section_key or "",
     }
     text = (_RUN_HEADER + _RUN_INSTRUCTIONS[kind] + _RUN_FOOTER).format(**values)
     metadata = {
@@ -436,7 +440,7 @@ def run_message(
             "run_id": str(run_id),
             "kind": kind.value,
             "idea": idea_key,
-            "section_key": section_key.value if section_key else None,
+            "section_key": section_key,
         }
     }
     return AiRunMessage(text=text, metadata=metadata)
@@ -908,8 +912,14 @@ class AiRunRequest(RequestModel):
     agent_id: UUID
 
 
+class AiEvaluationRequest(AiRunRequest, ResearchOverride):
+    """ "Ask AI to evaluate". Phase 8: with a research step before evaluation, asking for
+    an idea's first evaluator in New or Research while required checklist items are open
+    is 409 ``research_incomplete`` unless an admin sends ``override_research``."""
+
+
 class AiSectionDraftRequest(AiRunRequest):
-    section_key: ProposalSectionKey
+    section_key: SectionKey
 
 
 class EvaluationInclusionUpdate(RequestModel):
@@ -941,7 +951,9 @@ class AiRun(ResponseModel):
     id: UUID
     idea_id: UUID
     kind: AiRunKind
-    section_key: ProposalSectionKey | None = Field(description="draft_section only.")
+    section_key: str | None = Field(
+        description="draft_section only: a key of the idea's project's template."
+    )
     agent: AiAgentRef
     requested_by: UserRef | None
     status: AiRunStatus
@@ -1002,6 +1014,10 @@ class AiBlockedReason(StrEnum):
     """Draft: nobody has started the proposal yet."""
     NO_AGENT = "no_agent"
     """No registered agent passes c10 for this kind on this idea."""
+    RESEARCH_INCOMPLETE = "research_incomplete"
+    """Phase 8 (evaluate): it would be the idea's first evaluator before an evaluation
+    research step with required checklist items open (admins may ask anyway with
+    ``override_research``: ``IdeaResearch.permissions.can_override``)."""
 
 
 class AiPermissions(ResponseModel):
@@ -1009,7 +1025,10 @@ class AiPermissions(ResponseModel):
     request flag comes with the reason it is false (null while true)."""
 
     can_request_evaluation: bool = Field(
-        description="ai.request_evaluation: evaluation open (c6) and an evaluate agent (c10)."
+        description=(
+            "ai.request_evaluation: evaluation open (c6) and an evaluate agent (c10); Phase "
+            "8: and the research gate doesn't block it (else research_incomplete)."
+        )
     )
     request_evaluation_blocked_by: AiBlockedReason | None = Field(
         description="Why can_request_evaluation is false (null when true)."

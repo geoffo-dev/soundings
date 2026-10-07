@@ -256,7 +256,9 @@ def test_the_run_message_holds_references_and_instructions_only(kind: AiRunKind)
         }
     }
     if section:
-        assert '"Risks" section (risks)' in message.text
+        # Phase 8: the section by key only (titles are project admins' text).
+        assert 'section with key "risks"' in message.text
+        assert "Risks" not in message.text
 
 
 def test_only_section_drafts_name_a_section() -> None:
@@ -430,6 +432,7 @@ def test_permissions_say_why_an_action_is_unavailable() -> None:
         "proposal_not_available",
         "no_proposal",
         "no_agent",
+        "research_incomplete",  # Phase 8 (contract-phase8 section 3.5)
     ]
 
 

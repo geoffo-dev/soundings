@@ -11,9 +11,20 @@ from enum import StrEnum
 
 
 class IdeaStatus(StrEnum):
-    """Fixed lifecycle (SPEC section 2). Admins may rename labels, not add stages."""
+    """The lifecycle (SPEC section 2), in the **canonical order** used across projects (My
+    work's groups, search, MCP). Admins may rename labels, not add stages.
+
+    Phase 8 (product owner, 2026-10-07): ``research`` exists only in projects whose
+    research step is on (``projects.research_step``), at the step's position: New ->
+    Research -> Evaluating -> ... (``before_evaluation``) or ... -> Shortlisted ->
+    Research -> Proposal -> Closed (``before_proposal``). A project's own order is
+    :func:`app.schemas.research.lifecycle`; the canonical order puts Research after New.
+    """
 
     NEW = "new"
+    RESEARCH = "research"
+    """Phase 8: checking the idea isn't being done elsewhere and the right teams were
+    consulted (the project's research checklist). Only while the project's step is on."""
     EVALUATING = "evaluating"
     SHORTLISTED = "shortlisted"
     PROPOSAL = "proposal"
@@ -153,8 +164,14 @@ class EmailStatus(StrEnum):
 
 # --- Phase 4: proposals, public submission, branding (contract-phase4) ------------------
 class ProposalSectionKey(StrEnum):
-    """The fixed proposal template (SPEC section 2), in document order. Titles and
-    prompts are in ``app.schemas.proposals.PROPOSAL_TEMPLATE``."""
+    """The keys of the **built-in default** proposal template (SPEC section 2), in
+    document order; titles and hints in ``app.schemas.proposals.DEFAULT_PROPOSAL_TEMPLATE``.
+
+    Phase 8: templates are per project (``proposal_template_sections``). Every project
+    starts with these eight and they keep these keys, but they are no longer the set of
+    valid keys: a project's sections are its template rows, and a section added later
+    gets a key of its own (``app.schemas.proposals.SECTION_KEY_PATTERN``). Use this enum
+    only to name the defaults."""
 
     SUMMARY = "summary"
     PROBLEM = "problem"
@@ -168,6 +185,20 @@ class ProposalSectionKey(StrEnum):
     RISKS = "risks"
     NEXT_STEPS = "next_steps"
     """Next steps / the ask."""
+
+
+class ResearchStep(StrEnum):
+    """Phase 8: whether a project has a research step, and where (``projects.research_step``,
+    project settings -> Research). Off for every project until a project admin turns it
+    on; while on, the lifecycle gains the Research status at this position and the
+    research checklist gates the statuses after it (contract-phase8 section 3)."""
+
+    OFF = "off"
+    """No Research status, column or checklist anywhere in the project (the default)."""
+    BEFORE_EVALUATION = "before_evaluation"
+    """New -> Research -> Evaluating -> Shortlisted -> Proposal -> Closed."""
+    BEFORE_PROPOSAL = "before_proposal"
+    """New -> Evaluating -> Shortlisted -> Research -> Proposal -> Closed."""
 
 
 class HoldReason(StrEnum):

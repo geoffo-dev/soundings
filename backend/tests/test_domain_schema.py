@@ -54,9 +54,12 @@ DOMAIN_TABLES = {
     "proposal_comments",
     "proposal_sections",
     "proposal_suggestions",
+    "proposal_template_sections",
     "proposal_threads",
     "proposals",
     "public_submissions",
+    "research_answers",
+    "research_checklist_items",
     "rubric_criteria",
     "tags",
     "user_external_ids",
@@ -763,7 +766,7 @@ async def test_notification_preferences_are_one_per_user_and_type(
 
 
 # --- Phase 4: proposals, public submission and branding ---------------------------------
-async def test_proposals_are_one_per_idea_with_fixed_versioned_sections(
+async def test_proposals_are_one_per_idea_with_versioned_template_sections(
     db_session: AsyncSession,
 ) -> None:
     idea_id, user_id = await _idea_and_user(db_session)
@@ -778,7 +781,12 @@ async def test_proposals_are_one_per_idea_with_fixed_versioned_sections(
     cases: list[tuple[object, dict[str, object], str]] = [
         (insert_proposal, {"id": uuid.uuid4(), "idea": idea_id}, "uq_proposals_idea_id"),
         (insert_section, {"p": proposal_id, "k": "summary", "v": 1}, "pk_proposal_sections"),
-        (insert_section, {"p": proposal_id, "k": "appendix", "v": 1}, "ck_proposal_sections_key"),
+        # Phase 8: any template key, but in the key format.
+        (
+            insert_section,
+            {"p": proposal_id, "k": "Appendix", "v": 1},
+            "ck_proposal_sections_key_format",
+        ),
         (
             insert_section,
             {"p": proposal_id, "k": "risks", "v": 0},
@@ -805,12 +813,12 @@ async def test_proposals_are_one_per_idea_with_fixed_versioned_sections(
         ),
         {"c": uuid.uuid4(), "t": thread_id, "u": user_id},
     )
-    with pytest.raises(IntegrityError, match="ck_proposal_threads_section_key"):
+    with pytest.raises(IntegrityError, match="ck_proposal_threads_section_key_format"):
         async with db_session.begin_nested():
             await db_session.execute(
                 text(
                     "INSERT INTO proposal_threads (id, proposal_id, section_key)"
-                    " VALUES (:t, :p, 'appendix')"
+                    " VALUES (:t, :p, 'Appendix')"
                 ),
                 {"t": uuid.uuid4(), "p": proposal_id},
             )

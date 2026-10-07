@@ -34,6 +34,7 @@ from pydantic import (
 __all__ = [
     "BIDI_CONTROLS",
     "IDEA_KEY_PATTERN",
+    "INVISIBLE_CHARACTERS",
     "PROJECT_KEY_PATTERN",
     "SLUG_PATTERN",
     "NoNul",
@@ -47,6 +48,7 @@ __all__ = [
     "reject_control",
     "reject_hidden",
     "reject_nul",
+    "visible_text",
 ]
 
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
@@ -133,6 +135,40 @@ SingleLine = AfterValidator(reject_control)
 """``Annotated[str, Field(...), SingleLine]``: a one-line name (an idea title, a display
 name) that ends up in email subjects, so CR/LF and other control characters, U+2028 /
 U+2029, bidi controls and tag characters are a 422 (:func:`has_control`)."""
+
+
+INVISIBLE_CHARACTERS: Final = re.compile(
+    "["
+    "\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f"  # controls (Cc) but tab, LF and CR
+    "\u00ad"  # soft hyphen
+    "\u034f"  # combining grapheme joiner
+    "\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2"  # Arabic and Syriac format marks
+    "\u115f\u1160\u3164\uffa0"  # Hangul fillers: letters that show as nothing
+    "\u180e"  # Mongolian vowel separator
+    "\u200b\u200e\u200f"  # zero-width space, LRM, RLM
+    "\u202a-\u202e"  # bidi embeddings and overrides
+    "\u2060-\u2064\u2066-\u206f"  # word joiner, invisible operators, bidi isolates, ...
+    "\ufe00-\ufe0d"  # variation selectors 1-14 (VS15/VS16 stay: emoji presentation)
+    "\ufeff"  # zero-width no-break space (byte order mark)
+    "\ufff9-\ufffb"  # interlinear annotation
+    "\U000110bd\U000110cd"  # Kaithi number signs
+    "\U00013430-\U0001343f"  # Egyptian hieroglyph format controls
+    "\U0001bca0-\U0001bca3"  # shorthand format controls
+    "\U0001d173-\U0001d17a"  # musical symbol format controls
+    "\U000e0000-\U000e007f"  # the whole tag block
+    "\U000e0100-\U000e01ef"  # variation selectors 17-256
+    "\ud800-\udfff"  # lone surrogates
+    "]+"
+)
+"""Characters that show nothing: the same set as ``app.mcp.text.HIDDEN`` (MCP results and
+agents' text; ``tests/test_schemas_phase8.py`` keeps the two equal). Kept: tab, line feed
+and carriage return, ZWNJ and ZWJ, VS15 and VS16."""
+
+
+def visible_text(text: str) -> str:
+    """``text`` without :data:`INVISIBLE_CHARACTERS` (Phase 8: research answers, so a lone
+    zero-width space or bidi control is never an answer)."""
+    return INVISIBLE_CHARACTERS.sub("", text)
 
 
 class RequestModel(BaseModel):

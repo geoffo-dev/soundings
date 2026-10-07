@@ -80,6 +80,14 @@ class StatusChangedActivity(_ActivityBase):
     from_resolution: Resolution | None
     to_status: IdeaStatus
     to_resolution: Resolution | None
+    research_overridden: bool = Field(
+        default=False,
+        description=(
+            'Phase 8: an admin moved it past an unfinished research checklist ("Move '
+            'anyway"): say "without finishing research". Stored in the payload as '
+            "research_overridden: true (absent = false)."
+        ),
+    )
 
 
 class OwnerChangedActivity(_ActivityBase):

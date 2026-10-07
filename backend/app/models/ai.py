@@ -51,8 +51,8 @@ from app.models.enums import (
     AiRunEventType,
     AiRunKind,
     AiRunStatus,
-    ProposalSectionKey,
 )
+from app.models.proposal import SECTION_KEY_MAX_LENGTH, SECTION_KEY_PATTERN
 from app.models.types import str_enum
 
 __all__ = [
@@ -143,6 +143,7 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
         CheckConstraint(
             "(kind = 'draft_section') = (section_key IS NOT NULL)", name="section_iff_draft"
         ),
+        CheckConstraint(f"section_key ~ '{SECTION_KEY_PATTERN}'", name="section_key_format"),
         CheckConstraint(
             f"({AI_RUN_ACTIVE_STATUSES_SQL}) = (finished_at IS NULL)",
             name="finished_iff_final",
@@ -218,10 +219,9 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
     # NO ACTION: agents are disabled, never deleted.
     agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_agents.id"), index=True)
     kind: Mapped[AiRunKind] = mapped_column(str_enum(AiRunKind, "kind"))
-    # draft_section only: the template section to draft.
-    section_key: Mapped[ProposalSectionKey | None] = mapped_column(
-        str_enum(ProposalSectionKey, "section_key")
-    )
+    # draft_section only: the key of the template section to draft (Phase 8: a section
+    # of the idea's project's template; runs of a section removed later keep its key).
+    section_key: Mapped[str | None] = mapped_column(String(SECTION_KEY_MAX_LENGTH))
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

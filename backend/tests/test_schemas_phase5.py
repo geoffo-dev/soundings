@@ -239,7 +239,7 @@ def test_search_and_get_limits() -> None:
     with pytest.raises(ValidationError):
         SearchIdeasInput(project="Not A Slug")
     with pytest.raises(ValidationError):
-        SearchIdeasInput.model_validate({"status": ["new"] * 6})
+        SearchIdeasInput.model_validate({"status": ["new"] * 7})  # six statuses (Phase 8)
     assert GetIdeaInput(idea="cust-12").comment_limit == 10
     assert GetIdeaInput(idea="0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11", comment_limit=0)
     for reference in ("CUST12", "cust-0", "12", "x" * 37, "CUST-12; DROP"):
@@ -384,5 +384,8 @@ def test_proposed_text_is_verbatim_and_bounded() -> None:
     for body in ("", "  \n", "x" * (SECTION_MAX_LENGTH + 1)):
         with pytest.raises(ValidationError):
             propose("risks", body)
+    # Phase 8: any key of the project's template (the tool answers unknown_section for
+    # one it doesn't have); the shape is a key's.
+    assert propose("carbon_impact", "x").section_key == "carbon_impact"
     with pytest.raises(ValidationError):
-        propose("appendix", "x")
+        propose("Appendix", "x")

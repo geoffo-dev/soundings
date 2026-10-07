@@ -204,7 +204,10 @@ async def test_run_states_are_consistent(db_session: AsyncSession) -> None:
     cases: list[tuple[dict[str, object], str]] = [
         (_run(idea_id, a, kind="draft_section"), "ck_ai_runs_section_iff_draft"),
         (_run(idea_id, a, kind="research", section="risks"), "ck_ai_runs_section_iff_draft"),
-        (_run(idea_id, a, section="appendix", kind="draft_section"), "ck_ai_runs_section_key"),
+        (
+            _run(idea_id, a, section="Appendix", kind="draft_section"),
+            "ck_ai_runs_section_key_format",
+        ),
         (_run(idea_id, a, status="succeeded", started=now), "ck_ai_runs_finished_iff_final"),
         (_run(idea_id, a, finished=now), "ck_ai_runs_finished_iff_final"),
         (_run(idea_id, a, status="running"), "ck_ai_runs_started_when_run"),

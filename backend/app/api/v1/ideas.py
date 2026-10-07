@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
+from app.api.v1.research_gate import GATE_DESCRIPTION, research_gate_conflict
 from app.api.v1.responses import problems
 from app.authz import Rule, load_project
 from app.db import SessionDep
@@ -259,9 +260,15 @@ async def delete_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaPa
         "Owner or project admin; any status to any status. Closing requires a "
         "resolution; leaving closed clears it. Same status and resolution is a no-op. "
         "No side effects (moving to evaluating does not set a due date), so the "
-        "inverse call undoes a move."
+        "inverse call undoes a move. Phase 8: research only while the project's research "
+        "step is on (else 409 research_step_off); moving into a status after Research from "
+        "one that isn't (reopening counts from the status the idea was closed from) is "
+        "guarded by the research checklist." + GATE_DESCRIPTION
     ),
-    responses=problems(401, 403, 404, 409, 422),
+    responses={
+        **problems(401, 403, 404, 422),
+        **research_gate_conflict("research_step_off, project_archived, awaiting_moderation"),
+    },
 )
 async def change_idea_status(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: StatusChange
@@ -317,9 +324,14 @@ async def volunteer_as_owner(
     description=(
         "Owner or project admin. Evaluators need effective role member or admin (422 "
         "assignee_not_eligible). 409 evaluation_closed unless evaluation is open. The "
-        "first invite sets the default due date when the idea has none."
+        "first invite sets the default due date when the idea has none. Phase 8: with a "
+        "research step before evaluation, the first invite of an idea in New or Research is "
+        "guarded by the research checklist." + GATE_DESCRIPTION
     ),
-    responses=problems(401, 403, 404, 409, 422),
+    responses={
+        **problems(401, 403, 404, 422),
+        **research_gate_conflict("evaluation_closed, project_archived, awaiting_moderation"),
+    },
 )
 async def add_evaluators(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: EvaluatorsAdd

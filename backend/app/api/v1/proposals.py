@@ -1,9 +1,9 @@
 """Proposals: the Proposal tab of an idea (SPEC section 5, screen 5).
 
-One proposal per idea over the fixed template, edited section by section with
-optimistic concurrency, margin comment threads per section, and PDF / Markdown export.
-Business rules: docs/api/contract-phase4.md sections 3.1-3.4; rules ``proposal.*``
-(role matrix section E).
+One proposal per idea over its project's template (Phase 8: per project, contract-phase8
+section 2), edited section by section with optimistic concurrency, margin comment threads
+per section, and PDF / Markdown export. Business rules: docs/api/contract-phase4.md
+sections 3.1-3.4; rules ``proposal.*`` (role matrix section E).
 """
 
 from __future__ import annotations
@@ -16,12 +16,13 @@ from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
+from app.api.v1.research_gate import GATE_DESCRIPTION, research_gate_conflict
 from app.api.v1.responses import binary, problems
 from app.config import Settings
 from app.db import SessionDep
 from app.errors import PROBLEM_CONTENT_TYPE, PROBLEM_TYPE_PREFIX
 from app.models.base import utcnow
-from app.models.enums import ProposalSectionKey
+from app.models.proposal import SECTION_KEY_MAX_LENGTH, SECTION_KEY_PATTERN
 from app.observability import request_id_var
 from app.proposals import comments, export, service
 from app.schemas.proposals import (
@@ -29,6 +30,7 @@ from app.schemas.proposals import (
     ProposalConflictProblem,
     ProposalSection,
     ProposalSectionUpdate,
+    ProposalStart,
     ProposalThread,
     ProposalThreadCreate,
     ProposalThreadList,
@@ -38,7 +40,18 @@ from app.services import ideas
 
 router = APIRouter(tags=["proposals"])
 
-SectionKeyParam = Annotated[ProposalSectionKey, Path(description="A template section's key.")]
+SectionKeyParam = Annotated[
+    str,
+    Path(
+        min_length=1,
+        max_length=SECTION_KEY_MAX_LENGTH,
+        pattern=SECTION_KEY_PATTERN,
+        description=(
+            "A section of the project's template, by key (Phase 8: per project; a key the "
+            "template doesn't have, or a removed section's, is 404)."
+        ),
+    ),
+]
 ThreadId = Annotated[UUID, Path(description="A margin thread's id.")]
 CommentId = Annotated[UUID, Path(description="A comment's id (in that thread).")]
 
@@ -104,15 +117,25 @@ async def get_proposal(
     summary="Start the proposal",
     description=(
         "proposal.write (owner, project and platform admins) while the idea is Shortlisted "
-        "or in Proposal (c7, else 409 proposal_not_available). Creates all eight sections "
-        "(Summary starts as the idea's summary) and moves a Shortlisted idea to Proposal "
-        "(a status change like any other: feed, notifications, audit). 409 proposal_exists "
-        "when there already is one."
+        "or in Proposal (c7, else 409 proposal_not_available; Phase 8: also in Research when "
+        "the project's research step is before_proposal). Creates a section for each active "
+        "section of the project's template (a summary section starts as the idea's summary) "
+        "and moves a Shortlisted (or Research) idea to Proposal (a status change like any "
+        "other: feed, notifications, audit). 409 proposal_exists when there already is one. "
+        "The body is optional (ProposalStart: the research override)." + GATE_DESCRIPTION
     ),
-    responses=problems(401, 403, 404, 409),
+    responses={
+        **problems(401, 403, 404, 422),
+        **research_gate_conflict(
+            "proposal_not_available, proposal_exists, project_archived, awaiting_moderation"
+        ),
+    },
 )
 async def create_proposal(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: ProposalStart | None = None,
 ) -> ProposalView:
     loaded = await ideas.load_idea(session, principal, idea, for_update=True)
     await service.create_proposal(session, principal, loaded)
@@ -154,9 +177,11 @@ async def update_proposal_section(
     response_class=Response,
     summary="Export as Markdown",
     description=(
-        "proposal.export: a text/markdown download (title, metadata, the eight sections; "
-        "the aggregate score only if you may see it). Shares the export limit with PDF "
-        "(429 too_many_attempts with Retry-After). 404 when there is no proposal."
+        "proposal.export: a text/markdown download (title, metadata, the project's template "
+        'sections; the aggregate score only if you may see it; Phase 8: a closing "Research '
+        "and consultation\" appendix of the answered checklist items while the project's "
+        "research step is on). Shares the export limit with PDF (429 too_many_attempts with "
+        "Retry-After). 404 when there is no proposal."
     ),
     responses={
         **binary(
@@ -183,7 +208,9 @@ async def export_proposal_markdown(
     summary="Export as PDF",
     description=(
         "proposal.export: an application/pdf download in the project's effective branding "
-        "(cover with logo or app name, colours and font; page numbers), rendered in a "
+        "(cover with logo or app name, colours and font; page numbers; the project's "
+        'template sections, then Phase 8\'s "Research and consultation" appendix while the '
+        "research step is on), rendered in a "
         "separate process without any remote resource. 429 too_many_attempts (with "
         "Retry-After) beyond the export limit; 503 export_busy (with Retry-After) when "
         "the renderer stayed busy for 30 s or a render hit its 20 s limit. 404 when "

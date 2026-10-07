@@ -933,3 +933,83 @@ Phase 7 added no feature; it removed places and choices. In one list (details ab
 8. **One switch for single-key shortcuts** instead of removing shortcuts.
 9. **Declined to add:** two workers per pod (scale with replicas), a Help item, a
    minimum search length; **declined to change:** one save model everywhere.
+
+## Phase 8 (product owner, 2026-10-07)
+
+The product owner's change after reviewing 0.1.0. SPEC.md is read-only, so it is recorded
+here; where it differs it **supersedes** SPEC section 2's "fixed, sensible template" for
+proposals and its fixed lifecycle ("they can't add or remove stages"), and the Phase 0
+non-goal line "The five statuses are fixed" (now: five, or six with the research step;
+still no per-project stage designer). Contract: [contract-phase8.md](api/contract-phase8.md);
+architecture: [ADR 0015](adr/0015-proposal-templates-and-research-step.md).
+
+### A. Per-project proposal template (Decided, product owner)
+
+| Decision | Why |
+|---|---|
+| Each project edits its proposal template like the rubric: project admins add, remove, rename and reorder sections; each has a title (1–60) and a one-line hint shown in the editor (≤ 200); 1–12 sections. New projects and every existing project start from today's eight. | Teams write different proposals (an internal tool needs "Effort & rollout", not "Market & users"). |
+| Each section has a stable key: the eight keep `summary` … `next_steps`; new ones get a slug key, unique per project, immutable. Renaming keeps the key. | REST, MCP and AI drafts keep addressing sections by key. |
+| Removing a section archives it: its text is kept but hidden from the editor and the exports; "Removed sections" in settings restores it with its text. | Nobody loses writing by tidying the template. |
+| One template per project, live: every proposal in the project follows it at once (editor, margin threads, suggestions, "Draft with AI", MCP `get_proposal` / `propose_proposal_section`, PDF and Markdown). A removed or unknown key is a clean 4xx / tool error. | One place to change; no per-proposal drift. |
+| No per-idea templates and no global template library: new projects start from the built-in defaults. | Simple beats configurable. |
+
+### B. The research step (Decided, product owner)
+
+| Decision | Why |
+|---|---|
+| Purpose: before the team invests in an idea, check it isn't already being done elsewhere in the company and that the right departments or teams were consulted. | Avoid duplicated work and late surprises from Legal, Security, IT. |
+| Project setting "Research step": Off (default for every existing and new project), Before evaluation, Before proposal. When on, the lifecycle gains a Research status and board column at that position (New → Research → Evaluating → … or … → Shortlisted → Research → Proposal → Closed). `IdeaStatus` gains `research`, renameable per project. Cross-project views use one canonical order with Research after New. While Off there is no Research column or status anywhere in the project. | One optional stage, two sensible places; projects that don't want it see nothing new. |
+| Switching the step off or moving it is refused while any idea of the project is in Research (409 with the count; the UI says to move those ideas first). | No idea is ever left in a status its project doesn't have. |
+| A per-project research checklist, edited like the rubric (add, remove, rename, reorder; 1–10 items): title (1–80), hint (≤ 200, what to write), Required (default on). Completing an item is a free-text answer (1–2,000); for consultations a free-text box naming the department or team and what they said, not a user picker. Who answered and when is recorded; answers can be edited or cleared by the same people; removing an item archives it (answers kept, hidden, restorable). | The answer is the record people read later; consultations are with teams, not accounts. |
+| Default checklist offered when the step is turned on: "Not already being done elsewhere" (required; search Soundings and ask around, note what you found), "Departments or teams consulted" (required; who you spoke to and what they said), "Data protection considered" (optional). | A useful start that teams can change. |
+| The gate: an idea can't move to any status after Research (status change, board drag, the evaluator invite or anything else that would start evaluation before an evaluation step, starting a proposal before a proposal step) while a required item is unanswered: 409 `research_incomplete` with the open items. Project and platform admins may "Move anyway" (a request flag, audited, the reason optional). Moving back, or to Closed, is never blocked. An all-optional checklist is a guide that never blocks. Changing the checklist never moves ideas. | The step means something, with an escape hatch for the people accountable. |
+| Who: the idea's owner and project admins (and platform admins) answer; everyone who can view the idea reads the checklist and answers (no score data; pending evaluators see them). API keys: answering is a write-scope operation; agents' keys never answer. | The owner does the research; evaluators benefit from it. |
+| Help on the Research panel: "Similar ideas" (similar titles and summaries across every project the viewer can see, pg_trgm similarity, top 5, held ideas never shown) and the existing "Ask AI to research". Answers are shown to evaluators on the idea page, and proposal exports end with a "Research and consultation" appendix listing each answered item while the step is on. | Make the check easy to do and visible where decisions are made. |
+| Public tracking shows Research as "With the team". Status-change notifications and emails cover Research like other statuses (no new notification types; never score data). | Submitters don't need the internal stage; members get the usual updates. |
+| Demo: Internal Tools uses "Before evaluation" with the default checklist and a custom template (Summary, Problem, Solution, Effort & rollout, Risks, The ask), two ideas in Research (one complete, one partly answered); Sustainability uses "Before proposal" with a "Carbon impact" section added; Customer Innovation keeps the defaults with the step Off. | Show both positions and both features in the demo story. |
+
+## 2026-10-07 · Phase 8 contract
+
+Calls made while writing the Phase 8 contract ([contract-phase8.md](api/contract-phase8.md),
+[ADR 0015](adr/0015-proposal-templates-and-research-step.md)). Status **Proposed** = the
+lead's default; build it this way unless told otherwise.
+
+### Templates
+
+| Decision | Status | Why |
+|---|---|---|
+| Section rows, threads, suggestions and AI runs keep naming a section by **key** (`varchar(40)`, format `CHECK`), with **no foreign key** to the template; a removed section is archived when anything refers to its key (text in a proposal, a thread, a suggestion, an AI run), else deleted with its empty rows, all under the project's `FOR UPDATE` lock. | Proposed | Keys are immutable and a referenced key is never deleted, so they always resolve; no copied `project_id` on four tables, no backfill, historic rows untouched, a plain downgrade. Matches the rubric's archive-or-delete rule. |
+| New keys come from the title (`section_key_for`: ASCII slug, `_2`, `_3` on a clash with any key the project has, removed ones included); the API never takes a key for a new section. | Proposed | Deterministic, readable in MCP and runs, no key field in the UI. |
+| Restoring a section is putting its key back in `replace_proposal_template` (no restore endpoint); the replace also creates the section rows proposals lack. | Proposed | One endpoint, like the rubric; every proposal always has a row per active section. |
+| No template tool in MCP: `get_proposal`'s sections carry the keys whenever a suggestion is possible. | Proposed | Keep the tool list at ten. |
+| Threads, suggestions and an active draft run of a removed section are kept and hidden (404 by id); a running draft for it ends `no_result`. | Proposed | Nothing is lost; restoring brings them back; no cancel cascade to build. |
+
+### Research
+
+| Decision | Status | Why |
+|---|---|---|
+| The gate guards **crossings**: a status change into a status after Research from one that isn't; an idea's **first** evaluator (or "Ask AI to evaluate") before an evaluation step; starting a proposal before a proposal step. Ideas already past Research move freely among later statuses even when the checklist changes later. **To confirm with the product owner**: this reads "cannot move to any status after Research" as "cannot cross into one". | Proposed (to confirm with the PO) | "Changing the checklist never moves ideas" and turning the step on mid-flight shouldn't freeze ideas already evaluating. |
+| **Reopening counts from the status the idea was closed from** (the latest `status_changed` into Closed, read under the idea lock; none recorded counts as New): reopening an idea that was past Research is never guarded, one closed from New or Research is (review must-fix 2). | Proposed | Undo of a Close must work for every idea past Research (ideas that passed before the step was turned on, ideas moved on with "Move anyway"), and owners can't override; New → Closed → Evaluating must not skip the check. |
+| One choke point: `ideas.change_status` (also `create_proposal`'s move, with the override passed through) and one research-service helper for invites and "Ask AI to evaluate"; **no bypass**, the demo seed answers or turns the step on after moving its ideas. | Proposed | Every path that moves an idea forward uses the same check; nothing can skip it by accident. |
+| c7 also allows Research while the step is before proposal, so "Start proposal" is the Research column's next step (gated). | Proposed | One click from finished research to a proposal. |
+| The override is a request flag on the four guarded requests (`override_research`, optional one-line `override_reason`), needs `idea.research_override` (project and platform admins, **session only**) whenever it is true, is audited `idea.research_override` with the reason, and marks the status change `research_overridden`. Owners can't override. | Proposed | An explicit, accountable choice by the people who own the process; visible in the feed and the audit log. |
+| One settings resource for the step and the checklist (`GET/PUT /projects/{slug}/research`), audited as two actions (step change, checklist replace); the default checklist comes from the server (`default_items`) and is created only on Save. | Proposed | One form, one save; one definition of the defaults. |
+| Answers are plain text (not Markdown), last write wins, first author and last editor recorded, not activity events, not audited, not notified. | Proposed | Short records; calm feed; the panel shows who and when. |
+| Status `research` while the step is off is 409 `research_step_off` (also for answers); the API never stores an idea in Research outside a research step. | Proposed | "No Research anywhere" holds by construction. |
+| "Similar ideas": `pg_trgm` similarity ≥ 0.3 on title or summary, top 5, every project the viewer can see **archived included**, any status, never held ideas or the idea itself, owner shown, no scores. | Proposed | An archived project's idea is evidence it was tried; the owner is whom to ask. |
+| Public tracking reports Research as **the status before it** in the project's lifecycle (`new` before evaluation, `shortlisted` before the proposal: `public_status`) and leaves moves that change nothing reported out of the history and the submitter emails (review must-fix 1). | Proposed | "With the team" without a new public status, and a "Before proposal" idea never drops back to "New" for the submitter. |
+| Answers lose invisible characters (zero-width, bidi controls: the MCP `HIDDEN` set) and need one visible character. | Proposed | A lone zero-width space must not count as an answer and pass the gate. |
+| Turning the step off ignores `items`: the checklist and answers are kept as they are. | Proposed | `{step: off, items: []}` must not delete a checklist the team will want back. |
+| Cards show research progress only for an idea in Research or in the status before it; `blocking` is false for a closed idea; no per-card override flag (the 409 says whether you may move anyway); invites get a `invite_blocked_by_research` warning flag like "Start proposal" and "Ask AI to evaluate". | Proposed | Calm cards: no "0/3" on ideas past the gate or closed; one policy call per page, not per row. |
+| c1 is unchanged: the submitter may edit their idea only while it is New; moving it into Research ends that, like moving it to Evaluating. | Proposed | Research answers ("not already done elsewhere") are about the text as it stood; the team has taken the idea up. |
+| An AI draft's run message names the section by **key only**; the agent reads the title and hint in `get_proposal`, untrusted. | Proposed | Section titles are project admins' text, which ADR 0014 keeps out of agents' instructions. |
+| No "Reset to the default eight" in the template editor; Removed sections restores. | Proposed | A deleted default's key can't be given back; simple beats configurable. |
+| Template and checklist saves are last write wins, like the rubric. | Proposed | Rare, admin-only edits of a short list. |
+| Project settings gains one tab, **Workflow** (Research step, Proposal template). | Proposed | Five tabs rather than six; both settings shape how ideas flow. |
+
+### Contract mechanics
+
+| Decision | Status | Why |
+|---|---|---|
+| The eight new operations are pinned in `PHASE8_OPERATIONS` (test_contract_routes), apart from `CONTRACT`, until identity adds their `ROUTE_KEY_ACCESS` rows and `ROUTE_RULES` and moves them into `CONTRACT`; meanwhile keys are refused on them. | Proposed | The meta-tests index identity's tables by every `CONTRACT` operation, so adding them earlier stops the whole backend suite at collection. This phase's contract owns no identity paths. |
+| New response fields have server defaults in the schemas (`research_step = off`, `lifecycle` = the five, `research = null`, permission flags false) so the backend keeps building them until it implements Phase 8; the OpenAPI document still marks them required. | Proposed | Builders work in parallel on a compiling backend. |

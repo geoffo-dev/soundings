@@ -28,7 +28,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
-from app.models.enums import ProjectRole, ProjectVisibility
+from app.models.enums import ProjectRole, ProjectVisibility, ResearchStep
 from app.models.types import str_enum
 
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
@@ -77,12 +77,20 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Markdown shown above the public form (at most 2,000 characters through the API).
     public_intro_md: Mapped[str] = mapped_column(Text, default="", server_default="")
     # Label overrides only, e.g. {"shortlisted": "Short list"}; keys are IdeaStatus and
-    # Resolution values. Missing keys use the default labels.
+    # Resolution values (Phase 8: "research" too). Missing keys use the default labels.
     status_labels: Mapped[dict[str, str]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )
     default_evaluation_days: Mapped[int] = mapped_column(
         Integer, default=7, server_default=text("7")
+    )
+    # Phase 8: the research step (project settings -> Research; contract-phase8 section
+    # 3.3). While it is off there is no Research status, column or checklist in the
+    # project; its checklist is research_checklist_items.
+    research_step: Mapped[ResearchStep] = mapped_column(
+        str_enum(ResearchStep, "research_step"),
+        default=ResearchStep.OFF,
+        server_default=ResearchStep.OFF.value,
     )
     # Next idea number (CUST-<n>); allocate with UPDATE ... RETURNING to stay race-free.
     next_idea_number: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))

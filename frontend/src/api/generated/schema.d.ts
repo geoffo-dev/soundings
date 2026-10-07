@@ -920,7 +920,7 @@ export interface paths {
         put?: never;
         /**
          * Ask AI to evaluate
-         * @description ai.request_evaluation (the owner and admins; c6: evaluation open). Assigns the agent's service account as an evaluator if it isn't one (audited evaluator.add, activity evaluator_added; removed again if the run ends without its submitted evaluation) and queues a run: the agent reads the idea and the rubric through MCP and submits an evaluation with a rationale and sources per criterion, shown with an AI badge and left out of the aggregate until someone includes it. 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.
+         * @description ai.request_evaluation (the owner and admins; c6: evaluation open). Assigns the agent's service account as an evaluator if it isn't one (audited evaluator.add, activity evaluator_added; removed again if the run ends without its submitted evaluation) and queues a run: the agent reads the idea and the rubric through MCP and submits an evaluation with a rationale and sources per criterion, shown with an AI badge and left out of the aggregate until someone includes it. 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request. Phase 8: with a research step before evaluation, asking for an idea's first evaluator in New or Research is guarded by the research checklist (after c10). Phase 8: 409 research_incomplete (with open_items and can_override) while required research checklist items are open and the request would take the idea past Research; override_research: true (idea.research_override: project and platform admins, session only, else 403) moves anyway, audited as idea.research_override.
          */
         post: operations["request_ai_evaluation"];
         delete?: never;
@@ -960,7 +960,7 @@ export interface paths {
         put?: never;
         /**
          * Draft a proposal section with AI
-         * @description ai.draft_section (the owner and admins; c7: Shortlisted or Proposal). 404 when the idea has no proposal yet. Queues a run: the agent reads the idea and the proposal and suggests the whole text of the section (propose_proposal_section, source ai), which the owner accepts or discards. 201 with the new run, or 200 with the active one for the same section. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.
+         * @description ai.draft_section (the owner and admins; c7: Shortlisted or Proposal, Phase 8: or Research before a proposal step). 404 when the idea has no proposal yet; 422 unknown_section for a key the project's template doesn't have (or a removed section's). Queues a run: the agent reads the idea and the proposal and suggests the whole text of the section (propose_proposal_section, source ai), which the owner accepts or discards. 201 with the new run, or 200 with the active one for the same section. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.
          */
         post: operations["request_ai_section_draft"];
         delete?: never;
@@ -1184,7 +1184,7 @@ export interface paths {
         put?: never;
         /**
          * Invite evaluators
-         * @description Owner or project admin. Evaluators need effective role member or admin (422 assignee_not_eligible). 409 evaluation_closed unless evaluation is open. The first invite sets the default due date when the idea has none.
+         * @description Owner or project admin. Evaluators need effective role member or admin (422 assignee_not_eligible). 409 evaluation_closed unless evaluation is open. The first invite sets the default due date when the idea has none. Phase 8: with a research step before evaluation, the first invite of an idea in New or Research is guarded by the research checklist. Phase 8: 409 research_incomplete (with open_items and can_override) while required research checklist items are open and the request would take the idea past Research; override_research: true (idea.research_override: project and platform admins, session only, else 403) moves anyway, audited as idea.research_override.
          */
         post: operations["add_evaluators"];
         delete?: never;
@@ -1248,7 +1248,7 @@ export interface paths {
         put?: never;
         /**
          * Start the proposal
-         * @description proposal.write (owner, project and platform admins) while the idea is Shortlisted or in Proposal (c7, else 409 proposal_not_available). Creates all eight sections (Summary starts as the idea's summary) and moves a Shortlisted idea to Proposal (a status change like any other: feed, notifications, audit). 409 proposal_exists when there already is one.
+         * @description proposal.write (owner, project and platform admins) while the idea is Shortlisted or in Proposal (c7, else 409 proposal_not_available; Phase 8: also in Research when the project's research step is before_proposal). Creates a section for each active section of the project's template (a summary section starts as the idea's summary) and moves a Shortlisted (or Research) idea to Proposal (a status change like any other: feed, notifications, audit). 409 proposal_exists when there already is one. The body is optional (ProposalStart: the research override). Phase 8: 409 research_incomplete (with open_items and can_override) while required research checklist items are open and the request would take the idea past Research; override_research: true (idea.research_override: project and platform admins, session only, else 403) moves anyway, audited as idea.research_override.
          */
         post: operations["create_proposal"];
         delete?: never;
@@ -1266,7 +1266,7 @@ export interface paths {
         };
         /**
          * Export as Markdown
-         * @description proposal.export: a text/markdown download (title, metadata, the eight sections; the aggregate score only if you may see it). Shares the export limit with PDF (429 too_many_attempts with Retry-After). 404 when there is no proposal.
+         * @description proposal.export: a text/markdown download (title, metadata, the project's template sections; the aggregate score only if you may see it; Phase 8: a closing "Research and consultation" appendix of the answered checklist items while the project's research step is on). Shares the export limit with PDF (429 too_many_attempts with Retry-After). 404 when there is no proposal.
          */
         get: operations["export_proposal_markdown"];
         put?: never;
@@ -1286,7 +1286,7 @@ export interface paths {
         };
         /**
          * Export as PDF
-         * @description proposal.export: an application/pdf download in the project's effective branding (cover with logo or app name, colours and font; page numbers), rendered in a separate process without any remote resource. 429 too_many_attempts (with Retry-After) beyond the export limit; 503 export_busy (with Retry-After) when the renderer stayed busy for 30 s or a render hit its 20 s limit. 404 when there is no proposal.
+         * @description proposal.export: an application/pdf download in the project's effective branding (cover with logo or app name, colours and font; page numbers; the project's template sections, then Phase 8's "Research and consultation" appendix while the research step is on), rendered in a separate process without any remote resource. 429 too_many_attempts (with Retry-After) beyond the export limit; 503 export_busy (with Retry-After) when the renderer stayed busy for 30 s or a render hit its 20 s limit. 404 when there is no proposal.
          */
         get: operations["export_proposal_pdf"];
         put?: never;
@@ -1469,6 +1469,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The idea's research checklist
+         * @description idea.view: the checklist with this idea's answers, progress, whether the gate blocks moving past Research (never for a closed idea), and what you may do. While the project's step is off: step off and no items. No score data.
+         */
+        get: operations["get_idea_research"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/research-notes/{note_id}": {
         parameters: {
             query?: never;
@@ -1493,6 +1513,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/research/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Answer a research item
+         * @description idea.answer_research (the owner and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         */
+        put: operations["answer_research_item"];
+        post?: never;
+        /**
+         * Clear a research item's answer
+         * @description idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea, even past Research. Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         */
+        delete: operations["clear_research_item"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/similar-ideas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Similar ideas
+         * @description idea.view: up to 5 ideas whose title or summary is like this idea's (pg_trgm similarity >= 0.3, the higher of title and summary), most similar first, from every project you can view (archived ones included); never this idea or a held idea; a key's project restriction applies. No score data.
+         */
+        get: operations["list_similar_ideas"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/status": {
         parameters: {
             query?: never;
@@ -1504,7 +1568,7 @@ export interface paths {
         put?: never;
         /**
          * Move an idea to a status
-         * @description Owner or project admin; any status to any status. Closing requires a resolution; leaving closed clears it. Same status and resolution is a no-op. No side effects (moving to evaluating does not set a due date), so the inverse call undoes a move.
+         * @description Owner or project admin; any status to any status. Closing requires a resolution; leaving closed clears it. Same status and resolution is a no-op. No side effects (moving to evaluating does not set a due date), so the inverse call undoes a move. Phase 8: research only while the project's research step is on (else 409 research_step_off); moving into a status after Research from one that isn't (reopening counts from the status the idea was closed from) is guarded by the research checklist. Phase 8: 409 research_incomplete (with open_items and can_override) while required research checklist items are open and the request would take the idea past Research; override_research: true (idea.research_override: project and platform admins, session only, else 403) moves anyway, audited as idea.research_override.
          */
         post: operations["change_idea_status"];
         delete?: never;
@@ -2161,6 +2225,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{slug}/proposal-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The project's proposal template
+         * @description project.view: the active sections in order (key, title, hint, how many proposals have text in each) and the removed sections that still hold something (restore one by putting its key back).
+         */
+        get: operations["get_proposal_template"];
+        /**
+         * Replace the proposal template
+         * @description project.edit_proposal_template (project and platform admins, session only): the complete template, 1-12 sections in order. Existing sections by key (renaming keeps the key and the text; a removed section's key restores it with its text); new ones without a key get one made from the title. Sections left out are archived if anything refers to them, else deleted. Every proposal of the project follows it at once (missing section rows are created). Last write wins (no version), like the rubric. 422 unknown_section; validation_error for duplicate titles or keys. Audited as project.proposal_template_replace.
+         */
+        put: operations["replace_proposal_template"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{slug}/public-form": {
         parameters: {
             query?: never;
@@ -2183,6 +2271,30 @@ export interface paths {
          * @description project.edit_settings (session only); audited as project.update. Changes apply to new submissions only (held ideas stay held). 409 public_submission_unavailable (turning the form on while the instance switch is off, or for an older project whose slug is one of the app's own paths), smtp_not_configured (requiring email verification without email), project_archived.
          */
         patch: operations["update_public_form_settings"];
+        trace?: never;
+    };
+    "/api/v1/projects/{slug}/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The project's research step and checklist
+         * @description project.view: the step (off, before_evaluation, before_proposal), the active checklist in order, removed items that hold answers, the default checklist to start from, and how many ideas are in Research.
+         */
+        get: operations["get_research_settings"];
+        /**
+         * Set the research step and checklist
+         * @description project.edit_research (project and platform admins, session only): the step and, while it is on, the complete checklist in order (1-10 items; with the step off, items is ignored and the checklist is kept, hidden). Existing items by id (a removed item's id restores it with its answers); items left out are archived if answered, else deleted. Last write wins (no version), like the rubric. Changing the checklist never moves an idea. Changing the step (off, or the other position) while ideas are in Research: 409 ideas_in_research with idea_count. 422 unknown_research_item; validation_error for duplicate titles or ids, or no item while on. Audited as project.research_step_change and project.research_checklist_replace (each when it changed).
+         */
+        put: operations["replace_research_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{slug}/rubric": {
@@ -3046,7 +3158,30 @@ export interface components {
          *     order (the order the request checks them).
          * @enum {string}
          */
-        AiBlockedReason: "not_allowed" | "ai_off" | "project_archived" | "awaiting_moderation" | "idea_closed" | "evaluation_closed" | "proposal_not_available" | "no_proposal" | "no_agent";
+        AiBlockedReason: "not_allowed" | "ai_off" | "project_archived" | "awaiting_moderation" | "idea_closed" | "evaluation_closed" | "proposal_not_available" | "no_proposal" | "no_agent" | "research_incomplete";
+        /**
+         * AiEvaluationRequest
+         * @description "Ask AI to evaluate". Phase 8: with a research step before evaluation, asking for
+         *     an idea's first evaluator in New or Research while required checklist items are open
+         *     is 409 ``research_incomplete`` unless an admin sends ``override_research``.
+         */
+        AiEvaluationRequest: {
+            /**
+             * Agent Id
+             * Format: uuid
+             */
+            agent_id: string;
+            /**
+             * Override Reason
+             * @description Optional, with override_research: why (one line, kept in the audit log).
+             */
+            override_reason?: string | null;
+            /**
+             * Override Research
+             * @description Phase 8: true = "Move anyway" past an unfinished research checklist (omitted, null or false: no override). true needs idea.research_override (project and platform admins, in a session; else 403 forbidden, or 403 insufficient_scope with an API key), even when nothing would block. Audited as idea.research_override when it lets the request through.
+             */
+            override_research?: boolean | null;
+        };
         /**
          * AiPermissions
          * @description What you may do with AI on this idea now (rules, conditions and c10 included). Each
@@ -3070,7 +3205,7 @@ export interface components {
             can_include_ai: boolean;
             /**
              * Can Request Evaluation
-             * @description ai.request_evaluation: evaluation open (c6) and an evaluate agent (c10).
+             * @description ai.request_evaluation: evaluation open (c6) and an evaluate agent (c10); Phase 8: and the research gate doesn't block it (else research_incomplete).
              */
             can_request_evaluation: boolean;
             /**
@@ -3170,8 +3305,11 @@ export interface components {
             kind: components["schemas"]["AiRunKind"];
             requested_by: components["schemas"]["UserRef"] | null;
             result: components["schemas"]["AiRunResult"];
-            /** @description draft_section only. */
-            section_key: components["schemas"]["ProposalSectionKey"] | null;
+            /**
+             * Section Key
+             * @description draft_section only: a key of the idea's project's template.
+             */
+            section_key: string | null;
             /** Started At */
             started_at: string | null;
             status: components["schemas"]["AiRunStatus"];
@@ -3229,8 +3367,11 @@ export interface components {
             kind: components["schemas"]["AiRunKind"];
             requested_by: components["schemas"]["UserRef"] | null;
             result: components["schemas"]["AiRunResult"];
-            /** @description draft_section only. */
-            section_key: components["schemas"]["ProposalSectionKey"] | null;
+            /**
+             * Section Key
+             * @description draft_section only: a key of the idea's project's template.
+             */
+            section_key: string | null;
             /** Started At */
             started_at: string | null;
             status: components["schemas"]["AiRunStatus"];
@@ -3359,7 +3500,11 @@ export interface components {
              * Format: uuid
              */
             agent_id: string;
-            section_key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Section Key
+             * @description A section of the project's template, by key: "summary", "next_steps", "carbon_impact" (GET /projects/{slug}/proposal-template, or the proposal's sections). A key the template doesn't have, or a removed section's: 422 unknown_section (404 in a path).
+             */
+            section_key: string;
         };
         /**
          * AiSettingsInEffect
@@ -3570,7 +3715,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -3659,7 +3804,8 @@ export interface components {
         AuthMethod: "dev_login" | "sso" | "break_glass";
         /**
          * Board
-         * @description One column per status, always all five, in lifecycle order.
+         * @description One column per status of the project's lifecycle, in its order: five, or six with
+         *     Research at the project's research step (Phase 8; ``Project.lifecycle``).
          */
         Board: {
             /** Columns */
@@ -3683,6 +3829,7 @@ export interface components {
             next_cursor: string | null;
             /** @description Closed column only (null elsewhere): count split by resolution. Expand it with GET /projects/{slug}/ideas?status=closed&resolution=<resolution>. */
             resolution_counts: components["schemas"]["ResolutionCounts"] | null;
+            /** @description research only in projects whose research step is on (Phase 8). */
             status: components["schemas"]["IdeaStatus"];
         };
         /**
@@ -4049,6 +4196,18 @@ export interface components {
             readonly initials: string;
             /** Is Platform Admin */
             is_platform_admin: boolean;
+        };
+        /**
+         * DefaultChecklistItem
+         * @description A default item, for the settings form to start from.
+         */
+        DefaultChecklistItem: {
+            /** Hint */
+            hint: string;
+            /** Required */
+            required: boolean;
+            /** Title */
+            title: string;
         };
         /** DevLoginRequest */
         DevLoginRequest: {
@@ -4574,6 +4733,10 @@ export interface components {
         /**
          * EvaluatorsAdd
          * @description Invite evaluators. Users already assigned are ignored.
+         *
+         *     Phase 8: with a research step before evaluation, the first invite of an idea in New or
+         *     Research while required checklist items are open is 409 ``research_incomplete`` unless
+         *     an admin sends ``override_research``.
          */
         EvaluatorsAdd: {
             /**
@@ -4581,6 +4744,16 @@ export interface components {
              * @description Also set the evaluation due date. If omitted on the first invite (the idea has no evaluators yet) and the idea has no due date, it becomes now + the project's default_evaluation_days; later invites leave it alone.
              */
             due_at?: string | null;
+            /**
+             * Override Reason
+             * @description Optional, with override_research: why (one line, kept in the audit log).
+             */
+            override_reason?: string | null;
+            /**
+             * Override Research
+             * @description Phase 8: true = "Move anyway" past an unfinished research checklist (omitted, null or false: no override). true needs idea.research_override (project and platform admins, in a session; else 403 forbidden, or 403 insufficient_scope with an API key), even when nothing would block. Audited as idea.research_override when it lets the request through.
+             */
+            override_research?: boolean | null;
             /** User Ids */
             user_ids: string[];
         };
@@ -4989,6 +5162,8 @@ export interface components {
             owner: components["schemas"]["UserRef"] | null;
             permissions: components["schemas"]["IdeaPermissions"];
             project: components["schemas"]["ProjectRef"];
+            /** @description Phase 8: the research checklist at a glance ("2/3" on cards), only for an idea in Research or in the status right before it (New when Research comes before evaluation, Shortlisted when it comes before the proposal) while the project's research step is on; null otherwise (step off, past Research, closed). Holds no score data. */
+            research: components["schemas"]["ResearchProgress"] | null;
             /** @description Set if and only if status is closed. */
             resolution: components["schemas"]["Resolution"] | null;
             /** @description Null when there are no included submitted evaluations, or when hidden. */
@@ -5100,6 +5275,12 @@ export interface components {
          */
         IdeaPermissions: {
             /**
+             * Can Answer Research
+             * @description Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner and admins; false while the project's step is off).
+             * @default false
+             */
+            can_answer_research: boolean;
+            /**
              * Can Assign Owner
              * @description idea.assign_owner: pick any eligible owner.
              */
@@ -5159,6 +5340,12 @@ export interface components {
              * @description idea.vote
              */
             can_vote: boolean;
+            /**
+             * Invite Blocked By Research
+             * @description Phase 8: inviting evaluators now would be refused (409 research_incomplete): the research step is before evaluation, the idea (New or Research) has no evaluator yet and required checklist items are open. Say so next to "Invite evaluators" (and "Ask AI to evaluate"); admins may invite anyway (IdeaResearch.permissions.can_override).
+             * @default false
+             */
+            invite_blocked_by_research: boolean;
         };
         /**
          * IdeaRef
@@ -5190,11 +5377,59 @@ export interface components {
             title: string;
         };
         /**
+         * IdeaResearch
+         * @description The Research panel of the idea page. While the project's step is off: ``step``
+         *     off, no items, nothing blocking (answers kept from before stay hidden).
+         */
+        IdeaResearch: {
+            /**
+             * Blocking
+             * @description Moving this idea past Research would be refused now: required items open, the step on, and the idea neither past Research nor closed (false for a closed idea). Say "N required items left before <gate status label>".
+             */
+            blocking: boolean;
+            /** @description The status right after Research (evaluating or proposal); null while off. */
+            gate_status: components["schemas"]["IdeaStatus"] | null;
+            /**
+             * Items
+             * @description The active checklist, in order.
+             */
+            items: components["schemas"]["IdeaResearchItem"][];
+            permissions: components["schemas"]["ResearchPermissions"];
+            progress: components["schemas"]["ResearchProgress"];
+            step: components["schemas"]["ResearchStep"];
+        };
+        /**
+         * IdeaResearchItem
+         * @description One active checklist item with this idea's answer.
+         */
+        IdeaResearchItem: {
+            /** @description Null while unanswered. */
+            answer: components["schemas"]["ResearchAnswer"] | null;
+            /** Hint */
+            hint: string;
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            /** Required */
+            required: boolean;
+            /** Title */
+            title: string;
+        };
+        /**
          * IdeaStatus
-         * @description Fixed lifecycle (SPEC section 2). Admins may rename labels, not add stages.
+         * @description The lifecycle (SPEC section 2), in the **canonical order** used across projects (My
+         *     work's groups, search, MCP). Admins may rename labels, not add stages.
+         *
+         *     Phase 8 (product owner, 2026-10-07): ``research`` exists only in projects whose
+         *     research step is on (``projects.research_step``), at the step's position: New ->
+         *     Research -> Evaluating -> ... (``before_evaluation``) or ... -> Shortlisted ->
+         *     Research -> Proposal -> Closed (``before_proposal``). A project's own order is
+         *     :func:`app.schemas.research.lifecycle`; the canonical order puts Research after New.
          * @enum {string}
          */
-        IdeaStatus: "new" | "evaluating" | "shortlisted" | "proposal" | "closed";
+        IdeaStatus: "new" | "research" | "evaluating" | "shortlisted" | "proposal" | "closed";
         /**
          * IdeaSubmission
          * @description How an idea came in through the public form (``GET /ideas/{idea}/submission``).
@@ -5283,6 +5518,8 @@ export interface components {
             owner: components["schemas"]["UserRef"] | null;
             permissions: components["schemas"]["IdeaSummaryPermissions"];
             project: components["schemas"]["ProjectRef"];
+            /** @description Phase 8: the research checklist at a glance ("2/3" on cards), only for an idea in Research or in the status right before it (New when Research comes before evaluation, Shortlisted when it comes before the proposal) while the project's research step is on; null otherwise (step off, past Research, closed). Holds no score data. */
+            research: components["schemas"]["ResearchProgress"] | null;
             /** @description Set if and only if status is closed. */
             resolution: components["schemas"]["Resolution"] | null;
             /** @description Null when there are no included submitted evaluations, or when hidden. */
@@ -5334,6 +5571,66 @@ export interface components {
             tags?: string[] | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * IdeasInResearchProblem
+         * @description 409 ``ideas_in_research`` from ``replace_research_settings``: the step can't be
+         *     turned off or moved while ideas are in Research.
+         * @example {
+         *       "code": "not_found",
+         *       "detail": "Idea not found.",
+         *       "instance": "/api/v1/ideas/0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11",
+         *       "request_id": "7f9c2b4e1d6a4c0f8e3b5a2d9c1e0f7a",
+         *       "status": 404,
+         *       "title": "Not Found",
+         *       "type": "urn:soundings:problem:not_found"
+         *     }
+         */
+        IdeasInResearchProblem: {
+            /**
+             * Code
+             * @description Stable machine-readable error code (snake_case).
+             */
+            code: string;
+            /**
+             * Detail
+             * @description Explanation of this occurrence.
+             * @default null
+             */
+            detail: string | null;
+            /**
+             * Idea Count
+             * @description ideas_in_research only: ideas in Research now.
+             * @default null
+             */
+            idea_count: number | null;
+            /**
+             * Instance
+             * @description Request path that failed.
+             * @default null
+             */
+            instance: string | null;
+            /**
+             * Request Id
+             * @description Correlates with server logs (X-Request-ID).
+             * @default null
+             */
+            request_id: string | null;
+            /**
+             * Status
+             * @description HTTP status code.
+             */
+            status: number;
+            /**
+             * Title
+             * @description Short, human-readable summary of the problem type.
+             */
+            title: string;
+            /**
+             * Type
+             * @description URI identifying the problem type.
+             */
+            type: string;
         };
         /**
          * InheritedBranding
@@ -6014,6 +6311,11 @@ export interface components {
              * @description Idea-key prefix, e.g. "CUST" in CUST-12.
              */
             key: string;
+            /**
+             * Lifecycle
+             * @description Phase 8: the project's statuses in board order (closed last): the board's columns, the status menu and the filter chips. Five, or six with research at the step's position.
+             */
+            lifecycle: components["schemas"]["IdeaStatus"][];
             /** Member Count */
             member_count: number;
             /** @description Your effective project role; null without one (an internal project you don't belong to, or a platform admin who isn't a member). */
@@ -6026,6 +6328,11 @@ export interface components {
              */
             pending_moderation_count: number | null;
             permissions: components["schemas"]["ProjectPermissions"];
+            /**
+             * @description Phase 8: off, before_evaluation or before_proposal (project settings -> Research). While off there is no Research status, column or checklist.
+             * @default off
+             */
+            research_step: components["schemas"]["ResearchStep"];
             /**
              * Rubric
              * @description Active criteria in display order.
@@ -6133,7 +6440,7 @@ export interface components {
             can_create_ideas: boolean;
             /**
              * Can Manage
-             * @description Edit settings, rubric and members (project or platform admin).
+             * @description Edit settings, rubric, members, the proposal template and the research step and checklist (project or platform admin; Phase 8 adds the last two).
              */
             can_manage: boolean;
         };
@@ -6184,6 +6491,11 @@ export interface components {
              * @description Idea-key prefix, e.g. "CUST" in CUST-12.
              */
             key: string;
+            /**
+             * Lifecycle
+             * @description Phase 8: the project's statuses in board order (closed last): the board's columns, the status menu and the filter chips. Five, or six with research at the step's position.
+             */
+            lifecycle: components["schemas"]["IdeaStatus"][];
             /** Member Count */
             member_count: number;
             /** @description Your effective project role; null without one (an internal project you don't belong to, or a platform admin who isn't a member). */
@@ -6196,6 +6508,11 @@ export interface components {
              */
             pending_moderation_count: number | null;
             permissions: components["schemas"]["ProjectPermissions"];
+            /**
+             * @description Phase 8: off, before_evaluation or before_proposal (project settings -> Research). While off there is no Research status, column or checklist.
+             * @default off
+             */
+            research_step: components["schemas"]["ResearchStep"];
             /** Slug */
             slug: string;
             visibility: components["schemas"]["ProjectVisibility"];
@@ -6243,7 +6560,7 @@ export interface components {
             idea: components["schemas"]["IdeaRef"];
             /**
              * Sections
-             * @description All eight, in template order.
+             * @description Every active section of the project's template, in its order (Phase 8: 1-12; removed sections and their text are left out).
              */
             sections: components["schemas"]["ProposalSection"][];
             /**
@@ -6371,7 +6688,7 @@ export interface components {
             can_comment: boolean;
             /**
              * Can Create
-             * @description proposal.write and no proposal yet: show "Start proposal" (the idea is Shortlisted or in Proposal, c7).
+             * @description proposal.write and no proposal yet: show "Start proposal" (the idea is Shortlisted or in Proposal, c7; Phase 8: or in Research when the project's research step is before_proposal).
              */
             can_create: boolean;
             /**
@@ -6384,10 +6701,17 @@ export interface components {
              * @description proposal.export: PDF and Markdown.
              */
             can_export: boolean;
+            /**
+             * Start Blocked By Research
+             * @description Phase 8: starting now would be refused (409 research_incomplete): the project's research step is before_proposal, the idea is Shortlisted or in Research and required items are open. Say so next to "Start proposal"; admins (IdeaResearch.permissions.can_override) may start anyway.
+             * @default false
+             */
+            start_blocked_by_research: boolean;
         };
         /**
          * ProposalSection
-         * @description One template section. Always all eight, in template order.
+         * @description One section of the project's template with this proposal's text. A proposal lists
+         *     every active section of its project's template, in template order (Phase 8).
          */
         ProposalSection: {
             /**
@@ -6395,15 +6719,19 @@ export interface components {
              * @description Markdown; empty until someone writes it.
              */
             body_md: string;
-            key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Key
+             * @description The section's stable key ("summary", "carbon_impact"): use it in paths and in suggestions; it never changes, even when the section is renamed.
+             */
+            key: string;
             /**
              * Prompt
-             * @description Placeholder while the section is empty.
+             * @description The template section's hint: the placeholder while the section is empty.
              */
             prompt: string;
             /**
              * Title
-             * @description From the template, e.g. "Market & users".
+             * @description From the project's template, e.g. "Market & users".
              */
             title: string;
             /**
@@ -6420,13 +6748,6 @@ export interface components {
             version: number;
         };
         /**
-         * ProposalSectionKey
-         * @description The fixed proposal template (SPEC section 2), in document order. Titles and
-         *     prompts are in ``app.schemas.proposals.PROPOSAL_TEMPLATE``.
-         * @enum {string}
-         */
-        ProposalSectionKey: "summary" | "problem" | "solution" | "market" | "cost" | "benefits" | "risks" | "next_steps";
-        /**
          * ProposalSectionUpdate
          * @description Save one section. ``base_version`` is the ``version`` your text started from:
          *     409 ``proposal_conflict`` if the section has changed since (the problem's
@@ -6442,6 +6763,24 @@ export interface components {
              * @description Markdown, kept verbatim.
              */
             body_md: string;
+        };
+        /**
+         * ProposalStart
+         * @description ``create_proposal``'s optional body: "Start anyway" past an unfinished research
+         *     checklist (the project's research step is before_proposal). Without a body: no
+         *     override.
+         */
+        ProposalStart: {
+            /**
+             * Override Reason
+             * @description Optional, with override_research: why (one line, kept in the audit log).
+             */
+            override_reason?: string | null;
+            /**
+             * Override Research
+             * @description Phase 8: true = "Move anyway" past an unfinished research checklist (omitted, null or false: no override). true needs idea.research_override (project and platform admins, in a session; else 403 forbidden, or 403 insufficient_scope with an API key), even when nothing would block. Audited as idea.research_override when it lets the request through.
+             */
+            override_research?: boolean | null;
         };
         /**
          * ProposalSuggestion
@@ -6480,7 +6819,11 @@ export interface components {
              * @description The section has been saved since base_version: say so next to the suggestion ("The section has changed since this was suggested").
              */
             section_changed: boolean;
-            section_key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Section Key
+             * @description A key of the project's template.
+             */
+            section_key: string;
             /** @description ai whenever the author is an AI agent's service account (show the AI badge), whatever the channel; otherwise mcp (an MCP client) or api (the app or an API client). */
             source: components["schemas"]["SuggestionSource"];
             status: components["schemas"]["SuggestionStatus"];
@@ -6511,12 +6854,17 @@ export interface components {
              * @description Markdown, kept verbatim; not only whitespace.
              */
             body_md: string;
-            section_key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Section Key
+             * @description A section of the project's template, by key: "summary", "next_steps", "carbon_impact" (GET /projects/{slug}/proposal-template, or the proposal's sections). A key the template doesn't have, or a removed section's: 422 unknown_section (404 in a path).
+             */
+            section_key: string;
         };
         /**
          * ProposalSuggestionList
-         * @description Pending suggestions in template-section order, then oldest first (at most 50: no
-         *     paging).
+         * @description Pending suggestions for active sections, in template-section order, then oldest
+         *     first (no paging: at most 50 are pending on active sections when one is created;
+         *     restoring a removed section can bring back a few more).
          */
         ProposalSuggestionList: {
             /** Items */
@@ -6540,8 +6888,65 @@ export interface components {
             can_suggest: boolean;
         };
         /**
+         * ProposalTemplate
+         * @description A project's proposal template (project settings -> Workflow -> Proposal template).
+         *     Saves are last write wins (no version), like the rubric.
+         */
+        ProposalTemplate: {
+            /**
+             * Removed Sections
+             * @description Most recently removed first.
+             */
+            removed_sections: components["schemas"]["RemovedTemplateSection"][];
+            /**
+             * Sections
+             * @description 1-12 active sections, in order.
+             */
+            sections: components["schemas"]["ProposalTemplateSection"][];
+        };
+        /**
+         * ProposalTemplateSection
+         * @description An active section of a project's template.
+         */
+        ProposalTemplateSection: {
+            /**
+             * Hint
+             * @description One line shown in the editor while the section is empty.
+             */
+            hint: string;
+            /**
+             * Key
+             * @description Stable and immutable (paths, MCP, AI drafts use it).
+             */
+            key: string;
+            /**
+             * Position
+             * @description 0-based order.
+             */
+            position: number;
+            /**
+             * Proposal Count
+             * @description Proposals of the project with text in this section: before removing it, say "Its text in N proposals is kept and comes back if you restore it" (N > 0).
+             */
+            proposal_count: number;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ProposalTemplateUpdate
+         * @description The complete new template, in order (like ``replace_rubric``). Renaming keeps a
+         *     section's key and text. Sections left out are removed: archived if anything refers
+         *     to them (text in a proposal, a thread, a suggestion, an AI run), deleted otherwise.
+         *     Every proposal of the project follows the new template at once.
+         */
+        ProposalTemplateUpdate: {
+            /** Sections */
+            sections: components["schemas"]["TemplateSectionIn"][];
+        };
+        /**
          * ProposalThread
-         * @description A margin thread on one section; resolved threads collapse.
+         * @description A margin thread on one section; resolved threads collapse. Threads of a removed
+         *     section are hidden with it (and back when it is restored).
          */
         ProposalThread: {
             /**
@@ -6562,7 +6967,11 @@ export interface components {
             /** Resolved At */
             resolved_at: string | null;
             resolved_by: components["schemas"]["UserRef"] | null;
-            section_key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Section Key
+             * @description A key of the project's template.
+             */
+            section_key: string;
         };
         /**
          * ProposalThreadCreate
@@ -6574,12 +6983,17 @@ export interface components {
              * @description Markdown.
              */
             body_md: string;
-            section_key: components["schemas"]["ProposalSectionKey"];
+            /**
+             * Section Key
+             * @description A section of the project's template, by key: "summary", "next_steps", "carbon_impact" (GET /projects/{slug}/proposal-template, or the proposal's sections). A key the template doesn't have, or a removed section's: 422 unknown_section (404 in a path).
+             */
+            section_key: string;
         };
         /**
          * ProposalThreadList
-         * @description Every thread of the proposal with at least one comment that isn't deleted, in
-         *     template-section order, then oldest first (at most 500 threads: no paging).
+         * @description Every thread of the proposal with at least one comment that isn't deleted, on an
+         *     active section, in template-section order, then oldest first (at most 500 threads: no
+         *     paging).
          */
         ProposalThreadList: {
             /** Items */
@@ -6776,6 +7190,209 @@ export interface components {
             no: number;
         };
         /**
+         * RemovedResearchItem
+         * @description A removed item that ideas answered: its answers are kept, hidden. Restore it by
+         *     putting its id back in the checklist.
+         */
+        RemovedResearchItem: {
+            /**
+             * Answer Count
+             * @description Ideas whose answer to it is kept.
+             */
+            answer_count: number;
+            /** Hint */
+            hint: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Removed At
+             * Format: date-time
+             */
+            removed_at: string;
+            /** Required */
+            required: boolean;
+            /** Title */
+            title: string;
+        };
+        /**
+         * RemovedTemplateSection
+         * @description A removed section that holds something (text in a proposal, a margin thread, a
+         *     suggestion or an AI draft run): hidden from the editor and the exports, kept.
+         *     Restore it by putting its key back in the template.
+         */
+        RemovedTemplateSection: {
+            /** Hint */
+            hint: string;
+            /** Key */
+            key: string;
+            /**
+             * Proposal Count
+             * @description Proposals with text in it ("Text in 3 proposals"). May be 0: a section is also kept for a margin thread, a suggestion or an AI run ("Kept for its comments and suggestions").
+             */
+            proposal_count: number;
+            /**
+             * Removed At
+             * Format: date-time
+             */
+            removed_at: string;
+            /** Title */
+            title: string;
+        };
+        /** ResearchAnswer */
+        ResearchAnswer: {
+            /**
+             * Answer
+             * @description Plain text as typed (line breaks kept; not Markdown).
+             */
+            answer: string;
+            /**
+             * Answered At
+             * Format: date-time
+             */
+            answered_at: string;
+            /** @description Who answered first; null if gone. */
+            answered_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Equals answered_at until someone edits it.
+             */
+            updated_at: string;
+            /** @description Who changed it last; null if gone. */
+            updated_by: components["schemas"]["UserRef"] | null;
+        };
+        /**
+         * ResearchAnswerIn
+         * @description Answer an item, or replace its answer (last write wins). Plain text, kept as typed
+         *     apart from the stripped ends and invisible characters (removed); line breaks allowed;
+         *     at least one visible character.
+         */
+        ResearchAnswerIn: {
+            /**
+             * Answer
+             * @description 1-2,000 characters of plain text with at least one visible character; zero-width, bidi-control and other invisible characters are removed.
+             */
+            answer: string;
+        };
+        /**
+         * ResearchChecklistItem
+         * @description An active checklist item, in order.
+         */
+        ResearchChecklistItem: {
+            /**
+             * Hint
+             * @description What to write (shown under the title).
+             */
+            hint: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Position
+             * @description 0-based order.
+             */
+            position: number;
+            /**
+             * Required
+             * @description Gates the statuses after Research while unanswered.
+             */
+            required: boolean;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ResearchIncompleteProblem
+         * @description 409 from a request the research gate guards. With ``code`` ``research_incomplete``
+         *     it lists the open required items and whether you may move anyway; other 409 codes of
+         *     the same routes (``project_archived``, ``awaiting_moderation``, ...) have neither.
+         * @example {
+         *       "code": "not_found",
+         *       "detail": "Idea not found.",
+         *       "instance": "/api/v1/ideas/0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11",
+         *       "request_id": "7f9c2b4e1d6a4c0f8e3b5a2d9c1e0f7a",
+         *       "status": 404,
+         *       "title": "Not Found",
+         *       "type": "urn:soundings:problem:not_found"
+         *     }
+         */
+        ResearchIncompleteProblem: {
+            /**
+             * Can Override
+             * @description research_incomplete only: you hold idea.research_override: offer "Move anyway" (send the request again with override_research: true).
+             * @default null
+             */
+            can_override: boolean | null;
+            /**
+             * Code
+             * @description Stable machine-readable error code (snake_case).
+             */
+            code: string;
+            /**
+             * Detail
+             * @description Explanation of this occurrence.
+             * @default null
+             */
+            detail: string | null;
+            /**
+             * Instance
+             * @description Request path that failed.
+             * @default null
+             */
+            instance: string | null;
+            /**
+             * Open Items
+             * @description research_incomplete only: the required items left, in order.
+             * @default null
+             */
+            open_items: components["schemas"]["ResearchOpenItem"][] | null;
+            /**
+             * Request Id
+             * @description Correlates with server logs (X-Request-ID).
+             * @default null
+             */
+            request_id: string | null;
+            /**
+             * Status
+             * @description HTTP status code.
+             */
+            status: number;
+            /**
+             * Title
+             * @description Short, human-readable summary of the problem type.
+             */
+            title: string;
+            /**
+             * Type
+             * @description URI identifying the problem type.
+             */
+            type: string;
+        };
+        /** ResearchItemIn */
+        ResearchItemIn: {
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /**
+             * Id
+             * @description An existing item (active, or removed: putting it back restores it with its answers); omit to add a new one. Unknown: 422 unknown_research_item.
+             */
+            id?: string | null;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /** Title */
+            title: string;
+        };
+        /**
          * ResearchNote
          * @description A research note in the activity feed (the ``ai_research_note`` item, at
          *     integration): Markdown by an AI agent, untrusted, rendered sanitised with an AI
@@ -6807,6 +7424,104 @@ export interface components {
             /** Sources */
             sources: components["schemas"]["Citation"][];
         };
+        /** ResearchOpenItem */
+        ResearchOpenItem: {
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            /** Title */
+            title: string;
+        };
+        /** ResearchPermissions */
+        ResearchPermissions: {
+            /**
+             * Can Answer
+             * @description idea.answer_research: answer, edit and clear items (owner and admins).
+             */
+            can_answer: boolean;
+            /**
+             * Can Override
+             * @description idea.research_override: offer "Move anyway" (project and platform admins).
+             */
+            can_override: boolean;
+        };
+        /**
+         * ResearchProgress
+         * @description An idea's checklist at a glance ("2/3" on cards): active items only.
+         */
+        ResearchProgress: {
+            /**
+             * Answered
+             * @description Items with an answer.
+             */
+            answered: number;
+            /**
+             * Required Open
+             * @description Required items without an answer: while above 0, moves past Research are refused (409 research_incomplete) unless an admin moves anyway.
+             */
+            required_open: number;
+            /**
+             * Total
+             * @description Items in the checklist.
+             */
+            total: number;
+        };
+        /**
+         * ResearchSettings
+         * @description Project settings -> Research.
+         */
+        ResearchSettings: {
+            /**
+             * Default Items
+             * @description The default checklist (DEFAULT_RESEARCH_CHECKLIST): fill the form with it when the step is turned on while items is empty.
+             */
+            default_items: components["schemas"]["DefaultChecklistItem"][];
+            /**
+             * Ideas In Research
+             * @description Ideas of the project in Research now (held ones never are): while above 0 the step can't be turned off or moved (409 ideas_in_research): say to move them first.
+             */
+            ideas_in_research: number;
+            /**
+             * Items
+             * @description The active checklist, in order.
+             */
+            items: components["schemas"]["ResearchChecklistItem"][];
+            /**
+             * Removed Items
+             * @description Removed items that hold answers, most recently removed first.
+             */
+            removed_items: components["schemas"]["RemovedResearchItem"][];
+            step: components["schemas"]["ResearchStep"];
+        };
+        /**
+         * ResearchSettingsUpdate
+         * @description The research step and, while it is on, the complete checklist in order (like
+         *     ``replace_rubric``; last write wins, no version).
+         *
+         *     Items left out are removed: archived if an idea answered them (answers kept, hidden),
+         *     deleted otherwise. Changing the checklist never moves an idea. Changing ``step`` (off,
+         *     or to the other position) while ideas are in Research: 409 ``ideas_in_research``.
+         *     With ``step`` off, ``items`` is ignored and the checklist is kept as it is.
+         */
+        ResearchSettingsUpdate: {
+            /**
+             * Items
+             * @description The complete checklist, in order: 1-10 items while the step is on. **Ignored while step is off**: turning the step off keeps the checklist and its answers as they are (hidden) for when it is turned on again, so send [] (or nothing) with off.
+             */
+            items?: components["schemas"]["ResearchItemIn"][];
+            step: components["schemas"]["ResearchStep"];
+        };
+        /**
+         * ResearchStep
+         * @description Phase 8: whether a project has a research step, and where (``projects.research_step``,
+         *     project settings -> Research). Off for every project until a project admin turns it
+         *     on; while on, the lifecycle gains the Research status at this position and the
+         *     research checklist gates the statuses after it (contract-phase8 section 3).
+         * @enum {string}
+         */
+        ResearchStep: "off" | "before_evaluation" | "before_proposal";
         /**
          * Resolution
          * @description Why a closed idea was closed. Set if and only if the status is ``closed``.
@@ -6958,6 +7673,58 @@ export interface components {
             projects: components["schemas"]["ProjectRef"][];
         };
         /**
+         * SimilarIdea
+         * @description An idea whose title or summary is like this one's, in any project you can view.
+         *     No score data (blind rules are unaffected).
+         */
+        SimilarIdea: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Key
+             * @description "<project key>-<number>", e.g. "CUST-12".
+             */
+            key: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Number */
+            number: number;
+            /** @description Whom to ask about it. */
+            owner: components["schemas"]["UserRef"] | null;
+            project: components["schemas"]["ProjectRef"];
+            /** @description Set if and only if status is closed. */
+            resolution: components["schemas"]["Resolution"] | null;
+            /**
+             * Similarity
+             * @description pg_trgm similarity, 2 decimal places (the higher of title and summary).
+             */
+            similarity: number;
+            status: components["schemas"]["IdeaStatus"];
+            /**
+             * Status Label
+             * @description Project label for the status; for closed ideas, the resolution's label.
+             */
+            status_label: string;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** SimilarIdeas */
+        SimilarIdeas: {
+            /**
+             * Items
+             * @description At most 5, most similar first (similarity >= 0.3), never the idea itself or a held idea; ideas you can view in every project you can view, archived ones included.
+             */
+            items: components["schemas"]["SimilarIdea"][];
+        };
+        /**
          * SsoConfig
          * @description The effective sign-in configuration. Secrets are never returned, only whether
          *     they are set.
@@ -7051,8 +7818,24 @@ export interface components {
         /**
          * StatusChange
          * @description Move an idea. ``resolution`` is required for ``closed`` and forbidden otherwise.
+         *
+         *     Phase 8: ``research`` only while the project's research step is on (else 409
+         *     ``research_step_off``); a move into a status after Research from one before it (or
+         *     reopening a closed idea into one, when it was closed from New, Research or a status
+         *     before it) while required checklist items are open is 409 ``research_incomplete``
+         *     unless an admin sends ``override_research``.
          */
         StatusChange: {
+            /**
+             * Override Reason
+             * @description Optional, with override_research: why (one line, kept in the audit log).
+             */
+            override_reason?: string | null;
+            /**
+             * Override Research
+             * @description Phase 8: true = "Move anyway" past an unfinished research checklist (omitted, null or false: no override). true needs idea.research_override (project and platform admins, in a session; else 403 forbidden, or 403 insufficient_scope with an API key), even when nothing would block. Audited as idea.research_override when it lets the request through.
+             */
+            override_research?: boolean | null;
             resolution?: components["schemas"]["Resolution"] | null;
             status: components["schemas"]["IdeaStatus"];
         };
@@ -7077,6 +7860,12 @@ export interface components {
              * Format: uuid
              */
             idea_id: string;
+            /**
+             * Research Overridden
+             * @description Phase 8: an admin moved it past an unfinished research checklist ("Move anyway"): say "without finishing research". Stored in the payload as research_overridden: true (absent = false).
+             * @default false
+             */
+            research_overridden: boolean;
             to_resolution: components["schemas"]["Resolution"] | null;
             to_status: components["schemas"]["IdeaStatus"];
             /**
@@ -7144,6 +7933,11 @@ export interface components {
             proposal: string;
             /** Rejected */
             rejected: string;
+            /**
+             * Research
+             * @description Phase 8: the Research status (used only while the research step is on).
+             */
+            research: string;
             /** Shortlisted */
             shortlisted: string;
         };
@@ -7166,6 +7960,8 @@ export interface components {
             proposal?: string | null;
             /** Rejected */
             rejected?: string | null;
+            /** Research */
+            research?: string | null;
             /** Shortlisted */
             shortlisted?: string | null;
         };
@@ -7219,7 +8015,29 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** TrackedStatusChange */
+        /** TemplateSectionIn */
+        TemplateSectionIn: {
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /**
+             * Key
+             * @description An existing section (active, or removed: putting it back restores it with its text); omit to add a new one, whose key the server makes from the title (section_key_for). Unknown: 422 unknown_section.
+             */
+            key?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TrackedStatusChange
+         * @description A change of the status the submitter sees. Phase 8: never ``research``: an idea in
+         *     Research is reported as the status before Research in its project's lifecycle (``new``
+         *     before evaluation, ``shortlisted`` before the proposal;
+         *     ``app.schemas.research.public_status``), so a move that doesn't change the reported
+         *     status or resolution (New -> Research, Shortlisted -> Research and back) is left out.
+         */
         TrackedStatusChange: {
             /**
              * At
@@ -7227,6 +8045,7 @@ export interface components {
              */
             at: string;
             resolution: components["schemas"]["Resolution"] | null;
+            /** @description Never research (Phase 8: reported as the status before it, new or shortlisted). */
             status: components["schemas"]["IdeaStatus"];
             /**
              * Status Label
@@ -7259,7 +8078,7 @@ export interface components {
             held_for: components["schemas"]["HoldReason"] | null;
             /**
              * History
-             * @description Status changes since it reached the team, oldest first.
+             * @description Changes of the status shown here since it reached the team, oldest first (Research counts as the status before it; moves that change nothing shown are left out).
              */
             history: components["schemas"]["TrackedStatusChange"][];
             project: components["schemas"]["PublicProjectRef"];
@@ -7269,6 +8088,7 @@ export interface components {
              */
             reached_team_at: string | null;
             resolution: components["schemas"]["Resolution"] | null;
+            /** @description Never research: Phase 8 reports an idea in Research as the status before it in the project's lifecycle (new before evaluation, shortlisted before the proposal), with that status's label. */
             status: components["schemas"]["IdeaStatus"];
             /** Status Label */
             status_label: string;
@@ -11130,7 +11950,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AiRunRequest"];
+                "application/json": components["schemas"]["AiEvaluationRequest"];
             };
         };
         responses: {
@@ -11179,13 +11999,13 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Conflicts with the current state (see code) */
+            /** @description Conflicts with the current state: research_incomplete (with open_items and can_override), ai_unavailable, evaluation_closed, project_archived, awaiting_moderation */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/problem+json": components["schemas"]["ResearchIncompleteProblem"];
                 };
             };
             /** @description Validation Failed */
@@ -12292,13 +13112,13 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Conflicts with the current state (see code) */
+            /** @description Conflicts with the current state: research_incomplete (with open_items and can_override), evaluation_closed, project_archived, awaiting_moderation */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/problem+json": components["schemas"]["ResearchIncompleteProblem"];
                 };
             };
             /** @description Validation Failed */
@@ -12549,7 +13369,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProposalStart"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -12587,13 +13411,13 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Conflicts with the current state (see code) */
+            /** @description Conflicts with the current state: research_incomplete (with open_items and can_override), proposal_not_available, proposal_exists, project_archived, awaiting_moderation */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/problem+json": components["schemas"]["ResearchIncompleteProblem"];
                 };
             };
             /** @description Validation Failed */
@@ -12772,8 +13596,8 @@ export interface operations {
             path: {
                 /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
                 idea: string;
-                /** @description A template section's key. */
-                section_key: components["schemas"]["ProposalSectionKey"];
+                /** @description A section of the project's template, by key (Phase 8: per project; a key the template doesn't have, or a removed section's, is 404). */
+                section_key: string;
             };
             cookie?: never;
         };
@@ -13610,6 +14434,65 @@ export interface operations {
             };
         };
     };
+    get_idea_research: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaResearch"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     get_research_note: {
         parameters: {
             query?: never;
@@ -13748,6 +14631,227 @@ export interface operations {
             };
         };
     };
+    answer_research_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description An active item of the project's research checklist. */
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaResearch"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    clear_research_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description An active item of the project's research checklist. */
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaResearch"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_similar_ideas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimilarIdeas"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     change_idea_status: {
         parameters: {
             query?: never;
@@ -13800,13 +14904,13 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Conflicts with the current state (see code) */
+            /** @description Conflicts with the current state: research_incomplete (with open_items and can_override), research_step_off, project_archived, awaiting_moderation */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/problem+json": components["schemas"]["ResearchIncompleteProblem"];
                 };
             };
             /** @description Validation Failed */
@@ -16646,6 +17750,137 @@ export interface operations {
             };
         };
     };
+    get_proposal_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalTemplate"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_proposal_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalTemplate"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     get_public_form_settings: {
         parameters: {
             query?: never;
@@ -16773,6 +18008,146 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_research_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_research_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchSettings"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description ideas_in_research (with idea_count): the step can't be turned off or moved while ideas are in Research */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["IdeasInResearchProblem"];
                 };
             };
             /** @description Validation Failed */

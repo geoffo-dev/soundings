@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 7): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 8): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -42,8 +42,10 @@ from app.api.v1 import (
     project_groups,
     projects,
     proposal_suggestions,
+    proposal_templates,
     proposals,
     public,
+    research,
     search,
     submissions,
     unsubscribe,
@@ -246,6 +248,26 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/me/evaluations-due", "list_my_evaluations_due"),
 ]
 
+PHASE8_OPERATIONS: list[tuple[str, str, str]] = [
+    # --- Phase 8: proposal templates and the research step (docs/api/contract-phase8.md)
+    ("GET", "/api/v1/projects/{slug}/proposal-template", "get_proposal_template"),
+    ("PUT", "/api/v1/projects/{slug}/proposal-template", "replace_proposal_template"),
+    ("GET", "/api/v1/projects/{slug}/research", "get_research_settings"),
+    ("PUT", "/api/v1/projects/{slug}/research", "replace_research_settings"),
+    ("GET", "/api/v1/ideas/{idea}/research", "get_idea_research"),
+    ("PUT", "/api/v1/ideas/{idea}/research/items/{item_id}", "answer_research_item"),
+    ("DELETE", "/api/v1/ideas/{idea}/research/items/{item_id}", "clear_research_item"),
+    ("GET", "/api/v1/ideas/{idea}/similar-ideas", "list_similar_ideas"),
+]
+"""Phase 8's new operations, pinned like ``CONTRACT`` but kept apart from it until they
+are classified for API keys (``app.authz.keys.ROUTE_KEY_ACCESS``) and their rules are
+named (``tests/authz/test_route_rules.py`` ``ROUTE_RULES``): the meta-tests that import
+``CONTRACT`` index those tables by every operation. Until then keys are refused on them
+(deny by default). Identity moves these rows into ``CONTRACT`` in the same change as the
+classification (contract-phase8 section 7)."""
+
+ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT + PHASE8_OPERATIONS
+
 # operation_id -> a valid request (url with query string, JSON body or None) for the
 # Phase 2 admin, group and access operations (implemented; tests/admin covers them).
 PHASE2_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
@@ -361,12 +383,43 @@ _NEW_AGENT: dict[str, Any] = {
     "project_ids": [IDEA],
 }
 
+ITEM = "6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d"
+_TEMPLATE_BODY: dict[str, Any] = {
+    "sections": [
+        {"key": "summary", "title": "Summary", "hint": "The idea in a few sentences."},
+        {"key": "problem", "title": "Problem"},
+        {"title": "Effort & rollout", "hint": "Who does what, and when."},
+        {"key": "risks", "title": "Risks"},
+    ]
+}
+_RESEARCH_BODY: dict[str, Any] = {
+    "step": "before_evaluation",
+    "items": [
+        {"id": ITEM, "title": "Not already being done elsewhere", "required": True},
+        {"title": "Departments or teams consulted", "hint": "Who you spoke to and what they said."},
+        {"title": "Data protection considered", "required": False},
+    ],
+}
+
 # operation_id -> a valid request for every operation still answered with 501. Every
-# Phase 1-6 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
+# Phase 1-7 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
 # tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
 # tests/moderation, tests/api_keys, tests/mcp, tests/ai). Delete a row when you
 # implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Phase 8: proposal templates and the research step -------------------------------
+    "get_proposal_template": ("/api/v1/projects/cust/proposal-template", None),
+    "replace_proposal_template": ("/api/v1/projects/cust/proposal-template", _TEMPLATE_BODY),
+    "get_research_settings": ("/api/v1/projects/cust/research", None),
+    "replace_research_settings": ("/api/v1/projects/cust/research", _RESEARCH_BODY),
+    "get_idea_research": ("/api/v1/ideas/CUST-12/research", None),
+    "answer_research_item": (
+        f"/api/v1/ideas/CUST-12/research/items/{ITEM}",
+        {"answer": "Legal (contracts team), 3 Oct: fine if we keep the standard terms."},
+    ),
+    "clear_research_item": (f"/api/v1/ideas/CUST-12/research/items/{ITEM}", None),
+    "list_similar_ideas": ("/api/v1/ideas/CUST-12/similar-ideas", None),
+}
 
 # Phase 6 operations (tests/ai): a valid request each, for the shape and session checks.
 PHASE6_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
@@ -547,7 +600,7 @@ PUBLIC_OPERATIONS = frozenset(
 """Operations that need no session (sign-in and sign-out, unsubscribe links, the public
 form and its links, branding)."""
 
-_METHODS = {operation_id: method for method, _, operation_id in CONTRACT}
+_METHODS = {operation_id: method for method, _, operation_id in ALL_OPERATIONS}
 
 
 def _feature_routes() -> list[APIRoute]:
@@ -574,8 +627,10 @@ def _feature_routes() -> list[APIRoute]:
             project_groups,
             projects,
             proposal_suggestions,
+            proposal_templates,
             proposals,
             public,
+            research,
             search,
             submissions,
             unsubscribe,
@@ -608,19 +663,20 @@ async def test_routes_match_the_contract(client: httpx.AsyncClient) -> None:
         for method, operation in item.items()
     }
 
-    assert operations == set(CONTRACT)
+    assert operations == set(ALL_OPERATIONS)
 
 
 def test_operation_ids_are_explicit_and_match_function_names() -> None:
     routes = _feature_routes()
 
-    assert len(routes) == len(CONTRACT)
+    assert len(routes) == len(ALL_OPERATIONS)
     for route in routes:
         assert route.operation_id == route.name, route.path
 
 
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
+    assert not {op for _, _, op in PHASE8_OPERATIONS} & {op for _, _, op in CONTRACT}
     assert set(PHASE2_REQUESTS) <= set(_METHODS)
     assert set(PHASE3_REQUESTS) <= set(_METHODS)
     assert set(PHASE6_REQUESTS) <= set(_METHODS)
@@ -629,7 +685,7 @@ def test_every_stub_has_a_contract_entry() -> None:
 async def test_openapi_lists_every_operation(client: httpx.AsyncClient) -> None:
     document = (await client.get("/api/v1/openapi.json")).json()
 
-    for method, path, operation_id in CONTRACT:
+    for method, path, operation_id in ALL_OPERATIONS:
         operation = document["paths"][path][method.lower()]
         assert operation["operationId"] == operation_id
         assert operation["summary"], operation_id
@@ -691,7 +747,7 @@ async def test_no_two_paths_share_a_template(client: httpx.AsyncClient) -> None:
 
 
 def test_every_idea_route_names_the_idea_the_same_way() -> None:
-    idea_paths = {path for _, path, _ in CONTRACT if path.startswith("/api/v1/ideas/")}
+    idea_paths = {path for _, path, _ in ALL_OPERATIONS if path.startswith("/api/v1/ideas/")}
 
     assert idea_paths
     assert all(path.startswith("/api/v1/ideas/{idea}") for path in idea_paths)
@@ -863,14 +919,15 @@ _BRANDING = PHASE4_REQUESTS["update_global_branding"][1] or {}
 @pytest.mark.parametrize(
     ("operation_id", "url", "body"),
     [
-        # Proposal sections: fixed keys, a version to compare, a length limit.
-        ("update_proposal_section", f"{_PROPOSAL}/sections/appendix", None),
+        # Proposal sections: template keys (Phase 8: the key format), a version to
+        # compare, a length limit.
+        ("update_proposal_section", f"{_PROPOSAL}/sections/Appendix", None),
         ("update_proposal_section", None, {"body_md": "x", "base_version": 0}),
         ("update_proposal_section", None, {"body_md": "x"}),
         ("update_proposal_section", None, {"body_md": _LONG, "base_version": 1}),
         ("update_proposal_section", None, {"body_md": "x", "base_version": 1, "title": "Y"}),
         ("update_proposal_section", None, {"body_md": "a\u0000b", "base_version": 1}),
-        ("create_proposal_thread", None, {"section_key": "appendix", "body_md": "Hi"}),
+        ("create_proposal_thread", None, {"section_key": "Appendix", "body_md": "Hi"}),
         ("create_proposal_thread", None, {"section_key": "problem", "body_md": "  "}),
         ("create_proposal_thread", None, {"section_key": "problem", "body_md": "x" * 5_001}),
         ("reply_to_proposal_thread", f"{_PROPOSAL}/threads/not-a-uuid/comments", None),
@@ -1060,7 +1117,7 @@ def _in_days(days: int) -> str:
         ("revoke_admin_api_key", "/api/v1/admin/api-keys/sdg_abc", None),
         # Suggestions: a template section, some text (not only whitespace) within the
         # section limit, a positive version.
-        ("create_proposal_suggestion", None, {"section_key": "appendix", "body_md": "x"}),
+        ("create_proposal_suggestion", None, {"section_key": "Appendix", "body_md": "x"}),
         ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": ""}),
         ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": " \n\t"}),
         ("create_proposal_suggestion", None, {"section_key": "risks", "body_md": _LONG}),
@@ -1214,7 +1271,12 @@ _RUN_REQUESTS = ("request_ai_evaluation", "request_ai_research", "request_ai_sec
         ("request_ai_evaluation", "/api/v1/ideas/CUST12/ai-runs/evaluation", None),
         ("request_ai_research", None, {"agent_id": AGENT, "focus": "competitors"}),
         ("request_ai_section_draft", None, {"agent_id": AGENT}),
-        ("request_ai_section_draft", None, {"agent_id": AGENT, "section_key": "appendix"}),
+        # Phase 8: any key of the project's template; the shape is a key's (422 here),
+        # an unknown key is the endpoint's 422 unknown_section.
+        ("request_ai_section_draft", None, {"agent_id": AGENT, "section_key": "Appendix"}),
+        ("request_ai_section_draft", None, {"agent_id": AGENT, "section_key": "next-steps"}),
+        ("request_ai_section_draft", None, {"agent_id": AGENT, "section_key": "x" * 41}),
+        ("request_ai_evaluation", None, {"agent_id": AGENT, "override_reason": "Legal says ok"}),
         ("list_idea_ai_runs", f"{_RUNS}?kind=summarise", None),
         ("list_idea_ai_runs", f"{_RUNS}?limit=0", None),
         ("list_idea_ai_runs", f"{_RUNS}?limit=51", None),
@@ -1314,7 +1376,13 @@ def test_no_ai_request_body_names_a_url_host_or_prompt(app: FastAPI) -> None:
     the configured controller URL, and the message from Soundings' own template."""
     schemas = app.openapi()["components"]["schemas"]
     forbidden = re.compile(r"url|host|endpoint|address|prompt|message|instruction", re.I)
-    for name in ("AiAgentCreate", "AiAgentUpdate", "AiRunRequest", "AiSectionDraftRequest"):
+    for name in (
+        "AiAgentCreate",
+        "AiAgentUpdate",
+        "AiRunRequest",
+        "AiEvaluationRequest",
+        "AiSectionDraftRequest",
+    ):
         fields = set(schemas[name]["properties"])
         assert not {field for field in fields if forbidden.search(field)}, name
 
@@ -1333,3 +1401,227 @@ def test_only_agent_creation_and_rotation_carry_a_secret_manifest(app: FastAPI) 
     for name in carrying:
         key = schemas[name]["properties"]["key"]
         assert key["$ref"] == "#/components/schemas/CreatedApiKey", name
+
+
+# --- Phase 8 (contract-phase8) ----------------------------------------------------------
+_SECTION = {"title": "Carbon impact"}
+_ITEM_IN = {"title": "Carbon reviewed"}
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        # Templates: 1-12 sections, unique titles and keys, one-line titles and hints,
+        # keys in the key format (an unknown but well-formed key is the endpoint's 422).
+        ("replace_proposal_template", None, {"sections": []}),
+        ("replace_proposal_template", None, {"sections": [_SECTION] * 13}),
+        (
+            "replace_proposal_template",
+            None,
+            {"sections": [{"title": f"S{n}"} for n in range(13)]},
+        ),
+        ("replace_proposal_template", None, {"sections": [_SECTION, {"title": "carbon IMPACT"}]}),
+        (
+            "replace_proposal_template",
+            None,
+            {"sections": [{"key": "risks", "title": "A"}, {"key": "risks", "title": "B"}]},
+        ),
+        ("replace_proposal_template", None, {"sections": [{"title": ""}]}),
+        ("replace_proposal_template", None, {"sections": [{"title": "x" * 61}]}),
+        ("replace_proposal_template", None, {"sections": [{"title": "Carbon\nimpact"}]}),
+        ("replace_proposal_template", None, {"sections": [{"title": "A", "hint": "x" * 201}]}),
+        ("replace_proposal_template", None, {"sections": [{"title": "A", "hint": "a\nb"}]}),
+        ("replace_proposal_template", None, {"sections": [{"key": "Risks", "title": "A"}]}),
+        ("replace_proposal_template", None, {"sections": [{"key": "next-steps", "title": "A"}]}),
+        ("replace_proposal_template", None, {"sections": [{"key": "1st", "title": "A"}]}),
+        ("replace_proposal_template", None, {"sections": [{"key": "x" * 41, "title": "A"}]}),
+        ("replace_proposal_template", None, {"sections": [{"title": "A", "position": 3}]}),
+        ("replace_proposal_template", None, {"sections": [{"title": "A\U000e0041"}]}),
+        ("get_proposal_template", "/api/v1/projects/Cust/proposal-template", None),
+        # Research settings: a known step, 0-10 items (1+ while on), unique titles and ids.
+        ("replace_research_settings", None, {"step": "always", "items": [_ITEM_IN]}),
+        ("replace_research_settings", None, {"items": [_ITEM_IN]}),
+        ("replace_research_settings", None, {"step": "before_proposal", "items": []}),
+        ("replace_research_settings", None, {"step": "before_evaluation"}),
+        ("replace_research_settings", None, {"step": "off", "items": [_ITEM_IN] * 11}),
+        (
+            "replace_research_settings",
+            None,
+            {"step": "off", "items": [{"title": f"Item {n}"} for n in range(11)]},
+        ),
+        (
+            "replace_research_settings",
+            None,
+            {"step": "off", "items": [_ITEM_IN, {"title": "CARBON reviewed"}]},
+        ),
+        (
+            "replace_research_settings",
+            None,
+            {"step": "off", "items": [{"id": ITEM, "title": "A"}, {"id": ITEM, "title": "B"}]},
+        ),
+        ("replace_research_settings", None, {"step": "off", "items": [{"title": "x" * 81}]}),
+        ("replace_research_settings", None, {"step": "off", "items": [{"title": "a\rb"}]}),
+        (
+            "replace_research_settings",
+            None,
+            {"step": "off", "items": [{"title": "A", "hint": "x" * 201}]},
+        ),
+        (
+            "replace_research_settings",
+            None,
+            {"step": "off", "items": [{"title": "A", "type": "user"}]},
+        ),
+        (
+            "replace_research_settings",
+            None,
+            {"step": "off", "items": [{"title": "A", "required": "maybe"}]},
+        ),
+        ("replace_research_settings", None, {"step": "off", "items": [{"id": "x", "title": "A"}]}),
+        # Answers: free text, 1-2,000 characters, nothing else.
+        ("answer_research_item", None, {}),
+        ("answer_research_item", None, {"answer": ""}),
+        ("answer_research_item", None, {"answer": "   "}),
+        ("answer_research_item", None, {"answer": "x" * 2001}),
+        ("answer_research_item", None, {"answer": "Legal", "user_id": USER}),
+        ("answer_research_item", None, {"answer": "Legal\x00"}),
+        ("answer_research_item", "/api/v1/ideas/CUST-12/research/items/consulted", None),
+        ("clear_research_item", "/api/v1/ideas/CUST-12/research/items/1", None),
+        ("get_idea_research", "/api/v1/ideas/CUST12/research", None),
+        ("list_similar_ideas", "/api/v1/ideas/CUST12/similar-ideas", None),
+    ],
+)
+async def test_invalid_phase8_requests_are_rejected_before_the_endpoint(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS[operation_id]
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("url", "body"),
+    [
+        # The research override: a flag and an optional one-line reason, never a reason alone.
+        ("/api/v1/ideas/CUST-12/status", {"status": "evaluating", "override_reason": "Legal ok"}),
+        ("/api/v1/ideas/CUST-12/status", {"status": "evaluating", "override_research": "maybe"}),
+        (
+            "/api/v1/ideas/CUST-12/status",
+            {"status": "evaluating", "override_research": True, "override_reason": "a\nb"},
+        ),
+        (
+            "/api/v1/ideas/CUST-12/status",
+            {"status": "evaluating", "override_research": True, "override_reason": "x" * 201},
+        ),
+        ("/api/v1/ideas/CUST-12/status", {"status": "researching"}),
+        ("/api/v1/ideas/CUST-12/evaluators", {"user_ids": [USER], "override_reason": "ok"}),
+        ("/api/v1/ideas/CUST-12/proposal", {"override_reason": "Legal ok"}),
+        ("/api/v1/ideas/CUST-12/proposal", {"override_research": True, "template": "short"}),
+        # Section keys in paths and bodies have the key format.
+        ("/api/v1/ideas/CUST-12/proposal/threads", {"section_key": "Problem", "body_md": "?"}),
+        (
+            "/api/v1/ideas/CUST-12/proposal/suggestions",
+            {"section_key": "next-steps", "body_md": "Ask for budget."},
+        ),
+    ],
+)
+async def test_phase8_fields_of_existing_requests_are_validated(
+    client: httpx.AsyncClient, url: str, body: dict[str, Any]
+) -> None:
+    response = await client.post(url, json=body)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize("key", ["Problem", "next-steps", "x" * 41, "_risks", "9lives"])
+async def test_a_malformed_section_key_in_the_path_is_rejected(
+    client: httpx.AsyncClient, key: str
+) -> None:
+    response = await client.put(
+        f"{_PROPOSAL}/sections/{key}", json={"body_md": "Text", "base_version": 1}
+    )
+
+    assert response.status_code == 422, response.text
+
+
+def test_the_research_gate_documents_its_problem(app: FastAPI) -> None:
+    """The requests the gate guards answer 409 with a ResearchIncompleteProblem (open items,
+    can_override); the step change's 409 carries the count of ideas in Research."""
+    paths = app.openapi()["paths"]
+    guarded = [
+        ("/api/v1/ideas/{idea}/status", "post"),
+        ("/api/v1/ideas/{idea}/evaluators", "post"),
+        ("/api/v1/ideas/{idea}/proposal", "post"),
+        ("/api/v1/ideas/{idea}/ai-runs/evaluation", "post"),
+    ]
+    for path, method in guarded:
+        content = paths[path][method]["responses"]["409"]["content"]
+        schema = content["application/problem+json"]["schema"]
+        assert schema == {"$ref": "#/components/schemas/ResearchIncompleteProblem"}, path
+    settings = paths["/api/v1/projects/{slug}/research"]["put"]["responses"]["409"]["content"]
+    assert settings["application/problem+json"]["schema"] == {
+        "$ref": "#/components/schemas/IdeasInResearchProblem"
+    }
+    schemas = app.openapi()["components"]["schemas"]
+    assert {"open_items", "can_override"} <= set(schemas["ResearchIncompleteProblem"]["properties"])
+    assert "idea_count" in schemas["IdeasInResearchProblem"]["properties"]
+
+
+def test_guarded_requests_take_the_override_and_starting_a_proposal_needs_no_body(
+    app: FastAPI,
+) -> None:
+    document = app.openapi()
+    schemas = document["components"]["schemas"]
+    for name in ("StatusChange", "EvaluatorsAdd", "ProposalStart", "AiEvaluationRequest"):
+        assert {"override_research", "override_reason"} <= set(schemas[name]["properties"]), name
+        assert "override_research" not in schemas[name].get("required", []), name
+    create = document["paths"]["/api/v1/ideas/{idea}/proposal"]["post"]
+    assert create["requestBody"].get("required", False) is False
+
+
+def test_section_keys_are_template_keys_not_a_fixed_enum(app: FastAPI) -> None:
+    """Phase 8: the template is per project, so no request or response names the eight
+    default keys as an enum any more."""
+    document = app.openapi()
+    assert "ProposalSectionKey" not in document["components"]["schemas"]
+    assert "section_key" in json.dumps(document)
+    path = document["paths"]["/api/v1/ideas/{idea}/proposal/sections/{section_key}"]["put"]
+    (key,) = (p for p in path["parameters"] if p["name"] == "section_key")
+    assert key["schema"]["pattern"] == r"^[a-z][a-z0-9_]{0,39}$"
+    assert key["schema"]["maxLength"] == 40
+
+
+def test_research_and_status_labels_are_in_the_contract(app: FastAPI) -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    assert schemas["IdeaStatus"]["enum"] == [
+        "new",
+        "research",
+        "evaluating",
+        "shortlisted",
+        "proposal",
+        "closed",
+    ]
+    assert schemas["ResearchStep"]["enum"] == ["off", "before_evaluation", "before_proposal"]
+    assert "research" in schemas["StatusLabels"]["required"]
+    assert {"research_step", "lifecycle"} <= set(schemas["ProjectSummary"]["required"])
+    assert "research" in schemas["IdeaSummary"]["required"]
+    # Review item 14: no per-row override flag on cards (the 409 carries can_override).
+    assert "can_override_research" not in schemas["IdeaSummaryPermissions"]["properties"]
+    assert {"can_answer_research", "invite_blocked_by_research"} <= set(
+        schemas["IdeaPermissions"]["required"]
+    )
+    assert "proposal_count" in schemas["ProposalTemplateSection"]["required"]
+    # Turning the step off ignores items, so they may be left out.
+    assert "items" not in schemas["ResearchSettingsUpdate"].get("required", [])
+    assert "research_overridden" in schemas["StatusChangedActivity"]["required"]
+    assert "start_blocked_by_research" in schemas["ProposalPermissions"]["required"]
+    assert "research_incomplete" in schemas["AiBlockedReason"]["enum"]
