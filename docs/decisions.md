@@ -803,7 +803,7 @@ in the image and the chart, and the lead's calls. Contract changes:
 | The image sets `SOUNDINGS_ENVIRONMENT=production`; dev compose, the e2e and perf stacks, `make demo`, the chart's `devLogin`, both CIs say `development` explicitly. `soundings api` / `worker` refuse to start when the environment is unset and the key is the built-in development one. | Decided (lead) | Review M1: the image fell back to development mode with a public signing key (forged `all` unsubscribe links and cheap, lasting ALTCHA challenges). The CLI refusal covers installs from the wheel; the Settings model stays usable for tests and tools. |
 | ALTCHA refuses a signed challenge whose cost is below `SOUNDINGS_ALTCHA_COST` or whose expiry is beyond `SOUNDINGS_ALTCHA_EXPIRY` (plus 1 minute of clock skew). | Decided | Review L3: a leaked key could mint challenges with cost 1 lasting 8 years. |
 | 120 writes a minute per signed-in person per API process (`SOUNDINGS_SESSION_WRITES_PER_MINUTE`), then 429 `rate_limited` with `Retry-After`; refused writes aren't counted; CSRF is checked first; sign-out is never limited. The e2e and perf stacks and CI's demo raise it to 100,000. | Decided (lead: 120, `rate_limited`) | Review L4: 40 comments with 11 mentions each in 2 s made 400 inbox rows. One setting, because the e2e suite sets its data up through the API as a handful of people. |
-| `soundings anonymise-user <email>` (CLI only, deactivated accounts only): placeholder name and undeliverable address, identities, external ids, sessions, inbox, preferences and outbox deleted, keys revoked, @mention labels renamed; work and audit entries stay; one `user.anonymise` entry (no actor, counts only). Expired sessions are deleted hourly. The operator guide lists what is stored about users and for how long. | Decided (lead) | Review L5: no erasure procedure for leavers; expired session rows waited for the next sign-in. |
+| `soundings anonymise-user <email>` (CLI only, deactivated accounts only): placeholder name and undeliverable address, identities, external ids, sessions, inbox, preferences and outbox deleted, keys revoked, @mention labels renamed (idea comments and proposal margin comments); work and audit entries stay; one `user.anonymise` entry (no actor, counts only). Expired sessions are deleted hourly. The operator guide lists what is stored about users and for how long. | Decided (lead) | Review L5: no erasure procedure for leavers; expired session rows waited for the next sign-in. |
 | **Declined:** a minimum `q` length and emails for admins or co-members only in `GET /users`. | Declined (lead) | Review L8: an internal directory with emails for signed-in staff is intended. |
 | The bundled Postgres: bootstrap superuser `postgres` (its own generated password) and a non-superuser app role that owns the database and its `public` schema; migrations, procrastinate and `pg_trgm` work (verified on a fresh volume; `COPY ... PROGRAM` refused). Older volumes keep their roles (documented). | Decided | Review L6: the app's role was a superuser, so any SQL injection would have been command execution. |
 | `/api/docs` and `/api/v1/openapi.json` need a session or a person's key with `read` in production (401 / 403); open in development. | Decided (lead) | Review N1: anonymously they mapped the admin surface. |
@@ -827,7 +827,8 @@ in the image and the chart, and the lead's calls. Contract changes:
 | Every database connection runs `SET max_parallel_workers_per_gather = 0`. | Decided | Perf B6: sorts over a 10k-idea project (score, title, votes) spent most of their time starting parallel workers (45-70 ms; 28-39 ms without), and under load the workers took the requests' CPU. |
 | One- and two-letter searches match titles only, most recently active first. | Decided | Perf B6: pg_trgm can't narrow them; 98 ms to 25 ms (a miss: 92 to 49 ms). |
 | Tag counts are a semi-join over the project's viewable ideas (`count(*)`). | Decided | Perf B6: 127 ms to 29 ms for a pending evaluator. |
-| `GET /ideas/{key}` uses the facts it loaded (no re-read after a plain read) and one query for "watching" and "via the public form": 14 statements to 11. | Decided | Perf B6. |
+| `GET /ideas/{key}` uses the facts it loaded (no re-read after a plain read) and one query for "watching" and "via the public form": 14 statements to 10-11. | Decided | Perf B6. |
+| My work reads its owned groups in one statement (the board's `LATERAL` page per status, `pages_by_status`) and the first 50 evaluations due with their total and overdue counts as window aggregates, selecting only the columns an item shows. Same response. | Decided | Perf B1 follow-up: an owner of 225 ideas (five groups) still took 141 / 166 ms (p50 / p95) after C1; 108 / 122 ms after (A/B in-process on the 10k data set, identical bodies). |
 | The session keep-alive runs after the response in a short transaction of its own, guarded in SQL (`SessionTouchMiddleware`). | Decided (lead) | Perf B8: a screen's parallel requests queued on the user's row lock until each committed. It also survives a request that fails. |
 | **Declined:** two uvicorn workers per pod by default. | Declined (lead) | Perf B5: each process also keeps a warm PDF child; scale with replicas, and send fewer requests per screen (C1, C2). |
 
@@ -837,5 +838,64 @@ in the image and the chart, and the lead's calls. Contract changes:
 |---|---|---|
 | Exported PDFs are tagged (`pdf_tags`: headings, paragraphs, lists, tables, links), keeping the 20 s and box bounds. | Decided (lead) | Audit minor: the export had no structure tree. About 50% larger. |
 | Every email is one `role="article"` landmark (`aria-roledescription="email"`, named by its subject); the layout tables stay presentational. | Decided (lead) | Audit minor: emails had no landmark. |
-| **Deferred:** pdfjs-dist 6 in e2e (GHSA-hq66-cqwq-w95j). | Deferred | Review L9: 6.x removed `PDFDocumentProxy.destroy()`, which `e2e/tests/support/pdf.ts` calls; with `loadingTask.destroy()` (works on 5.x too) the helper reads and renders exported PDFs identically on 6.4.299 (checked in a scratch copy). Bump once that line changes. Test-only, reading the app's own PDFs. |
+| **Deferred:** pdfjs-dist 6 in e2e (GHSA-hq66-cqwq-w95j). | Deferred | Review L9: 6.x removed `PDFDocumentProxy.destroy()` (`e2e/tests/support/pdf.ts` now destroys the loading task, which works on 5 and 6) and the `isEvalSupported` option, which `readPdf` still passes (a type error on 6). With that one line dropped, 6.4.299 reads, colour-checks and renders the exported proposal exactly as 5.6.205 (checked 2026-10-07 in a scratch copy). Bump with `npm --prefix e2e install pdfjs-dist@6.4.299 --save-exact` in the same change. Test-only, reading the app's own PDFs. |
 
+
+## 2026-10-07 · Phase 7 fixes: frontend
+
+What the Phase 7 UX, accessibility and performance reviews changed in the SPA, and the
+lead's calls. Every item was checked against the app first; the regression tests are
+named in the frontend's `tests/a11y-phase7.spec.ts`, `tests/project-list.spec.ts` and
+e2e `tests/a11y-phase7.spec.ts`.
+
+### Simplifications
+
+| Decision | Status | Why |
+|---|---|---|
+| **Settings** is about you (Account, Notifications, API keys); platform admins get **Admin** in the sidebar, its sections listed under it on an admin page and as a list at `/admin` (phones). The admin pages keep their `/settings/…` addresses. | Decided (lead) | UX M5: eleven tabs mixed personal and admin pages; on phones they scrolled sideways with shortened labels. |
+| Project settings: four tabs. Status labels are a section of **General**, Branding a section of **Public form**; `?tab=statuses` and `?tab=branding` open the tab that holds them, at the section. | Decided (lead) | UX simplification: Branding only changes how the project faces outward (the form, submitter emails, PDFs). |
+| **API keys** and **All API keys** are one page: platform admins switch between "Your keys" and "Everyone's keys" (`?everyone=1`); `/settings/all-api-keys` redirects with its filters. | Decided (lead) | UX simplification. |
+| The create-key dialog offers the presets; the scope checkboxes are behind **Custom**. | Decided (lead) | UX simplification: presets and checkboxes side by side asked the same question twice. |
+| AI is asked from the header's **AI** menu only (now with **Draft a section…**); the sidebar's "Ask AI to evaluate" is gone. The AI runs panel shows a row while a run works or after it stopped short (failed, timed out), plus runs seen finishing on the page; the rest fold under **History**. | Decided (lead) | UX simplification and m4: AI appeared in five places; a finished run's result is already in the feed and the Evaluations tab. |
+| "Waiting for review" is the sidebar's count and the board's notice (one line on phones); My work no longer has the section. | Decided (lead) | UX simplification: three places for one queue. |
+| The Users list leaves out AI agents' service accounts (they live in Admin → AI agents) and shows "Platform admin" / "Break-glass" by the name, Active or Deactivated as the status. | Decided (lead) | UX m3. |
+| **Declined:** one Save model everywhere. Forms whose fields are checked together (project settings, rubric, branding) keep an explicit Save; single preferences and documents (notification preferences, proposals) save as you go. | Declined (lead) | UX m11; the rule is in the user guide. |
+
+### UX
+
+| Decision | Status | Why |
+|---|---|---|
+| The break-glass admin picks the project's **First admin** in New project; with nobody to pick, the dialog points to Admin → Users. | Decided (lead) | UX B1: the only account on a fresh install hit "No active user with that id". The API already took `admin_user_id`. |
+| My work with no projects is a welcome: platform admins get **Create a project** (and `N` opens New project while there is none), others "Ask an admin for access". Empty sections are one line; viewers don't get "Ideas I own". | Decided (lead) | UX M3, m6. |
+| The idea header's blue button follows the status: Evaluate (you owe a score), Assign owner / I'll own this, Invite evaluators, Close evaluation, Change status, Start proposal, Open proposal; none when there is nothing to do. | Decided (lead) | UX M6. |
+| The status and owner pickers open on the current value; "Remove owner" is last. | Decided (lead) | UX M2: Enter straight away removed the owner or moved the idea back to New. |
+| A new search, filter or sort starts the list at the top. | Decided | UX M4. Cause: the router's scroll restoration put the old offset back after the replace navigation; the page navigates with `resetScroll: false` and the list resets its virtualizer. |
+| Phones: the project header keeps its actions beside the title, the description on one line, the view toggle as icons and the review notice as a one-line link. | Decided (lead) | UX M7: the first idea sat below the fold. |
+| The receipt and `/track` say the tracking link isn't emailed (only a confirmation link is). | Decided (lead) | UX M1. |
+| Public messages (form off or failing, broken tracking, confirmation and unsubscribe links) share one layout (`PublicMessage`); the unsubscribe page uses the public pages' frame. | Decided (lead) | UX m5. |
+| Minors: idea keys never wrap (m1); "No proposal was written for this idea" on closed ideas (m2); one page width on every idea tab (m7); a thin progress bar after 300 ms of navigation and a board-shaped skeleton (m8); "1.2K" counts in collapsed board columns (m9); one button style per My work row (m10); the dark-mode logo plate grows around the logo (m12). | Decided (lead) | UX review. |
+| Polish: the score hint once per sheet, and even scores worded by level and their neighbours (p1); "Saved" once, in the editor bar (p2); no breadcrumb on not-found pages, a chevron for audit details, narrower key columns (p4); full-width group pages, Details beside the idea facts on phones, the inbox dot at the row's start (p5). | Decided (lead) | UX review. The duplicated private-link sentence (p3) is in the demo seed's form introduction (`backend/app/seed/public.py`), not the page. |
+
+### Accessibility
+
+| Decision | Status | Why |
+|---|---|---|
+| A "Single-key shortcuts" switch in the `?` sheet, kept per person in the browser; off, keys without a modifier do nothing and their hints go. Every shortcut stays. | Decided (lead) | Audit major 1 (2.1.4). Dropping `[`, `v`, `f`, `1`–`3` declined. |
+| One 2px ring (`highlight-ring`, the focus colour) marks the highlighted or selected item of every list (menus, selects, ⌘K, pickers, "Close as…"); a dark `--accent-control` token for radios, switches, checkboxes, scores and selected tabs; the neutral segmented control's selection has a border and semibold text. `tokens.test.ts` checks 3:1. | Decided (lead) | Audit majors 7–8 (1.4.11). |
+| Focus is never hidden: the page scrolls fields clear of a sticky Save bar or the proposal's bar, the list's header sits above its rows, the card layout's sort buttons leave the Tab order, a focused board column scrolls into view on phones. Tab panels show the ring. | Decided | Audit majors 2–6 (2.4.11, 2.4.7). |
+| Undo messages last 10 s and wait while the pointer or focus is on them; `Alt`+`T` is in the `?` sheet; the toast region is "Messages". | Decided (lead) | Audit major 9 (2.2.1), minor (two "Notifications"). |
+| Rubric criteria have **Move up** / **Move down** in a row menu. | Decided | Audit major 10 (2.5.7). |
+| "Continue" (a draft) is named "Continue evaluating KEY: title"; key hints are hidden from names and given as `aria-keyshortcuts`; board cards are named by their title and key, the rest as their description. | Decided | Audit 2.5.3 and minors. |
+| After a navigation that left focus nowhere, focus moves to the new page's h1; titles name the project settings tab and project, and "Idea not found". | Decided | Audit minors. |
+| **Declined:** a Help item in the account menu (3.2.6). | Declined (lead) | There is no in-app help to be consistent with. |
+| **Rejected:** Radix menus outside landmarks (axe best-practice `region`). | Rejected | Menus are portalled, transient overlays opened from a control in a landmark; moving them inside one breaks their stacking. |
+| **Deferred:** an arrow key whose keyup arrives with its keydown moves focus in a radio group without selecting. | Deferred | Radix moves focus in a timeout; normal typing works. Low priority in the audit. |
+
+### Performance
+
+| Decision | Status | Why |
+|---|---|---|
+| The sidebar's badges come from `GET /me/work/counts`; My work lists the first 50 evaluations due with **Show more** (100 at a time, `GET /me/evaluations-due`); the sidebar's review counts come from `pending_moderation_count` (no request per project). | Decided (lead) | Perf B1, B7 (contract-phase7 C1, C2). |
+| List rows are memoised, the virtualizer re-renders without `flushSync`, table rows have a fixed height (cards are measured), and row tooltips mount on hover or focus (`HoverTooltip`). | Decided | Perf B2: 112 long tasks over 80 wheel ticks. |
+| The idea route's loading and not-found states live in `idea-page-states.tsx`, so first visits don't download the idea page, AI and Markdown; the idea route's chunk (with the evaluate sheet) is fetched when the browser is idle. | Decided | Perf B3, B9. |
+| ⌘K's first frame is the dialog and its input; the results mount in the next (deferred) render. | Decided | Perf B9: a 247 ms task on open. Sort and filter got the memoised rows above; anything further waits for the perf rerun's numbers. |

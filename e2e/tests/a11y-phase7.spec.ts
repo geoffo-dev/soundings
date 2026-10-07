@@ -1,7 +1,15 @@
 import type { Locator, Page } from '@playwright/test'
 
 import { uniqueKey, uniqueSuffix } from './support/api'
-import { expect, heading, settled, signIn, test, toast } from './support/fixtures'
+import {
+  bestPracticeViolations,
+  expect,
+  heading,
+  settled,
+  signIn,
+  test,
+  toast,
+} from './support/fixtures'
 
 /**
  * Regression specs for the Phase 7 accessibility audit (WCAG 2.2 AA) against the
@@ -9,8 +17,8 @@ import { expect, heading, settled, signIn, test, toast } from './support/fixture
  * Innovation): Shift+Tab under the list's sticky header (2.4.11), the rubric at
  * 390 px under the sticky save bar (2.4.11), the list's sort buttons at 390 px
  * (2.4.7), the tab panel's focus ring (2.4.7), an Undo toast that waits while
- * focus is on it (2.2.1) and a name that starts with the visible label (2.5.3).
- * Test plan: A11Y7-*.
+ * focus is on it (2.2.1), a name that starts with the visible label (2.5.3), and axe's
+ * best-practice rules on the main screens. Test plan: A11Y7-*.
  */
 
 const SLUG = 'customer-innovation'
@@ -57,7 +65,8 @@ test.describe('on a phone (390px)', () => {
     const first = page.getByRole('textbox', { name: 'Name' }).first()
     await expect(first).toBeVisible()
     await first.focus()
-    const bar = page.locator('[data-sticky-actions]').last()
+    // The rubric's own Save bar (the other tabs' forms stay mounted, hidden).
+    const bar = page.locator('[data-sticky-actions]').filter({ visible: true }).first()
     for (let i = 0; i < 14; i += 1) {
       await page.keyboard.press('Tab')
       const target = focused(page)
@@ -119,7 +128,9 @@ test('A11Y7-05 an Undo toast waits while focus is on it, then goes', async ({ pa
   await undo.focus()
   await page.waitForTimeout(12_000)
   await expect(undo).toBeVisible()
-  await page.getByRole('heading', { level: 1 }).click()
+  // Focus leaves (the pointer was never on it): the timer runs again and the toast goes.
+  await page.mouse.move(5, 300)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   await expect(undo).toBeHidden({ timeout: 15_000 })
 })
 
@@ -145,4 +156,26 @@ test('A11Y7-06 a draft’s “Continue” is named starting with the word it sho
   const link = page.getByRole('link', { name: `Continue evaluating ${idea.key}: ${idea.title}` })
   await expect(link).toBeVisible()
   await expect(link).toHaveText('Continue')
+})
+
+test.describe('A11Y7-07 axe best-practice rules pass on the main screens', () => {
+  for (const path of [
+    '/',
+    `/p/${SLUG}`,
+    `/p/${SLUG}?view=list`,
+    '/ideas/CUST-2',
+    '/notifications',
+    '/settings',
+    '/settings/api-keys',
+    '/settings/users',
+    '/admin',
+    `/p/${SLUG}/settings`,
+  ]) {
+    test(path, async ({ page }) => {
+      await page.goto(path)
+      await expect(page.locator('h1').first()).toBeVisible()
+      await settled(page)
+      expect(await bestPracticeViolations(page)).toEqual([])
+    })
+  }
 })

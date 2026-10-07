@@ -17,7 +17,7 @@ export function LogoMark({ className, src }: { className?: string; src?: string 
         src={logo}
         alt=""
         aria-hidden="true"
-        className={cn('h-6 w-auto max-w-24 shrink-0 logo-plate object-contain', className)}
+        className={cn('logo-plate h-6 w-auto max-w-24 shrink-0 object-contain', className)}
       />
     )
   }

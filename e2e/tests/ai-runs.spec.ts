@@ -41,12 +41,15 @@ test.describe('@ai how runs end', () => {
     try {
       await signInAs(page, team.owner.me)
       await openIdea(page, key)
-      // From the evaluators list, where the AI evaluator ends up.
-      await details(page).getByRole('button', { name: 'Ask AI to evaluate' }).click()
+      // From the header's AI menu (Phase 7: the one place agents are asked).
+      await page.getByRole('button', { name: 'AI actions' }).first().click()
+      await page.getByRole('menuitem', { name: /Ask AI to evaluate/ }).click()
       const progress = page.getByRole('button', {
         name: /AI run (in progress|waiting to start)\. View progress/,
       })
-      await expect(progress).toBeFocused()
+      await expect(progress.first()).toBeVisible()
+      // Focus stays on the menu's button, which is still there.
+      await expect(page.getByRole('button', { name: 'AI actions' }).first()).toBeFocused()
       const card = page.locator('article[id^="ai-run-"]').first()
       // One line while it works: the current step, the time taken and the time left.
       await expect(card).toContainText('Read the idea', { timeout: 30_000 })

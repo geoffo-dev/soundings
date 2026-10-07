@@ -1253,7 +1253,7 @@ kubectl -n soundings exec deploy/soundings-api -- soundings anonymise-user lee@e
 It renames the account "Former user <8 characters>" with an undeliverable placeholder
 address, deletes their sign-in identities, external ids, sessions, inbox, email
 preferences and outbox rows, revokes any key still active, and renames @mentions of
-them in comments; ideas, evaluations, comments and audit entries stay, under the
+them in comments and proposal margin comments; ideas, evaluations, comments and audit entries stay, under the
 placeholder. It records one `user.anonymise` audit entry (counts only, no actor) and
 can't be undone. It refuses an active account, the break-glass account and AI agents'
 service accounts (disable or delete the agent instead). Remove the person from your IdP

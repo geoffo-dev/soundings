@@ -70,9 +70,9 @@ CUST_FAVICON: Final = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 PUBLIC_FORM_INTRO: Final = (
+    # The form itself says you get a private link (UX review P7 p3: not twice).
     "Got an idea that would make shopping with us better? Tell the Customer Innovation "
-    "team. We read every idea, and you can follow yours with the private link you get "
-    "when you send it."
+    "team: we read every idea."
 )
 
 

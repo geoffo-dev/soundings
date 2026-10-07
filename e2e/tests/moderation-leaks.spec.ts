@@ -13,8 +13,9 @@ import { fragmentToken, projectWithPublicForm, Visitor } from './support/public'
  * Test plan: ML-*.
  */
 
+// A list row is named from its key; a board card "Title (KEY)" (Phase 7).
 const ideaLink = (scope: Page, key: string) =>
-  scope.getByRole('link', { name: new RegExp(`^${key}\\b`) })
+  scope.getByRole('link', { name: new RegExp(`^${key}\\b|\\(${key}\\)$`) })
 
 interface Held {
   project: Project

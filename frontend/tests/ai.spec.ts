@@ -50,11 +50,17 @@ test('“Ask AI to evaluate”: live steps, a badged, cited evaluation left out 
   const evaluators = sidebar(page).getByRole('list', { name: 'Evaluators' })
   await expect(sidebar(page).getByText('2 evaluations')).toBeVisible()
 
-  await sidebar(page).getByRole('button', { name: 'Ask AI to evaluate' }).click()
-  // Focus moves to the AI evaluator's row (the button went away).
+  // The header's AI menu is the one place agents are asked (Phase 7).
+  const aiActions = page.getByRole('button', { name: 'AI actions' }).first()
+  await aiActions.click()
+  await page.getByRole('menuitem', { name: /Ask AI to evaluate/ }).click()
+  // The AI evaluator's row shows its progress; focus stays on the menu's button.
   await expect(
-    page.getByRole('button', { name: /AI run (in progress|waiting to start)\. View progress/ }),
-  ).toBeFocused()
+    page
+      .getByRole('button', { name: /AI run (in progress|waiting to start)\. View progress/ })
+      .first(),
+  ).toBeVisible()
+  await expect(aiActions).toBeFocused()
   await expect(evaluators.getByText('Idea evaluator')).toBeVisible()
   await expect(evaluators).toContainText('AI agent')
   await stream // progress comes over the event stream (SSE), not polling
@@ -108,7 +114,9 @@ test('a pending evaluator sees the AI evaluator and its run, never its scores', 
   await openIdea(page, 'CUST-7') // Alice hasn't submitted
   const evaluators = sidebar(page).getByRole('list', { name: 'Evaluators' })
   await expect(evaluators.getByText('Idea evaluator')).toBeVisible()
-  const card = runCard(page)
+  // A run that did its job is under History (its evaluation is on the page already).
+  await page.getByRole('button', { name: 'History (1)' }).click()
+  const card = page.getByRole('list', { name: 'Earlier AI runs' }).locator('article').first()
   await expect(card).toContainText('Evaluation submitted')
   // No way to the evaluation itself: the tab is blind.
   await expect(card.getByRole('button', { name: 'View the evaluation' })).toHaveCount(0)
@@ -172,14 +180,16 @@ test('a run that ends while you type leaves focus where it is', async ({ page })
 test('a failed run says why in Soundings’ words and offers “Try again”', async ({ page }) => {
   await aiMock(page, { outcome: 'fail' })
   await openIdea(page, 'CUST-2')
-  await sidebar(page).getByRole('button', { name: 'Ask AI to evaluate' }).click()
+  const aiActions = page.getByRole('button', { name: 'AI actions' }).first()
+  await aiActions.click()
+  await page.getByRole('menuitem', { name: /Ask AI to evaluate/ }).click()
   const card = runCard(page)
   // Plain words and a next step; the server's sentence stays in the steps.
   await expect(card).toContainText('The agent ran into an error and stopped.')
   await expect(card).toContainText('If it keeps failing, ask a platform admin')
   await expect(card.getByRole('button', { name: 'Try again' })).toBeVisible()
-  // Its row's progress button went: focus moved to "Ask AI to evaluate", not <body>.
-  await expect(sidebar(page).getByRole('button', { name: 'Ask AI to evaluate' })).toBeFocused()
+  // Focus stayed on the menu's button throughout, never on <body>.
+  await expect(aiActions).toBeFocused()
   await expect(await openSteps(card)).toContainText('The agent stopped with an error.')
 })
 
@@ -254,11 +264,10 @@ test.describe('as the owner of CUST-7', () => {
     await openIdea(page, 'CUST-7')
     await page.getByRole('button', { name: 'AI actions' }).first().click()
     // Its evaluator can evaluate again; research has two agents to choose from.
-    await expect(page.getByRole('menuitem', { name: /Ask AI to evaluate/ })).toBeEnabled()
+    await expect(page.getByRole('menuitem', { name: /Ask AI to evaluate again/ })).toBeEnabled()
     await page.keyboard.press('Escape')
-    await expect(
-      sidebar(page).getByRole('button', { name: 'Ask AI to evaluate again' }),
-    ).toBeVisible()
+    // The evaluators list has no AI button of its own any more: the menu is the place.
+    await expect(sidebar(page).getByRole('button', { name: /Ask AI/ })).toHaveCount(0)
   })
 })
 

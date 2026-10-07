@@ -23,13 +23,16 @@ const require = createRequire(import.meta.url)
 /** The text of every page (lines joined with spaces) and the document's metadata. */
 export async function readPdf(bytes: Buffer): Promise<PdfInfo> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  const document = await pdfjs.getDocument({
+  // The loading task owns the document: destroying it frees both (pdf.js 5 and 6; 6
+  // dropped `PDFDocumentProxy.destroy()`).
+  const task = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useSystemFonts: false,
     disableFontFace: true,
     isEvalSupported: false,
     verbosity: 0,
-  }).promise
+  })
+  const document = await task.promise
   try {
     const pages: string[] = []
     for (let number = 1; number <= document.numPages; number++) {
@@ -44,7 +47,7 @@ export async function readPdf(bytes: Buffer): Promise<PdfInfo> {
     const field = (name: string) => (typeof info[name] === 'string' ? (info[name] as string) : '')
     return { pages, title: field('Title'), author: field('Author'), creator: field('Creator') }
   } finally {
-    await document.destroy()
+    await task.destroy()
   }
 }
 

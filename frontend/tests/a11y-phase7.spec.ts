@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 
-import { expect, test } from './support'
+import { bestPracticeViolations, expect, test } from './support'
 
 /**
  * Phase 7 accessibility fixes (WCAG 2.2 AA audit) against the mock: focus never
@@ -228,4 +228,27 @@ test('after following a link, focus lands on the new page’s heading', async ({
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/ideas\//)
   await expect(page.getByRole('heading', { level: 1 })).toBeFocused()
+})
+
+test.describe('axe best-practice rules pass on the main screens', () => {
+  for (const path of [
+    '/',
+    '/p/customer-innovation',
+    '/p/customer-innovation?view=list',
+    '/ideas/CUST-2',
+    '/ideas/CUST-3?tab=proposal',
+    '/notifications',
+    '/settings',
+    '/settings/api-keys',
+    '/settings/users',
+    '/admin',
+    '/p/customer-innovation/settings',
+  ]) {
+    test(path, async ({ page }) => {
+      await page.goto(path)
+      await expect(page.locator('h1').first()).toBeVisible()
+      await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
+      expect(await bestPracticeViolations(page)).toEqual([])
+    })
+  }
 })

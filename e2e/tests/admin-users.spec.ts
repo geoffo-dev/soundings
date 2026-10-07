@@ -26,7 +26,10 @@ async function openUsers(page: Page, query = '') {
 test('AU-01: lists everyone, searches and filters through the URL', async ({ page }) => {
   await signIn(page, 'alice')
   await openUsers(page)
-  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
+  // The admin sections are listed under Admin in the sidebar (Phase 7).
+  await expect(
+    page.getByRole('list', { name: 'Admin sections' }).getByRole('link', { name: 'Users' }),
+  ).toHaveAttribute('aria-current', 'page')
   await expect(userRow(page, 'Alice Anders')).toContainText('Platform admin')
 
   await page.getByRole('searchbox', { name: 'Search users' }).fill('carol')
@@ -99,11 +102,12 @@ test('AU-03: you can’t lock yourself out; non-admins get a plain 404', async (
   await page.goto('/settings/users')
   await expect(page.getByRole('heading', { name: 'We couldn’t find that page' })).toBeVisible()
   // Everyone has Account, Notifications (Phase 3) and API keys (Phase 5); the admin
-  // sections, All API keys among them, stay hidden.
+  // sections (their own area since Phase 7) stay hidden.
   await page.goto('/settings')
   await expect(
     page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link'),
   ).toHaveText(['Account', 'Notifications', 'API keys'])
+  await expect(page.getByRole('list', { name: 'Admin sections' })).toHaveCount(0)
 })
 
 test.describe('pre-created users and SSO', { tag: '@sso' }, () => {

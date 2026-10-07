@@ -184,6 +184,16 @@ See [Statuses](#statuses-new-evaluating-shortlisted-proposal-closed). Moving to
 Evaluating doesn't invite anyone or set a date: invite evaluators when you are ready.
 Due dates can be up to five years ahead.
 
+### The next step on the idea page
+
+The blue button at the top of an idea is its next step for you, and it follows the
+status. **Evaluate** (or **Continue evaluation**) while you owe a score comes first. For
+the owner and admins it is then **Assign owner** (or **I'll own this**) on an unowned
+idea, **Invite evaluators** while nobody is invited, **Close evaluation** while evaluation
+is open, **Change status** once it is closed (shortlist or close the idea), **Start
+proposal** on a Shortlisted idea and **Open proposal** once there is one. A closed idea,
+or one with nothing for you to do, has no blue button.
+
 ### Closing and reopening evaluation
 
 "Close evaluation" stops further scoring (the page suggests it once everyone has
@@ -642,9 +652,9 @@ submission off for the whole instance, or for a project whose address clashes wi
 of the app's own pages. A private project's form shows only its name, introduction and
 branding.
 
-**Moderating.** While ideas wait, the board shows "3 ideas waiting for review", the
-sidebar a **Review 3** link under the project, and My work a "Waiting for review" group
-(admins only); each opens the queue (`/p/<project>/review`), oldest first: title, summary, description and
+**Moderating.** While ideas wait, the board shows "3 ideas waiting for review" (on a
+phone, a one-line link) and the sidebar a **Review 3** link under the project (admins
+only); each opens the queue (`/p/<project>/review`), oldest first: title, summary, description and
 the sender's name if they gave one. **Approve** puts the idea in New (at the top) with no
 email to anyone; **Reject** deletes it for good, for spam, abuse or off-topic posts. Both
 offer Undo for a few seconds. A genuine idea you don't want to pursue is better approved

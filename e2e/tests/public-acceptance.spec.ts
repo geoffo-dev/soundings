@@ -268,7 +268,7 @@ test(
       await expect(
         bobPage
           .getByRole('region', { name: /^New\b/ })
-          .getByRole('link', { name: new RegExp(`^${key}\\b`) }),
+          .getByRole('link', { name: new RegExp(`\\(${key}\\)$`) }),
       ).toBeVisible()
 
       // --- 4. Owner, evaluations, Shortlisted --------------------------------------------

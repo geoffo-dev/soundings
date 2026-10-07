@@ -20,8 +20,11 @@ const keyRow = (page: Page, name: string) => table(page).getByRole('row').filter
 const search = (page: Page) => page.getByRole('searchbox', { name: 'Search API keys' })
 
 async function openAdminKeys(page: Page, query = '') {
+  // The Phase 5 address still works: since Phase 7 it is "Everyone's keys" on Settings →
+  // API keys, with its filters.
   await page.goto(`/settings/all-api-keys${query}`)
-  await expect(page.getByRole('heading', { level: 2, name: 'All API keys' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'API keys' })).toBeVisible()
+  await expect(page.getByRole('radio', { name: 'Everyone’s keys' })).toBeChecked()
   await settled(page)
 }
 
@@ -169,7 +172,9 @@ test('AAK-03: “Sign out everywhere” ends sessions but not keys, and links to
 
     // The sheet's "API keys" link filters the admin list by owner.
     await sheet.getByRole('link', { name: 'API keys' }).click()
-    await expect(page).toHaveURL(new RegExp(`/settings/all-api-keys\\?user_id=${person.me.id}$`))
+    await expect(page).toHaveURL(
+      new RegExp(`/settings/api-keys\\?everyone=1&user_id=${person.me.id}$`),
+    )
     await expect(page.getByText('1 key', { exact: true })).toBeVisible()
     await expect(keyRow(page, 'Nightly export')).toContainText(person.me.display_name)
     await expect(page.locator('[data-slot="filter-value-chip"]')).toContainText(

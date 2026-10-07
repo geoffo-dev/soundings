@@ -69,6 +69,7 @@ __all__ = [
     "idea_filter_clauses",
     "list_ideas",
     "page_statement",
+    "pages_by_status",
 ]
 
 LIFECYCLE: Final = tuple(IdeaStatus)
@@ -364,13 +365,15 @@ def board_statement(
     )
 
 
-async def _columns(
+async def pages_by_status(
     db: AsyncSession,
     principal: Principal,
     where: Sequence[ColumnElement[bool]],
     sort: Sort,
     limit: int,
 ) -> dict[IdeaStatus, tuple[list[IdeaRow], str | None]]:
+    """The first keyset page of every status (:func:`board_statement`, one round trip):
+    the board's columns and My work's owned groups."""
     by_status: dict[IdeaStatus, list[Row[Any]]] = {status: [] for status in LIFECYCLE}
     for row in await db.execute(board_statement(principal, where, sort, limit=limit)):
         by_status[IdeaStatus(row.status)].append(row)
@@ -398,7 +401,7 @@ async def get_board(
             .group_by(Idea.status, Idea.resolution)
         )
     }
-    pages = await _columns(db, principal, where, sort, limit)
+    pages = await pages_by_status(db, principal, where, sort, limit)
     summaries = await build_summaries(
         db,
         principal,

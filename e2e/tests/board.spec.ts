@@ -120,7 +120,8 @@ test('ST-03: someone who may not change the status can’t drag', async ({ page,
   await signIn(page, 'farah')
   await openBoard(page)
   const item = card(page, idea.key)
-  await expect(item).not.toHaveAttribute('aria-describedby', /./)
+  // Described by what the card shows only, not by the drag instructions.
+  await expect(item).toHaveAttribute('aria-describedby', /^card-[^ ]+-description$/)
   await item.focus()
   await page.keyboard.press('Space')
   await expect(announcer(page)).not.toContainText('Picked up')

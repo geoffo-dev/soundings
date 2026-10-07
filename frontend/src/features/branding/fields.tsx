@@ -263,7 +263,7 @@ export function ImageField({
               alt={value ? `The ${kind} you chose` : `The current ${kind}`}
               className={cn(
                 'object-contain',
-                kind === 'favicon' ? 'size-8' : 'max-h-10 max-w-20 logo-plate',
+                kind === 'favicon' ? 'size-8' : 'logo-plate max-h-10 max-w-20',
               )}
             />
           ) : (

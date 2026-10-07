@@ -19,7 +19,6 @@ import {
 import type { EffectiveBranding, TrackedSubmission } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Field } from '@/components/ui/field'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { StatusBadge, StatusDot } from '@/components/ui/status-badge'
@@ -79,23 +78,20 @@ export function TrackPage() {
               It may have been removed, or the link is incomplete. Check you copied the whole link.
             </PublicMessage>
           ) : (
-            <EmptyState
+            <PublicMessage
               role="alert"
-              size="compact"
-              headingLevel={1}
               icon={<CloudOff />}
               title={status === 429 ? 'Too many requests just now' : 'We couldn’t load your idea'}
-              description={
-                status === 429
-                  ? 'Wait a minute, then try again.'
-                  : 'Check your connection and try again.'
-              }
               action={
                 <Button variant="primary" onClick={() => void tracked.refetch()}>
                   Try again
                 </Button>
               }
-            />
+            >
+              {status === 429
+                ? 'Wait a minute, then try again.'
+                : 'Check your connection and try again.'}
+            </PublicMessage>
           )}
         </PublicCard>
       </PublicLayout>

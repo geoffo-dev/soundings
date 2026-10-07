@@ -52,7 +52,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
 import httpx
@@ -111,6 +111,24 @@ EVALUATE_STEPS = [
     ("result_recorded", "Evaluation submitted"),
     ("succeeded", "Done"),
 ]
+WORKING: Final = ("agent_working", "The agent is working")
+
+
+def evaluate_steps_match(steps: list[tuple[str, str]]) -> bool:
+    """``EVALUATE_STEPS``, except that "The agent is working" may land among the tool
+    calls: the worker records it from the A2A stream while the API records the agent's
+    MCP calls, and on a loaded machine the agent's first call can commit first. It still
+    comes once, after "The agent started" and before "Evaluation submitted"."""
+    if steps.count(WORKING) != 1:
+        return False
+    without = [step for step in steps if step != WORKING]
+    position = steps.index(WORKING)
+    return (
+        without == [step for step in EVALUATE_STEPS if step != WORKING]
+        and steps.index(("agent_accepted", "The agent started")) < position
+        and position < steps.index(("result_recorded", "Evaluation submitted"))
+    )
+
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SOUNDINGS_TEST_FAKE_AGENT") == "0"
@@ -558,7 +576,7 @@ async def test_ac6_api_1_ask_ai_to_evaluate_gives_a_badged_cited_evaluation_left
     assert stream.headers["cache-control"] == "no-cache"
     assert stream.headers["x-accel-buffering"] == "no"
     assert stream.raw.startswith("retry: 3000\n")
-    assert stream.steps == EVALUATE_STEPS
+    assert evaluate_steps_match(stream.steps), stream.steps
     assert stream.ids == [e["seq"] for e in stream.events] == list(range(1, 10))
     assert [e["final"] for e in stream.events] == [False] * 8 + [True]
     assert agent_text(stream.raw) == []
@@ -569,7 +587,8 @@ async def test_ac6_api_1_ask_ai_to_evaluate_gives_a_badged_cited_evaluation_left
     assert (done["status"], done["error"], done["cancel_requested"]) == ("succeeded", None, False)
     evaluation_id = done["result"]["evaluation_id"]
     assert evaluation_id is not None
-    assert [(e["type"], e["message"]) for e in done["events"]] == EVALUATE_STEPS
+    done_steps = [(e["type"], e["message"]) for e in done["events"]]
+    assert done_steps == stream.steps, (done_steps, stream.steps)  # one log, in seq order
     assert done["event_count"] == 9
     assert done["can_cancel"] is False
     #    Reconnecting: after the end 204; replays from Last-Event-ID or ?after= (the header

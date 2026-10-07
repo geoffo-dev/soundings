@@ -148,7 +148,12 @@ test.describe('as a project admin', () => {
       }
     })
     await page.goto('/p/customer-innovation/settings?tab=public-form')
-    await expect(page.getByRole('tab', { name: 'Public form', selected: true })).toBeVisible()
+    // The settings' own tab (the branding section below has preview tabs of its own).
+    await expect(
+      page
+        .getByRole('tablist', { name: 'Settings' })
+        .getByRole('tab', { name: 'Public form', selected: true }),
+    ).toBeVisible()
     await expect(page.getByRole('textbox', { name: 'Link to share' })).toHaveValue(
       /\/customer-innovation\/submit$/,
     )

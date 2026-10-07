@@ -16,9 +16,10 @@ from app import cli
 from app.config import Settings
 from app.models.activity import AuditLog, Comment
 from app.models.api_key import ApiKey
-from app.models.enums import AuthMethod, ProjectRole
+from app.models.enums import AuthMethod, IdeaStatus, ProjectRole
 from app.models.idea import Idea
 from app.models.notification import Notification
+from app.models.proposal import ProposalComment
 from app.models.user import User, UserExternalId, UserIdentity, UserSession
 from app.services.anonymise import AnonymiseRefused, anonymise_user
 from app.services.sessions import start_session
@@ -115,6 +116,44 @@ async def test_a_deactivated_leaver_is_anonymised_and_their_work_stays(
     shown = (await ada.get(f"{API}/ideas/{idea.id}")).json()
     assert shown["owner"]["display_name"] == done.display_name
     assert key  # the key string itself is never stored
+
+
+async def test_mentions_in_proposal_margin_threads_show_the_placeholder_too(
+    login: Login, db_session: AsyncSession
+) -> None:
+    """Margin comments on a proposal take @mentions as well (contract-phase4 3.3)."""
+    admin = await make_user(db_session, "Ada Admin", platform_admin=True)
+    leaver = await make_user(db_session, "Lee Leaver")
+    owner = await make_user(db_session, "Olu Owner")
+    project = await make_project(
+        db_session, members={leaver: ProjectRole.MEMBER, owner: ProjectRole.MEMBER}
+    )
+    idea = await make_idea(
+        db_session, project, title="Refunds", status=IdeaStatus.SHORTLISTED, owner=owner
+    )
+    await db_session.commit()
+    olu = await login(owner)
+    started = await olu.post(f"{API}/ideas/{idea.id}/proposal")
+    assert started.status_code == 201, started.text
+    body = f"Ask @[Lee Leaver](user:{leaver.id}) about the numbers"
+    thread = await olu.post(
+        f"{API}/ideas/{idea.id}/proposal/threads", json={"section_key": "cost", "body_md": body}
+    )
+    assert thread.status_code == 201, thread.text
+    ada = await login(admin)
+    deactivated = await ada.patch(f"{API}/admin/users/{leaver.id}", json={"is_active": False})
+    assert deactivated.status_code == 200, deactivated.text
+
+    done = await anonymise_user(db_session, leaver.email)
+    await db_session.commit()
+
+    comment = await db_session.scalar(
+        select(ProposalComment).execution_options(populate_existing=True)
+    )
+    assert comment is not None
+    assert "Lee Leaver" not in comment.body_md
+    assert f"@[{done.display_name}](user:{leaver.id})" in comment.body_md
+    assert done.counts["mentions"] == 1
 
 
 @pytest.mark.parametrize(

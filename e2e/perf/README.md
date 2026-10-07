@@ -18,6 +18,8 @@ It reuses `e2e/scripts/start-stack.sh` with its own ports and names: the app on
 http://localhost:8320 (`PERF_PORT`), Postgres `p7-perf-pg` on 127.0.0.1:55436
 (`PERF_PG_PORT`, started first with `pg_stat_statements`), state in `e2e/perf/.stack/`
 (SPA build, logs, pid files, `results/`; git-ignored), no SMTP (the worker runs).
+The SPA build gets the image's `.br`/`.gz` twins (`scripts/precompress-assets.mjs`), so
+bytes over the network match production; `PERF_PRECOMPRESS=0` serves it raw.
 `PERF_SCALE=0.1` seeds a tenth of the ideas. The data set is
 `backend/tests/perf/seed_large.py`; people sign in through the dev login: Pat Pending
 `perf01@example.com` (owes 1,000 evaluations, blind), Alice (admin), `perf02`-`perf50`.

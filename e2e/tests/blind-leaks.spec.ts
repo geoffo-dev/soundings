@@ -135,7 +135,7 @@ for (const person of ['alice', 'amara'] as const satisfies readonly Person[]) {
 
       // BL-02 Board.
       await page.goto('/p/customer-innovation?view=board')
-      const card = page.getByRole('link', { name: new RegExp(`^${BLIND_KEY}\\b`) })
+      const card = page.getByRole('link', { name: new RegExp(`\\(${BLIND_KEY}\\)$`) })
       await expect(card.getByRole('img', { name: lock })).toBeVisible()
       await expect(card).not.toContainText(SCORE_TEXT)
       await expect(card.getByRole('img', { name: 'High disagreement' })).toHaveCount(0)
@@ -191,8 +191,10 @@ for (const person of ['alice', 'amara'] as const satisfies readonly Person[]) {
       await expect(listRows(page).filter({ hasText: 'CUST-8' })).toHaveCount(1)
       await expect(listRows(page).filter({ hasText: BLIND_KEY })).toHaveCount(0)
       await page.goto('/p/customer-innovation?view=board&high_disagreement=1')
-      await expect(page.getByRole('link', { name: /^CUST-8\b/ })).toBeVisible()
-      await expect(page.getByRole('link', { name: new RegExp(`^${BLIND_KEY}\\b`) })).toHaveCount(0)
+      await expect(page.getByRole('link', { name: /\(CUST-8\)$/ })).toBeVisible()
+      await expect(page.getByRole('link', { name: new RegExp(`\\(${BLIND_KEY}\\)$`) })).toHaveCount(
+        0,
+      )
     })
   })
 }

@@ -4,6 +4,8 @@ SPEC section 12 asks for an app that stays calm and fast with 10,000 ideas. This
 says how we measure that, what we measured on 2026-10-06, the bottlenecks we found and
 who should fix them. Everything here is runnable again; the numbers move by ±20 % on
 the shared 4-CPU build machine (other agents were running; load average 1-2).
+**Section 8 has the same measurements after the Phase 7 fixes (2026-10-07), taken side
+by side with the code from before them.**
 
 ## 1. Budgets
 
@@ -225,7 +227,10 @@ primary action renders or on hover. Opening an idea from the list (88 ms) is in 
 
 - `tests/perf/test_perf_large.py` (slow): no N+1 on nine lists and on evaluations
   (3 vs 5 evaluators); `STATEMENT_BUDGET` per request (raise it only with a reason); read
-  p95 < 150 ms one at a time (My work is `xfail`, non-strict, until B1); writes < 250 ms.
+  p95 < 150 ms one at a time, My work (Pat's and an owner's) and its counts included
+  since Phase 7 (the `xfail` is gone); writes < 250 ms. The timings freeze the test
+  process's heap first (`frozen_heap`), as the API does after startup: otherwise one
+  full garbage collection over the earlier tests' objects lands on a single sample.
 - `tests/ideas/test_performance.py` (slow, Phase 1): list, board, My work and search p95
   and the keyset index plans at 10k.
 - `e2e/perf/*.perf.ts`: soft budgets (LCP, interaction response, dropped frames); every
@@ -234,3 +239,113 @@ primary action renders or on hover. Opening an idea from the list (88 ms) is in 
 Not covered: real networks (all local; with B4 a 10 Mbit/s link adds ~1 s to a cold
 load), Firefox and Safari, phones (390 px layouts render cards: same row components),
 the PDF child (measured in Phase 4), MCP and AI runs under load.
+
+## 8. After the Phase 7 fixes (2026-10-07)
+
+**How.** Side by side on one data set (`e2e/perf/stack.sh up` on :8400, Postgres
+`p7-fixb-pg`, reseeded before the browser runs): the code from before the fixes (commit
+`fd32366`: its API on :8401 and its SPA build, driven by its own `load.py`, which sends
+what that SPA sent: all of My work on every page, one moderation request per project)
+and the fixed tree (API on :8400, the SPA with the image's `.br`/`.gz` twins, today's
+`load.py`). Each pair ran back to back; load average 1-2 (other agents). Raw results:
+`e2e/perf/.stack/results/p7-ab-*.json`. What changed, by bottleneck: B1 (C1 work counts,
+50 evaluations due a page, the owned groups and due counts in one statement each), B2
+(memoised list rows, no `flushSync`, fixed row heights, tooltips on hover), B3 (the idea
+page out of the first load), B4 (Brotli/gzip twins, gzip for JSON), B6 (short searches,
+tag counts, no parallel workers, fewer statements on the idea page), B7 (C2 moderation
+counts in `GET /projects`), B8 (the keep-alive after the response), B9 (palette list a
+frame later, idea and evaluate chunks preloaded when idle). Declined: B5 (2 workers).
+
+### 8.1 One request at a time (`load.py --isolated 30`, p50 / p95 ms)
+
+| Endpoint | Before | After |
+|---|---|---|
+| `GET /me/work`, Pat (1,000 due) | 134 / 180 | **55 / 67** |
+| `GET /me/work`, Alice (owns 225 ideas in five groups) | 192 / 264 | **103 / 129** |
+| `GET /me/work/counts` (the sidebar, new) | – | 22 / 29 |
+| `GET /me/evaluations-due` (a page of 50, new) | – | 28 / 36 |
+| `GET /search?q=pr` (two letters) | 129 / 162 | **14 / 17** |
+| `GET /projects/{slug}/tags`, Alice / Pat | 105 / 143, 66 / 81 | **39 / 47, 33 / 43** |
+| list `sort=-score`, Alice / Pat | 137 / 225, 98 / 133 | 77 / 86, 75 / 90 |
+| list `sort=title`, Alice | 104 / 130 | 86 / 97 |
+| board, Alice / Pat | 97 / 158, 69 / 91 | 82 / 99, 67 / 85 |
+| board `sort=-score`, Alice / Pat | 111 / 155, 96 / 123 | 115 / 143, 93 / 120 |
+| `GET /ideas/{key}`, Pat | 32 / 42 (14 statements) | 25 / 32 (10-11) |
+| `GET /projects` (now with `pending_moderation_count`) | 28 / 33 | 32 / 37 |
+| all reads, p95 over every operation: Alice / Pat | 153 / 128 | **101 / 83** |
+
+Every read is now under 150 ms one at a time; the closest are the board by score
+(120-143 ms: five sorted pages of 51 cards, about 45 ms of SQL and 50 ms of building 255
+summaries) and an owner's My work. In-process (`make -C backend test-perf`, quiet
+machine): board by score 142, an owner's My work 139, Pat's My work 71-74, everything
+else ≤ 97 ms; writes ≤ 97 ms. A/B of the My work statements alone, in-process with
+identical bodies: Alice 141 / 166 → 108 / 122, Pat 78 / 96 → 66 / 81.
+
+### 8.2 Twenty people (`--think 2-8`, 120 s, two rounds each) and stress
+
+| | Before (rounds 1, 2) | After (rounds 1, 2) |
+|---|---|---|
+| reads p95, all requests | 294, 268 ms | **255, 206 ms** |
+| writes p95 (n = 50-60, noisy) | 196, 240 ms | 249, 167 ms |
+| screen p50 / p95: app shell (cold load) | 227-232 / 639-722 | **56-59 / 429-468** |
+| list | 109-120 / 256-296 | 93-97 / 194-213 |
+| idea page | 93-106 / 282-292 | 77-89 / 203-341 |
+| board | 123-133 / 242-371 | 118-129 / 226-299 |
+| evaluate sheet | 47-51 / 1,066-1,095 | 40 / 891-957 |
+| throughput, API CPU | 11.7 req/s | 11.6 req/s, 0.2 cores |
+| stress (`--think 0`, 60 s): throughput, reads p95 | 59 req/s, 1,145 ms | **67 req/s**, 959 ms |
+| API resident memory | 182 MB | 180-211 MB |
+
+**Still over budget at 20 people** (reads p95 206-255 ms against 150). The medians are
+well inside it; the tail is requests of overlapping screens sharing the one event loop
+(B5, declined: scale with replicas, each pod has its own loop). A board of 255 cards or
+an owner's My work costs 50-100 ms of Python, and the requests queued behind it wait.
+The connection pool isn't it (a pool of 20 changed nothing, §4.1), nor garbage
+collection (the startup heap is frozen; with collection off a board took the same).
+Next steps if it matters: lighter summaries (the board builds 255 per call), a narrower
+sort for the board by score (ids and the masked score first, the rest for 51 rows:
+about 30 % less SQL in a hand-written trial), or two replicas.
+
+### 8.3 Browser (4x CPU throttling; one cold-load run, two interaction runs)
+
+| Metric | Before | After |
+|---|---|---|
+| My work cold, Pat: data shown / TBT / DOM nodes | 10.97 s / 9.5 s / 17,269 | **1.96 s / 0.25 s / 1,043** |
+| My work cold, Alice: data shown / TBT | 3.14 s / 2.4 s | 3.31 s / 2.0 s (her 186 owned ideas still render) |
+| List cold, Pat: FCP = LCP / data shown | 1.55 / 2.20 s | 1.40 / 2.07 s |
+| Board cold, Pat: LCP / data shown / TBT | 1.69 / 3.39 / 1.85 s | 1.83 / 2.43 / 1.44 s |
+| List cold, Alice: LCP / data shown | 1.36 / 1.81 s | 2.14 / 2.09 s (one run) |
+| Bytes on a cold list load: JS / CSS / API | 1,236 / 98 / 609 kB | **400 / 14 / 19 kB** |
+| First-load JS (`bundle-report.ts`) | 1,026 kB (326 gzip), 48 files | **636 kB (209 gzip), 28 files** |
+| List scroll, 80 wheel ticks: long tasks / dropped frames / p95 frame | 147-157 (18-20 s) / 84-85 % / 267 ms | **55-71 (3.6-4.7 s)** / 75-77 % / 150-167 ms |
+| Board column scroll: dropped frames | 49-56 % | 48-51 % |
+| Sort by score: response / result shown | 256-360 / 790-973 ms | 224-232 / 746-874 ms |
+| Filter "Needs evaluators": response | 256-264 ms | 168-208 ms |
+| ⌘K open: response | 472-568 ms | 296-408 ms |
+| Evaluate sheet: response / shown | 632-760 / 1,055-1,520 ms | 640 / 954-1,070 ms |
+| Open an idea from the list: response / page shown | 128-136 / 760-879 ms | **248-264** / 700-720 ms |
+
+The browser now fetches 101-110 JS files in all on a cold load (63-72 before): the
+first load is smaller, and the idea page and evaluate sheet chunks follow when the
+browser is idle (B9), so they show up in a load that waits for the network to settle.
+
+**Still over the 100 ms interaction budget:** sort and filter (168-232 ms), ⌘K open
+(296-408 ms), the evaluate sheet (640 ms), and opening an idea from the list, which got
+**slower** to its first frame (128-136 → 248-264 ms) although the page shows sooner:
+something now renders synchronously on that click (the route focus or the progress
+bar are candidates; frontend). List scrolling still drops three frames in four at 4x
+throttling. LCP on Alice's cold list was 2.1 s in one run (1.4 s before); repeat it
+before reading much into it.
+
+### 8.4 Against the budgets now
+
+| Area | Budget | After | |
+|---|---|---|---|
+| API reads one at a time, all (My work included) | p95 < 150 ms | 17-143 ms | pass |
+| API writes one at a time | p95 < 250 ms | 25-97 ms | pass |
+| 20 people, reads | p95 < 150 ms | 206-255 ms | **fail** (B5) |
+| 20 people, writes | p95 < 250 ms | 167-249 ms | pass, barely |
+| N+1 | none | none | pass |
+| Cold LCP | < 1.5 s | 1.3-1.4 s (board 1.8, Alice's list 2.1 in one run) | mostly |
+| Interactions | < 100 ms | 168-640 ms | **fail** |
+| My work for 1,000 evaluations due | (instant) | data at 2.0 s cold, TBT 0.25 s | fixed |

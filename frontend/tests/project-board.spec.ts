@@ -151,7 +151,8 @@ test('dropping on Closed asks how it was closed', async ({ page }) => {
 test('cards you may not move have no drag', async ({ page }) => {
   await openBoard(page)
   const item = card(page, 'CUST-1') // owned by Bob
-  await expect(item).not.toHaveAttribute('aria-describedby', /./)
+  // Described by what the card shows only, not by the drag instructions.
+  await expect(item).toHaveAttribute('aria-describedby', /^card-[^ ]+-description$/)
   await item.focus()
   await page.keyboard.press('Space')
   await expect(announcer(page)).not.toContainText('Picked up')

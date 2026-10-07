@@ -154,11 +154,11 @@ const SCREENS: Screen[] = [
     },
   },
   {
-    name: 'Admin settings → API keys',
+    name: 'Settings → API keys → Everyone’s keys',
     as: 'alice',
     open: async (page, data) => {
-      await page.goto(`/settings/all-api-keys?q=${data.run}`)
-      await expect(page.getByRole('heading', { level: 2, name: 'All API keys' })).toBeVisible()
+      await page.goto(`/settings/api-keys?everyone=1&q=${data.run}`)
+      await expect(page.getByRole('heading', { level: 2, name: 'API keys' })).toBeVisible()
       await expect(page.getByText('3 keys', { exact: true })).toBeVisible()
     },
   },
@@ -166,7 +166,7 @@ const SCREENS: Screen[] = [
     name: 'the admin revoke confirm',
     as: 'alice',
     open: async (page, data) => {
-      await page.goto(`/settings/all-api-keys?q=${data.run}`)
+      await page.goto(`/settings/api-keys?everyone=1&q=${data.run}`)
       const name = `Jira sync ${data.run}`
       await page.getByRole('button', { name: `Revoke Bob Brown’s key ${name}` }).click()
       await expect(page.getByRole('alertdialog')).toBeVisible()

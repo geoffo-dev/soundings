@@ -116,7 +116,10 @@ test.describe('on a phone (390px)', () => {
     // No sidebar on screen: "All admin settings" leads to the list of sections.
     await page.getByRole('link', { name: 'All admin settings' }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Admin' })).toBeVisible()
-    await page.getByRole('main').getByRole('link', { name: /^Audit log/ }).click()
+    await page
+      .getByRole('main')
+      .getByRole('link', { name: /^Audit log/ })
+      .click()
     await expect(page.getByRole('heading', { level: 2, name: 'Audit log' })).toBeVisible()
     await page.goto('/settings/users')
     // Cards: one meta line under the name (no repeated column names); the header is for

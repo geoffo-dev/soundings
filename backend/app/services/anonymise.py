@@ -13,7 +13,8 @@ further, once the account is deactivated:
   no sign-in matches the account again;
 * keys are revoked (deactivation already did) and sessions ended;
 * their inbox, email preferences and outbox rows are deleted;
-* @mentions of them in comments show the placeholder (the token keeps the id);
+* @mentions of them in comments and proposal margin comments show the placeholder
+  (the token keeps the id);
 * their ideas, evaluations, comments, votes and audit entries stay, under the
   placeholder; the audit trail keeps its ids.
 
@@ -35,6 +36,7 @@ from app.models.activity import Comment
 from app.models.api_key import ApiKey
 from app.models.base import utcnow
 from app.models.notification import Notification, NotificationPreference, OutboundEmail
+from app.models.proposal import ProposalComment
 from app.models.user import User, UserExternalId, UserIdentity, UserSession
 from app.services import audit
 
@@ -135,17 +137,25 @@ async def anonymise_user(db: AsyncSession, email: str) -> Anonymised:
 
 
 async def _rename_mentions(db: AsyncSession, user: User, placeholder: str) -> int:
-    """Rewrite the label of every ``@[Name](user:<id>)`` token for this user in
-    comments; returns how many comments changed."""
+    """Rewrite the label of every ``@[Name](user:<id>)`` token for this user in the two
+    places mentions live: idea comments and proposal margin comments (contract-phase3
+    3.8, contract-phase4 3.3). Returns how many comments changed."""
     token = f"(user:{user.id})"
     pattern = re.compile(r"@\[[^\[\]\r\n]{1,100}\]\(user:" + re.escape(str(user.id)) + r"\)", re.I)
-    comments = list(
-        await db.scalars(select(Comment).where(func.lower(Comment.body_md).contains(token.lower())))
-    )
+    rows: list[Comment | ProposalComment] = [
+        *await db.scalars(
+            select(Comment).where(func.lower(Comment.body_md).contains(token.lower()))
+        ),
+        *await db.scalars(
+            select(ProposalComment).where(
+                func.lower(ProposalComment.body_md).contains(token.lower())
+            )
+        ),
+    ]
     changed = 0
-    for comment in comments:
-        rewritten = pattern.sub(f"@[{placeholder}]{token}", comment.body_md)
-        if rewritten != comment.body_md:
-            comment.body_md = rewritten
+    for row in rows:
+        rewritten = pattern.sub(f"@[{placeholder}]{token}", row.body_md)
+        if rewritten != row.body_md:
+            row.body_md = rewritten
             changed += 1
     return changed

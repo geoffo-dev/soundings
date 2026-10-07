@@ -269,9 +269,14 @@ Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_in
 (`backend/tests/perf/seed_large.py`: 10k ideas in Big Ideas, Pat Pending
 `perf01@example.com` owes 1,000 evaluations) on :8320, Postgres `p7-perf-pg` on 55436,
 prefix `p7-perf-` (`PERF_PORT`, `PERF_PG_PORT`, `PERF_PREFIX`, `PERF_STATE_DIR`
-override); then `uv run python -m tests.perf.load` in `backend/` (20 people, `--isolated
+override; the SPA gets the image's `.br`/`.gz` twins, `PERF_PRECOMPRESS=0` serves it raw); then `uv run python -m tests.perf.load` in `backend/` (20 people, `--isolated
 N`, `--think 0`), `npm --prefix e2e run perf` (browser timings, 4x CPU throttling) and
 `npm --prefix e2e run perf:bundle` (first-load JavaScript). e2e's `tsc` covers `perf/`.
+Timings in `tests/perf` freeze the test process's heap first (`frozen_heap`), as the API
+does after startup; without it one full garbage collection over earlier tests' objects
+lands on a single sample (a 400 ms "board -score" outlier in a full `-m slow` run).
+Before/after comparisons: run the old commit's `backend/app` (`git archive`) with the
+backend venv on another port against the same database (section 8 of the test plan).
 
 Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000 (and
 `/metrics` on 9090 unless `--reload`), Vite 5173, Playwright 5174, fake agent 8083, e2e

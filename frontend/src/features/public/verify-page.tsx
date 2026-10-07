@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 
 import { useFragmentToken, VERIFICATION_TOKEN } from './fragment-token'
-import { PublicCard, PublicLayout } from './public-layout'
+import { PublicCard, PublicLayout, PublicMessage } from './public-layout'
 
 /**
  * /{slug}/verify#<token> (and the older /verify#<token>; contract-phase4 §3.7):
@@ -56,30 +56,20 @@ export function VerifyPage({ slug }: { slug?: string }) {
     <PublicLayout branding={before} projectName={project.data?.name} width="narrow">
       <PublicCard>
         {invalid ? (
-          <div role={token ? 'alert' : undefined} className="flex flex-col gap-2">
-            <StateIcon>
-              <LinkIcon />
-            </StateIcon>
-            <h1 className="text-xl font-semibold text-primary">
-              This link has expired or isn’t valid
-            </h1>
-            <p className="text-base text-secondary">
-              Confirmation links work for 3 days. Open your private tracking link (shown when you
-              sent the idea) to get a new one, or send the idea again.
-            </p>
-          </div>
+          <PublicMessage
+            role={token ? 'alert' : undefined}
+            icon={<LinkIcon />}
+            title="This link has expired or isn’t valid"
+          >
+            Confirmation links work for 3 days. Open your private tracking link (shown when you sent
+            the idea) to get a new one, or send the idea again.
+          </PublicMessage>
         ) : (
           <>
-            <div className="flex flex-col gap-2">
-              <StateIcon>
-                <MailQuestion />
-              </StateIcon>
-              <h1 className="text-xl font-semibold text-primary">Confirm your email address</h1>
-              <p className="text-base text-secondary">
-                Someone sent an idea and gave this email address. If it was you, confirm it: the
-                team gets your idea, and you get status emails if you asked for them.
-              </p>
-            </div>
+            <PublicMessage icon={<MailQuestion />} title="Confirm your email address">
+              Someone sent an idea and gave this email address. If it was you, confirm it: the team
+              gets your idea, and you get status emails if you asked for them.
+            </PublicMessage>
             {verify.isError && (
               <Callout role="alert" tone="danger" title="That didn’t work">
                 {isApiError(verify.error) && verify.error.status === 429
@@ -103,17 +93,6 @@ export function VerifyPage({ slug }: { slug?: string }) {
         )}
       </PublicCard>
     </PublicLayout>
-  )
-}
-
-function StateIcon({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="flex size-10 items-center justify-center rounded-xl border bg-surface text-muted [&_svg]:size-5"
-    >
-      {children}
-    </span>
   )
 }
 

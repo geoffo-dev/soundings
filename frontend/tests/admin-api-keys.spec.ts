@@ -142,7 +142,10 @@ test('revokes anyone’s key after a confirm that names it; focus moves to the n
   await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
   // The audit log has it (in-app navigation: a page load resets the mock).
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Admin' }).click()
-  await page.getByRole('main').getByRole('link', { name: /^Audit log/ }).click()
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: /^Audit log/ })
+    .click()
   await expect(page.getByText(/revoked API key sdg_J1r4SyncB0b2 of Bob Chen/).first()).toBeVisible()
 })
 
@@ -155,9 +158,7 @@ test('"Sign out everywhere" says keys keep working and links to that person’s 
   const confirm = page.getByRole('alertdialog', { name: 'Sign Bob Chen out everywhere?' })
   await expect(confirm).toContainText('API keys keep working')
   await confirm.getByRole('link', { name: 'Review their keys' }).click()
-  await expect(page).toHaveURL(
-    new RegExp(`/settings/api-keys\\?everyone=1&user_id=${USERS.bob}$`),
-  )
+  await expect(page).toHaveURL(new RegExp(`/settings/api-keys\\?everyone=1&user_id=${USERS.bob}$`))
   await expect(page.getByText('1 key', { exact: true })).toBeVisible()
 })
 

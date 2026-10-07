@@ -88,7 +88,30 @@ export function CommandPalette({
   }, [open])
   const value = search ?? localSearch
   const setValue = onSearchChange ?? setLocalSearch
-  const visibleGroups = groups.filter((group) => group.actions.length > 0)
+  // The first frame after ⌘K is the dialog and its input only; the results mount one frame
+  // later, in one go (a deferred render could be starved by fast typing, and Enter would
+  // find nothing): mounting every item with the dialog was a 250 ms task (perf review B9).
+  // Mounted open, it shows them at once; closing keeps them, so it doesn't shrink as it fades.
+  const [ready, setReady] = useState(open)
+  const [lastOpen, setLastOpen] = useState(open)
+  if (open !== lastOpen) {
+    setLastOpen(open)
+    if (open) setReady(false)
+  }
+  useEffect(() => {
+    if (!open || ready) return
+    let inner = 0
+    // Two frames: the first paints the dialog, the second mounts the results.
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setReady(true))
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [open, ready])
+  const listReady = ready || !open
+  const visibleGroups = listReady ? groups.filter((group) => group.actions.length > 0) : []
   const settled = new Set(
     visibleGroups
       .filter((group) => !group.pending)
@@ -178,7 +201,7 @@ export function CommandPalette({
           <CommandList
             onPointerMove={() => setPicked(true)}
             empty={
-              loading ? undefined : (
+              loading || !listReady ? undefined : (
                 <div className="flex flex-col items-center gap-2">
                   <SearchX aria-hidden="true" className="size-5 text-muted" />
                   <span>No results for “{value}”</span>

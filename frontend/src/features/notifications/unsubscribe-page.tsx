@@ -5,11 +5,10 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { hasErrorCode, isApiError } from '@/api/errors'
 import { useConfirmUnsubscribe, useUnsubscribeInfo } from '@/api/notifications'
 import type { UnsubscribeInfo } from '@/api/types'
-import { Logo } from '@/components/layout/logo'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { PublicCard, PublicLayout, PublicMessage } from '@/features/public/public-layout'
 
 import { unsubscribeSubject } from './preferences'
 
@@ -28,42 +27,44 @@ export function UnsubscribePage({ token }: { token: string | undefined }) {
     !token || (info.isError && isApiError(info.error) && [404, 422].includes(info.error.status))
 
   return (
-    <div className="flex min-h-dvh flex-col items-center bg-background px-4 py-10 sm:justify-center sm:py-16">
-      <main id="main" className="flex w-full max-w-md flex-col gap-6">
-        <Logo className="self-center" />
-        <div className="flex flex-col gap-5 rounded-xl border bg-surface p-5 sm:p-6">
-          {invalid ? (
-            <BrokenLink />
-          ) : info.data && token ? (
-            <Unsubscribe token={token} info={info.data} />
-          ) : info.isError ? (
-            <EmptyState
-              role="alert"
-              size="compact"
-              headingLevel={1}
-              icon={<CloudOff />}
-              title="We couldn’t load this page"
-              description="Check your connection and try again."
-              action={
-                <Button variant="primary" onClick={() => void info.refetch()}>
-                  Try again
-                </Button>
-              }
-            />
-          ) : (
-            <SkeletonGroup label="Loading" className="flex flex-col gap-3">
-              <Skeleton className="h-6 w-3/4" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="mt-2 h-10 w-full rounded-md" />
-            </SkeletonGroup>
-          )}
-        </div>
-        <p className="text-center text-xs text-muted">
+    // The public pages' frame and message layout (UX review m5), in the instance's branding.
+    <PublicLayout
+      branding={null}
+      width="narrow"
+      footer={
+        <p className="text-center text-xs">
           Soundings only emails you about ideas you own, evaluate, follow or are mentioned in.
         </p>
-      </main>
-    </div>
+      }
+    >
+      <PublicCard>
+        {invalid ? (
+          <BrokenLink />
+        ) : info.data && token ? (
+          <Unsubscribe token={token} info={info.data} />
+        ) : info.isError ? (
+          <PublicMessage
+            role="alert"
+            icon={<CloudOff />}
+            title="We couldn’t load this page"
+            action={
+              <Button variant="primary" onClick={() => void info.refetch()}>
+                Try again
+              </Button>
+            }
+          >
+            Check your connection and try again.
+          </PublicMessage>
+        ) : (
+          <SkeletonGroup label="Loading" className="flex flex-col gap-3">
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="mt-2 h-10 w-full rounded-md" />
+          </SkeletonGroup>
+        )}
+      </PublicCard>
+    </PublicLayout>
   )
 }
 
@@ -79,40 +80,26 @@ function SignInToPreferences({ children }: { children: ReactNode }) {
   )
 }
 
-/** The icon above each state's heading. */
-function StateIcon({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="flex size-10 items-center justify-center rounded-xl border bg-surface text-muted [&_svg]:size-5"
-    >
-      {children}
-    </span>
-  )
-}
-
 /**
  * Missing, cut-off, forged or outdated (the secret key changed) links all read
- * the same. Laid out like the page's other states.
+ * the same.
  */
 function BrokenLink() {
   return (
-    <div role="alert" className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <StateIcon>
-          <LinkIcon />
-        </StateIcon>
-        <h1 className="text-xl font-semibold text-primary">This unsubscribe link doesn’t work</h1>
-        <p className="text-base text-secondary">
-          It may be incomplete or no longer valid. Sign in to choose which emails you get.
-        </p>
-      </div>
-      <Button variant="primary" size="lg" asChild>
-        <Link to="/login" search={{ next: PREFERENCES }}>
-          Sign in to your email preferences
-        </Link>
-      </Button>
-    </div>
+    <PublicMessage
+      role="alert"
+      icon={<LinkIcon />}
+      title="This unsubscribe link doesn’t work"
+      action={
+        <Button variant="primary" size="lg" className="w-full" asChild>
+          <Link to="/login" search={{ next: PREFERENCES }}>
+            Sign in to your email preferences
+          </Link>
+        </Button>
+      }
+    >
+      It may be incomplete or no longer valid. Sign in to choose which emails you get.
+    </PublicMessage>
   )
 }
 
@@ -168,15 +155,11 @@ function Unsubscribe({ token, info }: { token: string; info: UnsubscribeInfo }) 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <StateIcon>
-          <MailX />
-        </StateIcon>
-        <h1 className="text-xl font-semibold text-primary">{subject.title}</h1>
-        <p className="text-base text-secondary">
+        <PublicMessage icon={<MailX />} title={subject.title}>
           Soundings will stop emailing{' '}
           <span className="font-medium text-primary">{info.email_hint}</span>
           {subject.when ? ` when ${subject.when}.` : subject.list.length > 0 ? ' about:' : '.'}
-        </p>
+        </PublicMessage>
         {!subject.when && subject.list.length > 0 && (
           <ul className="flex list-disc flex-col gap-0.5 pl-5 text-base text-primary marker:text-muted">
             {subject.list.map((label) => (

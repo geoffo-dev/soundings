@@ -230,7 +230,10 @@ const SCREENS: Screen[] = [
     open: async (page, data) => {
       await page.goto(`/ideas/${data.doneKey}`)
       await expect(page.locator('article[id^="research-note-"]')).toBeVisible()
+      // Runs that did their job fold under History (Phase 7).
+      await page.getByRole('button', { name: /^History \(\d+\)$/ }).click()
       await page
+        .getByRole('list', { name: 'Earlier AI runs' })
         .locator('article[id^="ai-run-"]')
         .first()
         .getByRole('button', { name: 'Steps' })

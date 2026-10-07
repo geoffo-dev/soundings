@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Final
+from typing import Any, Final
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.authz import ASSIGNABLE_ROLES, viewable_ideas
 from app.domain.principal import Principal
@@ -38,7 +39,7 @@ from app.schemas.work import (
     WorkOwnedGroup,
     WorkRecentIdea,
 )
-from app.services.board import LIFECYCLE, Sort, count_ideas, fetch_page
+from app.services.board import LIFECYCLE, Sort, count_ideas, fetch_page, pages_by_status
 from app.services.feed import latest_activity
 from app.services.refs import idea_ref
 from app.services.summaries import IdeaRow, idea_facts, load_context, summary_fields, user_refs
@@ -117,13 +118,49 @@ def _due_after(cursor: str) -> ColumnElement[bool]:
     )
 
 
+_DUE_IDEA_COLUMNS: Final = load_only(
+    Idea.id,
+    Idea.project_id,
+    Idea.number,
+    Idea.title,
+    Idea.status,
+    Idea.resolution,
+    Idea.owner_id,
+    Idea.evaluation_due_at,
+    raiseload=True,
+)
+_DUE_PROJECT_COLUMNS: Final = load_only(
+    Project.id, Project.slug, Project.key, Project.name, Project.status_labels, raiseload=True
+)
+"""What an evaluation due shows (``idea_ref``, owner, due date): not the description."""
+
+
 async def _evaluations_due(
-    db: AsyncSession, principal: Principal, *, cursor: str | None, limit: int
-) -> tuple[list[WorkEvaluation], str | None]:
-    """One page of the evaluations you owe: overdue first, then soonest due, undated last."""
+    db: AsyncSession,
+    principal: Principal,
+    *,
+    cursor: str | None,
+    limit: int,
+    with_counts: bool = False,
+) -> tuple[list[WorkEvaluation], str | None, tuple[int, int]]:
+    """One page of the evaluations you owe: overdue first, then soonest due, undated
+    last. ``with_counts`` (the first page only) also counts all of them and the overdue
+    ones in the same statement (window aggregates over the rows the sort reads anyway);
+    otherwise the counts are ``(0, 0)``."""
+    if with_counts and cursor:
+        raise ValueError("counts come with the first page")
     me = principal.user_id
-    statement = _due_joins(select(Idea, Project, Evaluation.status), me).where(
-        *_due_where(principal)
+    now = utcnow()
+    columns: list[Any] = [Idea, Project, Evaluation.status]
+    if with_counts:
+        columns += [
+            func.count().over().label("due_total"),
+            func.count().filter(Idea.evaluation_due_at < now).over().label("overdue_total"),
+        ]
+    statement = (
+        _due_joins(select(*columns), me)
+        .where(*_due_where(principal))
+        .options(_DUE_IDEA_COLUMNS, _DUE_PROJECT_COLUMNS)
     )
     if cursor:
         statement = statement.where(_due_after(cursor))
@@ -132,21 +169,26 @@ async def _evaluations_due(
             statement.order_by(Idea.evaluation_due_at.asc().nulls_last(), Idea.id).limit(limit + 1)
         )
     ).all()
+    counts = (
+        (int(rows[0].due_total), int(rows[0].overdue_total)) if with_counts and rows else (0, 0)
+    )
     page, next_cursor = slice_page(
         rows, limit, lambda row: {"due": row[0].evaluation_due_at, "id": row[0].id}
     )
-    owners = await user_refs(db, [idea.owner_id for idea, _, _ in page])
-    now = utcnow()
-    return [
-        WorkEvaluation(
-            idea=idea_ref(idea, project),
-            owner=owners.get(idea.owner_id) if idea.owner_id else None,
-            due_at=idea.evaluation_due_at,
-            overdue=idea.evaluation_due_at is not None and idea.evaluation_due_at < now,
-            state="draft" if status is EvaluationStatus.DRAFT else "invited",
+    owners = await user_refs(db, [row[0].owner_id for row in page])
+    items = []
+    for row in page:
+        idea, project, status = row[0], row[1], row[2]
+        items.append(
+            WorkEvaluation(
+                idea=idea_ref(idea, project),
+                owner=owners.get(idea.owner_id) if idea.owner_id else None,
+                due_at=idea.evaluation_due_at,
+                overdue=idea.evaluation_due_at is not None and idea.evaluation_due_at < now,
+                state="draft" if status is EvaluationStatus.DRAFT else "invited",
+            )
         )
-        for idea, project, status in page
-    ], next_cursor
+    return items, next_cursor, counts
 
 
 async def _due_counts(db: AsyncSession, principal: Principal) -> tuple[int, int]:
@@ -187,30 +229,24 @@ async def list_evaluations_due(
     db: AsyncSession, principal: Principal, *, cursor: str | None, limit: int
 ) -> WorkEvaluationPage:
     """``GET /me/evaluations-due``: My work's list of evaluations due, page by page."""
-    items, next_cursor = await _evaluations_due(db, principal, cursor=cursor, limit=limit)
+    items, next_cursor, _ = await _evaluations_due(db, principal, cursor=cursor, limit=limit)
     return WorkEvaluationPage(items=items, next_cursor=next_cursor)
 
 
 async def get_my_work(db: AsyncSession, principal: Principal) -> Work:
-    due, due_next_cursor = await _evaluations_due(
-        db, principal, cursor=None, limit=EVALUATIONS_DUE_PAGE
+    # The first 50 and how many there are in all (and overdue), in one statement.
+    due, due_next_cursor, due_total = await _evaluations_due(
+        db, principal, cursor=None, limit=EVALUATIONS_DUE_PAGE, with_counts=True
     )
-    due_total = await _due_counts(db, principal)  # always: the same statements for 5 or 1,000
 
-    owned_where = _owned(principal)
     owned_counts = await _owned_counts(db, principal)
     groups: list[tuple[IdeaStatus, list[IdeaRow], str | None]] = []
-    for status in LIFECYCLE:
-        if owned_counts.get(status):
-            rows, next_cursor = await fetch_page(
-                db,
-                principal,
-                [*owned_where, Idea.status == status],
-                _RECENT_FIRST,
-                cursor=None,
-                limit=OWNED_GROUP_SIZE,
-            )
-            groups.append((status, rows, next_cursor))
+    if owned_counts:
+        # Every group's first page in one statement, as the board's columns (P7 perf).
+        pages = await pages_by_status(
+            db, principal, _owned(principal), _RECENT_FIRST, OWNED_GROUP_SIZE
+        )
+        groups = [(status, *pages[status]) for status in LIFECYCLE if owned_counts.get(status)]
 
     my_projects = Idea.project_id.in_(
         select(_roles.c.project_id).where(_roles.c.user_id == principal.user_id)

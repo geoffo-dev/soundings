@@ -146,7 +146,7 @@ function PreviewFrame({
 /** The logo at its own proportions (wide logos stay wide), or the mark. */
 function PreviewLogo({ url }: { url: string | null }) {
   return url ? (
-    <img src={url} alt="" className="h-5 w-auto max-w-24 shrink-0 logo-plate object-contain" />
+    <img src={url} alt="" className="logo-plate h-5 w-auto max-w-24 shrink-0 object-contain" />
   ) : (
     <LogoMark src={null} className="size-5" />
   )

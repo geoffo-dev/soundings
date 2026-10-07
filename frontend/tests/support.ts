@@ -48,6 +48,20 @@ export const test = base.extend<{ signedInAs: string | null }>({
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 
+/**
+ * axe's best-practice rules (headings in order, landmarks, one h1, …), every impact.
+ * They pass on the main screens without overlays; Radix menus and dialogs are
+ * portalled outside the landmarks (`region`), so open overlays aren't checked here.
+ */
+export async function bestPracticeViolations(page: Page) {
+  const results = await new AxeBuilder({ page }).withTags(['best-practice']).analyze()
+  return results.violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    targets: violation.nodes.slice(0, 5).map((node) => node.target.join(' ')),
+  }))
+}
+
 /** axe violations of impact serious or critical (the bar: none). */
 export async function seriousViolations(page: Page) {
   const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()

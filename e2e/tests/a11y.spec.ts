@@ -40,7 +40,7 @@ const SCREENS: Screen[] = [
     as: 'alice',
     open: async (page) => {
       await page.goto('/p/customer-innovation?view=board')
-      await expect(page.getByRole('link', { name: /^CUST-11\b/ })).toBeVisible()
+      await expect(page.getByRole('link', { name: /\(CUST-11\)$/ })).toBeVisible()
     },
   },
   {

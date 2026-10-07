@@ -13,7 +13,8 @@
 #
 # Defaults (PERF_* override): app http://localhost:8320, Postgres 127.0.0.1:55436,
 # containers p7-perf-*, state (SPA build, logs, pids) in e2e/perf/.stack. No SMTP (the
-# worker still runs: memory, schedules). PERF_SCALE=0.1 seeds a tenth of the ideas.
+# worker still runs: memory, schedules). PERF_SCALE=0.1 seeds a tenth of the ideas. The
+# SPA build gets the image's .br/.gz twins (PERF_PRECOMPRESS=0 leaves it raw).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,10 +58,19 @@ seed_large() {
     -c "SELECT pg_stat_statements_reset()" >/dev/null
 }
 
+precompress() {
+  # As the image does (performance review B4): .br/.gz twins next to the SPA build, which
+  # the API serves to browsers that accept them. PERF_PRECOMPRESS=0 measures it raw.
+  [ "${PERF_PRECOMPRESS:-1}" = "1" ] || return 0
+  log "precompressing the SPA build (scripts/precompress-assets.mjs)"
+  node "$repo/scripts/precompress-assets.mjs" "$E2E_STATE_DIR/dist" >&2
+}
+
 case "${1:-up}" in
   up)
     start_pg
     "$repo/e2e/scripts/start-stack.sh"
+    precompress
     seed_large
     log "ready: http://localhost:${E2E_PORT} (Big Ideas: /p/big-ideas)"
     ;;

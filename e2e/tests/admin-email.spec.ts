@@ -51,10 +51,9 @@ test('AE-01: shows the settings in effect, credentials never; only platform admi
   const config = await alice.emailConfig()
   await signIn(page, 'alice')
   await openEmailPage(page)
+  // The admin sections are listed under Admin in the sidebar (Phase 7).
   await expect(
-    page
-      .getByRole('navigation', { name: 'Settings sections' })
-      .getByRole('link', { name: 'Email' }),
+    page.getByRole('list', { name: 'Admin sections' }).getByRole('link', { name: 'Email' }),
   ).toHaveAttribute('aria-current', 'page')
   await expect(page.getByText('Email is on')).toBeVisible()
   const server = page.locator('#server')
