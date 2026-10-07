@@ -69,6 +69,12 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
     return (
       <Command
         label="Close as"
+        // Starts on the current resolution: Enter right away changes nothing.
+        defaultValue={
+          idea.status === 'closed' && idea.resolution
+            ? statusLabel('closed', idea.resolution)
+            : undefined
+        }
         className="border-t border-subtle"
         onKeyDown={(event) => {
           if (event.key === 'Backspace' && !search) {
@@ -126,7 +132,12 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <Command label="Status" className="border-t border-subtle">
+    // The highlight starts on the current status, so an Enter straight away changes nothing.
+    <Command
+      label="Status"
+      defaultValue={statusLabel(idea.status)}
+      className="border-t border-subtle"
+    >
       <CommandInput
         value={search}
         onValueChange={setSearch}

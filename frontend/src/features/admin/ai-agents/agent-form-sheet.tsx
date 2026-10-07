@@ -342,7 +342,7 @@ function AgentForm({
                 <label
                   key={protocol}
                   htmlFor={`agent-protocol-${protocol}`}
-                  className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors hover:bg-subtle has-[[data-state=checked]]:border-accent"
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors hover:bg-subtle has-[[data-state=checked]]:border-accent-control"
                 >
                   <RadioGroupItem
                     id={`agent-protocol-${protocol}`}

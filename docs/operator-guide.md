@@ -1,7 +1,6 @@
 # Soundings operator guide
 
-> Filled in phase by phase (noted in brackets) and completed in Phase 7; headings without
-> text are still to come.
+> Filled in phase by phase (noted in brackets) and completed in Phase 7.
 > Audience: whoever installs and runs Soundings on Kubernetes. The Helm chart's own
 > reference is `deploy/helm/README.md` and `values.yaml`; this guide explains choices
 > and procedures.
@@ -60,6 +59,33 @@ Hyperlegible) and IBM Plex Mono for code ship inside the app (`app/assets/fonts/
 in the SPA bundle; PDFs embed subsets of them, and emails name them first in a system
 font stack (mail clients use their own fonts; nothing is downloaded). There is no way to
 add a font: the set is fixed so that every surface can render it offline.
+
+### Running the image without Helm [Phase 7]
+
+The image starts in **production** mode (`SOUNDINGS_ENVIRONMENT=production` is set in
+it): no dev login, `Secure` `__Host-` cookies, exception messages redacted from logs,
+`/metrics` only on its own port, the API's OpenAPI document and Swagger UI only for
+signed-in callers, and a refusal to start with a weak or missing signing key. Outside
+Kubernetes (Docker, Compose, Nomad, a VM) give it at least:
+
+| Variable | What |
+|---|---|
+| `SOUNDINGS_DATABASE_URL` | `postgresql://user@host:5432/db` (and `SOUNDINGS_DATABASE_PASSWORD`, so the password needn't be URL-encoded). The role should own its database and not be a superuser. |
+| `SOUNDINGS_SECRET_KEY` | 32+ random characters (`openssl rand -base64 48`): signs sessions' sealed cookies, unsubscribe and tracking links, ALTCHA challenges. Keep it stable: changing it invalidates outstanding links. |
+| `SOUNDINGS_BASE_URLS` | Every origin people use, comma-separated (`https://ideas.example.com`); other `Host`s get 400. |
+| `SOUNDINGS_TRUSTED_PROXIES` | Your reverse proxy's address(es); the default trusts the private ranges, which is only safe if nothing else can reach the container. |
+| sign-in | `SOUNDINGS_OIDC_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET`, or the break-glass admin (`SOUNDINGS_BREAK_GLASS_ENABLED=true`, `_USERNAME`, `_PASSWORD` of 16+ characters). |
+| `SOUNDINGS_SMTP_*` | Optional: email (worker only). |
+
+Run `soundings migrate` once per upgrade (or `wait-for-db --timeout 120 && migrate`
+before the API), then `soundings api` and `soundings worker` (the same image, the
+same variables). Run them like the chart does: `--read-only --tmpfs /tmp`, as the
+image's user 10001, with no added capabilities. `soundings api` and `soundings worker`
+refuse to start when `SOUNDINGS_ENVIRONMENT` is unset and the signing key is the
+built-in development one (only a hand-built environment without the image's setting can
+get there). Development mode (the dev login, demo data with `soundings seed`) must be
+asked for with `SOUNDINGS_ENVIRONMENT=development`, as `make demo` does: never on a
+shared or reachable machine.
 
 ## Trying it out [Phase 1]
 
@@ -129,6 +155,18 @@ uninstall. For anything you back up, set `postgresql.enabled=false` and
 `externalDatabase.*` (for CloudNativePG, point `existingSecret` at the cluster's
 `<cluster>-app` Secret; `sslmode` defaults to `require`).
 
+**The app's database role is not a superuser** [Phase 7]. On a fresh volume the bundled
+Postgres creates the bootstrap superuser `postgres` (password under `admin-password` in
+its Secret, for maintenance with `kubectl exec ... psql -U postgres`; the app never uses
+it) and the app's login role `postgresql.auth.username` (default `soundings`), which owns
+the database and its `public` schema. That is all migrations, the job queue's schema and
+the `pg_trgm` extension (a trusted extension) need; `COPY ... PROGRAM` and other
+superuser powers are out of the app's reach. A volume initialised by an earlier chart
+keeps its roles (the app's role stays the bootstrap superuser, which PostgreSQL can't
+demote): to harden one, dump the database, reinstall with a new volume and restore as
+the new owner. With an external database, give the app a role of the same kind: owner
+of its database, not a superuser, and `CREATE` on the `public` schema.
+
 ### Ingress, TLS and multiple hostnames
 
 `baseUrls` lists every origin people use (`scheme://host[:port]`, no path); the first
@@ -144,6 +182,38 @@ Request bodies over 1 MiB get 413 `content_too_large` from the app itself, befor
 authentication and without buffering them. ingress-nginx enforces the same 1 MiB by
 default; Traefik and Gateway API need their own limit if you want one at the edge (the
 [chart README](../deploy/helm/README.md#security) shows how).
+
+### Client addresses behind the ingress [Phase 7]
+
+Every throttle (sign-in and break-glass attempts, the public form, ALTCHA challenges,
+tracking and confirmation links, refused API keys) keys on the client's address. The app
+takes it from `X-Forwarded-For`, but only from a peer listed in `trustedProxies`, and
+only `trustedProxyHops` entries from the right. So two settings must agree:
+
+- `trustedProxies` names who may vouch for an address (default: the private ranges
+  pods usually get, so any ingress controller works out of the box);
+- `networkPolicy.ingressFrom` says who may reach the API at all.
+
+While `ingressFrom` is empty, **any pod in the cluster** can connect to the API directly,
+and with the default `trustedProxies` it counts as a proxy: it can put any address in
+`X-Forwarded-For` and get a fresh throttle budget with every request. `NOTES.txt` warns
+whenever that is the case. Set `ingressFrom` to your ingress controller's namespace (as
+in `deploy/helm/ci/production-values.yaml`) and, if you can, narrow `trustedProxies` to
+its pod range. The two stay separate settings on purpose: a NetworkPolicy peer is a
+selector, `trustedProxies` an address range, and neither can be derived from the other.
+
+### Compression [Phase 7]
+
+The app compresses on its own: the image carries Brotli and gzip copies of the SPA's
+files (made at build time, served with `Content-Encoding` and `Vary: Accept-Encoding`;
+the 1 MB of JavaScript goes out as about 300 kB), and `GET` JSON responses of 1 KB or
+more are gzipped for clients that accept it (the board of a 10k-idea project: 213 kB
+raw). A response the app marks `Cache-Control: no-store` *by itself* (a new API key or
+an agent's key, shown once) is never compressed, so a secret is never in a compressed
+body next to text an attacker chose (BREACH); session and CSRF tokens are cookies, never
+in a body. You don't need compression at the ingress; if you turn it on (ingress-nginx
+`use-gzip`, Traefik's `Compress` middleware), exclude `text/event-stream`, which the AI
+run progress streams.
 
 ### `values.schema.json` validation and `NOTES.txt`
 
@@ -170,6 +240,13 @@ hour and 8 hours), and
 as soon as its sign-in method stops being available; signing in again always issues a
 new token. The cookies are `Secure` in production; `SOUNDINGS_COOKIE_SECURE` (in
 `extraEnv`) overrides that for unusual setups, but `false` is refused in production.
+
+A signed-in person may make at most 120 changes a minute (posts, edits, votes, moves),
+per API pod, across their sessions; past that the API answers 429 `rate_limited` with
+`Retry-After` and the SPA asks them to wait [Phase 7]. Reads are not limited. API keys
+have their own limit (30 changes a minute). `SOUNDINGS_SESSION_WRITES_PER_MINUTE` (in
+`extraEnv`) changes it; the e2e stack raises it because its specs set up data through the
+API. Expired sessions are deleted every hour.
 
 ## Sign-in and access [Phase 2]
 
@@ -1036,7 +1113,9 @@ Prometheus metrics are served **only on their own port**, `metrics.port` (defaul
 9090; `SOUNDINGS_METRICS_PORT`), exposed as the Service port `metrics`. The ingress and
 HTTPRoute route the `http` port only, so metrics are never public. Scrape them with
 `serviceMonitor.enabled=true` (Prometheus Operator) or your own scrape config, and allow
-the scraper with `networkPolicy.metricsFrom` when network policies are on.
+the scraper with `networkPolicy.metricsFrom` when network policies are on: since Phase 7
+nobody else may connect to the metrics port by default (route counts and timings say
+how the app is used).
 `otel.endpoint` sends OTLP/HTTP traces.
 
 ### Logs (JSON, no PII)
@@ -1046,17 +1125,43 @@ incoming well-formed one is reused), which is also in the log line and in proble
 responses, so a user's error report can be matched to the log.
 
 ### Backups and restore
+
+Everything Soundings keeps is in PostgreSQL: ideas, evaluations, proposals, the audit
+log, the email outbox and the job queue, and the branding images. Back up the database
+and the chart's Secret (`<release>-soundings`: the signing key; without it sealed
+values, unsubscribe and tracking links stop working, and people sign in again).
+
+- External or CloudNativePG database: use its backups (point-in-time recovery).
+- Bundled Postgres: a nightly `pg_dump` is enough for its size, e.g.
+  `kubectl -n soundings exec sts/soundings-postgresql -- pg_dump -U postgres -Fc soundings > soundings.dump`;
+  restore into an empty database with `pg_restore -U postgres --no-owner --role=soundings -d soundings`.
+
+Restore with the API and worker scaled to 0, then start them: `soundings migrate` (the
+init containers or the hook) brings an older dump's schema up to date. Erased data (a
+public submitter's details, an anonymised account) is in backups until they expire.
+
 ### Scaling: replicas, HPA, PodDisruptionBudget
 
-The worker's scaling is described under [Worker and scaling](#worker-and-scaling).
+Each API pod runs **one** uvicorn worker (an event loop plus a warm PDF renderer of
+about 190 MB): scale with `api.replicas` or `autoscaling.enabled` (CPU, 2 to 6 replicas
+by default), not with more workers per pod [Phase 7: measured at 10k ideas, two workers
+per pod cut the median screen time by a third but not the tail, and doubled memory].
+One pod served 20 people at once with reads at p95 under 150 ms one at a time and 262
+ms under load (docs/test-plans/performance.md). The throttles (sign-in, public form,
+keys, writes) are per pod, so with N replicas they allow N times as much.
+`podDisruptionBudget` (on, `maxUnavailable: 1`) keeps one API pod during node drains
+without ever blocking them. The worker's scaling is described under
+[Worker and scaling](#worker-and-scaling).
 ### Security: Pod Security `restricted`, NetworkPolicy, secrets
 
 `networkPolicy.enabled` is **on by default**: the bundled Postgres accepts only this
 release's pods, the worker accepts nothing, and the API's HTTP port accepts this
 release's pods plus `networkPolicy.ingressFrom` (any source while that is empty; the
-NOTES remind you). Set `ingressFrom` to your ingress controller's namespace so other
+NOTES warn you, see [Client addresses behind the ingress](#client-addresses-behind-the-ingress-phase-7)).
+Set `ingressFrom` to your ingress controller's namespace so other
 pods can't reach the API directly with an `X-Forwarded-For` of their choosing, and
-`metricsFrom` to your Prometheus. The policies are ignored on a CNI without
+`metricsFrom` to your Prometheus: while it is empty only this release's own pods may
+scrape the metrics port [Phase 7]. The policies are ignored on a CNI without
 NetworkPolicy support (k3s's default flannel enforces them through its network policy
 controller).
 
@@ -1075,6 +1180,18 @@ kept indefinitely except `mcp.call`, which the worker deletes after 90 days
 ([above](#audit-and-logs)).
 
 ### Troubleshooting
+
+| Symptom | Look at |
+|---|---|
+| A pod won't start: `SOUNDINGS_SECRET_KEY must be set to 32+ random characters` | Production refuses the development key: set `secretKey.existingSecret`, or let the chart generate one (not with `--dry-run`, Argo CD or Flux: [Upgrades](#upgrades-and-migrations-pre-upgrade-hook-argo-cd-presync)). |
+| `soundings: refusing to start. SOUNDINGS_ENVIRONMENT is not set ...` | A hand-built environment without the image's setting: set `SOUNDINGS_ENVIRONMENT` ([Running the image without Helm](#running-the-image-without-helm-phase-7)). |
+| 400 `invalid_host` | The host isn't in `baseUrls`. |
+| Everyone shares one rate limit, or a limit never applies | `trustedProxies` / `trustedProxyHops` ([Client addresses behind the ingress](#client-addresses-behind-the-ingress-phase-7)). |
+| 429 `rate_limited` for a person | More than 120 changes a minute ([Sessions](#sessions)). |
+| Sign-in loops or `login_expired` | The issuer URL must be the same for browsers and pods; cookies need `https` in production. |
+| No email | Admin settings → Email (settings in effect, the outbox, test email); a running worker. |
+| AI runs fail | [Troubleshooting runs](#troubleshooting-runs). |
+| Anything else | The response's `request_id` is in the API's log line for that request. |
 
 ## Data protection [Phase 4, 7]
 
@@ -1103,4 +1220,47 @@ recorded as `submission.erase` in the audit log:
 Personal data someone typed into the idea's own text is removed by editing the idea;
 rejecting a held idea deletes it entirely. The retention periods are constants. Database
 backups keep erased data until they expire, so set your backup retention accordingly.
-### What is stored about users
+
+### What is stored about users [Phase 7]
+
+About the people who sign in (staff accounts), Soundings keeps what it needs to show who
+did what and to let them in, and nothing it doesn't (UK GDPR, data minimisation). No IP
+address is stored anywhere; logs carry ids and outcome codes, never names, addresses,
+tokens or text.
+
+| Where | What | Kept |
+|---|---|---|
+| `users` | email address, display name, platform-admin and active flags, when last seen | until anonymised (deactivating keeps it, so their work still names them) |
+| `user_identities` | the IdP's issuer and subject (`sub`), last SSO sign-in | until unlinked (Admin settings → Users) or anonymised |
+| `user_external_ids` | ids from an IdP claim (an employee number) | until changed or anonymised |
+| `user_sessions` | SHA-256 of the session token, the CSRF token, the sign-in method, the ID token sealed with the signing key (for the IdP's sign-out), a browser and OS summary ("Firefox on Linux") | until sign-out; once expired (12 h idle, 24 h at most) deleted hourly |
+| `group_memberships`, `project_members` | groups (synced from the IdP or added by hand) and project roles | while they apply |
+| `api_keys` | key name, lookup id, SHA-256 of the key, scopes, last use; revoked keys stay for the audit trail | for good (revoked at deactivation) |
+| `notifications`, `notification_preferences` | their inbox and email choices | inbox 90 days; preferences until anonymised |
+| `outbound_email` | emails to them, by user id (the address is read when sending, not stored) | sent 30 days, failed 90 days |
+| ideas, comments, evaluations, votes, watches, proposals, suggestions, `activity_events`, `ai_runs` | what they wrote and did, by user id; @mentions of them carry their name in the comment text | the organisation's record: kept with the idea (deleted with it) |
+| `audit_log` | the actor's and target's ids, the action, ids and field names (never names, emails, tokens or claims) | for good, except `mcp.call` entries (90 days) |
+
+**When someone leaves:** deactivate them in Admin settings → Users (signs them out,
+revokes their keys, stops their notifications; their work keeps their name). To erase
+their personal data (an erasure request, or your retention policy), run, once
+deactivated:
+
+```bash
+kubectl -n soundings exec deploy/soundings-api -- soundings anonymise-user lee@example.com
+```
+
+It renames the account "Former user <8 characters>" with an undeliverable placeholder
+address, deletes their sign-in identities, external ids, sessions, inbox, email
+preferences and outbox rows, revokes any key still active, and renames @mentions of
+them in comments; ideas, evaluations, comments and audit entries stay, under the
+placeholder. It records one `user.anonymise` audit entry (counts only, no actor) and
+can't be undone. It refuses an active account, the break-glass account and AI agents'
+service accounts (disable or delete the agent instead). Remove the person from your IdP
+too: with `oidc.autoCreateUsers` on, their next SSO sign-in would create a new account.
+Text they typed into ideas or comments that names them is edited like any other text;
+backups keep the old rows until they expire.
+
+**Right of access:** Admin settings → Users shows the account, its identities, groups,
+projects and keys; Admin settings → Audit log, filtered by the person, shows what they
+did as an administrator.

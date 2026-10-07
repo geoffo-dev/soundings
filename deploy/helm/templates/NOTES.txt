@@ -85,18 +85,29 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    pre-install/pre-upgrade hook Job ({{ $fullname }}-migrate).
 {{- end }}
 
-{{- if not .Values.networkPolicy.enabled }}
+{{- /* Security review P7 L1: trusting private ranges is only safe while nothing but the
+ingress controller can reach the API. */ -}}
+{{- $privateProxies := list -}}
+{{- range .Values.trustedProxies -}}
+{{- if regexMatch "^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.|0\\.0\\.0\\.0/0|::/0|f[cd][0-9a-f]{2}:)" . -}}
+{{- $privateProxies = append $privateProxies . -}}
+{{- end -}}
+{{- end -}}
+{{- if or (not .Values.networkPolicy.enabled) (not .Values.networkPolicy.ingressFrom) }}
 
 5. Network
-   networkPolicy.enabled is false: any pod in the cluster can reach the API and the
-   bundled database, and send the API its own X-Forwarded-For.
-{{- else if not .Values.networkPolicy.ingressFrom }}
-
-5. Network
-   networkPolicy.ingressFrom is empty: any pod in the cluster can reach the API directly
-   and send its own X-Forwarded-For (the client address of the sign-in throttles and the
-   public form's limit). Set it to your ingress controller's namespace, and narrow
-   trustedProxies to its pods.
+{{- $who := ternary "networkPolicy.ingressFrom is empty" "networkPolicy.enabled is false" .Values.networkPolicy.enabled }}
+{{- if $privateProxies }}
+   WARNING: {{ $who }}, so any pod in the cluster can reach the API
+   directly, and trustedProxies trusts private ranges ({{ join ", " $privateProxies }}):
+   such a pod chooses its own client address with X-Forwarded-For, the key of the
+   sign-in, public form, API key and link throttles.
+{{- else }}
+   {{ $who }}: any pod in the cluster can reach the API directly.
+{{- end }}
+   Set networkPolicy.ingressFrom to your ingress controller's namespace (as in
+   deploy/helm/ci/production-values.yaml) and narrow trustedProxies to its pods
+   (operator guide, "Client addresses behind the ingress").
 {{- end }}
 {{- if .Values.features.publicSubmission }}
 

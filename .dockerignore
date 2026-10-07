@@ -6,6 +6,7 @@
 !backend/uv.lock
 !backend/README.md
 !backend/app/
+!scripts/precompress-assets.mjs
 
 !frontend/
 frontend/node_modules/

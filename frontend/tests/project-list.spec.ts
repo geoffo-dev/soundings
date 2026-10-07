@@ -172,6 +172,37 @@ test('10,000 ideas: rows are virtualised and pages load as you scroll', async ({
   expect(await rows(page).count()).toBeLessThan(80)
 })
 
+test('a new search, filter or sort starts the list from the top (10,000 ideas)', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('soundings-mock-dataset', 'large'))
+  await openList(page)
+  const scroller = page.locator('[data-slot="table-container"]')
+  for (let i = 0; i < 8; i += 1) {
+    await scroller.evaluate((node) => node.scrollBy({ top: node.scrollHeight }))
+    await page.waitForTimeout(150)
+  }
+  expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(5000)
+
+  await page.getByRole('searchbox', { name: 'Search ideas' }).fill('automate')
+  await expect(page).toHaveURL(/q=automate/)
+  await expect(scroller).not.toHaveAttribute('aria-busy', 'true')
+  await page.waitForTimeout(300)
+  expect(await scroller.evaluate((node) => node.scrollTop)).toBe(0)
+  await expect(rows(page).first()).toHaveAttribute('aria-rowindex', '2')
+
+  // Scrolled again, then sorted: the top again.
+  for (let i = 0; i < 4; i += 1) {
+    await scroller.evaluate((node) => node.scrollBy({ top: node.scrollHeight }))
+    await page.waitForTimeout(150)
+  }
+  expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(1000)
+  await page.getByRole('button', { name: 'Votes' }).click()
+  await expect(page).toHaveURL(/sort=/)
+  await page.waitForTimeout(300)
+  expect(await scroller.evaluate((node) => node.scrollTop)).toBe(0)
+})
+
 test('shows an error with a retry when the ideas fail to load', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('soundings-mock-fail', '/ideas'))
   await openList(page)

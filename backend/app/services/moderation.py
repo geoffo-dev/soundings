@@ -60,6 +60,7 @@ __all__ = [
     "approve",
     "awaiting_moderation",
     "form_settings",
+    "may_moderate",
     "moderation_queue",
     "reject",
     "update_form_settings",
@@ -168,15 +169,20 @@ _HELD: Final = IdeaFacts(id=UUID(int=0), status=IdeaStatus.NEW, held_for=HoldRea
 """Any idea held for moderation in the project, for deciding at project level."""
 
 
-def _require_moderator(principal: Principal, resource: Resource) -> None:
-    """``idea.moderate`` for the project's held ideas (project and platform admins);
-    everyone else who can see the project gets 403. Listing is a read, so the archived
-    check (a write condition) doesn't apply to it."""
+def may_moderate(principal: Principal, resource: Resource) -> bool:
+    """``idea.moderate`` for the project's held ideas (project and platform admins).
+    Listing and counting are reads, so the archived check (a write condition) doesn't
+    apply. Also decides who sees ``ProjectSummary.pending_moderation_count``."""
     assert resource.project is not None  # noqa: S101 - load_project sets it
     probe = resource.replace(
         project=dataclasses.replace(resource.project, archived=False), idea=_HELD
     )
-    if not can(principal, Rule.IDEA_MODERATE, probe):
+    return can(principal, Rule.IDEA_MODERATE, probe)
+
+
+def _require_moderator(principal: Principal, resource: Resource) -> None:
+    """:func:`may_moderate`, or 403 for everyone else who can see the project."""
+    if not may_moderate(principal, resource):
         raise ProblemError(
             403, "forbidden", detail="Only the project's admins review public ideas."
         )

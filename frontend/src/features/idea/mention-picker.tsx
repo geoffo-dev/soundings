@@ -178,7 +178,9 @@ export function useMentionPicker({
                 onClick={() => choose(person)}
                 className={cn(
                   'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm',
-                  selected ? 'bg-subtle-hover text-primary' : 'text-secondary hover:bg-subtle',
+                  selected
+                    ? 'bg-subtle-hover text-primary highlight-ring'
+                    : 'text-secondary hover:bg-subtle',
                 )}
               >
                 <Avatar name={person.display_name} src={person.avatar_url} size="xs" decorative />

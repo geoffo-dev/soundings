@@ -8,7 +8,7 @@ export const Route = createFileRoute('/_app/settings/_admin/users')({
   validateSearch: validateUsersSearch,
   // A loader crumb (not staticData): it is only shown once the admin check passed.
   loader: () => ({ crumb: 'Users' }),
-  head: () => ({ meta: [{ title: 'Users · Settings · Soundings' }] }),
+  head: () => ({ meta: [{ title: 'Users · Admin · Soundings' }] }),
   component: UsersRoute,
 })
 

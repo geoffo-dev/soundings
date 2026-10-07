@@ -12,7 +12,8 @@ import { expect, seriousViolations, test, USERS } from './support'
 const column = (page: Page, label: string) =>
   page.getByRole('region', { name: new RegExp(`^${label}\\b`) })
 const card = (scope: Page | Locator, key: string) =>
-  scope.getByRole('link', { name: new RegExp(`^${key}\\b`) })
+  // Cards are named "Title (KEY)".
+  scope.getByRole('link', { name: new RegExp(`\\(${key}\\)$`) })
 const announcer = (page: Page) => page.locator('[id^="DndLiveRegion"]')
 const toast = (page: Page, text: string) => page.locator('[data-sonner-toast]', { hasText: text })
 

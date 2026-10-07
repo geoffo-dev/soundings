@@ -228,11 +228,7 @@ async def still_allowed(
             live = (await reload_api_key(db, principal.api_key_id, settings=settings)).principal
         else:
             token = read_cookie(request, settings, SESSION_COOKIE)
-            found = (
-                await sessions.resolve_session(db, token, settings=settings, touch=False)
-                if token
-                else None
-            )
+            found = await sessions.resolve_session(db, token, settings=settings) if token else None
             if found is not None and found[1].id == principal.user_id:
                 row, user = found
                 live = Principal(

@@ -36,8 +36,10 @@ export interface PeopleListProps {
   placeholder?: string
   /** Label for the search field and the list. */
   label: string
-  /** Extra rows above the people (e.g. "Remove owner"), hidden while searching. */
+  /** Extra rows above the people, hidden while searching. */
   before?: ReactNode
+  /** Extra rows below the people (e.g. "Remove owner"), hidden while searching. */
+  after?: ReactNode
 }
 
 /**
@@ -53,6 +55,7 @@ export function PeopleList({
   placeholder = 'Search people…',
   label,
   before,
+  after,
 }: PeopleListProps) {
   const [search, setSearch] = useState('')
   const q = useDebouncedValue(search, 150)
@@ -61,10 +64,11 @@ export function PeopleList({
   const searching = search.trim() !== ''
   const reasonFor = (person: UserSearchResult) =>
     unavailable?.get(person.id) ?? (isEligible(person) ? undefined : 'Viewer · can’t be assigned')
-  // Type a name, press Enter: the top person. Not searching, cmdk starts at the first row.
-  const highlight = useTopResult(
-    searching ? items.filter((person) => !reasonFor(person)).map((person) => person.id) : [],
-  )
+  // Type a name, press Enter: the top person. Not searching, the highlight starts on the
+  // current choice (the owner), so an Enter straight away changes nothing.
+  const pickable = items.filter((person) => !reasonFor(person)).map((person) => person.id)
+  const current = items.find((person) => selected.includes(person.id))?.id
+  const highlight = useTopResult(searching || !current ? pickable : [current, ...pickable])
 
   return (
     <Command shouldFilter={false} label={label} className="min-h-0" {...highlight}>
@@ -142,6 +146,7 @@ export function PeopleList({
             })}
           </CommandGroup>
         )}
+        {!searching && after}
       </CommandList>
     </Command>
   )

@@ -208,14 +208,18 @@ async def _aggregate(db: AsyncSession, idea: Idea) -> AggregateScore | None:
     )
 
 
-async def idea_detail(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> IdeaDetail:
+async def idea_detail(
+    db: AsyncSession, principal: Principal, loaded: LoadedIdea, *, reread: bool = True
+) -> IdeaDetail:
     """The idea page as the principal may see it (blind evaluation applied).
 
-    The principal's facts are re-read, so the flags reflect a change just made
-    (a new owner, a submitted evaluation, a closed idea).
+    After a write the principal's facts are re-read, so the flags reflect the change
+    just made (a new owner, a submitted evaluation, a closed idea); a plain read
+    (``reread=False``, ``GET /ideas/{idea}``) uses the facts it was loaded with
+    (performance review B6: two statements fewer).
     """
     idea, project = loaded.idea, loaded.project
-    resource = await idea_resource(db, principal, idea, project)
+    resource = await idea_resource(db, principal, idea, project) if reread else loaded.resource
     visible = authorize(principal, Rule.SCORE_VIEW_AGGREGATE, resource).allowed
     row = await idea_row(db, principal, idea, score_visible=visible)
     context = await load_context(
@@ -228,11 +232,16 @@ async def idea_detail(db: AsyncSession, principal: Principal, loaded: LoadedIdea
     )
     fields = summary_fields(principal, row, context)
     fields["permissions"] = idea_permissions(principal, resource)
-    watching = await db.scalar(
-        select(IdeaWatcher.user_id).where(
-            IdeaWatcher.idea_id == idea.id, IdeaWatcher.user_id == principal.user_id
+    watching, via_public_form = (
+        await db.execute(
+            select(
+                exists().where(
+                    IdeaWatcher.idea_id == idea.id, IdeaWatcher.user_id == principal.user_id
+                ),
+                exists().where(PublicSubmission.idea_id == idea.id),
+            )
         )
-    )
+    ).one()
     return IdeaDetail(
         **fields,
         description_md=idea.description_md,
@@ -242,11 +251,9 @@ async def idea_detail(db: AsyncSession, principal: Principal, loaded: LoadedIdea
         evaluation_closed_at=idea.evaluation_closed_at,
         evaluation_open=resource.idea is not None and resource.idea.evaluation_open,
         aggregate=await _aggregate(db, idea) if visible else None,
-        watching=watching is not None,
+        watching=bool(watching),
         held_for=idea.held_for,
-        via_public_form=bool(
-            await db.scalar(select(exists().where(PublicSubmission.idea_id == idea.id)))
-        ),
+        via_public_form=bool(via_public_form),
     )
 
 

@@ -24,6 +24,7 @@ export const AUDIT_CATEGORIES = [
       'user.identity_link',
       'user.identity_unlink',
       'user.sessions_end',
+      'user.anonymise',
     ],
   },
   { id: 'group_sync', label: 'Group sync at sign-in', actions: ['user.groups_sync'] },

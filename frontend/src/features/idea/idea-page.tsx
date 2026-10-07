@@ -1,5 +1,6 @@
-import { Link, useNavigate } from '@tanstack/react-router'
-import { Archive, ChevronRight, CloudOff, SearchX } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { Archive, ChevronRight, CloudOff } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isApiError } from '@/api/errors'
@@ -10,7 +11,7 @@ import {
   useVolunteerAsOwner,
 } from '@/api/ideas'
 import { useMarkIdeaNotificationsRead } from '@/api/notifications'
-import { useProposalSuggestions } from '@/api/proposals'
+import { proposalQueryOptions, useCreateProposal, useProposalSuggestions } from '@/api/proposals'
 import { useProject } from '@/api/projects'
 import type { IdeaDetail, IdeaSummary } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
@@ -18,10 +19,11 @@ import { CountBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DueDateLabel } from '@/components/ui/due-date'
 import { EmptyState } from '@/components/ui/empty-state'
-import { ariaKeys, ButtonShortcut, KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Skeleton, SkeletonGroup, SkeletonIdeaPage } from '@/components/ui/skeleton'
+import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { IdeaNotFound, IdeaPageSkeleton } from '@/features/idea/idea-page-states'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/components/ui/toaster'
@@ -29,7 +31,7 @@ import { AiRunsSection } from '@/features/ai/ai-runs-section'
 import { AiMenu, submittedEvaluatorIds, useAiCommands } from '@/features/ai/idea-ai'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
-import { useTyping } from '@/lib/focus'
+import { focusWhenRendered, useTyping } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -182,7 +184,25 @@ function LoadedIdeaPage({
 
   const volunteer = useVolunteerAsOwner(ideaKey)
   const setClosed = useSetEvaluationClosed(ideaKey)
-  const action = primaryAction(idea, me.id)
+  const createProposal = useCreateProposal(ideaKey)
+  // Shortlisted or in Proposal, the owner's next step is the proposal: ask whether one
+  // exists (the Proposal tab's own query, so it's shared) to say Start or Open.
+  const proposalStage = idea.status === 'shortlisted' || idea.status === 'proposal'
+  const proposalView = useQuery({
+    ...proposalQueryOptions(ideaKey),
+    enabled: proposalStage && idea.permissions.can_change_status,
+  })
+  const proposalState = proposalView.data && {
+    exists: proposalView.data.proposal !== null,
+    canCreate: proposalView.data.permissions.can_create,
+  }
+  // On the Proposal tab the editor (or its Start button) is the primary action.
+  const statusAction = primaryAction(idea, me.id, proposalState)
+  const action =
+    tab === 'proposal' &&
+    (statusAction?.kind === 'open-proposal' || statusAction?.kind === 'start-proposal')
+      ? null
+      : statusAction
   const typing = useTyping()
   const runPrimary = (kind: PrimaryAction['kind']) => {
     if (kind === 'evaluate') openEvaluate()
@@ -190,7 +210,21 @@ function LoadedIdeaPage({
     else if (kind === 'volunteer') volunteer.mutate({})
     else if (kind === 'invite') openDialog('invite')
     else if (kind === 'close-evaluation') setClosed.mutate({ closed: true })
-    else openDialog('status')
+    else if (kind === 'open-proposal') setTab('proposal')
+    else if (kind === 'start-proposal') {
+      setTab('proposal')
+      createProposal.mutate(undefined, {
+        // Start writing in Summary, as the Proposal tab's own Start does.
+        onSuccess: () =>
+          focusWhenRendered(
+            () =>
+              document.querySelector<HTMLElement>(
+                '[data-testid="proposal-editor"] textarea[data-section-text]',
+              ),
+            { force: true },
+          ),
+      })
+    } else openDialog('status')
   }
   const primaryShortcut =
     action?.kind === 'evaluate'
@@ -199,7 +233,9 @@ function LoadedIdeaPage({
         ? SHORTCUTS.changeStatus.keys
         : action?.kind === 'assign-owner'
           ? SHORTCUTS.assignOwner.keys
-          : undefined
+          : action?.kind === 'open-proposal'
+            ? SHORTCUTS.proposalTab.keys
+            : undefined
 
   const primaryButton = (className?: string) =>
     action && (
@@ -208,6 +244,7 @@ function LoadedIdeaPage({
         data-primary-action=""
         aria-keyshortcuts={primaryShortcut ? ariaKeys(primaryShortcut) : undefined}
         className={className}
+        loading={action.kind === 'start-proposal' && createProposal.isPending}
         onClick={() => runPrimary(action.kind)}
       >
         {action.label}
@@ -226,11 +263,9 @@ function LoadedIdeaPage({
   return (
     <IdeaPageProvider value={page}>
       <div
-        className={cn(
-          'mx-auto flex w-full flex-col px-4 pt-5 pb-28 sm:px-6 sm:pb-12 lg:px-10 lg:pt-8',
-          // The proposal editor needs the room: outline, text and margin comments.
-          wide ? 'max-w-7xl' : 'max-w-6xl',
-        )}
+        // One width for every tab (the proposal editor needs the room: outline, text and
+        // margin comments), so the header doesn't jump when switching (UX review m7).
+        className="mx-auto flex w-full max-w-7xl flex-col px-4 pt-5 pb-28 sm:px-6 sm:pb-12 lg:px-10 lg:pt-8"
       >
         {archived && (
           <p className="mb-5 flex items-center gap-2 rounded-lg border bg-background px-3.5 py-2.5 text-sm text-secondary">
@@ -365,31 +400,38 @@ function MobileSummary({
   const { idea } = useIdeaPage()
   const { submitted, total } = idea.evaluator_progress
   return (
-    <div
-      className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 text-sm', !always && 'lg:hidden')}
-    >
-      <StatusBadge status={idea.status} resolution={idea.resolution} label={idea.status_label} />
-      {idea.owner ? (
-        <span className="flex min-w-0 items-center gap-1.5 text-secondary">
-          <Avatar name={idea.owner.display_name} src={idea.owner.avatar_url} size="xs" decorative />
-          <span className="truncate">{idea.owner.display_name}</span>
-        </span>
-      ) : (
-        <span className="text-muted">No owner</span>
-      )}
-      {total > 0 && (
-        <span className="text-muted tabular-nums">
-          {submitted}/{total} evaluated
-        </span>
-      )}
-      {submitted < total && idea.evaluation_open && (
-        <DueDateLabel value={idea.evaluation_due_at} hideWhenNone />
-      )}
-      {total > 0 && (
-        // "2/3 evaluated" sits beside it, so no "· 2" count on the chip.
-        <ScoreBadge score={idea.score?.overall ?? null} hidden={idea.score_hidden} size="sm" />
-      )}
-      <Button variant="outline" size="sm" className="ml-auto max-sm:h-9" onClick={onOpenDetails}>
+    // The facts wrap among themselves; Details keeps its place at the end of the first
+    // line, never on a line of its own (UX review p5).
+    <div className={cn('flex items-start gap-3 text-sm', !always && 'lg:hidden')}>
+      <div className="flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 sm:min-h-8">
+        <StatusBadge status={idea.status} resolution={idea.resolution} label={idea.status_label} />
+        {idea.owner ? (
+          <span className="flex min-w-0 items-center gap-1.5 text-secondary">
+            <Avatar
+              name={idea.owner.display_name}
+              src={idea.owner.avatar_url}
+              size="xs"
+              decorative
+            />
+            <span className="truncate">{idea.owner.display_name}</span>
+          </span>
+        ) : (
+          <span className="text-muted">No owner</span>
+        )}
+        {total > 0 && (
+          <span className="text-muted tabular-nums">
+            {submitted}/{total} evaluated
+          </span>
+        )}
+        {submitted < total && idea.evaluation_open && (
+          <DueDateLabel value={idea.evaluation_due_at} hideWhenNone />
+        )}
+        {total > 0 && (
+          // "2/3 evaluated" sits beside it, so no "· 2" count on the chip.
+          <ScoreBadge score={idea.score?.overall ?? null} hidden={idea.score_hidden} size="sm" />
+        )}
+      </div>
+      <Button variant="outline" size="sm" className="shrink-0 max-sm:h-9" onClick={onOpenDetails}>
         Details
         <ChevronRight />
       </Button>
@@ -400,7 +442,7 @@ function MobileSummary({
 /** While the idea loads: its title and status from any list cache, skeletons for the rest. */
 function IdeaPageLoading({ summary }: { summary: IdeaSummary | undefined }) {
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col px-4 pt-5 sm:px-6 lg:px-10 lg:pt-8">
+    <div className="mx-auto flex w-full max-w-7xl flex-col px-4 pt-5 sm:px-6 lg:px-10 lg:pt-8">
       {summary ? (
         <SkeletonGroup
           label="Loading idea"
@@ -448,17 +490,6 @@ function IdeaPageLoading({ summary }: { summary: IdeaSummary | undefined }) {
   )
 }
 
-export function IdeaPageSkeleton() {
-  return (
-    <SkeletonGroup
-      label="Loading idea"
-      className="mx-auto w-full max-w-6xl px-4 pt-5 sm:px-6 lg:px-10 lg:pt-8"
-    >
-      <SkeletonIdeaPage className="lg:grid-cols-[minmax(0,1fr)_18rem]" />
-    </SkeletonGroup>
-  )
-}
-
 function IdeaLoadError({ onRetry }: { onRetry: () => void }) {
   return (
     <EmptyState
@@ -469,28 +500,6 @@ function IdeaLoadError({ onRetry }: { onRetry: () => void }) {
       action={
         <Button variant="primary" onClick={onRetry}>
           Try again
-        </Button>
-      }
-    />
-  )
-}
-
-/** Same text whether the idea doesn't exist or is hidden, to avoid leaking (wireframe 03). */
-export function IdeaNotFound() {
-  return (
-    <EmptyState
-      headingLevel={1}
-      icon={<SearchX />}
-      title="This idea doesn’t exist or you don’t have access"
-      description={
-        <>
-          Check the link, or search for it with{' '}
-          <KbdShortcut keys="mod+k" className="align-middle" />.
-        </>
-      }
-      action={
-        <Button asChild variant="primary">
-          <Link to="/">Go to My work</Link>
         </Button>
       }
     />

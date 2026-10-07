@@ -78,10 +78,14 @@ const segment = cva(
         score: 'h-9 min-w-11 px-3 text-base pointer-coarse:h-11',
       },
       variant: {
+        // The selected segment is told apart from the track by more than its fill
+        // (≥ 3:1, WCAG 1.4.11): a control-strength outline and semibold text; the
+        // chosen score also gets a ring in `accent-control` (lighter in dark mode,
+        // where the fill alone is too dark against the surface).
         neutral:
-          'hover:bg-subtle data-[state=checked]:bg-surface data-[state=checked]:text-primary data-[state=checked]:shadow-[0_0_0_1px_var(--border)]',
+          'hover:bg-subtle data-[state=checked]:bg-surface data-[state=checked]:font-semibold data-[state=checked]:text-primary data-[state=checked]:shadow-[0_0_0_1px_var(--border-control)]',
         accent:
-          'hover:bg-subtle data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground data-[state=checked]:hover:bg-accent-hover',
+          'hover:bg-subtle data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground data-[state=checked]:shadow-[inset_0_0_0_2px_var(--accent-control)] data-[state=checked]:hover:bg-accent-hover',
       },
       fullWidth: { true: 'flex-1', false: '' },
     },

@@ -39,7 +39,7 @@ from app.models.user import User
 from app.notifications import access, preferences
 from app.notifications.fanout import NotificationWriter, usable_address
 from app.public import retention as public_retention
-from app.services import brand_assets
+from app.services import brand_assets, sessions
 from app.services.sql import any_of
 
 __all__ = [
@@ -330,6 +330,9 @@ async def run_schedule(
     async with session_scope(sessionmaker) as db:
         # Phase 5: the MCP call trail older than 90 days (other audit entries stay).
         await mcp_audit.delete_expired_calls(db, now)
+    async with session_scope(sessionmaker) as db:
+        # Phase 7: expired sign-in sessions (security review L5), not only at sign-in.
+        await sessions.delete_expired_sessions(db, settings, now)
     if reminders or digests:
         logger.info("notification schedule ran", extra={"reminders": reminders, "digests": digests})
     return ScheduleResult(reminders=reminders, digests=digests, cleaned=True)

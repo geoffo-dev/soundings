@@ -22,6 +22,7 @@
     "global-setup.ts",
     "global-teardown.ts",
     "tests",
-    "screenshots"
+    "screenshots",
+    "perf"
   ]
 }

@@ -13,7 +13,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, type FocusEvent } from 'react'
 
 import { useChangeIdeaStatus } from '@/api/ideas'
 import type { Board, IdeaFilters, IdeaStatus, IdeaSummary, Project, Resolution } from '@/api/types'
@@ -202,6 +202,7 @@ export function BoardView({
           <div
             ref={containerRef}
             aria-busy={stale || undefined}
+            onFocus={revealFocusedColumn}
             className={cn(
               'transition-opacity duration-150',
               stale && 'opacity-60',
@@ -263,7 +264,7 @@ export function BoardView({
                     key={resolution}
                     type="button"
                     onClick={() => close(closing, resolution)}
-                    className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-primary transition-colors outline-none hover:bg-subtle-hover focus-visible:bg-subtle-hover focus-visible:outline-none"
+                    className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-primary transition-colors outline-none hover:bg-subtle-hover focus-visible:bg-subtle-hover focus-visible:highlight-ring"
                   >
                     <StatusDot tone={resolution} />
                     {labels[resolution]}
@@ -284,6 +285,22 @@ export function BoardView({
       </DndContext>
     </BoardFocusContext>
   )
+}
+
+/**
+ * Phones show one column at a time and snap to column starts, so the browser's own
+ * "scroll the focused card into view" can leave it almost off-screen (the snap pulls
+ * the row back). Tabbing into another column brings that whole column into view
+ * (WCAG 2.4.11 focus not obscured).
+ */
+function revealFocusedColumn(event: FocusEvent<HTMLDivElement>) {
+  const scroller = event.currentTarget
+  const column = event.target.closest('section')
+  if (!column || !scroller.contains(column)) return
+  const shown = scroller.getBoundingClientRect()
+  const box = column.getBoundingClientRect()
+  if (box.left >= shown.left - 1 && box.right <= shown.right + 1) return
+  column.scrollIntoView({ inline: 'start', block: 'nearest' })
 }
 
 /** Whether the Closed column is expanded, remembered per project (collapsed by default). */

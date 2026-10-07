@@ -1,42 +1,98 @@
 import { Link, useLocation } from '@tanstack/react-router'
+import {
+  ArrowLeft,
+  Bot,
+  ChevronRight,
+  KeyRound,
+  Mail,
+  Palette,
+  ScrollText,
+  UserRound,
+  UsersRound,
+} from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 
 import { Page, PageHeader } from '@/components/layout/page'
-import { useCurrentUser } from '@/features/auth/current-user'
 import { useScrollFade } from '@/components/ui/scroll-fade'
 import { cn, mergeRefs } from '@/lib/utils'
 
-/** The settings pages, in nav order. Admin pages are for platform admins only. */
+/** Your own settings, in tab order (everyone). */
 export const SETTINGS_PAGES = [
-  { to: '/settings', label: 'Account', admin: false },
-  { to: '/settings/notifications', label: 'Notifications', admin: false },
-  { to: '/settings/api-keys', label: 'API keys', admin: false },
-  { to: '/settings/users', label: 'Users', admin: true },
-  { to: '/settings/groups', label: 'Groups', admin: true },
-  { to: '/settings/sso', label: 'Sign-in (SSO)', short: 'SSO', admin: true },
-  { to: '/settings/email', label: 'Email', admin: true },
-  { to: '/settings/branding', label: 'Branding', admin: true },
-  { to: '/settings/all-api-keys', label: 'All API keys', short: 'All keys', admin: true },
-  { to: '/settings/ai-agents', label: 'AI agents', short: 'AI', admin: true },
-  { to: '/settings/audit', label: 'Audit log', admin: true },
+  { to: '/settings', label: 'Account' },
+  { to: '/settings/notifications', label: 'Notifications' },
+  { to: '/settings/api-keys', label: 'API keys' },
 ] as const
 
 /**
- * /settings and its pages (SPEC §5 screen 7, wireframe 07): one "Settings"
- * page with a row of sections, like project settings. Everyone has Account
- * (profile, appearance, projects they manage), Notifications (email
- * preferences) and API keys (theirs); platform admins also get Users, Groups,
- * Sign-in (SSO), Email, Branding, All API keys, AI agents and the Audit log, after a
- * divider. Anyone else never sees the admin sections (and their URLs are a 404).
+ * The admin area (platform admins): its own sidebar entry and a left nav; on phones
+ * the /admin page lists the sections. The pages keep their /settings/… URLs.
+ */
+export const ADMIN_PAGES = [
+  {
+    to: '/settings/users',
+    label: 'Users',
+    description: 'Who can sign in, their roles, sign-in links and sessions.',
+    icon: UserRound,
+  },
+  {
+    to: '/settings/groups',
+    label: 'Groups',
+    description: 'Groups of people, and how they follow your identity provider.',
+    icon: UsersRound,
+  },
+  {
+    to: '/settings/sso',
+    label: 'Sign-in (SSO)',
+    description: 'The single sign-on settings in effect and the break-glass account.',
+    icon: KeyRound,
+  },
+  {
+    to: '/settings/email',
+    label: 'Email',
+    description: 'The mail server in effect, a test email and the outbox.',
+    icon: Mail,
+  },
+  {
+    to: '/settings/branding',
+    label: 'Branding',
+    description: 'Name, logo, colours and font for the app, emails and exports.',
+    icon: Palette,
+  },
+  {
+    to: '/settings/ai-agents',
+    label: 'AI agents',
+    description: 'kagent agents that evaluate, research and draft, and their keys.',
+    icon: Bot,
+  },
+  {
+    to: '/settings/audit',
+    label: 'Audit log',
+    description: 'Sign-ins, admin changes, keys and AI runs: who did what, when.',
+    icon: ScrollText,
+  },
+] as const
+
+/** Whether a path is one of the admin pages (or the /admin list). */
+export function isAdminPath(pathname: string): boolean {
+  return (
+    pathname === '/admin' ||
+    ADMIN_PAGES.some((page) => pathname === page.to || pathname.startsWith(`${page.to}/`))
+  )
+}
+
+/**
+ * /settings, /settings/notifications and /settings/api-keys (SPEC §5 screen 7,
+ * wireframe 07): your own settings, one "Settings" page with three tabs:
+ * Account (profile, appearance, projects you manage), Notifications (email
+ * preferences) and API keys. The admin pages have their own frame (AdminFrame).
  */
 export function SettingsFrame({ children }: { children: ReactNode }) {
-  const me = useCurrentUser()
   return (
     <Page>
-      {/* The section row says what's here; each page has its own heading and purpose. */}
+      {/* The tab row says what's here; each page has its own heading and purpose. */}
       <PageHeader title="Settings" />
       <div className="flex flex-col gap-6">
-        <SettingsNav admin={me.is_platform_admin} />
+        <SettingsNav />
         {children}
       </div>
     </Page>
@@ -46,18 +102,16 @@ export function SettingsFrame({ children }: { children: ReactNode }) {
 const navLink = cn(
   'relative -mb-px inline-flex h-9 shrink-0 items-center border-b-2 border-transparent px-0.5 text-sm font-medium whitespace-nowrap text-muted',
   'transition-colors duration-150 hover:text-primary focus-visible:rounded-sm focus-visible:outline-offset-0',
-  'data-[status=active]:border-accent data-[status=active]:text-primary',
+  'data-[status=active]:border-accent-control data-[status=active]:text-primary',
 )
 
-function SettingsNav({ admin }: { admin: boolean }) {
-  const pages = SETTINGS_PAGES.filter((page) => admin || !page.admin)
+function SettingsNav() {
   const listRef = useRef<HTMLUListElement>(null)
   const fade = useScrollFade<HTMLUListElement>()
   const ref = useMemo(() => mergeRefs(listRef, fade), [fade])
   const pathname = useLocation({ select: (location) => location.pathname })
-  // On phones the row scrolls sideways: bring the current section into view (an
-  // admin on Email or Audit log would otherwise see the row end at "SSO"). Only the
-  // row scrolls, never the page.
+  // On narrow phones the row may scroll sideways: bring the current tab into view.
+  // Only the row scrolls, never the page.
   useEffect(() => {
     const list = listRef.current
     const active = list?.querySelector<HTMLElement>('a[data-status="active"]')
@@ -67,39 +121,84 @@ function SettingsNav({ admin }: { admin: boolean }) {
     const margin = 40 // the padding and the faded edge
     if (link.right > row.right - margin) list.scrollLeft += link.right - row.right + margin
     else if (link.left < row.left + margin) list.scrollLeft -= row.left + margin - link.left
-  }, [pathname, admin])
+  }, [pathname])
   return (
-    // On phones the row runs to the screen's edges, fading the side with more.
     <nav aria-label="Settings sections" className="-mx-4 sm:mx-0">
       <ul
         ref={ref}
         className="scrollbar-none flex items-center gap-4 overflow-x-auto border-b scroll-fade-x px-4 sm:px-0"
       >
-        {pages.map((page, index) => (
-          <li key={page.to} className="flex shrink-0 items-center gap-4">
-            {page.admin && !pages[index - 1]?.admin && (
-              <span aria-hidden="true" className="h-4 w-px bg-border" />
-            )}
+        {SETTINGS_PAGES.map((page) => (
+          <li key={page.to} className="flex shrink-0">
             <Link
               to={page.to}
               activeOptions={{ exact: page.to === '/settings' }}
               className={navLink}
-              // On phones the row would be cut off: a shorter visible label, same name.
-              aria-label={'short' in page ? page.label : undefined}
             >
-              {'short' in page ? (
-                <>
-                  <span className="sm:hidden">{page.short}</span>
-                  <span className="hidden sm:inline">{page.label}</span>
-                </>
-              ) : (
-                page.label
-              )}
+              {page.label}
             </Link>
           </li>
         ))}
       </ul>
     </nav>
+  )
+}
+
+/**
+ * The admin pages (platform admins; UX review M5): an "Admin" page whose sections
+ * are listed in the app's sidebar under "Admin" (a left nav that costs the content
+ * no room). Phones have no sidebar on screen: a link back to the /admin list takes
+ * its place.
+ */
+export function AdminFrame({ children }: { children: ReactNode }) {
+  return (
+    <Page>
+      <PageHeader title="Admin" />
+      <div className="flex flex-col gap-6">
+        <Link
+          to="/admin"
+          className="-mt-2 inline-flex w-fit items-center gap-1.5 rounded-sm text-sm text-muted hover:text-primary md:hidden"
+        >
+          <ArrowLeft aria-hidden="true" className="size-4" />
+          All admin settings
+        </Link>
+        {children}
+      </div>
+    </Page>
+  )
+}
+
+/** /admin: the admin sections as a list (the phone's nav; a contents page on wide screens). */
+export function AdminOverview() {
+  return (
+    <Page>
+      <PageHeader
+        title="Admin"
+        description="Settings for everyone in Soundings. Only platform admins see these."
+      />
+      <nav aria-label="Admin sections">
+        <ul className="divide-y divide-subtle overflow-hidden rounded-lg border bg-surface">
+          {ADMIN_PAGES.map((page) => {
+            const Icon = page.icon
+            return (
+              <li key={page.to}>
+                <Link
+                  to={page.to}
+                  className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-subtle focus-visible:-outline-offset-2"
+                >
+                  <Icon aria-hidden="true" className="size-4 shrink-0 text-muted" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="text-base font-medium text-primary">{page.label}</span>
+                    <span className="text-sm text-muted">{page.description}</span>
+                  </span>
+                  <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" />
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+    </Page>
   )
 }
 

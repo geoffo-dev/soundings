@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react'
 
-import { formatKeys } from '@/lib/hotkeys'
+import { formatKeys, isSingleKeyShortcut } from '@/lib/hotkeys'
+import { useSingleKeyShortcuts } from '@/lib/shortcut-preference'
 import { cn } from '@/lib/utils'
 
 /** `accent`: inside a primary (accent) button, e.g. "New idea  N". */
@@ -31,14 +32,19 @@ export function Kbd({
 
 /**
  * Renders a shortcut such as "mod+k" or "g m" as platform-aware keys
- * (⌘ K on macOS, Ctrl K elsewhere).
+ * (⌘ K on macOS, Ctrl K elsewhere). A single-key hint ("N") disappears while
+ * single-key shortcuts are turned off, since the key does nothing then (`always`
+ * keeps it: the "?" sheet lists every shortcut).
  */
 export function KbdShortcut({
   keys,
   tone = 'default',
+  always = false,
   className,
   ...props
-}: { keys: string; tone?: KbdTone } & Omit<ComponentProps<'span'>, 'children'>) {
+}: { keys: string; tone?: KbdTone; always?: boolean } & Omit<ComponentProps<'span'>, 'children'>) {
+  const singleKeys = useSingleKeyShortcuts()
+  if (!always && !singleKeys && isSingleKeyShortcut(keys)) return null
   const sequence = formatKeys(keys)
   return (
     <span className={cn('inline-flex items-center gap-1', className)} {...props}>

@@ -15,6 +15,13 @@ export const SHORTCUTS = {
   commandPalette: { keys: 'mod+k', label: 'Open command palette', group: 'General' },
   shortcutSheet: { keys: '?', label: 'Show keyboard shortcuts', group: 'General' },
   toggleSidebar: { keys: '[', label: 'Collapse or expand sidebar', group: 'General' },
+  // Handled by the toaster (sonner's hotkey), listed so people can find it: messages
+  // stay while focus or the pointer is on them (components/ui/toaster.tsx).
+  focusMessages: {
+    keys: 'alt+t',
+    label: 'Go to messages such as Undo (they wait while you’re there)',
+    group: 'General',
+  },
   goToMyWork: { keys: 'g m', label: 'Go to My work', group: 'Navigation' },
   goToNotifications: { keys: 'g i', label: 'Go to notifications (inbox)', group: 'Navigation' },
   nextItem: { keys: 'j', label: 'Next item (or ↓)', group: 'Lists' },

@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { CircleCheckBig } from 'lucide-react'
+import { useState } from 'react'
 
 import type { WorkEvaluation } from '@/api/types'
+import { useMoreEvaluationsDue } from '@/api/work'
 import { PageSection } from '@/components/layout/page'
 import { Badge, CountBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,16 +15,36 @@ import { cn } from '@/lib/utils'
 
 /**
  * "Evaluations due": overdue first, then soonest (the API's order). The most
- * urgent row carries the page's one primary action.
+ * urgent row carries the page's one primary action. My work holds the first 50;
+ * "Show more" pages on (100 at a time), so someone who owes a thousand still gets
+ * a page that opens at once.
  */
-export function EvaluationsDueSection({ items }: { items: WorkEvaluation[] | undefined }) {
+export function EvaluationsDueSection({
+  items,
+  total,
+  nextCursor,
+}: {
+  items: WorkEvaluation[] | undefined
+  /** Everything owed (`counts.evaluations_due`), which may be more than `items`. */
+  total: number | undefined
+  nextCursor: string | null | undefined
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const more = useMoreEvaluationsDue(nextCursor ?? null, expanded && Boolean(nextCursor))
+  const extra = more.data?.pages.flatMap((page) => page.items) ?? []
+  const shown = (items?.length ?? 0) + extra.length
+  const count = Math.max(total ?? 0, shown)
+  const hasMore = expanded ? more.hasNextPage : Boolean(nextCursor)
+  const loadingMore = more.isFetchingNextPage || (expanded && more.isPending)
+  const rows = items ? dedupeRows([...items, ...extra]) : []
+
   return (
     <PageSection
       id="evaluations"
       title={
         <>
           Evaluations due
-          {items && items.length > 0 && <CountBadge>{items.length}</CountBadge>}
+          {count > 0 && <CountBadge>{count.toLocaleString()}</CountBadge>}
         </>
       }
     >
@@ -45,21 +67,56 @@ export function EvaluationsDueSection({ items }: { items: WorkEvaluation[] | und
       ) : items.length === 0 ? (
         <div className="rounded-lg border">
           <EmptyState
-            size="compact"
+            size="inline"
             icon={<CircleCheckBig />}
             title="Nothing to evaluate"
-            description="When someone asks for your view on an idea, it appears here with its due date."
+            description="When someone asks for your view on an idea, it shows here."
           />
         </div>
       ) : (
-        <ul className="divide-y divide-subtle overflow-hidden rounded-lg border bg-surface">
-          {items.map((item, index) => (
-            <EvaluationRow key={item.idea.id} item={item} primary={index === 0} />
-          ))}
-        </ul>
+        <div className="flex flex-col gap-1.5">
+          <ul className="divide-y divide-subtle overflow-hidden rounded-lg border bg-surface">
+            {rows.map((item, index) => (
+              <EvaluationRow key={item.idea.id} item={item} primary={index === 0} />
+            ))}
+          </ul>
+          {hasMore && (
+            <div className="flex items-center gap-3 px-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted"
+                loading={loadingMore}
+                onClick={() => {
+                  if (!expanded) setExpanded(true)
+                  else void more.fetchNextPage()
+                }}
+              >
+                Show {Math.min(100, count - shown).toLocaleString()} more
+              </Button>
+              <span className="text-sm text-muted tabular-nums">
+                {shown.toLocaleString()} of {count.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {more.isError && (
+            <p role="alert" className="flex items-center gap-2 px-1 text-sm text-danger">
+              Couldn’t load more.
+              <Button variant="link" size="sm" onClick={() => void more.refetch()}>
+                Try again
+              </Button>
+            </p>
+          )}
+        </div>
       )}
     </PageSection>
   )
+}
+
+/** A row the first page already has can come again if My work refreshed in between. */
+function dedupeRows(rows: WorkEvaluation[]): WorkEvaluation[] {
+  const seen = new Set<string>()
+  return rows.filter((row) => (seen.has(row.idea.id) ? false : (seen.add(row.idea.id), true)))
 }
 
 function EvaluationRow({ item, primary }: { item: WorkEvaluation; primary: boolean }) {
@@ -94,19 +151,23 @@ function EvaluationRow({ item, primary }: { item: WorkEvaluation; primary: boole
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:shrink-0 sm:flex-nowrap">
         {item.state === 'draft' && <Badge>Draft saved</Badge>}
         <DueDateLabel value={item.due_at} />
+        {/* Every row's button sits at its end, the same size on phones too (only the
+            most urgent one is primary). Its name starts with the word it shows, so
+            "click Continue" works by voice (WCAG 2.5.3). */}
         <Button
           asChild
           variant={primary ? 'primary' : 'outline'}
-          className={cn(
-            'relative z-10 ml-auto max-sm:h-11 max-sm:px-5',
-            primary && 'max-sm:basis-full',
-          )}
+          className="relative z-10 ml-auto max-sm:h-11 max-sm:px-5"
         >
           <Link
             to="/ideas/$ideaKey"
             params={{ ideaKey: idea.key }}
             search={{ evaluate: true }}
-            aria-label={`Evaluate ${idea.key}: ${idea.title}`}
+            aria-label={
+              item.state === 'draft'
+                ? `Continue evaluating ${idea.key}: ${idea.title}`
+                : `Evaluate ${idea.key}: ${idea.title}`
+            }
           >
             {item.state === 'draft' ? 'Continue' : 'Evaluate'}
           </Link>

@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import Rule, authorize, require
+from app.authz import Rule, authorize, counted_by_default, may_cite_sources, require
 from app.domain.principal import Principal
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
@@ -310,7 +310,7 @@ async def save_my_evaluation(
             422, "unknown_criterion", detail="A criterion is not in this project's rubric."
         )
     given = {score.criterion_id: score for score in body.scores}
-    agent = principal.user.is_service_account
+    agent = may_cite_sources(principal)
     cited = [score for score in body.scores if getattr(score, "sources", None)]
     if cited and not agent:
         # Phase 6: only AI evaluators cite sources (MCP McpScoreIn.sources).
@@ -398,7 +398,7 @@ async def save_my_evaluation(
     if first_submission:
         evaluation.status = EvaluationStatus.SUBMITTED
         evaluation.submitted_at = now
-        if principal.user.is_service_account:
+        if not counted_by_default(principal):
             # An AI agent's evaluation is left out of the aggregate by default (role
             # matrix section 3 rule 10); ``evaluation.include_ai`` changes it later.
             evaluation.include_in_aggregate = False

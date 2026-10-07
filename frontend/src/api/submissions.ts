@@ -3,7 +3,6 @@ import {
   queryOptions,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
   type InfiniteData,
@@ -19,6 +18,8 @@ import type {
   IdeaDetail,
   IdeaSubmission,
   ModerationPage,
+  Project,
+  ProjectSummary,
   PublicFormSettings,
   PublicFormSettingsUpdate,
 } from '@/api/types'
@@ -105,44 +106,32 @@ export function useModerationQueue(slug: string, options: { enabled?: boolean } 
   })
 }
 
-const moderationCountOptions = (slug: string) =>
-  queryOptions({
-    queryKey: [...queryKeys.submissions.moderation(slug), 'count'] as const,
-    queryFn: ({ signal }) =>
-      unwrap(
-        api.GET('/api/v1/projects/{slug}/moderation', {
-          params: { path: { slug }, query: { limit: 1 } },
-          signal,
-        }),
-      ),
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-  })
-
 /** The queue's total less the ideas approved or rejected a moment ago (Undo still open). */
-function waiting(page: ModerationPage, slug: string, hidden: ReadonlySet<string>): number {
+function waiting(total: number, slug: string, hidden: ReadonlySet<string>): number {
   const prefix = hiddenSubmission(slug, '')
   const pending = [...hidden].filter((key) => key.startsWith(prefix)).length
-  return Math.max(0, page.total - pending)
+  return Math.max(0, total - pending)
 }
 
-/** "N ideas waiting for review" (project admins only: others get 403, so don't ask). */
-export function useModerationCount(slug: string, options: { enabled?: boolean } = {}) {
-  const hidden = useHiddenItems()
-  return useQuery({
-    ...moderationCountOptions(slug),
-    enabled: options.enabled ?? true,
-    select: (page) => waiting(page, slug, hidden),
-  })
-}
-
-/** What a project list row needs for review counts (the sidebar's list or full projects). */
+/** What a project needs for its review count (the sidebar's list or a full project). */
 interface ReviewableProject {
   id: string
   slug: string
   name: string
   archived_at: string | null
-  permissions: { can_manage: boolean }
+  /** The queue's total for people who may moderate it; null for everyone else (C2). */
+  pending_moderation_count: number | null
+}
+
+/**
+ * "N ideas waiting for review" for one project (its board's notice): the project's
+ * own `pending_moderation_count`, so it costs no request. 0 for anyone who may not
+ * moderate it and for archived projects (they can't be moderated).
+ */
+export function useModerationCount(project: ReviewableProject): number {
+  const hidden = useHiddenItems()
+  if (project.archived_at || project.pending_moderation_count === null) return 0
+  return waiting(project.pending_moderation_count, project.slug, hidden)
 }
 
 export interface ReviewCount<P extends ReviewableProject = ReviewableProject> {
@@ -152,22 +141,17 @@ export interface ReviewCount<P extends ReviewableProject = ReviewableProject> {
 
 /**
  * Projects with ideas waiting for review that you can moderate (the sidebar's
- * "Review" and My work's "Waiting for review"): held ideas are on no board,
- * list or inbox, so this is how admins notice them. One small request per
- * project you administer (shared with the board's notice); archived projects
- * can't be moderated, so they're skipped.
+ * counts): held ideas are on no board, list or inbox, so this is how admins notice
+ * them. The counts come with the projects list (`pending_moderation_count`,
+ * contract-phase7 C2), not one request per project; archived projects are skipped.
  */
 export function useReviewCounts<P extends ReviewableProject>(
   projects: readonly P[] | undefined,
 ): ReviewCount<P>[] {
   const hidden = useHiddenItems()
-  const reviewable = (projects ?? []).filter(
-    (project) => project.permissions.can_manage && !project.archived_at,
-  )
-  const pages = useQueries({ queries: reviewable.map((p) => moderationCountOptions(p.slug)) })
-  return reviewable.flatMap((project, index) => {
-    const page = pages[index]?.data
-    const count = page ? waiting(page, project.slug, hidden) : 0
+  return (projects ?? []).flatMap((project) => {
+    if (project.archived_at || project.pending_moderation_count === null) return []
+    const count = waiting(project.pending_moderation_count, project.slug, hidden)
     return count > 0 ? [{ project, count }] : []
   })
 }
@@ -189,7 +173,25 @@ export function useIdeaSubmission(idea: string, options: { enabled?: boolean } =
  * infinite queue and the count's single page), so nothing flickers back in
  * between unhiding it and the refetch.
  */
+/** One idea fewer in a project's `pending_moderation_count`, wherever the project is cached. */
+function countOneLess<T extends { slug: string; pending_moderation_count: number | null }>(
+  project: T,
+  slug: string,
+): T {
+  return project.slug === slug && project.pending_moderation_count
+    ? { ...project, pending_moderation_count: project.pending_moderation_count - 1 }
+    : project
+}
+
 function dropFromQueue(queryClient: QueryClient, slug: string, ideaId: string) {
+  // The counts drop now, so they don't bounce back up when the idea leaves `hidden`
+  // before the refetch lands.
+  queryClient.setQueriesData<ProjectSummary[]>({ queryKey: queryKeys.projects.lists() }, (list) =>
+    list?.map((project) => countOneLess(project, slug)),
+  )
+  queryClient.setQueryData<Project>(queryKeys.projects.detail(slug), (project) =>
+    project ? countOneLess(project, slug) : project,
+  )
   queryClient.setQueriesData<ModerationData | ModerationPage>(
     { queryKey: queryKeys.submissions.moderation(slug) },
     (data) => {

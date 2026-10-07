@@ -6,7 +6,7 @@ import { ProgressTicks } from '@/components/ui/progress-ticks'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { StatusDot } from '@/components/ui/status-badge'
-import { WithTooltip } from '@/components/ui/tooltip'
+import { HoverTooltip } from '@/components/ui/tooltip'
 import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
 import { statusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -28,11 +28,12 @@ export function IdeaRow({ idea, showStatus = false }: { idea: IdeaSummary; showS
         {...{ [NAV_ITEM_ATTRIBUTE]: '' }}
       >
         {showStatus && <StatusDot tone={statusTone(idea.status, idea.resolution)} />}
-        <span className="w-16 shrink-0 text-xs text-muted tabular-nums max-sm:hidden">
+        {/* Keys never wrap ("TOOLS-10"): the column grows to fit them. */}
+        <span className="min-w-16 shrink-0 text-xs whitespace-nowrap text-muted tabular-nums max-sm:hidden">
           {idea.key}
         </span>
         <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-primary sm:truncate">
-          <span className="mr-2 text-xs font-normal text-muted tabular-nums sm:hidden">
+          <span className="mr-2 text-xs font-normal whitespace-nowrap text-muted tabular-nums sm:hidden">
             {idea.key}
           </span>
           {idea.title}
@@ -49,11 +50,11 @@ export function IdeaRow({ idea, showStatus = false }: { idea: IdeaSummary; showS
             />
           )}
           {idea.high_disagreement && (
-            <WithTooltip content="Evaluators disagree on at least one criterion">
+            <HoverTooltip content="Evaluators disagree on at least one criterion">
               <span role="img" aria-label="High disagreement" className="inline-flex text-warning">
                 <TriangleAlert aria-hidden="true" className="size-3.5" />
               </span>
-            </WithTooltip>
+            </HoverTooltip>
           )}
           <ScoreBadge size="sm" hidden={idea.score_hidden} score={idea.score?.overall ?? null} />
           <RelativeTime

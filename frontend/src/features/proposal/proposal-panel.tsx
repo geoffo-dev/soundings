@@ -153,20 +153,25 @@ function NoProposal({
 
   const [title, description] = archived
     ? ['No proposal was written', 'This project is archived, so its ideas are read-only.']
-    : !ready
+    : idea.status === 'closed'
       ? [
-          'Available once the idea is shortlisted',
-          'Strong ideas get a proposal: a short document the owner writes here and exports as PDF or Markdown.',
+          'No proposal was written for this idea',
+          'It was closed without one. Ideas get a proposal while they’re shortlisted.',
         ]
-      : idea.owner
+      : !ready
         ? [
-            'The owner will write the proposal',
-            `${idea.owner.display_name} can start it now. It will appear here, and you can comment on it as it takes shape.`,
+            'Available once the idea is shortlisted',
+            'Strong ideas get a proposal: a short document the owner writes here and exports as PDF or Markdown.',
           ]
-        : [
-            'The owner will write the proposal',
-            'Once the idea has an owner, they can start it here.',
-          ]
+        : idea.owner
+          ? [
+              'The owner will write the proposal',
+              `${idea.owner.display_name} can start it now. It will appear here, and you can comment on it as it takes shape.`,
+            ]
+          : [
+              'The owner will write the proposal',
+              'Once the idea has an owner, they can start it here.',
+            ]
   return (
     <div className="rounded-lg border">
       <EmptyState

@@ -40,6 +40,11 @@
     outline-offset: 2px;
   }
 
+  /* A page heading that took focus after a navigation (useRouteFocus): no ring. */
+  [data-route-focus]:focus {
+    outline: none;
+  }
+
   button:not(:disabled),
   [role='button']:not([aria-disabled='true']) {
     cursor: pointer;

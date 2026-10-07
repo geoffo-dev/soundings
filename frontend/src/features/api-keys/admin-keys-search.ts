@@ -1,11 +1,11 @@
 import type { AdminApiKeyFilters } from '@/api/api-keys'
 import { keySearchTerm } from '@/api/api-keys'
 import type { ApiKeyState } from '@/api/types'
-import { searchEnum, searchString } from '@/lib/search-params'
+import { searchEnum, searchFlag, searchString } from '@/lib/search-params'
 
 export const KEY_STATES = ['active', 'expired', 'dormant'] as const satisfies readonly ApiKeyState[]
 
-/** `/settings/all-api-keys?q=&state=&user_id=` (defaults dropped). */
+/** Everyone's keys: `?q=&state=&user_id=` (defaults dropped). */
 export interface AdminKeysSearch {
   /** A key name, an owner, or a key's prefix (a whole key is cut to its prefix). */
   q?: string
@@ -25,6 +25,20 @@ export function validateAdminKeysSearch(search: Record<string, unknown>): AdminK
     state: searchEnum(search.state, KEY_STATES),
     user_id: userId && UUID.test(userId) ? userId.toLowerCase() : undefined,
   }
+}
+
+/**
+ * `/settings/api-keys?everyone=1&q=&state=&user_id=`: your keys, or (platform admins,
+ * `everyone`) every key with the admin filters. The old `/settings/all-api-keys`
+ * redirects here.
+ */
+export interface ApiKeysSearch extends AdminKeysSearch {
+  everyone?: boolean
+}
+
+export function validateApiKeysSearch(search: Record<string, unknown>): ApiKeysSearch {
+  const everyone = searchFlag(search.everyone)
+  return { ...(everyone ? { everyone } : {}), ...validateAdminKeysSearch(search) }
 }
 
 export function toAdminKeyFilters(search: AdminKeysSearch): AdminApiKeyFilters {

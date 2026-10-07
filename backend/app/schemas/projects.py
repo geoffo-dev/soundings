@@ -132,6 +132,14 @@ class ProjectSummary(ProjectRef):
     member_count: int
     archived_at: datetime | None
     permissions: ProjectPermissions
+    pending_moderation_count: int | None = Field(
+        description=(
+            "Ideas from the public form held for moderation (the queue's total), for "
+            "people who may moderate this project (idea.moderate: project and platform "
+            "admins); null for everyone else. Phase 7: the sidebar's review counts come "
+            "from here, not from one moderation request per project."
+        )
+    )
 
 
 class Project(ProjectSummary):

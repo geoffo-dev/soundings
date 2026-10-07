@@ -12,7 +12,8 @@ import { expect, heading, signIn, test, toast } from './support/fixtures'
 const column = (page: Page, label: string) =>
   page.getByRole('region', { name: new RegExp(`^${label}\\b`) })
 const card = (scope: Page | Locator, key: string) =>
-  scope.getByRole('link', { name: new RegExp(`^${key}\\b`) })
+  // Cards are named "Title (KEY)".
+  scope.getByRole('link', { name: new RegExp(`\\(${key}\\)$`) })
 const announcer = (page: Page) => page.locator('[id^="DndLiveRegion"]')
 
 async function drag(page: Page, from: Locator, to: Locator) {

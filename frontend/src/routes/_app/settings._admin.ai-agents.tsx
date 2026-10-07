@@ -6,6 +6,6 @@ import { AiAgentsPage } from '@/features/admin/ai-agents/ai-agents-page'
 export const Route = createFileRoute('/_app/settings/_admin/ai-agents')({
   // A loader crumb (not staticData): it is only shown once the admin check passed.
   loader: () => ({ crumb: 'AI agents' }),
-  head: () => ({ meta: [{ title: 'AI agents · Settings · Soundings' }] }),
+  head: () => ({ meta: [{ title: 'AI agents · Admin · Soundings' }] }),
   component: AiAgentsPage,
 })

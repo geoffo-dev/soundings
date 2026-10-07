@@ -14,7 +14,7 @@ import {
   Settings,
   Sun,
 } from 'lucide-react'
-import { createContext, use, useMemo, useState, type ReactNode } from 'react'
+import { createContext, use, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { meQueryOptions } from '@/api/auth'
 import { findCachedIdea } from '@/api/cache'
@@ -23,12 +23,18 @@ import { useGlobalSearch } from '@/api/search'
 import { ProjectTile } from '@/components/layout/project-tile'
 import { ShortcutSheet } from '@/components/layout/shortcut-sheet'
 import { useTheme } from '@/components/theme-provider'
-import { CommandPalette, type CommandGroupData } from '@/components/ui/command-palette'
+import {
+  CommandPalette,
+  type CommandAction,
+  type CommandGroupData,
+} from '@/components/ui/command-palette'
 import { StatusDot } from '@/components/ui/status-badge'
+import { toast } from '@/components/ui/toaster'
 import { useSignOut } from '@/features/auth/use-sign-out'
 import { useRegisteredCommands } from '@/lib/command-registry'
 import { openCreateProject, openNewIdea } from '@/lib/dialogs'
 import { designPageEnabled } from '@/lib/env'
+import { loadShortcutPreference } from '@/lib/shortcut-preference'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 import { statusTone } from '@/lib/status'
 
@@ -50,12 +56,7 @@ const ADMIN_PAGES = [
   { id: 'groups', label: 'Groups', to: '/settings/groups', keywords: ['mapping', 'sync'] },
   { id: 'sso', label: 'Sign-in (SSO)', to: '/settings/sso', keywords: ['oidc', 'login'] },
   { id: 'email', label: 'Email', to: '/settings/email', keywords: ['smtp', 'outbox', 'mail'] },
-  {
-    id: 'all-api-keys',
-    label: 'All API keys',
-    to: '/settings/all-api-keys',
-    keywords: ['keys', 'tokens', 'mcp', 'agents', 'revoke'],
-  },
+  { id: 'branding', label: 'Branding', to: '/settings/branding', keywords: ['logo', 'colours'] },
   {
     id: 'ai-agents',
     label: 'AI agents',
@@ -113,9 +114,26 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
     if (!signedIn) setPaletteOpen(false)
   }
 
+  // Single-key shortcuts on or off: each person's own choice in this browser.
+  const userId = me.data?.id ?? null
+  useEffect(() => loadShortcutPreference(userId), [userId])
+
   useShortcut('commandPalette', () => setPaletteOpen((open) => !open))
   useShortcut('shortcutSheet', () => setShortcutsOpen(true))
-  useShortcut('newIdea', commands.newIdea, { enabled: canCreateIdeas })
+  // N always answers: a new idea where you may add one; on a fresh install a platform
+  // admin gets New project (there's nowhere to put an idea yet); otherwise say why not.
+  useShortcut(
+    'newIdea',
+    () => {
+      if (canCreateIdeas) commands.newIdea()
+      else if (me.data?.is_platform_admin && projects.data?.length === 0) openCreateProject()
+      else
+        toast.info('You can’t add ideas yet', {
+          description: 'Ask a project admin to add you to a project as a member.',
+        })
+    },
+    { enabled: signedIn },
+  )
   useShortcut('goToMyWork', () => void navigate({ to: '/' }), { enabled: signedIn })
   useShortcut('goToNotifications', () => void navigate({ to: '/notifications' }), {
     enabled: signedIn,
@@ -205,14 +223,24 @@ export function AppCommandsProvider({ children }: { children: ReactNode }) {
               },
               // Admin settings (platform admins only; the pages are a 404 for anyone else).
               ...(me.data?.is_platform_admin
-                ? ADMIN_PAGES.map((page) => ({
+                ? ADMIN_PAGES.map<CommandAction>((page) => ({
                     id: `settings-${page.id}`,
                     label: page.label,
                     hint: 'Admin',
                     icon: <Settings />,
                     keywords: ['admin', 'settings', ...page.keywords],
                     onSelect: () => void navigate({ to: page.to }),
-                  }))
+                  })).concat([
+                    {
+                      id: 'settings-everyones-keys',
+                      label: 'Everyone’s API keys',
+                      hint: 'Admin',
+                      icon: <Settings />,
+                      keywords: ['admin', 'all', 'keys', 'tokens', 'mcp', 'agents', 'revoke'],
+                      onSelect: () =>
+                        void navigate({ to: '/settings/api-keys', search: { everyone: true } }),
+                    },
+                  ])
                 : []),
             ]
           : []),

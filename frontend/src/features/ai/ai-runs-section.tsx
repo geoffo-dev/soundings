@@ -16,12 +16,21 @@ import { RunCard } from './run-card'
 /** Runs that keep a row on Overview: one per agent and kind (drafts live in the proposal). */
 const groupKey = (run: AiRun) => `${run.agent.id}:${run.kind}`
 
+/** A run that ended without doing its job (it offers "Try again"). */
+const stoppedShort = (run: AiRun) => run.status === 'failed' || run.status === 'timed_out'
+
 /**
- * Splits the idea's runs (newest first) into the latest run of each agent and kind,
- * active ones first, and everything older ("History"). Draft runs stay out: the
- * proposal editor shows them under their section.
+ * Splits the idea's runs (newest first) into the rows on show and "History". A row
+ * is the latest run of an agent and kind while it works or when it stopped short;
+ * runs that did their job (their evaluation or note is on the page already) go to
+ * History with everything older, unless `keep` holds them (a run someone watched
+ * finish stays, so its outcome doesn't vanish). Draft runs stay out: the proposal
+ * editor shows them under their section.
  */
-export function partitionRuns(runs: readonly AiRun[]): { latest: AiRun[]; history: AiRun[] } {
+export function partitionRuns(
+  runs: readonly AiRun[],
+  keep: (run: AiRun) => boolean = () => false,
+): { latest: AiRun[]; history: AiRun[] } {
   const seen = new Set<string>()
   const latest: AiRun[] = []
   const history: AiRun[] = []
@@ -32,7 +41,8 @@ export function partitionRuns(runs: readonly AiRun[]): { latest: AiRun[]; histor
       history.push(run)
     } else {
       seen.add(key)
-      latest.push(run)
+      if (isActiveRun(run) || stoppedShort(run) || keep(run)) latest.push(run)
+      else history.push(run)
     }
   }
   // Working runs on top; the rest keep newest first.
@@ -41,10 +51,10 @@ export function partitionRuns(runs: readonly AiRun[]): { latest: AiRun[]; histor
 }
 
 /**
- * The idea's AI runs on the Overview tab (contract-phase6 §3.15): one quiet row per
- * agent and kind, its latest run (live while it works, its outcome after), and the
- * older runs folded under "History (N)". Only a latest run that stopped short offers
- * "Try again". Nothing at all while there are none.
+ * The idea's AI runs on the Overview tab (contract-phase6 §3.15): a row per agent
+ * and kind only while its latest run works or after it stopped short (with "Try
+ * again"); finished runs fold under "History (N)", since what they saved is on the
+ * page already (the feed, the Evaluations tab). Nothing at all while there are none.
  * Everyone who can open the idea sees them (they hold no score data); only the
  * owner and admins get Cancel and "Try again".
  */
@@ -52,7 +62,10 @@ export function AiRunsSection() {
   const { ideaKey, idea, setTab } = useIdeaPage()
   const ai = useIdeaAi(ideaKey)
   const { ask, pending } = useAskAi(ideaKey, setTab)
-  const { latest, history } = partitionRuns(ai.runs)
+  // Runs seen working on this page keep their row once they end, outcome and all.
+  const [watched] = useState(() => new Set<string>())
+  for (const run of ai.runs) if (isActiveRun(run)) watched.add(run.id)
+  const { latest, history } = partitionRuns(ai.runs, (run) => watched.has(run.id))
   const [showHistory, setShowHistory] = useState(false)
   const headingId = useId()
   const historyId = useId()
@@ -60,7 +73,7 @@ export function AiRunsSection() {
   const evaluated = latest.some((run) => run.kind === 'evaluate' && run.status === 'succeeded')
   const evaluations = useEvaluations(ideaKey, { enabled: evaluated && !idea.score_hidden })
 
-  if (latest.length === 0) return null
+  if (latest.length === 0 && history.length === 0) return null
 
   const counted = (run: AiRun): boolean | undefined => {
     const id = run.result.evaluation_id
@@ -150,19 +163,21 @@ export function AiRunsSection() {
       <h2 id={headingId} className="text-sm font-medium text-muted">
         AI runs
       </h2>
-      <ul className="flex flex-col divide-y divide-subtle rounded-lg border bg-surface">
-        {latest.map((run) => (
-          <li key={run.id}>
-            <RunCard
-              ideaKey={ideaKey}
-              run={run}
-              resultAction={resultAction(run)}
-              retry={retry(run)}
-              counted={counted(run)}
-            />
-          </li>
-        ))}
-      </ul>
+      {latest.length > 0 && (
+        <ul className="flex flex-col divide-y divide-subtle rounded-lg border bg-surface">
+          {latest.map((run) => (
+            <li key={run.id}>
+              <RunCard
+                ideaKey={ideaKey}
+                run={run}
+                resultAction={resultAction(run)}
+                retry={retry(run)}
+                counted={counted(run)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
       {history.length > 0 && (
         <>
           <Button

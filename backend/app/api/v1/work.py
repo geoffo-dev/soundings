@@ -1,4 +1,4 @@
-"""My work: the home screen, and the full list of ideas I own."""
+"""My work: the home screen, its counts, every evaluation due and every idea I own."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from app.db import SessionDep
 from app.models.enums import IdeaStatus
 from app.pagination import PageParamsDep
 from app.schemas.ideas import IdeaPage
-from app.schemas.work import Work
+from app.schemas.work import Work, WorkCounts, WorkEvaluationPage
 from app.services import work
 
 router = APIRouter(prefix="/me", tags=["work"])
@@ -27,6 +27,36 @@ router = APIRouter(prefix="/me", tags=["work"])
 )
 async def get_my_work(principal: PrincipalDep, session: SessionDep) -> Work:
     return await work.get_my_work(session, principal)
+
+
+@router.get(
+    "/work/counts",
+    operation_id="get_my_work_counts",
+    summary="My work counts (sidebar badges)",
+    description=(
+        "The sidebar's badges alone: evaluations you owe (and how many are overdue) and "
+        "the ideas you own that are not closed. The same numbers as GET /me/work's counts."
+    ),
+    responses=problems(401),
+)
+async def get_my_work_counts(principal: PrincipalDep, session: SessionDep) -> WorkCounts:
+    return await work.get_work_counts(session, principal)
+
+
+@router.get(
+    "/evaluations-due",
+    operation_id="list_my_evaluations_due",
+    summary="Evaluations I owe",
+    description=(
+        "Every evaluation you owe, in My work's order (overdue first, then soonest due, no "
+        "due date last). 'Show all' in My work: cursor=<work.evaluations_due_next_cursor>."
+    ),
+    responses=problems(400, 401),
+)
+async def list_my_evaluations_due(
+    principal: PrincipalDep, session: SessionDep, page: PageParamsDep
+) -> WorkEvaluationPage:
+    return await work.list_evaluations_due(session, principal, cursor=page.cursor, limit=page.limit)
 
 
 @router.get(

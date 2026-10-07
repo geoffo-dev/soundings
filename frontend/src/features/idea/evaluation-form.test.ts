@@ -202,8 +202,9 @@ describe('guidanceFor', () => {
       inverted: false,
     })
     expect(guidance[1]).toBe('1 · Little benefit.')
-    expect(guidance[2]).toBe('2 · Between 1 and 3')
-    expect(guidance[4]).toBe('4 · Between 3 and 5')
+    // The scores between get real words: their level, and the two they lie between.
+    expect(guidance[2]).toBe('2 · Weak: between “Little benefit” (1) and “Useful” (3)')
+    expect(guidance[4]).toBe('4 · Strong: between “Useful” (3) and “Major benefit” (5)')
     expect(guidance[5]).toBe('5 · Major benefit.')
   })
 

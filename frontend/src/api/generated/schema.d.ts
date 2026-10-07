@@ -1705,6 +1705,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/evaluations-due": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Evaluations I owe
+         * @description Every evaluation you owe, in My work's order (overdue first, then soonest due, no due date last). 'Show all' in My work: cursor=<work.evaluations_due_next_cursor>.
+         */
+        get: operations["list_my_evaluations_due"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/notification-preferences": {
         parameters: {
             query?: never;
@@ -1841,6 +1861,26 @@ export interface paths {
          * @description Evaluations due, ideas I own by status, recent ideas, sidebar counts.
          */
         get: operations["get_my_work"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/work/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My work counts (sidebar badges)
+         * @description The sidebar's badges alone: evaluations you owe (and how many are overdue) and the ideas you own that are not closed. The same numbers as GET /me/work's counts.
+         */
+        get: operations["get_my_work_counts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3530,7 +3570,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -5980,6 +6020,11 @@ export interface components {
             my_role: components["schemas"]["ProjectRole"] | null;
             /** Name */
             name: string;
+            /**
+             * Pending Moderation Count
+             * @description Ideas from the public form held for moderation (the queue's total), for people who may moderate this project (idea.moderate: project and platform admins); null for everyone else. Phase 7: the sidebar's review counts come from here, not from one moderation request per project.
+             */
+            pending_moderation_count: number | null;
             permissions: components["schemas"]["ProjectPermissions"];
             /**
              * Rubric
@@ -6145,6 +6190,11 @@ export interface components {
             my_role: components["schemas"]["ProjectRole"] | null;
             /** Name */
             name: string;
+            /**
+             * Pending Moderation Count
+             * @description Ideas from the public form held for moderation (the queue's total), for people who may moderate this project (idea.moderate: project and platform admins); null for everyone else. Phase 7: the sidebar's review counts come from here, not from one moderation request per project.
+             */
+            pending_moderation_count: number | null;
             permissions: components["schemas"]["ProjectPermissions"];
             /** Slug */
             slug: string;
@@ -7450,9 +7500,14 @@ export interface components {
             counts: components["schemas"]["WorkCounts"];
             /**
              * Evaluations Due
-             * @description Overdue first, then soonest due; no due date last.
+             * @description Overdue first, then soonest due; no due date last. The first 50 (counts.evaluations_due has the total).
              */
             evaluations_due: components["schemas"]["WorkEvaluation"][];
+            /**
+             * Evaluations Due Next Cursor
+             * @description More evaluations due: GET /me/evaluations-due?cursor=<this>; null when evaluations_due holds them all.
+             */
+            evaluations_due_next_cursor: string | null;
             /**
              * Owned
              * @description Ideas you own, grouped by status in lifecycle order (closed last, for the collapsed 'Show closed' row); empty groups are omitted.
@@ -7466,12 +7521,12 @@ export interface components {
         };
         /**
          * WorkCounts
-         * @description Sidebar badges.
+         * @description Sidebar badges (also ``GET /me/work/counts``, which runs only the counts).
          */
         WorkCounts: {
             /**
              * Evaluations Due
-             * @description Evaluations you owe (length of evaluations_due).
+             * @description All evaluations you owe (Work.evaluations_due lists the first 50 of them).
              */
             evaluations_due: number;
             /** Evaluations Overdue */
@@ -7502,6 +7557,17 @@ export interface components {
              * @enum {string}
              */
             state: "invited" | "draft";
+        };
+        /**
+         * WorkEvaluationPage
+         * @description Evaluations you owe, in My work's order (overdue first, then soonest due, no due
+         *     date last). Phase 7 (C1): "Show all" pages on from ``Work.evaluations_due_next_cursor``.
+         */
+        WorkEvaluationPage: {
+            /** Items */
+            items: components["schemas"]["WorkEvaluation"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** WorkOwnedGroup */
         WorkOwnedGroup: {
@@ -14555,6 +14621,67 @@ export interface operations {
             };
         };
     };
+    list_my_evaluations_due: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkEvaluationPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     get_notification_preferences: {
         parameters: {
             query?: never;
@@ -14957,6 +15084,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Work"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_my_work_counts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkCounts"];
                 };
             };
             /** @description Not signed in (unauthorized) */

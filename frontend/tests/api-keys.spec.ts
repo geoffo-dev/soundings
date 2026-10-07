@@ -101,6 +101,13 @@ test('creates a key, shows it once with ready-made examples, then never again', 
   )
   // An assistant on every project: a nudge towards fewer.
   await expect(dialog.getByText('keep it to the projects it needs')).toBeVisible()
+  // The scopes themselves are behind "Custom".
+  await expect(dialog.getByRole('checkbox', { name: /^Read/ })).toBeHidden()
+  await dialog.getByRole('button', { name: 'Custom' }).click()
+  await expect(dialog.getByRole('button', { name: 'Custom' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   const read = dialog.getByRole('checkbox', { name: /^Read/ })
   await expect(read).toBeChecked()
   await expect(read).toBeDisabled()
@@ -110,6 +117,7 @@ test('creates a key, shows it once with ready-made examples, then never again', 
   // MCP alone: allowed, but the form says it can't do anything.
   await expect(dialog.getByText('This key can connect, but do nothing')).toBeVisible()
   await dialog.getByRole('button', { name: 'Evaluate with an assistant' }).click()
+  await expect(dialog.getByRole('checkbox', { name: /^Read/ })).toBeHidden()
 
   await dialog.getByRole('radio', { name: '30 days' }).click()
   await expect(dialog.getByText(/Stops working on/)).toBeVisible()

@@ -39,7 +39,10 @@ import { hasContent, MARKDOWN_HINT_ID } from './text'
 export function EditorBar({ proposal }: { proposal: Proposal }) {
   const { permissions } = useProposalEditor()
   return (
-    <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle bg-surface px-4 py-2.5 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+    <div
+      data-sticky-top=""
+      className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle bg-surface px-4 py-2.5 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0"
+    >
       <SaveState proposal={proposal} />
       {permissions.can_edit && (
         // Once for the whole editor (each section's text is described by it).

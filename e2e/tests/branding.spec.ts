@@ -120,7 +120,7 @@ test('BR-02: a project’s override: live preview, then its public form, never t
   const global = (await alice.globalBranding()).effective
   await signIn(page, 'alice')
   await page.goto(`/p/${project.slug}/settings?tab=branding`)
-  const panel = page.getByRole('tabpanel', { name: 'Branding' })
+  const panel = page.getByRole('tabpanel', { name: 'Public form' })
   await expect(panel.getByText('From the global branding').first()).toBeVisible()
   await panel
     .getByRole('button', { name: `Brick (${PROJECT_PRIMARY})` })
@@ -283,7 +283,7 @@ test('BR-03: hostile images and values are refused with a reason', async ({ page
   // The settings page says why, and keeps the form.
   await signIn(page, 'alice')
   await page.goto(`/p/${project.slug}/settings?tab=branding`)
-  const favicon = page.getByRole('tabpanel', { name: 'Branding' }).getByRole('group', {
+  const favicon = page.getByRole('tabpanel', { name: 'Public form' }).getByRole('group', {
     name: 'Favicon',
   })
   await favicon.locator('input[type="file"]').setInputFiles({

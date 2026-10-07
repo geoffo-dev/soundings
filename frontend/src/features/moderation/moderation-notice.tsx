@@ -13,7 +13,7 @@ import { useCommands } from '@/lib/command-registry'
  */
 export function ModerationNotice({ project }: { project: Project }) {
   const admin = project.permissions.can_manage
-  const count = useModerationCount(project.slug, { enabled: admin }).data ?? 0
+  const count = useModerationCount(project)
   const navigate = useNavigate()
 
   useCommands(
@@ -37,7 +37,25 @@ export function ModerationNotice({ project }: { project: Project }) {
 
   if (!admin || count === 0) return null
   return (
-    <div className="-mt-1 flex items-center gap-2 rounded-md bg-warning-subtle px-3 py-1.5 text-sm text-primary">
+    <>
+      {/* Phones: one short line that is itself the link, so the ideas start higher. */}
+      <Link
+        to="/p/$slug/review"
+        params={{ slug: project.slug }}
+        className="-mt-1 flex h-8 w-fit items-center gap-2 rounded-md bg-warning-subtle px-2.5 text-sm text-primary sm:hidden"
+      >
+        <Inbox aria-hidden="true" className="size-4 shrink-0 text-warning" />
+        {count === 1 ? '1 idea' : `${count} ideas`} waiting for review
+        <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-muted" />
+      </Link>
+      <Banner project={project} count={count} />
+    </>
+  )
+}
+
+function Banner({ project, count }: { project: Project; count: number }) {
+  return (
+    <div className="-mt-1 flex items-center gap-2 rounded-md bg-warning-subtle px-3 py-1.5 text-sm text-primary max-sm:hidden">
       <Inbox aria-hidden="true" className="size-4 shrink-0 text-warning" />
       <p className="min-w-0 flex-1">
         {count === 1 ? '1 idea from the public form is' : `${count} ideas from the public form are`}{' '}

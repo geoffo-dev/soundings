@@ -7,7 +7,9 @@
 #                    # + the fake kagent on localhost:8083 (SOUNDINGS_KAGENT_URL)
 #
 # Host ports default to the standard ones and can be changed in dev/.env
-# (copy dev/.env.example). See dev/README.md for URLs and test users.
+# (copy dev/.env.example). They are published on 127.0.0.1 only (fixed passwords:
+# SOUNDINGS_DEV_BIND_ADDRESS=0.0.0.0 opens them to the network, at your own risk).
+# See dev/README.md for URLs and test users.
 # Dev only: fixed passwords, Keycloak in dev mode, no TLS.
 name: soundings-dev
 
@@ -19,7 +21,7 @@ services:
       POSTGRES_USER: soundings
       POSTGRES_PASSWORD: soundings
     ports:
-      - "${SOUNDINGS_DEV_POSTGRES_PORT:-5432}:5432"
+      - "${SOUNDINGS_DEV_BIND_ADDRESS:-127.0.0.1}:${SOUNDINGS_DEV_POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -41,7 +43,7 @@ services:
       KC_HOSTNAME_STRICT: "false"
       KC_LOG_LEVEL: warn,org.keycloak.exportimport:info
     ports:
-      - "${SOUNDINGS_DEV_KEYCLOAK_PORT:-8080}:8080"
+      - "${SOUNDINGS_DEV_BIND_ADDRESS:-127.0.0.1}:${SOUNDINGS_DEV_KEYCLOAK_PORT:-8080}:8080"
     volumes:
       - ./keycloak/realm-soundings.json:/opt/keycloak/data/import/realm-soundings.json:ro
     healthcheck:
@@ -72,8 +74,8 @@ services:
       MP_DISABLE_VERSION_CHECK: "true"
       MP_MAX_MESSAGES: "5000"
     ports:
-      - "${SOUNDINGS_DEV_MAILPIT_UI_PORT:-8025}:8025"
-      - "${SOUNDINGS_DEV_MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${SOUNDINGS_DEV_BIND_ADDRESS:-127.0.0.1}:${SOUNDINGS_DEV_MAILPIT_UI_PORT:-8025}:8025"
+      - "${SOUNDINGS_DEV_BIND_ADDRESS:-127.0.0.1}:${SOUNDINGS_DEV_MAILPIT_SMTP_PORT:-1025}:1025"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 2s
@@ -104,7 +106,7 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     ports:
-      - "${SOUNDINGS_DEV_FAKE_AGENT_PORT:-8083}:8083"
+      - "${SOUNDINGS_DEV_BIND_ADDRESS:-127.0.0.1}:${SOUNDINGS_DEV_FAKE_AGENT_PORT:-8083}:8083"
     volumes:
       - ./.fake-agent-keys:/keys:ro
     healthcheck:

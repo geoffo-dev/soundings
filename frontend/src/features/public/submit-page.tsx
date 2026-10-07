@@ -7,7 +7,6 @@ import type { PublicProject, PublicSubmissionReceipt } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 import { Checkbox } from '@/components/ui/checkbox'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Markdown } from '@/components/ui/markdown'
@@ -18,7 +17,7 @@ import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import { HumanCheck } from './human-check'
-import { PublicCard, PublicLayout } from './public-layout'
+import { PublicCard, PublicLayout, PublicMessage } from './public-layout'
 import { SubmissionReceipt } from './receipt'
 import {
   EMPTY_PUBLIC_FORM,
@@ -51,19 +50,18 @@ export function PublicSubmitPage({ slug, solver }: { slug: string; solver?: Altc
           {missing ? (
             <FormUnavailable />
           ) : (
-            <EmptyState
+            <PublicMessage
               role="alert"
-              size="compact"
-              headingLevel={1}
               icon={<CloudOff />}
               title="We couldn’t load this form"
-              description="Check your connection and try again."
               action={
                 <Button variant="primary" onClick={() => void project.refetch()}>
                   Try again
                 </Button>
               }
-            />
+            >
+              Check your connection and try again.
+            </PublicMessage>
           )}
         </PublicCard>
       </PublicLayout>
@@ -75,13 +73,9 @@ export function PublicSubmitPage({ slug, solver }: { slug: string; solver?: Altc
 
 function FormUnavailable() {
   return (
-    <EmptyState
-      size="compact"
-      headingLevel={1}
-      icon={<FileQuestion />}
-      title="This form isn’t available"
-      description="The link may be mistyped, or the form has been turned off."
-    />
+    <PublicMessage icon={<FileQuestion />} title="This form isn’t available">
+      The link may be mistyped, or the form has been turned off.
+    </PublicMessage>
   )
 }
 

@@ -406,9 +406,10 @@ connection, the worker for runs.
 
 {{/*
 Sign-in secrets, for the api pods only (the worker never signs anyone in): the OIDC
-client secret, and the break-glass credentials. The app ignores the latter while
-oidc.issuer is set; they stay wired so that unsetting the issuer in an SSO outage
-brings back the same account.
+client secret, and the break-glass credentials only while oidc.issuer is empty (the app
+can't use them with SSO configured; security review P7 N2). The Secret keeps the
+password either way, so unsetting the issuer in an SSO outage (helm upgrade --set
+oidc.issuer=) wires the same account back.
 */}}
 {{- define "soundings.signInSecretEnv" -}}
 {{- $fullname := include "soundings.fullname" . -}}
@@ -419,7 +420,7 @@ brings back the same account.
       name: {{ .Values.oidc.existingSecret | default $fullname }}
       key: {{ ternary .Values.oidc.existingSecretKey "oidc-client-secret" (not (empty .Values.oidc.existingSecret)) }}
 {{- end }}
-{{- if .Values.breakGlass.enabled }}
+{{- if and .Values.breakGlass.enabled (not .Values.oidc.issuer) }}
 - name: SOUNDINGS_BREAK_GLASS_USERNAME
   valueFrom:
     secretKeyRef:

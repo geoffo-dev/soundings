@@ -50,7 +50,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { TagInput } from '@/components/ui/tag-input'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { isActiveRun } from '@/features/ai/ai-copy'
-import { AskAiToEvaluateButton, showRun, submittedEvaluatorIds } from '@/features/ai/idea-ai'
+import { showRun } from '@/features/ai/idea-ai'
 import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
@@ -228,7 +228,7 @@ function EvaluatorsSection() {
   const sectionRef = useRef<HTMLElement>(null)
   const inviteRef = useRef<HTMLButtonElement>(null)
   // An AI evaluator's progress button goes when its run ends: if it had focus, focus
-  // "Ask AI to evaluate again" (or "Invite evaluators") rather than <body>.
+  // "Invite evaluators" (or the AI menu, where agents are asked) rather than <body>.
   const runStateHadFocus = useRef(false)
   const activeRunIds = (aiRuns ?? [])
     .filter((run) => run.kind === 'evaluate' && isActiveRun(run))
@@ -241,8 +241,7 @@ function EvaluatorsSection() {
     runStateHadFocus.current = false
     focusWhenRendered(
       () =>
-        sectionRef.current?.querySelector<HTMLElement>('[data-ask-ai-evaluate]') ??
-        inviteRef.current,
+        inviteRef.current ?? document.querySelector<HTMLElement>('button[aria-label="AI actions"]'),
       { force: true },
     )
   }, [activeRunIds])
@@ -359,11 +358,6 @@ function EvaluatorsSection() {
           Invite evaluators
         </Button>
       )}
-      <AskAiToEvaluateButton
-        ideaKey={ideaKey}
-        setTab={setTab}
-        submittedIds={submittedEvaluatorIds(idea.evaluators)}
-      />
 
       {(total > 0 || idea.evaluation_due_at) && (
         <dl className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-3 text-sm">

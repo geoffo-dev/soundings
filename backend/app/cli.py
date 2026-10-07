@@ -18,7 +18,7 @@ logger = logging.getLogger("soundings.cli")
 
 # Commands that only talk to the database: they read DatabaseSettings, so they run
 # without the API's secrets (e.g. a Helm pre-upgrade migration Job).
-_DATABASE_COMMANDS = frozenset({"migrate", "wait-for-db", "seed"})
+_DATABASE_COMMANDS = frozenset({"migrate", "wait-for-db", "seed", "anonymise-user"})
 # Commands that need no settings at all.
 _STANDALONE_COMMANDS = frozenset({"email-preview"})
 
@@ -106,6 +106,27 @@ def _seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _anonymise_user(args: argparse.Namespace) -> int:
+    from app.db import create_engine, create_sessionmaker, session_scope
+    from app.services.anonymise import AnonymiseRefused, anonymise_user
+
+    async def run() -> str:
+        engine = create_engine(get_database_settings())
+        try:
+            async with session_scope(create_sessionmaker(engine)) as db:
+                return (await anonymise_user(db, args.email)).summary()
+        finally:
+            await engine.dispose()
+
+    try:
+        summary = asyncio.run(run())
+    except AnonymiseRefused as exc:
+        sys.stderr.write(f"soundings: {exc}\n")
+        return 1
+    sys.stdout.write(f"{summary}\n")
+    return 0
+
+
 def _openapi(args: argparse.Namespace) -> int:
     from app.main import app
     from app.openapi import export_openapi
@@ -181,6 +202,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     seed.set_defaults(func=_seed)
 
+    anonymise = commands.add_parser(
+        "anonymise-user",
+        help="remove a deactivated person's name, address and sign-in links (GDPR erasure)",
+        description=(
+            "Replace a deactivated account's name and email with placeholders, delete its "
+            "sign-in identities, external ids, sessions, inbox and outbox, revoke its keys "
+            "and rename its @mentions. Ideas, evaluations, comments and audit entries stay "
+            "under the placeholder. Records a user.anonymise audit entry. Can't be undone."
+        ),
+    )
+    anonymise.add_argument("email", help="the account's email address (any case)")
+    anonymise.set_defaults(func=_anonymise_user)
+
     preview = commands.add_parser(
         "email-preview",
         help="render every email template with sample data to HTML and text files",
@@ -199,6 +233,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+IMPLICIT_DEVELOPMENT_MESSAGE = (
+    "soundings: refusing to start. SOUNDINGS_ENVIRONMENT is not set, so this would run in "
+    "development mode, signing links and challenges with the built-in development key, "
+    "which is public. In production set SOUNDINGS_ENVIRONMENT=production and "
+    "SOUNDINGS_SECRET_KEY (32+ random characters); on a developer machine set "
+    "SOUNDINGS_ENVIRONMENT=development.\n"
+)
+_SERVING_COMMANDS = frozenset({"api", "worker"})
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command in _STANDALONE_COMMANDS:
@@ -208,6 +252,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     settings: DatabaseSettings = (
         get_database_settings() if args.command in _DATABASE_COMMANDS else get_settings()
     )
+    if (
+        args.command in _SERVING_COMMANDS
+        and isinstance(settings, Settings)
+        and settings.implicit_development_secret
+    ):
+        sys.stderr.write(IMPLICIT_DEVELOPMENT_MESSAGE)
+        return 2
     configure_logging(
         settings.log_level,
         redact_exception_messages=settings.is_production,

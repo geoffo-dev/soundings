@@ -42,6 +42,7 @@ from pydantic import BaseModel, ValidationError
 from app.ai import results as ai_results
 from app.api_keys.verify import reload_api_key
 from app.auth.key_auth import refuse_reloaded_key, take_key_write
+from app.authz import writes_as_ai
 from app.db import session_scope
 from app.domain.principal import Principal
 from app.errors import ProblemError
@@ -137,7 +138,7 @@ async def call_tool(
     raw = dict(arguments or {})
     try:
         args = tool.input.model_validate(raw)
-        if not tool.read_only and principal.user.is_service_account:
+        if not tool.read_only and writes_as_ai(principal):
             # M2: an agent's Markdown and comments without invisible or direction
             # characters, validated again (so text that was only those is refused).
             cleaned = agent_text_arguments(raw)

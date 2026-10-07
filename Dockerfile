@@ -3,10 +3,15 @@
 # WeasyPrint's PDF export (ADR 0011).
 #
 #   docker build -t soundings:dev .
-#   docker run --rm -p 8000:8000 -e SOUNDINGS_DATABASE_URL=... soundings:dev            # API + SPA
-#   docker run --rm -e SOUNDINGS_DATABASE_URL=... soundings:dev worker                  # worker
-#   docker run --rm -e SOUNDINGS_DATABASE_URL=... soundings:dev migrate                 # migrations
-#   docker run --rm -e SOUNDINGS_DATABASE_URL=... soundings:dev seed                    # demo data
+#   docker run --rm -p 8000:8000 --env-file soundings.env soundings:dev   # API + SPA
+#   docker run --rm --env-file soundings.env soundings:dev worker         # worker
+#   docker run --rm --env-file soundings.env soundings:dev migrate        # migrations
+#
+# The image runs in **production** mode (SOUNDINGS_ENVIRONMENT=production): it needs
+# SOUNDINGS_DATABASE_URL, SOUNDINGS_SECRET_KEY (32+ random characters) and
+# SOUNDINGS_BASE_URLS at least (docs/operator-guide.md, "Running the image without
+# Helm"). Development (dev login, the demo seed without --force) must be asked for
+# with SOUNDINGS_ENVIRONMENT=development, as make demo and the chart's devLogin do.
 #
 # Build-time HTTPS behind a TLS-intercepting proxy: pass the CA bundle as a BuildKit
 # secret (never stored in a layer):  docker build --secret id=build_ca,src=/path/ca.pem .
@@ -31,7 +36,9 @@ RUN --mount=type=secret,id=build_ca,required=false \
     if [ -s /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \
     npm ci --no-audit --no-fund
 COPY frontend/ ./
-RUN npm run build
+COPY scripts/precompress-assets.mjs /tmp/precompress-assets.mjs
+# Brotli and gzip twins of every compressible file (served by backend/app/spa.py).
+RUN npm run build && node /tmp/precompress-assets.mjs dist
 
 # ---------------------------------------------------------------------------------
 # 2. Base: Ubuntu, its Python 3.12 and the runtime libraries (shared by the backend
@@ -150,7 +157,8 @@ ENV PATH="/app/venv/bin:${PATH}" \
     XDG_CACHE_HOME=/tmp/cache \
     SOUNDINGS_STATIC_DIR=/app/static \
     SOUNDINGS_HOST=0.0.0.0 \
-    SOUNDINGS_PORT=8000
+    SOUNDINGS_PORT=8000 \
+    SOUNDINGS_ENVIRONMENT=production
 
 ARG VERSION=0.1.0
 ARG VCS_REF=unknown

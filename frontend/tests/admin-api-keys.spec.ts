@@ -3,7 +3,8 @@ import type { Page } from '@playwright/test'
 import { expect, seriousViolations, test, USERS } from './support'
 
 /**
- * Admin settings → API keys (contract-phase5 §3.10) against the mock: eight keys
+ * Settings → API keys → Everyone's keys (platform admins; contract-phase5 §3.10; the
+ * Phase 5 "All API keys" page, merged in Phase 7) against the mock: eight keys
  * that aren't revoked, among them the Research agent's and Idea evaluator's
  * (service accounts, keys created by Priya), Mateo Rossi's dormant one and
  * Alice's expired "Old laptop".
@@ -20,8 +21,10 @@ const toast = (page: Page, text: string | RegExp) =>
   page.locator('[data-sonner-toast]', { hasText: text })
 
 async function open(page: Page, query = '') {
+  // The old address still works: it lands on Everyone's keys with its filters.
   await page.goto(`/settings/all-api-keys${query}`)
-  await expect(page.getByRole('heading', { level: 2, name: 'All API keys' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'API keys' })).toBeVisible()
+  await expect(page.getByRole('radio', { name: 'Everyone’s keys' })).toBeChecked()
   await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
 }
 
@@ -105,7 +108,7 @@ test('filters by state, and by owner from their admin page', async ({ page }) =>
   await page.goto(`/settings/users/${ALICE}`)
   const sheet = page.getByRole('dialog', { name: /Alice Anders/ })
   await sheet.getByRole('link', { name: 'API keys' }).click()
-  await expect(page).toHaveURL(new RegExp(`/settings/all-api-keys\\?user_id=${ALICE}$`))
+  await expect(page).toHaveURL(new RegExp(`/settings/api-keys\\?everyone=1&user_id=${ALICE}$`))
   await expect(page.getByText('3 keys')).toBeVisible()
   await expect(page.locator('[data-slot="filter-value-chip"]')).toContainText('Alice Anders')
   await page.getByRole('button', { name: 'Remove Owner filter' }).click()
@@ -138,10 +141,8 @@ test('revokes anyone’s key after a confirm that names it; focus moves to the n
   )
   await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
   // The audit log has it (in-app navigation: a page load resets the mock).
-  await page
-    .getByRole('navigation', { name: 'Settings sections' })
-    .getByRole('link', { name: 'Audit log' })
-    .click()
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Admin' }).click()
+  await page.getByRole('main').getByRole('link', { name: /^Audit log/ }).click()
   await expect(page.getByText(/revoked API key sdg_J1r4SyncB0b2 of Bob Chen/).first()).toBeVisible()
 })
 
@@ -154,7 +155,9 @@ test('"Sign out everywhere" says keys keep working and links to that person’s 
   const confirm = page.getByRole('alertdialog', { name: 'Sign Bob Chen out everywhere?' })
   await expect(confirm).toContainText('API keys keep working')
   await confirm.getByRole('link', { name: 'Review their keys' }).click()
-  await expect(page).toHaveURL(new RegExp(`/settings/all-api-keys\\?user_id=${USERS.bob}$`))
+  await expect(page).toHaveURL(
+    new RegExp(`/settings/api-keys\\?everyone=1&user_id=${USERS.bob}$`),
+  )
   await expect(page.getByText('1 key', { exact: true })).toBeVisible()
 })
 
@@ -167,7 +170,7 @@ test('deactivating someone says their keys are revoked, and they are', async ({ 
   await confirm.getByRole('button', { name: 'Deactivate' }).click()
   await expect(toast(page, 'Alice Anders deactivated')).toBeVisible()
   await sheet.getByRole('link', { name: 'API keys' }).click()
-  await expect(page).toHaveURL(new RegExp(`/settings/all-api-keys\\?user_id=${ALICE}$`))
+  await expect(page).toHaveURL(new RegExp(`/settings/api-keys\\?everyone=1&user_id=${ALICE}$`))
   await expect(page.getByRole('heading', { name: 'No keys match' })).toBeVisible()
 })
 
@@ -184,9 +187,9 @@ test('⌘K finds the page', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('all api keys')
+  await page.keyboard.type('everyone’s api keys')
   await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/\/settings\/all-api-keys$/)
+  await expect(page).toHaveURL(/\/settings\/api-keys\?everyone=1$/)
 })
 
 test.describe('without platform admin rights', () => {

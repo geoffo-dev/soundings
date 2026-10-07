@@ -4,7 +4,7 @@ import type { IdeaSummary, UserRef } from '@/api/types'
 import { Avatar, type AvatarSize } from '@/components/ui/avatar'
 import { ProgressTicks } from '@/components/ui/progress-ticks'
 import { ScoreBadge } from '@/components/ui/score-badge'
-import { WithTooltip } from '@/components/ui/tooltip'
+import { HoverTooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 /** The owner's avatar, or a dashed circle for "no owner". */
@@ -61,11 +61,11 @@ export function IdeaScore({
 
 export function DisagreementFlag() {
   return (
-    <WithTooltip content="High disagreement: evaluators are 2+ points apart on a criterion">
+    <HoverTooltip content="High disagreement: evaluators are 2+ points apart on a criterion">
       <span role="img" aria-label="High disagreement" className="inline-flex text-warning">
         <TriangleAlert aria-hidden="true" className="size-3.5" />
       </span>
-    </WithTooltip>
+    </HoverTooltip>
   )
 }
 

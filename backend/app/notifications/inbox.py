@@ -16,7 +16,7 @@ from uuid import UUID
 from sqlalchemy import exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import viewable_ideas
+from app.authz import sees_email_trouble, viewable_ideas
 from app.config import Settings
 from app.domain.labels import status_label
 from app.domain.principal import Principal
@@ -238,7 +238,7 @@ async def summary(
     db: AsyncSession, settings: Settings, principal: Principal
 ) -> NotificationSummary:
     trouble = False
-    if settings.smtp_configured and principal.is_platform_admin:
+    if settings.smtp_configured and sees_email_trouble(principal):
         trouble = await email_trouble(db)
     return NotificationSummary(
         unread_count=await _unread_count(db, principal),

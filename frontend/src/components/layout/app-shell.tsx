@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { NavigationProgress } from '@/components/layout/navigation-progress'
+import { useRouteFocus } from '@/components/layout/route-focus'
 import { Sidebar } from '@/components/layout/sidebar'
 import { SidebarProvider, useSidebar } from '@/components/layout/sidebar-context'
 import { TopBar, type TopBarProps } from '@/components/layout/top-bar'
@@ -30,6 +32,7 @@ export function AppShell(props: AppShellProps) {
 
 function ShellLayout({ children, topBar, banner, className }: AppShellProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar()
+  useRouteFocus()
 
   return (
     <div className={cn('flex h-dvh overflow-hidden bg-background', className)}>
@@ -77,15 +80,23 @@ function ShellLayout({ children, topBar, banner, className }: AppShellProps) {
       </Sheet>
 
       <div className={cn('flex min-w-0 flex-1 flex-col md:py-2 md:pr-2', collapsed && 'md:pl-2')}>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface md:rounded-lg md:border">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface md:rounded-lg md:border">
+          <NavigationProgress />
           {banner}
           <TopBar {...topBar} />
           {/* `relative`: absolutely positioned descendants (sr-only text, hidden inputs)
-              belong to this scroller; without it they overflow the document instead. */}
+              belong to this scroller; without it they overflow the document instead.
+              While a form's Save bar sticks to the bottom (FormActions), focus scrolls
+              fields clear of it (WCAG 2.4.11 focus not obscured). */}
           <main
             id="main"
             tabIndex={-1}
-            className="relative min-h-0 flex-1 overflow-y-auto focus:outline-none"
+            className={cn(
+              'relative min-h-0 flex-1 overflow-y-auto focus:outline-none',
+              'has-[[data-sticky-actions=always]]:scroll-pb-20 max-sm:has-[[data-sticky-actions=phone]]:scroll-pb-20',
+              // The same under a bar that sticks to the top (the proposal editor's).
+              'has-[[data-sticky-top]]:scroll-pt-16',
+            )}
           >
             {children}
           </main>

@@ -62,7 +62,9 @@ export function OwnerDialog({
               label="Owner"
               placeholder="Assign to…"
               onSelect={(person) => choose(toUserRef(person))}
-              before={
+              // Last, so it's never what an early Enter picks (the highlight starts on
+              // the current owner).
+              after={
                 owner && (
                   <CommandGroup>
                     <CommandItem value="remove-owner" onSelect={() => choose(null)}>

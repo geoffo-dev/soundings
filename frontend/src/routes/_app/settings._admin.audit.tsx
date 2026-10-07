@@ -8,7 +8,7 @@ export const Route = createFileRoute('/_app/settings/_admin/audit')({
   validateSearch: validateAuditSearch,
   // A loader crumb (not staticData): it is only shown once the admin check passed.
   loader: () => ({ crumb: 'Audit log' }),
-  head: () => ({ meta: [{ title: 'Audit log · Settings · Soundings' }] }),
+  head: () => ({ meta: [{ title: 'Audit log · Admin · Soundings' }] }),
   component: AuditRoute,
 })
 

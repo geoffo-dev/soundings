@@ -338,6 +338,24 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       }
       return [actor, text(' signed '), targetUser, text(` out everywhere${suffix}`)]
     }
+    case 'user.anonymise': {
+      // `soundings anonymise-user` at the console (no actor); the target now carries its
+      // placeholder name. Counts only: never the old name or address.
+      const removed = [
+        [num(details, 'identities'), 'SSO link'],
+        [num(details, 'external_ids'), 'external ID'],
+        [num(details, 'api_keys'), 'API key'],
+        [num(details, 'sessions'), 'session'],
+      ]
+        .filter((pair): pair is [number, string] => typeof pair[0] === 'number' && pair[0] > 0)
+        .map(([count, noun]) => plural(count, noun))
+      return [
+        text('The deactivated account '),
+        targetUser,
+        text(' was anonymised at the console'),
+        ...(removed.length > 0 ? [text(` (removed: ${removed.join(', ')})`)] : []),
+      ]
+    }
     case 'user.groups_sync': {
       const added = list(details, 'added_group_ids').map((id): AuditPart => ({ type: 'group', id }))
       const removed = list(details, 'removed_group_ids').map((id): AuditPart => ({

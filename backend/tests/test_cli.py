@@ -15,6 +15,7 @@ from tests.conftest import make_settings
 @pytest.fixture
 def cli_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     settings = make_settings(
+        environment="test",
         host="0.0.0.0",  # noqa: S104 - what the container sets
         trusted_proxies=["10.0.0.0/8", "127.0.0.1"],
         database_url="postgresql://u:p@db/soundings",
@@ -163,3 +164,45 @@ def test_wait_for_db_succeeds_against_the_test_database(database_url: str) -> No
     from app.migrate import wait_for_database
 
     assert wait_for_database(make_settings(database_url=database_url).database_dsn, timeout=10)
+
+
+@pytest.mark.parametrize("command", ["api", "worker"])
+def test_serving_commands_refuse_an_implicit_development_mode(
+    command: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security review P7 M1: without SOUNDINGS_ENVIRONMENT the app would run in
+    development mode with the public development key (forgeable unsubscribe links and
+    ALTCHA challenges). The image sets production; a bare install must say so."""
+    started: list[str] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: started.append(app))
+    monkeypatch.setattr(cli, "start_metrics_server", lambda settings: None)
+    implicit = make_settings(database_url="postgresql://u:p@db/soundings")
+    monkeypatch.setattr(cli, "get_settings", lambda: implicit)
+
+    assert implicit.environment == "development"
+    assert implicit.implicit_development_secret
+    assert cli.main([command]) == 2
+    assert "SOUNDINGS_ENVIRONMENT" in capsys.readouterr().err
+    assert started == []
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"environment": "development"},  # a developer machine says so
+        {"secret_key": "x" * 40},  # a real key, environment left at its default
+    ],
+)
+def test_explicit_development_or_a_real_key_starts(
+    overrides: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    no_metrics_server: list[Settings],
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: calls.append(app))
+    settings = make_settings(database_url="postgresql://u:p@db/soundings", **overrides)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+
+    assert not settings.implicit_development_secret
+    assert cli.main(["api"]) == 0
+    assert calls == ["app.main:app"]

@@ -68,3 +68,12 @@
     transform: translateY(2px);
   }
 }
+/* The navigation progress bar's sweep (NavigationProgress). */
+@keyframes progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}

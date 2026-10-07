@@ -29,7 +29,6 @@ import {
 import { toast } from '@/components/ui/toaster'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { SearchField } from '@/features/admin/search-field'
-import { AdminPageHeader } from '@/features/admin/settings-frame'
 import { formatDateTime, formatShortDate } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
@@ -47,13 +46,13 @@ import { AdminKeyProjects, KeyExpiry, KeyLastUsed, KeyStateBadge, ScopeBadges } 
 import { RevokeKeyDialog } from './revoke-key-dialog'
 
 /**
- * Admin settings → API keys (contract-phase5 §3.10, `api_key.manage_any`):
- * every key that isn't revoked, of every person and agent, newest first, with
- * search (a name, an owner, or a key's prefix: a pasted whole key is cut to its
- * prefix before anything is sent), a state filter, one owner's keys
- * (`?user_id=`), and Revoke (confirmed: no undo).
+ * Settings → API keys → "Everyone's keys" (platform admins; contract-phase5
+ * §3.10, `api_key.manage_any`): every key that isn't revoked, of every person
+ * and agent, newest first, with search (a name, an owner, or a key's prefix: a
+ * pasted whole key is cut to its prefix before anything is sent), a state
+ * filter, one owner's keys (`?user_id=`), and Revoke (confirmed: no undo).
  */
-export function AdminApiKeysPage({
+export function EveryonesKeys({
   search,
   onSearchChange,
 }: {
@@ -68,10 +67,6 @@ export function AdminApiKeysPage({
 
   return (
     <>
-      <AdminPageHeader
-        title="All API keys"
-        description="Every key people and AI agents use with the API and MCP. A key acts as its owner and stops working the moment it is revoked."
-      />
       <div
         role="group"
         aria-label="Filters"
@@ -266,10 +261,11 @@ function KeysList({ search, onClear }: { search: AdminKeysSearch; onClear: () =>
           <TableHeader>
             <TableRow>
               <TableHead>Key and owner</TableHead>
-              <TableHead className="w-40">Scopes</TableHead>
-              <TableHead className="w-40">Projects</TableHead>
-              <TableHead className="w-28">Last used</TableHead>
-              <TableHead className="w-28">Expires</TableHead>
+              {/* Narrow columns, so the key and its owner's name get the room (p4). */}
+              <TableHead className="w-36">Scopes</TableHead>
+              <TableHead className="w-36">Projects</TableHead>
+              <TableHead className="w-24">Last used</TableHead>
+              <TableHead className="w-24">Expires</TableHead>
               <TableHead className="w-20">
                 <span className="sr-only">Actions</span>
               </TableHead>

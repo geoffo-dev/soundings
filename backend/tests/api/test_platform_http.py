@@ -14,7 +14,11 @@ from pydantic import SecretStr, ValidationError
 from app.config import Settings
 from app.main import create_app
 from app.middleware import host_name
+from app.models.enums import AuthMethod
+from app.services.sessions import start_session
+from tests.api_keys.helpers import make_key
 from tests.conftest import make_settings
+from tests.factories import make_user
 
 STRONG_SECRET = SecretStr("s" * 40)
 
@@ -34,6 +38,9 @@ async def production_app(settings: Settings) -> AsyncIterator[FastAPI]:
         "dev_login_enabled": False,
         "base_urls": ["https://ideas.example.com", "https://ideas.example.org:8443"],
         "metrics_port": 0,
+        "break_glass_enabled": True,
+        "break_glass_username": "admin",
+        "break_glass_password": SecretStr("a-long-break-glass-password"),
     }
     application = create_app(make_settings(**values))
     async with application.router.lifespan_context(application):
@@ -53,7 +60,7 @@ async def production_app(settings: Settings) -> AsyncIterator[FastAPI]:
     ],
 )
 async def test_trusted_hosts_in_production(production_app: FastAPI, host: str, status: int) -> None:
-    response = await _get(production_app, "/api/v1/openapi.json", host)
+    response = await _get(production_app, "/api/v1/auth/config", host)
 
     assert response.status_code == status
     if status == 400:
@@ -151,3 +158,59 @@ def test_production_refuses_insecure_cookies() -> None:
         make_settings(environment="production", secret_key=STRONG_SECRET, cookie_secure=False)
 
     assert make_settings(environment="production", secret_key=STRONG_SECRET, cookie_secure=True)
+
+
+# --- Security review P7 N1: the API's map needs a signed-in caller in production -------------
+DOCS = ("/api/v1/openapi.json", "/api/docs")
+
+
+async def _https_get(app: FastAPI, url: str, **headers: str) -> httpx.Response:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://ideas.example.com") as http:
+        return await http.get(url, headers=headers)
+
+
+@pytest.mark.parametrize("path", DOCS)
+async def test_docs_need_a_caller_in_production(production_app: FastAPI, path: str) -> None:
+    response = await _https_get(production_app, path)
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthorized"
+
+
+@pytest.mark.parametrize("path", DOCS)
+async def test_docs_open_to_a_session_or_a_read_key_in_production(
+    production_app: FastAPI, path: str
+) -> None:
+    async with production_app.state.sessionmaker() as db:
+        ada = await make_user(db, "Ada Admin", platform_admin=True)
+        started = await start_session(
+            db, ada, settings=production_app.state.settings, auth_method=AuthMethod.BREAK_GLASS
+        )
+        reader = await make_key(db, ada, scopes=["read"], method=AuthMethod.BREAK_GLASS)
+        mcp_only = await make_key(db, ada, scopes=["mcp"], method=AuthMethod.BREAK_GLASS)
+        await db.commit()
+
+    by_session = await _https_get(
+        production_app, path, cookie=f"__Host-soundings_session={started.token}"
+    )
+    by_key = await _https_get(production_app, path, authorization=f"Bearer {reader}")
+    without_read = await _https_get(production_app, path, authorization=f"Bearer {mcp_only}")
+
+    assert by_session.status_code == 200
+    assert by_key.status_code == 200
+    assert without_read.status_code == 403
+    assert without_read.json()["code"] == "insufficient_scope"
+    if path.endswith(".json"):
+        assert by_key.json()["info"]["title"] == "Soundings API"
+
+
+@pytest.mark.parametrize("path", DOCS)
+async def test_docs_stay_open_outside_production(client: httpx.AsyncClient, path: str) -> None:
+    assert (await client.get(path)).status_code == 200
+
+
+async def test_swagger_assets_stay_public_in_production(production_app: FastAPI) -> None:
+    response = await _https_get(production_app, "/api/docs/swagger-ui.css")
+
+    assert response.status_code == 200

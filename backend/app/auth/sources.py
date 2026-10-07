@@ -14,23 +14,28 @@ credential never falls through to another source.
 * :class:`SessionCookieSource`: the session cookie. Every sign-in method (SSO,
   break-glass, dev login) creates the same server-side session; the principal
   records which (``auth_method``), and a session whose method is no longer available
-  is refused (:func:`app.services.sessions.resolve_session`).
+  is refused (:func:`app.services.sessions.resolve_session`). Writes need the CSRF
+  token and are limited per person (:func:`limit_session_write`, 429 ``rate_limited``).
 """
 
 from __future__ import annotations
 
-from typing import Final, Protocol
+import logging
+import math
+from typing import Any, Final, Protocol
+from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.cookies import CSRF_HEADER, SESSION_COOKIE, read_cookie
 from app.auth.key_auth import authenticate_api_key, bearer_token, limit_key_request
-from app.auth.throttle import client_key
+from app.auth.throttle import client_key, get_throttle
 from app.auth.tokens import tokens_match
 from app.config import Settings
 from app.domain.principal import Principal
 from app.errors import ProblemError
+from app.models.base import utcnow
 from app.models.enums import AuthMethod
 from app.services import sessions
 
@@ -41,9 +46,13 @@ __all__ = [
     "CsrfFailedProblem",
     "PrincipalSource",
     "SessionCookieSource",
+    "SessionWritesLimitedProblem",
     "UnauthorizedProblem",
     "authenticate",
+    "limit_session_write",
 ]
+
+logger = logging.getLogger(__name__)
 
 UNSAFE_METHODS: Final = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -86,6 +95,33 @@ class ApiKeySource:
         return principal
 
 
+class SessionWritesLimitedProblem(ProblemError):
+    """429 ``rate_limited`` with ``Retry-After`` (whole seconds, at least 1)."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__(
+            429,
+            "rate_limited",
+            detail="You're making changes very quickly. Wait a moment and try again.",
+            headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
+        )
+
+
+def limit_session_write(app: Any, settings: Settings, user_id: UUID) -> None:
+    """Count one write of a signed-in person (security review P7 L4): at most
+    ``SOUNDINGS_SESSION_WRITES_PER_MINUTE`` (120) a minute per API process, across their
+    sessions, like the 30 a minute an API key gets. A refused write isn't counted; the
+    first refusal of a minute is logged (user id only)."""
+    throttle = get_throttle(app, ("session_write", settings.session_writes_per_minute, 60.0))
+    key = str(user_id)
+    retry_after = throttle.retry_after(key)
+    if retry_after is not None:
+        if throttle.first_refusal(key):
+            logger.warning("session writes limited", extra={"user_id": key})
+        raise SessionWritesLimitedProblem(retry_after)
+    throttle.hit(key)
+
+
 class SessionCookieSource:
     """The session cookie (``soundings_session``, or ``__Host-soundings_session`` when
     cookies are Secure: only the variant for this request is read), checked against
@@ -103,14 +139,18 @@ class SessionCookieSource:
         token = read_cookie(request, settings, SESSION_COOKIE)
         if not token:
             return None
-        found = await sessions.resolve_session(db, token, settings=settings, touch=touch)
+        now = utcnow()
+        found = await sessions.resolve_session(db, token, settings=settings, now=now)
         if found is None:
             raise UnauthorizedProblem
         row, user = found
-        if request.method in UNSAFE_METHODS and not tokens_match(
-            request.headers.get(CSRF_HEADER), row.csrf_token
-        ):
-            raise CsrfFailedProblem
+        if touch and sessions.needs_touch(row, now):
+            # After the response, in a transaction of its own (performance review B8).
+            request.state.session_touch = (row.id, user.id)
+        if request.method in UNSAFE_METHODS:
+            if not tokens_match(request.headers.get(CSRF_HEADER), row.csrf_token):
+                raise CsrfFailedProblem
+            limit_session_write(request.app, settings, user.id)
         return Principal(
             user=user, auth="session", session_id=row.id, auth_method=AuthMethod(row.auth_method)
         )

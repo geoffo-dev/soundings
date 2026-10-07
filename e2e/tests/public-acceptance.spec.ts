@@ -151,7 +151,7 @@ test(
       await form.getByRole('button', { name: /^Save/ }).click()
       await expect(toast(page, 'The public form is on')).toBeVisible()
       await page.goto(`/p/${slug}/settings?tab=branding`)
-      const brandingPanel = page.getByRole('tabpanel', { name: 'Branding' })
+      const brandingPanel = page.getByRole('tabpanel', { name: 'Public form' })
       await brandingPanel
         .getByRole('textbox', { name: 'Primary colour', exact: true })
         .fill(PROJECT_PRIMARY)

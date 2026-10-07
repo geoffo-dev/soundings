@@ -31,7 +31,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import Rule, authorize, can, require
+from app.authz import Rule, authorize, can, require, writes_as_ai
 from app.domain.principal import Principal
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
@@ -84,7 +84,7 @@ class CreatedSuggestion:
 
 def suggestion_source(principal: Principal, channel: SuggestionSource) -> SuggestionSource:
     """``ai`` whenever the author is a service account, else the person's channel."""
-    if principal.user.is_service_account:
+    if writes_as_ai(principal):
         return SuggestionSource.AI
     return channel
 

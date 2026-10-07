@@ -98,6 +98,9 @@ app_env() {
   export SOUNDINGS_BASE_URLS="$E2E_URL,http://127.0.0.1:$E2E_PORT"
   export SOUNDINGS_TIMEZONE="$E2E_TIMEZONE"
   export SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP="$E2E_PUBLIC_PER_IP"
+  # Specs set up their data through the API as a handful of people, in parallel: the
+  # per-person write limit (120 a minute) would refuse some of it.
+  export SOUNDINGS_SESSION_WRITES_PER_MINUTE=100000
   # The specs' requests come from 127.0.0.1, trusted as the proxy (one hop; the app's
   # defaults, spelled out): a spec can be a client of its own with X-Forwarded-For
   # (public-abuse.spec.ts PA-05/06 exhaust per-address throttles without blocking the run).

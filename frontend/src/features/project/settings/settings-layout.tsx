@@ -135,6 +135,9 @@ export function FormActions({
 
   return (
     <div
+      // The page's scroller keeps focused fields clear of the bar while it sticks
+      // (app-shell's `main`: scroll-padding-bottom, WCAG 2.4.11).
+      data-sticky-actions={dirty ? 'always' : 'phone'}
       className={cn(
         'flex items-center justify-end gap-2 border-t border-subtle pt-4',
         'max-sm:sticky max-sm:bottom-0 max-sm:-mx-4 max-sm:bg-surface max-sm:px-4 max-sm:pb-3',

@@ -7,7 +7,7 @@ import {
   Trash2,
   UserRoundX,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
 import {
@@ -30,7 +30,7 @@ import { statusTone, type StatusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { TRACKING_TOKEN, useFragmentToken } from './fragment-token'
-import { PublicCard, PublicLayout } from './public-layout'
+import { PublicCard, PublicLayout, PublicMessage } from './public-layout'
 
 /**
  * /track#<token> (contract-phase4 §3.7): what the submitter sent and where it
@@ -47,9 +47,9 @@ export function TrackPage() {
     return (
       <PublicLayout branding={erasedWith} width="narrow">
         <PublicCard>
-          <StateMessage icon={<UserRoundX />} title="Your details are deleted" focus>
+          <PublicMessage icon={<UserRoundX />} title="Your details are deleted" focus>
             Your name, email address and this private link are gone. The team still has your idea.
-          </StateMessage>
+          </PublicMessage>
         </PublicCard>
       </PublicLayout>
     )
@@ -59,10 +59,10 @@ export function TrackPage() {
     return (
       <PublicLayout branding={null} width="narrow">
         <PublicCard>
-          <StateMessage icon={<LinkIcon />} title="This tracking link is incomplete">
-            Open the private link from your confirmation page or email. It ends with a long code
-            after “#”.
-          </StateMessage>
+          <PublicMessage icon={<LinkIcon />} title="This tracking link is incomplete">
+            Open the private link you saved after sending your idea (we don’t email it). It ends
+            with a long code after “#”.
+          </PublicMessage>
         </PublicCard>
       </PublicLayout>
     )
@@ -75,9 +75,9 @@ export function TrackPage() {
       <PublicLayout branding={null} width="narrow">
         <PublicCard>
           {status === 404 || status === 422 ? (
-            <StateMessage icon={<LinkIcon />} title="We can’t find this submission">
+            <PublicMessage icon={<LinkIcon />} title="We can’t find this submission">
               It may have been removed, or the link is incomplete. Check you copied the whole link.
-            </StateMessage>
+            </PublicMessage>
           ) : (
             <EmptyState
               role="alert"
@@ -109,41 +109,6 @@ export function TrackPage() {
       tracked={tracked.data}
       onErased={() => setErasedWith(tracked.data.branding)}
     />
-  )
-}
-
-function StateMessage({
-  icon,
-  title,
-  children,
-  focus = false,
-}: {
-  icon: ReactNode
-  title: string
-  children: ReactNode
-  focus?: boolean
-}) {
-  const heading = useRef<HTMLHeadingElement>(null)
-  useEffect(() => {
-    if (focus) heading.current?.focus()
-  }, [focus])
-  return (
-    <div className="flex flex-col gap-2">
-      <span
-        aria-hidden="true"
-        className="flex size-10 items-center justify-center rounded-xl border bg-surface text-muted [&_svg]:size-5"
-      >
-        {icon}
-      </span>
-      <h1
-        ref={heading}
-        tabIndex={-1}
-        className="text-xl font-semibold text-primary focus:outline-none"
-      >
-        {title}
-      </h1>
-      <p className="text-base text-secondary">{children}</p>
-    </div>
   )
 }
 

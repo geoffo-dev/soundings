@@ -19,16 +19,20 @@ export interface Crumb {
 /**
  * Breadcrumbs from the matched routes: a static `staticData: { crumb }`, a
  * dynamic `crumb` string returned by the route's loader (e.g. a project name),
- * or a loader `crumbs` array for several levels (e.g. project › idea key).
+ * or a loader `crumbs` array for several levels (e.g. project › idea key). A
+ * loader's `crumbRoot` starts the trail afresh (the admin pages live under
+ * /settings but read "Admin › Users").
  */
 function useRouteCrumbs(): Crumb[] {
   const matches = useMatches()
-  return matches.flatMap((match) => {
-    const data = match.loaderData as { crumb?: unknown; crumbs?: unknown } | undefined
-    if (Array.isArray(data?.crumbs)) return data.crumbs as Crumb[]
+  return matches.reduce<Crumb[]>((trail, match) => {
+    const data = match.loaderData as
+      { crumb?: unknown; crumbs?: unknown; crumbRoot?: unknown } | undefined
+    if (Array.isArray(data?.crumbRoot)) return [...(data.crumbRoot as Crumb[])]
+    if (Array.isArray(data?.crumbs)) return [...trail, ...(data.crumbs as Crumb[])]
     const label = typeof data?.crumb === 'string' ? data.crumb : match.staticData.crumb
-    return label ? [{ label, to: match.pathname }] : []
-  })
+    return label ? [...trail, { label, to: match.pathname }] : trail
+  }, [])
 }
 
 export interface TopBarProps {
@@ -71,32 +75,40 @@ export function TopBar({ crumbs, actions, showBell = true }: TopBarProps) {
         </WithTooltip>
       )}
 
-      <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
-        <ol className="flex min-w-0 items-center gap-1 text-sm">
-          {items.map((crumb, index) => {
-            const last = index === items.length - 1
-            return (
-              <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1">
-                {index > 0 && (
-                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted" />
-                )}
-                {last || !crumb.to ? (
-                  <span
-                    aria-current={last ? 'page' : undefined}
-                    className="truncate font-medium text-primary"
-                  >
-                    {crumb.label}
-                  </span>
-                ) : (
-                  <Link to={crumb.to} className="truncate rounded-sm text-muted hover:text-primary">
-                    {crumb.label}
-                  </Link>
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      </nav>
+      {/* No trail (a not-found page): no empty Breadcrumb landmark either. */}
+      {items.length === 0 ? (
+        <div className="flex-1" />
+      ) : (
+        <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+          <ol className="flex min-w-0 items-center gap-1 text-sm">
+            {items.map((crumb, index) => {
+              const last = index === items.length - 1
+              return (
+                <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1">
+                  {index > 0 && (
+                    <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted" />
+                  )}
+                  {last || !crumb.to ? (
+                    <span
+                      aria-current={last ? 'page' : undefined}
+                      className="truncate font-medium text-primary"
+                    >
+                      {crumb.label}
+                    </span>
+                  ) : (
+                    <Link
+                      to={crumb.to}
+                      className="truncate rounded-sm text-muted hover:text-primary"
+                    >
+                      {crumb.label}
+                    </Link>
+                  )}
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
+      )}
 
       <div className="flex items-center gap-2">
         {actions}

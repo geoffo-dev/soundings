@@ -8,6 +8,7 @@
 #   SMTP=1 scripts/k3s-install.sh                   # + dev/k3s-smtp-values.yaml (Mailpit)
 #   MCP=1 scripts/k3s-install.sh                    # + dev/k3s-mcp-values.yaml (agents' access)
 #   AI=1 scripts/k3s-install.sh                     # + dev/k3s-ai-values.yaml (AI runs)
+#   PROD=1 scripts/k3s-install.sh                   # + dev/k3s-prod-values.yaml (production mode)
 #
 #   RELEASE    release name (default soundings)     NAMESPACE  (default soundings)
 #   VALUES     values file under deploy/helm/ or dev/ TIMEOUT   helm --timeout (default 10m)
@@ -21,6 +22,10 @@
 #              NetworkPolicies) for the fake kagent (scripts/k3s-fake-agent.sh first),
 #              and kagent.examples when kagent's CRDs are installed
 #              (scripts/k3s-kagent-crds.sh), for `scripts/k3s-smoke.sh` with AI=1
+#   PROD       1: adds dev/k3s-prod-values.yaml (production mode: no dev login or demo
+#              data, break-glass sign-in), for `scripts/k3s-smoke.sh` with PROD=1. Not
+#              with SSO=1 (production refuses the cluster's http Keycloak as an issuer).
+#              A release installed in development keeps its demo data.
 # Extra arguments are passed to helm.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/k3s-env.sh
@@ -34,8 +39,11 @@ SSO="${SSO:-0}"
 SMTP="${SMTP:-0}"
 MCP="${MCP:-0}"
 AI="${AI:-0}"
+PROD="${PROD:-0}"
 
 require_k3s
+[ "$PROD" != "1" ] || [ "$SSO" != "1" ] ||
+  die "PROD=1 and SSO=1 don't mix: production refuses the cluster's http Keycloak as an issuer"
 case "$VALUES" in
   deploy/helm/* | dev/*) ;;
   *) die "VALUES must be a file under deploy/helm/ or dev/ (relative to the repo root)" ;;
@@ -85,6 +93,12 @@ if [ "$AI" = "1" ]; then
   fi
 fi
 
+prod_args=()
+if [ "$PROD" = "1" ]; then
+  prod_args=(--values dev/k3s-prod-values.yaml)
+  values_label="$values_label + dev/k3s-prod-values.yaml"
+fi
+
 # An edge rate limit for the public form's API (dev/k3s/public-ratelimit.yaml), attached
 # through the chart's second Ingress, when Traefik's CRDs are there (k3s ships them).
 edge_args=()
@@ -102,6 +116,7 @@ helm upgrade --install "$RELEASE" deploy/helm \
   ${smtp_args[@]+"${smtp_args[@]}"} \
   ${mcp_args[@]+"${mcp_args[@]}"} \
   ${ai_args[@]+"${ai_args[@]}"} \
+  ${prod_args[@]+"${prod_args[@]}"} \
   ${edge_args[@]+"${edge_args[@]}"} \
   --set "baseUrls[0]=http://localhost:$K3S_HTTP_PORT" \
   --wait --timeout "$TIMEOUT" \

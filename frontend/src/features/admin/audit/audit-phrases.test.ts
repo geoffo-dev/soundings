@@ -640,6 +640,23 @@ describe('audit sentences', () => {
     )
   })
 
+  it('says an account was anonymised at the console, with counts only', () => {
+    const anonymised = entry('user.anonymise', {
+      actor: null,
+      actor_id: null,
+      target_type: 'user',
+      target_id: 'u-jonas',
+      target_label: 'Former user 3f2a',
+      details: { identities: 1, external_ids: 2, api_keys: 0, sessions: 1 },
+    })
+    expect(say(anonymised)).toBe(
+      'The deactivated account Former user 3f2a was anonymised at the console (removed: 1 SSO link, 2 external IDs, 1 session)',
+    )
+    expect(say({ ...anonymised, details: {} })).toBe(
+      'The deactivated account Former user 3f2a was anonymised at the console',
+    )
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -658,6 +675,7 @@ describe('audit categories', () => {
       'user.identity_unlink': true,
       'user.sessions_end': true,
       'user.groups_sync': true,
+      'user.anonymise': true,
       'group.create': true,
       'group.update': true,
       'group.delete': true,

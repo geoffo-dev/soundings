@@ -270,9 +270,10 @@ function EvaluationFormBody({ rubric, session }: { rubric: RubricCriterion[]; se
               : 'Evaluation closed before you submitted, so your draft can’t be changed. Scores stay hidden from you.'}
         </p>
       )}
-      {rubric.map((criterion) => (
+      {rubric.map((criterion, index) => (
         <CriterionField
           key={criterion.id}
+          showHint={index === 0}
           criterion={criterion}
           entry={form.criteria[criterion.id] ?? { score: null, comment: '' }}
           onChange={(entry) =>

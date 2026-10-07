@@ -491,9 +491,12 @@ postgresql:
     # -- Empty: generated on first install and kept across upgrades. Only applied when
     # the data directory is initialised; changing it later does not change the role.
     password: ""
-    # -- Existing Secret with the password under existingSecretKey.
+    # -- Existing Secret with the app role's password under existingSecretKey and the
+    # bootstrap superuser's ("postgres", never used by the app) under
+    # existingSecretAdminKey.
     existingSecret: ""
     existingSecretKey: password
+    existingSecretAdminKey: admin-password
   persistence:
     enabled: true
     # -- Empty: the cluster's default StorageClass.
@@ -544,8 +547,10 @@ networkPolicy:
   # agent pods in kagent.agentNamespaces. Other in-cluster MCP clients call
   # http://<fullname>.<namespace>.svc.cluster.local/mcp: add their namespace here.
   ingressFrom: []
-  # -- Who may scrape the metrics port (e.g. the Prometheus namespace), as peers.
-  # Empty: any source. Pods of this release are always allowed.
+  # -- Who may scrape the metrics port, as peers: set your Prometheus's namespace, e.g.
+  # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}].
+  # Empty (the default): nobody but this release's pods (route counts and timings are
+  # no one else's business).
   metricsFrom: []
   # Egress: off by default (the app may connect anywhere). On, the api and worker pods
   # may only reach DNS (port 53), the database, and: the worker the SMTP server (when

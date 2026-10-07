@@ -28,7 +28,7 @@ const menuSurface = cn(
 
 const itemBase = cn(
   'relative flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-base outline-none select-none sm:h-7 sm:text-sm',
-  'data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-subtle-hover',
+  'data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-subtle-hover data-[highlighted]:highlight-ring',
   "[&_svg]:shrink-0 [&_svg]:text-muted [&_svg:not([class*='size-'])]:size-4",
 )
 
@@ -128,9 +128,12 @@ export function DropdownMenuSeparator({
   )
 }
 
-/** Right-aligned shortcut hint inside a menu item. */
+/**
+ * Right-aligned shortcut hint inside a menu item. Hidden from assistive tech, so
+ * the item's name stays its words: give the item `aria-keyshortcuts={ariaKeys(keys)}`.
+ */
 export function DropdownMenuShortcut({ keys }: { keys: string }) {
-  return <KbdShortcut keys={keys} className="ml-auto pl-4" />
+  return <KbdShortcut keys={keys} aria-hidden="true" className="ml-auto pl-4" />
 }
 
 export function DropdownMenuSubTrigger({

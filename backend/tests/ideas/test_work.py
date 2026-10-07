@@ -11,6 +11,7 @@ from app.models.base import utcnow
 from app.models.enums import EvaluatorState, IdeaStatus, ProjectRole, ProjectVisibility, Resolution
 from app.models.idea import Idea
 from app.models.project import ProjectMember
+from app.schemas.work import EVALUATIONS_DUE_PAGE
 from app.services.work import OWNED_GROUP_SIZE
 from tests.factories import add_evaluator, make_idea, make_project
 from tests.ideas.conftest import AsUser, Team, assert_problem, ok
@@ -30,6 +31,7 @@ async def test_empty_work(api: AsUser, team: Team) -> None:
     assert work == {
         "counts": {"evaluations_due": 0, "evaluations_overdue": 0, "owned_open": 0},
         "evaluations_due": [],
+        "evaluations_due_next_cursor": None,
         "owned": [],
         "recent": [],
     }
@@ -214,3 +216,95 @@ async def test_recent(api: AsUser, team: Team, db_session: AsyncSession) -> None
     assert latest["comment"]["body_md"] == "Bumped"
     assert recent[1]["latest_activity"] is None  # made without events
     assert recent[0]["idea"]["comment_count"] == 1
+
+
+# --- Phase 7 (contract-phase7 C1): the first 50 due, the rest page by page; counts alone -----
+async def test_my_work_lists_the_first_50_due_and_pages_the_rest(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    eve = team.evaluators[0]
+    p = team.project
+    total = EVALUATIONS_DUE_PAGE + 7
+    same_time = NOW + timedelta(days=2)  # ties on the due date: the id decides
+    for n in range(total):
+        idea = await make_idea(db_session, p, title=f"Due {n}")
+        if n % 5 == 0:
+            due: datetime | None = None
+        elif n % 5 == 1:
+            due = same_time
+        else:
+            due = NOW + timedelta(hours=n - 20)  # the first few are overdue
+        await set_due(db_session, idea, due)
+        await add_evaluator(db_session, idea, eve)
+    http = await api(eve)
+
+    work = ok(await http.get("/me/work"))
+    every: list[dict[str, Any]] = []
+    cursor = None
+    pages = 0
+    while True:
+        params: dict[str, Any] = {"limit": 20}
+        if cursor:
+            params["cursor"] = cursor
+        page = ok(await http.get("/me/evaluations-due", **params))
+        assert set(page) == {"items", "next_cursor"}
+        every += page["items"]
+        cursor = page["next_cursor"]
+        pages += 1
+        if cursor is None:
+            break
+    counts = ok(await http.get("/me/work/counts"))
+
+    assert len(work["evaluations_due"]) == EVALUATIONS_DUE_PAGE
+    assert work["evaluations_due_next_cursor"] is not None
+    assert pages == 3
+    assert len(every) == total
+    assert len({e["idea"]["id"] for e in every}) == total
+    assert every[:EVALUATIONS_DUE_PAGE] == work["evaluations_due"]
+    dated = [e["due_at"] for e in every if e["due_at"] is not None]
+    assert dated == sorted(dated)
+    assert all(e["due_at"] is None for e in every[len(dated) :])  # undated last
+    overdue = sum(e["overdue"] for e in every)
+    assert overdue > 0
+    assert work["counts"]["evaluations_due"] == total
+    assert work["counts"]["evaluations_overdue"] == overdue
+    assert counts == work["counts"]
+    rest = ok(await http.get("/me/evaluations-due", cursor=work["evaluations_due_next_cursor"]))
+    assert rest["items"] == every[EVALUATIONS_DUE_PAGE:]
+    assert rest["next_cursor"] is None
+
+
+async def test_work_counts_match_my_work(api: AsUser, team: Team, db_session: AsyncSession) -> None:
+    eve = team.evaluators[0]
+    late = await make_idea(db_session, team.project, title="Late", owner=eve)
+    await set_due(db_session, late, NOW - timedelta(days=1))
+    await add_evaluator(db_session, late, eve)
+    await add_evaluator(db_session, await make_idea(db_session, team.project), eve)
+    await make_idea(db_session, team.project, owner=eve, status=IdeaStatus.SHORTLISTED)
+    await make_idea(
+        db_session, team.project, owner=eve, status=IdeaStatus.CLOSED, resolution=Resolution.PARKED
+    )
+    http = await api(eve)
+
+    counts = ok(await http.get("/me/work/counts"))
+    work = ok(await http.get("/me/work"))
+
+    assert counts == {"evaluations_due": 2, "evaluations_overdue": 1, "owned_open": 2}
+    assert work["counts"] == counts
+    assert work["evaluations_due_next_cursor"] is None
+    assert ok(await (await api(team.member)).get("/me/work/counts")) == {
+        "evaluations_due": 0,
+        "evaluations_overdue": 0,
+        "owned_open": 0,
+    }
+
+
+async def test_evaluations_due_rejects_foreign_cursors(api: AsUser, team: Team) -> None:
+    http = await api(team.evaluators[0])
+    owned_cursor = "eyJpZCI6IjEiLCJzb3J0IjoiLXVwZGF0ZWQiLCJ2IjoiMjAyNi0xMC0wMSJ9"
+
+    assert_problem(await http.get("/me/evaluations-due", cursor="nope"), 400, "invalid_cursor")
+    assert_problem(
+        await http.get("/me/evaluations-due", cursor=owned_cursor), 400, "invalid_cursor"
+    )
+    assert_problem(await http.get("/me/evaluations-due", limit=0), 422, "validation_error")

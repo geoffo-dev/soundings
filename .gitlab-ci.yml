@@ -407,6 +407,7 @@ e2e:
     E2E_MAILPIT_URL: http://mailpit:8025
     # Every spec sends the public form from this job's address (as in the local stack).
     SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP: "1000"
+    SOUNDINGS_SESSION_WRITES_PER_MINUTE: "100000"
     # The break-glass admin, as in the local e2e stack (e2e/scripts/stack-env.sh).
     SOUNDINGS_BREAK_GLASS_ENABLED: "true"
     SOUNDINGS_BREAK_GLASS_USERNAME: admin
@@ -493,6 +494,7 @@ e2e:sso:
     SOUNDINGS_SMTP_FROM: soundings@example.com
     SOUNDINGS_TIMEZONE: Europe/London
     SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP: "1000"
+    SOUNDINGS_SESSION_WRITES_PER_MINUTE: "100000"
     E2E_MAILPIT_URL: http://mailpit:8025
     E2E_BASE_URL: http://app:8000
     E2E_SSO: "1"

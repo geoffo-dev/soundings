@@ -6,6 +6,6 @@ import { GroupsPage } from '@/features/admin/groups/groups-page'
 export const Route = createFileRoute('/_app/settings/_admin/groups/')({
   // A loader crumb (not staticData): it is only shown once the admin check passed.
   loader: () => ({ crumb: 'Groups' }),
-  head: () => ({ meta: [{ title: 'Groups · Settings · Soundings' }] }),
+  head: () => ({ meta: [{ title: 'Groups · Admin · Soundings' }] }),
   component: GroupsPage,
 })

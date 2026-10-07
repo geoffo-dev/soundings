@@ -118,10 +118,11 @@ describe('primaryAction', () => {
 
   it('guides the owner: invite, then close evaluation, then decide', () => {
     expect(primaryAction(idea(), ME)?.kind).toBe('invite')
+    // While evaluation is open, closing it is the owner's next step (all in or not).
     const waiting = idea({
       evaluators: [evaluator('bob', 'submitted'), evaluator('cy', 'invited')],
     })
-    expect(primaryAction(waiting, ME)).toBeNull()
+    expect(primaryAction(waiting, ME)?.kind).toBe('close-evaluation')
     const allIn = idea({
       evaluators: [evaluator('bob', 'submitted'), evaluator('cy', 'submitted')],
     })
@@ -134,11 +135,25 @@ describe('primaryAction', () => {
     expect(primaryAction(closed, ME)?.kind).toBe('change-status')
   })
 
-  it('leaves Close evaluation to the sidebar once the idea is Shortlisted or in Proposal', () => {
+  it('moves on to the proposal once the idea is Shortlisted or in Proposal', () => {
     const evaluators = [evaluator('bob', 'submitted'), evaluator('cy', 'submitted')]
-    for (const status of ['shortlisted', 'proposal'] as const) {
-      expect(primaryAction(idea({ evaluators, status, status_label: status }), ME)).toBeNull()
-    }
+    const shortlisted = idea({ evaluators, status: 'shortlisted', status_label: 'Shortlisted' })
+    // Close evaluation stays in the sidebar from here.
+    expect(primaryAction(shortlisted, ME, { exists: false, canCreate: true })).toEqual({
+      kind: 'start-proposal',
+      label: 'Start proposal',
+    })
+    // The proposal tab not loaded yet, or a proposal already started: open it.
+    expect(primaryAction(shortlisted, ME)?.kind).toBe('open-proposal')
+    expect(primaryAction(shortlisted, ME, { exists: true, canCreate: false })?.kind).toBe(
+      'open-proposal',
+    )
+    const proposal = idea({ evaluators, status: 'proposal', status_label: 'Proposal' })
+    expect(primaryAction(proposal, ME, { exists: true, canCreate: false })?.kind).toBe(
+      'open-proposal',
+    )
+    // Not for people who don't run the idea.
+    expect(primaryAction({ ...proposal, permissions: NONE }, ME)).toBeNull()
   })
 
   it('has nothing for viewers or closed ideas', () => {

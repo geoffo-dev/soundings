@@ -9,7 +9,9 @@
  *   Borders      border (default colour) · border-subtle · border-strong · border-control ·
  *                border-input / border-input-hover (text fields, ≥ 3:1)
  *   Hairlines    bg-border (1px dividers drawn as boxes) · bg-control (switch track)
- *   Accent       bg-accent · bg-accent-hover · text-accent-foreground · bg-accent-subtle · ring-focus
+ *   Accent       bg-accent · bg-accent-hover · text-accent-foreground · bg-accent-subtle · ring-focus ·
+ *                bg-/border-accent-control (selected radio, switch, score: ≥ 3:1 in both themes)
+ *   Lists        highlight-ring (the highlighted or selected item: 2px inset ring, focus colour)
  *   Feedback     bg-danger · bg-danger-subtle · text-danger · (same for warning / success / info)
  *   Status       bg-status-new|evaluating|shortlisted|proposal|accepted|rejected|parked
  *   Scores       bg-score-1 … bg-score-5 (also text-/fill-/border-)
@@ -88,6 +90,7 @@
   --animate-sheet-in-bottom: sheet-in-bottom 220ms var(--ease-emphasized);
   --animate-sheet-out-bottom: sheet-out-bottom 160ms var(--ease-standard);
   --animate-reveal: reveal 320ms var(--ease-emphasized) both;
+  --animate-progress: progress-sweep 1.1s var(--ease-in-out) infinite;
 }
 
 @theme inline {
@@ -118,6 +121,7 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-subtle: var(--accent-subtle);
+  --color-accent-control: var(--accent-control);
   --color-focus: var(--focus);
 
   --color-danger: var(--danger);
@@ -219,6 +223,20 @@
     border-radius: var(--radius-md);
     background-color: color-mix(in oklch, var(--color-white) 86%, var(--background));
     padding: 0.1875rem 0.375rem;
+    /* The plate grows around the logo rather than shrinking it: a wordmark stays the
+       size it is in light mode (UX review m12). */
+    box-sizing: content-box;
     filter: brightness(0.94);
   }
+}
+
+/*
+ * The highlighted or selected item of a list (menus, selects, ⌘K, pickers, the
+ * board's "Close as…"): a 2px inset ring in the focus colour on top of the quiet
+ * fill, so which item is current reads at ≥ 3:1 (WCAG 1.4.11), not by a grey fill
+ * alone. One rule for every list: `data-[highlighted]:highlight-ring` and friends.
+ */
+@utility highlight-ring {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }

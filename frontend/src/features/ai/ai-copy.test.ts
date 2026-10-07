@@ -126,7 +126,7 @@ describe('AI copy', () => {
     expect(outcomeWords(run('c', cancelled)).text).toBe('Cancelled · its evaluation was submitted')
   })
 
-  it('keeps one row per agent and kind (active first), the rest in History, drafts elsewhere', () => {
+  it('shows working and stopped runs, one per agent and kind; the rest in History, drafts elsewhere', () => {
     const runs = [
       run('new-research', { kind: 'research' }),
       run('evaluating', { status: 'running' }),
@@ -138,8 +138,19 @@ describe('AI copy', () => {
       }),
     ]
     const { latest, history } = partitionRuns(runs)
-    expect(latest.map((r) => r.id)).toEqual(['evaluating', 'new-research', 'other-agent'])
-    expect(history.map((r) => r.id)).toEqual(['old-research', 'old-evaluation'])
+    // Finished runs did their job (their result is on the page): History.
+    expect(latest.map((r) => r.id)).toEqual(['evaluating'])
+    expect(history.map((r) => r.id)).toEqual([
+      'new-research',
+      'old-research',
+      'old-evaluation',
+      'other-agent',
+    ])
+    // A latest run that stopped short keeps its row (Try again); one watched finishing too.
+    const stopped = partitionRuns([run('failed', { status: 'timed_out' }), run('ok')])
+    expect(stopped.latest.map((r) => r.id)).toEqual(['failed'])
+    const watched = partitionRuns([run('done')], (r) => r.id === 'done')
+    expect(watched.latest.map((r) => r.id)).toEqual(['done'])
   })
 
   it('names an agent’s purposes in a sentence, in a fixed order', () => {

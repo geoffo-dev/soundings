@@ -203,13 +203,18 @@ async def test_list_and_board_at_10k_ideas(
     admin_client = await login(admin)
     owner_client = await login(owner)
     scenarios["board (admin)"] = (admin_client, "board", {})
-    # My work and search (code review F9); the pending evaluator owes 1,000 evaluations.
+    # My work and search (code review F9, Phase 7 C1); the pending evaluator owes 1,000
+    # evaluations: My work lists the first 50, the counts and the full list page on.
     scenarios["my work (evaluator)"] = (viewer, "/me/work", {})
     scenarios["my work (owner)"] = (owner_client, "/me/work", {})
+    scenarios["my work counts (evaluator)"] = (viewer, "/me/work/counts", {})
+    scenarios["evaluations due (evaluator)"] = (viewer, "/me/evaluations-due", {})
     scenarios["search"] = (viewer, "/search", {"q": "pricing"})
     scenarios["search key"] = (viewer, "/search", {"q": "big-4242"})
     work = ok(await viewer.get(f"{API}/me/work"))
-    assert work["counts"]["evaluations_due"] == len(work["evaluations_due"]) == 1_000
+    assert work["counts"]["evaluations_due"] == 1_000
+    assert len(work["evaluations_due"]) == 50
+    assert work["evaluations_due_next_cursor"] is not None
     results: dict[str, float] = {}
     for name, (client, what, query) in scenarios.items():
         url = f"{API}{what}" if what.startswith("/") else f"{API}/projects/big/{what}"

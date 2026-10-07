@@ -2,8 +2,8 @@
 Ingress: the API accepts traffic on its HTTP port from ingressFrom peers (plus, when
 kagent.enabled, kagent's namespace, whose controller lists the MCP tools, and kagent's
 agent pods, label app.kubernetes.io/managed-by: kagent, in kagent.agentNamespaces, which
-call /mcp) and on its metrics port from metricsFrom peers (each: anyone when
-the list is empty; this release's pods always), the worker accepts nothing, and the
+call /mcp; anyone when the list is empty) and on its metrics port from metricsFrom peers
+only (nobody else when it is empty); this release's pods always. The worker accepts nothing, and the
 bundled Postgres only accepts this release's app pods and Jobs.
 Egress (networkPolicy.egress.enabled, off by default: IdP, SMTP, kagent and the
 database live in different places in every cluster): the api and worker pods reach
@@ -39,18 +39,28 @@ spec:
     {{- include "soundings.egressRules" (dict "ctx" . "component" "api") | nindent 4 }}
     {{- end }}
   ingress:
-    {{- range $port, $peers := dict "http" $httpFrom "metrics" .Values.networkPolicy.metricsFrom }}
     - ports:
-        - port: {{ $port }}
+        - port: http
           protocol: TCP
-      {{- if $peers }}
+      {{- if $httpFrom }}
       from:
-        {{- toYaml $peers | nindent 8 }}
+        {{- toYaml $httpFrom | nindent 8 }}
         - podSelector:
             matchLabels:
-              {{- include "soundings.selectorLabels" $ | nindent 14 }}
+              {{- include "soundings.selectorLabels" . | nindent 14 }}
       {{- end }}
-    {{- end }}
+    {{- /* The metrics port: only metricsFrom peers and this release's pods, never anyone
+    by default (security review P7 N3). */}}
+    - ports:
+        - port: metrics
+          protocol: TCP
+      from:
+        {{- with .Values.networkPolicy.metricsFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        - podSelector:
+            matchLabels:
+              {{- include "soundings.selectorLabels" . | nindent 14 }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

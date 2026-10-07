@@ -14,7 +14,7 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *              ['ideas', 'detail', KEY]
  *   evaluations ['evaluations', KEY, 'all' | 'mine']
  *   activity   ['activity', KEY]
- *   work       ['work', 'summary'] · ['work', 'owned', status]
+ *   work       ['work', 'summary'] · ['work', 'counts'] · ['work', 'due'] · ['work', 'owned', status]
  *   search     ['search', q]
  *   admin      ['admin', 'users' | 'groups', 'list' | 'detail', …] · ['admin', 'audit', filters] ·
  *              ['admin', 'sso'] · ['admin', 'email'] · ['admin', 'email', 'outbox', …]
@@ -113,6 +113,8 @@ export const queryKeys = {
   work: {
     all: ['work'] as const,
     summary: () => ['work', 'summary'] as const,
+    counts: () => ['work', 'counts'] as const,
+    due: () => ['work', 'due'] as const,
     owned: (status?: IdeaStatus) => ['work', 'owned', status ?? 'all'] as const,
   },
   search: {

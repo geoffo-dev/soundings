@@ -261,7 +261,7 @@ const SCREENS: Screen[] = [
     open: async (page, data) => {
       await page.goto(`/p/${data.slug}/settings?tab=branding`)
       await expect(
-        page.getByRole('tabpanel', { name: 'Branding' }).getByTestId('branding-preview').first(),
+        page.getByRole('tabpanel', { name: 'Public form' }).getByTestId('branding-preview').first(),
       ).toBeVisible()
     },
   },

@@ -5,11 +5,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 from http.cookies import SimpleCookie
+from uuid import uuid4
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import func, select, update
+from sqlalchemy import event, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import hash_token
@@ -288,6 +289,64 @@ async def test_activity_slides_the_idle_expiry_at_most_once_a_minute(
     assert user.last_seen_at == row.last_seen_at
 
 
+async def test_the_keep_alive_is_its_own_short_transaction(
+    login: Login, db_session: AsyncSession, app: FastAPI
+) -> None:
+    """Performance review B8: the throttled ``last_seen_at`` write runs after the
+    response in a transaction of its own (guarded by the one-minute throttle), so a
+    screen's parallel requests don't queue on the user's row lock until each commits.
+    So it also survives a request that fails and rolls back."""
+    ada = await make_user(db_session)
+    http = await login(ada)
+    earlier = utcnow() - timedelta(hours=2)
+    await _age_session(db_session, ada, last_seen_at=earlier)
+    await db_session.execute(update(User).where(User.id == ada.id).values(last_seen_at=earlier))
+    await db_session.commit()
+    statements: list[str] = []
+
+    def record(conn: object, cursor: object, statement: str, *args: object) -> None:
+        statements.append(statement)
+
+    engine = app.state.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        missing = await http.get(f"/api/v1/ideas/{uuid4()}")  # 404: the request rolls back
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert missing.status_code == 404
+    [row] = await sessions_of(db_session, ada)
+    user = await db_session.get(User, ada.id, populate_existing=True)
+    assert user is not None
+    assert row.last_seen_at > earlier + timedelta(hours=1)
+    assert user.last_seen_at == row.last_seen_at
+    touches = [s for s in statements if s.lstrip().upper().startswith("UPDATE")]
+    assert len(touches) == 2
+    assert all("last_seen_at <=" in s or "last_seen_at IS NULL" in s for s in touches)
+
+
+async def test_parallel_requests_touch_the_session_once(
+    login: Login, db_session: AsyncSession, app: FastAPI
+) -> None:
+    ada = await make_user(db_session)
+    http = await login(ada)
+    earlier = utcnow() - timedelta(hours=2)
+    await _age_session(db_session, ada, last_seen_at=earlier)
+    from app.services.sessions import touch_session
+
+    [row] = await sessions_of(db_session, ada)
+    now = utcnow()
+    first = await touch_session(app.state.sessionmaker, row.id, ada.id, now=now)
+    second = await touch_session(
+        app.state.sessionmaker, row.id, ada.id, now=now + timedelta(seconds=5)
+    )
+
+    assert (first, second) == (True, False)  # the guard: at most once a minute
+    [row] = await sessions_of(db_session, ada)
+    assert row.last_seen_at == now
+    assert (await http.get("/api/v1/auth/me")).status_code == 200
+
+
 async def test_deactivated_users_are_signed_out(login: Login, db_session: AsyncSession) -> None:
     ada = await make_user(db_session)
     http = await login(ada)
@@ -388,3 +447,23 @@ async def test_a_session_survives_membership_changes(
 )
 def test_user_agent_summary(header: str | None, summary: str | None) -> None:
     assert summarise_user_agent(header) == summary
+
+
+async def test_the_hourly_schedule_deletes_expired_sessions(
+    login: Login, db_session: AsyncSession, app: FastAPI
+) -> None:
+    """Security review P7 L5: a leaver's expired session rows (with their user-agent
+    summary) no longer wait for that person's next sign-in."""
+    from app.notifications.schedule import run_schedule
+
+    ada, bea, cal = [await make_user(db_session) for _ in range(3)]
+    for person in (ada, bea, cal):
+        await login(person)
+    await _age_session(db_session, ada, expires_at=utcnow() - timedelta(seconds=1))
+    await _age_session(db_session, bea, last_seen_at=utcnow() - timedelta(hours=13))
+
+    await run_schedule(app.state.sessionmaker, app.state.settings, utcnow())
+
+    assert await sessions_of(db_session, ada) == []
+    assert await sessions_of(db_session, bea) == []
+    assert len(await sessions_of(db_session, cal)) == 1

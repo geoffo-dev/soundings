@@ -40,8 +40,8 @@ test('shows the idea: description, activity, evaluators and the score', async ({
   await expect(sidebar.getByText('3.1', { exact: true })).toBeVisible()
   await expect(sidebar.getByText('High disagreement')).toBeVisible()
   await expect(sidebar.getByRole('meter')).toHaveCount(5)
-  // The owner's next step isn't obvious yet (one evaluation missing): no primary action.
-  await expect(page.locator('[data-primary-action]')).toHaveCount(0)
+  // Evaluation is open: closing it is the owner's next step (UX review M6).
+  await expect(page.locator('[data-primary-action]:visible')).toHaveText('Close evaluation')
 })
 
 test('an unknown idea shows the same not-found page as a hidden one', async ({ page }) => {

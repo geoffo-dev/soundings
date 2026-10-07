@@ -1,5 +1,5 @@
 import { CloudOff, KeyRound, Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import { useCreateApiKey, useMyApiKeys, useRevokeApiKey } from '@/api/api-keys'
 import type { ApiKey, ApiKeyList } from '@/api/types'
@@ -17,12 +17,16 @@ import {
 } from '@/components/ui/table'
 import { toast } from '@/components/ui/toaster'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { AdminPageHeader, SettingsFrame } from '@/features/admin/settings-frame'
+import { useCurrentUser } from '@/features/auth/current-user'
 import { formatDateTime, formatShortDate } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
 import { cn } from '@/lib/utils'
 
+import { EveryonesKeys } from './admin-api-keys-page'
+import type { ApiKeysSearch } from './admin-keys-search'
 import { ConnectMcpSection } from './connect-mcp'
 import { CreateKeyDialog } from './create-key-dialog'
 import { KeyAccess, KeyExpiry, KeyLastUsed, KeyProjects, KeyStateBadge } from './key-parts'
@@ -35,9 +39,53 @@ const CREATE_BUTTON_ID = 'create-api-key'
  * Settings → API keys (contract-phase5 §3.10): your keys (name, prefix,
  * scopes, projects, expiry, last use), "Create key" with the one-time secret,
  * revoke (confirmed: no undo), and how to connect an MCP client. Session only:
- * a key can't manage keys.
+ * a key can't manage keys. Platform admins also get "Everyone's keys" here
+ * (`?everyone=1`), once a page of its own ("All API keys").
  */
-export function ApiKeysPage() {
+export function ApiKeysPage({
+  search,
+  onSearchChange,
+}: {
+  search: ApiKeysSearch
+  onSearchChange: (patch: Partial<ApiKeysSearch>) => void
+}) {
+  const me = useCurrentUser()
+  const everyone = me.is_platform_admin && search.everyone === true
+  const viewSwitch = me.is_platform_admin && (
+    <SegmentedControl
+      aria-label="Show"
+      size="sm"
+      value={everyone ? 'everyone' : 'mine'}
+      onValueChange={(value) =>
+        // Your own keys have no filters: leaving Everyone's keys drops them.
+        onSearchChange(
+          value === 'everyone'
+            ? { everyone: true }
+            : { everyone: undefined, q: undefined, state: undefined, user_id: undefined },
+        )
+      }
+      options={[
+        { value: 'mine', label: 'Your keys' },
+        { value: 'everyone', label: 'Everyone’s keys' },
+      ]}
+    />
+  )
+  if (everyone) {
+    return (
+      <SettingsFrame>
+        <AdminPageHeader
+          title="API keys"
+          description="Every key people and AI agents use with the API and MCP. A key acts as its owner and stops working the moment it is revoked."
+        />
+        {viewSwitch}
+        <EveryonesKeys search={search} onSearchChange={onSearchChange} />
+      </SettingsFrame>
+    )
+  }
+  return <YourKeys viewSwitch={viewSwitch} />
+}
+
+function YourKeys({ viewSwitch }: { viewSwitch: ReactNode }) {
   const query = useMyApiKeys()
   const create = useCreateApiKey()
   const [creating, setCreating] = useState(false)
@@ -66,6 +114,7 @@ export function ApiKeysPage() {
         description="Let a script or an AI assistant work in Soundings as you. A key does only what you allow when you create it, never more than you can, until it expires or you revoke it."
         actions={list && !empty ? createButton : undefined}
       />
+      {viewSwitch}
       {list && !list.can_create && !(breakGlass && empty) && (
         <Callout id="api-keys-limit" role="status" title={limitReason(list)} />
       )}

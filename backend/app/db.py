@@ -23,9 +23,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Final
+from typing import Annotated, Any, Final
 
 from fastapi import Depends, Request
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -33,7 +34,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.config import Settings
+from app.config import DatabaseSettings, Settings
 
 SessionMaker = async_sessionmaker[AsyncSession]
 
@@ -43,9 +44,13 @@ _HOOKS: Final = "soundings.before_commit"
 _SETTINGS: Final = "soundings.settings"
 
 
-def create_engine(settings: Settings, *, application_name: str = "soundings") -> AsyncEngine:
-    """Create the async engine (psycopg 3). No connection is made until first use."""
-    return create_async_engine(
+def create_engine(
+    settings: DatabaseSettings, *, application_name: str = "soundings"
+) -> AsyncEngine:
+    """Create the async engine (psycopg 3). No connection is made until first use.
+
+    Every connection runs without parallel query workers (:func:`_serial_queries`)."""
+    engine = create_async_engine(
         settings.sqlalchemy_url,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_pool_size,
@@ -55,6 +60,23 @@ def create_engine(settings: Settings, *, application_name: str = "soundings") ->
         hide_parameters=True,
         connect_args={"application_name": application_name},
     )
+    event.listen(engine.sync_engine, "connect", _serial_queries)
+    return engine
+
+
+def _serial_queries(dbapi_connection: Any, _record: Any) -> None:
+    """``max_parallel_workers_per_gather = 0`` for the session (performance review B6).
+    Soundings' queries are small: a sort over a 10k-idea project (the list by score,
+    title or votes) took 45-70 ms with two parallel workers, of which most was starting
+    them, and 28-39 ms without; with 20 people at once, workers also compete for the
+    CPUs the requests need. A plain ``SET`` on connect, committed (a rollback would undo
+    it), works through any pooler that keeps session state."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SET max_parallel_workers_per_gather = 0")
+    finally:
+        cursor.close()
+    dbapi_connection.commit()
 
 
 def create_sessionmaker(engine: AsyncEngine) -> SessionMaker:

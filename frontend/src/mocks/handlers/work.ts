@@ -9,24 +9,46 @@ import {
   search,
   STATUSES,
 } from '@/mocks/domain'
+import type { MockDb, MockUser } from '@/mocks/db'
 import { failValidation, queryEnum, queryLimit, route } from '@/mocks/http'
+
+/** My work lists the first 50 evaluations due; "Show more" pages on (contract-phase7 C1). */
+const WORK_DUE_SHOWN = 50
+
+function workCounts(db: MockDb, user: MockUser) {
+  const due = evaluationsDue(db, user)
+  return {
+    evaluations_due: due.length,
+    evaluations_overdue: due.filter((row) => row.overdue).length,
+    owned_open: ownedGroups(db, user)
+      .filter((group) => group.status !== 'closed')
+      .reduce((sum, group) => sum + group.count, 0),
+  }
+}
 
 export const workHandlers = [
   route('get', '/me/work', ({ db, user }) => {
     const due = evaluationsDue(db, user)
-    const owned = ownedGroups(db, user)
+    const { page, next_cursor } = paginate(due, null, WORK_DUE_SHOWN, `due:${user.id}`)
     return {
-      evaluations_due: due,
-      owned,
+      evaluations_due: page,
+      evaluations_due_next_cursor: next_cursor,
+      owned: ownedGroups(db, user),
       recent: recentIdeas(db, user),
-      counts: {
-        evaluations_due: due.length,
-        evaluations_overdue: due.filter((row) => row.overdue).length,
-        owned_open: owned
-          .filter((group) => group.status !== 'closed')
-          .reduce((sum, group) => sum + group.count, 0),
-      },
+      counts: workCounts(db, user),
     }
+  }),
+
+  route('get', '/me/work/counts', ({ db, user }) => workCounts(db, user)),
+
+  route('get', '/me/evaluations-due', ({ url, db, user }) => {
+    const { page, next_cursor } = paginate(
+      evaluationsDue(db, user),
+      url.searchParams.get('cursor'),
+      queryLimit(url),
+      `due:${user.id}`,
+    )
+    return { items: page, next_cursor }
   }),
 
   route('get', '/me/owned-ideas', ({ url, db, user }) => {

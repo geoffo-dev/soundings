@@ -5,7 +5,8 @@ import { isApiError } from '@/api/errors'
 import { ideaQueryOptions } from '@/api/ideas'
 import { retryIfCancelled } from '@/api/query'
 import type { IdeaSummary } from '@/api/types'
-import { IdeaNotFound, IdeaPage, IdeaPageSkeleton } from '@/features/idea/idea-page'
+import { IdeaPage } from '@/features/idea/idea-page'
+import { IdeaNotFound, IdeaPageSkeleton } from '@/features/idea/idea-page-states'
 import { validateIdeaSearch } from '@/features/idea/idea-search'
 
 function crumbsFor(idea: Pick<IdeaSummary, 'key' | 'title' | 'project'>) {
@@ -47,7 +48,10 @@ export const Route = createFileRoute('/_app/ideas/$ideaKey')({
       throw error
     }
   },
-  head: ({ loaderData }) => ({ meta: [{ title: `${loaderData?.title ?? 'Idea'} · Soundings` }] }),
+  // No loader data: the idea wasn't found (or is hidden).
+  head: ({ loaderData }) => ({
+    meta: [{ title: `${loaderData?.title ?? 'Idea not found'} · Soundings` }],
+  }),
   pendingComponent: IdeaPageSkeleton,
   notFoundComponent: IdeaNotFound,
   component: IdeaRoute,

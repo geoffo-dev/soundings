@@ -289,8 +289,8 @@ function Sessions({ user, isMe }: { user: AdminUser; isMe: boolean }) {
         {/* contract-phase5 §2: ending sessions doesn't stop API keys. */}
         API keys keep working.{' '}
         <Link
-          to="/settings/all-api-keys"
-          search={{ user_id: user.id }}
+          to="/settings/api-keys"
+          search={{ everyone: true, user_id: user.id }}
           className="text-accent underline-offset-4 hover:underline"
         >
           {isMe ? 'Review your keys' : 'Review their keys'}

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useLocation, useParams } from '@tanstack/react-router'
 import {
   ChevronsUpDown,
   Inbox,
@@ -12,6 +12,7 @@ import {
   Plus,
   RotateCw,
   Settings,
+  ShieldCheck,
   SquarePen,
   Sun,
 } from 'lucide-react'
@@ -41,9 +42,11 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ariaKeys } from '@/components/ui/kbd'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { ADMIN_PAGES, isAdminPath } from '@/features/admin/settings-frame'
 import { DevUserSwitcher } from '@/features/auth/dev-user-switcher'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { useSignOut } from '@/features/auth/use-sign-out'
@@ -74,6 +77,9 @@ export interface SidebarProps {
 
 export function Sidebar({ variant = 'desktop', onNavigate }: SidebarProps) {
   const user = useCurrentUser()
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const adminPage = isAdminPath(pathname)
+  const settingsPage = pathname === '/settings' || pathname.startsWith('/settings/')
   const { toggleCollapsed } = useSidebar()
   const { newIdea, canCreateIdeas } = useAppCommands()
 
@@ -112,13 +118,71 @@ export function Sidebar({ variant = 'desktop', onNavigate }: SidebarProps) {
       </ScrollArea>
 
       <div className="flex shrink-0 flex-col gap-px border-t border-subtle p-2">
-        <Link to="/settings" onClick={onNavigate} className={navItem}>
+        {user.is_platform_admin && (
+          <AdminNav pathname={pathname} active={adminPage} onNavigate={onNavigate} />
+        )}
+        {/* Your own settings; the admin pages (also under /settings) light up "Admin". */}
+        <Link
+          to="/settings"
+          onClick={onNavigate}
+          activeOptions={{ exact: true }}
+          className={navItem}
+          data-current={(settingsPage && !adminPage) || undefined}
+          aria-current={settingsPage && !adminPage ? 'page' : undefined}
+        >
           <Settings />
           Settings
         </Link>
         <UserMenu user={user} />
       </div>
     </nav>
+  )
+}
+
+/**
+ * "Admin" (platform admins), and on an admin page its sections under it: the admin
+ * area's left nav, in the sidebar it already has (UX review M5).
+ */
+function AdminNav({
+  pathname,
+  active,
+  onNavigate,
+}: {
+  pathname: string
+  active: boolean
+  onNavigate?: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-px">
+      <Link
+        to="/admin"
+        onClick={onNavigate}
+        className={navItem}
+        data-current={pathname === '/admin' || undefined}
+        aria-current={pathname === '/admin' ? 'page' : undefined}
+      >
+        <ShieldCheck />
+        Admin
+      </Link>
+      {active && (
+        <ul aria-label="Admin sections" className="flex flex-col gap-px">
+          {ADMIN_PAGES.map((page) => (
+            <li key={page.to}>
+              <Link
+                to={page.to}
+                onClick={onNavigate}
+                className={cn(
+                  subItem,
+                  'data-[status=active]:bg-subtle-hover data-[status=active]:text-primary',
+                )}
+              >
+                {page.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -316,7 +380,10 @@ function UserMenu({ user }: { user: CurrentUser }) {
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={openShortcutSheet}>
+        <DropdownMenuItem
+          onSelect={openShortcutSheet}
+          aria-keyshortcuts={ariaKeys(SHORTCUTS.shortcutSheet.keys)}
+        >
           <Keyboard /> Keyboard shortcuts
           <DropdownMenuShortcut keys={SHORTCUTS.shortcutSheet.keys} />
         </DropdownMenuItem>

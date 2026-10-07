@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import type { IdeaSummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
+import { formatScore } from '@/lib/scores'
 import { cn, mergeRefs } from '@/lib/utils'
 
 import {
@@ -42,6 +43,7 @@ export function BoardCard({ idea }: { idea: IdeaSummary }) {
     if (focus.take(idea.id)) node.current?.focus({ preventScroll: false })
   }, [focus, idea.id])
 
+  const descriptionId = `card-${idea.id}-description`
   return (
     <Link
       ref={mergeRefs(node, setNodeRef)}
@@ -51,7 +53,15 @@ export function BoardCard({ idea }: { idea: IdeaSummary }) {
       data-card-id={idea.id}
       {...{ [NAV_ITEM_ATTRIBUTE]: '' }}
       {...(draggable ? listeners : undefined)}
-      aria-describedby={draggable ? attributes['aria-describedby'] : undefined}
+      // Named by its title (then its key), the rest as the description: a screen
+      // reader moving through a column hears "Print-free returns (CUST-2)", not the
+      // key and "Scores hidden…" first (a11y review).
+      aria-label={`${idea.title} (${idea.key})`}
+      aria-describedby={
+        [descriptionId, draggable ? attributes['aria-describedby'] : undefined]
+          .filter(Boolean)
+          .join(' ') || undefined
+      }
       className={cn(
         'block rounded-lg outline-offset-2',
         draggable && 'cursor-grab touch-manipulation active:cursor-grabbing',
@@ -59,8 +69,29 @@ export function BoardCard({ idea }: { idea: IdeaSummary }) {
       )}
     >
       <CardBody idea={idea} />
+      <span id={descriptionId} hidden>
+        {cardDescription(idea)}
+      </span>
     </Link>
   )
+}
+
+/** What the card shows besides its title and key, in words. */
+export function cardDescription(idea: IdeaSummary): string {
+  const { submitted, total } = idea.evaluator_progress
+  return [
+    idea.score_hidden
+      ? 'Scores hidden until you submit your evaluation'
+      : idea.score
+        ? `Score ${formatScore(idea.score.overall)} out of 5`
+        : null,
+    idea.high_disagreement ? 'High disagreement' : null,
+    idea.owner ? `Owner ${idea.owner.display_name}` : 'No owner',
+    total > 0 ? `${submitted} of ${total} evaluations submitted` : null,
+    idea.tags.length > 0 ? `Tags: ${idea.tags.join(', ')}` : null,
+  ]
+    .filter(Boolean)
+    .join('. ')
 }
 
 /** The card's content; also rendered in the drag overlay. */

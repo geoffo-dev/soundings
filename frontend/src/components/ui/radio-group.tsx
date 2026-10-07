@@ -37,13 +37,13 @@ export function RadioGroupItem({
       className={cn(
         'peer relative inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-control bg-surface',
         'transition-[border-color] duration-150 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50',
-        'data-[state=checked]:border-accent',
+        'data-[state=checked]:border-accent-control',
         'after:absolute after:-inset-2 after:content-[""]',
         className,
       )}
       {...props}
     >
-      <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-accent" />
+      <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-accent-control" />
     </RadioGroupPrimitive.Item>
   )
 }

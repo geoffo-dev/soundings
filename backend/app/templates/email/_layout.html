@@ -36,6 +36,10 @@
 </head>
 <body class="sx-bg" style="margin:0;padding:0;width:100%;background-color:{{ c.bg }};color:{{ c.text }};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:{{ c.bg }};">{{ preheader }}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+{#- One landmark for the message, named by its subject (accessibility audit P7): screen
+    readers in webmail announce "email, <subject>" and can jump to it; the layout tables
+    inside stay presentational. -#}
+<div role="article" aria-roledescription="email" aria-label="{{ subject }}" lang="en">
 <table role="presentation" class="sx-bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:{{ c.bg }};">
 <tr>
 <td align="center" style="padding:24px 12px 32px 12px;">
@@ -72,5 +76,6 @@
 </td>
 </tr>
 </table>
+</div>
 </body>
 </html>

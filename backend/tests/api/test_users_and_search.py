@@ -161,6 +161,36 @@ async def test_search_finds_ideas_and_projects(login: Login, db_session: AsyncSe
     assert [p["slug"] for p in body["projects"]] == ["refunds"]
 
 
+async def test_one_or_two_letters_match_titles_most_recent_first(
+    login: Login, db_session: AsyncSession
+) -> None:
+    """Performance review B6: pg_trgm can't narrow one or two letters, so the palette's
+    first keystrokes match titles only and list the most recently active first, read
+    along the activity index instead of ranking every match."""
+    from datetime import UTC, datetime, timedelta
+
+    ada = await make_user(db_session)
+    project = await make_project(db_session, members={ada: ProjectRole.MEMBER})
+    now = datetime.now(UTC)
+    for n, (title, summary) in enumerate(
+        [("Pricing page", ""), ("Print less", ""), ("Refunds", "Pricing problems"), ("Apron", "")]
+    ):
+        await make_idea(
+            db_session,
+            project,
+            title=title,
+            summary=summary,
+            last_activity_at=now - timedelta(hours=n),
+        )
+    http = await login(ada)
+
+    short = (await http.get("/api/v1/search", params={"q": "pr"})).json()
+    longer = (await http.get("/api/v1/search", params={"q": "pri"})).json()
+
+    assert [i["title"] for i in short["ideas"]] == ["Pricing page", "Print less", "Apron"]
+    assert {i["title"] for i in longer["ideas"]} == {"Pricing page", "Print less", "Refunds"}
+
+
 async def test_exact_key_comes_first(login: Login, db_session: AsyncSession) -> None:
     ada = await make_user(db_session)
     project = await make_project(db_session, key="CUST", members={ada: ProjectRole.MEMBER})

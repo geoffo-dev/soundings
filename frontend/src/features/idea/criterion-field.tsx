@@ -36,6 +36,8 @@ export interface CriterionFieldProps {
   /** "Pick a score" after a submit attempt left it empty. */
   missing: boolean
   readOnly: boolean
+  /** "Hover or focus a score to see what it means": once, under the first criterion. */
+  showHint?: boolean
 }
 
 /**
@@ -50,6 +52,7 @@ export function CriterionField({
   showWeight,
   missing,
   readOnly,
+  showHint = true,
 }: CriterionFieldProps) {
   const id = useId()
   const nameId = `${id}-name`
@@ -107,7 +110,7 @@ export function CriterionField({
         options={options}
         value={entry.score === null ? null : `${entry.score}`}
         onValueChange={(value) => onChange({ ...entry, score: Number(value) as Score })}
-        guidancePlaceholder={SCORE_GUIDANCE_PLACEHOLDER}
+        guidancePlaceholder={showHint ? SCORE_GUIDANCE_PLACEHOLDER : undefined}
         disabled={readOnly}
         className={cn(
           missing &&

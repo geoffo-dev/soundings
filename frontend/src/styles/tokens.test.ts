@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
-import { contrastHex, contrastRatio, mixRgb, parseHex, type Rgb } from '@/lib/color'
+import { DEFAULT_BRANDING, deriveBrandTokens } from '@/lib/branding'
+import {
+  contrastHex,
+  contrastRatio,
+  mixRgb,
+  oklchToRgb,
+  parseHex,
+  rgbToOklch,
+  type Rgb,
+} from '@/lib/color'
+import type { ResolvedTheme } from '@/lib/theme'
 import tokensCss from '@/styles/tokens.css?raw'
 
 function block(selector: RegExp): string {
@@ -70,6 +80,59 @@ describe('text contrast (WCAG 1.4.3)', () => {
           }
         }
       }
+    })
+  }
+})
+
+describe('selected and highlighted states (WCAG 1.4.11)', () => {
+  function hex(value: string): Rgb {
+    const parsed = parseHex(value)
+    if (!parsed) throw new Error(`${value} is not a colour`)
+    return parsed
+  }
+
+  /** `color-mix(in oklch, primary 58%, white)`, as tokens.css writes dark mode's accents. */
+  function mixWithWhite(color: string, weight: number): Rgb {
+    const base = rgbToOklch(hex(color))
+    return oklchToRgb({ l: base.l * weight + (1 - weight), c: base.c * weight, h: base.h })
+  }
+
+  for (const [theme, css] of Object.entries(THEMES) as [ResolvedTheme, string][]) {
+    // What `--accent-control` and `--focus` resolve to: the stylesheet's own default and the
+    // contrast-checked values applyBranding() writes for the default brand colour.
+    const stylesheet =
+      theme === 'dark'
+        ? mixWithWhite(DEFAULT_BRANDING.primary, 0.58)
+        : hex(DEFAULT_BRANDING.primary)
+    const derived = hex(deriveBrandTokens(DEFAULT_BRANDING.primary, theme).accentText)
+
+    it(`the selected radio, switch and score ring are at least 3:1 in ${theme} mode`, () => {
+      for (const canvas of ['background', 'surface', 'elevated']) {
+        const base = rgb(css, canvas)
+        // A segmented control's track is the subtle fill over the canvas.
+        for (const backdrop of [base, over(css, 'subtle', base)]) {
+          for (const control of [stylesheet, derived]) {
+            expect(contrastRatio(control, backdrop), `on ${canvas}`).toBeGreaterThanOrEqual(3)
+          }
+        }
+      }
+    })
+
+    it(`a highlighted list item's ring is at least 3:1 in ${theme} mode`, () => {
+      for (const canvas of ['surface', 'elevated']) {
+        const base = rgb(css, canvas)
+        const fill = over(css, 'subtle-hover', base)
+        for (const ring of [stylesheet, derived]) {
+          expect(contrastRatio(ring, fill), `on ${canvas}`).toBeGreaterThanOrEqual(3)
+        }
+      }
+    })
+
+    it(`the selected segment's outline is at least 3:1 against its track in ${theme} mode`, () => {
+      const surface = rgb(css, 'surface')
+      const outline = rgb(css, 'border-control')
+      expect(contrastRatio(outline, surface)).toBeGreaterThanOrEqual(3)
+      expect(contrastRatio(outline, over(css, 'subtle', surface))).toBeGreaterThanOrEqual(3)
     })
   }
 })

@@ -45,6 +45,8 @@ ROUTES: dict[str, tuple[str, str, Any]] = {
     "delete_comment": ("DELETE", "/comments/{comment}", None),
     "get_my_work": ("GET", "/me/work", None),
     "list_my_owned_ideas": ("GET", "/me/owned-ideas", None),
+    "get_my_work_counts": ("GET", "/me/work/counts", None),
+    "list_my_evaluations_due": ("GET", "/me/evaluations-due", None),
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 

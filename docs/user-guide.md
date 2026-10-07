@@ -50,10 +50,16 @@ development installs a **development login** that lists everyone ("who are you?"
 
 - **My work** (`G` then `M`, or the logo) is your home page:
   - **Evaluations due**: ideas waiting for your scores, overdue first. The most urgent
-    one has the page's only blue button; "Continue" means you have a saved draft.
-  - **Ideas I own**, grouped by status (Closed is folded away).
+    one has the page's only blue button; "Continue" means you have a saved draft. The
+    first 50 are listed; **Show more** loads the rest, a hundred at a time.
+  - **Ideas I own**, grouped by status (Closed is folded away). Viewers, who can't own
+    ideas, don't see this section.
   - **Recently updated in my projects**: the ten ideas with the latest activity.
   The sidebar repeats the counts and shows a red dot when an evaluation is overdue.
+  Project admins see how many public-form ideas wait for review in the sidebar, next to
+  the project, and in a notice above its board. On a brand-new install, or before anyone
+  has added you to a project, My work says how to start instead: platform admins get
+  **Create a project** (and `N` opens New project while there is none).
 - **Projects** are listed in the sidebar. A project page has two views of the same
   ideas: a **Board** (a column per status) and a **List** (sortable columns); `V`
   switches between them and the app remembers your choice. Filters (owner, tag,
@@ -70,9 +76,15 @@ development installs a **development login** that lists everyone ("who are you?"
 
 `?` shows every shortcut. They work anywhere except while you are typing in a field.
 
+**Single-key shortcuts** (letters, digits and symbols on their own, like `N` or `G` `M`)
+can be turned off with the switch at the top of the `?` sheet, for example if you use
+speech input or press keys by accident. Shortcuts with `⌘`/Ctrl keep working, and so do
+keys that only act inside a focused control (arrows in a list, `1`–`5` on a score). The
+choice is kept in this browser for you; with it off, the key hints on buttons go too.
+
 | Where | Keys |
 |---|---|
-| Everywhere | `⌘K` palette · `?` shortcuts · `[` sidebar · `G` `M` My work · `G` `I` notifications · `N` new idea · `⌘↵` submit a form or comment |
+| Everywhere | `⌘K` palette · `?` shortcuts · `[` sidebar · `G` `M` My work · `G` `I` notifications · `N` new idea · `⌘↵` submit a form or comment · `Alt`+`T` go to the messages (an Undo, for instance) |
 | Lists (My work, project list, board, notifications) | `J` / `K` or `↓` / `↑` move · `Enter` opens · in My work `E` evaluates the focused idea (or the most urgent one) |
 | Project page | `V` board/list · `F` search and filter · on the board `←` / `→` move between columns; on a focused card `Space` picks it up, arrows move it, `Space` drops it (`Esc` puts it back) |
 | Idea page | `E` evaluate · `S` change status · `A` assign owner · `C` comment · `1` `2` `3` Overview / Evaluations / Proposal |
@@ -82,7 +94,11 @@ development installs a **development login** that lists everyone ("who are you?"
 | Project settings | `⌘S` saves the section you are editing |
 
 On macOS `⌘` is Command; elsewhere it is Ctrl. When a dialog, sheet or menu closes,
-focus goes back to where you were, so you can carry on with the keyboard.
+focus goes back to where you were, so you can carry on with the keyboard. After you
+follow a link, focus starts at the new page's title.
+
+**Undo** messages (after moving, closing or deleting something) stay for 10 seconds, and
+for as long as the pointer or keyboard focus is on them.
 
 ### Light and dark mode
 
@@ -92,12 +108,14 @@ Light or Dark), the account menu (your name at the bottom of the sidebar) or typ
 
 ### Your settings page
 
-**Settings** in the sidebar shows your account (name and email, from sign-in), the
-theme, and links to the settings of every project you manage. **Notifications**, next
-to Account, holds your email preferences
-([below](#notifications-and-email-preferences-phase-3)), and **API keys** your keys for
-scripts and MCP clients ([below](#api-keys-and-mcp-phase-5)). Platform admins also see the
-sections described in [Platform administration](#platform-administration-phase-2).
+**Settings** in the sidebar is about you, in three tabs: **Account** (name and email,
+from sign-in, the theme, and links to the settings of every project you manage),
+**Notifications** (your email preferences,
+[below](#notifications-and-email-preferences-phase-3)) and **API keys** (your keys for
+scripts and MCP clients, [below](#api-keys-and-mcp-phase-5)). Platform admins also have
+**Admin** in the sidebar, with its own sections
+([Platform administration](#platform-administration-phase-2)); old links to admin pages
+under /settings still work.
 
 ## Ideas [Phase 1]
 
@@ -427,10 +445,10 @@ it and the row says "+1 project you can no longer open". **Create key** asks for
 
 - **A name** that says what it's for ("Claude Desktop", "Weekly report"); each of your
   keys needs a different one.
-- **Scopes**, or one of four presets: **Read only** (scripts and reports that look),
+- **What it can do**: one of four presets, **Read only** (scripts and reports that look),
   **Read with an assistant** (an AI assistant that searches and reads), **Evaluate with an
   assistant** (it also submits evaluations as you: they count as yours) and **Full
-  access**. *Read* sees what you see; *Write* creates and changes ideas, comments, owners,
+  access**, or **Custom** to tick the scopes yourself. *Read* sees what you see; *Write* creates and changes ideas, comments, owners,
   evaluators, statuses and proposals; *Evaluate* saves and submits your own evaluations,
   blind as in the app; *AI assistants (MCP)* lets an AI assistant connect (its tools also
   need Read, Write or Evaluate). Write and Evaluate include Read. Under the form, "This
@@ -446,7 +464,8 @@ shows only its start. A key can't be changed later: create a new one and revoke 
 **Revoke** asks first, then the key stops at once: whatever uses it gets "unauthorized"
 on its next request. Signing out doesn't stop keys. A key also pauses when you haven't
 signed in to Soundings for 30 days (signing in resumes it), and a platform admin can
-revoke any key (Settings → All API keys); deactivating an account revokes all its keys.
+revoke any key (Settings → API keys → Everyone's keys); deactivating an account revokes all
+its keys.
 Some things always need you signed in, so no key can do them: deleting or moderating
 ideas, project and admin settings, your inbox, and managing keys. You can have up to 25
 keys. The break-glass admin account can't create keys.
@@ -483,13 +502,14 @@ scores).
 
 ### "Ask AI to evaluate" and the AI badge
 
-On an idea you own (or as an admin), open the **AI** menu next to the main action, or use
-**Ask AI to evaluate** under the evaluators (also in ⌘K). The agent joins the evaluators
-with an AI badge, and a row appears on the Overview tab under **AI runs**: one quiet row
-per agent and kind of work, showing its latest run on one line: while it works, the
-current step ("Read the rubric", "Read the idea", "Saved its evaluation"), how long it
-has taken and about how long it has left, and **Cancel**. **Steps** opens who asked,
-when it will be stopped and every step so far; older runs fold under **History (N)**.
+On an idea you own (or as an admin), open the **AI** menu next to the main action (also in
+⌘K): it is the one place to ask an agent to evaluate, research or draft. The agent joins
+the evaluators with an AI badge, and a row appears on the Overview tab under **AI runs**
+while it works: the current step ("Read the rubric", "Read the idea", "Saved its
+evaluation"), how long it has taken and about how long it has left, and **Cancel**.
+**Steps** opens who asked, when it will be stopped and every step so far. A run that did
+its job folds under **History (N)** once you leave the page (its evaluation or note is on
+the page already); a run that stopped short keeps its row, with **Try again**.
 Everyone who can see the idea can watch, but a run never shows scores, so pending
 evaluators stay blind. The row updates live and falls back to refreshing on its own if
 live updates aren't available. When a run ends, your focus stays where you left it (a
@@ -528,8 +548,8 @@ the feed then shows that a research note was deleted, and the audit log records 
 deleted it.
 
 In the proposal editor, **Draft with AI** (on phones **Draft**) on the section you are
-working on (other sections show it when you point at them or tab to them) asks an agent
-to suggest text for that section. While it works, the section shows its progress with
+working on (other sections show it when you point at them or tab to them), or **Draft a
+section…** in the AI menu, asks an agent to suggest text for that section. While it works, the section shows its progress with
 Cancel; when it is done, its text arrives as a **suggestion** under the section (focus
 moves to it), with the AI badge and the changes highlighted, like any other suggestion (see
 [Suggestions](#suggestions-phase-5)): **Accept** puts it into the section, **Discard**
@@ -543,8 +563,11 @@ waiting for moderation, or the proposal hasn't been started.
 ## For project admins [Phase 1–4]
 
 Project settings are behind the gear icon on the project page (or Settings → Projects
-you manage). Members see them read-only. Each section saves on its own (`⌘S`); if you
-try to leave with unsaved changes, the app asks first.
+you manage), in four tabs: **General** (with the status labels), **Members**, **Rubric**
+and **Public form** (with the project's branding). Members see them read-only. Each form
+has its own Save (`⌘S` saves the tab you are on); if you try to leave with unsaved
+changes, the app asks first. Forms whose fields belong together keep an explicit Save;
+single preferences (notifications) and documents (proposals) save as you go.
 
 ### Members and groups
 
@@ -565,19 +588,22 @@ Role changes and removals offer "Undo" for a few seconds. Every project keeps at
 one admin, counting admins through groups; the app explains when a change would leave
 none. Removing someone keeps their owner and evaluator assignments, but they grant
 nothing without a member role. Only platform admins create projects; the creator
-becomes its first admin.
+becomes its first admin. The break-glass account can't run projects, so it chooses the
+first admin when it creates one (on a fresh install, add that person in Admin → Users
+first).
 
 ### Editing the rubric
 
 A rubric has 3 to 6 criteria, each with a weight (relative: 2 counts twice as much as
 1), an optional "inverted" switch for criteria where a high score is bad, and optional
-guidance for each score. Saving recalculates every idea's score in the project;
+guidance for each score. Reorder criteria by dragging the handle, with Alt+↑/↓ in any of
+their fields, or from their **Move** menu (Move up, Move down). Saving recalculates every idea's score in the project;
 submitted evaluations stay submitted, and a new criterion is scored the next time
 someone edits their evaluation.
 
 ### Renaming status labels
 
-Rename any status or resolution (for example "Shortlisted" → "Next up"); the board,
+On the General tab, rename any status or resolution (for example "Shortlisted" → "Next up"); the board,
 lists and filters use the new names at once. The reset button next to a name restores
 the default.
 
@@ -588,7 +614,7 @@ everyone who can sign in can read it), whether members may volunteer to own idea
 the evaluation window in days. **Archive** makes a project read-only and hides it from
 lists, search and My work; restore it from the archived notice or the settings.
 
-**Branding** (project settings → Branding) overrides the global branding for this
+**Branding** (project settings → Public form, below the form's settings) overrides the global branding for this
 project's **public pages, emails to its public submitters and exported proposals**; the
 signed-in app keeps the global look for everyone. Every field says "Use the global one"
 until you set it: app name, logo, favicon, primary and accent colour, font and email
@@ -644,13 +670,17 @@ activity for 180 days are erased.
 
 ## Platform administration [Phase 2]
 
-Platform admins get five more sections in **Settings** (also in the palette: "Users",
-"Groups", "Sign-in (SSO)", "Email", "Audit log"). Everyone else sees a plain "Page not
-found" at those addresses.
+Platform admins get **Admin** in the sidebar: Users, Groups, Sign-in (SSO), Email,
+Branding, AI agents and the Audit log. **Admin** opens a list of them; on an admin page
+they are listed under Admin in the sidebar (on a phone, each page has "All admin
+settings" to go back to the list). They are also in the palette. The pages keep their
+addresses under /settings. Everyone else sees a plain "Page not found" there.
 
 ### Users
 
 Search by name or email and filter by status, platform admins or "Not signed in yet".
+Each person's row says Active or Deactivated, with "Platform admin" or "Break-glass" by
+their name. AI agents' accounts aren't listed here: they live in AI agents.
 **Add user** pre-creates someone before their first sign-in: email, name, and ideally an
 **external ID** (for example their `employee_no`), which links their organisation
 sign-in more safely than email. Give platform admin rights sparingly.
@@ -714,7 +744,7 @@ Secrets are never shown.
 
 ### Branding
 
-**Settings → Branding** (platform admins) sets the instance's look: app name (up to 40
+**Admin → Branding** (platform admins) sets the instance's look: app name (up to 40
 characters, shown in the sidebar, page titles and emails), logo, favicon, primary and
 accent colours, font, and an email footer (plain text, up to 5 lines, for example your
 company name and address). The app, the sign-in page, every email to staff, and every
@@ -761,9 +791,10 @@ quiet banner "Email isn't set up" across the app (dismiss it for the session).
 
 Sending a test email and retrying are recorded in the audit log, without the address.
 
-### All API keys [Phase 5]
+### Everyone's API keys [Phase 5]
 
-**Settings → All API keys** lists every key people and AI agents have that isn't revoked:
+**Settings → API keys → Everyone's keys** (platform admins; the old "All API keys"
+address leads there) lists every key people and AI agents have that isn't revoked:
 the key's name and start (`sdg_` and 12 characters), the owner (an AI agent's avatar says
 so) with a **Dormant** badge when they haven't signed in for 30 days, scopes, projects
 (a project the owner can no longer open is struck through: the key no longer reaches
@@ -775,7 +806,7 @@ revokes those too.
 
 ### AI agents [Phase 6]
 
-**Settings → AI agents** (platform admins) registers kagent agents and shows the AI
+**Admin → AI agents** (platform admins) registers kagent agents and shows the AI
 settings in effect (read-only, from the deployment: whether AI is on, the kagent
 controller's address, the run time limit, the default protocol, the namespaces agents may
 run in and the MCP address agents use). **Register agent** asks for a name people will see

@@ -2,7 +2,7 @@ import type { InfiniteData, UseInfiniteQueryResult } from '@tanstack/react-query
 import { Link } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ThumbsUp } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { IdeaPage, IdeaSort, IdeaSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -92,7 +92,15 @@ export function ListView({
     estimateSize: () => (cards ? ROW_HEIGHT.card : ROW_HEIGHT.table),
     getItemKey: (index) => items[index]?.id ?? index,
     overscan: 12,
+    // Scrolling re-renders in a normal React update instead of a synchronous flush on
+    // every scroll event, and (memoised) rows that stay in view don't render again:
+    // at 10k ideas this took scrolling from ~110 long tasks to ~20 (perf review B2).
+    useFlushSync: false,
   })
+  // Rows change height between cards and table rows: forget the old sizes.
+  useEffect(() => {
+    virtualizer.measure()
+  }, [cards, virtualizer])
   const rows = virtualizer.getVirtualItems()
   const lastIndex = rows.at(-1)?.index ?? -1
   const { hasNextPage, isFetchingNextPage, fetchNextPage, isError } = query
@@ -109,10 +117,12 @@ export function ListView({
     }
   }, [lastIndex, items.length, hasNextPage, isFetchingNextPage, isError, fetchNextPage])
 
-  // New filters or sort: start from the top.
+  // New filters or sort: start from the top (through the virtualizer, which keeps its
+  // own offset). The page navigates with `resetScroll: false`, so the router's scroll
+  // restoration doesn't put the old offset back over the new results.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 })
-  }, [resetKey])
+    virtualizer.scrollToOffset(0)
+  }, [resetKey, virtualizer])
 
   // Spacers stand in for the rows that aren't rendered. Before the first rows are measured
   // the bottom one holds the whole estimated height, so the list (content-sized) has a height.
@@ -136,12 +146,16 @@ export function ListView({
       <Table
         mobile="container-cards"
         containerRef={containerRef}
-        containerClassName="h-full overflow-y-auto overscroll-contain"
+        // The sticky header is 36px: rows that take focus scroll clear of it (WCAG 2.4.11).
+        containerClassName={cn(
+          'h-full overflow-y-auto overscroll-contain',
+          !cards && 'scroll-pt-9',
+        )}
         className="@3xl:table-fixed"
         aria-label="Ideas"
         aria-rowcount={total + 1}
       >
-        <TableHeader className="sticky top-0 z-10 bg-surface after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border [&_tr]:border-b-0">
+        <TableHeader className="sticky top-0 z-20 bg-surface after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border [&_tr]:border-b-0">
           <TableRow aria-rowindex={1}>
             <SortableTableHead {...sortable('title')}>Idea</SortableTableHead>
             <TableHead className="w-16">Owner</TableHead>
@@ -172,7 +186,9 @@ export function ListView({
                 key={row.key}
                 idea={idea}
                 index={row.index}
-                measure={virtualizer.measureElement}
+                // Table rows are a fixed 44px (titles truncate): nothing to measure. Cards
+                // wrap, so their height is measured.
+                measure={cards ? virtualizer.measureElement : undefined}
               />
             )
           })}
@@ -207,14 +223,14 @@ function Spacer({ height }: { height: number }) {
   )
 }
 
-function IdeaTableRow({
+const IdeaTableRow = memo(function IdeaTableRow({
   idea,
   index,
   measure,
 }: {
   idea: IdeaSummary
   index: number
-  measure: (node: Element | null) => void
+  measure: ((node: Element | null) => void) | undefined
 }) {
   return (
     <TableRow
@@ -300,7 +316,7 @@ function IdeaTableRow({
       </TableCell>
     </TableRow>
   )
-}
+})
 
 /** Skeleton rows of the final size while the first page loads. */
 export function ListSkeleton() {

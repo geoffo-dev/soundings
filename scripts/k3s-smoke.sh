@@ -31,6 +31,11 @@
 #   SMTP=1            also the email checks (after `make k3s-mailpit k3s-install SMTP=1`)
 #   MCP=1             also the MCP checks (after `make k3s-install MCP=1`)
 #   AI=1              also the AI checks (after `make k3s-fake-agent k3s-install AI=1`)
+#   PROD=1            the production checks (after `make k3s-install PROD=1`): no dev
+#                     login, the break-glass admin as the way in, __Host- cookies, the API's
+#                     map for signed-in callers only, /metrics off the app port, a
+#                     production startup log with no password in it; no public-form smoke
+#                     (production has no demo data)
 #   K3S_CONNECT_HOST  where the ingress port is reachable when not on localhost (CI with
 #                     docker:dind: "docker"); requests still carry Host: localhost:<port>.
 set -euo pipefail
@@ -69,10 +74,22 @@ fail() { printf '  FAIL %s\n' "$*" >&2; failed=1; }
 
 log "smoke test against $BASE_URL"
 failed=0
+PROD="${PROD:-0}"
+environment="$(kubectl -n "$NAMESPACE" get configmap -l "app.kubernetes.io/instance=$RELEASE" \
+  -o jsonpath='{.items[*].data.SOUNDINGS_ENVIRONMENT}' 2>/dev/null || true)"
+if [ "$PROD" = "1" ] && [[ "$environment" != *production* ]]; then
+  die "PROD=1 but the release runs in '${environment:-?}' mode: make k3s-install PROD=1 first"
+fi
 check /healthz 200 application/json || failed=1
 check /readyz 200 application/json || failed=1
 check / 200 text/html || failed=1
-check /api/v1/openapi.json 200 application/json || failed=1
+if [[ "$environment" == *production* ]]; then
+  # Production: the API's map needs a signed-in caller (security review P7 N1).
+  check /api/v1/openapi.json 401 application/problem+json || failed=1
+  check /api/docs 401 application/problem+json || failed=1
+else
+  check /api/v1/openapi.json 200 application/json || failed=1
+fi
 
 # /metrics lives on its own port (Service port "metrics"), never behind the ingress.
 # (Outputs are captured first: `grep -q` on a pipe can make the pipeline fail.)
@@ -202,17 +219,73 @@ if grep -q '"break_glass":true' <<<"$config"; then
     fail "break-glass: wrong credentials $wrong (want 401), Secret's credentials $status (want 200 break_glass admin)"
   fi
   csrf="$(awk '$6 ~ /soundings_csrf$/ { print $7 }' "$bg_jar" 2>/dev/null || true)"
+  if [ "$PROD" = "1" ]; then
+    # Production cookies: __Host- names, Secure, HttpOnly session, SameSite=Lax; the
+    # API's map is open to the signed-in admin.
+    headers="$workdir/break-glass-headers"
+    curl -sS "${curl_args[@]}" -D "$headers" -o /dev/null -H 'Content-Type: application/json' \
+      --data-binary "$(jq -n --arg u "$bg_user" --arg p "$bg_password" '{username: $u, password: $p}')" \
+      "$BASE_URL/api/v1/auth/break-glass" || true
+    session_cookie="$(grep -i '^set-cookie: __Host-soundings_session=' "$headers" || true)"
+    csrf_cookie="$(grep -i '^set-cookie: __Host-soundings_csrf=' "$headers" || true)"
+    if grep -qi 'Secure' <<<"$session_cookie" && grep -qi 'HttpOnly' <<<"$session_cookie" &&
+      grep -qi 'SameSite=lax' <<<"$session_cookie" && grep -qi 'Path=/' <<<"$session_cookie" &&
+      ! grep -qi 'Domain=' <<<"$session_cookie" && grep -qi 'Secure' <<<"$csrf_cookie"; then
+      ok "production cookies: __Host-soundings_session (Secure, HttpOnly, SameSite=Lax, no Domain) and __Host-soundings_csrf"
+    else
+      fail "production cookies: session '${session_cookie:-missing}', csrf '${csrf_cookie:-missing}'"
+    fi
+    rm -f "$headers"
+    docs="$(curl -sS "${curl_args[@]}" -b "$bg_jar" -o /dev/null -w '%{http_code}' "$BASE_URL/api/v1/openapi.json" || true)"
+    if [ "$docs" = "200" ]; then
+      ok "/api/v1/openapi.json 200 for the signed-in admin"
+    else
+      fail "/api/v1/openapi.json for the signed-in admin: $docs (want 200)"
+    fi
+  fi
   curl -sS "${curl_args[@]}" -b "$bg_jar" -o /dev/null -X POST -H "X-CSRF-Token: $csrf" \
     "$BASE_URL/api/v1/auth/logout" || true
+elif [ "$PROD" = "1" ]; then
+  fail "break-glass is the way in on PROD=1 but isn't available (/api/v1/auth/config: $config)"
 else
   ok "break-glass is not available (/api/v1/auth/config: $config)"
 fi
 
+if [ "$PROD" = "1" ]; then
+  # /metrics is never on the app port in production (only on its own, above).
+  on_app_port="$(kubectl -n "$NAMESPACE" exec "$deployment" -c api -- python -c "
+import http.client
+conn = http.client.HTTPConnection('127.0.0.1', $app_port, timeout=10)
+conn.request('GET', '/metrics', headers={'Host': 'localhost:$K3S_HTTP_PORT'})
+print(conn.getresponse().status)" 2>/dev/null || true)"
+  if [ "$on_app_port" = "404" ]; then
+    ok "/metrics on the app port inside the pod: 404 (production)"
+  else
+    fail "/metrics on the app port inside the pod: '${on_app_port:-none}' (want 404)"
+  fi
+  # The startup log says production (exception messages redacted, the dev login and
+  # the development key refused) and no log line holds the break-glass password.
+  api_logs="$(kubectl -n "$NAMESPACE" logs "$deployment" -c api --tail=-1 2>/dev/null || true)"
+  if grep -q '"message": "api starting".*"environment": "production"' <<<"$api_logs"; then
+    ok "the API started in production mode"
+  else
+    fail "no production startup line in the API's log"
+  fi
+  if [ -n "${bg_password:-}" ] && grep -qF "$bg_password" <<<"$api_logs"; then
+    fail "the break-glass password appears in the API's log"
+  else
+    ok "the API's log holds no break-glass password"
+  fi
+fi
+
 # Public form, branding and proposal export through the ingress. The ALTCHA is solved
 # with the api pod's Python (it has the altcha package; CI's runner has no Python).
-CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
-  ALTCHA_PYTHON="docker exec -i $K3S_NAME kubectl -n $NAMESPACE exec -i $deployment -c api -- python" \
-  "$(dirname "$0")/public-smoke.sh" "$BASE_URL" || failed=1
+# Production has no demo data (it needs the dev login), so nothing to submit to.
+if [ "$PROD" != "1" ]; then
+  CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
+    ALTCHA_PYTHON="docker exec -i $K3S_NAME kubectl -n $NAMESPACE exec -i $deployment -c api -- python" \
+    "$(dirname "$0")/public-smoke.sh" "$BASE_URL" || failed=1
+fi
 
 # The edge rate limit on the public form's API (the chart's second Ingress with the
 # Traefik middleware from dev/k3s/public-ratelimit.yaml, when k3s-install.sh set it up):

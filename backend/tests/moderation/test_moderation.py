@@ -62,6 +62,32 @@ async def audit_of(db: AsyncSession, action: str) -> list[AuditLog]:
 
 
 # --- The queue ---------------------------------------------------------------------------
+async def test_project_lists_carry_the_queue_total_for_moderators_only(
+    api: AsUser, team: Team, db_session: AsyncSession, settings: Settings
+) -> None:
+    """Phase 7 (contract-phase7 C2): ``pending_moderation_count`` in ``GET /projects``
+    and ``GET /projects/{slug}`` for project and platform admins; null for the rest."""
+    await held(db_session, settings, team, "One", hours_ago=2)
+    await held(db_session, settings, team, "Two", hours_ago=3)
+    await held(db_session, settings, team, "Unconfirmed", reason=HoldReason.EMAIL_VERIFICATION)
+    await make_idea(db_session, team.project, title="Visible")
+
+    for user, expected in (
+        (team.admin, 2),
+        (team.platform, 2),
+        (team.owner, None),
+        (team.member, None),
+        (team.viewer, None),
+    ):
+        http = await api(user)
+        listed = {p["slug"]: p for p in ok(await http.get("/projects"))}
+        detail = ok(await http.get(f"/projects/{team.slug}"))
+        assert listed[team.slug]["pending_moderation_count"] == expected, user.display_name
+        assert detail["pending_moderation_count"] == expected, user.display_name
+    approved = ok(await (await api(team.admin)).get(f"/projects/{team.slug}/moderation"))
+    assert approved["total"] == 2
+
+
 async def test_admins_see_the_queue_oldest_first(
     api: AsUser, team: Team, db_session: AsyncSession, settings: Settings
 ) -> None:

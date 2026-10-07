@@ -140,6 +140,8 @@ ROUTE_KEY_ACCESS: Final[dict[str, KeyAccess]] = {
     "request_ai_section_draft": _P, "get_ai_run": _P, "cancel_ai_run": _P,
     "stream_ai_run_events": _P, "set_evaluation_inclusion": _P,
     "get_research_note": _P, "delete_research_note": _P,
+    # Phase 7: My work's counts and its full list of evaluations due (like get_my_work)
+    "get_my_work_counts": _R, "list_my_evaluations_due": _R,
 }
 # fmt: on
 """Every API operation (``operation_id``) and what a key may do there."""

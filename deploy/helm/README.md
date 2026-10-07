@@ -104,7 +104,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `externalDatabase.host` / `.port` / `.database` / `.user` | `""` / `5432` / `soundings` / `soundings` | Used when `postgresql.enabled=false` (host required). |
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
 | `externalDatabase.sslmode` | `require` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. |
-| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace, plus the namespaces of in-cluster MCP clients (kagent's is added with `kagent.enabled`). |
+| `networkPolicy.enabled` / `.ingressFrom` / `.metricsFrom` | `true` / `[]` / `[]` | Ingress policies: peers for the HTTP port / the metrics port (see below). Set `ingressFrom` to your ingress controller's namespace, plus the namespaces of in-cluster MCP clients (kagent's is added with `kagent.enabled`); while it is empty and `trustedProxies` trusts private ranges, NOTES warns that any pod can choose its own client address. Set `metricsFrom` to your Prometheus's namespace: empty, only this release's pods may scrape. |
 | `networkPolicy.egress.enabled` | `false` | Also restrict the api and worker pods' egress to DNS, the database, SMTP (worker), the IdP (api), kagent's controller (both, with `features.ai` or `kagent.enabled`), OTLP and `extra` (see [Security](#security)). |
 | `networkPolicy.egress.smtp.to` / `.port` | `[]` / `""` | Peers of the SMTP server (empty: any address) and its pods' port (empty: the SMTP port). |
 | `networkPolicy.egress.database.to` / `.oidc.to` / `.oidc.port` | `[]` / `[]` / `""` | Peers of an external database and of the IdP (empty: any address); the IdP's port (empty: the issuer's). |
@@ -341,8 +341,9 @@ app ignores them until the issuer is unset.
   dropped, no privilege escalation, seccomp `RuntimeDefault`, no ServiceAccount token.
   `scripts/k3s-install.sh` installs into a namespace that enforces it.
 - `networkPolicy.enabled` (default on): the API accepts traffic on its HTTP port from
-  `ingressFrom` peers and on its metrics port from `metricsFrom` peers, plus this
-  release's pods (each port: any source when its list is empty); the worker accepts
+  `ingressFrom` peers (any source when the list is empty) and on its metrics port from
+  `metricsFrom` peers only (nobody else when it is empty), plus this release's pods on
+  both; the worker accepts
   nothing; the bundled Postgres accepts only this release's api, worker, migration and
   seed pods. Egress is not restricted by default (IdP, SMTP, kagent and the database
   differ per cluster). `networkPolicy.egress.enabled` restricts the api and worker pods

@@ -15,7 +15,7 @@ import { useSyncExternalStore } from 'react'
 
 import { toast, toastUndo } from '@/components/ui/toaster'
 
-export const UNDO_TOAST_MS = 6000
+export const UNDO_TOAST_MS = 10_000
 
 export interface CommitOptions {
   /** True when flushing on page hide: send with `keepalive` so it survives unload. */

@@ -339,3 +339,36 @@ async def test_a_failed_render_is_a_500_without_details(
     response = await (await api(team.member)).get(f"{proposal_url(written)}/pdf")
     body: dict[str, Any] = assert_problem(response, 500, "internal_error")
     assert "Customers" not in str(body)
+
+
+def _structure_types(node: Any, found: set[str]) -> set[str]:
+    """Every ``/S`` type in a tagged PDF's structure tree (depth first)."""
+    node = node.get_object()
+    if isinstance(node, dict):
+        if "/S" in node:
+            found.add(str(node["/S"]))
+        kids = node.get("/K")
+        if kids is not None:
+            for kid in kids if isinstance(kids, list) else [kids]:
+                if hasattr(kid, "get_object") and isinstance(kid.get_object(), dict):
+                    _structure_types(kid, found)
+    return found
+
+
+async def test_the_pdf_is_tagged_for_assistive_technology(
+    api: AsUser, team: Team, written: str
+) -> None:
+    """Accessibility audit P7: a structure tree (headings, paragraphs, lists, links), the
+    language and the title, so screen readers can read the export in order."""
+    response = await (await api(team.admin)).get(f"{proposal_url(written)}/pdf")
+
+    assert response.status_code == 200, response.text
+    reader = PdfReader(io.BytesIO(response.content))
+    root: Any = reader.trailer["/Root"].get_object()
+    assert bool(root["/MarkInfo"]["/Marked"])
+    assert str(root["/Lang"]).startswith("en")
+    types = _structure_types(root["/StructTreeRoot"], set())
+    assert {"/Document", "/P"} <= types
+    assert types & {"/H1", "/H2", "/H3"}, types
+    assert reader.metadata is not None
+    assert reader.metadata.title == "Self-service refunds"

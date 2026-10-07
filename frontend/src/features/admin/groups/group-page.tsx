@@ -93,7 +93,7 @@ function GroupDetail({ group }: { group: Group }) {
   ].join(' · ')
 
   return (
-    <div className="flex max-w-3xl flex-col gap-10">
+    <div className="flex flex-col gap-10">
       <AdminPageHeader
         back={<BackToGroups />}
         title={group.name}

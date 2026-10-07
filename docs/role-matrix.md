@@ -93,6 +93,26 @@ it immediately.
 - **How someone signed in** (SSO, break-glass, dev login) changes nothing in these
   tables: a session is a session. Sign-in itself is not a rule (section 2a).
 
+## 1a. Principal traits (Phase 7)
+
+Decisions that follow from *who* the principal is, not from a rule's cells. They are
+named functions in `app/authz/policy.py`, so no service, route, job or MCP tool branches
+on account kinds or roles itself (ADR 0010; security review P7 N4).
+`tests/authz/test_principal_traits.py` pins them.
+
+| Function | Trait | Who | Used by |
+|---|---|---|---|
+| `is_agent` | principal.agent | an AI agent's service account | c21, c22, rule 9; the docs gate (an agent's key is MCP only) |
+| `sees_email_trouble` | principal.sees_email_trouble | whoever `platform.configure_email` allows (platform admins) | the bell's `email_trouble` banner |
+| `may_cite_sources` | evaluation.cite_sources | agents only | `save_my_evaluation` / `submit_evaluation`: a person's sources are 422 |
+| `counted_by_default` | evaluation.counted_by_default | people (not agents) | a first submission's `include_in_aggregate` (section 3 rule 10) |
+| `writes_as_ai` | proposal.suggest_as_ai | agents | suggestion `source` = `ai`; the MCP dispatcher strips invisible and direction characters from an agent's text |
+| `searches_co_members_only` | user.search (co-members only) | agents | `search_users` finds only people who share a project |
+
+Traits are not rules: they have no cells and no API-key scope (the trait names are
+written without backticks so the rule tables' parser, `tests/authz/test_policy_matrix.py`,
+never reads them as rules).
+
 ## 2. Reading the tables
 
 | Cell | Meaning |

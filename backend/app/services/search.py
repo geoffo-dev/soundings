@@ -2,14 +2,15 @@
 
 Ideas and projects the principal can view, in non-archived projects. An exact idea
 key (``cust-12`` -> ``CUST-12``) is always the first idea; then ideas whose title or
-summary contains ``q`` (``pg_trgm`` indexes), most similar title first. Projects
+summary contains ``q`` (``pg_trgm`` indexes), most similar title first (for one or two
+letters, most recently active first: :data:`SHORT_QUERY`). Projects
 match on name or slug, by name. Results never carry scores.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import Any, Final
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,9 @@ from app.services.users import escape_like
 __all__ = ["global_search"]
 
 _IDEA_KEY: Final = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-([1-9][0-9]{0,8})$")
+SHORT_QUERY: Final = 3
+"""Queries shorter than this (one or two letters, as the palette searches while you
+type) list the most recently active matches instead of the most similar (perf B6)."""
 
 
 async def global_search(
@@ -51,16 +55,22 @@ async def global_search(
         if exact is not None:
             found.append((exact[0], exact[1]))
     if len(found) < limit:
+        short = len(q) < SHORT_QUERY
+        in_title = Idea.title.ilike(pattern, escape="\\")
         matches = ideas.where(
-            or_(Idea.title.ilike(pattern, escape="\\"), Idea.summary.ilike(pattern, escape="\\"))
+            # One or two letters match the title only: summaries match nearly anything.
+            in_title if short else or_(in_title, Idea.summary.ilike(pattern, escape="\\"))
         )
         if found:
             matches = matches.where(Idea.id != found[0][0].id)
-        rows = await db.execute(
-            matches.order_by(
-                func.similarity(Idea.title, q).desc(), Idea.last_activity_at.desc(), Idea.id
-            ).limit(limit - len(found))
-        )
+        if short:
+            # One or two letters: pg_trgm can't narrow them (trigrams need three), so
+            # most ideas match and ranking them all by similarity costs ~100 ms at 10k.
+            # The most recently active matches instead, read along the activity index.
+            order: tuple[Any, ...] = (Idea.last_activity_at.desc(), Idea.id)
+        else:
+            order = (func.similarity(Idea.title, q).desc(), Idea.last_activity_at.desc(), Idea.id)
+        rows = await db.execute(matches.order_by(*order).limit(limit - len(found)))
         found.extend((idea, project) for idea, project in rows)
 
     projects = await db.scalars(

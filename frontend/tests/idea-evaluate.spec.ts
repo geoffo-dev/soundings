@@ -197,7 +197,7 @@ test.describe('on a phone (390 px, touch)', () => {
     // Tapping shows what the score means.
     await expect(
       dialog
-        .locator('[data-slot="segmented-guidance"]', { hasText: '4 · Between 3 and 5' })
+        .locator('[data-slot="segmented-guidance"]', { hasText: /^4 · Strong: between / })
         .first(),
     ).toBeVisible()
     await dialog

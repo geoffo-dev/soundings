@@ -29,7 +29,7 @@ export const Route = createFileRoute('/_app/settings/_admin/groups/$groupId')({
     }
   },
   head: ({ loaderData }) => ({
-    meta: [{ title: `${loaderData?.name ?? 'Group'} · Settings · Soundings` }],
+    meta: [{ title: `${loaderData?.name ?? 'Group'} · Admin · Soundings` }],
   }),
   pendingComponent: GroupPageSkeleton,
   notFoundComponent: GroupNotFound,

@@ -31,7 +31,7 @@ from app.domain.principal import Principal
 from app.domain.rubric_defaults import default_rubric_criteria
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
-from app.models.enums import ProjectRole
+from app.models.enums import HoldReason, ProjectRole
 from app.models.evaluation import EvaluationScore
 from app.models.idea import Idea, IdeaTag
 from app.models.project import (
@@ -91,7 +91,10 @@ def _summary(
     role: ProjectRole | None,
     idea_count: int,
     member_count: int,
+    held_count: int,
 ) -> ProjectSummary:
+    from app.services.moderation import may_moderate  # moderation builds on ideas
+
     resource = Resource(project=ProjectFacts.of(project), role=role)
     return ProjectSummary(
         id=project.id,
@@ -105,6 +108,7 @@ def _summary(
         member_count=member_count,
         archived_at=project.archived_at,
         permissions=project_permissions(principal, resource),
+        pending_moderation_count=held_count if may_moderate(principal, resource) else None,
     )
 
 
@@ -125,15 +129,23 @@ async def list_projects(
         .group_by(_roles.c.project_id)
         .subquery()
     )
+    held = (  # the moderation queues' totals (partial index on held ideas)
+        select(Idea.project_id, func.count().label("n"))
+        .where(Idea.held_for == HoldReason.MODERATION)
+        .group_by(Idea.project_id)
+        .subquery()
+    )
     statement = (
         select(
             Project,
             effective_role(principal.user_id).label("role"),
             func.coalesce(ideas.c.n, 0),
             func.coalesce(members.c.n, 0),
+            func.coalesce(held.c.n, 0),
         )
         .outerjoin(ideas, ideas.c.project_id == Project.id)
         .outerjoin(members, members.c.project_id == Project.id)
+        .outerjoin(held, held.c.project_id == Project.id)
         .where(visible_projects(principal))
         .order_by(func.lower(Project.name), Project.id)
     )
@@ -141,8 +153,8 @@ async def list_projects(
         statement = statement.where(Project.archived_at.is_(None))
     rows = await db.execute(statement)
     return [
-        _summary(principal, project, role, int(idea_count), int(member_count))
-        for project, role, idea_count, member_count in rows
+        _summary(principal, project, role, int(idea_count), int(member_count), int(held_count))
+        for project, role, idea_count, member_count, held_count in rows
     ]
 
 
@@ -163,11 +175,15 @@ async def project_detail(
     db: AsyncSession, principal: Principal, project: Project, resource: Resource
 ) -> ProjectOut:
     """The full project: settings, resolved labels, active rubric, permissions."""
-    idea_count = await db.scalar(
-        select(func.count())
+    counted = await db.execute(
+        select(
+            func.count().filter(viewable_ideas(principal)),
+            func.count().filter(Idea.held_for == HoldReason.MODERATION),
+        )
         .select_from(Idea)
-        .where(Idea.project_id == project.id, viewable_ideas(principal))
+        .where(Idea.project_id == project.id)
     )
+    idea_count, held_count = counted.one()
     member_count = await db.scalar(
         select(func.count())
         .select_from(_roles)
@@ -175,7 +191,12 @@ async def project_detail(
         .where(_roles.c.project_id == project.id, User.is_active)
     )
     summary = _summary(
-        principal, project, resource.role, int(idea_count or 0), int(member_count or 0)
+        principal,
+        project,
+        resource.role,
+        int(idea_count or 0),
+        int(member_count or 0),
+        int(held_count or 0),
     )
     return ProjectOut(
         **summary.model_dump(),
@@ -504,12 +525,15 @@ async def replace_rubric(
 
 # --- Tags ----------------------------------------------------------------------------------
 async def list_tags(db: AsyncSession, principal: Principal, project: Project) -> list[TagInfo]:
-    """Tags on at least one idea the principal can view, by name."""
+    """Tags on at least one idea the principal can view, by name. ``idea_tags`` holds a
+    tag once per idea, so ``count(*)`` counts ideas; the viewable ideas of *this*
+    project are a hashed semi-join (performance review B6: 29 ms instead of 127 ms for
+    a pending evaluator in a 10k-idea project, where the join probed every tagged idea)."""
+    viewable = select(Idea.id).where(Idea.project_id == project.id, viewable_ideas(principal))
     rows = await db.execute(
-        select(Tag.id, Tag.name, func.count(func.distinct(IdeaTag.idea_id)))
+        select(Tag.id, Tag.name, func.count())
         .join(IdeaTag, IdeaTag.tag_id == Tag.id)
-        .join(Idea, Idea.id == IdeaTag.idea_id)
-        .where(Tag.project_id == project.id, viewable_ideas(principal))
+        .where(Tag.project_id == project.id, IdeaTag.idea_id.in_(viewable))
         .group_by(Tag.id, Tag.name)
         .order_by(func.lower(Tag.name), Tag.id)
     )

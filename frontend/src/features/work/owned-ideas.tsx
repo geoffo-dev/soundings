@@ -29,6 +29,10 @@ export function OwnedIdeasSection({
   const open = groups?.filter((group) => group.status !== 'closed') ?? []
   const closed = groups?.find((group) => group.status === 'closed')
 
+  // Viewers can't own or submit ideas: a section they can't act on isn't shown (unless
+  // they still own some from before).
+  if (!canCreateIdeas && groups?.length === 0) return null
+
   return (
     <PageSection
       id="owned"
@@ -47,27 +51,17 @@ export function OwnedIdeasSection({
         </SkeletonGroup>
       ) : groups.length === 0 ? (
         <div className="rounded-lg border">
-          {canCreateIdeas ? (
-            <EmptyState
-              size="compact"
-              icon={<Lightbulb />}
-              title="You don’t own any ideas yet"
-              description="Open a project and volunteer for an idea you care about, or submit your own."
-              action={
-                <Button variant="outline" onClick={openCommandPalette}>
-                  Find a project
-                </Button>
-              }
-            />
-          ) : (
-            // Viewers (or people in no project) can't own or submit ideas: don't suggest it.
-            <EmptyState
-              size="compact"
-              icon={<Lightbulb />}
-              title="No ideas to own"
-              description="Project members submit and own ideas. To join in, ask a project admin to add you as a member."
-            />
-          )}
+          <EmptyState
+            size="inline"
+            icon={<Lightbulb />}
+            title="You don’t own any ideas yet"
+            description="Volunteer for one you care about, or submit your own."
+            action={
+              <Button variant="ghost" size="sm" onClick={openCommandPalette}>
+                Find a project
+              </Button>
+            }
+          />
         </div>
       ) : (
         <div className="flex flex-col gap-5">

@@ -18,6 +18,8 @@
 #   DEMO_TIMEZONE   instance time zone of digests, reminders and dates in emails (UTC)
 #   DEMO_PUBLIC_PER_IP  public-form submissions per client address and hour (the app's
 #                   default, 10, when unset; CI's e2e sends more from one address)
+#   DEMO_SESSION_WRITES  changes per signed-in person and minute (the app's default, 120,
+#                   when unset; CI's e2e sets data up through the API as a few people)
 #   DEMO_AI=1       AI assistance against Soundings' fake kagent agent ($DEMO_NAME-fake-agent,
 #                   image FAKE_AGENT_IMAGE, default soundings-fake-agent:dev: `make
 #                   fake-agent-image`; observations on localhost:$DEMO_FAKE_AGENT_PORT, 8027),
@@ -76,6 +78,9 @@ if [ "$DEMO_AI" = "1" ]; then
 fi
 if [ -n "${DEMO_PUBLIC_PER_IP:-}" ]; then
   app_env+=(-e "SOUNDINGS_PUBLIC_SUBMISSIONS_PER_IP=$DEMO_PUBLIC_PER_IP")
+fi
+if [ -n "${DEMO_SESSION_WRITES:-}" ]; then
+  app_env+=(-e "SOUNDINGS_SESSION_WRITES_PER_MINUTE=$DEMO_SESSION_WRITES")
 fi
 # The app and the worker run as in Kubernetes: read-only root filesystem with a
 # writable /tmp (fontconfig's cache, PDF export), no capabilities.

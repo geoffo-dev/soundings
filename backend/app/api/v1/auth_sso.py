@@ -232,6 +232,19 @@ async def sso_login(
     return response
 
 
+CALLBACK_MAX_LENGTHS: Final = {"code": 4096, "state": 512, "error": 256, "iss": 2048}
+"""Bounds of the callback's parameters (security review P7 N6): nothing a real IdP sends
+comes near them. A longer one is a failed sign-in (``sso_failed``), never sent to the
+token endpoint; ``error_description`` is never read at all."""
+
+
+def _oversized(**values: str | None) -> bool:
+    return any(
+        value is not None and len(value) > CALLBACK_MAX_LENGTHS[name]
+        for name, value in values.items()
+    )
+
+
 @router.get(
     "/callback",
     operation_id="sso_callback",
@@ -276,6 +289,8 @@ async def sso_callback(
     # State: in the URL and in the attempt this browser's cookie carries (sealed, so
     # only this server made it). The cookie goes with every outcome, and the IdP
     # accepts each code once: a callback URL works once, and only in this browser.
+    if state is not None and len(state) > CALLBACK_MAX_LENGTHS["state"]:
+        state = None  # not ours: ours are short
     attempt = open_attempt(settings, read_cookie(request, settings, OIDC_COOKIE))
     if attempt is None or not tokens_match(state, attempt.state):
         return finish(_login_error(LoginErrorCode.LOGIN_EXPIRED))
@@ -293,6 +308,8 @@ async def sso_callback(
 
     if attempt.expires_at <= utcnow():
         return await deny("login_expired")
+    if _oversized(code=code, error=error, iss=iss):  # N6: never sent on or compared
+        return await deny("sso_failed")
     if iss is not None and iss != issuer:  # RFC 9207: mix-up defence
         return await deny("sso_failed")
     if error is not None:

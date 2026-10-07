@@ -35,6 +35,8 @@ const COLUMN_HINTS: Record<BoardColumnData['status'], string> = {
 
 export const columnId = (status: string) => `column:${status}`
 
+const COMPACT = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+
 /** One status column: header with count, cards, "Show more", and a drop target. */
 export function BoardColumn({
   slug,
@@ -73,7 +75,17 @@ export function BoardColumn({
       >
         <StatusDot tone={statusTone(column.status, null)} />
         <span className="truncate">{column.label}</span>
-        <span className="font-normal text-muted tabular-nums">{column.count}</span>
+        {/* The collapsed column is narrow: 1,234 reads "1.2K" there, so its name stays whole. */}
+        {collapsed && column.count >= 1000 ? (
+          <span className="shrink-0 font-normal text-muted tabular-nums">
+            <span aria-hidden="true">{COMPACT.format(column.count)}</span>
+            <span className="sr-only">{column.count.toLocaleString()}</span>
+          </span>
+        ) : (
+          <span className="shrink-0 font-normal text-muted tabular-nums">
+            {column.count.toLocaleString()}
+          </span>
+        )}
       </h2>
       {onToggleCollapsed && (
         <WithTooltip content={collapsed ? `Show ${column.label.toLowerCase()} ideas` : 'Collapse'}>
@@ -339,14 +351,15 @@ function ResolutionTabs({
           onClick={() => onChange(option.value)}
           className={cn(
             'inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors',
+            // The chosen filter stands out by more than a fill (WCAG 1.4.11).
             value === option.value
-              ? 'bg-surface text-primary ring-1 ring-border'
+              ? 'bg-surface font-semibold text-primary ring-1 ring-control'
               : 'text-muted hover:bg-subtle hover:text-primary',
           )}
         >
           {option.value && <StatusDot tone={option.value} className="size-1.5" />}
           {option.label}
-          <span className="tabular-nums opacity-70">{option.count}</span>
+          <span className="font-normal text-muted tabular-nums">{option.count}</span>
         </button>
       ))}
     </div>

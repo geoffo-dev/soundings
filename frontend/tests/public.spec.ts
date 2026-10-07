@@ -53,7 +53,7 @@ test('a visitor sends an idea: verified in the background, private link shown on
   await expect(heading).toBeFocused()
   const link = page.getByRole('textbox', { name: 'Your private link' })
   await expect(link).toHaveValue(/\/track#[A-Za-z0-9_-]{43}$/)
-  await expect(page.getByText(/We’ve also emailed you this link/)).toBeVisible()
+  await expect(page.getByText(/Keep this tracking link: it isn’t in the email/)).toBeVisible()
   await expect(page.getByText('The team reviews new ideas first')).toBeVisible()
 
   expect(posts).toHaveLength(1)

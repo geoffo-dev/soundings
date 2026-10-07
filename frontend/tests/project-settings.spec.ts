@@ -170,12 +170,16 @@ test('rubric: inline validation, limits, reorder and save', async ({ page }) => 
 })
 
 test('status labels: rename with a live preview, then the board uses them', async ({ page }) => {
+  // The old ?tab=statuses lands on General, where the labels now are.
   await openSettings(page, 'statuses')
+  await expect(page).toHaveURL(/\/p\/internal-tools\/settings#status-labels$/)
+  await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'Status labels' })).toHaveCount(0)
   const newLabel = page.getByRole('textbox', { name: 'New', exact: true })
   await newLabel.fill('Inbox')
   const preview = page.getByRole('heading', { name: 'Preview' }).locator('..')
   await expect(preview).toContainText('Inbox')
-  await page.getByRole('button', { name: /Save changes/ }).click()
+  await page.getByRole('button', { name: /Save labels/ }).click()
   await expect(toast(page, 'Status labels saved')).toBeVisible()
 
   await page.getByRole('link', { name: 'Back to ideas' }).click()
@@ -183,7 +187,6 @@ test('status labels: rename with a live preview, then the board uses them', asyn
   await expect(page.getByRole('region', { name: /^Inbox\b/ })).toBeVisible()
 
   await page.getByRole('link', { name: 'Project settings' }).click()
-  await page.getByRole('tab', { name: 'Status labels' }).click()
   await expect(newLabel).toHaveValue('Inbox')
   await page.getByRole('button', { name: 'Reset New to its default name' }).click()
   await expect(newLabel).toHaveValue('New')
@@ -228,9 +231,10 @@ test('members of a project see its settings read-only', async ({ page }) => {
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`settings have no serious accessibility violations (${colorScheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme })
-    for (const tab of ['', 'members', 'rubric', 'statuses']) {
+    for (const tab of ['', 'members', 'rubric', 'public-form']) {
       await openSettings(page, tab)
-      await expect(page.getByRole('tabpanel')).toBeVisible()
+      // Public form holds the branding form, whose preview has tabs of its own.
+      await expect(page.getByRole('tabpanel').first()).toBeVisible()
       expect(await seriousViolations(page), `tab ${tab || 'general'}`).toEqual([])
     }
   })
@@ -240,7 +244,7 @@ test.describe('on a phone (390px)', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
   test('settings fit the screen', async ({ page }) => {
-    for (const tab of ['', 'members', 'rubric', 'statuses']) {
+    for (const tab of ['', 'members', 'rubric', 'public-form']) {
       await openSettings(page, tab)
       const overflow = await page.evaluate(() => {
         const main = document.querySelector('main')

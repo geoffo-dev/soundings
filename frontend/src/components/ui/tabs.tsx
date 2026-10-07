@@ -36,7 +36,7 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
         'transition-colors duration-150 hover:text-primary',
         'focus-visible:rounded-sm focus-visible:outline-offset-0',
         'disabled:pointer-events-none disabled:opacity-50',
-        'data-[state=active]:border-accent data-[state=active]:text-primary',
+        'data-[state=active]:border-accent-control data-[state=active]:text-primary',
         "[&_svg:not([class*='size-'])]:size-4",
         className,
       )}
@@ -45,11 +45,16 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
   )
 }
 
+/**
+ * Radix makes each panel a Tab stop (so a panel without focusable content can
+ * still be reached); it shows the standard focus ring like everything else
+ * (WCAG 2.4.7).
+ */
 export function TabsContent({ className, ...props }: ComponentProps<typeof TabsPrimitive.Content>) {
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn('pt-5 focus-visible:outline-none', className)}
+      className={cn('rounded-sm pt-5', className)}
       {...props}
     />
   )

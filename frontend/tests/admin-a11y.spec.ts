@@ -109,11 +109,14 @@ test.describe('on a phone (390px)', () => {
     })
   }
 
-  test('the section row scrolls and the users list becomes cards', async ({ page }) => {
+  test('admin sections are a list on phones, and the users list becomes cards', async ({
+    page,
+  }) => {
     await visit(page, { path: '/settings/users', heading: 'Users' })
-    const nav = page.getByRole('navigation', { name: 'Settings sections' })
-    await nav.getByRole('link', { name: 'Audit log' }).scrollIntoViewIfNeeded()
-    await nav.getByRole('link', { name: 'Audit log' }).click()
+    // No sidebar on screen: "All admin settings" leads to the list of sections.
+    await page.getByRole('link', { name: 'All admin settings' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Admin' })).toBeVisible()
+    await page.getByRole('main').getByRole('link', { name: /^Audit log/ }).click()
     await expect(page.getByRole('heading', { level: 2, name: 'Audit log' })).toBeVisible()
     await page.goto('/settings/users')
     // Cards: one meta line under the name (no repeated column names); the header is for

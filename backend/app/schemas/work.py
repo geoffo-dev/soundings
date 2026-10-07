@@ -10,10 +10,23 @@ from pydantic import Field
 from app.models.enums import IdeaStatus
 from app.schemas.activity import ActivityItem
 from app.schemas.base import ResponseModel
+from app.schemas.common import Page
 from app.schemas.ideas import IdeaRef, IdeaSummary
 from app.schemas.users import UserRef
 
-__all__ = ["Work", "WorkCounts", "WorkEvaluation", "WorkOwnedGroup", "WorkRecentIdea"]
+__all__ = [
+    "EVALUATIONS_DUE_PAGE",
+    "Work",
+    "WorkCounts",
+    "WorkEvaluation",
+    "WorkEvaluationPage",
+    "WorkOwnedGroup",
+    "WorkRecentIdea",
+]
+
+EVALUATIONS_DUE_PAGE = 50
+"""``GET /me/work`` lists the first 50 evaluations due (Phase 7, C1);
+``GET /me/evaluations-due?cursor=`` pages through the rest in the same order."""
 
 
 class WorkEvaluation(ResponseModel):
@@ -24,6 +37,11 @@ class WorkEvaluation(ResponseModel):
     due_at: datetime | None
     overdue: bool = Field(description="due_at is in the past.")
     state: Literal["invited", "draft"]
+
+
+class WorkEvaluationPage(Page[WorkEvaluation]):
+    """Evaluations you owe, in My work's order (overdue first, then soonest due, no due
+    date last). Phase 7 (C1): "Show all" pages on from ``Work.evaluations_due_next_cursor``."""
 
 
 class WorkOwnedGroup(ResponseModel):
@@ -48,9 +66,11 @@ class WorkRecentIdea(ResponseModel):
 
 
 class WorkCounts(ResponseModel):
-    """Sidebar badges."""
+    """Sidebar badges (also ``GET /me/work/counts``, which runs only the counts)."""
 
-    evaluations_due: int = Field(description="Evaluations you owe (length of evaluations_due).")
+    evaluations_due: int = Field(
+        description=("All evaluations you owe (Work.evaluations_due lists the first 50 of them).")
+    )
     evaluations_overdue: int
     owned_open: int = Field(description="Ideas you own that are not closed.")
 
@@ -58,7 +78,16 @@ class WorkCounts(ResponseModel):
 class Work(ResponseModel):
     counts: WorkCounts
     evaluations_due: list[WorkEvaluation] = Field(
-        description="Overdue first, then soonest due; no due date last."
+        description=(
+            "Overdue first, then soonest due; no due date last. The first 50 "
+            "(counts.evaluations_due has the total)."
+        )
+    )
+    evaluations_due_next_cursor: str | None = Field(
+        description=(
+            "More evaluations due: GET /me/evaluations-due?cursor=<this>; null when "
+            "evaluations_due holds them all."
+        )
     )
     owned: list[WorkOwnedGroup] = Field(
         description=(

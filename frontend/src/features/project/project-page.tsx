@@ -28,7 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
-import { KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { ModerationNotice } from '@/features/moderation/moderation-notice'
@@ -93,8 +93,17 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
       ? board.data?.columns.reduce((sum, column) => sum + column.count, 0)
       : list.data?.pages[0]?.total
 
+  // `resetScroll: false`: the router's scroll restoration would put the list's scroller
+  // back where it was for this entry (a replace keeps the entry), undoing the list's
+  // own "new filters, back to the top" (ListView's resetKey).
   const setSearch = (next: ProjectSearch) =>
-    void navigate({ to: '/p/$slug', params: { slug }, search: next, replace: true })
+    void navigate({
+      to: '/p/$slug',
+      params: { slug },
+      search: next,
+      replace: true,
+      resetScroll: false,
+    })
   const setView = (next: ProjectView) => {
     writeViewPreference(slug, next)
     setSearch(withView(search, next))
@@ -242,6 +251,7 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
   return (
     <Page width="full" className="h-full min-h-0 gap-4 pb-0 sm:gap-5 lg:px-6 lg:py-6">
       <PageHeader
+        compact
         title={project.name}
         description={project.description || undefined}
         actions={
@@ -257,10 +267,15 @@ function ProjectPageContent({ project, search }: { project: Project; search: Pro
               </WithTooltip>
             )}
             {canCreate && (
-              <Button variant="primary" className="max-sm:hidden" onClick={newIdea}>
+              <Button
+                variant="primary"
+                className="max-sm:hidden"
+                onClick={newIdea}
+                aria-keyshortcuts={ariaKeys(SHORTCUTS.newIdea.keys)}
+              >
                 <Plus />
                 New idea
-                <KbdShortcut keys={SHORTCUTS.newIdea.keys} tone="accent" className="ml-1" />
+                <ButtonShortcut keys={SHORTCUTS.newIdea.keys} />
               </Button>
             )}
           </>
@@ -362,10 +377,11 @@ function ViewToggle({
           options={[
             {
               value: 'board',
+              // Phones: icons only, so the toggle fits beside the title.
               label: (
                 <>
                   <SquareKanban aria-hidden="true" className="size-3.5" />
-                  Board
+                  <span className="max-sm:sr-only">Board</span>
                 </>
               ),
               ariaLabel: 'Board',
@@ -375,7 +391,7 @@ function ViewToggle({
               label: (
                 <>
                   <List aria-hidden="true" className="size-3.5" />
-                  List
+                  <span className="max-sm:sr-only">List</span>
                 </>
               ),
               ariaLabel: 'List',

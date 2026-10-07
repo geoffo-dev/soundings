@@ -26,6 +26,8 @@ export E2E_SMTP=0 E2E_SSO=0 E2E_AI=0
 pg="${E2E_PREFIX}pg"
 export SOUNDINGS_DATABASE_URL="postgresql+psycopg://soundings:soundings@127.0.0.1:${E2E_PG_PORT}/soundings"
 export SOUNDINGS_ENVIRONMENT=development SOUNDINGS_DEV_LOGIN_ENABLED=true
+# 20 people at once with no pauses would pass the 120 writes a minute per person.
+export SOUNDINGS_SESSION_WRITES_PER_MINUTE=100000
 
 log() { printf '\033[1;35m[perf]\033[0m %s\n' "$*" >&2; }
 

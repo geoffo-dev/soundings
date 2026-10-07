@@ -1,21 +1,23 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import { CloudOff, Plus } from 'lucide-react'
+import { CloudOff, FolderPlus, Plus, Sprout } from 'lucide-react'
 import { useEffect } from 'react'
 
 import { describeError } from '@/api/errors'
+import { useProjects } from '@/api/projects'
 import { useMyWork } from '@/api/work'
 import { useAppCommands } from '@/components/layout/app-commands'
 import { Page, PageHeader } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import { KbdShortcut } from '@/components/ui/kbd'
+import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
+import { useCurrentUser } from '@/features/auth/current-user'
+import { openCreateProject } from '@/lib/dialogs'
 import { useListNavigation } from '@/lib/list-navigation'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import { EvaluationsDueSection } from './evaluations-due'
 import { OwnedIdeasSection } from './owned-ideas'
 import { RecentIdeasSection } from './recent-ideas'
-import { WaitingForReviewSection } from './waiting-for-review'
 
 /**
  * My work (SPEC §5 screen 1, wireframe 01): evaluations due, ideas I own by
@@ -24,8 +26,13 @@ import { WaitingForReviewSection } from './waiting-for-review'
  */
 export function MyWorkPage() {
   const work = useMyWork()
+  const projects = useProjects()
+  const user = useCurrentUser()
   const navigate = useNavigate()
   const { newIdea, canCreateIdeas } = useAppCommands()
+  // A fresh install, or someone no project has added yet: say how to start instead of
+  // three empty sections.
+  const firstRun = projects.data?.length === 0
   const { listRef } = useListNavigation()
   const hash = useLocation({ select: (location) => location.hash })
   const due = work.data?.evaluations_due
@@ -59,21 +66,50 @@ export function MyWorkPage() {
         description="Evaluations waiting for you, ideas you own and what changed recently."
         actions={
           // The most urgent "Evaluate" is the primary action while evaluations are due.
-          canCreateIdeas && (
-            <Button variant={hasDue ? 'outline' : 'primary'} onClick={newIdea}>
+          canCreateIdeas &&
+          !firstRun && (
+            <Button
+              variant={hasDue ? 'outline' : 'primary'}
+              onClick={newIdea}
+              aria-keyshortcuts={ariaKeys(SHORTCUTS.newIdea.keys)}
+            >
               <Plus />
               New idea
-              <KbdShortcut
-                keys={SHORTCUTS.newIdea.keys}
-                tone={hasDue ? 'default' : 'accent'}
-                className="ml-1 hidden sm:inline-flex"
-              />
+              <ButtonShortcut keys={SHORTCUTS.newIdea.keys} tone={hasDue ? 'default' : 'accent'} />
             </Button>
           )
         }
       />
 
-      {work.isError ? (
+      {firstRun ? (
+        <div className="rounded-lg border">
+          {user.is_platform_admin ? (
+            <EmptyState
+              headingLevel={2}
+              icon={<Sprout />}
+              title="Welcome to Soundings"
+              description="Start with a project: a place for ideas, the people who weigh them and the rubric they score against. Press N to create one."
+              action={
+                <Button
+                  variant="primary"
+                  onClick={openCreateProject}
+                  aria-keyshortcuts={ariaKeys(SHORTCUTS.newIdea.keys)}
+                >
+                  <FolderPlus />
+                  Create a project
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              headingLevel={2}
+              icon={<Sprout />}
+              title="You’re not in any project yet"
+              description="Ask an admin to add you to a project. Its ideas, and anything you’re asked to evaluate, will show up here."
+            />
+          )}
+        </div>
+      ) : work.isError ? (
         <div className="rounded-lg border">
           <EmptyState
             role="alert"
@@ -93,8 +129,11 @@ export function MyWorkPage() {
         </div>
       ) : (
         <div ref={listRef} className="flex flex-col gap-10">
-          <EvaluationsDueSection items={due} />
-          <WaitingForReviewSection />
+          <EvaluationsDueSection
+            items={due}
+            total={work.data?.counts.evaluations_due}
+            nextCursor={work.data?.evaluations_due_next_cursor}
+          />
           <OwnedIdeasSection groups={work.data?.owned} openCount={work.data?.counts.owned_open} />
           <RecentIdeasSection recent={work.data?.recent} />
         </div>

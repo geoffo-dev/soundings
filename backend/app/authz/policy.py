@@ -69,10 +69,16 @@ __all__ = [
     "authorize",
     "best_decision",
     "can",
+    "counted_by_default",
+    "is_agent",
+    "may_cite_sources",
     "not_found",
     "require",
     "require_any",
     "require_view",
+    "searches_co_members_only",
+    "sees_email_trouble",
+    "writes_as_ai",
 ]
 
 ASSIGNABLE_ROLES: Final = frozenset({ProjectRole.ADMIN, ProjectRole.MEMBER})
@@ -885,3 +891,43 @@ def require_any(
     if not decision.allowed:
         raise decision.problem()
     return decision.rule
+
+
+# --- Principal traits (role matrix section 1a) ---------------------------------------------
+# Decisions that follow from *who* the principal is rather than from a rule's cells. They
+# live here, named, so nothing outside the policy branches on roles or account kinds
+# (ADR 0010; security review P7 N4).
+def is_agent(principal: Principal | None) -> bool:
+    """``principal.agent``: an AI agent's service account (c21, c22, rule 9)."""
+    return principal is not None and principal.user.is_service_account
+
+
+def sees_email_trouble(principal: Principal | None) -> bool:
+    """``principal.sees_email_trouble``: the "Email isn't being delivered" banner goes to
+    whoever may configure email (``platform.configure_email``)."""
+    return can(principal, Rule.PLATFORM_CONFIGURE_EMAIL)
+
+
+def may_cite_sources(principal: Principal | None) -> bool:
+    """``evaluation.cite_sources``: only an AI evaluator attaches cited sources to its
+    scores (contract-phase6 §4); a person's sources are 422."""
+    return is_agent(principal)
+
+
+def counted_by_default(principal: Principal | None) -> bool:
+    """``evaluation.counted_by_default``: a first submission counts in the aggregate,
+    except an AI agent's, which waits for ``evaluation.include_ai`` (section 3 rule 10)."""
+    return not is_agent(principal)
+
+
+def writes_as_ai(principal: Principal | None) -> bool:
+    """``proposal.suggest_as_ai``: an agent's proposal suggestions are labelled AI
+    whatever channel they came through; its Markdown and comments lose invisible and
+    direction characters before validation (Phase 6 review M2)."""
+    return is_agent(principal)
+
+
+def searches_co_members_only(principal: Principal | None) -> bool:
+    """``user.search`` narrowed: an agent finds only people who share a project with it
+    (Phase 5 decision), a person finds everyone active."""
+    return is_agent(principal)

@@ -8,7 +8,7 @@ export const Route = createFileRoute('/_app/settings/_admin/email')({
   validateSearch: validateEmailSearch,
   // A loader crumb (not staticData): it is only shown once the admin check passed.
   loader: () => ({ crumb: 'Email' }),
-  head: () => ({ meta: [{ title: 'Email · Settings · Soundings' }] }),
+  head: () => ({ meta: [{ title: 'Email · Admin · Soundings' }] }),
   component: EmailRoute,
 })
 

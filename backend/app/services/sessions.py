@@ -5,7 +5,10 @@ The cookie holds a random token; the ``user_sessions`` row stores only its SHA-2
 A session ends after ``session_idle_timeout`` without requests (sliding) or
 ``session_max_age`` after sign-in (absolute), whichever comes first. ``last_seen_at``
 (session and user) is written at most once per :data:`LAST_SEEN_THROTTLE`, so busy
-clients don't turn every read into a write.
+clients don't turn every read into a write, and by :func:`touch_session` in a short
+transaction of its own after the response (``app.middleware.SessionTouchMiddleware``;
+performance review B8): inside the request's transaction, a screen's parallel requests
+queued on the user's row lock until each of them committed.
 
 Every sign-in method (SSO, break-glass, dev login) calls :func:`start_session`, which
 records the method. A session works only while its method is available
@@ -23,8 +26,8 @@ from datetime import datetime, timedelta
 from typing import Final
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.sealing import seal, unseal
 from app.auth.tokens import hash_token, new_token
@@ -40,13 +43,16 @@ __all__ = [
     "ID_TOKEN_MAX_LENGTH",
     "LAST_SEEN_THROTTLE",
     "NewSession",
+    "delete_expired_sessions",
     "end_session",
     "end_user_sessions",
     "id_token_hint",
     "method_available",
+    "needs_touch",
     "resolve_session",
     "session_limits",
     "start_session",
+    "touch_session",
 ]
 
 LAST_SEEN_THROTTLE: Final = timedelta(minutes=1)
@@ -168,14 +174,13 @@ async def resolve_session(
     *,
     settings: Settings,
     now: datetime | None = None,
-    touch: bool = True,
 ) -> tuple[UserSession, User] | None:
     """The live session for a cookie token and its (active) user, or ``None``.
 
-    ``None`` too when the session's sign-in method is no longer available. A live
-    session is kept alive: ``last_seen_at`` moves forward (throttled), unless
-    ``touch=False`` (the bell's poll: polling isn't activity, contract-phase3
-    section 3.2).
+    ``None`` too when the session's sign-in method is no longer available. Reads only:
+    keeping a live session alive is :func:`touch_session`'s, after the response, when
+    :func:`needs_touch` (and the request counts as activity: the bell's poll doesn't,
+    contract-phase3 section 3.2).
     """
     now = now or utcnow()
     found = (
@@ -195,10 +200,63 @@ async def resolve_session(
         or user.is_service_account
     ):
         return None
-    if touch and now - row.last_seen_at >= LAST_SEEN_THROTTLE:
-        row.last_seen_at = now
-        user.last_seen_at = now
     return row, user
+
+
+def needs_touch(row: UserSession, now: datetime) -> bool:
+    """The session was last seen :data:`LAST_SEEN_THROTTLE` ago or more."""
+    return now - row.last_seen_at >= LAST_SEEN_THROTTLE
+
+
+async def touch_session(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    session_id: UUID,
+    user_id: UUID,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Keep a session alive: ``last_seen_at`` of the session and its user moves to
+    ``now`` in one short transaction of its own, guarded by the throttle in SQL, so of a
+    screen's parallel requests one writes and the rest find nothing to do. Returns
+    whether the session moved. Call it holding no other connection (after the request's
+    session is closed: :class:`app.middleware.SessionTouchMiddleware`)."""
+    now = now or utcnow()
+    async with sessionmaker() as db:
+        moved = await db.execute(
+            update(UserSession)
+            .where(
+                UserSession.id == session_id, UserSession.last_seen_at <= now - LAST_SEEN_THROTTLE
+            )
+            .values(last_seen_at=now)
+        )
+        if not getattr(moved, "rowcount", 0):
+            await db.rollback()
+            return False
+        await db.execute(
+            update(User)
+            .where(
+                User.id == user_id,
+                or_(User.last_seen_at.is_(None), User.last_seen_at < now),  # never back
+            )
+            .values(last_seen_at=now)
+        )
+        await db.commit()
+    return True
+
+
+async def delete_expired_sessions(db: AsyncSession, settings: Settings, now: datetime) -> int:
+    """Delete sessions past their absolute limit or idle timeout (security review P7
+    L5: until then a leaver's rows, with their user-agent summary, stayed until that
+    person signed in again). The hourly schedule calls it; returns how many."""
+    result = await db.execute(
+        delete(UserSession).where(
+            or_(
+                UserSession.expires_at <= now,
+                UserSession.last_seen_at <= now - settings.session_idle_timeout,
+            )
+        )
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def end_session(db: AsyncSession, token: str) -> UserSession | None:

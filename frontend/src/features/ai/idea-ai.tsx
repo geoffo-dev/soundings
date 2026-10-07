@@ -1,4 +1,4 @@
-import { FileSearch, Gauge, Sparkles } from 'lucide-react'
+import { FileSearch, Gauge, PenLine, Sparkles } from 'lucide-react'
 import { useCallback } from 'react'
 
 import { useIdeaAiRuns, useRequestAiRun } from '@/api/ai'
@@ -311,6 +311,7 @@ export function AiMenu({
         <DropdownMenuLabel>AI assistance</DropdownMenuLabel>
         <KindItems kind="evaluate" ai={ai} submittedIds={submittedIds} onAsk={ask} onShow={show} />
         <KindItems kind="research" ai={ai} submittedIds={submittedIds} onAsk={ask} onShow={show} />
+        <DraftItems ai={ai} onAsk={ask} setTab={setTab} />
         <DropdownMenuSeparator />
         <p className="px-2 py-1 text-xs text-muted">
           Agents work only on this idea, and only while the run lasts. Their evaluations don’t count
@@ -322,73 +323,59 @@ export function AiMenu({
 }
 
 /**
- * "Ask AI to evaluate" in the evaluators list, where an AI evaluator ends up:
- * only when it can be asked now (the menu explains when it can't).
+ * "Draft a section…" (UX review m4): the proposal's drafting from the same AI menu,
+ * so it isn't only a button that appears on hovering a section. One agent: pick the
+ * section here; several: the Proposal tab, where each section offers the choice.
  */
-export function AskAiToEvaluateButton({
-  ideaKey,
+function DraftItems({
+  ai,
+  onAsk,
   setTab,
-  submittedIds = [],
 }: {
-  ideaKey: string
+  ai: ReturnType<typeof useIdeaAi>
+  onAsk: ReturnType<typeof useAskAi>['ask']
   setTab: (tab: IdeaTab) => void
-  /** Evaluators who have submitted: an agent among them would re-evaluate. */
-  submittedIds?: readonly string[]
 }) {
-  const ai = useIdeaAi(ideaKey)
-  const { ask, pending } = useAskAi(ideaKey, setTab)
-  const agents = ai.agentsFor('evaluate')
-  if (!ai.allowed('evaluate') || ai.activeRun('evaluate')) return null
-  const label = evaluateActionLabel(agents, submittedIds)
-  // The button goes while the run works: focus its row's progress button instead.
-  const onAsked = (run: AiRun) =>
-    focusWhenRendered(
-      () => document.querySelector<HTMLElement>(`[data-ai-run-state="${CSS.escape(run.id)}"]`),
-      { force: true },
-    )
-  if (agents.length === 1 && agents[0]) {
-    const agent = agents[0]
+  if (!ai.allowed('draft_section')) return null
+  const agents = ai.agentsFor('draft_section')
+  const agent = agents.length === 1 ? agents[0] : undefined
+  if (!agent) {
     return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-2 self-start text-secondary"
-        loading={pending}
-        data-ask-ai-evaluate=""
-        onClick={() => ask('evaluate', agent, undefined, onAsked)}
-      >
-        <Sparkles />
-        {label}
-      </Button>
+      <DropdownMenuItem onSelect={() => setTab('proposal')}>
+        <PenLine />
+        Draft a section…
+      </DropdownMenuItem>
     )
   }
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 self-start text-secondary"
-          loading={pending}
-          data-ask-ai-evaluate=""
-        >
-          <Sparkles />
-          {label}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuLabel>Choose an agent</DropdownMenuLabel>
-        {agents.map((agent) => (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <PenLine />
+        Draft a section…
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <DropdownMenuLabel>{agent.display_name} drafts</DropdownMenuLabel>
+        {(Object.keys(SECTION_TITLES) as ProposalSectionKey[]).map((key) => (
           <DropdownMenuItem
-            key={agent.id}
-            onSelect={() => ask('evaluate', agent, undefined, onAsked)}
+            key={key}
+            disabled={Boolean(ai.activeRun('draft_section', key))}
+            onSelect={() => {
+              setTab('proposal')
+              // The section's progress (and Cancel) takes over in the editor.
+              onAsk('draft_section', agent, key, () =>
+                focusWhenRendered(
+                  () =>
+                    document.querySelector<HTMLElement>(`[data-draft-cancel="${CSS.escape(key)}"]`),
+                  { force: true, frames: 60 },
+                ),
+              )
+            }}
           >
-            <Sparkles />
-            {agent.display_name}
+            {SECTION_TITLES[key]}
           </DropdownMenuItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 

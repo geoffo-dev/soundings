@@ -27,6 +27,7 @@ SMTP ?=
 # `make k3s-install MCP=1` / `make k3s-smoke MCP=1`: the MCP server for in-cluster agents.
 MCP ?=
 # `make k3s-install AI=1` / `make k3s-smoke AI=1`: AI runs against the fake kagent in k3s.
+# `make k3s-install PROD=1` / `make k3s-smoke PROD=1`: production mode (no dev login).
 AI ?=
 # The fake kagent agent's image (dev/fake-agent; dev, CI and k3s only).
 FAKE_AGENT_IMAGE ?= soundings-fake-agent:dev
@@ -139,12 +140,12 @@ k3s-fake-agent: ## The fake kagent in k3s as kagent/kagent-controller:8083 (for 
 k3s-kagent-crds: ## kagent v0.10.2's CRDs in k3s (KAGENT_VERSION), then a server-side dry run of every kagent manifest
 	scripts/k3s-kagent-crds.sh install && scripts/k3s-kagent-crds.sh check
 
-k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak; SMTP=1: + Mailpit; MCP=1: + agents' NetworkPolicy; AI=1: + AI runs)
-	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' AI='$(AI)' scripts/k3s-install.sh \
+k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (dev/k3s-values.yaml; SSO=1: + Keycloak; SMTP=1: + Mailpit; MCP=1: + agents' NetworkPolicy; AI=1: + AI runs; PROD=1: production mode)
+	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' AI='$(AI)' PROD='$(PROD)' scripts/k3s-install.sh \
 	  --set image.repository="$${image%:*}" --set image.tag="$${image##*:}"
 
-k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, then helm test (SSO=1: + SSO flow; SMTP=1: + email; MCP=1: + MCP, in-cluster client; AI=1: + AI runs)
-	SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' AI='$(AI)' scripts/k3s-smoke.sh
+k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, then helm test (SSO=1: + SSO flow; SMTP=1: + email; MCP=1: + MCP, in-cluster client; AI=1: + AI runs; PROD=1: production checks)
+	SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' AI='$(AI)' PROD='$(PROD)' scripts/k3s-smoke.sh
 
 k3s-down: ## Delete the local k3s cluster
 	scripts/k3s-down.sh

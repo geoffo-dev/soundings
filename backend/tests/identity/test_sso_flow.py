@@ -706,6 +706,31 @@ async def test_callback_without_sso(
     assert await denials(db_session) == []
 
 
+@pytest.mark.parametrize(("name", "length"), [("code", 4097), ("error", 257), ("iss", 2049)])
+async def test_oversized_callback_parameters_fail_without_reaching_the_idp(
+    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, name: str, length: int
+) -> None:
+    """Security review P7 N6: every callback parameter has a bound; past it the sign-in
+    fails like any other (a redirect, a denial) and nothing goes to the token endpoint."""
+    response = await callback_after_start(client, idp, **{"code": "x", name: "a" * length})
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/login?error=sso_failed"
+    assert await denials(db_session) == [("sso_failed", None, None)]
+    assert idp.calls("/token") == 0
+
+
+async def test_an_oversized_state_is_never_ours(
+    client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp
+) -> None:
+    await start(client)
+
+    response = await client.get(CALLBACK, params={"code": "x", "state": "s" * 513})
+
+    assert response.headers["location"] == "/login?error=login_expired"
+    assert await denials(db_session) == []
+
+
 @pytest.mark.parametrize("problem", ["no_state", "no_cookie", "other_cookie", "unknown_state"])
 async def test_state_must_match_the_cookie_and_an_attempt(
     client: httpx.AsyncClient, db_session: AsyncSession, idp: FakeIdp, problem: str

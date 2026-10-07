@@ -508,6 +508,11 @@ export function projectSummary(db: MockDb, project: MockProject, user: MockUser)
     my_role: effectiveRole(db, project.id, user.id),
     idea_count: db.ideas.filter((idea) => idea.project_id === project.id && isListed(idea)).length,
     member_count: usersWithAccess(db, project.id).length,
+    // Phase 7 (C2): the queue's total, only for people who may moderate (idea.moderate).
+    pending_moderation_count: isProjectAdmin(db, project, user)
+      ? db.ideas.filter((idea) => idea.project_id === project.id && idea.held_for === 'moderation')
+          .length
+      : null,
     permissions: projectPermissions(db, project, user),
   }
 }

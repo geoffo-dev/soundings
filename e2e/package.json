@@ -18,6 +18,9 @@
     "stack:start": "scripts/start-stack.sh",
     "stack:stop": "scripts/stop-stack.sh",
     "stack:reseed": "scripts/reseed.sh",
+    "perf": "playwright test -c perf/playwright.config.ts",
+    "perf:stack": "perf/stack.sh up",
+    "perf:bundle": "node --experimental-strip-types perf/bundle-report.ts --build",
     "check": "tsc --noEmit && prettier --check .",
     "format": "prettier --write .",
     "report": "playwright show-report"

@@ -301,9 +301,10 @@ function AuditRow({
             )}
           </p>
         </div>
+        {/* A quiet chevron at the row's end (a word on every row was noise; UX review p4). */}
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-sm"
           className="shrink-0 text-muted"
           aria-expanded={expanded}
           aria-controls={detailsId}
@@ -315,7 +316,7 @@ function AuditRow({
             aria-hidden="true"
             className={cn('transition-transform duration-150', expanded && 'rotate-90')}
           />
-          <span className="max-sm:sr-only">Details</span>
+          <span className="sr-only">Details</span>
         </Button>
       </div>
       {expanded && (

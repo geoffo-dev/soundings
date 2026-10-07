@@ -168,8 +168,9 @@ export function SubmissionReceipt({
       {!confirming && (
         <Callout tone="neutral" title={step.title}>
           {step.text}
+          {/* The email holds a link to confirm the address, never this tracking link. */}
           {receipt.email_sent &&
-            ' We’ve also emailed you this link: check your spam folder if it isn’t there.'}
+            ' We’ve emailed you a link to confirm your address. Keep this tracking link: it isn’t in the email.'}
         </Callout>
       )}
 

@@ -1,4 +1,5 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useRouter } from '@tanstack/react-router'
+import { useEffect } from 'react'
 
 import { AppShell } from '@/components/layout/app-shell'
 import { AppShellPending } from '@/components/layout/app-shell-pending'
@@ -21,7 +22,28 @@ export const Route = createFileRoute('/_app')({
   component: AppLayout,
 })
 
+/**
+ * Nearly every visit opens an idea: once the first screen is up and the browser is
+ * idle, fetch the idea page's code (the evaluate sheet with it), so opening one, or
+ * pressing E, doesn't wait for a chunk (perf review B9).
+ */
+function usePreloadIdeaPage() {
+  const router = useRouter()
+  useEffect(() => {
+    const preload = () => {
+      void router.loadRouteChunk(router.routesById['/_app/ideas/$ideaKey'])?.catch(() => undefined)
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(preload, { timeout: 4000 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const timer = window.setTimeout(preload, 1500)
+    return () => window.clearTimeout(timer)
+  }, [router])
+}
+
 function AppLayout() {
+  usePreloadIdeaPage()
   return (
     <AppShell
       banner={

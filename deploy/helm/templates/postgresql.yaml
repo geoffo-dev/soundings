@@ -20,8 +20,38 @@ data:
   {{- else }}
   password: {{ include "soundings.lookupOrGenerate" (dict "ctx" . "name" $name "key" "password" "length" 32) }}
   {{- end }}
+  # The bootstrap superuser "postgres" (maintenance from inside the pod only).
+  admin-password: {{ include "soundings.lookupOrGenerate" (dict "ctx" . "name" $name "key" "admin-password" "length" 32) }}
 ---
 {{- end }}
+{{- /*
+Security review P7 L6: the app's role is not a superuser. initdb creates the bootstrap
+superuser "postgres"; this script (run once, on an empty data directory) creates the
+app's login role and gives it the database and its public schema, which is all
+migrations, procrastinate's schema and the trusted pg_trgm extension need. A data
+directory initialised by an earlier chart keeps its roles (operator guide, "Bundled
+Postgres vs external or CloudNativePG database").
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-init
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+data:
+  10-app-role.sh: |
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+      -v app_user="$SOUNDINGS_DB_USER" -v app_password="$SOUNDINGS_DB_PASSWORD" \
+      -v db="$POSTGRES_DB" <<'SQL'
+    CREATE ROLE :"app_user" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
+      PASSWORD :'app_password';
+    ALTER DATABASE :"db" OWNER TO :"app_user";
+    ALTER SCHEMA public OWNER TO :"app_user";
+    REVOKE ALL ON DATABASE :"db" FROM PUBLIC;
+    GRANT CONNECT, TEMPORARY ON DATABASE :"db" TO :"app_user";
+    SQL
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -73,8 +103,16 @@ spec:
             - name: POSTGRES_DB
               value: {{ $pg.auth.database | quote }}
             - name: POSTGRES_USER
-              value: {{ $pg.auth.username | quote }}
+              value: postgres
             - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "soundings.postgresql.secretName" . }}
+                  key: {{ $pg.auth.existingSecretAdminKey }}
+            # The app's own role, created by the init script (not a superuser).
+            - name: SOUNDINGS_DB_USER
+              value: {{ $pg.auth.username | quote }}
+            - name: SOUNDINGS_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "soundings.postgresql.secretName" . }}
@@ -111,8 +149,14 @@ spec:
               mountPath: /var/run/postgresql
             - name: tmp
               mountPath: /tmp
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
       terminationGracePeriodSeconds: 60
       volumes:
+        - name: init
+          configMap:
+            name: {{ $name }}-init
         - name: run
           emptyDir: {}
         - name: tmp

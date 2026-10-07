@@ -27,7 +27,10 @@ async function openUsers(page: Page, query = '') {
 
 test('lists everyone, searches and filters through the URL', async ({ page }) => {
   await openUsers(page)
-  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
+  // The admin sections are listed under Admin in the sidebar.
+  await expect(
+    page.getByRole('list', { name: 'Admin sections' }).getByRole('link', { name: 'Users' }),
+  ).toHaveAttribute('aria-current', 'page')
   await expect(userRow(page, 'Bob Chen')).toContainText('Linked')
   await expect(userRow(page, 'Break-glass admin')).toContainText('Break-glass')
   await expect(userRow(page, 'Priya Natarajan')).toContainText('Platform admin')

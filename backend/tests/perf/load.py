@@ -129,18 +129,18 @@ class Person:
 
 # --- Screens ------------------------------------------------------------------------------
 async def shell(p: Person) -> None:
-    """A cold load of any page: what the app shell fetches before the screen's own data."""
-    calls = [
+    """A cold load of any page: what the app shell fetches before the screen's own data.
+    Phase 7: the sidebar's badges come from ``/me/work/counts`` (C1) and its review
+    counts from ``/projects`` (C2), no longer from My work and one moderation request
+    per project."""
+    await p.screen(
+        "app shell (cold load)",
         p.get("auth.me", "/auth/me"),
         p.get("branding", "/branding"),
         p.get("projects.list", "/projects"),
-        p.get("me.work", "/me/work"),
+        p.get("me.work.counts", "/me/work/counts"),
         p.get("notifications.summary", "/me/notifications/summary"),
-    ]
-    calls += [
-        p.get("moderation (limit 1)", f"/projects/{s}/moderation", limit=1) for s in p.admin_of
-    ]
-    await p.screen("app shell (cold load)", *calls)
+    )
 
 
 async def board(p: Person) -> None:
@@ -545,6 +545,8 @@ def isolated_calls(p: Person) -> list[tuple[str, str, dict[str, Any]]]:
         ("projects.list", "/projects", {}),
         ("notifications.summary", "/me/notifications/summary", {}),
         ("me.work", "/me/work", {}),
+        ("me.work.counts", "/me/work/counts", {}),
+        ("me.evaluations_due", "/me/evaluations-due", {}),
         ("project.get", f"/projects/{BIG}", {}),
         ("project.members", f"/projects/{BIG}/members", {}),
         ("project.tags", f"/projects/{BIG}/tags", {}),

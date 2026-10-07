@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
-from app.authz import Rule, load_project, require
+from app.authz import Rule, load_project, require, searches_co_members_only
 from app.db import SessionDep
 from app.pagination import PageParamsDep
 from app.schemas.base import SLUG_PATTERN, NoNul
@@ -52,5 +52,5 @@ async def search_users(
         q=q,
         project=in_project,
         page=page,
-        co_members_of=principal if principal.user.is_service_account else None,
+        co_members_of=principal if searches_co_members_only(principal) else None,
     )

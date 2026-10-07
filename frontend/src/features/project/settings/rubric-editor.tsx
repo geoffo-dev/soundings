@@ -16,7 +16,17 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronRight, CircleAlert, GripVertical, Info, Plus, Trash2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronRight,
+  CircleAlert,
+  GripVertical,
+  Info,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { useState, type KeyboardEvent } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
@@ -24,6 +34,12 @@ import { useReplaceRubric } from '@/api/projects'
 import type { Project, RubricCriterion } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -61,7 +77,8 @@ const GUIDANCE_PLACEHOLDER: Record<(typeof GUIDANCE_SCORES)[number], string> = {
 /**
  * Rubric editor (wireframe 07): 3–6 criteria with name, one-line description,
  * weight, inverted, and hover guidance for 1/3/5. Rows reorder by dragging
- * the handle or with Alt+↑/↓. Saving replaces the whole rubric.
+ * the handle, with Alt+↑/↓ or from the row's Move menu. Saving replaces the
+ * whole rubric.
  */
 export function RubricEditor({ project, active }: { project: Project; active: boolean }) {
   const replace = useReplaceRubric(project.slug)
@@ -331,9 +348,33 @@ function CriterionRow({
     },
   }
 
-  // Next to the name on phones, at the end of the controls on wider screens.
+  // Next to the name on phones, at the end of the controls on wider screens: Move (a
+  // menu, so reordering never needs a drag or a key combination; WCAG 2.5.7) and Remove.
   const remove = (className: string) => (
-    <div className={className}>
+    <div className={cn('flex items-center gap-0.5', className)}>
+      <DropdownMenu>
+        <WithTooltip content={`Move ${label}`}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Move ${label}`}
+              disabled={count < 2}
+              {...moveKeys}
+            >
+              <ArrowUpDown />
+            </Button>
+          </DropdownMenuTrigger>
+        </WithTooltip>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem disabled={index === 0} onSelect={() => onMove(index - 1)}>
+            <ArrowUp /> Move up
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={index === count - 1} onSelect={() => onMove(index + 1)}>
+            <ArrowDown /> Move down
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <WithTooltip
         content={
           count <= MIN_CRITERIA

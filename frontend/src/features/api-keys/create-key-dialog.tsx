@@ -94,6 +94,8 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
   const projects = useProjects()
   const [name, setName] = useState('')
   const [scopes, setScopes] = useState<ApiKeyScope[]>(['read'])
+  // The presets say what a key is for; the scope checkboxes are for "Custom" only.
+  const [custom, setCustom] = useState(false)
   const [expiry, setExpiry] = useState<ExpiryChoice>('90d')
   const [date, setDate] = useState('')
   const [restrict, setRestrict] = useState<'all' | 'some'>('all')
@@ -212,20 +214,18 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
           className="flex flex-col gap-3"
           aria-describedby={errors.scopes ? SCOPES_ERROR_ID : undefined}
         >
-          <legend className="mb-1.5 text-sm font-medium text-primary">Scopes</legend>
+          <legend className="mb-1.5 text-sm font-medium text-primary">What it can do</legend>
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Presets">
-            <span aria-hidden="true" className="mr-1 text-sm text-muted">
-              Presets
-            </span>
             {SCOPE_PRESETS.map((option) => (
               <Button
                 key={option.value}
                 type="button"
                 size="sm"
                 variant="outline"
-                aria-pressed={preset === option.value}
-                className="aria-pressed:border-accent aria-pressed:bg-accent-subtle aria-pressed:text-accent"
+                aria-pressed={!custom && preset === option.value}
+                className="aria-pressed:border-accent-control aria-pressed:bg-accent-subtle aria-pressed:font-semibold aria-pressed:text-accent"
                 onClick={() => {
+                  setCustom(false)
                   setScopes([...option.scopes])
                   clear('scopes')
                 }}
@@ -233,12 +233,28 @@ function CreateKeyForm({ create, onCancel }: { create: CreateKeyMutation; onCanc
                 {option.label}
               </Button>
             ))}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-pressed={custom || preset === null}
+              aria-controls="create-key-scopes"
+              className="aria-pressed:border-accent-control aria-pressed:bg-accent-subtle aria-pressed:font-semibold aria-pressed:text-accent"
+              onClick={() => setCustom(true)}
+            >
+              Custom
+            </Button>
           </div>
           <p className="-mt-1 text-sm text-muted" aria-live="polite">
-            {SCOPE_PRESETS.find((option) => option.value === preset)?.description ??
-              'Your own mix of scopes.'}
+            {custom || preset === null
+              ? 'Choose the scopes yourself.'
+              : SCOPE_PRESETS.find((option) => option.value === preset)?.description}
           </p>
-          <ul className="flex flex-col divide-y divide-subtle rounded-lg border">
+          <ul
+            id="create-key-scopes"
+            hidden={!custom && preset !== null}
+            className="flex flex-col divide-y divide-subtle rounded-lg border"
+          >
             {SCOPES.map((scope) => {
               const locked = scope === 'read' && readIsIncluded(scopes)
               return (

@@ -139,19 +139,17 @@ test.describe('on a phone (390px)', () => {
     ['/settings/email', 'Email'],
     ['/settings/audit', 'Audit log'],
   ] as const) {
-    test(`the settings row scrolls ${name} into view on ${path}`, async ({ page }) => {
+    test(`the drawer lists the admin sections with ${name} current on ${path}`, async ({
+      page,
+    }) => {
       await page.goto(path)
-      const nav = page.getByRole('navigation', { name: 'Settings sections' })
-      const current = nav.getByRole('link', { name, exact: true })
+      await page.getByRole('button', { name: 'Open navigation' }).click()
+      const drawer = page.getByRole('dialog', { name: 'Navigation' })
+      const current = drawer
+        .getByRole('list', { name: 'Admin sections' })
+        .getByRole('link', { name, exact: true })
       await expect(current).toHaveAttribute('aria-current', 'page')
-      // The whole tab is on screen (the row scrolled sideways), not cut off at the right.
-      await expect
-        .poll(async () => {
-          const box = await current.boundingBox()
-          return box !== null && box.x >= 0 && box.x + box.width <= 390
-        })
-        .toBe(true)
-      // Only the row scrolled, not the page.
+      await expect(current).toBeInViewport()
       expect(await page.evaluate(() => window.scrollX)).toBe(0)
     })
   }

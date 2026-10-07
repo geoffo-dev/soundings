@@ -1,7 +1,7 @@
 import { createFileRoute, notFound, Outlet } from '@tanstack/react-router'
 
 import { PageNotFound } from '@/components/not-found'
-import { SettingsFrame } from '@/features/admin/settings-frame'
+import { AdminFrame } from '@/features/admin/settings-frame'
 
 /**
  * The admin settings pages (contract-phase2: platform admins only). Anyone else
@@ -12,6 +12,9 @@ export const Route = createFileRoute('/_app/settings/_admin')({
   beforeLoad: ({ context }) => {
     if (!context.user.is_platform_admin) throw notFound()
   },
+  // The admin pages read "Admin › Users", not "Settings › Users" (they live under
+  // /settings for their URLs' sake; UX review M5).
+  loader: () => ({ crumbRoot: [{ label: 'Admin', to: '/admin' }] }),
   head: ({ match }) =>
     match.status === 'notFound' ? { meta: [{ title: 'Page not found · Soundings' }] } : {},
   notFoundComponent: PageNotFound,
@@ -20,8 +23,8 @@ export const Route = createFileRoute('/_app/settings/_admin')({
 
 function AdminSettingsLayout() {
   return (
-    <SettingsFrame>
+    <AdminFrame>
       <Outlet />
-    </SettingsFrame>
+    </AdminFrame>
   )
 }

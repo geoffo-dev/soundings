@@ -118,7 +118,7 @@ export function CommandItem({ className, ...props }: ComponentProps<typeof Comma
       data-slot="command-item"
       className={cn(
         'relative flex h-10 cursor-default items-center gap-2.5 rounded-md px-2 text-base outline-none select-none sm:h-9',
-        'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-subtle-hover',
+        'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-subtle-hover data-[selected=true]:highlight-ring',
         "[&_svg]:shrink-0 [&_svg]:text-muted [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
@@ -136,8 +136,9 @@ export function CommandSeparator({
   )
 }
 
+/** A shortcut hint in a command row: hidden from assistive tech (the row has `aria-keyshortcuts`). */
 export function CommandShortcut({ keys }: { keys: string }) {
-  return <KbdShortcut keys={keys} className="ml-auto" />
+  return <KbdShortcut keys={keys} aria-hidden="true" className="ml-auto" />
 }
 
 export const CommandLoading = CommandPrimitive.Loading

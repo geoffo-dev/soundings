@@ -6,26 +6,38 @@
   both with ``Cache-Control: no-cache`` so new deploys are picked up.
 * Backend paths (``/api``, ``/mcp``, ``/.well-known``, ...) keep returning problem+json
   404s (an MCP client probing for OAuth metadata after a 401 gets a clean 404).
+* Precompressed files (performance review B4): the image build writes ``<file>.br`` and
+  ``<file>.gz`` next to every compressible file (``scripts/precompress-assets.mjs``);
+  a client that accepts Brotli or gzip gets one (``Content-Encoding``, ``Vary:
+  Accept-Encoding``), everyone else the file itself. A build without them (``npm run
+  build``, the e2e stack) is served as it is.
 """
 
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
+import mimetypes
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import FileResponse, Response
 
 from app.errors import NotFoundProblem
+from app.middleware import accepted_encodings
 
 BACKEND_PATH_PREFIXES = ("/api", "/mcp", "/metrics", "/healthz", "/readyz", "/.well-known")
 """Paths the SPA fallback never answers. Add new non-SPA top-level paths here."""
 
 IMMUTABLE = "public, max-age=31536000, immutable"
 REVALIDATE = "no-cache"
+
+PRECOMPRESSED: Final = (("br", ".br"), ("gzip", ".gz"))
+"""Codings the build may have written next to a file, in order of preference."""
 
 _INLINE_SCRIPT = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
 _SRC_ATTRIBUTE = re.compile(r"\bsrc\s*=", re.IGNORECASE)
@@ -61,13 +73,30 @@ def _safe_file(root: Path, relative: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def file_response(request: Request, file: Path, *, cache_control: str) -> FileResponse:
+    """``file``, or its precompressed ``.br`` / ``.gz`` twin when the client takes it."""
+    accepted = accepted_encodings(request.scope)
+    media_type = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
+    headers = {"Cache-Control": cache_control}
+    for coding, suffix in PRECOMPRESSED:
+        twin = file.with_name(file.name + suffix)
+        if twin.is_file():
+            headers["Vary"] = "Accept-Encoding"
+            if coding in accepted:
+                headers["Content-Encoding"] = coding
+                return FileResponse(twin, media_type=media_type, headers=headers)
+    return FileResponse(file, media_type=media_type, headers=headers)
+
+
 @dataclass(frozen=True, slots=True)
 class SpaBundle:
-    """A built SPA; ``index.html`` is read once so its CSP hashes always match."""
+    """A built SPA; ``index.html`` is read once so its CSP hashes always match (and
+    gzipped once, for clients that take it)."""
 
     root: Path
     index_html: bytes
     script_hashes: tuple[str, ...]
+    index_gzip: bytes = field(default=b"", repr=False)
 
     @classmethod
     def load(cls, static_dir: Path) -> SpaBundle | None:
@@ -80,14 +109,16 @@ class SpaBundle:
             root=static_dir.resolve(),
             index_html=html,
             script_hashes=inline_script_hashes(html.decode("utf-8")),
+            index_gzip=gzip.compress(html, compresslevel=9, mtime=0),
         )
 
-    def index_response(self) -> Response:
-        return Response(
-            self.index_html,
-            media_type="text/html; charset=utf-8",
-            headers={"Cache-Control": REVALIDATE},
-        )
+    def index_response(self, request: Request | None = None) -> Response:
+        headers = {"Cache-Control": REVALIDATE, "Vary": "Accept-Encoding"}
+        body = self.index_html
+        if request is not None and "gzip" in accepted_encodings(request.scope):
+            body = self.index_gzip
+            headers["Content-Encoding"] = "gzip"
+        return Response(body, media_type="text/html; charset=utf-8", headers=headers)
 
     async def fallback(self, request: Request) -> Response | None:
         """Answer an unmatched request, or ``None`` to let it 404."""
@@ -98,8 +129,8 @@ class SpaBundle:
             return None
         file = _safe_file(self.root, path.lstrip("/"))
         if file is not None and file.name != "index.html":
-            return FileResponse(file, headers={"Cache-Control": REVALIDATE})
-        return self.index_response()
+            return file_response(request, file, cache_control=REVALIDATE)
+        return self.index_response(request)
 
 
 def install_spa(app: FastAPI, bundle: SpaBundle) -> None:
@@ -108,10 +139,10 @@ def install_spa(app: FastAPI, bundle: SpaBundle) -> None:
     router = APIRouter(include_in_schema=False)
 
     @router.api_route("/assets/{asset_path:path}", methods=["GET", "HEAD"])
-    async def spa_asset(asset_path: str) -> FileResponse:
+    async def spa_asset(request: Request, asset_path: str) -> FileResponse:
         file = _safe_file(assets_root, asset_path) if assets_root.is_dir() else None
         if file is None:
             raise NotFoundProblem
-        return FileResponse(file, headers={"Cache-Control": IMMUTABLE})
+        return file_response(request, file, cache_control=IMMUTABLE)
 
     app.include_router(router)

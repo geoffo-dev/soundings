@@ -206,7 +206,7 @@ export function TagInput({
                 event.preventDefault()
                 add(tag)
               }}
-              className="flex h-8 cursor-default items-center rounded-md px-2 text-sm aria-selected:bg-subtle-hover"
+              className="flex h-8 cursor-default items-center rounded-md px-2 text-sm aria-selected:bg-subtle-hover aria-selected:highlight-ring"
             >
               {tag}
             </li>

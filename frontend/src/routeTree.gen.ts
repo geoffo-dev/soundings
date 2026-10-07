@@ -19,6 +19,7 @@ import { Route as SlugSubmitRouteImport } from './routes/$slug.submit'
 import { Route as SlugVerifyRouteImport } from './routes/$slug.verify'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
+import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppIdeasIdeaKeyRouteImport } from './routes/_app/ideas.$ideaKey'
@@ -88,6 +89,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppSplatRoute = AppSplatRouteImport.update({
   id: '/$',
   path: '/$',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AppRoute,
 } as any)
 const AppNotificationsRoute = AppNotificationsRouteImport.update({
@@ -212,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/$slug/submit': typeof SlugSubmitRoute
   '/$slug/verify': typeof SlugVerifyRoute
   '/$': typeof AppSplatRoute
+  '/admin': typeof AppAdminRoute
   '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRouteWithChildren
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
@@ -242,6 +249,7 @@ export interface FileRoutesByTo {
   '/$slug/submit': typeof SlugSubmitRoute
   '/$slug/verify': typeof SlugVerifyRoute
   '/$': typeof AppSplatRoute
+  '/admin': typeof AppAdminRoute
   '/notifications': typeof AppNotificationsRoute
   '/': typeof AppIndexRoute
   '/ideas/$ideaKey': typeof AppIdeasIdeaKeyRoute
@@ -273,6 +281,7 @@ export interface FileRoutesById {
   '/$slug/submit': typeof SlugSubmitRoute
   '/$slug/verify': typeof SlugVerifyRoute
   '/_app/$': typeof AppSplatRoute
+  '/_app/admin': typeof AppAdminRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
   '/_app/': typeof AppIndexRoute
@@ -308,6 +317,7 @@ export interface FileRouteTypes {
     | '/$slug/submit'
     | '/$slug/verify'
     | '/$'
+    | '/admin'
     | '/notifications'
     | '/settings'
     | '/ideas/$ideaKey'
@@ -338,6 +348,7 @@ export interface FileRouteTypes {
     | '/$slug/submit'
     | '/$slug/verify'
     | '/$'
+    | '/admin'
     | '/notifications'
     | '/'
     | '/ideas/$ideaKey'
@@ -368,6 +379,7 @@ export interface FileRouteTypes {
     | '/$slug/submit'
     | '/$slug/verify'
     | '/_app/$'
+    | '/_app/admin'
     | '/_app/notifications'
     | '/_app/settings'
     | '/_app/'
@@ -473,6 +485,13 @@ declare module '@tanstack/react-router' {
       path: '/$'
       fullPath: '/$'
       preLoaderRoute: typeof AppSplatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin': {
+      id: '/_app/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/notifications': {
@@ -701,6 +720,7 @@ const AppPSlugRouteWithChildren = AppPSlugRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppSplatRoute: typeof AppSplatRoute
+  AppAdminRoute: typeof AppAdminRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppSettingsRoute: typeof AppSettingsRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
@@ -710,6 +730,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppSplatRoute: AppSplatRoute,
+  AppAdminRoute: AppAdminRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,

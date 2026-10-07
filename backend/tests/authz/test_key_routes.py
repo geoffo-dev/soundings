@@ -76,7 +76,14 @@ def test_the_classification_follows_the_routes_rules(operation_id: str) -> None:
 def test_routes_without_a_rule_need_read() -> None:
     reads = {op for op, access in ROUTE_KEY_ACCESS.items() if access is KeyAccess.READ}
 
-    assert reads == {"get_me", "get_my_work", "list_my_owned_ideas", "global_search"}
+    assert reads == {
+        "get_me",
+        "get_my_work",
+        "get_my_work_counts",
+        "list_my_evaluations_due",
+        "list_my_owned_ideas",
+        "global_search",
+    }
 
 
 # --- The helpers --------------------------------------------------------------------------------

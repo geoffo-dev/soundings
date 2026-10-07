@@ -4,6 +4,7 @@ the request body size limit."""
 
 from __future__ import annotations
 
+import gzip
 import ipaddress
 import logging
 import re
@@ -420,3 +421,123 @@ class BodySizeLimitMiddleware:
             headers={"Connection": "close"},  # the unread body is never drained
         )
         await response(scope, receive, send)
+
+
+SESSION_TOUCH_KEY: Final = "session_touch"
+"""``request.state.session_touch``: ``(session id, user id)`` set by
+:class:`app.auth.sources.SessionCookieSource` when a session is due a keep-alive."""
+
+
+class SessionTouchMiddleware:
+    """Innermost: after the response, keep the request's session alive in a short
+    transaction of its own (:func:`app.services.sessions.touch_session`; performance
+    review B8). The request's own unit of work has committed and returned its
+    connection by then, so a request never holds two, and the user's row is locked for
+    one statement instead of the whole request. A failure is logged, never raised."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            pending = (scope.get("state") or {}).get(SESSION_TOUCH_KEY)
+            if pending is not None:
+                await self._touch(scope, pending)
+
+    @staticmethod
+    async def _touch(scope: Scope, pending: tuple[uuid.UUID, uuid.UUID]) -> None:
+        from app.services.sessions import touch_session
+
+        try:
+            await touch_session(scope["app"].state.sessionmaker, *pending)
+        except Exception:
+            logger.warning("session keep-alive failed", exc_info=True)
+
+
+def accepted_encodings(scope: Scope) -> frozenset[str]:
+    """Content codings the client accepts (``Accept-Encoding``; ``q=0`` refuses one)."""
+    accepted: set[str] = set()
+    for name, value in scope.get("headers", ()):
+        if name != b"accept-encoding":
+            continue
+        for item in value.decode("latin-1").split(","):
+            coding, _, params = item.strip().partition(";")
+            quality = params.strip().lower().replace(" ", "")
+            if quality in {"q=0", "q=0.0", "q=0.00", "q=0.000"}:
+                continue
+            if coding:
+                accepted.add(coding.strip().lower())
+    return frozenset(accepted)
+
+
+COMPRESS_MIN_BYTES: Final = 1024
+
+
+class JsonGzipMiddleware:
+    """Gzip for ``GET`` JSON responses of at least 1 KB when the client accepts it
+    (performance review B4: the board was 213 kB raw). Sits inside the security headers,
+    so it sees what the endpoint itself set: a response the endpoint marked
+    ``Cache-Control: no-store`` (a key shown once: the only bodies with secrets) is
+    never compressed (BREACH), nor are event streams, files or anything already
+    encoded. No CSRF token or session secret is ever in a body (they are cookies)."""
+
+    def __init__(self, app: ASGIApp, *, minimum_size: int = COMPRESS_MIN_BYTES) -> None:
+        self.app = app
+        self.minimum_size = minimum_size
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] != "http"
+            or scope["method"] != "GET"
+            or "gzip" not in accepted_encodings(scope)
+        ):
+            await self.app(scope, receive, send)
+            return
+        start: Message | None = None
+        chunks: list[bytes] = []
+        passthrough = False
+
+        async def buffering_send(message: Message) -> None:
+            nonlocal start, passthrough
+            if passthrough:
+                await send(message)
+                return
+            if message["type"] == "http.response.start":
+                if not _compressible(MutableHeaders(scope=message)):
+                    passthrough = True
+                    await send(message)
+                    return
+                start = message
+                return
+            if message["type"] != "http.response.body" or start is None:
+                await send(message)
+                return
+            chunks.append(message.get("body", b""))
+            if message.get("more_body", False):
+                return
+            body = b"".join(chunks)
+            if len(body) >= self.minimum_size:
+                body = gzip.compress(body, compresslevel=6, mtime=0)
+                headers = MutableHeaders(scope=start)
+                headers["Content-Encoding"] = "gzip"
+                headers["Content-Length"] = str(len(body))
+                headers.add_vary_header("Accept-Encoding")
+            await send(start)
+            await send({"type": "http.response.body", "body": body})
+
+        await self.app(scope, receive, buffering_send)
+
+
+def _compressible(headers: MutableHeaders) -> bool:
+    content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    json = content_type == "application/json" or content_type.endswith("+json")
+    return (
+        json
+        and "content-encoding" not in headers
+        and "no-store" not in headers.get("cache-control", "").lower()
+    )

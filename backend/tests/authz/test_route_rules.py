@@ -174,6 +174,9 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "set_evaluation_inclusion": ("evaluation.include_ai", "evaluation.view_others"),
     "get_research_note": ("idea.view",),
     "delete_research_note": ("ai.delete_note",),
+    # Phase 7 (docs/api/contract-phase7.md section 2)
+    "get_my_work_counts": (SIGNED_IN, "idea.view"),
+    "list_my_evaluations_due": (SIGNED_IN, "idea.view"),
 }
 
 

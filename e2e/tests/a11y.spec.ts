@@ -129,7 +129,7 @@ const SCREENS: Screen[] = [
       await openedDialog(page, 'Keyboard shortcuts')
     },
   },
-  ...(['general', 'members', 'rubric', 'statuses'] as const).map((tab): Screen => ({
+  ...(['general', 'members', 'rubric', 'public-form'] as const).map((tab): Screen => ({
     name: `project settings: ${tab}`,
     as: 'alice',
     open: async (page) => {

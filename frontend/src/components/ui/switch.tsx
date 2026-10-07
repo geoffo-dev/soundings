@@ -22,7 +22,7 @@ export function Switch({ className, pending = false, ...props }: SwitchProps) {
         'peer relative inline-flex h-5 w-8 shrink-0 items-center rounded-full border border-transparent p-px',
         'transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50',
         'aria-busy:cursor-progress',
-        'data-[state=checked]:bg-accent data-[state=unchecked]:bg-control',
+        'data-[state=checked]:bg-accent-control data-[state=unchecked]:bg-control',
         'after:absolute after:-inset-1.5 after:content-[""]',
         className,
       )}

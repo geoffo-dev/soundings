@@ -60,6 +60,9 @@
   --accent-subtle: color-mix(in oklch, var(--brand-primary) 9%, var(--surface));
   --fg-accent: var(--brand-primary);
   --focus: var(--brand-primary);
+  /* Selected controls drawn in the brand colour (radio dot, switch on, the chosen
+     score's ring): ≥ 3:1 on every surface, like the accent as text (WCAG 1.4.11). */
+  --accent-control: var(--fg-accent);
 
   /* Feedback */
   --danger: #d42a2a;
@@ -137,6 +140,8 @@
   --accent-subtle: color-mix(in oklch, var(--brand-primary) 22%, var(--surface));
   --fg-accent: color-mix(in oklch, var(--brand-primary) 58%, white);
   --focus: color-mix(in oklch, var(--brand-primary) 58%, white);
+  /* The accent fill is too dark to mark a selected control on dark surfaces. */
+  --accent-control: var(--fg-accent);
 
   --danger: #d42a2a;
   --danger-hover: #b92222;

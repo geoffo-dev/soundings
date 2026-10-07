@@ -1,6 +1,6 @@
 import { Lock } from 'lucide-react'
 
-import { WithTooltip } from '@/components/ui/tooltip'
+import { HoverTooltip } from '@/components/ui/tooltip'
 import { formatScore, SCORE_FILL, SCORE_TINT, scoreBand } from '@/lib/scores'
 import { cn } from '@/lib/utils'
 
@@ -30,7 +30,7 @@ export function ScoreBadge({
 
   if (hidden) {
     return (
-      <WithTooltip content="Submit your evaluation to see scores">
+      <HoverTooltip content="Submit your evaluation to see scores">
         <span
           role="img"
           aria-label="Scores hidden until you submit your evaluation"
@@ -38,7 +38,7 @@ export function ScoreBadge({
         >
           <Lock aria-hidden="true" className="size-3.5" />
         </span>
-      </WithTooltip>
+      </HoverTooltip>
     )
   }
 

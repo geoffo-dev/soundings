@@ -8,7 +8,7 @@ OPENAPI_OUT ?= openapi.json
 SWAGGER_UI_VERSION ?= 5.33.0
 SWAGGER_DIR := app/static/swagger
 
-.PHONY: help install fmt lint typecheck test test-slow check dev worker migrate revision openapi vendor-swagger
+.PHONY: help install fmt lint typecheck test test-slow test-perf check dev worker migrate revision openapi vendor-swagger
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
@@ -33,13 +33,20 @@ test: ## Run tests (needs Docker, or TEST_DATABASE_URL pointing at a throwaway D
 test-slow: ## Performance checks only (10k ideas: list, board, My work, search p95; query plans)
 	$(UV) run pytest -m slow
 
+test-perf: ## The Phase 7 performance kit in-process (tests/perf: N+1, statements, p95; ~90 s)
+	$(UV) run pytest -m slow tests/perf -s
+
 check: lint typecheck test ## Lint + typecheck + test
 
+# A developer machine: `soundings api` and `worker` refuse to start without an explicit
+# SOUNDINGS_ENVIRONMENT while the secret key is the public development one.
+DEV_ENV := SOUNDINGS_ENVIRONMENT=$${SOUNDINGS_ENVIRONMENT:-development}
+
 dev: ## Run the API with auto-reload on PORT (default 8000)
-	$(UV) run soundings api --reload --port $(PORT)
+	$(DEV_ENV) $(UV) run soundings api --reload --port $(PORT)
 
 worker: ## Run the background worker
-	$(UV) run soundings worker
+	$(DEV_ENV) $(UV) run soundings worker
 
 migrate: ## Apply database migrations (app + procrastinate schema)
 	$(UV) run soundings migrate

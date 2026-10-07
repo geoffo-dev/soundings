@@ -1,11 +1,13 @@
-import { useNavigate } from '@tanstack/react-router'
-import { CircleAlert, Globe, Lock } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { CircleAlert, Globe, Lock, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 
 import { describeError, hasErrorCode, isApiError } from '@/api/errors'
 import { useCreateProject } from '@/api/projects'
-import type { ProjectVisibility } from '@/api/types'
+import type { ProjectVisibility, UserSearchResult } from '@/api/types'
+import { useUserSearch } from '@/api/users'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import {
   Dialog,
   DialogBody,
@@ -21,6 +23,8 @@ import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
+import { isBreakGlassSession, useCurrentUser } from '@/features/auth/current-user'
+import { PersonPicker } from '@/features/project/settings/person-picker'
 import { closeDialog, useAppDialog } from '@/lib/dialogs'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
@@ -47,8 +51,10 @@ const VISIBILITY: { value: ProjectVisibility; label: string; help: string; icon:
 
 /**
  * New project (platform admins): name → suggested URL and idea key, then
- * visibility. Opened by `openCreateProject()` (sidebar, palette); mounted in
- * routes/_app.tsx. You become the project's first admin.
+ * visibility. Opened by `openCreateProject()` (sidebar, palette, My work's
+ * welcome); mounted in routes/_app.tsx. You become the project's first admin;
+ * the break-glass account can't hold project roles, so it picks the first admin
+ * (`admin_user_id`), and is pointed to Users when there's nobody to pick yet.
  */
 export function CreateProjectDialog() {
   const dialog = useAppDialog()
@@ -73,6 +79,12 @@ export function CreateProjectDialog() {
 function CreateProjectForm() {
   const navigate = useNavigate()
   const create = useCreateProject()
+  const me = useCurrentUser()
+  const breakGlass = isBreakGlassSession(me)
+  const [admin, setAdmin] = useState<UserSearchResult | null>(null)
+  const people = useUserSearch({ q: '' }, { enabled: breakGlass })
+  const nobody =
+    breakGlass && people.data !== undefined && !people.data.items.some((p) => p.id !== me.id)
   const [form, setForm] = useState<CreateProjectForm>({
     name: '',
     slug: '',
@@ -107,13 +119,16 @@ function CreateProjectForm() {
   }
 
   const focusFirst = (found: CreateProjectErrors) => {
-    const first = (['name', 'slug', 'key', 'description'] as const).find((field) => found[field])
+    const first = (['name', 'slug', 'key', 'description', 'admin'] as const).find(
+      (field) => found[field],
+    )
     if (first) document.getElementById(`create-project-${first}`)?.focus()
   }
 
   const submit = () => {
     if (create.isPending) return
     const found = validateCreateProject(form)
+    if (breakGlass && !admin) found.admin = 'Choose who runs this project.'
     if (Object.keys(found).length > 0) {
       setErrors(found)
       focusFirst(found)
@@ -126,6 +141,7 @@ function CreateProjectForm() {
         key: form.key.trim(),
         description: form.description.trim(),
         visibility,
+        ...(breakGlass && admin ? { admin_user_id: admin.id } : {}),
       },
       {
         onSuccess: (project) => {
@@ -142,7 +158,11 @@ function CreateProjectForm() {
         },
         onError: (error) => {
           let found: CreateProjectErrors = {}
-          if (hasErrorCode(error, 'slug_taken')) {
+          if (hasErrorCode(error, 'user_not_found')) {
+            found = breakGlass
+              ? { admin: 'That person can’t be its admin any more. Choose someone else.' }
+              : { form: 'You can’t be a project admin from this account. Sign in as yourself.' }
+          } else if (hasErrorCode(error, 'slug_taken')) {
             found = { slug: 'Another project uses this URL. Try another.' }
           } else if (hasErrorCode(error, 'key_taken')) {
             found = { key: 'Another project uses this key. Try another.' }
@@ -175,7 +195,9 @@ function CreateProjectForm() {
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
-          A space for ideas with its own members and rubric. You’ll be its first admin.
+          {breakGlass
+            ? 'A space for ideas with its own members and rubric. Choose its first admin: the break-glass account can’t run projects.'
+            : 'A space for ideas with its own members and rubric. You’ll be its first admin.'}
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="flex flex-col gap-5">
@@ -258,6 +280,35 @@ function CreateProjectForm() {
             onChange={(event) => set({ description: event.target.value })}
           />
         </Field>
+        {breakGlass &&
+          (nobody ? (
+            <Callout tone="info" icon={<UserPlus />} title="There’s no one to make admin yet">
+              Add a person in{' '}
+              <Link to="/settings/users" className="text-accent underline" onClick={closeDialog}>
+                Users
+              </Link>{' '}
+              first. With SSO, people also appear once they’ve signed in.
+            </Callout>
+          ) : (
+            <Field
+              label="First admin"
+              required
+              description="They can add members, change the rubric and the public form."
+              error={errors.admin}
+              id="create-project-admin"
+            >
+              <PersonPicker
+                value={admin}
+                onChange={(person) => {
+                  setAdmin(person)
+                  setErrors((current) => ({ ...current, admin: undefined, form: undefined }))
+                }}
+                exclude={[me.id]}
+                excludeHint="That’s you"
+                placeholder="Choose a person…"
+              />
+            </Field>
+          ))}
         <Field label="Visibility">
           <RadioGroup
             value={visibility}
@@ -270,7 +321,7 @@ function CreateProjectForm() {
                 <label
                   key={option.value}
                   htmlFor={`create-visibility-${option.value}`}
-                  className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors hover:bg-subtle has-[[data-state=checked]]:border-accent"
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors hover:bg-subtle has-[[data-state=checked]]:border-accent-control"
                 >
                   <RadioGroupItem
                     id={`create-visibility-${option.value}`}

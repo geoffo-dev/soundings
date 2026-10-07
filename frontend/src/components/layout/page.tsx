@@ -30,17 +30,41 @@ export interface PageHeaderProps {
   description?: ReactNode
   /** The page's one primary action (plus optional quiet secondary ones). */
   actions?: ReactNode
+  /**
+   * Phones: keep the (small) actions beside the title and the description to one
+   * line, so the content starts high on a screen that has little room (a board).
+   */
+  compact?: boolean
   className?: string
 }
 
-export function PageHeader({ title, description, actions, className }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  description,
+  actions,
+  compact = false,
+  className,
+}: PageHeaderProps) {
   return (
     <div
-      className={cn('flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between', className)}
+      className={cn(
+        'flex sm:flex-row sm:items-start sm:justify-between',
+        compact ? 'flex-row items-start justify-between gap-3' : 'flex-col gap-4',
+        className,
+      )}
     >
       <div className="flex min-w-0 flex-col gap-1">
         <h1 className="text-2xl font-semibold text-primary">{title}</h1>
-        {description && <p className="max-w-2xl text-base text-muted">{description}</p>}
+        {description && (
+          <p
+            className={cn(
+              'max-w-2xl text-base text-muted',
+              compact && 'max-sm:line-clamp-1 max-sm:text-sm',
+            )}
+          >
+            {description}
+          </p>
+        )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

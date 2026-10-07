@@ -111,7 +111,7 @@ Details and tests: [phase-summaries/phase-1.md](phase-summaries/phase-1.md#revie
 | Every write to an idea locks its project row (`FOR KEY SHARE`) before the idea row (`load_idea(for_update=True)`); `replace_rubric` locks the project. | Decided | One lock order: no deadlock (500) or stale cached aggregate when a rubric is replaced during an evaluation save. |
 | NUL characters in any body, `q` or `tag` are a 422; cursors holding NUL or values their column can't hold are 400 `invalid_cursor`; `due_at` must be between a year ago and five years ahead (422). The SPA's date pickers stop at five years. | Decided | Malformed input is the client's error, never a 500. |
 | `soundings seed --reset` needs `--force` as soon as anyone who is not a demo person has an account. | Decided | The reset is a development tool; it must never wipe a real database by default. |
-| `GET /me/work` stays **uncapped** in Phase 1 (review F9): `counts.evaluations_due` is still the length of the list. | Decided | p95 118 ms with 1,000 evaluations due among 10k ideas, inside the 150 ms budget. Revisit (cap at 100, count = total) if real data says otherwise. |
+| `GET /me/work` stays **uncapped** in Phase 1 (review F9): `counts.evaluations_due` is still the length of the list. | Superseded (Phase 7, C1) | p95 118 ms with 1,000 evaluations due among 10k ideas, inside the 150 ms budget. Phase 7's performance check found the sidebar fetching it on every load (up to 513 kB): My work now lists the first 50 (the count is the total), `GET /me/evaluations-due` pages on, and `GET /me/work/counts` serves the badges ([contract-phase7.md](api/contract-phase7.md)). |
 | The `__Host-` cookie prefix (review F10) is **deferred to Phase 2** with single sign-on. | Decided | It requires `Secure`, which breaks plain-http localhost development, and the SPA reads `soundings_csrf` by name; Phase 2 reworks sign-in anyway. |
 | Unsent drafts (new idea, comments) are stored per user in the browser and cleared on sign-out, on a 401 and when another person signs in on the same browser. A draft is therefore lost when the session expires. | Decided | A shared computer must not show one person's draft to the next; security over convenience. |
 | `?next=` after sign-in accepts only same-origin paths (no `//`, `\`, control characters or other origins). | Decided | Open-redirect hardening. |
@@ -780,3 +780,62 @@ contract changes in [contract-phase6.md §10](api/contract-phase6.md#10-changes-
 | Focus stays where the person put it when a run ends (only a lost focus moves to the row); busy buttons are `aria-disabled` + `aria-busy` instead of `disabled`, so they keep focus; a dialog opened while a menu closes returns focus to the menu's button. | Decided | UX B1, M1. |
 | The admin page's "Namespaces" shows the list in effect (never "Any"). | Decided (lead) | It can no longer be empty. |
 | `focusWhenRendered` keeps trying while focus is held by a closing dialog or sheet that doesn't contain its target. | Decided (final verification) | Since busy buttons stay focusable, a closing confirm's focus trap pulled focus back to its button, so focus after a revoke flaked in `admin-api-keys.spec.ts`. |
+
+## 2026-10-06 · Phase 7 fixes: backend and platform
+
+What the Phase 7 security, accessibility and performance reviews changed on the server,
+in the image and the chart, and the lead's calls. Contract changes:
+[contract-phase7.md](api/contract-phase7.md); measurements:
+[test-plans/performance.md](test-plans/performance.md).
+
+### Contract
+
+| Decision | Status | Why |
+|---|---|---|
+| `GET /me/work/counts` (the sidebar's badges, two aggregate queries); `GET /me/work` lists the first 50 evaluations due with `evaluations_due_next_cursor`; `GET /me/evaluations-due` pages through the rest (C1). | Decided (lead) | Perf B1: the sidebar fetched all of My work on every page load. Supersedes F9. MCP results are unchanged. |
+| `ProjectSummary.pending_moderation_count` (null unless you may moderate) (C2). | Decided (lead) | Perf B7: one moderation request per project on every load. |
+| `total` stays on every list page. | Kept | It is a required `int` in the contract; making it nullable isn't additive (lead: only if the schema allowed null). |
+
+### Security
+
+| Decision | Status | Why |
+|---|---|---|
+| The image sets `SOUNDINGS_ENVIRONMENT=production`; dev compose, the e2e and perf stacks, `make demo`, the chart's `devLogin`, both CIs say `development` explicitly. `soundings api` / `worker` refuse to start when the environment is unset and the key is the built-in development one. | Decided (lead) | Review M1: the image fell back to development mode with a public signing key (forged `all` unsubscribe links and cheap, lasting ALTCHA challenges). The CLI refusal covers installs from the wheel; the Settings model stays usable for tests and tools. |
+| ALTCHA refuses a signed challenge whose cost is below `SOUNDINGS_ALTCHA_COST` or whose expiry is beyond `SOUNDINGS_ALTCHA_EXPIRY` (plus 1 minute of clock skew). | Decided | Review L3: a leaked key could mint challenges with cost 1 lasting 8 years. |
+| 120 writes a minute per signed-in person per API process (`SOUNDINGS_SESSION_WRITES_PER_MINUTE`), then 429 `rate_limited` with `Retry-After`; refused writes aren't counted; CSRF is checked first; sign-out is never limited. The e2e and perf stacks and CI's demo raise it to 100,000. | Decided (lead: 120, `rate_limited`) | Review L4: 40 comments with 11 mentions each in 2 s made 400 inbox rows. One setting, because the e2e suite sets its data up through the API as a handful of people. |
+| `soundings anonymise-user <email>` (CLI only, deactivated accounts only): placeholder name and undeliverable address, identities, external ids, sessions, inbox, preferences and outbox deleted, keys revoked, @mention labels renamed; work and audit entries stay; one `user.anonymise` entry (no actor, counts only). Expired sessions are deleted hourly. The operator guide lists what is stored about users and for how long. | Decided (lead) | Review L5: no erasure procedure for leavers; expired session rows waited for the next sign-in. |
+| **Declined:** a minimum `q` length and emails for admins or co-members only in `GET /users`. | Declined (lead) | Review L8: an internal directory with emails for signed-in staff is intended. |
+| The bundled Postgres: bootstrap superuser `postgres` (its own generated password) and a non-superuser app role that owns the database and its `public` schema; migrations, procrastinate and `pg_trgm` work (verified on a fresh volume; `COPY ... PROGRAM` refused). Older volumes keep their roles (documented). | Decided | Review L6: the app's role was a superuser, so any SQL injection would have been command execution. |
+| `/api/docs` and `/api/v1/openapi.json` need a session or a person's key with `read` in production (401 / 403); open in development. | Decided (lead) | Review N1: anonymously they mapped the admin surface. |
+| The API's metrics port admits only `networkPolicy.metricsFrom` peers and the release's pods (empty: nobody else). | Decided (lead) | Review N3. |
+| Break-glass credentials reach the API pods only while `oidc.issuer` is empty (the Secret keeps the password for an outage). | Decided | Review N2. |
+| `trustedProxies` and `networkPolicy.ingressFrom` stay two settings; `production-values.yaml` sets `ingressFrom`; NOTES warns when `ingressFrom` is empty (or policies are off) while `trustedProxies` covers private ranges; the operator guide explains it. | Decided (lead) | Review L1: any pod could choose its own throttle address. Deriving one from the other isn't possible (selectors vs address ranges). |
+| Account-kind decisions live in the policy module as named traits (`is_agent`, `sees_email_trouble`, `may_cite_sources`, `counted_by_default`, `writes_as_ai`, `searches_co_members_only`; role matrix §1a). | Decided (lead) | Review N4 (ADR 0010). |
+| The SSO callback's parameters are bounded (code 4 KiB, state 512, error 256, iss 2 KiB): past that the sign-in fails as `sso_failed` (a redirect and a denial, nothing sent to the IdP), not a 422. | Decided | Review N6; keeps the existing behaviour that IdP errors end on the sign-in page. |
+| Dev compose publishes Postgres, Keycloak, Mailpit and the fake agent on 127.0.0.1 (`SOUNDINGS_DEV_BIND_ADDRESS`). | Decided | Review L7. |
+| `make k3s-install PROD=1` / `k3s-smoke PROD=1`: production mode on the local k3s (no dev login or demo data; break-glass sign-in; `__Host-` cookies; the API's map for signed-in callers only; `/metrics` off the app port; the startup log; no password in the logs). | Decided (lead) | Review L10: no live install ran in production mode. |
+| GitHub CI gains an `audit` job: pip-audit (backend runtime with otel, the fake agent), `npm audit --omit=dev`, Trivy on the built image (as GitLab: HIGH/CRITICAL with a fix fails). | Decided (lead) | Review L2. Validated here: pip-audit and npm audit clean; Trivy can't run in this sandbox. |
+| **Deferred:** a final image stage without apt, dpkg, perl and bash. | Deferred (lead, after 0.1.0) | Review N5: stripping Ubuntu's base is fragile and WeasyPrint needs its libraries. |
+| **Kept:** SVG logos (hardened and tested in Phase 4) and the per-agent A2A protocol (agents migrate one by one). | Kept (lead) | Simplifications the security review proposed. |
+
+### Performance
+
+| Decision | Status | Why |
+|---|---|---|
+| Static files ship with Brotli and gzip twins made at image build (`scripts/precompress-assets.mjs`; 1.76 MB of JS/CSS to 0.49 MB), served by `spa.py` with `Content-Encoding` and `Vary`; `index.html` is gzipped in memory. | Decided (lead) | Perf B4. |
+| `GET` JSON of 1 KB or more is gzipped when accepted, except what the endpoint itself marked `no-store` (keys shown once), event streams and files. | Decided (lead) | Perf B4 (the board was 213 kB); BREACH: secrets are only in explicit `no-store` bodies, and CSRF and session tokens are cookies. Ingress compression is optional (operator guide). |
+| Every database connection runs `SET max_parallel_workers_per_gather = 0`. | Decided | Perf B6: sorts over a 10k-idea project (score, title, votes) spent most of their time starting parallel workers (45-70 ms; 28-39 ms without), and under load the workers took the requests' CPU. |
+| One- and two-letter searches match titles only, most recently active first. | Decided | Perf B6: pg_trgm can't narrow them; 98 ms to 25 ms (a miss: 92 to 49 ms). |
+| Tag counts are a semi-join over the project's viewable ideas (`count(*)`). | Decided | Perf B6: 127 ms to 29 ms for a pending evaluator. |
+| `GET /ideas/{key}` uses the facts it loaded (no re-read after a plain read) and one query for "watching" and "via the public form": 14 statements to 11. | Decided | Perf B6. |
+| The session keep-alive runs after the response in a short transaction of its own, guarded in SQL (`SessionTouchMiddleware`). | Decided (lead) | Perf B8: a screen's parallel requests queued on the user's row lock until each committed. It also survives a request that fails. |
+| **Declined:** two uvicorn workers per pod by default. | Declined (lead) | Perf B5: each process also keeps a warm PDF child; scale with replicas, and send fewer requests per screen (C1, C2). |
+
+### Accessibility
+
+| Decision | Status | Why |
+|---|---|---|
+| Exported PDFs are tagged (`pdf_tags`: headings, paragraphs, lists, tables, links), keeping the 20 s and box bounds. | Decided (lead) | Audit minor: the export had no structure tree. About 50% larger. |
+| Every email is one `role="article"` landmark (`aria-roledescription="email"`, named by its subject); the layout tables stay presentational. | Decided (lead) | Audit minor: emails had no landmark. |
+| **Deferred:** pdfjs-dist 6 in e2e (GHSA-hq66-cqwq-w95j). | Deferred | Review L9: 6.x removed `PDFDocumentProxy.destroy()`, which `e2e/tests/support/pdf.ts` calls; with `loadingTask.destroy()` (works on 5.x too) the helper reads and renders exported PDFs identically on 6.4.299 (checked in a scratch copy). Bump once that line changes. Test-only, reading the app's own PDFs. |
+

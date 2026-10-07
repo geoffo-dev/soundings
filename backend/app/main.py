@@ -25,9 +25,11 @@ from app.mcp import MCP_PATH, McpTransport, install_mcp
 from app.middleware import (
     PROBE_PATHS,
     BodySizeLimitMiddleware,
+    JsonGzipMiddleware,
     ProxyHeadersMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
+    SessionTouchMiddleware,
     TrustedHostMiddleware,
     content_security_policy,
 )
@@ -90,7 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="Soundings API",
         version=__version__,
-        openapi_url="/api/v1/openapi.json",
+        # Served by app.api.docs (signed in only in production, security review P7 N1).
+        openapi_url=None,
         docs_url=None,
         redoc_url=None,
         lifespan=lifespan,
@@ -108,6 +111,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # headers also land on the 500s that RequestContextMiddleware produces, and
     # refused hosts and oversized bodies still get a request id, an access-log line
     # and metrics. No middleware reads the body, so the size limit needs no more.
+    # Innermost: the keep-alive after the request's own transaction (B8), then gzip
+    # for large GET JSON, which sees the endpoint's own Cache-Control (B4).
+    app.add_middleware(SessionTouchMiddleware)
+    app.add_middleware(JsonGzipMiddleware)
     app.add_middleware(BodySizeLimitMiddleware)
     # /mcp is exempt like the probes: agents call the cluster Service by name; the bearer
     # key and the Origin check cover what the Host check guards (contract-phase5 3.5).

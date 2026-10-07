@@ -7,7 +7,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { KbdShortcut } from '@/components/ui/kbd'
+import { Switch } from '@/components/ui/switch'
+import { isSingleKeyShortcut } from '@/lib/hotkeys'
+import { setSingleKeyShortcuts, useSingleKeyShortcuts } from '@/lib/shortcut-preference'
 import { SHORTCUT_GROUPS, SHORTCUTS, type ShortcutDefinition } from '@/lib/shortcuts'
+import { cn } from '@/lib/utils'
 
 /** The "?" dialog. Lists everything in the shortcut registry, grouped. */
 export function ShortcutSheet({
@@ -18,6 +22,7 @@ export function ShortcutSheet({
   onOpenChange: (open: boolean) => void
 }) {
   const all: ShortcutDefinition[] = Object.values(SHORTCUTS)
+  const singleKeys = useSingleKeyShortcuts()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -31,6 +36,26 @@ export function ShortcutSheet({
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>Shortcuts work anywhere except while you’re typing.</DialogDescription>
+          {/* WCAG 2.1.4: single-key shortcuts can be turned off (speech input, stray keys). */}
+          <div className="mt-3 flex items-start gap-3 rounded-lg border px-3 py-2.5">
+            <Switch
+              id="single-key-shortcuts"
+              checked={singleKeys}
+              onCheckedChange={setSingleKeyShortcuts}
+              aria-describedby="single-key-shortcuts-hint"
+              className="mt-0.5"
+            />
+            <div className="flex flex-col gap-0.5">
+              <label htmlFor="single-key-shortcuts" className="text-sm font-medium text-primary">
+                Single-key shortcuts
+              </label>
+              <p id="single-key-shortcuts-hint" className="text-sm text-muted">
+                Keys on their own, like N or G then M. Turn them off if you use speech input or
+                press keys by accident; shortcuts with ⌘ or Ctrl keep working. Saved in this
+                browser.
+              </p>
+            </div>
+          </div>
         </DialogHeader>
         {/* Two columns from sm, so it fits a laptop screen without scrolling. Scrolls on
             short screens: focusable so the keyboard can scroll it too (axe
@@ -54,17 +79,23 @@ export function ShortcutSheet({
                   {group}
                 </h3>
                 <dl className="divide-y divide-subtle">
-                  {items.map((shortcut) => (
-                    <div
-                      key={shortcut.keys}
-                      className="flex h-9 items-center justify-between gap-4"
-                    >
-                      <dt className="text-sm text-primary">{shortcut.label}</dt>
-                      <dd>
-                        <KbdShortcut keys={shortcut.keys} />
-                      </dd>
-                    </div>
-                  ))}
+                  {items.map((shortcut) => {
+                    const off = !singleKeys && isSingleKeyShortcut(shortcut.keys)
+                    return (
+                      <div
+                        key={shortcut.keys}
+                        className="flex min-h-9 items-center justify-between gap-4 py-1"
+                      >
+                        <dt className={cn('text-sm', off ? 'text-muted' : 'text-primary')}>
+                          {shortcut.label}
+                          {off && <span className="sr-only"> (turned off)</span>}
+                        </dt>
+                        <dd>
+                          <KbdShortcut keys={shortcut.keys} always />
+                        </dd>
+                      </div>
+                    )
+                  })}
                 </dl>
               </section>
             )

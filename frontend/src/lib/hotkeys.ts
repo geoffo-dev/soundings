@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent } from 'react'
 
+import { singleKeyShortcutsEnabled } from '@/lib/shortcut-preference'
 import { isMac } from '@/lib/utils'
 
 /**
@@ -11,7 +12,9 @@ import { isMac } from '@/lib/utils'
  *
  * Shortcuts are ignored while the user is typing (inputs, textareas, selects,
  * contenteditable) unless the combo uses mod/ctrl/meta/alt or `allowInInputs`
- * is set. Single-key shortcuts are also ignored inside open dialogs and menus.
+ * is set. Single-key shortcuts are also ignored inside open dialogs and menus,
+ * and whenever the person turned them off ("Single-key shortcuts" in the "?"
+ * sheet, lib/shortcut-preference.ts; WCAG 2.1.4).
  */
 
 export interface HotkeyOptions {
@@ -72,6 +75,19 @@ export function parseKeys(keys: string): Combo[] {
   return keys.trim().split(/\s+/).map(parseCombo)
 }
 
+/**
+ * A shortcut made of character keys alone ("n", "g m", "?", "1"): what WCAG 2.1.4
+ * lets people turn off. Modifier combos and named keys (Enter, arrows) aren't.
+ */
+export function isSingleKeyShortcut(keys: string): boolean {
+  return parseKeys(keys).every(
+    (combo) =>
+      !(combo.mod || combo.ctrl || combo.meta || combo.alt) &&
+      combo.key.length === 1 &&
+      combo.key !== ' ',
+  )
+}
+
 /** Printable, non-alphanumeric keys like "?" need Shift on many layouts — ignore Shift for them. */
 const isSymbolKey = (key: string) => key.length === 1 && !/[a-z0-9]/i.test(key)
 
@@ -108,11 +124,16 @@ export function createHotkeyMatcher(
   const mac = options.mac ?? isMac
   const hasModifier = sequence.some((c) => c.mod || c.ctrl || c.meta || c.alt)
   const allowInInputs = options.allowInInputs ?? hasModifier
+  const singleKey = isSingleKeyShortcut(keys)
   let index = 0
   let lastAt = 0
 
   return (event) => {
     if (event.defaultPrevented || event.isComposing || event.repeat) return false
+    if (singleKey && !singleKeyShortcutsEnabled()) {
+      index = 0
+      return false
+    }
     if (MODIFIER_KEYS.has(event.key.toLowerCase())) return false
     if (!allowInInputs && isTypingTarget(event.target)) return false
     if (!hasModifier && isInsideOverlay(event.target)) return false

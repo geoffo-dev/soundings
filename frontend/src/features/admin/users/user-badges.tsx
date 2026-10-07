@@ -41,6 +41,27 @@ export function UserBadges({
   )
 }
 
+/** What someone is, beside their name in the Users list: platform admin, break-glass. */
+export function UserRoleBadges({ user }: { user: AdminUserSummary }) {
+  if (!user.is_platform_admin && !user.is_break_glass) return null
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1">
+      {user.is_platform_admin && (
+        <Badge variant="info">
+          <ShieldCheck aria-hidden="true" />
+          Platform admin
+        </Badge>
+      )}
+      {user.is_break_glass && (
+        <Badge variant="warning">
+          <KeyRound aria-hidden="true" />
+          Break-glass
+        </Badge>
+      )}
+    </span>
+  )
+}
+
 /** System accounts (agents, the break-glass admin) keep their email and admin rights. */
 export function isSystemAccount(user: AdminUserSummary): boolean {
   return user.is_service_account || user.is_break_glass

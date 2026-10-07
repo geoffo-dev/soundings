@@ -25,15 +25,14 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
   members: 'Members',
   rubric: 'Rubric',
-  statuses: 'Status labels',
   'public-form': 'Public form',
-  branding: 'Branding',
 }
 
 /**
- * Project settings (SPEC §5 screen 7, wireframe 07): General, Members, Rubric
- * and Status labels, one short form each. Admins edit; everyone else with
- * access sees the same information read-only.
+ * Project settings (SPEC §5 screen 7, wireframe 07): General (with the status
+ * labels), Members, Rubric and Public form (with the project's branding), short
+ * forms each with its own Save. Admins edit; everyone else with access sees the
+ * same information read-only.
  */
 export function ProjectSettingsPage({
   slug,
@@ -50,7 +49,7 @@ export function ProjectSettingsPage({
 function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab }) {
   const navigate = useNavigate()
   const canManage = project.permissions.can_manage
-  // Status labels, the public form and branding are admin-only forms.
+  // The public form (and branding) are admin-only forms.
   const tabs: readonly SettingsTab[] = canManage
     ? SETTINGS_TABS
     : SETTINGS_TABS.filter((t) => !ADMIN_SETTINGS_TABS.includes(t))
@@ -97,9 +96,18 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
             ))}
           </TabsList>
           {/* Forms stay mounted, so switching tabs never loses unsaved edits. */}
-          <TabsContent value="general" forceMount className="pt-0 data-[state=inactive]:hidden">
+          <TabsContent
+            value="general"
+            forceMount
+            className="flex flex-col gap-12 pt-0 data-[state=inactive]:hidden"
+          >
             {canManage ? (
-              <GeneralSettings project={project} active={current === 'general'} />
+              <>
+                <GeneralSettings project={project} active={current === 'general'} />
+                <div id="status-labels" className="scroll-mt-6">
+                  <StatusLabelsSettings project={project} active={current === 'general'} />
+                </div>
+              </>
             ) : (
               <GeneralSummary project={project} />
             )}
@@ -115,22 +123,15 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
             )}
           </TabsContent>
           {canManage && (
-            <TabsContent value="statuses" forceMount className="pt-0 data-[state=inactive]:hidden">
-              <StatusLabelsSettings project={project} active={current === 'statuses'} />
-            </TabsContent>
-          )}
-          {canManage && (
             <TabsContent
               value="public-form"
               forceMount
-              className="pt-0 data-[state=inactive]:hidden"
+              className="flex flex-col gap-12 pt-0 data-[state=inactive]:hidden"
             >
               <PublicFormSettingsSection project={project} active={current === 'public-form'} />
-            </TabsContent>
-          )}
-          {canManage && (
-            <TabsContent value="branding" forceMount className="pt-0 data-[state=inactive]:hidden">
-              <ProjectBrandingSettings project={project} active={current === 'branding'} />
+              <div id="branding" className="scroll-mt-6">
+                <ProjectBrandingSettings project={project} active={current === 'public-form'} />
+              </div>
             </TabsContent>
           )}
         </Tabs>

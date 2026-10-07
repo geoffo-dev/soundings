@@ -146,13 +146,13 @@ describe('the public form', { timeout: 15_000 }, () => {
     expect(screen.getByText('The team reviews new ideas first')).toBeVisible()
   })
 
-  it('says the link was emailed when an address was given', async () => {
+  it('says what the email holds when an address was given (not this link)', async () => {
     const user = userEvent.setup({ delay: null })
     renderForm()
     await user.type(await screen.findByRole('textbox', { name: /^Your email/ }), 'jo@example.org')
     await user.click(screen.getByRole('checkbox', { name: 'Email me when the status changes' }))
     await fillAndSend(user)
-    expect(await screen.findByText(/We’ve also emailed you this link/)).toBeVisible()
+    expect(await screen.findByText(/Keep this tracking link: it isn’t in the email/)).toBeVisible()
   })
 
   it('leads with “confirm your email” when the idea waits for that', async () => {

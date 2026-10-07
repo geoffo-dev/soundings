@@ -211,9 +211,8 @@ async def create_idea(
     responses=problems(401, 404),
 )
 async def get_idea(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> IdeaDetail:
-    return await ideas.idea_detail(
-        session, principal, await ideas.load_idea(session, principal, idea)
-    )
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await ideas.idea_detail(session, principal, loaded, reread=False)
 
 
 @router.patch(

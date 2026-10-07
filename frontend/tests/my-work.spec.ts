@@ -93,7 +93,7 @@ test('shows an error with a retry when My work fails to load', async ({ page }) 
 test.describe('on a phone (390px)', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('stacks sections without sideways scrolling; the urgent Evaluate is full width', async ({
+  test('stacks sections without sideways scrolling; every Evaluate sits at its row’s end', async ({
     page,
   }) => {
     await page.goto('/')
@@ -101,7 +101,15 @@ test.describe('on a phone (390px)', () => {
     await expect(primary).toBeVisible()
     const box = await primary.boundingBox()
     expect(box?.height).toBeGreaterThanOrEqual(44)
-    expect(box?.width).toBeGreaterThan(300)
+    // The same shape as the other rows' buttons (UX review m10), not a full-width bar.
+    const other = await page
+      .getByRole('link', { name: /^(Evaluate|Continue)/ })
+      .nth(1)
+      .boundingBox()
+    expect(
+      Math.abs((box?.x ?? 0) + (box?.width ?? 0) - ((other?.x ?? 0) + (other?.width ?? 0))),
+    ).toBeLessThan(2)
+    expect(box?.width).toBeLessThan(200)
     const overflow = await page.evaluate(() => {
       const main = document.querySelector('main')
       return {

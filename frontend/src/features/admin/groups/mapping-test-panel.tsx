@@ -210,7 +210,7 @@ function MappingResult({
 
       {result.values.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-medium text-muted">Values (normalised)</h4>
+          <h3 className="text-xs font-medium text-muted">Values (normalised)</h3>
           <ul className="flex flex-wrap gap-1" aria-label="Values found">
             {result.values.map((value) => (
               <li
@@ -225,7 +225,7 @@ function MappingResult({
       )}
 
       <div className="flex flex-col gap-2">
-        <h4 className="text-sm font-medium text-primary">{headline}</h4>
+        <h3 className="text-sm font-medium text-primary">{headline}</h3>
         {rows.length > 0 ? (
           <ul
             aria-label="Groups"
@@ -244,7 +244,7 @@ function MappingResult({
 
       {(withUser || result.project_roles.length > 0) && (
         <div className="flex flex-col gap-2">
-          <h4 className="text-sm font-medium text-primary">Project roles after signing in</h4>
+          <h3 className="text-sm font-medium text-primary">Project roles after signing in</h3>
           {result.project_roles.length === 0 ? (
             <p className="text-sm text-muted">No project roles.</p>
           ) : (

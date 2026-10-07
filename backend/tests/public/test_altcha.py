@@ -121,6 +121,49 @@ async def test_a_challenge_signed_with_another_key_is_refused(
     assert_problem(await send(anon, team.slug, altcha=payload_for(forged)), 422, "challenge_failed")
 
 
+def _signed(settings: Settings, slug: str, *, cost: int, expires_in: timedelta) -> dict[str, Any]:
+    """A challenge signed with *our* key but with parameters we never issue (what a
+    leaked key could mint: security review P7 L3)."""
+    challenge = altcha_lib.create_challenge(
+        altcha.ALGORITHM,
+        cost,
+        key_length=altcha.KEY_LENGTH,
+        key_prefix=altcha.KEY_PREFIX,
+        expires_at=int((utcnow() + expires_in).timestamp()),
+        data={"project": slug},
+        hmac_secret=altcha.hmac_key(settings),
+    )
+    return challenge.to_dict()
+
+
+async def test_a_signed_challenge_cheaper_than_the_setting_is_refused(
+    anon: httpx.AsyncClient, team: Team, settings: Settings, db_session: AsyncSession
+) -> None:
+    cheap = _signed(settings, team.slug, cost=1, expires_in=timedelta(minutes=5))
+
+    assert_problem(await send(anon, team.slug, altcha=payload_for(cheap)), 422, "challenge_failed")
+    assert await ideas(db_session) == 0
+
+
+async def test_a_signed_challenge_outliving_the_expiry_setting_is_refused(
+    anon: httpx.AsyncClient, team: Team, settings: Settings, db_session: AsyncSession
+) -> None:
+    lasting = _signed(
+        settings,
+        team.slug,
+        cost=settings.altcha_cost,
+        expires_in=settings.altcha_expiry + timedelta(days=365 * 8),
+    )
+    fresh = _signed(
+        settings, team.slug, cost=settings.altcha_cost, expires_in=settings.altcha_expiry
+    )
+
+    assert_problem(
+        await send(anon, team.slug, altcha=payload_for(lasting)), 422, "challenge_failed"
+    )
+    assert (await send(anon, team.slug, altcha=payload_for(fresh))).status_code == 201
+
+
 @pytest.mark.parametrize(
     "tamper",
     [

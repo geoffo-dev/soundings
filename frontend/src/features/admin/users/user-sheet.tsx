@@ -256,7 +256,7 @@ function UserDetail({ user }: { user: AdminUser }) {
             </Link>
           </Button>
           <Button asChild variant="ghost" size="sm" className="text-secondary">
-            <Link to="/settings/all-api-keys" search={{ user_id: user.id }}>
+            <Link to="/settings/api-keys" search={{ everyone: true, user_id: user.id }}>
               <KeyRound />
               API keys
             </Link>

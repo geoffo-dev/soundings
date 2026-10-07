@@ -247,6 +247,17 @@ class Settings(DatabaseSettings):
             "hours, so IdP removals and group changes apply within a day)."
         ),
     )
+    session_writes_per_minute: int = Field(
+        default=120,
+        ge=10,
+        le=100_000,
+        description=(
+            "Changes (POST, PUT, PATCH, DELETE) one signed-in person may make per minute "
+            "in the browser, per API process; then 429 rate_limited. API keys have their "
+            "own limit (30 writes a minute). The e2e stack raises it: its specs set up "
+            "data through the API as a handful of people."
+        ),
+    )
     cookie_secure: bool | None = Field(
         default=None,
         description=(
@@ -863,6 +874,17 @@ class Settings(DatabaseSettings):
         return self
 
     # --- Derived values -------------------------------------------------------------
+    @property
+    def implicit_development_secret(self) -> bool:
+        """Development only by default (``SOUNDINGS_ENVIRONMENT`` unset) *and* signing with
+        the built-in development key, which is public. ``soundings api`` and ``soundings
+        worker`` refuse to start like this (security review P7 M1): anyone with the source
+        could forge unsubscribe links and ALTCHA challenges. The image sets production."""
+        return (
+            "environment" not in self.model_fields_set
+            and self.secret_key.get_secret_value() == DEV_SECRET_KEY
+        )
+
     @property
     def allowed_hosts(self) -> list[str]:
         """Host[:port] values of the configured base URLs."""

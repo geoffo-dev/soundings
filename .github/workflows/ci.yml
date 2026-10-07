@@ -1,5 +1,6 @@
 # Optional GitHub Actions mirror of the GitLab pipeline's checks (.gitlab-ci.yml is the
-# primary pipeline: it also scans the image and deploys it to k3s).
+# primary pipeline: it also deploys the image to k3s). The audit job scans dependencies
+# and the image here too.
 name: ci
 
 on:
@@ -88,6 +89,42 @@ jobs:
       - run: make -C dev/fake-agent install check
       - run: make fake-agent-image
 
+  # Known vulnerabilities in what ships (security review P7 L2): the Python dependencies of
+  # the backend (runtime, with the otel extra) and of the fake agent (PyPI's advisory data,
+  # pip-audit), the SPA's runtime npm dependencies (npm audit), and the built image's OS
+  # packages and wheels (Trivy, as GitLab's image:trivy: HIGH/CRITICAL with a fix fails).
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install "uv==0.8.17" "pip-audit==2.10.1"
+      - name: pip-audit (backend runtime, fake agent)
+        run: |
+          uv export --project backend --locked --no-dev --extra otel --no-emit-project \
+            --format requirements-txt > "$RUNNER_TEMP/backend.txt"
+          uv export --project dev/fake-agent --locked --no-emit-project \
+            --format requirements-txt > "$RUNNER_TEMP/fake-agent.txt"
+          pip-audit --strict --disable-pip --requirement "$RUNNER_TEMP/backend.txt"
+          pip-audit --strict --disable-pip --requirement "$RUNNER_TEMP/fake-agent.txt"
+      - name: npm audit (the SPA's runtime dependencies)
+        run: |
+          npm --prefix frontend ci --ignore-scripts
+          npm --prefix frontend audit --omit=dev --audit-level=high
+      - run: make image IMAGE=soundings:audit
+      - name: Trivy (the image)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -e TRIVY_NO_PROGRESS=true aquasec/trivy:0.67.2 \
+            image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL soundings:audit
+
   # The generated API contract must match the backend: `make gen-api` leaves no diff.
   contract:
     runs-on: ubuntu-24.04
@@ -132,6 +169,7 @@ jobs:
           DEMO_BREAK_GLASS_PASSWORD: e2e-break-glass-password
           # Every spec sends the public form from this runner (as in the local stack).
           DEMO_PUBLIC_PER_IP: "1000"
+          DEMO_SESSION_WRITES: "100000"
           # The browser's zone (playwright.config.ts), as in the local e2e stack.
           DEMO_TIMEZONE: Europe/London
       - if: steps.e2e.outputs.present == 'true'

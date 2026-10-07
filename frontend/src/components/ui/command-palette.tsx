@@ -18,7 +18,7 @@ import {
   CommandShortcut,
 } from '@/components/ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { Kbd } from '@/components/ui/kbd'
+import { ariaKeys, Kbd } from '@/components/ui/kbd'
 import { VisuallyHidden } from '@/components/ui/visually-hidden'
 import { isMac } from '@/lib/utils'
 
@@ -193,6 +193,7 @@ export function CommandPalette({
                     key={action.id}
                     value={itemValue(action)}
                     keywords={action.keywords}
+                    aria-keyshortcuts={action.shortcut ? ariaKeys(action.shortcut) : undefined}
                     onSelect={() => close(action.onSelect)}
                   >
                     {action.icon}

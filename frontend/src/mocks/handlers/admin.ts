@@ -61,6 +61,7 @@ const AUDIT_ACTION_SET: Record<AuditAction, true> = {
   'user.identity_unlink': true,
   'user.sessions_end': true,
   'user.groups_sync': true,
+  'user.anonymise': true,
   'group.create': true,
   'group.update': true,
   'group.delete': true,

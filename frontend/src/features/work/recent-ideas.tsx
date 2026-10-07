@@ -104,12 +104,12 @@ function NoRecentActivity() {
     return (
       <div className="rounded-lg border">
         <EmptyState
-          size="compact"
+          size="inline"
           icon={<Activity />}
           title={member ? 'Nothing new in your projects' : 'You’re not in any projects yet'}
           description={
             member
-              ? 'When ideas in your projects change, the latest ones show up here.'
+              ? 'When ideas in your projects change, they show up here.'
               : 'Ask a project admin to add you. Projects you join show their latest ideas here.'
           }
         />

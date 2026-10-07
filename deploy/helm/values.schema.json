@@ -1090,7 +1090,9 @@
             "username": {
               "type": "string",
               "minLength": 1,
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "not": {"const": "postgres"},
+              "description": "The app's own role (not a superuser); \"postgres\" is the bootstrap superuser."
             },
             "password": {
               "type": "string"
@@ -1101,6 +1103,10 @@
               "maxLength": 253
             },
             "existingSecretKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "existingSecretAdminKey": {
               "type": "string",
               "minLength": 1
             }

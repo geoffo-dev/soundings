@@ -10,8 +10,12 @@ export interface EmptyStateProps extends Omit<ComponentProps<'div'>, 'title'> {
   action?: ReactNode
   /** Optional quieter alternative (ghost/link button). */
   secondaryAction?: ReactNode
-  /** `compact` for inside a section or card; default for a whole page/panel. */
-  size?: 'default' | 'compact'
+  /**
+   * `compact` for inside a section or card; default for a whole page/panel;
+   * `inline`: one quiet row (icon, title, description, action) for a section
+   * that is empty most of the time and shouldn't take the page's room.
+   */
+  size?: 'default' | 'compact' | 'inline'
   /** Heading level of the title: 1 when it is the whole page (a 404), 2 right under a page title. */
   headingLevel?: 1 | 2 | 3
 }
@@ -30,6 +34,31 @@ export function EmptyState({
 }: EmptyStateProps) {
   const compact = size === 'compact'
   const Heading = `h${headingLevel}` as const
+  if (size === 'inline') {
+    return (
+      <div
+        data-slot="empty-state"
+        className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3', className)}
+        {...props}
+      >
+        {icon && (
+          <span aria-hidden="true" className="flex shrink-0 text-muted [&_svg]:size-4">
+            {icon}
+          </span>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+          <Heading className="text-sm font-medium text-primary">{title}</Heading>
+          {description && <p className="text-sm text-muted">{description}</p>}
+        </div>
+        {(action ?? secondaryAction) && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {action}
+            {secondaryAction}
+          </div>
+        )}
+      </div>
+    )
+  }
   return (
     <div
       data-slot="empty-state"

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/api/client'
+import { useProject } from '@/api/projects'
 import { createQueryClient } from '@/api/query'
 import {
   useEraseSubmitter,
@@ -53,11 +54,25 @@ afterEach(() => {
 afterAll(() => server.close())
 
 function useQueue() {
+  const project = useProject('sustainability').data
   return {
     queue: useModerationQueue('sustainability'),
-    count: useModerationCount('sustainability'),
+    // The count comes with the project (pending_moderation_count, contract-phase7 C2).
+    count: { data: useModerationCountOf(project) },
     moderate: useModerate(),
   }
+}
+
+function useModerationCountOf(project: Parameters<typeof useModerationCount>[0] | undefined) {
+  return useModerationCount(
+    project ?? {
+      id: '',
+      slug: 'sustainability',
+      name: '',
+      archived_at: null,
+      pending_moderation_count: null,
+    },
+  )
 }
 
 describe('moderation', () => {
@@ -69,6 +84,7 @@ describe('moderation', () => {
     const { result } = renderHook(useQueue, { wrapper })
     await waitFor(() => expect(result.current.queue.data?.items).toHaveLength(2))
     expect(result.current.queue.data?.total).toBe(2)
+    await waitFor(() => expect(result.current.count.data).toBe(2))
     const first = result.current.queue.data?.items[0]
     if (!first) throw new Error('no idea waiting')
 
@@ -94,6 +110,8 @@ describe('moderation', () => {
     act(() => result.current.moderate.approve(first))
     act(() => toasts.undo[0]?.onCommit?.())
     await waitFor(() => expect(result.current.queue.data?.total).toBe(1))
+    // The project's count follows (patched at once, then refetched), never bouncing back.
+    await waitFor(() => expect(result.current.count.data).toBe(1))
     expect(result.current.queue.data?.items.map((item) => item.key)).not.toContain(first.key)
     const idea = await api.GET('/api/v1/ideas/{idea}', { params: { path: { idea: first.key } } })
     expect(idea.data?.held_for).toBeNull()

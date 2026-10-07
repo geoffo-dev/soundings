@@ -33,6 +33,10 @@ const CARDS: Record<
     container: string
     table: string
     header: string
+    /** A sortable header's button, which can't show (or take focus) while the header is hidden. */
+    headerButton: string
+    /** Its plain text in its place, so the column keeps its name for screen readers. */
+    headerText: string
     body: string
     row: string
     cell: string
@@ -48,6 +52,8 @@ const CARDS: Record<
     container: 'md:overflow-x-auto',
     table: 'max-md:block',
     header: 'max-md:sr-only',
+    headerButton: 'max-md:hidden',
+    headerText: 'md:hidden',
     body: 'max-md:block',
     row: 'max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:gap-y-2 max-md:px-4 max-md:py-3',
     cell: 'max-md:h-auto max-md:p-0 max-md:first:pl-0 max-md:last:pr-0',
@@ -62,6 +68,8 @@ const CARDS: Record<
     container: '@container overflow-x-auto',
     table: '@max-3xl:block',
     header: '@max-3xl:sr-only',
+    headerButton: '@max-3xl:hidden',
+    headerText: '@3xl:hidden',
     body: '@max-3xl:block',
     row: '@max-3xl:flex @max-3xl:flex-wrap @max-3xl:items-center @max-3xl:gap-x-4 @max-3xl:gap-y-2 @max-3xl:px-4 @max-3xl:py-3',
     cell: '@max-3xl:h-auto @max-3xl:p-0 @max-3xl:first:pl-0 @max-3xl:last:pr-0',
@@ -197,12 +205,17 @@ export function SortableTableHead({
   ...props
 }: SortableTableHeadProps) {
   const Icon = sorted === 'asc' ? ArrowUp : sorted === 'desc' ? ArrowDown : ChevronsUpDown
+  const cards = useCards()
   return (
     <TableHead
       aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
       className={cn(align === 'right' && 'text-right', className)}
       {...props}
     >
+      {/* Cards hide the header (screen readers still read it): the column's name stays,
+          but its button goes, so Tab never lands on something invisible (WCAG 2.4.7).
+          The page offers sorting another way there (a Sort menu). */}
+      {cards && <span className={cards.headerText}>{children}</span>}
       <button
         type="button"
         onClick={onSort}
@@ -210,6 +223,7 @@ export function SortableTableHead({
           'group -mx-1.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-subtle hover:text-primary',
           sorted && 'text-primary',
           align === 'right' && 'flex-row-reverse',
+          cards?.headerButton,
         )}
       >
         {children}

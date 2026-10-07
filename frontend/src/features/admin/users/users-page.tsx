@@ -5,6 +5,7 @@ import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useAdminUsers } from '@/api/admin'
 import type { AdminUserSummary } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandList } from '@/components/ui/command'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -30,7 +31,7 @@ import { SearchField } from '@/features/admin/search-field'
 import { AdminPageHeader } from '@/features/admin/settings-frame'
 import { usePageVirtualizer } from '@/features/admin/use-page-virtualizer'
 import { AddUserDialog } from './add-user-dialog'
-import { UserBadges } from './user-badges'
+import { UserRoleBadges } from './user-badges'
 import { hasUserFilters, toUserFilters, type UsersSearch } from './users-search'
 
 const ROW_HEIGHT = { table: 52, card: 76 } as const
@@ -62,7 +63,7 @@ export function UsersPage({
     <>
       <AdminPageHeader
         title="Users"
-        description="Everyone who can sign in."
+        description="Everyone who can sign in. AI agents’ accounts are under AI agents."
         actions={
           <Button variant="primary" onClick={() => setAdding(true)}>
             <UserPlus />
@@ -154,7 +155,11 @@ export function UsersPage({
 function UsersList({ search, onClear }: { search: UsersSearch; onClear: () => void }) {
   const me = useCurrentUser()
   const query = useAdminUsers(toUserFilters(search))
-  const users = query.data?.pages.flatMap((page) => page.items) ?? []
+  // AI agents' service accounts live in Admin → AI agents (with their keys and runs),
+  // not among the people (UX review m3).
+  const users = (query.data?.pages.flatMap((page) => page.items) ?? []).filter(
+    (user) => !user.is_service_account,
+  )
   const [cards, setCards] = useState(false)
   const { listRef: navRef } = useListNavigation()
   const virtual = usePageVirtualizer({
@@ -361,27 +366,28 @@ function UserRow({
             className={cn(!user.is_active && 'opacity-60')}
           />
           <span className="flex min-w-0 flex-col">
-            <span
-              className={cn(
-                'truncate font-medium',
-                user.is_active ? 'text-primary' : 'text-secondary',
-              )}
-            >
-              {user.display_name}
-              {isMe && <span className="font-normal text-muted"> (you)</span>}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                className={cn(
+                  'truncate font-medium',
+                  user.is_active ? 'text-primary' : 'text-secondary',
+                )}
+              >
+                {user.display_name}
+                {isMe && <span className="font-normal text-muted"> (you)</span>}
+              </span>
+              <UserRoleBadges user={user} />
             </span>
             <span className="truncate text-xs text-muted">{user.email}</span>
           </span>
         </Link>
       </TableCell>
+      {/* Active or not; what someone is (platform admin, break-glass) goes by the name. */}
       <TableCell label="Status">
-        {user.is_active &&
-        !user.is_platform_admin &&
-        !user.is_break_glass &&
-        !user.is_service_account ? (
-          <span className="text-sm text-muted">Active</span>
+        {user.is_active ? (
+          <CellText table="Active" card="Active" />
         ) : (
-          <UserBadges user={user} />
+          <Badge variant="outline">Deactivated</Badge>
         )}
       </TableCell>
       <TableCell label="SSO account">

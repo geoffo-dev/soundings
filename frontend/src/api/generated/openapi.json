@@ -2268,6 +2268,7 @@
           "user.identity_unlink",
           "user.sessions_end",
           "user.groups_sync",
+          "user.anonymise",
           "group.create",
           "group.update",
           "group.delete",
@@ -7334,6 +7335,18 @@
             "title": "Name",
             "type": "string"
           },
+          "pending_moderation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ideas from the public form held for moderation (the queue's total), for people who may moderate this project (idea.moderate: project and platform admins); null for everyone else. Phase 7: the sidebar's review counts come from here, not from one moderation request per project.",
+            "title": "Pending Moderation Count"
+          },
           "permissions": {
             "$ref": "#/components/schemas/ProjectPermissions"
           },
@@ -7368,6 +7381,7 @@
           "member_count",
           "archived_at",
           "permissions",
+          "pending_moderation_count",
           "allow_volunteer_owners",
           "default_evaluation_days",
           "status_labels",
@@ -7663,6 +7677,18 @@
             "title": "Name",
             "type": "string"
           },
+          "pending_moderation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ideas from the public form held for moderation (the queue's total), for people who may moderate this project (idea.moderate: project and platform admins); null for everyone else. Phase 7: the sidebar's review counts come from here, not from one moderation request per project.",
+            "title": "Pending Moderation Count"
+          },
           "permissions": {
             "$ref": "#/components/schemas/ProjectPermissions"
           },
@@ -7685,7 +7711,8 @@
           "idea_count",
           "member_count",
           "archived_at",
-          "permissions"
+          "permissions",
+          "pending_moderation_count"
         ],
         "title": "ProjectSummary",
         "type": "object"
@@ -10305,12 +10332,24 @@
             "$ref": "#/components/schemas/WorkCounts"
           },
           "evaluations_due": {
-            "description": "Overdue first, then soonest due; no due date last.",
+            "description": "Overdue first, then soonest due; no due date last. The first 50 (counts.evaluations_due has the total).",
             "items": {
               "$ref": "#/components/schemas/WorkEvaluation"
             },
             "title": "Evaluations Due",
             "type": "array"
+          },
+          "evaluations_due_next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "More evaluations due: GET /me/evaluations-due?cursor=<this>; null when evaluations_due holds them all.",
+            "title": "Evaluations Due Next Cursor"
           },
           "owned": {
             "description": "Ideas you own, grouped by status in lifecycle order (closed last, for the collapsed 'Show closed' row); empty groups are omitted.",
@@ -10332,6 +10371,7 @@
         "required": [
           "counts",
           "evaluations_due",
+          "evaluations_due_next_cursor",
           "owned",
           "recent"
         ],
@@ -10339,10 +10379,10 @@
         "type": "object"
       },
       "WorkCounts": {
-        "description": "Sidebar badges.",
+        "description": "Sidebar badges (also ``GET /me/work/counts``, which runs only the counts).",
         "properties": {
           "evaluations_due": {
-            "description": "Evaluations you owe (length of evaluations_due).",
+            "description": "All evaluations you owe (Work.evaluations_due lists the first 50 of them).",
             "title": "Evaluations Due",
             "type": "integer"
           },
@@ -10415,6 +10455,35 @@
           "state"
         ],
         "title": "WorkEvaluation",
+        "type": "object"
+      },
+      "WorkEvaluationPage": {
+        "description": "Evaluations you owe, in My work's order (overdue first, then soonest due, no due\ndate last). Phase 7 (C1): \"Show all\" pages on from ``Work.evaluations_due_next_cursor``.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkEvaluation"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkEvaluationPage",
         "type": "object"
       },
       "WorkOwnedGroup": {
@@ -20888,6 +20957,111 @@
         ]
       }
     },
+    "/api/v1/me/evaluations-due": {
+      "get": {
+        "description": "Every evaluation you owe, in My work's order (overdue first, then soonest due, no due date last). 'Show all' in My work: cursor=<work.evaluations_due_next_cursor>.",
+        "operationId": "list_my_evaluations_due",
+        "parameters": [
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkEvaluationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Evaluations I owe",
+        "tags": [
+          "work"
+        ]
+      }
+    },
     "/api/v1/me/notification-preferences": {
       "get": {
         "description": "Per notification type: immediate, daily digest or off, with the defaults resolved (self.manage_profile; sessions only). The inbox always shows everything.",
@@ -21531,6 +21705,56 @@
           }
         ],
         "summary": "My work",
+        "tags": [
+          "work"
+        ]
+      }
+    },
+    "/api/v1/me/work/counts": {
+      "get": {
+        "description": "The sidebar's badges alone: evaluations you owe (and how many are overdue) and the ideas you own that are not closed. The same numbers as GET /me/work's counts.",
+        "operationId": "get_my_work_counts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkCounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "My work counts (sidebar badges)",
         "tags": [
           "work"
         ]

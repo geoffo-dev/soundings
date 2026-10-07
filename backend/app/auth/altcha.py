@@ -11,7 +11,10 @@ slug in ``data`` (a challenge fetched for another project's form is refused), an
 works offline (no third-party service).
 
 The library (``altcha`` 2.x) checks expiry, the signature and the solution, but it
-has **no replay protection** and trusts the payload's shape (a counter outside
+has **no replay protection**, trusts the cost and expiry inside the signature (so
+:func:`verify` also refuses a cost below ``SOUNDINGS_ALTCHA_COST`` and an expiry beyond
+``SOUNDINGS_ALTCHA_EXPIRY``: a leaked key can't mint cheap or lasting challenges) and
+trusts the payload's shape (a counter outside
 ``uint32`` or a non-ASCII signature raises instead of failing). So :func:`verify`
 parses the payload strictly first (anything unexpected is simply "not verified") and
 :func:`spend` records the challenge's signature in ``altcha_used_challenges`` until it
@@ -26,7 +29,7 @@ import functools
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final, TypeGuard
 
 import altcha
@@ -62,6 +65,8 @@ _PARAMETER_KEYS: Final = frozenset(
     {"algorithm", "cost", "keyLength", "keyPrefix", "nonce", "salt", "expiresAt", "data"}
 )
 _MAX_COUNTER: Final = 2**32 - 1  # the library packs it as a big-endian uint32
+_CLOCK_SKEW: Final = timedelta(minutes=1)
+"""How far another replica's clock may run ahead when it issued a challenge."""
 
 
 @functools.lru_cache(maxsize=4)
@@ -170,6 +175,13 @@ def verify(
     parameters = parsed.challenge.parameters
     assert parameters.expires_at is not None  # noqa: S101 - checked by _parse
     if parameters.expires_at <= now.timestamp():
+        return None
+    # Defence in depth (security review P7 L3): only what new_challenge issues passes,
+    # even if the key leaked: no cheaper proof of work, no longer life than the settings.
+    if parameters.cost < settings.altcha_cost:
+        return None
+    latest = now + settings.altcha_expiry + _CLOCK_SKEW
+    if parameters.expires_at > latest.timestamp():
         return None
     try:
         result = altcha.verify_solution(parsed, hmac_key(settings))

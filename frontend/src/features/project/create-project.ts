@@ -48,7 +48,9 @@ export interface CreateProjectForm {
   description: string
 }
 
-export type CreateProjectErrors = Partial<Record<keyof CreateProjectForm | 'form', string>>
+export type CreateProjectErrors = Partial<
+  Record<keyof CreateProjectForm | 'admin' | 'form', string>
+>
 
 export function validateCreateProject(form: CreateProjectForm): CreateProjectErrors {
   const errors: CreateProjectErrors = {}

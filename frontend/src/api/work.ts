@@ -9,12 +9,14 @@ import { api, unwrap } from '@/api/client'
 import { queryKeys } from '@/api/keys'
 import type { IdeaStatus } from '@/api/types'
 
-/** My work: evaluations due, owned ideas by status, recent activity, sidebar counts. */
+/**
+ * My work: the first 50 evaluations due (`evaluations_due_next_cursor` pages on),
+ * owned ideas by status, recent activity and the counts.
+ */
 export const myWorkQueryOptions = () =>
   queryOptions({
     queryKey: queryKeys.work.summary(),
     queryFn: ({ signal }) => unwrap(api.GET('/api/v1/me/work', { signal })),
-    // The sidebar badge reads this too; keep it fresh without hammering.
     staleTime: 20_000,
     refetchInterval: 120_000,
   })
@@ -23,9 +25,39 @@ export function useMyWork() {
   return useQuery(myWorkQueryOptions())
 }
 
-/** Sidebar counts only (shares the My work request and cache). */
+/**
+ * The sidebar's badges: `GET /me/work/counts` runs only the counts, so every page
+ * load doesn't fetch the whole of My work (contract-phase7 C1).
+ */
+export const workCountsQueryOptions = () =>
+  queryOptions({
+    queryKey: queryKeys.work.counts(),
+    queryFn: ({ signal }) => unwrap(api.GET('/api/v1/me/work/counts', { signal })),
+    staleTime: 20_000,
+    refetchInterval: 120_000,
+  })
+
 export function useWorkCounts() {
-  return useQuery({ ...myWorkQueryOptions(), select: (work) => work.counts })
+  return useQuery(workCountsQueryOptions())
+}
+
+/** My work's "Show more" for evaluations due, from `evaluations_due_next_cursor`. */
+export const evaluationsDueInfiniteOptions = (initialCursor: string | null, pageSize = 100) =>
+  infiniteQueryOptions({
+    queryKey: [...queryKeys.work.due(), { from: initialCursor, pageSize }] as const,
+    queryFn: ({ pageParam, signal }) =>
+      unwrap(
+        api.GET('/api/v1/me/evaluations-due', {
+          params: { query: { cursor: pageParam ?? undefined, limit: pageSize } },
+          signal,
+        }),
+      ),
+    initialPageParam: initialCursor,
+    getNextPageParam: (page) => page.next_cursor,
+  })
+
+export function useMoreEvaluationsDue(initialCursor: string | null, enabled: boolean) {
+  return useInfiniteQuery({ ...evaluationsDueInfiniteOptions(initialCursor), enabled })
 }
 
 /**

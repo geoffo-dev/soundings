@@ -186,8 +186,9 @@ const DEFAULT_INVERTED_GUIDANCE: Record<Score, string> = {
 
 /**
  * The hint for each score, "4 · A useful benefit…". Rubrics often describe
- * only 1, 3 and 5; the scores between say so ("Between 3 and 5") instead of
- * borrowing generic text that may contradict the rubric.
+ * only 1, 3 and 5; a score between two described ones gets the plain word for
+ * its level and the two it lies between ("4 · Strong: between “Useful.” and
+ * “Major benefit.”"), rather than generic text that may contradict the rubric.
  */
 export function guidanceFor(
   criterion: Pick<RubricCriterion, 'guidance' | 'inverted'>,
@@ -207,12 +208,18 @@ export function guidanceFor(
     }
     const lower = SCORES.filter((s) => s < score && given.has(s)).at(-1)
     const higher = SCORES.find((s) => s > score && given.has(s))
+    const level = fallback[score].split(' — ')[0] ?? fallback[score]
     out[score] =
       lower !== undefined && higher !== undefined
-        ? `${score} · Between ${lower} and ${higher}`
+        ? `${score} · ${level}: between “${unquote(given.get(lower))}” (${lower}) and “${unquote(given.get(higher))}” (${higher})`
         : `${score} · ${fallback[score]}`
   }
   return out
+}
+
+/** A rubric text quoted in another score's hint: without its own full stop. */
+function unquote(text: string | undefined): string {
+  return (text ?? '').replace(/[.。]+$/u, '')
 }
 
 export const RECOMMENDATION_LABELS: Record<Recommendation, string> = {

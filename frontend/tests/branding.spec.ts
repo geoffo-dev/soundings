@@ -51,9 +51,7 @@ test.describe('as a platform admin', () => {
     await page.goto('/settings/branding')
     await expect(page.getByRole('heading', { level: 2, name: 'Branding' })).toBeVisible()
     await expect(
-      page
-        .getByRole('navigation', { name: 'Settings sections' })
-        .getByRole('link', { name: 'Branding' }),
+      page.getByRole('list', { name: 'Admin sections' }).getByRole('link', { name: 'Branding' }),
     ).toHaveAttribute('aria-current', 'page')
 
     await page.getByLabel('App name').fill('Acme Ideas')
@@ -143,7 +141,7 @@ test.describe('as a platform admin', () => {
     await page.goto('/settings/branding')
     await page.getByLabel('App name').fill('Acme Ideas')
     await page
-      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('list', { name: 'Admin sections' })
       .getByRole('link', { name: 'Email' })
       .click()
     const dialog = page.getByRole('alertdialog', { name: 'Leave without saving?' })
@@ -227,7 +225,7 @@ test.describe('as a platform admin', () => {
 
   test('a project’s branding override: only where it faces outward', async ({ page }) => {
     await page.goto('/p/sustainability/settings?tab=branding')
-    const panel = page.getByRole('tabpanel', { name: 'Branding' })
+    const panel = page.getByRole('tabpanel', { name: 'Public form' })
     await expect(panel.getByRole('heading', { name: 'Branding', exact: true })).toBeVisible()
     await expect(panel.getByRole('textbox', { name: 'Primary colour', exact: true })).toHaveValue(
       '#2e7d4f',
@@ -270,9 +268,5 @@ test('anyone else gets the ordinary 404 for /settings/branding', async ({ page }
   await expect(
     page.getByRole('heading', { level: 1, name: 'We couldn’t find that page' }),
   ).toBeVisible()
-  await expect(
-    page
-      .getByRole('navigation', { name: 'Settings sections' })
-      .getByRole('link', { name: 'Branding' }),
-  ).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Branding', exact: true })).toHaveCount(0)
 })

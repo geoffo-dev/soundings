@@ -19,7 +19,7 @@ export function Checkbox({
         'peer inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-control bg-surface text-accent-foreground',
         'transition-[background-color,border-color] duration-150',
         'hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50',
-        'data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent',
+        'data-[state=checked]:border-accent-control data-[state=checked]:bg-accent data-[state=indeterminate]:border-accent-control data-[state=indeterminate]:bg-accent',
         'aria-invalid:border-danger',
         // Larger hit area without changing the visual size.
         'relative after:absolute after:-inset-2 after:content-[""]',

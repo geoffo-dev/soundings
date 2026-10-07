@@ -11,7 +11,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { describeError } from '@/api/errors'
 import { DraftWithAiButton, SectionDraftProgress } from '@/features/ai/draft-with-ai'
-import { formatTime } from '@/lib/dates'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -172,9 +171,7 @@ function SectionSaveBadge({ state }: { state: SectionSaveState }) {
       </span>
     )
   }
-  if (state.status === 'saved' && state.savedAt) {
-    return <span className="text-xs text-muted">Saved {formatTime(state.savedAt)}</span>
-  }
+  // Saved: the editor bar says so (and when) for the whole proposal; once is enough.
   return null
 }
 

@@ -108,9 +108,12 @@ class LocalOnlyFetcher(URLFetcher):  # type: ignore[misc]  # WeasyPrint is untyp
 
 
 def render_html(html: str) -> bytes:
-    """The PDF for ``html`` (fonts and images through :class:`LocalOnlyFetcher`)."""
+    """The PDF for ``html`` (fonts and images through :class:`LocalOnlyFetcher`), tagged
+    (``pdf_tags``: a structure tree of headings, paragraphs, lists, tables and links, for
+    screen readers; accessibility audit P7). About half as large again; the layout and
+    its time and box bounds are unchanged."""
     pdf: bytes = HTML(string=html, url_fetcher=LocalOnlyFetcher()).write_pdf(
-        font_config=FontConfiguration()
+        font_config=FontConfiguration(), pdf_tags=True
     )
     return pdf
 

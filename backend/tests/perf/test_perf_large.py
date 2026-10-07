@@ -11,8 +11,8 @@ Ideas + 2k elsewhere, 50 people, ~30k evaluations, ~31k comments, ~120k feed eve
 * **a statement budget per request** (``STATEMENT_BUDGET``): the counts this phase
   measured, so a new per-row query or an extra round trip fails here first;
 * **service times:** p95 of 20 calls of each read one at a time, against the 150 ms
-  read budget (writes: 250 ms). My work is over budget on a loaded machine (xfail
-  until it is reworked; see the test plan, bottleneck B1).
+  read budget (writes: 250 ms). My work, over budget before Phase 7 (B1), lists the first
+  50 evaluations due since C1, and its counts come alone.
 
 Concurrency (20 people at once) needs a real server: ``tests/perf/load.py`` against
 ``e2e/perf/stack.sh up``.
@@ -58,12 +58,14 @@ STATEMENT_BUDGET: dict[str, int] = {
     "list": 7,
     "board": 7,
     "search": 3,
-    "idea.get": 14,  # the most for one row: see the test plan (B6)
+    "idea.get": 11,  # Phase 7 B6: 14 before (a re-read of the facts, two lookups merged)
     "idea.activity": 7,
     "idea.evaluations": 7,
     "idea.ai_runs": 7,
     "evaluation.me": 6,
     "me.work": 17,  # owner with ideas in all five statuses: one page query per group
+    "me.work.counts": 3,  # Phase 7 C1: the sidebar's badges, two aggregates
+    "me.evaluations_due": 3,  # Phase 7 C1: a page of 50 and its owners
     "me.owned_ideas": 7,
     "notifications.list": 3,
     "notifications.summary": 2,
@@ -232,6 +234,8 @@ async def test_statements_per_request_stay_within_budget(perf_app: FastAPI) -> N
         "idea.ai_runs": (alice, "/ideas/BIG-9900/ai-runs", {"limit": 20}),
         "evaluation.me": (pat, f"/ideas/{due}/evaluations/me", {}),
         "me.work": (pat, "/me/work", {}),
+        "me.work.counts": (pat, "/me/work/counts", {}),
+        "me.evaluations_due": (pat, "/me/evaluations-due", {"limit": 50}),
         "me.owned_ideas": (alice, "/me/owned-ideas", {"limit": 50}),
         "notifications.list": (pat, "/me/notifications", {"limit": 30}),
         "notifications.summary": (pat, "/me/notifications/summary", {}),
@@ -279,6 +283,8 @@ async def service_times(perf_app: FastAPI) -> dict[str, float]:
         "admin.audit": (alice, "/admin/audit", {"limit": 50}),
         "me.work (1,000 due)": (pat, "/me/work", {}),
         "me.work (owner)": (alice, "/me/work", {}),
+        "me.work.counts (1,000 due)": (pat, "/me/work/counts", {}),
+        "me.evaluations_due (page of 50)": (pat, "/me/evaluations-due", {"limit": 50}),
     }
     results: dict[str, float] = {}
     gc.collect()
@@ -298,20 +304,13 @@ async def service_times(perf_app: FastAPI) -> dict[str, float]:
 async def test_reads_are_within_budget_one_at_a_time(perf_app: FastAPI) -> None:
     results = await service_times(perf_app)
     print(json.dumps({"p95_ms (one request at a time)": results}, indent=2))  # noqa: T201
-    over = {
-        name: ms
-        for name, ms in results.items()
-        if ms >= READ_BUDGET_MS and not name.startswith("me.work")
-    }
+    over = {name: ms for name, ms in results.items() if ms >= READ_BUDGET_MS}
     assert not over, over
 
 
-@pytest.mark.xfail(
-    reason="B1: GET /me/work builds every evaluation due and four owned groups (~100-200 ms "
-    "at 10k ideas); the sidebar fetches it on every load. Delete this mark once it is fast.",
-    strict=False,
-)
 async def test_my_work_is_within_budget_one_at_a_time(perf_app: FastAPI) -> None:
+    """B1, fixed in Phase 7 (C1): My work lists the first 50 evaluations due and the
+    sidebar asks only for the counts."""
     pat = await client_for(perf_app, PENDING_EMAIL)
     samples = []
     for n in range(RUNS + 3):

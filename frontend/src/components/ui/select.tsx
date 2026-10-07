@@ -86,7 +86,7 @@ export function SelectItem({
       data-slot="select-item"
       className={cn(
         'relative flex h-8 w-full cursor-default items-center gap-2 rounded-md pr-8 pl-2 text-base outline-none select-none sm:h-7 sm:text-sm',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-subtle-hover',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-subtle-hover data-[highlighted]:highlight-ring',
         "[&_svg]:text-muted [&_svg:not([class*='size-'])]:size-4",
         className,
       )}

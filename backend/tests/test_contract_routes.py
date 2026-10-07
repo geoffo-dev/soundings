@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 6): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 7): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -241,6 +241,9 @@ CONTRACT: list[tuple[str, str, str]] = [
     ),
     ("GET", "/api/v1/ideas/{idea}/research-notes/{note_id}", "get_research_note"),
     ("DELETE", "/api/v1/ideas/{idea}/research-notes/{note_id}", "delete_research_note"),
+    # --- Phase 7: polish and hardening (docs/api/contract-phase7.md) ------------------
+    ("GET", "/api/v1/me/work/counts", "get_my_work_counts"),
+    ("GET", "/api/v1/me/evaluations-due", "list_my_evaluations_due"),
 ]
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the

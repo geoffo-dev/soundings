@@ -1,5 +1,12 @@
-import { Tooltip as TooltipPrimitive } from 'radix-ui'
-import { useRef, useState, type ComponentProps, type FocusEvent, type ReactNode } from 'react'
+import { Slot, Tooltip as TooltipPrimitive } from 'radix-ui'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type FocusEvent,
+  type ReactNode,
+} from 'react'
 
 import { KbdShortcut } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
@@ -104,6 +111,55 @@ export function WithTooltip({ content, shortcut, side, align, children }: WithTo
       <TooltipContent side={side} align={align}>
         <span>{content}</span>
         {shortcut && <KbdShortcut keys={shortcut} />}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** The provider's delay, for HoverTooltip's first opening (TooltipProvider). */
+const HOVER_DELAY_MS = 400
+
+/**
+ * A tooltip for a trigger that never takes focus (a row's lock or warning icon) in
+ * lists of thousands: until the pointer first arrives the trigger is a plain
+ * element, and only then does it get a Radix tooltip (opening after the usual
+ * delay). Keyboard users get the same words from the trigger's own label. Use
+ * WithTooltip for anything focusable.
+ */
+export function HoverTooltip({
+  content,
+  side,
+  align,
+  children,
+}: Omit<WithTooltipProps, 'shortcut'>) {
+  const [armed, setArmed] = useState(false)
+  const [open, setOpen] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  if (!armed) {
+    return (
+      <Slot.Root
+        onPointerEnter={() => {
+          setArmed(true)
+          timer.current = window.setTimeout(() => setOpen(true), HOVER_DELAY_MS)
+        }}
+      >
+        {children}
+      </Slot.Root>
+    )
+  }
+  return (
+    <Tooltip
+      open={open}
+      onOpenChange={(next) => {
+        window.clearTimeout(timer.current)
+        setOpen(next)
+      }}
+    >
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} align={align}>
+        <span>{content}</span>
       </TooltipContent>
     </Tooltip>
   )

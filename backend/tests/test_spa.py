@@ -166,3 +166,57 @@ def test_inline_script_hashes_skip_external_and_empty_scripts() -> None:
 )
 def test_is_backend_path(path: str, expected: bool) -> None:
     assert is_backend_path(path) is expected
+
+
+# --- Performance review B4: precompressed assets ------------------------------------------
+@pytest.fixture
+def precompressed(dist: Path) -> Path:
+    import gzip
+
+    asset = dist / "assets" / "index-abc123.js"
+    (asset.with_name(asset.name + ".gz")).write_bytes(gzip.compress(asset.read_bytes()))
+    (asset.with_name(asset.name + ".br")).write_bytes(b"brotli-bytes")  # served as is
+    return asset
+
+
+async def test_assets_come_precompressed_when_the_client_takes_them(
+    client: httpx.AsyncClient, precompressed: Path
+) -> None:
+    url = "/assets/index-abc123.js"
+    request = client.build_request("GET", url, headers={"Accept-Encoding": "br, gzip"})
+    brotli = await client.send(request, stream=True)
+    raw = b"".join([chunk async for chunk in brotli.aiter_raw()])
+
+    gzipped = await client.get(url, headers={"Accept-Encoding": "gzip"})
+    plain = await client.get(url, headers={"Accept-Encoding": "identity"})
+    refused = await client.get(url, headers={"Accept-Encoding": "br;q=0, gzip;q=0"})
+
+    assert brotli.headers["content-encoding"] == "br"
+    assert raw == b"brotli-bytes"
+    assert brotli.headers["content-type"].startswith("text/javascript")
+    assert brotli.headers["vary"] == "Accept-Encoding"
+    assert brotli.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert gzipped.headers["content-encoding"] == "gzip"
+    assert gzipped.text == "console.log('app')"  # httpx decodes it
+    for response in (plain, refused):
+        assert "content-encoding" not in response.headers
+        assert response.text == "console.log('app')"
+        assert response.headers["vary"] == "Accept-Encoding"
+
+
+async def test_a_build_without_twins_is_served_as_it_is(client: httpx.AsyncClient) -> None:
+    response = await client.get("/assets/index-abc123.js", headers={"Accept-Encoding": "br"})
+
+    assert "content-encoding" not in response.headers
+    assert "vary" not in response.headers
+    assert response.text == "console.log('app')"
+
+
+async def test_index_is_gzipped_for_clients_that_take_it(client: httpx.AsyncClient) -> None:
+    gzipped = await client.get("/", headers={"Accept-Encoding": "gzip"})
+    plain = await client.get("/", headers={"Accept-Encoding": "identity"})
+
+    assert gzipped.headers["content-encoding"] == "gzip"
+    assert '<div id="root">' in gzipped.text
+    assert "content-encoding" not in plain.headers
+    assert plain.headers["vary"] == "Accept-Encoding"

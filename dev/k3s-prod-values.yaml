@@ -1,0 +1,13 @@
+# Production mode on the local k3s cluster (security review P7 L10): `make k3s-install
+# PROD=1` puts this on top of dev/k3s-values.yaml, `make k3s-smoke PROD=1` checks what
+# only production does: no dev login (and no demo data, which needs it), the break-glass
+# admin as the only way in, __Host- cookies that are Secure, HttpOnly and SameSite, the
+# API's map (OpenAPI, Swagger UI) only for signed-in callers, /metrics only on its own
+# port, and the startup log saying production. Not with SSO=1 (Keycloak in the cluster
+# is plain http, which production refuses as an issuer).
+devLogin: false
+demo:
+  seed: false
+breakGlass:
+  enabled: true
+logLevel: INFO

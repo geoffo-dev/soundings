@@ -16,7 +16,7 @@ const queue = (page: Page) => page.getByRole('list', { name: 'Ideas waiting for 
 const status = (page: Page, url: string) =>
   page.evaluate((path) => fetch(path).then((response) => response.status), url)
 const toastGone = (page: Page) =>
-  expect(page.getByRole('button', { name: 'Undo' })).toHaveCount(0, { timeout: 12_000 })
+  expect(page.getByRole('button', { name: 'Undo' })).toHaveCount(0, { timeout: 15_000 })
 
 test.describe('as a project admin', () => {
   test.use({ signedInAs: USERS.priya })
@@ -77,7 +77,7 @@ test.describe('as a project admin', () => {
     expect(await status(page, '/api/v1/ideas/GREEN-11')).toBe(404)
   })
 
-  test('the sidebar and My work show what is waiting; the queue empties into its empty state', async ({
+  test('the sidebar shows what is waiting; the queue empties into its empty state', async ({
     page,
   }) => {
     await page.goto('/')
@@ -85,10 +85,9 @@ test.describe('as a project admin', () => {
       .getByRole('navigation', { name: 'Main' })
       .getByRole('link', { name: 'Review new ideas, 2 waiting' })
     await expect(review).toBeVisible()
-    const waiting = page.getByRole('region', { name: /Waiting for review/ })
-    await expect(waiting).toContainText('Sustainability')
-    await expect(waiting).toContainText('2 ideas waiting')
-    await waiting.getByRole('link', { name: /Sustainability/ }).click()
+    // My work no longer repeats it (the sidebar count and the board's notice do).
+    await expect(page.getByRole('region', { name: /Waiting for review/ })).toHaveCount(0)
+    await review.click()
     await expect(page).toHaveURL(/\/p\/sustainability\/review$/)
     await page.getByRole('button', { name: 'Approve GREEN-10' }).click()
     await page.getByRole('button', { name: 'Approve GREEN-11' }).click()

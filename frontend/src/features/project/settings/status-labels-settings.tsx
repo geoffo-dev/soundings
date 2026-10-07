@@ -181,6 +181,7 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
         </div>
         <FormActions
           form="the status labels"
+          saveLabel="Save labels"
           dirty={dirty}
           saving={update.isPending}
           notice={notice}

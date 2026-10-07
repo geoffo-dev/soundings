@@ -155,6 +155,10 @@ function InboxRow({
         sameIdea ? 'pt-0.5' : density === 'compact' ? 'pt-2.5' : 'pt-3',
       )}
     >
+      {/* Unread: a dot at the row's start, beside what it marks (not across the page). */}
+      <span className="-mx-1.5 flex w-2 shrink-0 justify-center self-center">
+        {unread && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
+      </span>
       {item.actor ? (
         <Avatar name={item.actor.display_name} src={item.actor.avatar_url} size="md" decorative />
       ) : (
@@ -195,9 +199,6 @@ function InboxRow({
             “{sentence.quote}”
           </span>
         )}
-      </span>
-      <span className="flex w-2 shrink-0 justify-center pt-1.5">
-        {unread && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
       </span>
     </Link>
   )

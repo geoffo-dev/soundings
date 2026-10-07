@@ -50,6 +50,11 @@ def test_html_is_mail_client_safe(name: str) -> None:
         assert href.startswith("http://localhost:8000"), href
     # The hidden preheader comes first in the body.
     assert html.index(str(escape(SAMPLES[name].preheader))) < html.index("<table")
+    # Accessibility audit P7: the message is one landmark named by its subject.
+    label = f'aria-label="{escape(rendered.subject)}"'
+    assert f'<div role="article" aria-roledescription="email" {label} lang="en">' in html
+    assert html.index('role="article"') < html.index("<table")
+    assert html.rstrip().endswith("</div>\n</body>\n</html>")
     assert "{{" not in html
     assert "{%" not in html
 

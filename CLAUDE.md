@@ -95,15 +95,20 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make ai-smoke` | `scripts/ai-smoke.sh $(AI_BASE_URL)` (default :8000) against an app with AI on, dev login, the worker and the fake agent (`AI_FAKE_URL`, default :8083; `AI_FAKE_KEYS_DIR`, default `dev/.fake-agent-keys`): register an agent (key once), hand the fake its key, Test connection, "Ask AI to evaluate" watched over SSE by a pending evaluator (no score data, 204 after the end), the AI evaluation out of the aggregate then included, research note, section draft, a cancelled `-slow` run, the agent's key refused on REST and outside runs; `AI_PROTOCOL=kagent_v1_0` runs it over A2A 1.0; needs `jq` |
 | `make fake-agent-image` · `make k3s-fake-agent` · `make k3s-kagent-crds` · `k3s-install AI=1` · `k3s-smoke AI=1` | The fake agent's image (`FAKE_AGENT_IMAGE`, default `soundings-fake-agent:dev`); the fake in k3s as `kagent/kagent-controller:8083` (so the default `controllerUrl` works); kagent v0.10.2's CRDs (from the git tag, cloned into `.k3s/`) plus a server-side dry run of every kagent manifest; install with `dev/k3s-ai-values.yaml` (AI on, `kagent.examples` when the CRDs exist) and run `ai-smoke` through the ingress. CI's k3s job runs `SSO=1 SMTP=1 MCP=1 AI=1` |
 | `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then deletes the idea. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too |
+| `make k3s-install PROD=1` · `k3s-smoke PROD=1` | Production mode on the local k3s (`dev/k3s-prod-values.yaml`: no dev login or demo data, break-glass sign-in): the smoke checks `__Host-` cookies, the OpenAPI document and Swagger UI 401 anonymously and 200 signed in, `/metrics` off the app port, the production startup log, no password in the logs; skips the public-form smoke (no demo data). Not with `SSO=1` |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
 | `make e2e` | Playwright e2e in `e2e/` against `E2E_BASE_URL` (default http://localhost:8000, i.e. `make demo`); CI runs it against the built image with the demo data |
 
 Backend (`make -C backend <target>`): `install` (uv sync --locked), `check`, `lint`,
-`typecheck`, `test`, `test-slow` (10k-idea performance checks, excluded from `test`),
+`typecheck`, `test`, `test-slow` (10k-idea performance checks, excluded from `test`;
+includes `tests/perf`), `test-perf` (only the Phase 7 kit `tests/perf`: N+1, statements
+per request, p95 one at a time, ~90 s),
 `fmt`, `dev` (API on :8000 with reload; also serves the SPA from `frontend/dist` once
 built), `worker` (sends email, runs the outbox sweep, the hourly reminder/digest
-schedule and job cleanup; needed for any email), `migrate`, `revision m="..."` (backend
+schedule and job cleanup; needed for any email; `dev` and `worker` set
+`SOUNDINGS_ENVIRONMENT=development` unless you did: `soundings api`/`worker` refuse to
+start with it unset and the built-in key), `migrate`, `revision m="..."` (backend
 owner only), `openapi`, `vendor-swagger` (refresh the bundled Swagger UI).
 `tests/acceptance/test_phase3_acceptance.py` sends through a real Mailpit (testcontainer,
 about 10 s; `SOUNDINGS_TEST_MAILPIT=0` skips, `SOUNDINGS_TEST_MAILPIT_SMTP=host:port` +
@@ -136,7 +141,8 @@ realm (CI loads it with `dev/keycloak/import_realm.py`). The other SSO tests use
 IdP in `tests/identity/fake_idp.py`. The `soundings` CLI (`uv run soundings
 <cmd>` in `backend/`, the image's entrypoint): `api`, `worker`, `migrate`,
 `wait-for-db --timeout N`, `seed [--reset] [--force]` (refuses production without
-`--force`), `openapi`, `email-preview -o DIR` (every email template with sample data as
+`--force`), `anonymise-user <email>` (a deactivated person's personal data, UK GDPR;
+operator guide "What is stored about users"), `openapi`, `email-preview -o DIR` (every email template with sample data as
 `.html` + `.txt` and an `index.html`; no database or SMTP needed; for reviewing
 templates in browsers and mail clients).
 
@@ -257,9 +263,20 @@ in pytest), which fail loudly once fixed: then delete the mark.
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
+**Performance kit (Phase 7, `e2e/perf/README.md`, results in
+`docs/test-plans/performance.md`):** `e2e/perf/stack.sh up|seed|stats|restart-api|down`
+(`npm --prefix e2e run perf:stack`) starts the e2e stack with the large data set
+(`backend/tests/perf/seed_large.py`: 10k ideas in Big Ideas, Pat Pending
+`perf01@example.com` owes 1,000 evaluations) on :8320, Postgres `p7-perf-pg` on 55436,
+prefix `p7-perf-` (`PERF_PORT`, `PERF_PG_PORT`, `PERF_PREFIX`, `PERF_STATE_DIR`
+override); then `uv run python -m tests.perf.load` in `backend/` (20 people, `--isolated
+N`, `--think 0`), `npm --prefix e2e run perf` (browser timings, 4x CPU throttling) and
+`npm --prefix e2e run perf:bundle` (first-load JavaScript). e2e's `tsc` covers `perf/`.
+
 Ports: Postgres 5432, Keycloak 8080, Mailpit 8025 (SMTP 1025), API 8000 (and
 `/metrics` on 9090 unless `--reload`), Vite 5173, Playwright 5174, fake agent 8083, e2e
 stack 8100 (Postgres 55433, Keycloak 8180, Mailpit 8125 / SMTP 1125, fake agent 8183),
+perf stack 8320 (Postgres 55436),
 `make demo` Mailpit 8026 and fake agent 8027, k3s API 16443, k3s ingress 18081. Dev logins, the demo
 people and groups, and the Keycloak users are in `dev/README.md`.
 
@@ -481,6 +498,17 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   is `<Markdown untrusted>` (http/https links only, `rel="noopener noreferrer nofollow"`,
   host shown), with `AiBadge` wherever an agent's work appears (evaluator rows, cards,
   comparison columns, notes, suggestions, feed lines).
+- **Hardening (Phase 7, contract-phase7, decisions Phase 7):** the image defaults to
+  `SOUNDINGS_ENVIRONMENT=production` (everything that runs it for development says so);
+  session writes are limited to 120 a minute per person (429 `rate_limited`; the e2e and
+  perf stacks raise `SOUNDINGS_SESSION_WRITES_PER_MINUTE`); the session keep-alive runs
+  after the response in its own transaction (`app.middleware.SessionTouchMiddleware`);
+  `GET` JSON of 1 KB+ is gzipped unless the endpoint set `no-store` itself (a body with a
+  secret must: BREACH) and the image ships `.br`/`.gz` twins of the SPA
+  (`scripts/precompress-assets.mjs`); connections run without parallel query workers;
+  OpenAPI and Swagger UI need a caller in production; account-kind decisions are policy
+  traits (`app.authz.is_agent` …, role matrix §1a); PDFs are tagged; emails are one
+  `role="article"` landmark; the bundled Postgres's app role is not a superuser.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.

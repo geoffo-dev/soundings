@@ -40,6 +40,7 @@ class AuditAction(StrEnum):
     USER_IDENTITY_UNLINK = "user.identity_unlink"
     USER_SESSIONS_END = "user.sessions_end"
     USER_GROUPS_SYNC = "user.groups_sync"
+    USER_ANONYMISE = "user.anonymise"  # Phase 7: `soundings anonymise-user` (CLI only)
     # Groups
     GROUP_CREATE = "group.create"
     GROUP_UPDATE = "group.update"
