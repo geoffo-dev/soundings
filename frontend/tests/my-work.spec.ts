@@ -61,6 +61,24 @@ test('groups owned ideas by status, with closed ones collapsed', async ({ page }
   await expect(owned.getByText('Carbon-neutral shipping option')).toBeVisible()
 })
 
+test('a large owned group shows 10 ideas, then 50 more at a time (10,000 ideas)', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('soundings-mock-dataset', 'large'))
+  await page.goto('/')
+  const group = page.locator('#owned section[aria-labelledby="owned-evaluating"]')
+  const rows = group.getByRole('listitem')
+  // Alice owns hundreds: each group renders 10 rows, not the 50 My work sent.
+  await expect(rows).toHaveCount(10, { timeout: 15_000 })
+  await expect(group).toContainText(/10 of \d+/)
+  // First the rest of what My work sent, then the next page from the group's cursor.
+  await group.getByRole('button', { name: 'Show 50 more' }).click()
+  await expect(rows).toHaveCount(60)
+  await group.getByRole('button', { name: 'Show 50 more' }).click()
+  await expect(rows).toHaveCount(110)
+  await expect(group).toContainText(/110 of \d+/)
+})
+
 test('the sidebar shows My work counts and the projects', async ({ page }) => {
   await page.goto('/settings')
   const nav = page.getByRole('navigation', { name: 'Main' })

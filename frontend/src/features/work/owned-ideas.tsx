@@ -9,7 +9,6 @@ import { CountBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SkeletonGroup, SkeletonListRow } from '@/components/ui/skeleton'
-import { Spinner } from '@/components/ui/spinner'
 import { StatusDot } from '@/components/ui/status-badge'
 import { statusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -105,6 +104,14 @@ export function OwnedIdeasSection({
   )
 }
 
+/**
+ * A group shows its first 10 ideas, then "Show N more" adds 50 at a time: first the
+ * rest of what My work already sent (up to 50 per group), then pages from
+ * `next_cursor`. An owner of hundreds of ideas gets a page that renders at once.
+ */
+const OWNED_PREVIEW = 10
+const OWNED_STEP = 50
+
 function OwnedGroup({
   group,
   hideHeading = false,
@@ -112,15 +119,27 @@ function OwnedGroup({
   group: WorkOwnedGroup
   hideHeading?: boolean
 }) {
+  const [limit, setLimit] = useState(OWNED_PREVIEW)
   const [expanded, setExpanded] = useState(false)
   const more = useOwnedIdeas(group.status, group.next_cursor, {
     enabled: expanded && Boolean(group.next_cursor),
   })
   const extra = more.data?.pages.flatMap((page) => page.items) ?? []
-  const shown = group.ideas.length + extra.length
-  const hasMore = expanded ? more.hasNextPage : Boolean(group.next_cursor)
+  const loaded = [...group.ideas, ...extra]
+  const rows = loaded.slice(0, limit)
+  const serverHasMore = expanded ? more.hasNextPage : Boolean(group.next_cursor)
+  const hasMore = loaded.length > rows.length || serverHasMore
+  const loadingMore = more.isFetchingNextPage || (expanded && more.isPending)
   const headingId = `owned-${group.status}`
   const closed = group.status === 'closed'
+
+  function showMore() {
+    const next = rows.length + OWNED_STEP
+    setLimit(next)
+    if (loaded.length >= next || !serverHasMore) return
+    if (!expanded) setExpanded(true)
+    else void more.fetchNextPage()
+  }
 
   return (
     <section
@@ -138,24 +157,25 @@ function OwnedGroup({
         </h3>
       )}
       <ul className="divide-y divide-subtle overflow-hidden rounded-lg border bg-surface">
-        {[...group.ideas, ...extra].map((idea) => (
+        {rows.map((idea) => (
           <IdeaRow key={idea.id} idea={idea} showStatus={closed} />
         ))}
       </ul>
       {hasMore && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-1.5 text-muted"
-          disabled={more.isFetchingNextPage || (expanded && more.isPending)}
-          onClick={() => {
-            if (!expanded) setExpanded(true)
-            else void more.fetchNextPage()
-          }}
-        >
-          {(more.isFetchingNextPage || (expanded && more.isPending)) && <Spinner />}
-          Show {Math.min(50, group.count - shown)} more
-        </Button>
+        <div className="mt-1.5 flex items-center gap-3 px-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted"
+            loading={loadingMore}
+            onClick={showMore}
+          >
+            Show {Math.max(1, Math.min(OWNED_STEP, group.count - rows.length))} more
+          </Button>
+          <span className="text-sm text-muted tabular-nums">
+            {rows.length} of {group.count}
+          </span>
+        </div>
       )}
       {more.isError && (
         <p role="alert" className="mt-1.5 flex items-center gap-2 px-1 text-sm text-danger">

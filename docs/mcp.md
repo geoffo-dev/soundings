@@ -187,13 +187,13 @@ a header ([operator guide](operator-guide.md#api-keys-and-mcp-phase-5)).
   suggest) a minute, refused requests included; past that the call answers
   `too_many_attempts`. Ideas waiting for moderation never reach MCP clients, even an
   admin's.
-- **Every call is recorded.** Each tool call is in Settings → Audit log (`mcp.call`: the
+- **Every call is recorded.** Each tool call is in Admin → Audit log (`mcp.call`: the
   tool, allowed or denied, the key; never the arguments), kept for 90 days; what a call
   changed (a submitted evaluation, say) has its own entry, kept for good. A key without
   the `mcp` scope, or past its request budget, is refused at the door, and that is
   recorded at most once a minute per key.
-- **Revoking is immediate.** Revoke a key in Settings → API keys (admins: Settings → All
-  API keys); the client's very next call fails with 401, and each tool call checks the key
+- **Revoking is immediate.** Revoke a key in Settings → API keys (admins: Settings → API keys →
+  Everyone’s keys); the client's very next call fails with 401, and each tool call checks the key
   and its owner again when it runs, so a call already on its way when you revoke does
   nothing (the tool error `unauthorized`). Signing out does not stop keys, and
   deactivating a user revokes all of theirs.
@@ -202,7 +202,7 @@ a header ([operator guide](operator-guide.md#api-keys-and-mcp-phase-5)).
   open" under the key (admins see that project struck through).
 - **Keep the key secret.** It is shown once and stored only as a fingerprint. It starts
   with `sdg_` so secret scanners can spot it (`sdg_[A-Za-z0-9]{12}_[A-Za-z0-9]{40}`); an
-  admin can find a leaked key by its first 16 characters in Settings → All API keys.
+  admin can find a leaked key by its first 16 characters in Settings → API keys → Everyone’s keys.
 
 ## 5. Soundings' AI agents (kagent)
 

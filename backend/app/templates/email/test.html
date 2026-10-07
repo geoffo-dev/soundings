@@ -2,5 +2,5 @@
 {% block content %}
 <h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Email works</h1>
 <p class="sx-text" style="{{ s.p }}color:{{ c.text }};">This is a test email from {{ brand.product_name }} at <a class="sx-link" href="{{ base_url }}" style="color:{{ c.link }};">{{ base_url }}</a>.</p>
-<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{% if sent_by %}{{ sent_by }} sent it{% else %}It was sent{% endif %} from Settings → Email on {{ sent_at }}. If it reached you, people will get their notifications by email.</p>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{% if sent_by %}{{ sent_by }} sent it{% else %}It was sent{% endif %} from Admin → Email on {{ sent_at }}. If it reached you, people will get their notifications by email.</p>
 {% endblock %}

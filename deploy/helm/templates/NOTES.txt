@@ -24,7 +24,7 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
 {{- end }}
 {{- if .Values.oidc.issuer }}
    Single sign-on with {{ .Values.oidc.issuer }} (client "{{ .Values.oidc.clientId }}").
-   Register these on the IdP client (Settings > Sign-in (SSO) shows them too):
+   Register these on the IdP client (Admin > Sign-in (SSO) shows them too):
 {{- range .Values.baseUrls }}
      redirect URI:             {{ . }}/api/v1/auth/callback
      post-logout redirect URI: {{ . }}/login?signed_out=1
@@ -46,10 +46,10 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    Break-glass admin (works while oidc.issuer is empty; every use is audited):
      {{ $breakGlass }}
    Then connect single sign-on, in this order:
-     a. Sign in as break-glass. In Settings > Users, pre-create the real platform admins
+     a. Sign in as break-glass. In Admin > Users, pre-create the real platform admins
         (with the external ID from an attribute only IdP admins can set, and/or their
         email) as platform admins. Optionally create groups and IdP mappings.
-     b. Register the redirect URIs from Settings > Sign-in (SSO) on your IdP client.
+     b. Register the redirect URIs from Admin > Sign-in (SSO) on your IdP client.
      c. helm upgrade with oidc.issuer, oidc.clientId and oidc.existingSecret.
         Break-glass then switches off; the pre-created admins are linked at their
         first SSO sign-in. SSO users are never platform admins by default.
@@ -63,7 +63,7 @@ Soundings {{ include "soundings.imageTag" . }} is deployed as release "{{ .Relea
    SMTP is configured: {{ .Values.smtp.host }}:{{ include "soundings.smtpPort" . }}, security {{ .Values.smtp.security }}, from {{ .Values.smtp.from }}.
    Credentials: {{ if .Values.smtp.existingSecret }}Secret {{ .Values.smtp.existingSecret }} (keys username and password){{ else if or .Values.smtp.username .Values.smtp.password }}the chart's Secret (from values){{ else }}none (no SMTP AUTH){{ end }}, in the worker pods only. CA: {{ if .Values.smtp.caBundle.configMap }}ConfigMap {{ .Values.smtp.caBundle.configMap }}{{ else }}system trust store{{ end }}.
    The worker sends email from an outbox and retries while the server is unreachable.
-   Try it: Settings > Email > "Send test email" (as a platform admin).
+   Try it: Admin > Email > "Send test email" (as a platform admin).
 {{- if not .Values.worker.enabled }}
    WARNING: worker.enabled is false, so nothing sends the queued email.
 {{- end }}
@@ -112,8 +112,8 @@ ingress controller can reach the API. */ -}}
 {{- if .Values.features.publicSubmission }}
 
 Public form
-   Project admins can let anyone send ideas without an account (Settings > Public
-   form): {{ first .Values.baseUrls }}/<project>/submit. Limits: a proof of work, {{ int .Values.publicSubmission.perIpPerHour }} submissions
+   Project admins can let anyone send ideas without an account (Project settings >
+   Public form): {{ first .Values.baseUrls }}/<project>/submit. Limits: a proof of work, {{ int .Values.publicSubmission.perIpPerHour }} submissions
    per client address and hour (per API pod), {{ int .Values.publicSubmission.perProjectPerHour }} per project and hour.
    Before publishing a form, check that the app sees real client addresses
    (trustedProxies, trustedProxyHops). Edge rate limiting: ingress.publicApi.annotations

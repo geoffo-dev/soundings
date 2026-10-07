@@ -18,6 +18,8 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 
 | File | Why |
 |---|---|
+| `README.md` | The front door: what Soundings is, the tour (`docs/screenshots/tour/`), quick start, architecture |
+| `docs/RELEASE-NOTES.md` | 0.1.0: what is in it, known issues, upgrade notes, decisions to confirm |
 | `SPEC.md` | The product brief and source of truth (read-only) |
 | `docs/ownership.md` | Which paths you may edit; how to ask other owners for changes |
 | `docs/role-matrix.md` | Every permission rule by stable name, and the exact blind-evaluation rules |
@@ -255,7 +257,9 @@ with its **own idea owner**, because each person may ask for 20 runs an hour;
 The fake's behaviour follows the agent name's suffix (`-slow -fails -silent -asks -rejects
 -blind-probe -strays -late -no-cancel -unavailable -drops -lingers`; `dev/fake-agent/README.md`).
 `screenshots:phase6` (E2E_AI=1) writes `docs/screenshots/phase-6/` (11 screens × 1440
-light/dark and 390 light). Contract rules not built yet are pinned as
+light/dark and 390 light). `screenshots:tour` (E2E_SSO=1 E2E_AI=1) writes the README's
+product tour, `docs/screenshots/tour/` (`NN-<screen>-<variant>.png`: 12 screens at 1440
+light, most also dark or 390, the PDF's first page and an email). Contract rules not built yet are pinned as
 expected failures (`test.fail(true, …)` in Playwright, `@pytest.mark.xfail(strict=True)`
 in pytest), which fail loudly once fixed: then delete the mark.
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
@@ -403,7 +407,25 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   rows that scroll sideways (`TabsList`, the settings row) fade the edge with more
   (`useScrollFade` in `components/ui/scroll-fade.ts` + `scroll-fade-x`); `CodeSnippet`
   wraps long lines; the secret dialog never puts the key in a toast, URL, storage or
-  draft and `reset()`s the create mutation after closing.
+  draft and `reset()`s the create mutation after closing. Phase 7: **Settings** is
+  personal (Account, Notifications, API keys); platform admins get **Admin** in the
+  sidebar (its sections listed under it; `/admin` lists them on phones) while the admin
+  pages keep their `/settings/…` addresses (`features/admin/settings-frame.tsx`
+  `ADMIN_PAGES`); "Everyone's keys" is `/settings/api-keys?everyone=1`. Public pages'
+  messages (form off, broken links, confirmation, unsubscribe) use `PublicMessage`
+  (`features/public/public-layout.tsx`). Tokens: `highlight-ring` marks the highlighted
+  or selected item of every list (`data-[highlighted]:highlight-ring`), `accent-control`
+  colours radios, switches, scores and selected tabs (3:1, `tokens.test.ts`).
+  Single-key shortcuts can be switched off (`lib/shortcut-preference.ts`; `useShortcut`
+  respects it). Tooltips on list rows mount on hover or focus (`HoverTooltip` in
+  `components/ui/tooltip.tsx`). After a navigation that left focus nowhere,
+  `components/layout/route-focus.ts` focuses the new page's h1; `NavigationProgress` shows
+  a bar after 300 ms of a pending navigation. Board cards are named "Title (KEY)", so
+  e2e and Playwright locators match `/\(KEY\)$/`, never `/^KEY/` (which now matches
+  nothing, and a `toHaveCount(0)` on it passes without testing anything). Both test
+  helpers have `bestPracticeViolations` (axe best-practice rules) next to the WCAG check
+  (`frontend/tests/support.ts`, `e2e/tests/support/fixtures.ts`). My work shows the first
+  50 evaluations due and 10 ideas per owned group, each with "Show more".
 - **Proposals** (contract-phase4 §3.1–3.4): one Markdown text per fixed template section,
   saved per section with `base_version` (409 `proposal_conflict` carries `current`); a
   save locks the project `FOR KEY SHARE` then the idea `FOR SHARE`. Section Markdown is
@@ -568,6 +590,13 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   Keycloak 26 ignores `prompt=select_account` (hence `max_age=0` with every prompt) and
   compares `max_age` in whole seconds: a test that switches accounts right after a
   sign-in must wait a second (e2e LE-09).
+- **k3s upgrades between values files:** `make k3s-install` on top of a release installed
+  another way (the operator guide's one-command quick start) fails with "updates to
+  statefulset spec … are forbidden", because `dev/k3s-values.yaml` sets a 1 GiB Postgres
+  volume and the default is 8 GiB: run `scripts/k3s-install.sh --set image.repository=…
+  --set image.tag=… --set postgresql.persistence.size=8Gi` (the make target sets the
+  image from `IMAGE` for you; the script alone keeps `soundings:dev` with `pullPolicy:
+  Never`, so pods stick in `ErrImageNeverPull` until `--wait` times out).
 - **k3s NetworkPolicy** is enforced (kube-router) and on by default in the chart; a new
   pod's address is admitted a moment after it starts, so in-cluster clients started
   fresh (the `helm test` pod) retry. Through Traefik an oversized *chunked* POST may get
@@ -810,3 +839,27 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   [docs/phase-summaries/phase-6.md](docs/phase-summaries/phase-6.md) (what is verified
   against real kagent vs the fake, known issues and deferred items there). Stop for the
   human's review.
+- **Phase 7** (polish and hardening, release **0.1.0**): no new feature; four reviews
+  against the running app and their fixes. Security (OWASP ASVS L2): the image defaults
+  to production and refuses the development key, ALTCHA bounds, 120 session writes a
+  minute (429 `rate_limited`), `soundings anonymise-user`, a non-superuser bundled Postgres
+  role, the API's map for signed-in callers in production, the metrics port policy,
+  bounded SSO callback, policy traits for account kinds, `k3s-install PROD=1`, a CI audit
+  job. Accessibility (WCAG 2.2 AA): single-key shortcut switch, `highlight-ring` and
+  `accent-control`, focus never hidden and moved to the h1, 10 s Undo, rubric Move
+  up/down, tagged PDFs, email landmarks. UX: Settings personal and **Admin** for platform
+  admins, four project settings tabs, one API keys page, the status-driven blue button,
+  first-run welcome, phone-first project header. Performance (the kit in `e2e/perf/`,
+  10k ideas): `GET /me/work/counts`, 50 evaluations due a page, `pending_moderation_count`
+  (contract-phase7), Brotli/gzip, first-load JS 1,026 → 636 kB, memoised list rows, the
+  idea route preloaded when idle, 10 ideas per owned group in My work. Docs: the README
+  with the tour (`screenshots:tour`), `docs/RELEASE-NOTES.md`, guides checked against the
+  app. Closed on 2026-10-07 with every check green: backend (6,336 tests, `test-slow`),
+  frontend check + test:pw, e2e in all three modes (default, SSO, `E2E_AI=1`), fake agent,
+  `make image` (524 MB), and on k3s the operator guide's one-command `helm install`
+  (production, break-glass, `PROD=1` smoke), then an upgrade as CI (`SSO=1 SMTP=1 MCP=1
+  AI=1`) and to two API replicas with every smoke:
+  [docs/phase-summaries/phase-7.md](docs/phase-summaries/phase-7.md); performance numbers
+  and the remaining misses in `docs/test-plans/performance.md` §8–9 and the release notes'
+  known issues; decisions `docs/decisions.md` (Phase 7 sections). Stop for the human's
+  review.

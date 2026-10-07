@@ -215,8 +215,9 @@ const SHOTS: Shot[] = [
     name: 'admin-api-keys',
     as: 'alice',
     open: async (page) => {
-      await page.goto('/settings/all-api-keys')
-      await expect(page.getByRole('heading', { level: 2, name: 'All API keys' })).toBeVisible()
+      await page.goto('/settings/api-keys?everyone=1')
+      await expect(page.getByRole('heading', { level: 2, name: 'API keys' })).toBeVisible()
+      await expect(page.getByRole('radio', { name: 'Everyone’s keys' })).toBeChecked()
       await expect(page.getByRole('row').filter({ hasText: 'Board report' })).toBeVisible()
     },
   },

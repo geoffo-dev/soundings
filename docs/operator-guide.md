@@ -123,13 +123,25 @@ machine or a throwaway cluster. Production mode refuses it.
 
 ### Quick start on k3s/k3d
 
+The chart runs the image `soundings:<appVersion>` (`image.registry`, `image.repository`,
+`image.tag`). Build it and push it where your cluster pulls from:
+`make image IMAGE=registry.example.com/soundings:0.1.0`, `docker push …`, then add
+`--set image.registry=registry.example.com` below. On k3s or k3d you can import it into
+the node instead (`make image IMAGE=soundings:0.1.0`, then `make k3s-load
+IMAGE=soundings:0.1.0` or `k3d image import soundings:0.1.0`). Then one command:
+
 ```sh
 helm install soundings ./deploy/helm -n soundings --create-namespace \
   --set 'baseUrls[0]=https://ideas.example.com' --set ingress.enabled=true
 helm test soundings -n soundings      # /readyz and the SPA through the Service
 ```
 
-`NOTES.txt` prints the URL and the first sign-in steps. For a local cluster in Docker,
+That is a production install: bundled PostgreSQL, a generated signing key, the
+NetworkPolicies, and the **break-glass admin** as the only way in until you connect
+single sign-on. `NOTES.txt` prints the URL, the command that reads the break-glass
+password (user `admin`) and the steps to connect SSO. Production cookies are `Secure`,
+so serve the base URL over HTTPS (`ingress.tls`); browsers make an exception only for
+`http://localhost`. For a local cluster in Docker,
 `make k3s-up`, `make k3s-install IMAGE=soundings:<tag>`, `make k3s-smoke` and
 `make k3s-down` do the whole loop (`dev/k3s-values.yaml`: dev login and demo data, in a
 namespace that enforces the Restricted policy).
@@ -226,7 +238,10 @@ install before anything is applied.
 pods keep serving until new ones are ready. Migrations are idempotent and serialised by
 an advisory lock. Generated secrets (signing key, break-glass password, bundled
 database password) survive upgrades through Helm's `lookup`; with Argo CD, Flux or
-`--dry-run`, which can't use `lookup`, supply them as `existingSecret`s.
+`--dry-run`, which can't use `lookup`, supply them as `existingSecret`s. Upgrade with the
+values you installed with: the bundled Postgres's volume settings
+(`postgresql.persistence.*`) can't change after the first install, and Kubernetes
+refuses an upgrade that changes them.
 
 ### Sessions
 
@@ -251,7 +266,7 @@ API. Expired sessions are deleted every hour.
 ## Sign-in and access [Phase 2]
 
 One OpenID Connect provider per instance, configured only by Helm values (`oidc.*`, or
-`SOUNDINGS_OIDC_*` for the bare image). **Settings → Sign-in (SSO)** shows the effective
+`SOUNDINGS_OIDC_*` for the bare image). **Admin → Sign-in (SSO)** shows the effective
 configuration read-only, with secrets masked, the URIs to register for every base URL
 and whether the provider's discovery document can be fetched. The values reference and
 the IdP client checklist are in the chart README's
@@ -280,7 +295,7 @@ else.
 **Sessions and IdP changes.** Sessions last at most `sessions.maxAge` (24 hours by
 default) and end after `sessions.idleTimeout` (12 hours) without a request. Group sync
 and login matching run only at sign-in, so a removal or group change in the IdP applies
-within a day on its own; deactivate the person (Settings → Users), or use "Sign out
+within a day on its own; deactivate the person (Admin → Users), or use "Sign out
 everywhere", to apply it at once.
 
 ### Configuring OIDC: Keycloak, Entra ID, Google
@@ -364,7 +379,7 @@ internal CA, mount a bundle holding that CA (plus any public roots you still nee
 `extraVolumes` / `extraVolumeMounts` and set `SSL_CERT_FILE` in `extraEnv`. Outbound
 proxies are read from `HTTPS_PROXY` / `NO_PROXY`.
 
-**Checking it.** After `helm upgrade`, Settings → Sign-in (SSO) should say the provider
+**Checking it.** After `helm upgrade`, Admin → Sign-in (SSO) should say the provider
 answers. If not, it says which of the three failures it is (unreachable, not a
 discovery document, issuer mismatch). Production refuses an http issuer and, once SSO
 is configured, http base URLs.
@@ -383,7 +398,7 @@ At every sign-in the app looks for the user linked to the token's issuer and `su
 the first sign-in it tries, in order, and stops at the first user found:
 
 1. the **external ID**: `oidc.externalIdClaim` against users' external IDs of kind
-   `oidc.externalIdKind` (Settings → Users → Add user, or a user's External IDs);
+   `oidc.externalIdKind` (Admin → Users → Add user, or a user's External IDs);
 2. the **verified email** (`oidc.matchVerifiedEmail`, only when `email_verified` is
    true; a user who has an external ID of the configured kind links only by it);
 3. **auto-create** (`oidc.autoCreateUsers`, verified email only, an account with no
@@ -393,7 +408,7 @@ the first sign-in it tries, in order, and stops at the first user found:
 A match that is deactivated, a service account, the break-glass account or already
 linked to another identity refuses rather than falling through. Every refusal is in the
 audit log with its reason and the issuer/subject, never the email or claims. Admins
-unlink an identity (Settings → Users) to let an account match again.
+unlink an identity (Admin → Users) to let an account match again.
 
 **The external-ID claim must come from an attribute only IdP admins can set**: whoever
 can choose its value signs in as the pre-created user who has it, platform admins
@@ -401,7 +416,7 @@ included. Names and emails are not synced from claims after the first sign-in.
 
 ### Groups and IdP group mappings (managed vs additive)
 
-Internal groups (Settings → Groups) are what projects grant roles to. A group can be
+Internal groups (Admin → Groups) are what projects grant roles to. A group can be
 mapped to one or more IdP group values, matched after trimming, stripping `/` at both
 ends and lower-casing (inner path segments count: `admins` does not match
 `/innovation/admins`). At each sign-in the user's **synced** memberships are updated
@@ -439,10 +454,10 @@ SSO is configured, and every sign-in and every action is audited as
 Bootstrap order:
 
 1. Install without `oidc.issuer` and sign in as the break-glass admin.
-2. Settings → Users: pre-create the real platform admins (external ID from an
+2. Admin → Users: pre-create the real platform admins (external ID from an
    admin-only attribute, and/or email). Optionally create groups, their mappings and
    project grants.
-3. Register the redirect URIs from Settings → Sign-in (SSO) on the IdP client.
+3. Register the redirect URIs from Admin → Sign-in (SSO) on the IdP client.
 4. `helm upgrade` with `oidc.issuer`, `oidc.clientId` and `oidc.existingSecret`.
    Break-glass switches off; the admins from step 2 link at their first SSO sign-in.
 
@@ -462,7 +477,7 @@ is needed (no queue service: the outbox is a PostgreSQL table, sent by the worke
 ### SMTP settings and `existingSecret`
 
 Configured only through Helm values (environment variables `SOUNDINGS_SMTP_*`); there
-is no settings screen. Settings → Email shows the values in effect, read-only.
+is no settings screen. Admin → Email shows the values in effect, read-only.
 
 ```yaml
 smtp:
@@ -494,7 +509,7 @@ that accepts your cluster without authentication, set neither. The chart refuses
 `existingSecret` and `smtp.password` with `security: none` (except with `devLogin`).
 **Only the worker pods get the credentials** (they send the mail); the api pods get
 every other SMTP setting, so they can queue mail and show the configuration, plus
-`SOUNDINGS_SMTP_USERNAME_SET` / `_PASSWORD_SET`, so Settings → Email can say a user
+`SOUNDINGS_SMTP_USERNAME_SET` / `_PASSWORD_SET`, so Admin → Email can say a user
 name and password are set without the api ever holding them. Changing a value rolls
 both Deployments; a new password in the Secret or a new CA needs `kubectl -n soundings
 rollout restart deploy`. Links in emails use the first of `baseUrls`, so list the
@@ -551,7 +566,7 @@ port; narrow it with `networkPolicy.egress.smtp.to` (the relay's CIDR). See the
 
 ### Sending a test email; failed sends and retries
 
-**Settings → Email → Send test email** (platform admins) sends a real email to yourself
+**Admin → Email → Send test email** (platform admins) sends a real email to yourself
 or one address through the outbox and the worker, and shows the result within about 30
 seconds: "Sent to …" when the server accepted it, or the reason it didn't, with a hint
 (host and port, TLS, credentials). A test email has one attempt, so a failure shows at
@@ -569,7 +584,7 @@ stored. If the server doesn't accept it, the email goes back in the queue:
 - **Permanent** (a 5xx reply other than authentication, for example an unknown
   recipient or a refused sender): **Failed** at once.
 
-The outbox on Settings → Email lists every email with its recipient's name (never the
+The outbox on Admin → Email lists every email with its recipient's name (never the
 address), type, status, attempts and the last error, in our own words ("connection
 refused", "SMTP 535: authentication failed", "TLS certificate not trusted"; the server's
 reply text is never stored, since it can contain addresses). **Retry** sends a failed
@@ -628,7 +643,7 @@ Everything time-based follows **one time zone for the whole installation**, `tim
 Leave `smtp.host` empty (the default). The app works with in-app notifications only:
 the bell and inbox are unchanged, preferences can still be set (the page says email
 isn't set up), nothing is written to the outbox, and platform admins see a dismissible
-banner "Email isn't set up" linking to Settings → Email, which lists the setup steps.
+banner "Email isn't set up" linking to Admin → Email, which lists the setup steps.
 Test email and retry answer 409. Configure SMTP later and email starts with the next
 notification; nothing from before is sent late.
 
@@ -759,7 +774,7 @@ of closed ideas idle for 180 days, and unused uploaded images after 24 hours.
 
 ## Branding [Phase 4]
 
-Platform admins set the instance's branding in Settings → Branding (app name, logo,
+Platform admins set the instance's branding in Admin → Branding (app name, logo,
 favicon, primary and accent colours, one of the four bundled fonts, an email footer);
 project admins can override any of them for their project. The
 signed-in app always uses the global branding; a project's override applies to its
@@ -817,7 +832,7 @@ People create personal API keys in Settings → API keys and use them with the R
   optional project restriction. Deleting and moderating ideas, project and admin settings,
   the inbox and key management are session only. Platform admins' keys are narrowed the
   same way and can't reach any admin page.
-- **When a key stops:** revoked (by its owner, or any key in Settings → All API keys),
+- **When a key stops:** revoked (by its owner, or any key in Settings → API keys → Everyone’s keys),
   expired, its owner deactivated (that revokes every key of theirs; reactivating doesn't
   bring them back), its owner hasn't signed in for 30 days (**dormant**: it works again
   after their next sign-in, which also refreshes their groups; service accounts are exempt),
@@ -830,13 +845,13 @@ People create personal API keys in Settings → API keys and use them with the R
   create keys. "Sign out everywhere" ends sessions, not keys.
 - **Lost project access shows:** a restricted key whose owner can no longer open one of
   its projects stops reaching it at once; Settings → API keys says "+1 project you can no
-  longer open", and Settings → All API keys strikes that project through.
+  longer open", and Settings → API keys → Everyone’s keys strikes that project through.
 - **AI agents' keys** (service accounts, Phase 6): an agent without a role in a project is
   treated as a private non-member there (404), internal projects included; it never owns
   an idea or holds the admin role; its evaluations are left out of the aggregate; and its
   people search (`GET /api/v1/users`) finds only people who share a project with it,
   inside its key's projects.
-- **A leaked key:** paste it into Settings → All API keys' search (only its first 16
+- **A leaked key:** paste it into Settings → API keys → Everyone’s keys' search (only its first 16
   characters are sent and matched exactly), revoke it, and look for its id in the audit
   log (`api_key_id`).
 
@@ -968,7 +983,7 @@ helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
 
 | Value (env) | Default | Meaning |
 |---|---|---|
-| `features.ai` (`SOUNDINGS_AI_ENABLED`) | `false` | The switch. Off: no run starts (409 `ai_unavailable`), queued runs fail, the idea page hides the AI actions; Admin settings → AI agents still works |
+| `features.ai` (`SOUNDINGS_AI_ENABLED`) | `false` | The switch. Off: no run starts (409 `ai_unavailable`), queued runs fail, the idea page hides the AI actions; Admin → AI agents still works |
 | `kagent.controllerUrl` (`SOUNDINGS_KAGENT_URL`) | `http://kagent-controller.<kagent.namespace>:8083` | kagent's controller, an http(s) origin without a path |
 | `kagent.existingTokenSecret` / `tokenSecretKey` (`SOUNDINGS_KAGENT_TOKEN`) | empty | Bearer token for kagent's `trusted-proxy` auth mode (api and worker pods) |
 | `kagent.agentNamespaces` (`SOUNDINGS_AI_AGENT_NAMESPACES`) | the release namespace (the app's own default without the chart: `soundings`) | Where agents may be registered, at least one (an empty list is refused at start-up, never "any"); keeps runs away from kagent's built-in agents in kagent's own namespace |
@@ -998,7 +1013,7 @@ kubectl -n soundings get agents,rmcps
 ### Registering agents, service accounts and their Secret
 
 1. **Create the kagent Agent** (below) in an allowed namespace, with a `ModelConfig`.
-2. **Register it** in Soundings: Admin settings → AI agents → Register agent (platform
+2. **Register it** in Soundings: Admin → AI agents → Register agent (platform
    admins, signed in; not the break-glass account): display name, the Agent's namespace
    and name, protocol, purposes (evaluate, research, draft sections) and projects. This
    creates the agent's **service account** (`agent-<id>@soundings.invalid`, never signs
@@ -1173,7 +1188,7 @@ of the ingress also appends). Entries further left are whatever the client sent 
 ignored. Narrow `trustedProxies` to your ingress pods' range where you can.
 ### Audit log
 
-Settings → Audit log (platform admins) records sign-ins, admin and access changes,
+Admin → Audit log (platform admins) records sign-ins, admin and access changes,
 assignments, evaluations, status changes, deletions, public-submission decisions,
 branding, API keys and every MCP tool call, with ids and outcome codes only. Entries are
 kept indefinitely except `mcp.call`, which the worker deletes after 90 days
@@ -1189,7 +1204,7 @@ kept indefinitely except `mcp.call`, which the worker deletes after 90 days
 | Everyone shares one rate limit, or a limit never applies | `trustedProxies` / `trustedProxyHops` ([Client addresses behind the ingress](#client-addresses-behind-the-ingress-phase-7)). |
 | 429 `rate_limited` for a person | More than 120 changes a minute ([Sessions](#sessions)). |
 | Sign-in loops or `login_expired` | The issuer URL must be the same for browsers and pods; cookies need `https` in production. |
-| No email | Admin settings → Email (settings in effect, the outbox, test email); a running worker. |
+| No email | Admin → Email (settings in effect, the outbox, test email); a running worker. |
 | AI runs fail | [Troubleshooting runs](#troubleshooting-runs). |
 | Anything else | The response's `request_id` is in the API's log line for that request. |
 
@@ -1231,7 +1246,7 @@ tokens or text.
 | Where | What | Kept |
 |---|---|---|
 | `users` | email address, display name, platform-admin and active flags, when last seen | until anonymised (deactivating keeps it, so their work still names them) |
-| `user_identities` | the IdP's issuer and subject (`sub`), last SSO sign-in | until unlinked (Admin settings → Users) or anonymised |
+| `user_identities` | the IdP's issuer and subject (`sub`), last SSO sign-in | until unlinked (Admin → Users) or anonymised |
 | `user_external_ids` | ids from an IdP claim (an employee number) | until changed or anonymised |
 | `user_sessions` | SHA-256 of the session token, the CSRF token, the sign-in method, the ID token sealed with the signing key (for the IdP's sign-out), a browser and OS summary ("Firefox on Linux") | until sign-out; once expired (12 h idle, 24 h at most) deleted hourly |
 | `group_memberships`, `project_members` | groups (synced from the IdP or added by hand) and project roles | while they apply |
@@ -1241,7 +1256,7 @@ tokens or text.
 | ideas, comments, evaluations, votes, watches, proposals, suggestions, `activity_events`, `ai_runs` | what they wrote and did, by user id; @mentions of them carry their name in the comment text | the organisation's record: kept with the idea (deleted with it) |
 | `audit_log` | the actor's and target's ids, the action, ids and field names (never names, emails, tokens or claims) | for good, except `mcp.call` entries (90 days) |
 
-**When someone leaves:** deactivate them in Admin settings → Users (signs them out,
+**When someone leaves:** deactivate them in Admin → Users (signs them out,
 revokes their keys, stops their notifications; their work keeps their name). To erase
 their personal data (an erasure request, or your retention policy), run, once
 deactivated:
@@ -1261,6 +1276,6 @@ too: with `oidc.autoCreateUsers` on, their next SSO sign-in would create a new a
 Text they typed into ideas or comments that names them is edited like any other text;
 backups keep the old rows until they expire.
 
-**Right of access:** Admin settings → Users shows the account, its identities, groups,
-projects and keys; Admin settings → Audit log, filtered by the person, shows what they
+**Right of access:** Admin → Users shows the account, its identities, groups,
+projects and keys; Admin → Audit log, filtered by the person, shows what they
 did as an administrator.

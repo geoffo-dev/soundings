@@ -277,7 +277,7 @@ const SHOTS: Shot[] = [
     open: async (page) => {
       await page.goto('/p/customer-innovation/settings?tab=branding')
       await expect(
-        page.getByRole('tabpanel', { name: 'Branding' }).getByTestId('branding-preview').first(),
+        page.getByRole('tabpanel', { name: 'Public form' }).getByTestId('branding-preview').first(),
       ).toBeVisible()
     },
   },
@@ -294,7 +294,12 @@ const SHOTS: Shot[] = [
     as: 'alice',
     open: async (page) => {
       await page.goto('/p/customer-innovation?view=board')
-      await expect(page.getByText(/ideas? from the public form (is|are) waiting/)).toBeVisible()
+      // Phones show the one-line link ("2 ideas waiting for review").
+      await expect(
+        page
+          .getByText(/ideas? (from the public form (is|are) waiting|waiting for review)/)
+          .filter({ visible: true }),
+      ).toBeVisible()
     },
   },
   {

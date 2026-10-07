@@ -29,7 +29,6 @@ export async function readPdf(bytes: Buffer): Promise<PdfInfo> {
     data: new Uint8Array(bytes),
     useSystemFonts: false,
     disableFontFace: true,
-    isEvalSupported: false,
     verbosity: 0,
   })
   const document = await task.promise

@@ -838,7 +838,7 @@ in the image and the chart, and the lead's calls. Contract changes:
 |---|---|---|
 | Exported PDFs are tagged (`pdf_tags`: headings, paragraphs, lists, tables, links), keeping the 20 s and box bounds. | Decided (lead) | Audit minor: the export had no structure tree. About 50% larger. |
 | Every email is one `role="article"` landmark (`aria-roledescription="email"`, named by its subject); the layout tables stay presentational. | Decided (lead) | Audit minor: emails had no landmark. |
-| **Deferred:** pdfjs-dist 6 in e2e (GHSA-hq66-cqwq-w95j). | Deferred | Review L9: 6.x removed `PDFDocumentProxy.destroy()` (`e2e/tests/support/pdf.ts` now destroys the loading task, which works on 5 and 6) and the `isEvalSupported` option, which `readPdf` still passes (a type error on 6). With that one line dropped, 6.4.299 reads, colour-checks and renders the exported proposal exactly as 5.6.205 (checked 2026-10-07 in a scratch copy). Bump with `npm --prefix e2e install pdfjs-dist@6.4.299 --save-exact` in the same change. Test-only, reading the app's own PDFs. |
+| **Deferred:** pdfjs-dist 6 in e2e (GHSA-hq66-cqwq-w95j). | Superseded (final verification: bumped) | Review L9: 6.x removed `PDFDocumentProxy.destroy()` (`e2e/tests/support/pdf.ts` now destroys the loading task, which works on 5 and 6) and the `isEvalSupported` option, which `readPdf` still passes (a type error on 6). With that one line dropped, 6.4.299 reads, colour-checks and renders the exported proposal exactly as 5.6.205 (checked 2026-10-07 in a scratch copy). Bump with `npm --prefix e2e install pdfjs-dist@6.4.299 --save-exact` in the same change. Test-only, reading the app's own PDFs. |
 
 
 ## 2026-10-07 · Phase 7 fixes: frontend
@@ -899,3 +899,37 @@ e2e `tests/a11y-phase7.spec.ts`.
 | List rows are memoised, the virtualizer re-renders without `flushSync`, table rows have a fixed height (cards are measured), and row tooltips mount on hover or focus (`HoverTooltip`). | Decided | Perf B2: 112 long tasks over 80 wheel ticks. |
 | The idea route's loading and not-found states live in `idea-page-states.tsx`, so first visits don't download the idea page, AI and Markdown; the idea route's chunk (with the evaluate sheet) is fetched when the browser is idle. | Decided | Perf B3, B9. |
 | ⌘K's first frame is the dialog and its input; the results mount in the next (deferred) render. | Decided | Perf B9: a 247 ms task on open. Sort and filter got the memoised rows above; anything further waits for the perf rerun's numbers. |
+
+## 2026-10-07 · Phase 7 final verification
+
+The lead's decisions at the close of Phase 7 and what the final verification changed.
+Checks and evidence: [phase-summaries/phase-7.md](phase-summaries/phase-7.md); numbers:
+[performance.md §9](test-plans/performance.md#9-final-verification-2026-10-07).
+
+| Decision | Status | Why |
+|---|---|---|
+| My work shows the first **10 ideas of each owned group**, then "Show N more" 50 at a time: first from the ideas the response already holds (up to 50 a group), then through the group's `next_cursor` (`GET /me/owned-ideas`). No contract change. | Decided (lead) | Perf §8.3: an owner of 186 open ideas still rendered them all (TBT 2.0 s). Measured: data shown 3.2-3.6 s → 2.5-2.8 s, TBT 2.0 → 1.2-1.4 s, DOM 3,560 → about 1,870 nodes. |
+| Opening an idea from the list keeps the idle preload of the idea route (B9), although its first frame is slower than without it (200-216 ms against 152-176 ms at 4x throttling). | Kept (lead: fix only if cheap) | Cause: with the chunk loaded, the router paints the idea page in the click's own frame (unmounting the list too); without it the first frame paints nothing new and the page shows about 250 ms later. The router's store renders synchronously, so no cheap change gives both. Known issue in the release notes. |
+| Sort and filter, opening ⌘K, the evaluate sheet and reads at 20 people at once stay over budget. | Known issues (lead) | No cheap fix left after the Phase 7 fixes; numbers in the release notes and performance.md §9. |
+| pdfjs-dist 6.4.299 in e2e (GHSA-hq66-cqwq-w95j), dropping `isEvalSupported` from `readPdf`. | Decided (lead) | Review L9. The PDF specs (BR-04, AC4-01, the public acceptance) pass on it in every e2e mode. |
+| The README is the front door: what Soundings is, a 12-step tour from real screenshots (`docs/screenshots/tour/`, `npm --prefix e2e run screenshots:tour` with `E2E_SSO=1 E2E_AI=1`), quick start, documentation, architecture. [RELEASE-NOTES.md](RELEASE-NOTES.md) (0.1.0) lists what is in it, known issues, upgrade notes and the decisions to confirm. | Decided (lead) | The tour's email picture names its run-unique test project "Customer Care" (CARE-1); everything else is the screen as captured. |
+| Guides, Helm NOTES and READMEs name the admin pages **Admin → …** (Users, Groups, Sign-in (SSO), Email, Branding, AI agents, Audit log) and the project's **Project settings → Public form**; the test email says "from Admin → Email". | Decided | They still said "Settings → …" from before the Settings/Admin split. |
+| The fake agent's cancel tests wait until the task exists (`tasks/get` / `GetTask`) before cancelling. | Decided | A cancel could race a2a-sdk's task store and get −32001 (a flaky `make check-fake-agent`). Test-only. |
+
+### Phase 7 simplifications (SPEC section 15, item 3)
+
+Phase 7 added no feature; it removed places and choices. In one list (details above in
+"Phase 7 fixes: frontend" and "backend and platform"):
+
+1. **Settings is about you, Admin is for platform admins:** eleven tabs became three
+   personal pages and an Admin section.
+2. **Project settings: four tabs** (statuses inside General, branding inside Public form).
+3. **One API keys page** ("Your keys" / "Everyone's keys") and **presets** in front of
+   the scope checkboxes.
+4. **AI is asked from one place** (the idea's AI menu); finished runs fold under History.
+5. **The review queue in two places** (the sidebar count and the board's notice), not three.
+6. **AI agents' accounts only under AI agents**, not in Users.
+7. **My work previews** (50 evaluations due, 10 ideas per group) instead of everything.
+8. **One switch for single-key shortcuts** instead of removing shortcuts.
+9. **Declined to add:** two workers per pod (scale with replicas), a Help item, a
+   minimum search length; **declined to change:** one save model everywhere.

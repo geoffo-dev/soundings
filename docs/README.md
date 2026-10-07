@@ -12,8 +12,10 @@
 | `erd.md`, `api/` | Data model and API contract (written with the Phase 1 contract) |
 | `test-plans/` | Acceptance test plans (qa) |
 | [phase-summaries/](phase-summaries/phase-1.md) | Per phase: what was built, acceptance evidence, review outcomes, known issues, screenshots |
-| `screenshots/` | Review screenshots per phase (real app, light/dark/390 px) |
-| [user-guide.md](user-guide.md) | End-user guide (filled in per phase; Phases 1–3 done) |
-| [operator-guide.md](operator-guide.md) | Install and operations guide (filled in per phase; Phases 0–3 done) |
+| `screenshots/` | Review screenshots per phase (real app, light/dark/390 px) and `tour/`, the README's product tour |
+| [user-guide.md](user-guide.md) | End-user guide, by task (complete for 0.1.0) |
+| [operator-guide.md](operator-guide.md) | Install and operations guide (complete for 0.1.0) |
+| [mcp.md](mcp.md) | Connecting MCP clients with an API key; the ten tools; how AI agents use them |
+| [RELEASE-NOTES.md](RELEASE-NOTES.md) | 0.1.0: features by area, known issues, upgrade notes, decisions to confirm |
 
-Agents: start with [../CLAUDE.md](../CLAUDE.md), then [ownership.md](ownership.md).
+Start at the root [README](../README.md). Agents: start with [../CLAUDE.md](../CLAUDE.md), then [ownership.md](ownership.md).

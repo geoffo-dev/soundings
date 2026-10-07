@@ -168,7 +168,7 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
   keep a session alive (section 2a's idle timeouts still apply).
 - **Email preferences** are `self.manage_profile` (sessions only); unsubscribe links
   are `self.unsubscribe` (c14), usable without signing in.
-- **Admin settings → Email** is `platform.configure_email`.
+- **Admin → Email** is `platform.configure_email`.
 - Section 3 rule 8 applies to every notification, email and digest.
 
 ## 2c. Branding, public pages and held ideas (not rules)

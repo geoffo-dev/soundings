@@ -4,5 +4,5 @@ Email works
 
 This is a test email from {{ brand.product_name }} at {{ base_url }}.
 
-{% if sent_by %}{{ sent_by }} sent it{% else %}It was sent{% endif %} from Settings -> Email on {{ sent_at }}. If it reached you, people will get their notifications by email.
+{% if sent_by %}{{ sent_by }} sent it{% else %}It was sent{% endif %} from Admin -> Email on {{ sent_at }}. If it reached you, people will get their notifications by email.
 {%- endblock %}

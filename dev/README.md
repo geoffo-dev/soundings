@@ -46,8 +46,8 @@ Open http://localhost:5173, choose **Sign in with SSO**, and sign in at Keycloak
 `alice` / `password`. Back in Soundings you are Alice Anders, platform admin: her
 first SSO sign-in linked the seeded account by her external ID (`employee_no`
 `E1001`), and group sync made her a synced member of "Innovation admins" and "Tools
-team" (the seed's groups are mapped to the realm's groups). Settings → Sign-in (SSO)
-shows the effective configuration; Settings → Audit log shows the sign-in (linked by
+team" (the seed's groups are mapped to the realm's groups). Admin → Sign-in (SSO)
+shows the effective configuration; Admin → Audit log shows the sign-in (linked by
 external ID). The dev login stays available below the SSO
 button. Sign out signs you out of Keycloak too (`/login?signed_out=1`).
 
@@ -107,7 +107,7 @@ have the external IDs `employee_no` E1001–E1003):
 | `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST |
 | `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS |
 
-Groups (Settings → Groups), mapped to the Keycloak realm's groups. Manual members
+Groups (Admin → Groups), mapped to the Keycloak realm's groups. Manual members
 already hold the granted role directly, so the dev login shows the same access as
 before; with SSO, sign-in syncs the Keycloak memberships. dave and erin link by
 verified email.
@@ -226,14 +226,14 @@ shows "Please evaluate ..." to bob@example.com, HTML and plain text, with a butt
 opens the idea with the evaluate sheet (`/ideas/CUST-n?evaluate=1`). Links in emails use
 the first of `SOUNDINGS_BASE_URLS` (`http://localhost:8000`, which serves the SPA once
 `npm --prefix frontend run build` has built `frontend/dist`; put
-`http://localhost:5173` first to open them in the Vite dev server). Settings → Email
+`http://localhost:5173` first to open them in the Vite dev server). Admin → Email
 shows the effective configuration, the outbox and **Send test email**; Settings →
 Notifications has your own preferences (immediate, daily digest or off per type).
 
 - **No worker running?** Email waits in the outbox (`queued`) and goes out when the
   worker starts; after 15 minutes platform admins see "Some emails aren't going out."
 - **SMTP down:** `docker compose -f dev/docker-compose.yml stop mailpit`, trigger an
-  email, and Settings → Email shows it queued with "connection refused"; `... start
+  email, and Admin → Email shows it queued with "connection refused"; `... start
   mailpit` and it arrives at the next retry (30 s, 1, 2, 4 minutes ... after each
   failure). After five connection failures in a row the worker pauses sending (30 s,
   doubling to 5 minutes): due emails wait without using an attempt, and the first one
@@ -262,7 +262,7 @@ The API serves Soundings' MCP server at `/mcp` (streamable HTTP, stateless, JSON
 `make -C backend dev` or `make demo` that is `http://localhost:8000/mcp`. Clients
 authenticate with a personal API key, act as its owner (narrowed by the key's scopes and
 projects) and see exactly what the app shows them: a pending evaluator gets no scores.
-Every tool call is in Settings → Audit log (`mcp.call`).
+Every tool call is in Admin → Audit log (`mcp.call`).
 
 **A key.** Sign in (dev login: carol is a member of Customer Innovation and Internal
 Tools), open Settings → API keys, create one with the "Read with an assistant" preset (`read`,
@@ -361,7 +361,7 @@ make ai-smoke                               # register an agent (as alice), hand
                                             # cancelled slow run, the key refused outside runs
 ```
 
-By hand: Admin settings → AI agents → Register agent (namespace `soundings`, any name,
+By hand: Admin → AI agents → Register agent (namespace `soundings`, any name,
 purposes, Customer Innovation), copy the key it shows once and give it to the fake:
 `printf 'Bearer %s\n' "$KEY" > dev/.fake-agent-keys/soundings.<name>` (the fake re-reads
 it on every request; without a key the agent is "not found"). Test connection shows its

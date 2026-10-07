@@ -99,7 +99,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `postgresql.image.*` | `docker.io/library/postgres:16-alpine` | |
 | `postgresql.auth.database` / `.username` / `.password` | `soundings` / `soundings` / `""` | Empty password: generated and kept. Only applied at first initialisation. |
 | `postgresql.auth.existingSecret` / `.existingSecretKey` | `""` / `password` | |
-| `postgresql.persistence.enabled` / `.storageClass` / `.size` / `.accessModes` | `true` / `""` / `8Gi` / `[ReadWriteOnce]` | The PVC is kept on uninstall. |
+| `postgresql.persistence.enabled` / `.storageClass` / `.size` / `.accessModes` | `true` / `""` / `8Gi` / `[ReadWriteOnce]` | The PVC is kept on uninstall. Fixed after the first install: Kubernetes refuses a `helm upgrade` that changes them ("updates to statefulset spec … are forbidden"); grow the PVC itself where the StorageClass allows it. |
 | `postgresql.resources` / `.podSecurityContext` | 100m, 256Mi-1Gi / uid 70 | |
 | `externalDatabase.host` / `.port` / `.database` / `.user` | `""` / `5432` / `soundings` / `soundings` | Used when `postgresql.enabled=false` (host required). |
 | `externalDatabase.password` / `.existingSecret` / `.existingSecretPasswordKey` | `""` / `""` / `password` | E.g. CloudNativePG's `<cluster>-app` Secret. |
@@ -213,7 +213,7 @@ evaluations in, status changes, comments and @mentions, daily digests) through a
 server. The **worker** sends it: each email is an outbox row written in the same
 transaction as the event, retried with exponential backoff (30 s doubling to an hour,
 12 attempts, about 5 hours) while the server is unreachable, so nothing is lost when SMTP
-is briefly down; emails that still fail show up in Settings > Email with a Retry button.
+is briefly down; emails that still fail show up in Admin > Email with a Retry button.
 Keep `worker.enabled` on. Without `smtp.host` the app works with in-app notifications
 only and platform admins see a banner.
 
@@ -235,7 +235,7 @@ kubectl -n soundings create secret generic soundings-smtp \
 kubectl -n soundings create configmap smtp-ca --from-file=ca.crt=./corporate-ca.pem
 ```
 
-`NOTES.txt` says whether SMTP is configured; Settings > Email shows the effective
+`NOTES.txt` says whether SMTP is configured; Admin > Email shows the effective
 configuration (password masked), the outbox and a **Send test email** button. Links in
 emails use the first of `baseUrls`. With `security: none` the connection is plain (an
 in-cluster relay or Mailpit); production refuses a password over it, and so does the
@@ -250,7 +250,7 @@ that on the local k3s cluster (below).
 ## Single sign-on
 
 One OpenID Connect provider per instance (Keycloak, Entra ID, Google, ...), configured
-here and nowhere else: Settings > Sign-in (SSO) shows the effective settings read-only,
+here and nowhere else: Admin > Sign-in (SSO) shows the effective settings read-only,
 with secrets masked, the URIs to register and whether the provider's discovery
 document can be fetched. The flow is the server-side authorization code flow with PKCE
 (S256), `state` and `nonce`; the browser only ever holds an HttpOnly session cookie.
@@ -277,7 +277,7 @@ groups claim (`oidc.groupsClaim: ""`), no external ID.
 to the token's issuer and `sub`; at the first sign-in it links a user found by external
 ID (`oidc.externalIdClaim`), then by verified email (`oidc.matchVerifiedEmail`), then
 creates one (`oidc.autoCreateUsers`), else refuses ("ask an admin to add you").
-Everyone else is pre-created by an admin (Settings > Users).
+Everyone else is pre-created by an admin (Admin > Users).
 
 - **The external-ID claim must come from an attribute only IdP admins can set.**
   Whoever can choose its value signs in as the pre-created user who has it, platform
@@ -290,13 +290,13 @@ Everyone else is pre-created by an admin (Settings > Users).
 - Profile fields are not synced: after the first sign-in, names and emails are
   Soundings' own.
 
-**Groups.** Settings > Groups maps internal groups to IdP group values; projects grant
+**Groups.** Admin > Groups maps internal groups to IdP group values; projects grant
 roles to groups. A *managed* mapping follows the IdP at every sign-in (adds and
 removes the synced membership); an *additive* one only adds. Memberships an admin
 added by hand are never touched. Sync runs only at sign-in, so changes in the IdP
 apply at the person's next sign-in.
 
-**Offboarding = deactivate** (Settings > Users). Removing someone from the IdP stops new
+**Offboarding = deactivate** (Admin > Users). Removing someone from the IdP stops new
 sign-ins, but a running session lasts until it ends (`sessions.idleTimeout`, at most
 `sessions.maxAge`, 24 hours by default) and their synced memberships stay until they
 sign in again. Deactivating ends their sessions at once; "Sign out everywhere" (same
@@ -320,10 +320,10 @@ minutes), its sessions last at most 8 hours (1 hour idle) and end as soon as SSO
 configured. In production the password needs 16+ characters.
 
 1. Install without `oidc.issuer`. Sign in as the break-glass admin.
-2. Settings > Users: pre-create the real platform admins, with an external ID from an
+2. Admin > Users: pre-create the real platform admins, with an external ID from an
    admin-only attribute where the IdP has one, and/or their email. Optionally create
    groups and their IdP mappings, and grant them project roles.
-3. Register the redirect URIs (Settings > Sign-in (SSO) lists them) on the IdP client.
+3. Register the redirect URIs (Admin > Sign-in (SSO) lists them) on the IdP client.
 4. `helm upgrade` with `oidc.issuer`, `oidc.clientId` and `oidc.existingSecret`.
    Break-glass switches off; the admins from step 2 are linked at their first SSO
    sign-in. SSO users are never platform admins by default.
@@ -396,7 +396,7 @@ app ignores them until the issuer is unset.
 ## Public submission
 
 With `features.publicSubmission` on (the default), a project admin can turn on the
-project's public form (Settings > Public form): anyone can then send an idea at
+project's public form (Project settings > Public form): anyone can then send an idea at
 `<baseUrl>/<project>/submit` without an account, and follows it through a private
 tracking link (`/track#<token>`; the token is after `#`, so it never reaches a server,
 proxy or access log). Nothing extra is deployed: the form, `/track` and `/verify` are
@@ -470,7 +470,7 @@ deployed. MCP clients (Claude Code, Claude Desktop, scripts, kagent agents) send
 personal or service-account **API key**: `Authorization: Bearer sdg_...`. People create
 keys in Settings → API keys (scopes `read`, `write`, `evaluate`, `mcp`; optional expiry
 and project restriction; shown once), platform admins see and revoke everyone's in
-Admin settings → API keys. A key acts as its owner, live, narrowed by its scopes and
+Admin → API keys. A key acts as its owner, live, narrowed by its scopes and
 projects, so MCP tools follow the same rules as the app (blind evaluation included),
 and every tool call is audited (`mcp.call`). Connecting a client:
 [`dev/README.md`](../../dev/README.md#mcp-clients-and-api-keys).
@@ -528,7 +528,7 @@ timeout is enough; Traefik streams as is); the page falls back to polling.
    `kagent.namespace`, A2A on 8083, or set `kagent.controllerUrl`).
 2. `--set features.ai=true --set kagent.enabled=true`; with kagent's `trusted-proxy`
    auth, `kagent.existingTokenSecret`.
-3. A platform admin registers each agent in Admin settings → AI agents (namespace in
+3. A platform admin registers each agent in Admin → AI agents (namespace in
    `kagent.agentNamespaces`, by default the release's; name; purposes; projects). The key
    is shown once with a Secret manifest `soundings-agent-<name>`: apply it in the agent's
    namespace.

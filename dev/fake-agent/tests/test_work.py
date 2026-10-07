@@ -123,6 +123,7 @@ def test_cancel_through_1_0(agent: Agent) -> None:
     run_id, body = run_message(protocol="1.0")
     _events, done = agent.background_stream(url, body, protocol="1.0")
     task_id = agent.task_id(run_id)
+    wait_for(lambda: "result" in rpc(agent.http, url, "GetTask", {"id": task_id}, protocol="1.0"))
     answer = rpc(agent.http, url, "CancelTask", {"id": task_id}, protocol="1.0")
     assert answer["result"]["status"]["state"] == "TASK_STATE_CANCELED"
     assert done.wait(5)
@@ -133,6 +134,9 @@ def test_no_cancel_answers_an_internal_error_like_kagent_adk(agent: Agent) -> No
     run_id, body = run_message()
     agent.background_stream(url, body)
     task_id = agent.task_id(run_id)
+    # The run knows its task a moment before the SDK's task store does (a cancel in
+    # between is "task not found", -32001): wait until tasks/get finds it.
+    wait_for(lambda: "result" in rpc(agent.http, url, "tasks/get", {"id": task_id}))
     answer = rpc(agent.http, url, "tasks/cancel", {"id": task_id})
     assert answer["error"]["code"] == -32603
     assert agent.observations(run_id)["cancel_requests"] == 1

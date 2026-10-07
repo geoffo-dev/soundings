@@ -332,8 +332,8 @@ browser is idle (B9), so they show up in a load that waits for the network to se
 **Still over the 100 ms interaction budget:** sort and filter (168-232 ms), ⌘K open
 (296-408 ms), the evaluate sheet (640 ms), and opening an idea from the list, which got
 **slower** to its first frame (128-136 → 248-264 ms) although the page shows sooner:
-something now renders synchronously on that click (the route focus or the progress
-bar are candidates; frontend). List scrolling still drops three frames in four at 4x
+something now renders synchronously on that click (cause found in the final
+verification: the idle preload paints the idea page in the click's frame, §9.2). List scrolling still drops three frames in four at 4x
 throttling. LCP on Alice's cold list was 2.1 s in one run (1.4 s before); repeat it
 before reading much into it.
 
@@ -349,3 +349,70 @@ before reading much into it.
 | Cold LCP | < 1.5 s | 1.3-1.4 s (board 1.8, Alice's list 2.1 in one run) | mostly |
 | Interactions | < 100 ms | 168-640 ms | **fail** |
 | My work for 1,000 evaluations due | (instant) | data at 2.0 s cold, TBT 0.25 s | fixed |
+
+## 9. Final verification (2026-10-07)
+
+**How.** The perf stack on its own ports (:8100, Postgres `p7-final-perf-pg`), the final
+tree's API, 4x CPU throttling, load average under 1. A/B by swapping only the SPA build
+(with its `.br`/`.gz` twins) under the same API and data: the committed tree (`b5923e4`,
+"HEAD"), the final tree, and the final tree with the idle preload of the idea route
+turned off ("no preload", a scratch build). Three cold loads or four clicks per variant;
+raw lines in the final verification's report.
+
+### 9.1 My work: 10 ideas per owned group (lead decision 3)
+
+My work now shows the first 10 ideas of each owned group with "Show N more" (50 at a
+time: first from the up to 50 the response already holds, then through the group's
+cursor, `GET /me/owned-ideas?status=`); no contract change.
+
+| Alice (owns 186 open ideas in five groups), cold | HEAD (all rendered) | Final (10 per group) |
+|---|---|---|
+| data shown | 3.15-3.58 s | **2.48-2.83 s** |
+| TBT after FCP | 1.98-2.10 s | **1.18-1.39 s** |
+| longest task | 1.53-1.72 s | 0.90-1.18 s |
+| DOM nodes | 3,560 | 1,854-1,893 |
+
+Pat (1,000 evaluations due, owns nothing) is unchanged: data at 1.78 s, TBT 0.69 s,
+1,043 nodes. Alice's remaining long task is the app's first render with its data (the
+sidebar, the 50 evaluations due and five groups), not the groups.
+
+### 9.2 Opening an idea from the list (lead decision 4)
+
+| Variant | Response (input to next paint) | Page shown |
+|---|---|---|
+| Final tree (idle preload of the idea route, B9) | 200-216 ms (one run 312) | 684-924 ms |
+| HEAD (the same code path) | 192-248 ms | 633-752 ms |
+| Final tree without the preload | **152-176 ms** | 891-1,068 ms |
+
+**Cause:** with the idea route's chunk already loaded, the router paints the idea page
+(the list's cached summary and skeletons) in the click's own frame, so that frame
+carries unmounting the list and mounting the page. Without the preload the click's frame
+only starts the chunk download and the page appears about 250 ms later. §8.3's 128-136
+ms "before" was that empty first frame. **Kept** as the better trade (the page shows
+sooner); no cheap way to have both was found, since the router's store update renders
+synchronously. Listed as a known issue in the release notes.
+
+### 9.3 The final tree against the budgets (one run each)
+
+| Interaction (4x throttling) | Response | Shown | Budget |
+|---|---|---|---|
+| List: sort by score | 200 ms | 782 ms | 100 ms: **miss** |
+| List: filter "Needs evaluators" | 160 ms | 557 ms | **miss** |
+| ⌘K open | 272 ms | 358 ms | **miss** |
+| ⌘K, worst keystroke | 96 ms | results 172 ms after the last key | pass |
+| Open an idea from the list | 208 ms | 684 ms | **miss** (9.2) |
+| Evaluate sheet | 592 ms | 887 ms | **miss** |
+| List scroll, 80 wheel ticks | p95 frame 133 ms; 70 % of frames dropped; 38 long tasks (2.4 s) | | **miss** (better than §8.3: 55-71 long tasks, 75-77 %) |
+| Board column scroll | p95 frame 83 ms; 50 % dropped | | **miss** |
+
+| Cold load (4x throttling) | LCP | Data shown | TBT |
+|---|---|---|---|
+| List, Pat / Alice | 1.34 / 1.54 s | 1.98 / 1.94 s | 0.36 / 0.33 s |
+| Board, Pat | 1.37 s | 2.20 s | 1.31 s |
+| My work, Pat / Alice | 1.13 / 1.23 s | 1.78 / 2.48 s | 0.69 / 1.23 s |
+| Warm list, Pat | 0.75 s | 1.14 s | 0.23 s |
+
+`make -C backend test-slow` (the in-process budgets, `tests/perf` included) passed on an
+idle machine (6 tests, 160 s). The API was unchanged since §8, so §8.1-8.2 stand: every
+read under 150 ms one at a time; at 20 people at once reads p95 206-255 ms (**miss**,
+scale with `api.replicas`). These misses are the release notes' known issues.

@@ -52,8 +52,9 @@ development installs a **development login** that lists everyone ("who are you?"
   - **Evaluations due**: ideas waiting for your scores, overdue first. The most urgent
     one has the page's only blue button; "Continue" means you have a saved draft. The
     first 50 are listed; **Show more** loads the rest, a hundred at a time.
-  - **Ideas I own**, grouped by status (Closed is folded away). Viewers, who can't own
-    ideas, don't see this section.
+  - **Ideas I own**, grouped by status (Closed is folded away). Each group shows its
+    first 10 ideas; **Show more** adds 50 at a time. Viewers, who can't own ideas, don't
+    see this section.
   - **Recently updated in my projects**: the ten ideas with the latest activity.
   The sidebar repeats the counts and shows a red dot when an evaluation is overdue.
   Project admins see how many public-form ideas wait for review in the sidebar, next to
@@ -102,7 +103,7 @@ for as long as the pointer or keyboard focus is on them.
 
 ### Light and dark mode
 
-The app follows your system setting. To choose, use **Settings → Appearance** (System,
+The app follows your system setting. To choose, use **Settings → Account** (Appearance) (System,
 Light or Dark), the account menu (your name at the bottom of the sidebar) or type
 "theme" in the palette. The choice is remembered on this device.
 
@@ -572,8 +573,8 @@ waiting for moderation, or the proposal hasn't been started.
 
 ## For project admins [Phase 1–4]
 
-Project settings are behind the gear icon on the project page (or Settings → Projects
-you manage), in four tabs: **General** (with the status labels), **Members**, **Rubric**
+Project settings are behind the gear icon on the project page (or Settings → Account →
+Projects you manage), in four tabs: **General** (with the status labels), **Members**, **Rubric**
 and **Public form** (with the project's branding). Members see them read-only. Each form
 has its own Save (`⌘S` saves the tab you are on); if you try to leave with unsaved
 changes, the app asks first. Forms whose fields belong together keep an explicit Save;

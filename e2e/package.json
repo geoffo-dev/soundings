@@ -15,6 +15,7 @@
     "screenshots:phase4": "SCREENSHOTS=phase-4 playwright test --project=screenshots",
     "screenshots:phase5": "SCREENSHOTS=phase-5 playwright test --project=screenshots",
     "screenshots:phase6": "SCREENSHOTS=phase-6 E2E_AI=1 playwright test --project=screenshots",
+    "screenshots:tour": "SCREENSHOTS=tour E2E_SSO=1 E2E_AI=1 playwright test --project=screenshots",
     "stack:start": "scripts/start-stack.sh",
     "stack:stop": "scripts/stop-stack.sh",
     "stack:reseed": "scripts/reseed.sh",
@@ -29,7 +30,7 @@
     "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.56.1",
     "@types/node": "^22.20.4",
-    "pdfjs-dist": "5.6.205",
+    "pdfjs-dist": "6.4.299",
     "prettier": "^3.9.9",
     "typescript": "~5.9.3"
   },

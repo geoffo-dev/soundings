@@ -46,6 +46,9 @@ import { defineConfig, devices } from '@playwright/test'
  * of its own (tests/support/ai.ts), so they run side by side. `npm run
  * screenshots:phase6` (SCREENSHOTS=phase-6, E2E_AI=1) runs screenshots/phase-6.spec.ts
  * (docs/screenshots/phase-6/).
+ *
+ * Phase 7: `npm run screenshots:tour` (SCREENSHOTS=tour, E2E_SSO=1 E2E_AI=1) runs
+ * screenshots/tour.spec.ts: the product tour for the README (docs/screenshots/tour/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -61,7 +64,9 @@ const screenshotSpec =
           ? /screenshots\/phase-5\.spec\.ts$/
           : process.env.SCREENSHOTS === 'phase-6'
             ? /screenshots\/phase-6\.spec\.ts$/
-            : /screenshots\/phase-1\.spec\.ts$/
+            : process.env.SCREENSHOTS === 'tour'
+              ? /screenshots\/tour\.spec\.ts$/
+              : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/
