@@ -66,6 +66,16 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "id",
         ),
         Index("ix_ideas_project_id_aggregate_score", "project_id", "aggregate_score"),
+        # My work's owned groups and /me/owned-ideas: an owner's ideas per status in the
+        # default order (-updated), a range scan that stops after a page (migration 0014;
+        # it replaced the plain owner_id index, which its first column also serves).
+        Index(
+            "ix_ideas_owner_id_status_last_activity_at",
+            "owner_id",
+            "status",
+            "last_activity_at",
+            "id",
+        ),
         # Phase 3 reminder scan: open evaluations with a due date.
         Index(
             "ix_ideas_evaluation_due_at_open",
@@ -128,9 +138,7 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=IdeaStatus.NEW.value,
     )
     resolution: Mapped[Resolution | None] = mapped_column(str_enum(Resolution, "resolution"))
-    owner_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), index=True
-    )
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     submitted_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True
     )

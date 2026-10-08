@@ -13,7 +13,7 @@ import { expect, openIdea, signIn, test, toast } from './support/fixtures'
 import { FakeAgent } from '../scripts/fake-agent'
 
 /**
- * "Research this" (SPEC section 9, contract-phase6 §3.8): the owner asks an agent from the
+ * "Ask AI to research" (SPEC section 9, contract-phase6 §3.8): the owner asks an agent from the
  * idea's AI menu; it reads the idea through `/mcp` and writes a research note
  * (`add_research_note`, only during its research run) that lands in the activity feed
  * with the AI label: untrusted Markdown (no raw HTML, http/https links with their host),
@@ -24,7 +24,10 @@ import { FakeAgent } from '../scripts/fake-agent'
 test.describe('@ai research notes', () => {
   test.beforeEach(skipWithoutAi)
 
-  test('AR6-01 “Research this” adds a cited research note to the feed', async ({ page, api }) => {
+  test('AR6-01 “Ask AI to research” adds a cited research note to the feed', async ({
+    page,
+    api,
+  }) => {
     const alice = await api('alice')
     const team = await aiTeam(alice, 'AI research')
     const key = await team.idea({ title: 'Reusable delivery boxes' })
@@ -42,7 +45,7 @@ test.describe('@ai research notes', () => {
       await expect(page.getByRole('menuitem', { name: /Ask AI to evaluate/ })).toContainText(
         'No AI agent serves this project',
       )
-      await page.getByRole('menuitem', { name: /Research this/ }).click()
+      await page.getByRole('menuitem', { name: /Ask AI to research/ }).click()
       // Its row says so; a toast does only while the row is out of view.
       const card = page.locator('article[id^="ai-run-"]').first()
       await expect(card).toBeVisible()

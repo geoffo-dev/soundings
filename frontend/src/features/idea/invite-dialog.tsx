@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { useAddEvaluators, useSetEvaluationDueDate } from '@/api/ideas'
+import { useAddEvaluators, useChangeIdeaStatus, useSetEvaluationDueDate } from '@/api/ideas'
 import type { UserSearchResult } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,8 @@ const MAX_PER_INVITE = 20
  * "Invite evaluators": pick several members or admins and a due date. The
  * first invite pre-fills the project's default window (7 days); later ones
  * keep the idea's date. People already evaluating are shown but can't be picked.
+ * Phase 8: inviting to an idea in Research (step before evaluation) starts its
+ * evaluation, so the idea moves on to Evaluating with it (UX review p7).
  */
 export function InviteDialog({
   open,
@@ -56,9 +58,12 @@ function names(people: { display_name: string }[]): string {
 }
 
 function InviteForm({ onDone }: { onDone: () => void }) {
-  const { idea, ideaKey, project, me } = useIdeaPage()
+  const { idea, ideaKey, project, me, statusLabel } = useIdeaPage()
   const add = useAddEvaluators(ideaKey)
   const setDueDate = useSetEvaluationDueDate(ideaKey)
+  const changeStatus = useChangeIdeaStatus(ideaKey, { undo: false })
+  const startsEvaluation =
+    idea.status === 'research' && project?.research_step === 'before_evaluation'
   const [picked, setPicked] = useState<UserSearchResult[]>([])
   const firstInvite = idea.evaluators.length === 0
   const current = toDateInput(idea.evaluation_due_at)
@@ -99,8 +104,11 @@ function InviteForm({ onDone }: { onDone: () => void }) {
       .mutateAsync({ users, dueAt })
       .then(() => {
         if (clearAfter) setDueDate.mutate(null)
+        if (startsEvaluation) changeStatus.mutate({ status: 'evaluating' })
         toast.success(`Invited ${names(users)}`, {
-          description: 'They’ll see it in My work.',
+          description: startsEvaluation
+            ? `${idea.key} moves to ${statusLabel('evaluating')}; they’ll see it in My work.`
+            : 'They’ll see it in My work.',
         })
       })
       .catch(() => undefined)
@@ -123,6 +131,12 @@ function InviteForm({ onDone }: { onDone: () => void }) {
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="flex flex-col gap-4">
+        {startsEvaluation && !idea.permissions.invite_blocked_by_research && (
+          <p className="text-sm text-secondary">
+            Research is done: inviting starts evaluation and moves {idea.key} to{' '}
+            {statusLabel('evaluating')}.
+          </p>
+        )}
         {idea.permissions.invite_blocked_by_research && (
           <Callout tone="warning" title="Finish the research checklist first">
             Inviting the first evaluator starts evaluation, and required research items are open.

@@ -499,3 +499,37 @@ async def test_template_rows_are_unique_per_project_and_key(
     )
 
     assert keys == ["summary_2"]  # the unused defaults were deleted
+
+
+async def test_the_pending_list_has_a_hard_ceiling(
+    api: AsUser, team: Team, key: str, db_session: AsyncSession
+) -> None:
+    """Code review N2: removing and restoring sections (the cap counts active ones) can
+    leave more than 50 pending; the list never returns more than
+    MAX_LISTED_SUGGESTIONS (oldest first, then in template order)."""
+    from uuid import uuid4
+
+    from app.models.enums import SuggestionSource
+    from app.models.proposal import ProposalSuggestion
+    from app.proposals.suggestions import MAX_LISTED_SUGGESTIONS
+
+    view = await start(await api(team.owner), key)
+    proposal_id = view["proposal"]["id"]
+    db_session.add_all(
+        ProposalSuggestion(
+            id=uuid4(),
+            proposal_id=proposal_id,
+            section_key=SECTION_KEYS[n % len(SECTION_KEYS)],
+            body_md=f"#{n}",
+            base_version=1,
+            author_id=None,
+            source=SuggestionSource.MCP,
+        )
+        for n in range(MAX_LISTED_SUGGESTIONS + 20)
+    )
+    await db_session.commit()
+
+    listed = ok(await (await api(team.member)).get(f"{proposal_url(key)}/suggestions"))
+
+    assert MAX_LISTED_SUGGESTIONS == 200
+    assert len(listed["items"]) == MAX_LISTED_SUGGESTIONS

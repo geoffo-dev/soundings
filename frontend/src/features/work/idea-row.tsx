@@ -43,8 +43,8 @@ export function IdeaRow({ idea, showStatus = false }: { idea: IdeaSummary; showS
           <span className="shrink-0 text-sm text-muted max-sm:hidden">{idea.status_label}</span>
         )}
         <span className="flex shrink-0 items-center gap-3 sm:gap-4">
-          {/* Phase 8: the research checklist, while the idea is in Research or right before it. */}
-          <ResearchProgressBadge research={idea.research} />
+          {/* Phase 8: the research checklist, in Research (or right before it, once begun). */}
+          <ResearchProgressBadge idea={idea} />
           {idea.evaluator_progress.total > 0 && (
             <ProgressTicks
               done={idea.evaluator_progress.submitted}

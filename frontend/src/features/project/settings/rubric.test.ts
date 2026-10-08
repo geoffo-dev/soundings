@@ -4,7 +4,9 @@ import type { RubricCriterion } from '@/api/types'
 
 import {
   emptyCriterion,
+  insertAt,
   isRubricDirty,
+  keepRowKeys,
   moveItem,
   parseWeight,
   serverRubricErrors,
@@ -153,5 +155,56 @@ describe('rubric validation', () => {
     expect(moveItem(['a', 'b', 'c'], 2, 1)).toEqual(['a', 'c', 'b'])
     expect(moveItem(['a', 'b', 'c'], 0, -1)).toEqual(['a', 'b', 'c'])
     expect(moveItem(['a', 'b', 'c'], 2, 3)).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('keepRowKeys (focus survives a save: Phase 8 UX review M2)', () => {
+  interface Row {
+    key: string
+    id: string | null
+    name: string
+  }
+  const keep = (sent: Row[], saved: Row[]) =>
+    keepRowKeys(
+      sent,
+      saved,
+      (row) => row.id,
+      (row, before) => ({ ...row, key: before.key }),
+    )
+
+  it('gives a new row its saved id but keeps its temporary key', () => {
+    const sent: Row[] = [
+      { key: 'c-1', id: 'c-1', name: 'Value' },
+      { key: 'new-7', id: null, name: 'Reach' },
+    ]
+    const saved: Row[] = [
+      { key: 'c-1', id: 'c-1', name: 'Value' },
+      { key: 'c-9', id: 'c-9', name: 'Reach' },
+    ]
+    expect(keep(sent, saved)).toEqual([
+      { key: 'c-1', id: 'c-1', name: 'Value' },
+      { key: 'new-7', id: 'c-9', name: 'Reach' },
+    ])
+  })
+
+  it('matches existing rows by id (a refetch after the save keeps the keys too)', () => {
+    const form: Row[] = [
+      { key: 'new-7', id: 'c-9', name: 'Reach' },
+      { key: 'c-1', id: 'c-1', name: 'Value' },
+    ]
+    const refetched: Row[] = [
+      { key: 'c-9', id: 'c-9', name: 'Reach' },
+      { key: 'c-1', id: 'c-1', name: 'Value' },
+      { key: 'c-5', id: 'c-5', name: 'Someone else added this' },
+    ]
+    expect(keep(form, refetched).map((row) => row.key)).toEqual(['new-7', 'c-1', 'c-5'])
+  })
+})
+
+describe('insertAt (Restore puts a row back where it was: UX review p1)', () => {
+  it('inserts at the remembered index, or at the end when unknown or past it', () => {
+    expect(insertAt(['a', 'b', 'c'], 'x', 1)).toEqual(['a', 'x', 'b', 'c'])
+    expect(insertAt(['a', 'b'], 'x', undefined)).toEqual(['a', 'b', 'x'])
+    expect(insertAt(['a', 'b'], 'x', 5)).toEqual(['a', 'b', 'x'])
   })
 })

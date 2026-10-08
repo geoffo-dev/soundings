@@ -34,6 +34,10 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
     useProposalEditor()
   const state = useSectionSave(store, section.key)
   const headingId = useId()
+  const hintId = useId()
+  // The admin-written hint says what goes here: a line under the heading for whoever
+  // writes, read with the text field, never a placeholder that goes once you type (UX m3).
+  const hint = permissions.can_edit && section.prompt ? section.prompt : null
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const text = state?.draft ?? section.body_md
   const mode = permissions.can_edit ? modeOf(section.key) : 'preview'
@@ -90,6 +94,12 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
           </div>
         </div>
 
+        {hint && (
+          <p id={hintId} className="-mt-1.5 text-sm text-muted">
+            {hint}
+          </p>
+        )}
+
         <SectionDraftProgress ideaKey={ideaKey} section={section} />
 
         {state?.status === 'conflict' && state.conflict && (
@@ -99,6 +109,7 @@ export function SectionRow({ section, index }: { section: ProposalSection; index
         {permissions.can_edit && mode === 'write' ? (
           <SectionWriter
             section={section}
+            hintId={hint ? hintId : undefined}
             value={text}
             fieldRef={fieldRef}
             onChange={(value) => store.edit(section.key, value)}
@@ -222,11 +233,14 @@ const TOOLS: { kind: FormatKind; label: string; icon: ReactNode; keys?: string }
  */
 function SectionWriter({
   section,
+  hintId,
   value,
   onChange,
   fieldRef,
 }: {
   section: ProposalSection
+  /** The section's hint line, read with the field. */
+  hintId?: string
   value: string
   onChange: (value: string) => void
   fieldRef: RefObject<HTMLTextAreaElement | null>
@@ -270,9 +284,8 @@ function SectionWriter({
         data-section-text=""
         value={value}
         aria-label={section.title}
-        // "Markdown · saves as you type", once in the editor's bar.
-        aria-describedby={MARKDOWN_HINT_ID}
-        placeholder={section.prompt}
+        // The hint, then "Markdown · saves as you type" (once, in the editor's bar).
+        aria-describedby={hintId ? `${hintId} ${MARKDOWN_HINT_ID}` : MARKDOWN_HINT_ID}
         spellCheck
         minRows={4}
         maxRows={400}

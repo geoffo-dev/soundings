@@ -153,6 +153,40 @@ export function moveItem<T>(items: T[], from: number, to: number): T[] {
 }
 
 /**
+ * Server rows (a save's answer, or a refetch the form follows) keyed as the form had
+ * them, so nothing remounts and focus stays in the field it was in (Phase 8 UX review
+ * M2): a row keeps its React key by its server id, and a row added before Save keeps
+ * its temporary key (the server answers in the order the rows were sent). `idOf` is a
+ * row's server id (null for a new row); `keep(row, before)` gives `row` the key of
+ * `before`.
+ */
+export function keepRowKeys<T>(
+  sent: readonly T[],
+  saved: readonly T[],
+  idOf: (row: T) => string | null,
+  keep: (row: T, before: T) => T,
+): T[] {
+  return saved.map((row, index) => {
+    const id = idOf(row)
+    const same = id === null ? undefined : sent.find((before) => idOf(before) === id)
+    if (same) return keep(row, same)
+    const before = sent[index]
+    return before && idOf(before) === null ? keep(row, before) : row
+  })
+}
+
+/**
+ * Where a row goes back to: its old place when we know it (it was removed in this
+ * visit), else the end (Phase 8 UX review p1).
+ */
+export function insertAt<T>(items: readonly T[], item: T, index: number | undefined): T[] {
+  if (index === undefined || index >= items.length) return [...items, item]
+  const next = [...items]
+  next.splice(Math.max(0, index), 0, item)
+  return next
+}
+
+/**
  * Maps a 422 from `replace_rubric` (`loc: ["body", "criteria", 2, "name"]`)
  * onto the rows, so server-side errors show next to the right field.
  */

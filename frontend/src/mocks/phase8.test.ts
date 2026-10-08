@@ -205,6 +205,28 @@ describe('answers', () => {
     )
     expect(refused.status).toBe(403)
   })
+
+  it('keeps a required answer once the idea is past Research (code review M1)', async () => {
+    await signIn(USERS.alice) // a TOOL admin; TOOL-4 is in Proposal, its checklist answered
+    const item = (id: string) => ({ params: { path: { idea: 'TOOL-4', item_id: id } } })
+    const kept = await rejection(
+      api.DELETE(
+        '/api/v1/ideas/{idea}/research/items/{item_id}',
+        item(RESEARCH_ITEMS.toolConsulted),
+      ),
+    )
+    expect(kept).toMatchObject({ status: 409, code: 'research_answer_required' })
+    // Editing it stays allowed; an idea in Research still clears (it re-arms the gate).
+    const edited = await api.PUT('/api/v1/ideas/{idea}/research/items/{item_id}', {
+      ...item(RESEARCH_ITEMS.toolConsulted),
+      body: { answer: 'Security (Raj), 21 Jul: fine with SSO only' },
+    })
+    expect(edited.error).toBeUndefined()
+    const cleared = await api.DELETE('/api/v1/ideas/{idea}/research/items/{item_id}', {
+      params: { path: { idea: 'TOOL-7', item_id: RESEARCH_ITEMS.toolElsewhere } },
+    })
+    expect(cleared.data?.progress.answered).toBe(0)
+  })
 })
 
 describe('research settings', () => {

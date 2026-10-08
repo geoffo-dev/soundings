@@ -14,6 +14,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
 import { STEP_EXPLANATIONS } from '@/features/research/research-copy'
 import { formatShortDate } from '@/lib/dates'
@@ -32,6 +33,7 @@ import {
   moveChecklistItem,
   removedItemNote,
   restoredItem,
+  savedToast,
   serverChecklistErrors,
   toItemDrafts,
   toResearchUpdate,
@@ -40,18 +42,27 @@ import {
   type ItemDraft,
   type ItemField,
 } from './research-settings'
+import { insertAt, keepRowKeys } from './rubric'
 import { FormActions, SettingsSection } from './settings-layout'
-import { moveKeysFor, RowControls, SortableRow, SortableRows } from './sortable-rows'
+import {
+  focusNeighbour,
+  moveKeysFor,
+  RowControls,
+  SortableRow,
+  SortableRows,
+} from './sortable-rows'
 
 const STEPS: ResearchStep[] = ['off', 'before_evaluation', 'before_proposal']
 const DESCRIPTION =
   'Before the team invests in an idea, its owner checks it isn’t already being done somewhere else and that the right departments or teams were consulted.'
+const titleId = (key: string) => `item-${key}-title`
 
 /**
  * Project settings → Research (contract-phase8 §3.13): where the optional Research
  * stage goes (Off / Before evaluation / Before proposal) and its checklist, edited
  * like the rubric. Turning the step on with no checklist fills in the default three.
- * The step can't change while ideas are in Research (the 409 says how many).
+ * The step can't change while ideas are in Research: one quiet line says so under the
+ * choice (a project using the step usually has some), and only a refused save alerts.
  */
 export function ResearchSettingsEditor({ project, active }: { project: Project; active: boolean }) {
   const settings = useResearchSettings(project.slug)
@@ -87,13 +98,23 @@ function ResearchForm({
   const [server, setServer] = useState<ChecklistErrors | null>(null)
   const [blocked, setBlocked] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // Where each item removed during this visit was, so Restore puts it back there.
+  const removedAt = useRef(new Map<string, number>())
   const stepLabelId = useId()
+  const lockId = useId()
 
   // Saved elsewhere (another admin, our own save): follow the server unless we have edits.
   if (settings !== baseline) {
     if (!isResearchDirty(step, drafts, baseline)) {
       setStep(settings.step)
-      setDrafts(toItemDrafts(settings.items))
+      setDrafts(
+        keepRowKeys(
+          drafts,
+          toItemDrafts(settings.items),
+          (draft) => draft.id,
+          (row, before) => ({ ...row, key: before.key }),
+        ),
+      )
       setFilledDefaults(false)
     }
     setBaseline(settings)
@@ -129,7 +150,14 @@ function ResearchForm({
   const move = (from: number, to: number) =>
     setDrafts((current) => moveChecklistItem(current, from, to))
   const focusTitle = (key: string) =>
-    window.requestAnimationFrame(() => document.getElementById(`item-${key}-title`)?.focus())
+    window.requestAnimationFrame(() => document.getElementById(titleId(key))?.focus())
+  const remove = (draft: ItemDraft) => {
+    setNotice(null)
+    const keys = drafts.map((d) => d.key)
+    if (draft.id) removedAt.current.set(draft.id, keys.indexOf(draft.key))
+    setDrafts((current) => current.filter((d) => d.key !== draft.key))
+    focusNeighbour(keys, draft.key, titleId)
+  }
 
   const discard = () => {
     setStep(settings.step)
@@ -152,28 +180,29 @@ function ResearchForm({
     setSubmitted(true)
     if (hasChecklistErrors(local)) {
       const first = drafts.find((d) => local.rows[d.key])
-      if (first) document.getElementById(`item-${first.key}-title`)?.focus()
+      if (first) document.getElementById(titleId(first.key))?.focus()
       return
     }
-    replace.mutate(toResearchUpdate(step, drafts), {
+    const sent = drafts
+    const before = settings.step
+    replace.mutate(toResearchUpdate(step, sent), {
       onSuccess: (next) => {
         setStep(next.step)
-        setDrafts(toItemDrafts(next.items))
+        // New rows keep their React keys: the field you saved from stays focused.
+        setDrafts(
+          keepRowKeys(
+            next.step === 'off' ? [] : sent,
+            toItemDrafts(next.items),
+            (draft) => draft.id,
+            (row, previous) => ({ ...row, key: previous.key }),
+          ),
+        )
         setFilledDefaults(false)
         setSubmitted(false)
         setTouched(new Set())
         changed.current.clear()
-        toast.success(
-          next.step === 'off'
-            ? 'Research step turned off'
-            : `Research step saved: ${RESEARCH_STEP_LABELS[next.step].toLowerCase()}`,
-          {
-            description:
-              next.step === 'off'
-                ? 'The checklist and every answer are kept, hidden.'
-                : 'The board shows a Research column now.',
-          },
-        )
+        const { title, description } = savedToast(before, next.step)
+        toast.success(title, { description })
       },
       onError: (error) => {
         if (hasErrorCode(error, 'ideas_in_research')) {
@@ -217,10 +246,10 @@ function ResearchForm({
           save()
         }}
       >
-        {(locked || blocked !== null) && (
+        {blocked !== null && (
           <Callout
             tone="warning"
-            role={blocked !== null ? 'alert' : 'status'}
+            role="alert"
             title={`Move the ${lockedCount} ${lockedCount === 1 ? 'idea' : 'ideas'} in Research to another status first`}
             action={researchLink}
           >
@@ -229,11 +258,20 @@ function ResearchForm({
           </Callout>
         )}
         <div className="flex max-w-3xl flex-col gap-2">
-          <h3 id={stepLabelId} className="text-sm font-medium text-primary">
-            Where Research goes
-          </h3>
+          <div className="flex flex-col gap-0.5">
+            <h3 id={stepLabelId} className="text-sm font-medium text-primary">
+              Where Research goes
+            </h3>
+            {locked && (
+              <p id={lockId} className="text-sm text-muted">
+                Can’t change while {inResearch} {inResearch === 1 ? 'idea is' : 'ideas are'} in
+                Research · {researchLink}
+              </p>
+            )}
+          </div>
           <RadioGroup
             aria-labelledby={stepLabelId}
+            aria-describedby={locked ? lockId : undefined}
             value={step}
             disabled={locked}
             onValueChange={(value) => chooseStep(value as ResearchStep)}
@@ -307,10 +345,7 @@ function ResearchForm({
                     index={index}
                     count={drafts.length}
                     onMove={(to) => move(index, to)}
-                    onRemove={() => {
-                      setNotice(null)
-                      setDrafts((current) => current.filter((d) => d.key !== draft.key))
-                    }}
+                    onRemove={() => remove(draft)}
                     removeDisabledReason={
                       drafts.length <= MIN_ITEMS
                         ? 'The checklist needs at least one item'
@@ -327,7 +362,7 @@ function ResearchForm({
                           label="Title"
                           hideLabel
                           error={shown(draft.key, 'title')}
-                          id={`item-${draft.key}-title`}
+                          id={titleId(draft.key)}
                           className="min-w-0 flex-1"
                         >
                           <Input
@@ -349,7 +384,10 @@ function ResearchForm({
                         error={shown(draft.key, 'hint')}
                         id={`item-${draft.key}-hint`}
                       >
-                        <Input
+                        <Textarea
+                          singleLine
+                          minRows={1}
+                          maxRows={3}
                           value={draft.hint}
                           maxLength={ITEM_LIMITS.hint + 10}
                           placeholder="One line: what to write"
@@ -426,7 +464,8 @@ function ResearchForm({
                         aria-label={`Restore ${item.title}`}
                         onClick={() => {
                           const restored = restoredItem(item)
-                          setDrafts((current) => [...current, restored])
+                          const at = removedAt.current.get(item.id)
+                          setDrafts((current) => insertAt(current, restored, at))
                           setNotice(null)
                           focusTitle(restored.key)
                         }}
@@ -506,10 +545,7 @@ function LifecyclePreview({ project, step }: { project: Project; step: ResearchS
 export function ResearchSettingsSummary({ project }: { project: Project }) {
   const settings = useResearchSettings(project.slug)
   return (
-    <SettingsSection
-      title="Research step"
-      description="Only project admins can change the research step and its checklist."
-    >
+    <SettingsSection title="Research step" description={DESCRIPTION}>
       {settings.isPending ? (
         <ResearchSkeleton />
       ) : settings.isError ? (

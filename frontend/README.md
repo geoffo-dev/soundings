@@ -132,7 +132,7 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   Proposal tab shows the count to whoever may decide.
 - **AI assistance (Phase 6, contract-phase6 §3.15):** `features/ai/`. The idea page's **AI** menu
   (`idea-ai.tsx`: beside the primary action; in the top row on phones) offers "Ask AI to evaluate"
-  and "Research this" to the owner and admins only (`AiRunList.permissions`; hidden for everyone
+  and "Ask AI to research" to the owner and admins only (`AiRunList.permissions`; hidden for everyone
   else and while `ai_enabled` is false), straight to the one agent or with a choice of several,
   disabled with the `*_blocked_by` reason in plain words (`BLOCKED_COPY` in `ai-copy.ts`), and
   "Evaluating… view progress" while a run is active (⌘K has the same, `useAiCommands`). The
@@ -182,13 +182,20 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   labels; `lib/status.ts` has the same rules: `lifecycle`, `crossesGate`, `publicStatus`…);
   views across projects use the canonical order (Research after New). Project settings has six
   tabs: General · Members · Rubric · **Research** (the step as radio cards with the stages each
-  gives, the checklist editor, Removed items, the lock while ideas are in Research) · **Proposal**
-  (the template editor, Removed sections) · Public form; both new editors reorder through
-  `settings/sortable-rows.tsx` (drag, Alt+↑/↓, Move menu) like the rubric. The idea page's
+  gives, the checklist editor, Removed items, a muted line while ideas are in Research) ·
+  **Proposal template** (the template editor, Removed sections) · Public form (the tabs wrap on
+  phones: `TabsList wrap`); both new editors reorder through `settings/sortable-rows.tsx` (drag,
+  Alt+↑/↓, Move menu) like the rubric. Focus never drops: Remove focuses the neighbour row's
+  title (`focusNeighbour`), a save or refetch keeps rows' React keys (`keepRowKeys` in
+  `rubric.ts`, also used by the rubric), Discard hands focus to Save (`FormActions`); hints are
+  `Textarea singleLine` (wraps, Enter submits, line breaks become spaces). The idea page's
   Overview has the **Research** panel (`features/research/research-panel.tsx`: plain-text answers
-  for the owner and admins with Save / Clear (deferred, Undo), read-only for everyone else,
-  "Similar ideas", "Ask AI to research"); cards, list rows and My work rows show
-  `ResearchProgressBadge` ("2/3") only when `IdeaSummary.research` is set. The **research gate**:
+  for the owner and admins with Save / Clear (deferred, Undo), unsent answers kept in
+  `lib/drafts.ts` (`research:<KEY>:<item>`, "Unsaved draft restored"), hints shown under each
+  title, read-only for everyone else, "Similar ideas" with a summary line, "Ask AI to research"
+  and the latest note's "Read it"); cards, list rows and My work rows show
+  `ResearchProgressBadge` ("2 open" / "Ready") in Research, and in the status before it once
+  something is answered (`showsResearchBadge`). The **research gate**:
   a 409 `research_incomplete` from a status change, the first invite, "Ask AI to evaluate" or
   "Start proposal" opens `ResearchGateDialog` (mounted in `_app.tsx`; the hooks call
   `openResearchGate`, the query client shows no toast for that code) with the open items, **Open
@@ -196,7 +203,7 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   Invite / Ask / Start anyway" with an optional reason (the same request with
   `override_research`); a refused board drag snaps back and focus returns to the card
   (`gateFocus`). The primary action adds Start research / Finish research / Start evaluation. The
-  proposal editor follows `Proposal.sections` (hints as placeholders), keeps text typed into a
+  proposal editor follows `Proposal.sections` (hints as a line under each heading), keeps text typed into a
   section removed meanwhile as a local draft (`save-store` status `removed`, `lib/drafts.ts`
   `writeDraft`/`readDrafts`, `removed-sections.tsx`; after the save's 404 the keeper's `refresh`
   re-reads the proposal, and a section restored meanwhile is edited again with the kept text

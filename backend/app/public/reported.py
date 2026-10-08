@@ -5,7 +5,9 @@ Research is never shown: it is reported as the status before it in the project's
 lifecycle (:func:`app.schemas.research.public_status`: New before evaluation, Shortlisted
 before the proposal), so a move into or out of Research that changes nothing reported
 adds no tracking-history row and sends no status email. Tracking and the submitter's
-status emails both decide with :func:`reported_move`.
+status emails both decide with :func:`reported_move`, with the step the move happened under
+(recorded on the event since the code review's L3), so moving the step later never
+rewrites the history.
 """
 
 from __future__ import annotations
@@ -33,10 +35,22 @@ def _parse(status: object, resolution: object) -> Reported | None:
         return None
 
 
+def _step_of(payload: Mapping[str, Any], current: ResearchStep) -> ResearchStep:
+    """The research step the move happened under: recorded on moves into or out of
+    Research (code review L3); else the project's current one (the step can't change
+    while an idea is in Research, and a move without Research doesn't depend on it)."""
+    try:
+        return ResearchStep(str(payload["research_step"]))
+    except (KeyError, ValueError):
+        return current
+
+
 def reported_move(step: ResearchStep, payload: Mapping[str, Any]) -> Reported | None:
     """For a ``status_changed`` payload: what the submitter is told it moved to, or
     ``None`` when the reported status and resolution don't change (or the payload can't
-    be read)."""
+    be read). ``step`` is the project's current step, used only for moves that didn't
+    record theirs."""
+    step = _step_of(payload, step)
     before = _parse(payload.get("from_status"), payload.get("from_resolution"))
     after = _parse(payload.get("to_status"), payload.get("to_resolution"))
     if after is None:

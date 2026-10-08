@@ -142,10 +142,16 @@ export function SectionJump({
   sections: readonly ProposalSection[]
   className?: string
 }) {
-  const { store, current, focusSection } = useProposalEditor()
+  const { store, current, focusSection, ideaKey } = useProposalEditor()
   const written = useWritten(store, sections)
+  const appendix = useAnsweredResearch(ideaKey)
   return (
-    <Select value={current} onValueChange={(value) => focusSection(value)}>
+    <Select
+      value={current}
+      onValueChange={(value) =>
+        value === RESEARCH_APPENDIX_ID ? focusResearchAppendix() : focusSection(value)
+      }
+    >
       <SelectTrigger aria-label="Jump to section" className={cn('w-36 xs:w-44 sm:w-52', className)}>
         <SelectValue>
           {(() => {
@@ -164,6 +170,12 @@ export function SectionJump({
             </span>
           </SelectItem>
         ))}
+        {appendix && (
+          // Phase 8: the research appendix the exports end with, as in the outline.
+          <SelectItem value={RESEARCH_APPENDIX_ID} className="border-t border-subtle">
+            Research and consultation
+          </SelectItem>
+        )}
       </SelectContent>
     </Select>
   )

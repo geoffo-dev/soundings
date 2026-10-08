@@ -66,12 +66,13 @@ from app.schemas.research import (
 from app.schemas.users import UserRef
 from app.services import audit
 from app.services.refs import project_ref
-from app.services.sql import any_of
+from app.services.sql import any_of, require_unique_lower
 
 __all__ = [
     "SIMILARITY_THRESHOLD",
     "SIMILAR_IDEAS_LIMIT",
     "GateOperation",
+    "ResearchAnswerRequiredProblem",
     "ResearchIncompleteError",
     "ResearchStepOffProblem",
     "answer_item",
@@ -79,6 +80,7 @@ __all__ = [
     "clear_item",
     "idea_research",
     "open_required_items",
+    "past_research",
     "progress_by_idea",
     "replace_settings",
     "require_guarded",
@@ -410,6 +412,13 @@ async def replace_settings(
     """``replace_research_settings`` (contract-phase8 section 3.3). The caller holds the
     project row ``FOR UPDATE`` and has checked ``project.edit_research``."""
     step_on = body.step is not ResearchStep.OFF
+    if step_on:
+        await require_unique_lower(
+            db,
+            [item.title for item in body.items],
+            field="items",
+            message="item titles must be unique",
+        )
     rows = await _items(db, project.id)
     if step_on:
         known = {row.id for row in rows}
@@ -599,6 +608,27 @@ async def answer_item(
     await db.flush()
 
 
+class ResearchAnswerRequiredProblem(ProblemError):
+    """409 ``research_answer_required``: clearing a required item's answer on an idea past
+    Research (code review M1)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            409,
+            "research_answer_required",
+            detail=(
+                "This idea is past Research: a required item's answer can be changed but not "
+                "cleared."
+            ),
+        )
+
+
+def past_research(step: ResearchStep, status: IdeaStatus) -> bool:
+    """The idea is in a status after Research (Closed excluded: no answer changes there,
+    c5): it crossed the gate, or was there before the step existed or moved."""
+    return status in gated_statuses(step)
+
+
 async def clear_item(
     db: AsyncSession,
     principal: Principal,
@@ -607,12 +637,21 @@ async def clear_item(
     resource: Resource,
     item_id: UUID,
 ) -> None:
-    """Delete an item's answer (idempotent). Never moves the idea."""
+    """Delete an item's answer (idempotent). Never moves the idea.
+
+    Code review M1: once the idea is past Research a **required** item's answer is kept
+    (409 ``research_answer_required``; editing it stays allowed, and records who and
+    when), so an answer that let the idea through can't vanish and leave it in Proposal
+    at 0/3 with no trace. Optional items, and ideas in Research or before it (where
+    clearing re-arms the gate), clear as before."""
     item = await _require_answering(db, principal, project, resource, item_id)
     existing = await db.get(AnswerRow, (idea.id, item.id))
-    if existing is not None:
-        await db.delete(existing)
-        await db.flush()
+    if existing is None:
+        return
+    if item.required and past_research(project.research_step, idea.status):
+        raise ResearchAnswerRequiredProblem
+    await db.delete(existing)
+    await db.flush()
 
 
 # --- Similar ideas -------------------------------------------------------------------------

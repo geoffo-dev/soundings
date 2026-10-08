@@ -166,6 +166,12 @@ test('rubric: inline validation, limits, reorder and save', async ({ page }) => 
   await expect(page.getByText('Unsaved changes')).toBeHidden()
   await expect(criteria.getByRole('listitem')).toHaveCount(6)
   await expect(criteria.getByRole('listitem').nth(4)).toHaveAccessibleName('Learning')
+  // The saved rows kept their place (no remount, Phase 8 UX review M2): Reach's guidance
+  // is still open, and folds to its hint count.
+  await expect(item('Reach').getByRole('textbox', { name: /score of 5/ })).toHaveValue(
+    'Everyone uses it',
+  )
+  await item('Reach').getByRole('button', { name: 'Guidance' }).click()
   await expect(item('Reach').getByRole('button', { name: 'Guidance · 1 hint' })).toBeVisible()
 })
 
@@ -228,7 +234,7 @@ test('members of a project see its settings read-only', async ({ page }) => {
     'Members',
     'Rubric',
     'Research',
-    'Proposal',
+    'Proposal template',
   ])
   await page.getByRole('tab', { name: 'Rubric' }).click()
   await expect(page).toHaveURL(/tab=rubric/)

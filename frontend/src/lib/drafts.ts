@@ -55,6 +55,15 @@ export function readDrafts(userId: string, prefix: string): [string, string][] {
   return out
 }
 
+/** One of this user's drafts (localStorage), or null when none is kept. */
+export function readDraft(userId: string, name: string): string | null {
+  try {
+    return localStorage.getItem(draftKey(userId, name))
+  } catch {
+    return null
+  }
+}
+
 /** Keeps (or with `null` removes) one of this user's drafts in localStorage. */
 export function writeDraft(userId: string, name: string, value: string | null): void {
   try {

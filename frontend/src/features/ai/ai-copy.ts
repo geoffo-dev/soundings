@@ -26,7 +26,7 @@ export const KIND_COPY: Record<
     purpose: 'Evaluate ideas',
   },
   research: {
-    action: 'Research this',
+    action: 'Ask AI to research',
     doing: 'Researching',
     noun: 'Research',
     purpose: 'Research ideas',

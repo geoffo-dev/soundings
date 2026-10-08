@@ -45,6 +45,7 @@ from app.schemas.proposals import (
     section_key_for,
 )
 from app.services import audit
+from app.services.sql import require_unique_lower
 
 __all__ = [
     "Section",
@@ -287,6 +288,12 @@ async def replace_template(
     """Make the active template exactly ``body.sections``, in order (contract-phase8
     section 2.3). The caller holds the project row ``FOR UPDATE`` and has checked
     ``project.edit_proposal_template``; last write wins."""
+    await require_unique_lower(
+        db,
+        [item.title for item in body.sections],
+        field="sections",
+        message="section titles must be unique",
+    )
     rows = list(
         await db.scalars(
             select(TemplateRow)

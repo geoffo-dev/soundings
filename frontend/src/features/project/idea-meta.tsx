@@ -5,7 +5,7 @@ import { Avatar, type AvatarSize } from '@/components/ui/avatar'
 import { ProgressTicks } from '@/components/ui/progress-ticks'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { HoverTooltip } from '@/components/ui/tooltip'
-import { badgeLabel } from '@/features/research/research-copy'
+import { badgeLabel, badgeWords, showsResearchBadge } from '@/features/research/research-copy'
 import { cn } from '@/lib/utils'
 
 /** The owner's avatar, or a dashed circle for "no owner". */
@@ -139,18 +139,21 @@ export function EngagementCounts({
 }
 
 /**
- * Phase 8: the research checklist at a glance, "2/3" (contract-phase8 §3.13): only
- * when the API sets `research` (an idea in Research or the status right before it).
- * Quiet while items are open; the open count is in the accessible name.
+ * Phase 8: the research checklist at a glance (contract-phase8 §3.13), "2 open" while
+ * required items are left, "Ready" once none are: on ideas in Research, and in the
+ * status before it once something is answered (`showsResearchBadge`). Quiet while
+ * items are open; the accessible name has the whole sentence ("Research 1 of 3
+ * answered, 2 required items open").
  */
 export function ResearchProgressBadge({
-  research,
+  idea,
   className,
 }: {
-  research: IdeaSummary['research']
+  idea: Pick<IdeaSummary, 'status' | 'research'>
   className?: string
 }) {
-  if (!research || research.total === 0) return null
+  const research = idea.research
+  if (!research || !showsResearchBadge(idea)) return null
   const complete = research.required_open === 0
   const label = badgeLabel(research)
   return (
@@ -165,9 +168,7 @@ export function ResearchProgressBadge({
         )}
       >
         <ListChecks aria-hidden="true" className="size-3.5" />
-        <span aria-hidden="true">
-          {research.answered}/{research.total}
-        </span>
+        <span aria-hidden="true">{badgeWords(research)}</span>
       </span>
     </HoverTooltip>
   )

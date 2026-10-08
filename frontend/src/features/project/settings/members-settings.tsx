@@ -83,7 +83,7 @@ export function MembersSettings({ project }: { project: Project }) {
       description={
         canManage
           ? 'Who can work in this project. Members submit, own and evaluate ideas; viewers can only read. Owners and evaluators must be members or admins.'
-          : 'Who can work in this project and why. Only project admins can change it.'
+          : 'Who can work in this project and why.'
       }
     >
       <div className="flex max-w-3xl flex-col gap-8">

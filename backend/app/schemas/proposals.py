@@ -36,7 +36,7 @@ from pydantic import Field, StringConstraints, field_validator
 
 from app.models.enums import ProposalSectionKey, SuggestionSource, SuggestionStatus
 from app.models.proposal import SECTION_KEY_MAX_LENGTH, SECTION_KEY_PATTERN
-from app.schemas.base import RequestModel, ResponseModel, SingleLine
+from app.schemas.base import RequestModel, ResponseModel, SingleLine, VisibleLine
 from app.schemas.common import Problem
 from app.schemas.ideas import IdeaRef
 from app.schemas.research import ResearchOverride
@@ -513,7 +513,14 @@ class TemplateSectionIn(RequestModel):
             "(section_key_for). Unknown: 422 unknown_section."
         ),
     )
-    title: Annotated[str, Field(min_length=1, max_length=SECTION_TITLE_MAX_LENGTH), SingleLine]
+    title: Annotated[
+        str, Field(min_length=1, max_length=SECTION_TITLE_MAX_LENGTH), VisibleLine, SingleLine
+    ] = Field(
+        description=(
+            "Invisible characters are removed and at least one visible character must be "
+            "left (Phase 8 review L2)."
+        )
+    )
     hint: Annotated[str, Field(max_length=SECTION_HINT_MAX_LENGTH), SingleLine] = ""
 
 

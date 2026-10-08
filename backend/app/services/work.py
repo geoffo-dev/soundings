@@ -11,7 +11,8 @@ fields follow blind evaluation (section 3.7) through the shared summary builder.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
 from uuid import UUID
@@ -30,6 +31,7 @@ from app.models.project import Project, project_effective_roles
 from app.pagination import InvalidCursorProblem, decode_cursor, slice_page
 from app.schemas.ideas import IdeaPage, IdeaSummary
 from app.schemas.projects import DEFAULT_STATUS_LABELS
+from app.schemas.users import UserRef
 from app.schemas.work import (
     EVALUATIONS_DUE_PAGE,
     Work,
@@ -40,7 +42,7 @@ from app.schemas.work import (
     WorkRecentIdea,
 )
 from app.services.board import LIFECYCLE, Sort, count_ideas, fetch_page, pages_by_status
-from app.services.feed import latest_activity
+from app.services.feed import event_user_ids, latest_activity, latest_events
 from app.services.refs import idea_ref
 from app.services.summaries import IdeaRow, idea_facts, load_context, summary_fields, user_refs
 
@@ -135,18 +137,47 @@ _DUE_PROJECT_COLUMNS: Final = load_only(
 """What an evaluation due shows (``idea_ref``, owner, due date): not the description."""
 
 
-async def _evaluations_due(
+@dataclass(frozen=True, slots=True)
+class _DuePage:
+    rows: list[Any]  # (Idea, Project, evaluation status[, counts]) rows
+    next_cursor: str | None
+    counts: tuple[int, int]
+    now: datetime
+
+    @property
+    def owner_ids(self) -> list[UUID | None]:
+        return [row[0].owner_id for row in self.rows]
+
+    def items(self, owners: Mapping[UUID, UserRef]) -> list[WorkEvaluation]:
+        items = []
+        for row in self.rows:
+            idea, project, status = row[0], row[1], row[2]
+            due_at = idea.evaluation_due_at
+            items.append(
+                WorkEvaluation(
+                    idea=idea_ref(idea, project),
+                    owner=owners.get(idea.owner_id) if idea.owner_id else None,
+                    due_at=due_at,
+                    overdue=due_at is not None and due_at < self.now,
+                    state="draft" if status is EvaluationStatus.DRAFT else "invited",
+                )
+            )
+        return items
+
+
+async def _due_page(
     db: AsyncSession,
     principal: Principal,
     *,
     cursor: str | None,
     limit: int,
     with_counts: bool = False,
-) -> tuple[list[WorkEvaluation], str | None, tuple[int, int]]:
+) -> _DuePage:
     """One page of the evaluations you owe: overdue first, then soonest due, undated
     last. ``with_counts`` (the first page only) also counts all of them and the overdue
     ones in the same statement (window aggregates over the rows the sort reads anyway);
-    otherwise the counts are ``(0, 0)``."""
+    otherwise the counts are ``(0, 0)``. The owners' names come separately
+    (:meth:`_DuePage.items`): My work loads them with the rest of its people."""
     if with_counts and cursor:
         raise ValueError("counts come with the first page")
     me = principal.user_id
@@ -175,20 +206,7 @@ async def _evaluations_due(
     page, next_cursor = slice_page(
         rows, limit, lambda row: {"due": row[0].evaluation_due_at, "id": row[0].id}
     )
-    owners = await user_refs(db, [row[0].owner_id for row in page])
-    items = []
-    for row in page:
-        idea, project, status = row[0], row[1], row[2]
-        items.append(
-            WorkEvaluation(
-                idea=idea_ref(idea, project),
-                owner=owners.get(idea.owner_id) if idea.owner_id else None,
-                due_at=idea.evaluation_due_at,
-                overdue=idea.evaluation_due_at is not None and idea.evaluation_due_at < now,
-                state="draft" if status is EvaluationStatus.DRAFT else "invited",
-            )
-        )
-    return items, next_cursor, counts
+    return _DuePage(rows=list(page), next_cursor=next_cursor, counts=counts, now=now)
 
 
 async def _due_counts(db: AsyncSession, principal: Principal) -> tuple[int, int]:
@@ -229,15 +247,17 @@ async def list_evaluations_due(
     db: AsyncSession, principal: Principal, *, cursor: str | None, limit: int
 ) -> WorkEvaluationPage:
     """``GET /me/evaluations-due``: My work's list of evaluations due, page by page."""
-    items, next_cursor, _ = await _evaluations_due(db, principal, cursor=cursor, limit=limit)
-    return WorkEvaluationPage(items=items, next_cursor=next_cursor)
+    due = await _due_page(db, principal, cursor=cursor, limit=limit)
+    owners = await user_refs(db, due.owner_ids)
+    return WorkEvaluationPage(items=due.items(owners), next_cursor=due.next_cursor)
 
 
 async def get_my_work(db: AsyncSession, principal: Principal) -> Work:
+    """Phase 8 review (performance): the people (due evaluations' owners, the cards'
+    owners, the latest activity's actors) are loaded in one statement with the rest of
+    the page's context, and the latest events before it."""
     # The first 50 and how many there are in all (and overdue), in one statement.
-    due, due_next_cursor, due_total = await _evaluations_due(
-        db, principal, cursor=None, limit=EVALUATIONS_DUE_PAGE, with_counts=True
-    )
+    due = await _due_page(db, principal, cursor=None, limit=EVALUATIONS_DUE_PAGE, with_counts=True)
 
     owned_counts = await _owned_counts(db, principal)
     groups: list[tuple[IdeaStatus, list[IdeaRow], str | None]] = []
@@ -263,18 +283,25 @@ async def get_my_work(db: AsyncSession, principal: Principal) -> Work:
     )
 
     all_rows = [row for _, rows, _ in groups for row in rows] + recent_rows
-    context = await load_context(db, principal, all_rows)
+    recent = {row.idea.id: row for row in recent_rows}
+    events = await latest_events(db, list(recent))
+    context = await load_context(
+        db, principal, all_rows, extra_users=[*due.owner_ids, *event_user_ids(events)]
+    )
     summaries = {
         row.idea.id: IdeaSummary(**summary_fields(principal, row, context)) for row in all_rows
     }
-    recent = {row.idea.id: row for row in recent_rows}
     latest = await latest_activity(
-        db, principal, list(recent), lambda idea_id: idea_facts(recent[idea_id], context)
+        db,
+        principal,
+        events,
+        lambda idea_id: idea_facts(recent[idea_id], context),
+        users=context.users,
     )
     return Work(
-        counts=_counts(*due_total, owned_counts),
-        evaluations_due=due,
-        evaluations_due_next_cursor=due_next_cursor,
+        counts=_counts(*due.counts, owned_counts),
+        evaluations_due=due.items(context.users),
+        evaluations_due_next_cursor=due.next_cursor,
         owned=[
             WorkOwnedGroup(
                 status=status,

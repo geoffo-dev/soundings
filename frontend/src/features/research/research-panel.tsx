@@ -27,8 +27,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { KIND_COPY } from '@/features/ai/ai-copy'
+import { researchNoteDomId } from '@/features/ai/dom-ids'
 import { showRun, useAskAi, useIdeaAi } from '@/features/ai/idea-ai'
 import { useIdeaPage } from '@/features/idea/idea-context'
+import { readDraft, writeDraft } from '@/lib/drafts'
+import { focusWhenRendered } from '@/lib/focus'
+import { gatedStatuses } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { progressWords } from './research-copy'
@@ -45,14 +50,18 @@ export const answerFieldId = (itemId: string) => `research-answer-${itemId}`
  * the project's research step is on: the checklist with free-text answers (the owner
  * and admins write, edit and clear them; everyone who can open the idea reads them,
  * pending evaluators too), the progress, "Similar ideas" and "Ask AI to research".
- * It starts open while the idea is in Research or the status before it, folded once
- * the idea is past it.
+ * It starts open while the idea is in Research, and in the status before it for the
+ * people who answer (the owner and admins); folded otherwise (UX review m2).
  */
 export function ResearchPanel() {
   const { ideaKey, idea, project, statusLabel } = useIdeaPage()
   const step = project?.research_step ?? 'off'
   const research = useIdeaResearch(ideaKey, { enabled: step !== 'off' })
-  const [open, setOpen] = useState(() => idea.research !== null || idea.status === 'research')
+  const [open, setOpen] = useState(
+    () =>
+      idea.status === 'research' ||
+      (idea.research !== null && idea.permissions.can_answer_research),
+  )
   const headingRef = useRef<HTMLButtonElement>(null)
   const bodyId = useId()
 
@@ -104,7 +113,13 @@ export function ResearchPanel() {
             Research
           </button>
         </h2>
-        {data && <ProgressLine research={data} gateLabel={gateLabel} />}
+        {data && (
+          <ProgressLine
+            research={data}
+            gateLabel={gateLabel}
+            inResearch={idea.status === 'research'}
+          />
+        )}
       </div>
       <div id={bodyId} hidden={!open} className="flex flex-col gap-5 px-4 pb-4">
         {research.isPending ? (
@@ -126,6 +141,9 @@ export function ResearchPanel() {
                     key={item.item_id}
                     item={item}
                     canAnswer={data.permissions.can_answer}
+                    // Past Research a required answer is kept: edit it, never clear it
+                    // (code review M1: answers that let the idea through stay on record).
+                    keepAnswer={item.required && gatedStatuses(step).includes(idea.status)}
                   />
                 ))}
               </ol>
@@ -133,7 +151,7 @@ export function ResearchPanel() {
               <p className="text-sm text-muted">This project’s checklist has no items yet.</p>
             )}
             <SimilarIdeas ideaKey={ideaKey} />
-            <AskAiToResearch />
+            <AiResearch />
           </>
         )}
       </div>
@@ -141,12 +159,19 @@ export function ResearchPanel() {
   )
 }
 
+/**
+ * "1 of 3 answered · 2 required items left before Evaluating": in the warning colour
+ * only once the idea is in Research (before that the checklist is a heads-up, not a
+ * hold-up: UX review m2).
+ */
 function ProgressLine({
   research,
   gateLabel,
+  inResearch,
 }: {
   research: IdeaResearch
   gateLabel: string | null
+  inResearch: boolean
 }) {
   const { progress, blocking } = research
   if (progress.total === 0) return null
@@ -157,7 +182,7 @@ function ProgressLine({
       {blocking && gateLabel ? (
         <>
           {' · '}
-          <span className="text-warning">
+          <span className={inResearch ? 'text-warning' : undefined}>
             {open} required {open === 1 ? 'item' : 'items'} left before {gateLabel}
           </span>
         </>
@@ -206,13 +231,34 @@ function AnswerMeta({ item }: { item: IdeaResearchItem }) {
   )
 }
 
-function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswer: boolean }) {
-  const { ideaKey } = useIdeaPage()
+/** The name of an unsent answer in lib/drafts (per user, cleared when the session ends). */
+export const answerDraftName = (ideaKey: string, itemId: string) => `research:${ideaKey}:${itemId}`
+
+function ResearchItemRow({
+  item,
+  canAnswer,
+  keepAnswer,
+}: {
+  item: IdeaResearchItem
+  canAnswer: boolean
+  /** Past Research, a required item: its answer can change but not be cleared. */
+  keepAnswer: boolean
+}) {
+  const { ideaKey, me } = useIdeaPage()
   const queryClient = useQueryClient()
   const answer = useAnswerResearchItem(ideaKey)
   const clear = useClearResearchItem(ideaKey)
   const saved = item.answer?.answer ?? ''
-  const [draft, setDraft] = useState(saved)
+  const draftName = answerDraftName(ideaKey, item.item_id)
+  // An answer typed and not saved survives leaving the page (UX review M1): it comes
+  // back from lib/drafts with "Unsaved draft restored" and the usual Discard.
+  const [draft, setDraft] = useState(() => {
+    if (!canAnswer) return saved
+    const kept = readDraft(me.id, draftName)
+    if (!kept?.trim() || kept.trim() === saved.trim()) return saved
+    return kept
+  })
+  const [restored, setRestored] = useState(() => draft !== saved)
   const [baseline, setBaseline] = useState(saved)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -229,11 +275,26 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
   const length = draft.trim().length
   const tooLong = length > ANSWER_MAX_LENGTH
 
+  /** Keeps what you typed (forgotten once empty or back to the saved answer). */
+  const keep = (value: string) => {
+    setDraft(value)
+    const unsaved = value.trim() !== '' && value.trim() !== saved.trim()
+    writeDraft(me.id, draftName, unsaved ? value : null)
+  }
+  const forget = () => {
+    writeDraft(me.id, draftName, null)
+    setRestored(false)
+  }
+
   const save = () => {
     if (answer.isPending) return
     const text = draft.trim()
     if (!text) {
-      setError('Write an answer first, or use Clear to remove it.')
+      setError(
+        keepAnswer
+          ? 'This idea is past Research: change the answer, but keep one.'
+          : 'Write an answer first, or use Clear to remove it.',
+      )
       fieldRef.current?.focus()
       return
     }
@@ -247,6 +308,7 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
       { itemId: item.item_id, answer: text },
       {
         onSuccess: () => {
+          forget()
           setNotice(answered ? 'Answer updated' : 'Answer saved')
           // The Save button goes away once saved: focus stays with the field.
           fieldRef.current?.focus()
@@ -261,7 +323,9 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
 
   const discard = () => {
     setDraft(saved)
+    forget()
     setError(null)
+    fieldRef.current?.focus()
   }
 
   /** Deferred (Undo in the toast): the answer goes when the toast closes. */
@@ -288,6 +352,7 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
             : current,
         )
         setDraft('')
+        forget()
         fieldRef.current?.focus()
       },
       restore: () => {
@@ -300,9 +365,10 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
   }
 
   const fieldId = answerFieldId(item.item_id)
-  const described = [item.hint && !canAnswer ? hintId : null, error ? errorId : null]
-    .filter(Boolean)
-    .join(' ')
+  // The hint says what to write: shown under the title (not as a placeholder that goes
+  // once you type) and read with the field (UX review m3). Readers see it until answered.
+  const showHint = Boolean(item.hint) && (canAnswer || !item.answer)
+  const described = [showHint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ')
   return (
     <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-2">
@@ -327,6 +393,11 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
         </div>
       </div>
       <div className="flex flex-col gap-1.5 pl-6">
+        {showHint && (
+          <p id={hintId} className="text-sm text-muted">
+            {item.hint}
+          </p>
+        )}
         {canAnswer ? (
           <>
             <Textarea
@@ -335,12 +406,12 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
               value={draft}
               minRows={2}
               maxRows={10}
-              placeholder={item.hint || 'Write what you found'}
+              placeholder={item.hint ? undefined : 'Write what you found'}
               aria-invalid={error ? true : undefined}
               aria-describedby={described || undefined}
               aria-keyshortcuts="Control+Enter Meta+Enter"
               onChange={(event) => {
-                setDraft(event.target.value)
+                keep(event.target.value)
                 setNotice('')
                 if (error) setError(null)
               }}
@@ -348,10 +419,12 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
                 if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
                   event.preventDefault()
                   save()
-                } else if (event.key === 'Escape' && dirty) {
+                } else if (event.key === 'Escape') {
+                  // Escape only leaves the field: what you typed stays (and is kept), so
+                  // nothing is thrown away by a key press (UX review m5). Discard does that.
                   event.preventDefault()
                   event.stopPropagation()
-                  discard()
+                  event.currentTarget.blur()
                 }
               }}
             />
@@ -368,6 +441,9 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
                     <p
                       className={cn('text-xs tabular-nums', tooLong ? 'text-danger' : 'text-muted')}
                     >
+                      {restored && (
+                        <span className="text-secondary">Unsaved draft restored · </span>
+                      )}
                       {length.toLocaleString()} / {ANSWER_MAX_LENGTH.toLocaleString()}
                     </p>
                   ) : (
@@ -383,7 +459,7 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
                       {answered ? 'Save changes' : 'Save answer'}
                     </Button>
                   </>
-                ) : (
+                ) : keepAnswer ? null : (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -407,17 +483,54 @@ function ResearchItemRow({ item, canAnswer }: { item: IdeaResearchItem; canAnswe
             <AnswerMeta item={item} />
           </>
         ) : (
-          <>
-            {item.hint && (
-              <p id={hintId} className="text-sm text-muted">
-                {item.hint}
-              </p>
-            )}
-            <p className="text-sm text-muted italic">Not answered yet</p>
-          </>
+          <p className="text-sm text-muted italic">Not answered yet</p>
         )}
       </div>
     </li>
+  )
+}
+
+/**
+ * "Ask AI to research" (the Phase 6 research run, the same words as the AI menu) and,
+ * once a run has saved one, a line pointing at its note in the feed (UX review m7).
+ */
+function AiResearch() {
+  const { ideaKey } = useIdeaPage()
+  const ai = useIdeaAi(ideaKey)
+  const note = ai.runs
+    .filter((run) => run.kind === 'research' && run.status === 'succeeded' && run.result.note_id)
+    .sort(
+      (a, b) =>
+        Date.parse(b.finished_at ?? b.created_at) - Date.parse(a.finished_at ?? a.created_at),
+    )[0]
+  const ask = ai.aiEnabled && ai.allowed('research')
+  if (!note && !ask) return null
+  return (
+    <div className="flex flex-col gap-3 border-t border-subtle pt-4">
+      {note?.result.note_id && (
+        <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-secondary">
+          <Sparkles aria-hidden="true" className="size-3.5 text-muted" />
+          Note from {note.agent.display_name} ·{' '}
+          <RelativeTime date={note.finished_at ?? note.created_at} className="text-muted" /> ·
+          <button
+            type="button"
+            className="font-medium text-accent underline-offset-4 hover:underline"
+            onClick={() => {
+              const id = note.result.note_id
+              if (id) {
+                focusWhenRendered(() => document.getElementById(researchNoteDomId(id)), {
+                  force: true,
+                  frames: 60,
+                })
+              }
+            }}
+          >
+            Read it
+          </button>
+        </p>
+      )}
+      {ask && <AskAiToResearch />}
+    </div>
   )
 }
 
@@ -426,13 +539,13 @@ function AskAiToResearch() {
   const { ideaKey, setTab } = useIdeaPage()
   const ai = useIdeaAi(ideaKey)
   const { ask, pending } = useAskAi(ideaKey, setTab)
-  if (!ai.aiEnabled || !ai.allowed('research')) return null
   const active = ai.activeRun('research')
   const agents = ai.agentsFor('research')
   const describedBy = 'research-ai-hint'
+  const label = KIND_COPY.research.action
   if (active) {
     return (
-      <div className="flex flex-wrap items-center gap-3 border-t border-subtle pt-4">
+      <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" variant="outline" onClick={() => showRun(active.id, setTab)}>
           <Sparkles /> Researching… view progress
         </Button>
@@ -441,12 +554,12 @@ function AskAiToResearch() {
   }
   const first = agents[0]
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-subtle pt-4">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {agents.length > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" variant="outline" aria-describedby={describedBy}>
-              <FileSearch /> Ask AI to research
+              <FileSearch /> {label}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -467,7 +580,7 @@ function AskAiToResearch() {
             loading={pending}
             onClick={() => ask('research', first)}
           >
-            <FileSearch /> Ask AI to research
+            <FileSearch /> {label}
           </Button>
         )
       )}

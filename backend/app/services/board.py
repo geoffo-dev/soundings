@@ -295,7 +295,7 @@ def _page(rows: Sequence[Row[Any]], sort: Sort, limit: int) -> tuple[list[IdeaRo
     next_cursor = None
     if len(rows) > limit and page:
         next_cursor = sort.encode(page[-1].sort_value, page[-1].id)
-    return [IdeaRow.of(IdeaData.of(row), row) for row in page], next_cursor
+    return [IdeaRow.of(IdeaData.of_row(row), row) for row in page], next_cursor
 
 
 async def fetch_page(

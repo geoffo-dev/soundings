@@ -8,6 +8,7 @@ import {
   hasChecklistErrors,
   isResearchDirty,
   removedItemNote,
+  savedToast,
   toItemDrafts,
   toResearchUpdate,
   validateChecklist,
@@ -74,5 +75,22 @@ describe('research settings form', () => {
       'The checklist has at most 10 items.',
     )
     expect(removedItemNote({ answer_count: 1 })).toBe('Answered on 1 idea')
+  })
+})
+
+describe('savedToast', () => {
+  it('says "Checklist saved" when only the checklist changed (UX review m4)', () => {
+    expect(savedToast('before_evaluation', 'before_evaluation').title).toBe('Checklist saved')
+  })
+
+  it('names the step when it changed, and says what the board does', () => {
+    expect(savedToast('off', 'before_proposal')).toEqual({
+      title: 'Research step saved: before proposal',
+      description: 'The board shows a Research column now.',
+    })
+    expect(savedToast('before_proposal', 'before_evaluation').description).toBe(
+      'The board’s Research column has moved too.',
+    )
+    expect(savedToast('before_evaluation', 'off').title).toBe('Research step turned off')
   })
 })

@@ -8,6 +8,8 @@ import type {
   ResearchStep,
 } from '@/api/types'
 
+import { RESEARCH_STEP_LABELS } from '@/lib/status'
+
 import { moveItem } from './rubric'
 
 /**
@@ -161,4 +163,35 @@ export function serverChecklistErrors(
 export function removedItemNote(item: Pick<RemovedResearchItem, 'answer_count'>): string {
   const count = item.answer_count
   return `Answered on ${count} ${count === 1 ? 'idea' : 'ideas'}`
+}
+
+/**
+ * The save's toast: what changed in words. Saving only the checklist says so, not
+ * "Research step saved" (UX review m4).
+ */
+export function savedToast(
+  before: ResearchStep,
+  after: ResearchStep,
+): { title: string; description: string } {
+  if (after === 'off') {
+    return before === 'off'
+      ? { title: 'Research step saved', description: 'Research stays off.' }
+      : {
+          title: 'Research step turned off',
+          description: 'The checklist and every answer are kept, hidden.',
+        }
+  }
+  if (before === after) {
+    return {
+      title: 'Checklist saved',
+      description: 'No idea moved; the next move past Research checks the required items.',
+    }
+  }
+  return {
+    title: `Research step saved: ${RESEARCH_STEP_LABELS[after].toLowerCase()}`,
+    description:
+      before === 'off'
+        ? 'The board shows a Research column now.'
+        : 'The board’s Research column has moved too.',
+  }
 }

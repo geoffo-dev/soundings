@@ -153,18 +153,27 @@ def _item(
     return None  # a type from a later phase: clients skip it too
 
 
+def event_user_ids(events: Sequence[ActivityEvent]) -> set[UUID]:
+    """The people ``events`` name (actors and payload users), for :func:`activity_items`."""
+    user_ids: set[UUID | None] = {event.actor_id for event in events}
+    for event in events:
+        user_ids.update(_uuid(event.payload.get(key)) for key in _USER_KEYS)
+    return {user_id for user_id in user_ids if user_id is not None}
+
+
 async def activity_items(
     db: AsyncSession,
     principal: Principal,
     events: Sequence[ActivityEvent],
     resource_for: Callable[[UUID], Resource],
+    *,
+    users: Mapping[UUID, UserRef] | None = None,
 ) -> list[ActivityItem]:
     """Feed items for ``events`` (users and comments loaded in batches);
-    ``resource_for(idea_id)`` gives the facts for comment permissions."""
-    user_ids: set[UUID | None] = {event.actor_id for event in events}
-    for event in events:
-        user_ids.update(_uuid(event.payload.get(key)) for key in _USER_KEYS)
-    users = await user_refs(db, user_ids)
+    ``resource_for(idea_id)`` gives the facts for comment permissions. ``users``: the
+    people already loaded for :func:`event_user_ids` (My work), else loaded here."""
+    if users is None:
+        users = await user_refs(db, event_user_ids(events))
     comment_ids = [event.comment_id for event in events if event.comment_id is not None]
     comments: dict[UUID, Comment] = {}
     if comment_ids:
@@ -233,16 +242,11 @@ async def list_activity(
     return ActivityPage(items=items, next_cursor=next_cursor)
 
 
-async def latest_activity(
-    db: AsyncSession,
-    principal: Principal,
-    idea_ids: Sequence[UUID],
-    resource_for: Callable[[UUID], Resource],
-) -> dict[UUID, ActivityItem]:
-    """The newest feed item of each idea (My work, "recent")."""
+async def latest_events(db: AsyncSession, idea_ids: Sequence[UUID]) -> list[ActivityEvent]:
+    """The newest event of each idea (My work, "recent"), for :func:`latest_activity`."""
     if not idea_ids:
-        return {}
-    events = list(
+        return []
+    return list(
         await db.scalars(
             select(ActivityEvent)
             .where(any_of(ActivityEvent.idea_id, idea_ids))
@@ -252,5 +256,16 @@ async def latest_activity(
             )
         )
     )
-    items = await activity_items(db, principal, events, resource_for)
+
+
+async def latest_activity(
+    db: AsyncSession,
+    principal: Principal,
+    events: Sequence[ActivityEvent],
+    resource_for: Callable[[UUID], Resource],
+    *,
+    users: Mapping[UUID, UserRef] | None = None,
+) -> dict[UUID, ActivityItem]:
+    """The feed item of each of :func:`latest_events`, by idea."""
+    items = await activity_items(db, principal, events, resource_for, users=users)
     return {item.idea_id: item for item in items}

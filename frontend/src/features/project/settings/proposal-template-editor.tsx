@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
-import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { formatShortDate } from '@/lib/dates'
 import { useShortcut } from '@/lib/shortcuts'
 
@@ -31,19 +31,27 @@ import {
   type SectionField,
   type TemplateErrors,
 } from './proposal-template'
+import { insertAt, keepRowKeys } from './rubric'
 import { FormActions, SettingsSection } from './settings-layout'
-import { moveKeysFor, RowControls, SortableRow, SortableRows } from './sortable-rows'
+import {
+  focusNeighbour,
+  moveKeysFor,
+  RowControls,
+  SortableRow,
+  SortableRows,
+} from './sortable-rows'
 
 const TITLE = 'Proposal template'
 const DESCRIPTION =
   'The sections every proposal in this project has, in order, each with a one-line hint shown in the editor. 1 to 12 sections.'
+const titleId = (id: string) => `section-${id}-title`
 
 /**
  * Project settings → Proposal (contract-phase8 §2.7): the project's proposal
  * sections, edited like the rubric. Rename, reorder (drag, Alt+↑/↓ or Move), add
- * (up to 12) and remove (at least one stays); a removed section's text is kept and
- * comes back with **Restore** under "Removed sections". Saving replaces the template,
- * and every proposal follows it at once.
+ * (up to 12) and remove (at least one stays; no confirmation, since nothing is lost: the
+ * text is kept and Discard or **Restore** under "Removed sections" brings it back).
+ * Saving replaces the template, and every proposal follows it at once.
  */
 export function ProposalTemplateEditor({ project, active }: { project: Project; active: boolean }) {
   const template = useProposalTemplate(project.slug)
@@ -76,11 +84,21 @@ function TemplateForm({
   }
   const [server, setServer] = useState<TemplateErrors | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState<SectionDraft | null>(null)
+  // Where each section removed during this visit was, so Restore puts it back there.
+  const removedAt = useRef(new Map<string, number>())
 
   // Saved elsewhere (another admin, our own save): follow the server unless we have edits.
   if (template !== baseline) {
-    if (!isTemplateDirty(drafts, baseline)) setDrafts(toSectionDrafts(template.sections))
+    if (!isTemplateDirty(drafts, baseline)) {
+      setDrafts(
+        keepRowKeys(
+          drafts,
+          toSectionDrafts(template.sections),
+          (draft) => draft.key,
+          (row, before) => ({ ...row, id: before.id }),
+        ),
+      )
+    }
     setBaseline(template)
   }
 
@@ -101,10 +119,13 @@ function TemplateForm({
   const move = (from: number, to: number) => setDrafts((current) => moveSection(current, from, to))
   const remove = (draft: SectionDraft) => {
     setNotice(null)
+    const ids = drafts.map((d) => d.id)
+    if (draft.key) removedAt.current.set(draft.key, ids.indexOf(draft.id))
     setDrafts((current) => current.filter((d) => d.id !== draft.id))
+    focusNeighbour(ids, draft.id, titleId)
   }
   const focusTitle = (id: string) =>
-    window.requestAnimationFrame(() => document.getElementById(`section-${id}-title`)?.focus())
+    window.requestAnimationFrame(() => document.getElementById(titleId(id))?.focus())
 
   const discard = () => {
     setDrafts(toSectionDrafts(template.sections))
@@ -124,12 +145,21 @@ function TemplateForm({
     setSubmitted(true)
     if (hasTemplateErrors(local)) {
       const first = drafts.find((d) => local.rows[d.id])
-      if (first) document.getElementById(`section-${first.id}-title`)?.focus()
+      if (first) document.getElementById(titleId(first.id))?.focus()
       return
     }
-    replace.mutate(toTemplateUpdate(drafts), {
+    const sent = drafts
+    replace.mutate(toTemplateUpdate(sent), {
       onSuccess: (next) => {
-        setDrafts(toSectionDrafts(next.sections))
+        // New rows keep their React keys: the field you saved from stays focused.
+        setDrafts(
+          keepRowKeys(
+            sent,
+            toSectionDrafts(next.sections),
+            (draft) => draft.key,
+            (row, before) => ({ ...row, id: before.id }),
+          ),
+        )
         setSubmitted(false)
         setTouched(new Set())
         changed.current.clear()
@@ -189,7 +219,7 @@ function TemplateForm({
                 index={index}
                 count={drafts.length}
                 onMove={(to) => move(index, to)}
-                onRemove={() => (draft.proposalCount > 0 ? setConfirmRemove(draft) : remove(draft))}
+                onRemove={() => remove(draft)}
                 removeDisabledReason={
                   drafts.length <= MIN_SECTIONS
                     ? 'A proposal needs at least one section'
@@ -206,7 +236,7 @@ function TemplateForm({
                       label="Title"
                       hideLabel
                       error={shown(draft.id, 'title')}
-                      id={`section-${draft.id}-title`}
+                      id={titleId(draft.id)}
                       className="min-w-0 flex-1"
                     >
                       <Input
@@ -228,7 +258,10 @@ function TemplateForm({
                     error={shown(draft.id, 'hint')}
                     id={`section-${draft.id}-hint`}
                   >
-                    <Input
+                    <Textarea
+                      singleLine
+                      minRows={1}
+                      maxRows={3}
                       value={draft.hint}
                       maxLength={SECTION_LIMITS.hint + 10}
                       placeholder="One line: what to write here"
@@ -292,7 +325,8 @@ function TemplateForm({
                     aria-label={`Restore ${section.title}`}
                     onClick={() => {
                       const restored = restoredSection(section)
-                      setDrafts((current) => [...current, restored])
+                      const at = removedAt.current.get(section.key)
+                      setDrafts((current) => insertAt(current, restored, at))
                       setNotice(null)
                       focusTitle(restored.id)
                     }}
@@ -305,7 +339,7 @@ function TemplateForm({
           </div>
         )}
 
-        <div className="flex gap-3 rounded-lg border bg-subtle px-4 py-3 text-sm text-secondary">
+        <div className="flex max-w-3xl gap-3 rounded-lg border bg-subtle px-4 py-3 text-sm text-secondary">
           <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted" />
           <div className="flex flex-col gap-1">
             <p className="font-medium text-primary">What happens to existing proposals</p>
@@ -330,21 +364,6 @@ function TemplateForm({
           saveLabel="Save template"
         />
       </form>
-      <ConfirmDialog
-        open={confirmRemove !== null}
-        onOpenChange={(open) => !open && setConfirmRemove(null)}
-        title={`Remove “${confirmRemove ? nameOf(confirmRemove) : ''}”?`}
-        description={
-          confirmRemove
-            ? `Its text in ${confirmRemove.proposalCount} ${confirmRemove.proposalCount === 1 ? 'proposal is' : 'proposals is'} kept and comes back if you restore it.`
-            : ''
-        }
-        confirmLabel="Remove section"
-        onConfirm={() => {
-          if (confirmRemove) remove(confirmRemove)
-          setConfirmRemove(null)
-        }}
-      />
     </SettingsSection>
   )
 }
@@ -355,7 +374,7 @@ export function ProposalTemplateSummary({ project }: { project: Project }) {
   return (
     <SettingsSection
       title={TITLE}
-      description="Every proposal in this project has these sections. Only project admins can change them."
+      description="Every proposal in this project has these sections, in this order."
     >
       {template.isPending ? (
         <TemplateSkeleton />

@@ -9,14 +9,25 @@ export interface TextareaProps extends ComponentProps<'textarea'> {
   autoGrow?: boolean
   minRows?: number
   maxRows?: number
+  /**
+   * A one-line value that wraps instead of scrolling out of view (a 200-character hint
+   * on a phone): Enter submits the form as in an input, and pasted line breaks become
+   * spaces. Use with `minRows={1}`.
+   */
+  singleLine?: boolean
 }
+
+const LINE_BREAKS = /[\r\n\u2028\u2029]+/g
 
 export function Textarea({
   className,
   autoGrow = true,
   minRows = 3,
   maxRows = 14,
+  singleLine = false,
   onInput,
+  onChange,
+  onKeyDown,
   ref,
   ...props
 }: TextareaProps) {
@@ -51,6 +62,20 @@ export function Textarea({
       onInput={(event) => {
         resize()
         onInput?.(event)
+      }}
+      onChange={(event) => {
+        if (singleLine) {
+          const flat = event.target.value.replace(LINE_BREAKS, ' ')
+          if (flat !== event.target.value) event.target.value = flat
+        }
+        onChange?.(event)
+      }}
+      onKeyDown={(event) => {
+        onKeyDown?.(event)
+        if (singleLine && event.key === 'Enter' && !event.defaultPrevented) {
+          event.preventDefault()
+          if (!event.nativeEvent.isComposing) event.currentTarget.form?.requestSubmit()
+        }
       }}
       className={cn(
         controlStyles,

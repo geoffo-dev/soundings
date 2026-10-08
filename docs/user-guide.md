@@ -200,8 +200,10 @@ proposal** on a Shortlisted idea and **Open proposal** once there is one. In a p
 with a research step, the button also walks the idea through it: **Start research** on
 the status before Research (New or Shortlisted) while the checklist is open, **Finish
 research** while required items are unanswered (it takes you to the first one), then
-**Start evaluation** (or **Start proposal**) once it is done. A closed idea, or one with
-nothing for you to do, has no blue button.
+**Start evaluation** (or **Start proposal**) once it is done. **Start evaluation** opens
+**Invite evaluators** when nobody is invited yet: inviting starts evaluation and moves the
+idea to Evaluating with it. A closed idea, or one with nothing for you to do, has no blue
+button.
 
 ## The research step [Phase 8]
 
@@ -217,12 +219,16 @@ On the idea's Overview tab, the **Research** panel lists the project's checklist
 example "Not already being done elsewhere", "Departments or teams consulted" and "Data
 protection considered". The idea's owner and project admins answer each item in a few
 lines of plain text, such as "Legal (contracts team), 3 Oct: fine if we keep the
-standard terms"; the grey hint in the box says what to write. **Save answer** (or `⌘↵`)
-saves it and records who answered and when; edit it later the same way, or **Clear** it
-("Undo" in the toast brings it back). Required items are marked **Required**; the line
-at the top says how many are answered and how many required items are left ("1 required
-item left before Evaluating", or "Research complete"). The panel opens by itself while
-the idea is in Research or the status just before it, and folds once it is past.
+standard terms"; the hint under each item's title says what to write. **Save answer** (or
+`⌘↵`) saves it and records who answered and when; edit it later the same way, or
+**Clear** it ("Undo" in the toast brings it back). An answer you typed but didn't save is
+kept in this browser: leave the page and come back, and it is still there ("Unsaved draft
+restored"), until you save it or press **Discard**. `Esc` only leaves the box. Required
+items are marked **Required**; the line at the top says how many are answered and how
+many required items are left ("1 required item left before Evaluating", or "Research
+complete"). The panel opens by itself while the idea is in Research, and for the owner
+and admins also in the status just before it; otherwise it starts folded (click
+**Research** to open it).
 
 Everyone who can open the idea reads the checklist and the answers, evaluators included
 (there are no scores in it). Under the checklist:
@@ -230,11 +236,13 @@ Everyone who can open the idea reads the checklist and the answers, evaluators i
 - **Similar ideas**: up to five ideas with a similar title or summary in every project
   you can see (archived ones too), with their project, status and owner, so you know
   whom to ask. Ideas waiting for moderation never appear.
-- **Ask AI to research** (where AI assistance is on): an AI agent looks for similar
-  work and writes a research note in the activity feed, as "Research this" does.
+- **Ask AI to research** (where AI assistance is on, the same as in the AI menu): an AI
+  agent looks for similar work and writes a research note in the activity feed; the
+  panel then says "Note from <agent>" with **Read it**, which takes you to the note.
 
-On the board and in the list, ideas in Research (or in the status just before it) show
-the checklist's progress, for example **2/3**.
+On the board, in the list and in My work, ideas in Research show the checklist at a
+glance: **2 open** (required items left) or **Ready** (nothing holds the move). Ideas in
+the status just before Research show it too once something is answered.
 
 ### Moving past Research
 
@@ -244,7 +252,11 @@ AI to evaluate it (before evaluation), or starting its proposal (before the prop
 The card snaps back and a dialog lists the open items, with **Open research**. Moving an
 idea back, or closing it, is never held up, and an optional item never holds anything
 up. Changing the checklist or turning the step on never moves an idea: ideas already
-past Research stay where they are.
+past Research stay where they are. Moving an idea back into Research while required
+items are open offers no **Undo** (undoing would take it past Research again); the
+toast says to finish the checklist first. Once an idea is past Research, a required
+item's answer can be changed but not cleared, so the answers that let it through stay
+on record.
 
 **Move anyway** (also **Invite anyway**, **Ask anyway**, **Start anyway**): project
 and platform admins can take an idea past Research with items open, after an optional
@@ -316,8 +328,8 @@ updates gets an email. Everyone else sees "The owner will write the proposal" un
 Every proposal follows its project's **template**: by default eight sections (Summary,
 Problem, Solution, Market & users, Cost & effort, Benefits / revenue, Risks, and Next
 steps / the ask), which a project admin can rename, reorder, add to or trim (see
-[Proposal template](#proposal-template)). Each section's hint is the grey placeholder in
-its box. Summary starts with the idea's summary; the rest start empty. When the template
+[Proposal template](#proposal-template)). Each section's hint is the grey line under its
+heading. Summary starts with the idea's summary; the rest start empty. When the template
 changes, every proposal follows at once; a section removed from it is hidden, with its
 text kept, and comes back if an admin restores it. If a section is removed while you
 are typing in it, your text is kept in this browser at the end of the proposal, with
@@ -624,9 +636,10 @@ them. If you find its evaluation sound, switch **Include in score** on its card
 off again at any time (Undo is offered). If the agent re-evaluates and changes any score
 or its recommendation, it is left out again until someone includes it again.
 
-### "Research this" and "Draft section"
+### "Ask AI to research" and "Draft section"
 
-**Research this** (the AI menu or ⌘K) asks an agent for a short research note: what it
+**Ask AI to research** (the AI menu, ⌘K, or the Research panel in a project with a
+research step) asks an agent for a short research note: what it
 found about the idea, open questions and numbered sources. The note appears in the
 activity feed with the AI badge, in a box of its own, readable by everyone who can see
 the idea. The owner and admins can **Delete** it (after confirming; there is no undo):
@@ -650,9 +663,9 @@ waiting for moderation, or the proposal hasn't been started.
 
 Project settings are behind the gear icon on the project page (or Settings → Account →
 Projects you manage), in six tabs: **General** (with the status labels), **Members**,
-**Rubric**, **Research** (the research step and its checklist), **Proposal** (the
-proposal template) and **Public form** (with the project's branding). Members see them
-read-only. Each form
+**Rubric**, **Research** (the research step and its checklist), **Proposal template**
+and **Public form** (with the project's branding); on a phone the tabs wrap onto two
+lines. Members see them read-only. Each form
 has its own Save (`⌘S` saves the tab you are on); if you try to leave with unsaved
 changes, the app asks first. Forms whose fields belong together keep an explicit Save;
 single preferences (notifications) and documents (proposals) save as you go.
@@ -698,24 +711,28 @@ as you like; nothing is saved until **Save research step**). The checklist is ed
 the rubric: 1 to 10 items, each with a title, a one-line hint (what to write) and a
 **Required** switch; reorder by dragging, Alt+↑/↓ or **Move**. Removing an item that
 ideas answered keeps their answers, hidden, under **Removed items**, and **Restore**
-brings them back.
+brings them back (to their old place, if you removed the item during this visit). Saving
+only the checklist says "Checklist saved".
 
-The step can't be moved or turned off while ideas are in Research: the page says how
-many and links to them, so you can move them first. Turning the step off hides the
+The step can't be moved or turned off while ideas are in Research: a line under the
+choice says how many ("Can't change while 2 ideas are in Research · Show them") and links
+to them, so you can move them first. Turning the step off hides the
 Research column, the checklist and every answer, and keeps them for when you turn it on
 again. Turning it on, moving it or changing the checklist never moves an idea; the next
 move past Research checks the required items.
 
 ### Proposal template
 
-Project settings → **Proposal** lists the sections every proposal in the project has, 1
-to 12, each with a title and a one-line hint shown in the editor. Rename a section,
+Project settings → **Proposal template** lists the sections every proposal in the project
+has, 1 to 12, each with a title and a one-line hint shown in the editor (under the
+section's heading). Rename a section,
 change its hint, reorder (drag, Alt+↑/↓ or **Move**), **Add section**, or remove one (at
 least one stays). Renaming or reordering keeps each section's text; a new section starts
-empty in every proposal. Removing a section with text asks first: its text is kept,
-hidden from the editor and the exports, under **Removed sections** ("Text in 3
-proposals"), and **Restore** brings it back with its text, comments and suggestions.
-Saving changes every proposal in the project at once.
+empty in every proposal. Removing a section loses nothing (so it doesn't ask): until you
+save, **Discard** brings it back; once saved, its text is kept, hidden from the editor and
+the exports, under **Removed sections** ("Text in 3 proposals"), and **Restore** brings
+it back with its text, comments and suggestions (to its old place, if you removed it
+during this visit). Saving changes every proposal in the project at once.
 
 ### Renaming status labels
 

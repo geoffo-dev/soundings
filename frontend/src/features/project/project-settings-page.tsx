@@ -1,5 +1,4 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useRef } from 'react'
 import { ArrowLeft } from 'lucide-react'
 
 import { useProject } from '@/api/projects'
@@ -34,7 +33,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   members: 'Members',
   rubric: 'Rubric',
   research: 'Research',
-  'proposal-template': 'Proposal',
+  'proposal-template': 'Proposal template',
   'public-form': 'Public form',
 }
 
@@ -65,13 +64,6 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
     ? SETTINGS_TABS
     : SETTINGS_TABS.filter((t) => !ADMIN_SETTINGS_TABS.includes(t))
   const current = tabs.includes(tab) ? tab : 'general'
-  // On phones the tab row scrolls sideways: keep the current tab in view.
-  const tabsRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    tabsRef.current
-      ?.querySelector<HTMLElement>('[role="tab"][data-state="active"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [current])
 
   return (
     <Page>
@@ -99,7 +91,8 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
           }
           className="flex flex-col gap-6"
         >
-          <TabsList ref={tabsRef} aria-label="Settings">
+          {/* Six tabs: on a phone they wrap onto two lines, all in sight. */}
+          <TabsList wrap aria-label="Settings">
             {tabs.map((value) => (
               <TabsTrigger key={value} value={value}>
                 {TAB_LABELS[value]}

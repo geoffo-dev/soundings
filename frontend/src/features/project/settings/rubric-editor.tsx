@@ -53,6 +53,7 @@ import {
   GUIDANCE_SCORES,
   hasErrors,
   isRubricDirty,
+  keepRowKeys,
   LIMITS,
   MAX_CRITERIA,
   MIN_CRITERIA,
@@ -67,6 +68,17 @@ import {
   type RubricErrors,
 } from './rubric'
 import { FormActions, SettingsSection } from './settings-layout'
+import { focusNeighbour } from './sortable-rows'
+
+/** The criteria as rows, keeping the React keys the form has (see keepRowKeys). */
+function keepKeys(drafts: CriterionDraft[], criteria: RubricCriterion[]): CriterionDraft[] {
+  return keepRowKeys(
+    drafts,
+    toDrafts(criteria),
+    (draft) => draft.id,
+    (row, before) => ({ ...row, key: before.key }),
+  )
+}
 
 const GUIDANCE_PLACEHOLDER: Record<(typeof GUIDANCE_SCORES)[number], string> = {
   '1': 'What does a 1 look like?',
@@ -95,7 +107,7 @@ export function RubricEditor({ project, active }: { project: Project; active: bo
   // Someone else saved (or our save came back): follow the server unless we have edits.
   if (project.rubric !== baseline) {
     setBaseline(project.rubric)
-    if (!isRubricDirty(drafts, baseline)) setDrafts(toDrafts(project.rubric))
+    if (!isRubricDirty(drafts, baseline)) setDrafts(keepKeys(drafts, project.rubric))
   }
 
   const dirty = isRubricDirty(drafts, baseline)
@@ -141,10 +153,12 @@ export function RubricEditor({ project, active }: { project: Project; active: bo
       if (first) document.getElementById(`criterion-${first.key}-name`)?.focus()
       return
     }
-    replace.mutate(toRubricUpdate(drafts), {
+    const sent = drafts
+    replace.mutate(toRubricUpdate(sent), {
       onSuccess: (rubric) => {
         setBaseline(rubric.criteria)
-        setDrafts(toDrafts(rubric.criteria))
+        // New rows keep their React keys: the field you saved from stays focused.
+        setDrafts(keepKeys(sent, rubric.criteria))
         setChanged(new Set())
         setTouched(new Set())
         setSubmitted(false)
@@ -243,8 +257,10 @@ export function RubricEditor({ project, active }: { project: Project; active: bo
                   onBlur={(field) => touch(draft.key, field)}
                   onMove={(to) => move(index, to)}
                   onRemove={() => {
+                    const keys = drafts.map((d) => d.key)
                     setDrafts((current) => current.filter((d) => d.key !== draft.key))
                     setNotice(null)
+                    focusNeighbour(keys, draft.key, (key) => `criterion-${key}-name`)
                   }}
                 />
               ))}
@@ -560,10 +576,7 @@ function CriterionRow({
 export function RubricSummary({ project }: { project: Project }) {
   const total = project.rubric.reduce((sum, criterion) => sum + criterion.weight, 0)
   return (
-    <SettingsSection
-      title="Rubric"
-      description="Every idea is scored 1–5 on these criteria. Only project admins can change them."
-    >
+    <SettingsSection title="Rubric" description="Every idea is scored 1–5 on these criteria.">
       <ol className="flex max-w-3xl flex-col divide-y divide-subtle rounded-lg border">
         {[...project.rubric]
           .sort((a, b) => a.position - b.position)

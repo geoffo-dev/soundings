@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     SmallInteger,
     String,
     Text,
@@ -46,6 +47,10 @@ class Evaluation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status <> 'submitted' OR (recommendation IS NOT NULL AND submitted_at IS NOT NULL)",
             name="submitted_complete",
         ),
+        # Cards' "3/4 evaluations in": an index-only count per idea and status (migration
+        # 0014; a partial index on status = 'submitted' would be skipped by the generic
+        # plans of prepared statements, where the status is a parameter).
+        Index("ix_evaluations_idea_id_status", "idea_id", "status"),
     )
 
     idea_id: Mapped[uuid.UUID] = mapped_column()

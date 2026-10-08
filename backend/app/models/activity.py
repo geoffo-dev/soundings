@@ -21,7 +21,11 @@ class Comment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "comments"
-    __table_args__ = (Index("ix_comments_idea_id_created_at", "idea_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_comments_idea_id_created_at", "idea_id", "created_at"),
+        # Cards' comment count: an index-only count per idea (migration 0014).
+        Index("ix_comments_idea_id_live", "idea_id", postgresql_where=text("deleted_at IS NULL")),
+    )
 
     idea_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ideas.id", ondelete="CASCADE"))
     author_id: Mapped[uuid.UUID | None] = mapped_column(

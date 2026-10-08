@@ -9411,7 +9411,7 @@
       },
       "ResearchAnswerIn": {
         "additionalProperties": false,
-        "description": "Answer an item, or replace its answer (last write wins). Plain text, kept as typed\napart from the stripped ends and invisible characters (removed); line breaks allowed;\nat least one visible character.",
+        "description": "Answer an item, or replace its answer (last write wins). Plain text, kept as typed\napart from the stripped ends and invisible characters (removed: zero-width, bidi\ncontrols, other format characters, :func:`app.schemas.base.visible_text`, as for\nagents' text); line breaks allowed; at least one letter, digit, punctuation mark or\nsymbol must be left (:func:`app.schemas.base.has_visible_character`), so a lone\nzero-width space, joiner, variation selector or combining mark never counts as\nanswering (and so never passes the gate). The length counts the cleaned text\n(:data:`app.schemas.base.VisibleText`, Phase 8 review L2).",
         "properties": {
           "answer": {
             "description": "1-2,000 characters of plain text with at least one visible character; zero-width, bidi-control and other invisible characters are removed.",
@@ -9605,6 +9605,7 @@
             "type": "boolean"
           },
           "title": {
+            "description": "Invisible characters are removed and at least one visible character must be left (Phase 8 review L2).",
             "maxLength": 80,
             "minLength": 1,
             "title": "Title",
@@ -10932,6 +10933,7 @@
             "title": "Key"
           },
           "title": {
+            "description": "Invisible characters are removed and at least one visible character must be left (Phase 8 review L2).",
             "maxLength": 60,
             "minLength": 1,
             "title": "Title",
@@ -21045,7 +21047,7 @@
     },
     "/api/v1/ideas/{idea}/research/items/{item_id}": {
       "delete": {
-        "description": "idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea, even past Research. Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
+        "description": "idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
         "operationId": "clear_research_item",
         "parameters": [
           {

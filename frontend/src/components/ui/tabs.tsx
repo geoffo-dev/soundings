@@ -9,9 +9,16 @@ export const Tabs = TabsPrimitive.Root
 
 /**
  * Underlined tabs (the idea page's Overview / Evaluations / Proposal). Too many
- * for the width (a phone), the row scrolls sideways and fades the edge with more.
+ * for the width (a phone), the row scrolls sideways and fades the edge with more;
+ * with `wrap` it wraps onto a second line instead, so every tab stays in sight (the
+ * six project settings tabs on a phone; Phase 8 UX review m6).
  */
-export function TabsList({ className, ref, ...props }: ComponentProps<typeof TabsPrimitive.List>) {
+export function TabsList({
+  className,
+  ref,
+  wrap = false,
+  ...props
+}: ComponentProps<typeof TabsPrimitive.List> & { wrap?: boolean }) {
   const fade = useScrollFade<HTMLDivElement>()
   const merged = useMemo(() => mergeRefs(fade, ref), [fade, ref])
   return (
@@ -19,7 +26,8 @@ export function TabsList({ className, ref, ...props }: ComponentProps<typeof Tab
       ref={merged}
       data-slot="tabs-list"
       className={cn(
-        'scrollbar-none flex items-center gap-4 overflow-x-auto border-b scroll-fade-x',
+        'flex items-center gap-4 border-b',
+        wrap ? 'flex-wrap gap-y-1' : 'scrollbar-none overflow-x-auto scroll-fade-x',
         className,
       )}
       {...props}

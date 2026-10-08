@@ -29,7 +29,7 @@ export function SimilarIdeas({ ideaKey }: { ideaKey: string }) {
       {similar.isPending ? (
         <SkeletonGroup label="Looking for similar ideas" className="flex flex-col gap-2">
           {[0, 1].map((i) => (
-            <Skeleton key={i} className="h-9 w-full" />
+            <Skeleton key={i} className="h-12 w-full" />
           ))}
         </SkeletonGroup>
       ) : similar.isError ? (
@@ -54,13 +54,19 @@ export function SimilarIdeas({ ideaKey }: { ideaKey: string }) {
                 params={{ ideaKey: idea.key }}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-2 transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:-outline-offset-2"
               >
-                <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                  <span className="shrink-0 text-xs whitespace-nowrap text-muted tabular-nums">
-                    {idea.key}
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 text-xs whitespace-nowrap text-muted tabular-nums">
+                      {idea.key}
+                    </span>
+                    <span className="min-w-0 truncate text-sm font-medium text-primary">
+                      {idea.title}
+                    </span>
                   </span>
-                  <span className="min-w-0 truncate text-sm font-medium text-primary">
-                    {idea.title}
-                  </span>
+                  {/* One line of the summary, to tell near-namesakes apart (UX review p6). */}
+                  {idea.summary && (
+                    <span className="truncate text-sm text-muted">{idea.summary}</span>
+                  )}
                 </span>
                 <span className="flex shrink-0 items-center gap-3 text-sm text-muted">
                   <span className="max-w-40 truncate">{idea.project.name}</span>

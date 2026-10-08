@@ -1,5 +1,14 @@
 import { useBlocker } from '@tanstack/react-router'
-import { createContext, use, useCallback, useEffect, useId, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
+import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -105,7 +115,8 @@ export function UnsavedChangesGuard({ children }: { children: ReactNode }) {
  * Discard + Save for one settings form. Save looks quiet until something
  * changed but still answers when pressed ("No changes to save"). With unsaved
  * changes the bar sticks to the bottom of the screen, and leaving the page asks
- * first (inside an UnsavedChangesGuard); on phones it always sticks.
+ * first (inside an UnsavedChangesGuard); on phones it always sticks. Discard goes away
+ * once used, so focus moves to Save rather than falling to `<body>`.
  */
 export function FormActions({
   form,
@@ -128,6 +139,7 @@ export function FormActions({
 }) {
   const report = use(UnsavedChangesContext)
   const id = useId()
+  const saveRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     report?.(id, dirty ? form : null)
     return () => report?.(id, null)
@@ -149,11 +161,19 @@ export function FormActions({
       </p>
       {extra}
       {dirty && (
-        <Button variant="ghost" onClick={onDiscard} disabled={saving}>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            onDiscard()
+            focusWhenRendered(() => saveRef.current)
+          }}
+          disabled={saving}
+        >
           Discard
         </Button>
       )}
       <Button
+        ref={saveRef}
         type="submit"
         variant={dirty ? 'primary' : 'secondary'}
         loading={saving}

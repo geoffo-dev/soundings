@@ -1529,7 +1529,7 @@ export interface paths {
         post?: never;
         /**
          * Clear a research item's answer
-         * @description idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea, even past Research. Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
          */
         delete: operations["clear_research_item"];
         options?: never;
@@ -7267,8 +7267,13 @@ export interface components {
         /**
          * ResearchAnswerIn
          * @description Answer an item, or replace its answer (last write wins). Plain text, kept as typed
-         *     apart from the stripped ends and invisible characters (removed); line breaks allowed;
-         *     at least one visible character.
+         *     apart from the stripped ends and invisible characters (removed: zero-width, bidi
+         *     controls, other format characters, :func:`app.schemas.base.visible_text`, as for
+         *     agents' text); line breaks allowed; at least one letter, digit, punctuation mark or
+         *     symbol must be left (:func:`app.schemas.base.has_visible_character`), so a lone
+         *     zero-width space, joiner, variation selector or combining mark never counts as
+         *     answering (and so never passes the gate). The length counts the cleaned text
+         *     (:data:`app.schemas.base.VisibleText`, Phase 8 review L2).
          */
         ResearchAnswerIn: {
             /**
@@ -7389,7 +7394,10 @@ export interface components {
              * @default true
              */
             required: boolean;
-            /** Title */
+            /**
+             * Title
+             * @description Invisible characters are removed and at least one visible character must be left (Phase 8 review L2).
+             */
             title: string;
         };
         /**
@@ -8027,7 +8035,10 @@ export interface components {
              * @description An existing section (active, or removed: putting it back restores it with its text); omit to add a new one, whose key the server makes from the title (section_key_for). Unknown: 422 unknown_section.
              */
             key?: string | null;
-            /** Title */
+            /**
+             * Title
+             * @description Invisible characters are removed and at least one visible character must be left (Phase 8 review L2).
+             */
             title: string;
         };
         /**

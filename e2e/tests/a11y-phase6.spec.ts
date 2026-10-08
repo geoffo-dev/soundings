@@ -21,7 +21,7 @@ import { expect, seriousViolations, settled, signIn, test } from './support/fixt
  * finished ones with a research note, the Evaluations tab with an AI evaluation and its
  * "Include in score" switch, the same idea as a pending evaluator (blind) and the proposal
  * editor with a draft in progress and an AI suggestion. Then the same at 390 px (no
- * sideways scrolling, sheets and dialogs fill the screen) and "Research this" with the
+ * sideways scrolling, sheets and dialogs fill the screen) and "Ask AI to research" with the
  * keyboard only. Test plan: A11Y6-*, MO6-*, K6-*.
  */
 
@@ -210,7 +210,7 @@ const SCREENS: Screen[] = [
     open: async (page, data) => {
       await page.goto(`/ideas/${data.doneKey}`)
       await page.getByRole('button', { name: 'AI actions' }).first().click()
-      await expect(page.getByRole('menuitem', { name: /Research this/ })).toBeVisible()
+      await expect(page.getByRole('menuitem', { name: /Ask AI to research/ })).toBeVisible()
     },
   },
   {
@@ -325,7 +325,10 @@ test.describe('@ai Phase 6 accessibility', () => {
     })
   })
 
-  test('K6-01: “Research this” with the keyboard only, then to the note', async ({ page, api }) => {
+  test('K6-01: “Ask AI to research” with the keyboard only, then to the note', async ({
+    page,
+    api,
+  }) => {
     const data = await prepare()
     const alice = await api('alice')
     const { key } = await alice.createIdea(data.projectSlug, {
@@ -339,7 +342,7 @@ test.describe('@ai Phase 6 accessibility', () => {
     await menu.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('menu')).toBeVisible()
-    const research = page.getByRole('menuitem', { name: /Research this/ })
+    const research = page.getByRole('menuitem', { name: /Ask AI to research/ })
     for (
       let i = 0;
       i < 4 && !(await research.evaluate((el) => el === document.activeElement));

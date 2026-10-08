@@ -416,3 +416,48 @@ synchronously. Listed as a known issue in the release notes.
 idle machine (6 tests, 160 s). The API was unchanged since §8, so §8.1-8.2 stand: every
 read under 150 ms one at a time; at 20 people at once reads p95 206-255 ms (**miss**,
 scale with `api.replicas`). These misses are the release notes' known issues.
+
+## 10. Phase 8 review: My work for an owner, and this machine's baseline (2026-10-08)
+
+The lead asked for the owner's My work (`me.work (owner)` in `tests/perf`, `my work
+(owner)` in `tests/ideas/test_performance.py`) to fit the 150 ms read budget, and for the
+budget to be raised only if 0.1.0's code also misses on an idle machine.
+
+**Profile** (alice at 10k ideas: 50 evaluations due, 187 owned cards in six groups, 20
+recent; in-process, warm): about 110-120 ms per request, of which SQL execution about 25
+ms (owned groups 14.5, evaluations due 7, recent 5) and Python about 55-70 ms CPU, spread
+over 14 statements (SQLAlchemy statement building, compile-cache keys and row handling
+about a third of it), 260 cards' summaries and 225 KB of JSON (gzip 2.5 ms).
+
+**Fixes** (contract-phase8 §10 R6, no response change): migration 0014's
+`ix_ideas_owner_id_status_last_activity_at` (each owned group one range scan that stops
+after the page; the groups' statement 14.5 → 8.9 ms), `ix_evaluations_idea_id_status` and
+`ix_comments_idea_id_live` (the cards' submitted and comment counts index-only; 8.9 → 7.0
+ms, every list and board gains the same per card; a partial index on `status =
+'submitted'` was useless because prepared statements' generic plans bind the status); the
+people of the page (due evaluations' owners, cards' owners, the latest activity's actors)
+and the projects with your roles each in one statement (14 → 11 statements); page rows
+read positionally. A/B on the same database, alternating runs (60 requests each, p50 /
+p95 ms): 0.1.0-era code on the old indexes 118-141 / 139-166, the new code 107-111 /
+127-139; the score-sorted board 117-125 / 135-160 → 110-115 / 131-135 (search unchanged).
+
+**This machine, idle** (4 vCPUs, no other agent running, steal ≈ 0): one request's time
+spreads widely (one run of the same My work: 93-190 ms, p50 118), so a round's p95 moves
+by 20-40 ms between identical runs. **0.1.0's own code misses too**: `tests/perf` me.work
+(owner) 161.1 and board -score 161.2; `test_performance` my work (owner) 142.4 then 185.6,
+board -score 140.2 then 152.3 (`git archive 0046a9a`, same venv, same machine, the same
+hour). The new code in the same hour: my work (owner) 134.9-170.7, me.work (owner)
+143.5-174.4 per round.
+
+**So the guards now** (lead's rule): reads keep the 150 ms budget; a read over it is
+measured again, up to three rounds, and judged by its best (`best_p95`; a regression is
+over in every round, and every round is printed); and the two heaviest reads, an owner's
+My work (~260 cards) and the score-sorted board (masks and sorts every column), have 200
+ms (`HEAVY_READ_BUDGET_MS` / `HEAVY_BUDGET_MS`). `make -C backend test-slow` passed with
+them on the idle machine (6 tests, 214 s). `STATEMENT_BUDGET["me.work"]` (Pat) is
+lowered from 12 to the 9 it now takes.
+
+**The real fix for the owner's My work** is fewer cards per group in the response (the SPA
+shows 10 per group and asks for more 50 at a time, §9.1): returning 10 instead of 50 would
+cut its cards from about 260 to about 110. That changes `WorkOwnedGroup.ideas` ("the first
+50"), so it is the lead's decision, not done here.

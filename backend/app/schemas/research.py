@@ -33,11 +33,11 @@ from datetime import datetime
 from typing import Annotated, Final
 from uuid import UUID
 
-from pydantic import AfterValidator, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.models.enums import IdeaStatus, ResearchStep
 from app.models.research import RESEARCH_ANSWER_MAX_LENGTH
-from app.schemas.base import RequestModel, ResponseModel, SingleLine, reject_hidden, visible_text
+from app.schemas.base import RequestModel, ResponseModel, SingleLine, VisibleLine, VisibleText
 from app.schemas.common import Problem
 from app.schemas.users import UserRef
 
@@ -340,7 +340,14 @@ class ResearchItemIn(RequestModel):
             "answers); omit to add a new one. Unknown: 422 unknown_research_item."
         ),
     )
-    title: Annotated[str, Field(min_length=1, max_length=RESEARCH_TITLE_MAX_LENGTH), SingleLine]
+    title: Annotated[
+        str, Field(min_length=1, max_length=RESEARCH_TITLE_MAX_LENGTH), VisibleLine, SingleLine
+    ] = Field(
+        description=(
+            "Invisible characters are removed and at least one visible character must be "
+            "left (Phase 8 review L2)."
+        )
+    )
     hint: Annotated[str, Field(max_length=RESEARCH_HINT_MAX_LENGTH), SingleLine] = ""
     required: bool = True
 
@@ -432,27 +439,20 @@ class IdeaResearch(ResponseModel):
     permissions: ResearchPermissions
 
 
-def _visible_answer(value: str) -> str:
-    """Drop invisible characters (zero-width, bidi controls, other format characters:
-    :func:`app.schemas.base.visible_text`, as for agents' text) and the ends' whitespace;
-    an answer must keep at least one visible character, so a lone zero-width space or bidi
-    control never counts as answering (and so never passes the gate)."""
-    reject_hidden(value)  # NUL and tag characters are refused (422), not dropped
-    cleaned = visible_text(value).strip()
-    if not cleaned:
-        raise ValueError("an answer needs at least one visible character")
-    return cleaned
-
-
 class ResearchAnswerIn(RequestModel):
     """Answer an item, or replace its answer (last write wins). Plain text, kept as typed
-    apart from the stripped ends and invisible characters (removed); line breaks allowed;
-    at least one visible character."""
+    apart from the stripped ends and invisible characters (removed: zero-width, bidi
+    controls, other format characters, :func:`app.schemas.base.visible_text`, as for
+    agents' text); line breaks allowed; at least one letter, digit, punctuation mark or
+    symbol must be left (:func:`app.schemas.base.has_visible_character`), so a lone
+    zero-width space, joiner, variation selector or combining mark never counts as
+    answering (and so never passes the gate). The length counts the cleaned text
+    (:data:`app.schemas.base.VisibleText`, Phase 8 review L2)."""
 
     answer: Annotated[
         str,
         Field(min_length=1, max_length=RESEARCH_ANSWER_MAX_LENGTH),
-        AfterValidator(_visible_answer),
+        VisibleText,
     ] = Field(
         description=(
             "1-2,000 characters of plain text with at least one visible character; "

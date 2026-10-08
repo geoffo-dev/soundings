@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { WithTooltip } from '@/components/ui/tooltip'
+import { focusWhenRendered } from '@/lib/focus'
 import { cn } from '@/lib/utils'
 
 /**
@@ -98,6 +99,21 @@ export function SortableRows<T>({
       </SortableContext>
     </DndContext>
   )
+}
+
+/**
+ * After Remove (its button goes with the row): focus the title of the row that takes its
+ * place, or of the one before when it was the last, never `<body>` (WCAG 2.4.3; Phase 8
+ * UX review M2). `ids` are the rows before the removal; `titleId(id)` the title's DOM id.
+ */
+export function focusNeighbour(
+  ids: readonly string[],
+  removed: string,
+  titleId: (id: string) => string,
+): void {
+  const index = ids.indexOf(removed)
+  const next = ids[index + 1] ?? ids[index - 1]
+  if (next !== undefined) focusWhenRendered(() => document.getElementById(titleId(next)))
 }
 
 /** Alt+↑/↓ from a field moves its row. */

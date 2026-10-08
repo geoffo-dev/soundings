@@ -60,6 +60,7 @@ from app.schemas.proposals import (
 from app.services.ideas import LoadedIdea
 
 __all__ = [
+    "MAX_LISTED_SUGGESTIONS",
     "CreatedSuggestion",
     "accept_suggestion",
     "create_suggestion",
@@ -68,6 +69,9 @@ __all__ = [
     "suggestion_out",
     "suggestion_source",
 ]
+
+MAX_LISTED_SUGGESTIONS: Final = 200
+"""The pending list's hard ceiling (the oldest; Phase 8 review N2)."""
 
 _NOT_PENDING: Final = "This suggestion has already been accepted."
 _NOT_FOUND: Final = "That suggestion isn't on this proposal."
@@ -136,7 +140,9 @@ async def list_suggestions(
 ) -> ProposalSuggestionList:
     """``proposal.view``: the pending suggestions of active sections in template order,
     then oldest first, with what the principal may do (a removed section's are kept,
-    hidden, Phase 8). 404 when the idea has no proposal."""
+    hidden, Phase 8). 404 when the idea has no proposal. At most the oldest
+    :data:`MAX_LISTED_SUGGESTIONS` (Phase 8 review N2: the cap of 50 counts active
+    sections only, so restoring sections can leave more pending, and there is no paging)."""
     proposal = await require_proposal(db, loaded)
     require(principal, Rule.PROPOSAL_VIEW, loaded.resource)
     template = await project_template(db, loaded.project.id)
@@ -149,6 +155,7 @@ async def list_suggestions(
                 SuggestionRow.section_key.in_(template.keys),
             )
             .order_by(SuggestionRow.created_at, SuggestionRow.id)
+            .limit(MAX_LISTED_SUGGESTIONS)
         )
     )
     rows.sort(key=lambda row: template.position(row.section_key))  # stable: oldest first

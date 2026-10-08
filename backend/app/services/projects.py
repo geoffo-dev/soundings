@@ -60,6 +60,7 @@ from app.schemas.rubric import RubricCriterion as RubricCriterionOut
 from app.schemas.users import UserRef
 from app.services import audit
 from app.services.scoring import recompute_aggregates
+from app.services.sql import require_unique_lower
 from app.services.users import active_user
 
 __all__ = [
@@ -451,6 +452,12 @@ async def replace_rubric(
     (:func:`app.services.ideas.load_idea`), so this runs strictly before or after
     every evaluation save in the project, never interleaved with one.
     """
+    await require_unique_lower(
+        db,
+        [item.name for item in body.criteria],
+        field="criteria",
+        message="criterion names must be unique",
+    )
     active = await _active_criteria(db, project.id)
     by_id = {criterion.id: criterion for criterion in active}
     unknown = [item.id for item in body.criteria if item.id is not None and item.id not in by_id]

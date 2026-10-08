@@ -289,7 +289,7 @@ const IdeaTableRow = memo(function IdeaTableRow({
             label={idea.status_label}
             className="max-w-full min-w-0 truncate"
           />
-          <ResearchProgressBadge research={idea.research} className="relative z-10" />
+          <ResearchProgressBadge idea={idea} className="relative z-10" />
         </span>
       </TableCell>
       <TableCell

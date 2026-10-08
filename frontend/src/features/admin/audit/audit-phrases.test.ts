@@ -700,6 +700,21 @@ describe('audit sentences', () => {
     expect(say({ ...override, details: { open_items: 1 } })).toBe(
       'Alice Anders moved CUST-7 past research without finishing it, 1 required item open',
     )
+    // Worded by the request it let through: an invite never reads "moved … (to New)".
+    const by = (operation: string) =>
+      say({
+        ...override,
+        details: { operation, from_status: 'new', to_status: 'new', open_items: 2 },
+      })
+    expect(by('add_evaluators')).toBe(
+      'Alice Anders invited evaluators to CUST-7 without finishing its research, 2 required items open',
+    )
+    expect(by('request_ai_evaluation')).toBe(
+      'Alice Anders asked AI to evaluate CUST-7 without finishing its research, 2 required items open',
+    )
+    expect(by('create_proposal')).toBe(
+      'Alice Anders started the proposal for CUST-7 without finishing its research, 2 required items open',
+    )
   })
 
   it('falls back to the raw action for unknown actions', () => {

@@ -47,12 +47,14 @@ test.describe('the board', () => {
       card(page, 'TOOL-7').getByRole('img', {
         name: 'Research 1 of 3 answered, 1 required item open',
       }),
-    ).toBeVisible()
+    ).toHaveText('1 open')
     await expect(
       card(page, 'TOOL-10').getByRole('img', { name: 'Research 3 of 3 answered, complete' }),
-    ).toBeVisible()
-    // Past Research: no badge.
+    ).toHaveText('Ready')
+    // Past Research: no badge; before it, none until something is answered (UX review m1).
     await expect(card(page, 'TOOL-1').getByRole('img', { name: /^Research/ })).toHaveCount(0)
+    await expect(card(page, 'TOOL-5')).toBeVisible()
+    await expect(card(page, 'TOOL-5').getByRole('img', { name: /^Research/ })).toHaveCount(0)
     expect(await seriousViolations(page)).toEqual([])
   })
 
@@ -74,6 +76,24 @@ test.describe('the board', () => {
     await expect(gate(page)).toHaveCount(0)
     await expect(card(column(page, 'Evaluating'), 'TOOL-7')).toBeVisible()
     await expect(toast(page, 'TOOL-7 moved to Evaluating')).toBeVisible()
+  })
+
+  test('moving it back offers no Undo that the gate would refuse', async ({ page }) => {
+    await openBoard(page)
+    await moveWithKeyboard(page, 'TOOL-7', 1)
+    await gate(page).getByRole('button', { name: 'Move anyway…' }).click()
+    await gate(page).getByRole('button', { name: 'Move anyway' }).click()
+    await expect(card(column(page, 'Evaluating'), 'TOOL-7')).toBeVisible()
+    // Back to Research: undoing that would cross the gate again with an item open
+    // (code review L4), so the toast says what to do instead of offering Undo.
+    await card(page, 'TOOL-7').focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('Space')
+    await expect(card(column(page, 'Research'), 'TOOL-7')).toBeVisible()
+    const moved = toast(page, 'TOOL-7 moved to Research')
+    await expect(moved).toContainText('Finish its research checklist to move it on again.')
+    await expect(moved.getByRole('button', { name: 'Undo' })).toHaveCount(0)
   })
 
   test('closing the dialog puts focus back on the card', async ({ page }) => {
@@ -144,7 +164,10 @@ test.describe('the idea page', () => {
     await expect(panel).toContainText('1 required item left before Evaluating')
     await expect(page.getByRole('button', { name: 'Finish research' }).first()).toBeVisible()
     await expect(panel.getByRole('heading', { name: 'Similar ideas' })).toBeVisible()
-    await expect(panel.getByRole('link', { name: /Cost dashboard per team/ })).toBeVisible()
+    // Similar ideas show a line of each summary (UX review p6).
+    await expect(panel.getByRole('link', { name: /Cost dashboard per team/ })).toContainText(
+      'Show each team what its cloud resources cost',
+    )
     expect(await seriousViolations(page)).toEqual([])
     expect(await bestPracticeViolations(page)).toEqual([])
 
@@ -158,8 +181,18 @@ test.describe('the idea page', () => {
     await expect(panel).toContainText('Answered by Bob Chen')
     await expect(page.getByRole('button', { name: 'Start evaluation' }).first()).toBeVisible()
 
+    // Evaluation needs evaluators: Start evaluation invites them, and the invite moves the
+    // idea on (UX review p7).
     await page.getByRole('button', { name: 'Start evaluation' }).first().click()
-    await expect(toast(page, 'TOOL-7 moved to Evaluating')).toBeVisible()
+    const invite = page.getByRole('dialog', { name: 'Invite evaluators' })
+    await expect(invite).toContainText('inviting starts evaluation and moves TOOL-7 to Evaluating')
+    await invite.getByRole('option').first().click()
+    await invite
+      .getByRole('button', { name: /^Invite/ })
+      .last()
+      .click()
+    await expect(toast(page, 'Invited')).toContainText('TOOL-7 moves to Evaluating')
+    await expect(page.getByRole('button', { name: 'Start evaluation' })).toHaveCount(0)
   })
 
   test('clearing an answer can be undone', async ({ page }) => {
@@ -173,8 +206,63 @@ test.describe('the idea page', () => {
     await expect(panel).toContainText('1 of 3 answered')
   })
 
+  test('an unsaved answer survives leaving the page; Escape only leaves the field', async ({
+    page,
+  }) => {
+    await page.goto('/ideas/TOOL-7')
+    const panel = page.getByRole('region', { name: 'Research' })
+    const field = panel.getByRole('textbox', { name: 'Departments or teams consulted' })
+    // The hint is a line under the title, read with the field (UX review m3).
+    await expect(panel.getByText('Who you spoke to and what they said')).toBeVisible()
+    await expect(field).toHaveAccessibleDescription(/Who you spoke to and what they said/)
+    await field.fill('Legal, 3 Oct: fine')
+    await field.press('Escape')
+    await expect(field).not.toBeFocused()
+    await expect(field).toHaveValue('Legal, 3 Oct: fine')
+
+    // Away and back (UX review M1): the draft comes back, saying so.
+    await page.getByRole('link', { name: 'Internal Tools' }).first().click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Internal Tools' })).toBeVisible()
+    await page.goBack()
+    await expect(field).toHaveValue('Legal, 3 Oct: fine')
+    await expect(panel).toContainText('Unsaved draft restored')
+    await panel.getByRole('button', { name: 'Discard' }).click()
+    await expect(field).toHaveValue('')
+    await expect(field).toBeFocused()
+    await page.goBack()
+    await page.goForward()
+    await expect(field).toHaveValue('')
+    await expect(panel).not.toContainText('Unsaved draft restored')
+  })
+
+  test('the appendix links back to the checklist', async ({ page }) => {
+    await page.goto('/ideas/TOOL-4?tab=proposal')
+    const appendix = page.getByRole('region', { name: 'Research and consultation' })
+    await expect(appendix).toBeVisible({ timeout: 10_000 })
+    await appendix.getByRole('button', { name: 'Edit on Overview' }).click()
+    const panel = page.getByRole('region', { name: 'Research' })
+    await expect(panel.getByRole('button', { name: 'Research', exact: true })).toBeFocused()
+    await expect(panel.getByRole('textbox').first()).toBeVisible()
+    // Past Research a required answer can be edited, not cleared (code review M1).
+    await expect(
+      panel.getByRole('button', { name: 'Clear the answer to Departments or teams consulted' }),
+    ).toHaveCount(0)
+  })
+
   test.describe('as a member who doesn’t own it', () => {
     test.use({ signedInAs: DAVE })
+
+    test('before Research the panel starts folded, in neutral words', async ({ page }) => {
+      await page.goto('/ideas/TOOL-5')
+      const panel = page.getByRole('region', { name: 'Research' })
+      const toggle = panel.getByRole('button', { name: 'Research', exact: true })
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(panel).toContainText('0 of 3 answered')
+      await expect(panel.locator('.text-warning')).toHaveCount(0)
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(panel.getByText('Not answered yet').first()).toBeVisible()
+    })
 
     test('reads the answers, nothing to edit', async ({ page }) => {
       await page.goto('/ideas/TOOL-10')
@@ -192,10 +280,14 @@ test.describe('project settings', () => {
   }) => {
     await page.goto('/p/internal-tools/settings?tab=research')
     await expect(page.getByRole('heading', { name: 'Research step' })).toBeVisible()
-    await expect(
-      page.getByText('Move the 2 ideas in Research to another status first'),
-    ).toBeVisible()
+    // A project using the step usually has ideas in Research: one quiet line, no warning
+    // above the checklist (UX review M3).
+    await expect(page.getByText('Can’t change while 2 ideas are in Research')).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveCount(0)
     await expect(page.getByRole('radio', { name: 'Off' })).toBeDisabled()
+    await expect(
+      page.getByRole('radiogroup', { name: 'Where Research goes' }),
+    ).toHaveAccessibleDescription(/Can’t change while 2 ideas are in Research/)
     await expect(
       page.getByRole('list', { name: 'Checklist items' }).getByRole('listitem'),
     ).toHaveCount(3)
@@ -204,13 +296,38 @@ test.describe('project settings', () => {
     // The checklist can still change: make data protection required, then save.
     await page.getByRole('switch').last().click()
     await page.getByRole('button', { name: 'Save research step' }).click()
-    await expect(toast(page, 'Research step saved')).toBeVisible()
+    await expect(toast(page, 'Checklist saved')).toBeVisible()
+  })
+
+  test('removing an item moves focus to the next one; saving keeps it in a new row', async ({
+    page,
+  }) => {
+    await page.goto('/p/internal-tools/settings?tab=research')
+    const items = page.getByRole('list', { name: 'Checklist items' }).getByRole('listitem')
+    await expect(items).toHaveCount(3)
+    await page.getByRole('button', { name: 'Remove Departments or teams consulted' }).click()
+    await expect(items).toHaveCount(2)
+    await expect(items.nth(1).getByRole('textbox', { name: 'Title' })).toBeFocused()
+    await page.getByRole('button', { name: 'Discard' }).click()
+    await expect(items).toHaveCount(3)
+
+    await page.getByRole('button', { name: 'Add item' }).click()
+    const title = items.last().getByRole('textbox', { name: 'Title' })
+    await title.fill('Budget owner agreed')
+    await page.keyboard.press('ControlOrMeta+s')
+    await expect(toast(page, 'Checklist saved')).toBeVisible()
+    // Saved and refetched: the new row kept its place in the DOM (UX review M2).
+    await page.waitForTimeout(500)
+    await expect(title).toBeFocused()
+    await expect(title).toHaveValue('Budget owner agreed')
   })
 
   test('members read the step without changing it', async ({ page }) => {
     await page.goto('/p/customer-innovation/settings?tab=research')
-    // Alice isn't a CUST admin: Priya is.
-    await expect(page.getByText('Only project admins can change the research step')).toBeVisible()
+    // Alice isn't a CUST admin: Priya is. The page says so once, in its header (UX p3).
+    await expect(page.getByText('Only project admins can change these settings.')).toBeVisible()
+    await expect(page.getByText(/Only project admins can change the research step/)).toHaveCount(0)
+    await expect(page.getByRole('radio')).toHaveCount(0)
   })
 
   test.describe('as a platform admin', () => {

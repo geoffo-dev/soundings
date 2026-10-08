@@ -99,8 +99,16 @@ class IdeaData:
         """From an ``Idea`` or a row selected with :data:`IDEA_COLUMNS`."""
         return cls(**{name: getattr(source, name) for name in _IDEA_FIELDS})
 
+    @classmethod
+    def of_row(cls, row: Row[Any]) -> IdeaData:
+        """From a row that starts with :data:`IDEA_COLUMNS`, in their order (the page
+        queries): positional, which is several times cheaper than a lookup by name per
+        field on hundreds of cards (Phase 8 review: My work)."""
+        return cls(*row[:_IDEA_FIELD_COUNT])
+
 
 _IDEA_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(IdeaData))
+_IDEA_FIELD_COUNT = len(_IDEA_FIELDS)
 IDEA_COLUMNS: tuple[InstrumentedAttribute[Any], ...] = tuple(
     getattr(Idea, name) for name in _IDEA_FIELDS
 )
@@ -269,8 +277,22 @@ async def load_context(
     """Projects, your roles, and the names of the page's owners and tags."""
     project_ids = {row.idea.project_id for row in rows}
     if projects is None or not project_ids <= set(projects):
-        found = await db.scalars(select(Project).where(any_of(Project.id, project_ids)))
-        projects = {project.id: project for project in found}
+        if roles is None:
+            # The projects and your role in each in one statement (Phase 8 review: My work).
+            found_roles = await db.execute(
+                select(Project, _roles.c.role)
+                .outerjoin(
+                    _roles,
+                    (_roles.c.project_id == Project.id) & (_roles.c.user_id == principal.user_id),
+                )
+                .where(any_of(Project.id, project_ids))
+            )
+            pairs = found_roles.all()
+            projects = {project.id: project for project, _ in pairs}
+            roles = {project.id: ProjectRole(role) for project, role in pairs if role is not None}
+        else:
+            found = await db.scalars(select(Project).where(any_of(Project.id, project_ids)))
+            projects = {project.id: project for project in found}
     if roles is None:
         roles = await roles_in(db, principal, project_ids)
     users = await user_refs(db, [*(row.idea.owner_id for row in rows), *extra_users])

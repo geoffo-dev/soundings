@@ -1,5 +1,5 @@
 import type { GateAction } from '@/api/research'
-import type { ResearchProgress, ResearchStep } from '@/api/types'
+import type { IdeaStatus, ResearchProgress, ResearchStep } from '@/api/types'
 
 /** "2 of 3 answered" (screen readers and the panel; cards show "2/3"). */
 export function progressWords(progress: ResearchProgress): string {
@@ -12,6 +12,25 @@ export function badgeLabel(progress: ResearchProgress): string {
   return `Research ${progressWords(progress)}${
     open > 0 ? `, ${open} required ${open === 1 ? 'item' : 'items'} open` : ', complete'
   }`
+}
+
+/**
+ * Whether a card (board, list, My work) shows the checklist badge: in Research, and in
+ * the status before it only once something is answered, so a column of "0/3" badges
+ * doesn't crowd the cards before anyone started (UX review m1).
+ */
+export function showsResearchBadge(idea: {
+  status: IdeaStatus
+  research: ResearchProgress | null
+}): boolean {
+  const research = idea.research
+  if (!research || research.total === 0) return false
+  return idea.status === 'research' || research.answered > 0
+}
+
+/** The badge's words: "2 open" (required items left) or "Ready" (nothing blocks the move). */
+export function badgeWords(progress: ResearchProgress): string {
+  return progress.required_open > 0 ? `${progress.required_open} open` : 'Ready'
 }
 
 /** The one line under the step choice: where Research goes and what it does. */

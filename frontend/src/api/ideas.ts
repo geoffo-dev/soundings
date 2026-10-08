@@ -25,7 +25,9 @@ import type {
   IdeaCreate,
   IdeaDetail,
   IdeaFilters,
+  IdeaResearch,
   IdeaStatus,
+  Project,
   ResearchOverride,
   IdeaSummary,
   IdeaUpdate,
@@ -40,6 +42,8 @@ import {
   unhideItem,
   useHiddenItems,
 } from '@/api/undo'
+import { toast } from '@/components/ui/toaster'
+import { crossesGate } from '@/lib/status'
 
 /* ------------------------------------------------------------------ */
 /* Queries                                                             */
@@ -372,7 +376,14 @@ export function useChangeIdeaStatus(idea?: string, { undo = true }: UndoOption =
       settleIdea(queryClient, ref, data)
       const previous = context.previous
       if (undo && !vars.isUndo && previous) {
-        offerUndo(`${data.key} moved to ${data.status_label}`, () =>
+        const title = `${data.key} moved to ${data.status_label}`
+        if (undoBlockedByResearch(queryClient, ref, data, previous.status)) {
+          toast.success(title, {
+            description: 'Finish its research checklist to move it on again.',
+          })
+          return
+        }
+        offerUndo(title, () =>
           mutation.mutate({
             idea: vars.idea,
             status: previous.status,
@@ -385,6 +396,28 @@ export function useChangeIdeaStatus(idea?: string, { undo = true }: UndoOption =
     meta: { errorTitle: 'Couldn’t change the status' },
   })
   return mutation
+}
+
+/**
+ * Code review L4: moving an idea back (out of a status after Research) and then undoing
+ * it crosses the research gate again. With required items open that Undo would be
+ * refused (owners) or need an audited "Move anyway" (admins), so it isn't offered.
+ */
+function undoBlockedByResearch(
+  queryClient: QueryClient,
+  ref: string,
+  moved: IdeaDetail,
+  back: IdeaStatus,
+): boolean {
+  const project = queryClient.getQueryData<Project>(queryKeys.projects.detail(moved.project.slug))
+  // Undoing a close counts from the status it was closed from (`back`): never a crossing.
+  if (!crossesGate(project?.research_step ?? 'off', moved.status, back, back)) return false
+  const open =
+    moved.research?.required_open ??
+    queryClient.getQueryData<IdeaResearch>(queryKeys.research.checklist(ref))?.progress
+      .required_open ??
+    0
+  return open > 0
 }
 
 /* ------------------------------------------------------------------ */

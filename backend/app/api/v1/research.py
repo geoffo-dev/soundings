@@ -162,8 +162,10 @@ async def answer_research_item(
     summary="Clear a research item's answer",
     description=(
         "idea.answer_research (the owner and admins; c5): delete the item's answer "
-        "(idempotent: an unanswered item stays unanswered). Clearing never moves the idea, "
-        "even past Research. Returns the whole panel." + _ANSWER_ERRORS
+        "(idempotent: an unanswered item stays unanswered). Clearing never moves the idea. "
+        "Once the idea is past Research (in a status after it), a required item's answer "
+        "is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). "
+        "Returns the whole panel." + _ANSWER_ERRORS
     ),
     responses=problems(401, 403, 404, 409),
 )

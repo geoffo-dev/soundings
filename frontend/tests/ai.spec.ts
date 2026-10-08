@@ -162,7 +162,7 @@ test('a run that ends while you type leaves focus where it is', async ({ page })
   await aiMock(page, { pace: 250 })
   await openIdea(page, 'CUST-2')
   await page.getByRole('button', { name: 'AI actions' }).first().click()
-  await page.getByRole('menuitem', { name: 'Research this' }).click()
+  await page.getByRole('menuitem', { name: 'Ask AI to research' }).click()
   await page.getByRole('menuitem', { name: 'Research agent' }).click()
   const card = runCard(page)
   await expect(card.getByText('Working', { exact: true })).toBeVisible()
@@ -193,11 +193,11 @@ test('a failed run says why in Soundings’ words and offers “Try again”', a
   await expect(await openSteps(card)).toContainText('The agent stopped with an error.')
 })
 
-test('“Research this” adds a cited research note to the feed', async ({ page }) => {
+test('“Ask AI to research” adds a cited research note to the feed', async ({ page }) => {
   await aiMock(page)
   await openIdea(page, 'CUST-2')
   await page.getByRole('button', { name: 'AI actions' }).first().click()
-  await page.getByRole('menuitem', { name: 'Research this' }).click()
+  await page.getByRole('menuitem', { name: 'Ask AI to research' }).click()
   await page.getByRole('menuitem', { name: 'Research agent' }).click()
   const card = runCard(page)
   await expect(card).toContainText('Research note saved')
@@ -212,6 +212,22 @@ test('“Research this” adds a cited research note to the feed', async ({ page
     'rel',
     'noopener noreferrer nofollow',
   )
+})
+
+test.describe('on the Research panel', () => {
+  test.use({ signedInAs: CAROL }) // a Sustainability admin (research step before proposal)
+
+  test('“Ask AI to research” has the menu’s words, and points at its note', async ({ page }) => {
+    await aiMock(page)
+    await openIdea(page, 'GREEN-3')
+    const panel = page.getByRole('region', { name: 'Research' })
+    await panel.getByRole('button', { name: 'Ask AI to research' }).click()
+    // Once saved, the panel says where the note is (UX review m7).
+    await expect(panel).toContainText('Note from Idea evaluator', { timeout: 10_000 })
+    await panel.getByRole('button', { name: 'Read it' }).click()
+    const note = page.locator('article[id^="research-note-"]').first()
+    await expect(note).toBeFocused()
+  })
 })
 
 test('the owner deletes a research note after confirming', async ({ page }) => {

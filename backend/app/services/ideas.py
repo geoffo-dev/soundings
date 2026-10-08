@@ -476,6 +476,10 @@ async def change_status(
     }
     if overridden:
         payload["research_overridden"] = True
+    if IdeaStatus.RESEARCH in (before[0], after[0]):
+        # Code review L3: public tracking reads Research with the step of the time, so
+        # moving the step later never rewrites a submitter's history.
+        payload["research_step"] = step
     await activity.emit(db, idea, "status_changed", actor=principal, payload=payload)
     await audit.record(
         db,

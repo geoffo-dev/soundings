@@ -305,7 +305,7 @@ function KindItems({
 
 /**
  * The idea's "AI" menu beside its primary action (owner and admins): "Ask AI to
- * evaluate" and "Research this", straight to the one agent or with a choice of
+ * evaluate" and "Ask AI to research", straight to the one agent or with a choice of
  * several; disabled with the reason when it can't be done now; "Evaluating…"
  * links to a run that is already active.
  */
@@ -412,7 +412,7 @@ function DraftItems({
   )
 }
 
-/** ⌘K: "Ask AI to evaluate" / "Research this" while they can be done (one per agent). */
+/** ⌘K: "Ask AI to evaluate" / "Ask AI to research" while they can be done (one per agent). */
 export function useAiCommands(
   ideaKey: string,
   setTab: (tab: IdeaTab) => void,

@@ -96,3 +96,26 @@ async def test_submitters_see_a_move_only_when_the_reported_status_changes(
     assert [row["status"] for row in body["history"]] == history
     assert "research" not in str(body).lower()
     assert len(await emails_of(db_session, EmailType.SUBMISSION_STATUS_CHANGED)) == emails
+
+
+async def test_moving_the_step_later_never_rewrites_the_history(
+    anon: httpx.AsyncClient, api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    """Code review L3: each move is read with the step it happened under (recorded on
+    the event), not the project's current one, so switching the step afterwards never
+    adds a status the submitter's idea never had."""
+    token, idea = await opted_in(anon, team, db_session)
+    await set_step(db_session, team.project, ResearchStep.BEFORE_EVALUATION, OPTIONAL)
+    for status in ("research", "evaluating", "shortlisted"):
+        await move(api, team, idea, status)
+    before = [row["status"] for row in ok(await track(anon, token))["history"]]
+
+    await set_step(db_session, team.project, ResearchStep.BEFORE_PROPOSAL)
+    after = ok(await track(anon, token))
+    await set_step(db_session, team.project, ResearchStep.OFF)
+    off = ok(await track(anon, token))
+
+    assert before == ["evaluating", "shortlisted"]
+    assert [row["status"] for row in after["history"]] == before
+    assert [row["status"] for row in off["history"]] == before
+    assert after["status"] == off["status"] == "shortlisted"

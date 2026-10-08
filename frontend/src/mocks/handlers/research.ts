@@ -51,7 +51,7 @@ import {
   TEMPLATE_TITLE_MAX_LENGTH,
   templateOut,
 } from '@/mocks/templates'
-import { crossesGate } from '@/lib/status'
+import { crossesGate, gatedStatuses } from '@/lib/status'
 
 import { ensureIdeaWritable, isUuid, standing, uuidParam, viewIdea, viewProject } from './common'
 
@@ -611,6 +611,18 @@ export const researchHandlers = [
     const idea = viewIdea(ctx)
     const item = researchItem(ctx, idea)
     checkAnswer(ctx, idea)
+    // Code review M1: past Research a required answer is kept (edits stay allowed).
+    const step = projectOf(ctx.db, idea).research_step
+    if (
+      answerOf(ctx.db, idea.id, item.id) &&
+      item.required &&
+      gatedStatuses(step).includes(idea.status)
+    ) {
+      conflict(
+        'research_answer_required',
+        'This idea is past Research: a required item’s answer can be changed but not cleared.',
+      )
+    }
     ctx.db.researchAnswers = ctx.db.researchAnswers.filter(
       (a) => !(a.idea_id === idea.id && a.item_id === item.id),
     )

@@ -804,14 +804,21 @@ async def test_ac8_api_2_the_research_step_gates_every_path_past_research(
     # 5. Now it moves on, with no override and no audit entry.
     assert (await move(bob, key, "evaluating"))["status"] == "evaluating"
     assert await audit(alice, action="idea.research_override", project_id=cust_id) == []
-    # Clearing an answer afterwards never moves it back; the card shows no progress
-    # past Research.
-    cleared = await bob.send("DELETE", f"/ideas/{key}/research/items/{second}")
-    assert cleared["progress"]["required_open"] == 1
-    assert cleared["blocking"] is False
+    # Past Research a required answer is kept (review M1: edit, don't clear), and the
+    # card shows no progress past Research.
+    await refused(
+        bob,
+        "DELETE",
+        f"/ideas/{key}/research/items/{second}",
+        None,
+        status=409,
+        code="research_answer_required",
+    )
+    kept = await bob.get(f"/ideas/{key}/research")
+    assert kept["progress"]["required_open"] == 0
+    assert kept["blocking"] is False
     after = await bob.get(f"/ideas/{key}")
     assert (after["status"], after["research"]) == ("evaluating", None)
-    await answer(bob, key, second, CONSULTED)
 
     # 6. "Move anyway": a project admin moves another idea on with its checklist open;
     #    audited with the reason, and the feed marks the move.

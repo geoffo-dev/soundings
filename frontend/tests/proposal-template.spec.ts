@@ -54,24 +54,68 @@ test('renames, reorders and adds; saving keeps every proposal in step', async ({
   await expect(page.getByRole('heading', { level: 2, name: /The ask and timing$/ })).toBeVisible()
 })
 
-test('removing a section with text asks first; Removed sections restores it', async ({ page }) => {
+test('removing a section keeps focus in the list; Restore puts it back in place', async ({
+  page,
+}) => {
   await openTemplate(page)
+  // No confirmation (nothing is lost: Discard or Restore brings it back, UX review S1);
+  // focus moves to the row that took its place, never to the page (UX review M2).
   await page.getByRole('button', { name: 'Remove Solution' }).click()
-  const confirm = page.getByRole('alertdialog', { name: 'Remove “Solution”?' })
-  await expect(confirm).toContainText('Its text in 1 proposal is kept')
-  await confirm.getByRole('button', { name: 'Remove section' }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   await expect(sections(page)).toHaveCount(5)
+  await expect(sections(page).nth(2).getByRole('textbox', { name: 'Title' })).toBeFocused()
+  await expect(sections(page).nth(2).getByRole('textbox', { name: 'Title' })).toHaveValue(
+    'Effort & rollout',
+  )
   await page.getByRole('button', { name: 'Save template' }).click()
   await expect(toast(page, 'Proposal template saved')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Removed sections' })).toBeVisible()
   await expect(page.getByText('Text in 1 proposal · removed')).toBeVisible()
 
+  // Back where it was (third), not at the end (UX review p1).
   await page.getByRole('button', { name: 'Restore Solution' }).click()
   await expect(sections(page)).toHaveCount(6)
-  await expect(sections(page).last().getByRole('textbox', { name: 'Title' })).toBeFocused()
+  const restored = sections(page).nth(2).getByRole('textbox', { name: 'Title' })
+  await expect(restored).toHaveValue('Solution')
+  await expect(restored).toBeFocused()
   await page.getByRole('button', { name: 'Save template' }).click()
   await expect(toast(page, 'Proposal template saved')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Removed sections' })).toHaveCount(0)
+})
+
+test('saving from a new row keeps focus in it; Discard hands focus to Save', async ({ page }) => {
+  await openTemplate(page)
+  await page.getByRole('button', { name: 'Add section' }).click()
+  const added = sections(page).last().getByRole('textbox', { name: 'Title' })
+  await added.fill('Carbon impact')
+  const hint = sections(page).last().getByRole('textbox', { name: 'Hint' })
+  await hint.fill('What it saves, roughly, per year.')
+  await page.keyboard.press('ControlOrMeta+s')
+  await expect(toast(page, 'Proposal template saved')).toBeVisible()
+  // The new row got its key from the server without remounting (UX review M2).
+  await expect(hint).toBeFocused()
+
+  await sections(page).first().getByRole('textbox', { name: 'Title' }).fill('Overview')
+  await page.getByRole('button', { name: 'Discard' }).click()
+  await expect(page.getByRole('button', { name: /^Save template/ })).toBeFocused()
+})
+
+test('a long hint wraps on a phone and stays one line', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openTemplate(page)
+  const hint = sections(page).first().getByRole('textbox', { name: 'Hint' })
+  await hint.fill('One line, long enough to wrap onto a second line on a phone screen')
+  await hint.press('End')
+  await hint.press('Shift+Enter')
+  await expect(hint).toHaveValue(
+    'One line, long enough to wrap onto a second line on a phone screen',
+  )
+  const box = await hint.boundingBox()
+  expect(box?.height ?? 0).toBeGreaterThan(40)
+  // Every settings tab in sight: they wrap instead of scrolling away (UX review m6).
+  const tab = page.getByRole('tab', { name: 'Public form' })
+  const tabBox = await tab.boundingBox()
+  expect((tabBox?.x ?? 999) + (tabBox?.width ?? 0)).toBeLessThanOrEqual(390)
 })
 
 test('keeps one section at least, twelve at most', async ({ page }) => {
@@ -92,13 +136,13 @@ test('the proposal ends with the research appendix while the step is on', async 
   await expect(appendix).toContainText('Departments or teams consulted')
   await expect(appendix).toContainText('Security (Raj), 21 Jul')
   await expect(appendix).toContainText('Answered by Bob Chen on')
-  // The custom sections, with their hints as placeholders.
+  // The custom sections, each hint a line under its heading read with the field (UX m3).
   await expect(
     page.getByRole('heading', { level: 2, name: /^4\. Effort & rollout$/ }),
   ).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'The ask' })).toHaveAttribute(
-    'placeholder',
-    'What you need, from whom, and by when.',
+  await expect(page.getByText('What you need, from whom, and by when.')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'The ask' })).toHaveAccessibleDescription(
+    /^What you need, from whom, and by when\./,
   )
 })
 
@@ -107,8 +151,8 @@ test.describe('as a member', () => {
 
   test('reads the template without changing it', async ({ page }) => {
     await page.goto('/p/internal-tools/settings?tab=proposal-template')
-    const panel = page.getByRole('tabpanel', { name: 'Proposal' })
-    await expect(panel.getByText('Only project admins can change them.')).toBeVisible()
+    const panel = page.getByRole('tabpanel', { name: 'Proposal template' })
+    await expect(panel.getByText('Every proposal in this project has these sections')).toBeVisible()
     await expect(panel.getByText('Effort & rollout')).toBeVisible()
     await expect(page.getByRole('textbox')).toHaveCount(0)
   })

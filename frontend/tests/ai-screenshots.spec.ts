@@ -56,7 +56,7 @@ const shots: Shot[] = [
       scheme,
       act: async (page) => {
         await page.getByRole('button', { name: 'AI actions' }).first().click()
-        await page.getByRole('menuitem', { name: 'Research this' }).hover()
+        await page.getByRole('menuitem', { name: 'Ask AI to research' }).hover()
       },
     },
     {

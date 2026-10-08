@@ -1,16 +1,26 @@
 import { useId } from 'react'
 
 import { useIdeaResearch } from '@/api/research'
+import { requestResearchFocus } from '@/features/research/research-focus'
 import { formatDate } from '@/lib/dates'
 
 /**
  * "Research and consultation" (contract-phase8 §3.8): after the template's sections,
  * while the project's research step is on, each answered checklist item as the
  * exports print it (plain text, who answered and when). Nothing while no item has an
- * answer; editing the answers happens on the idea's Research panel.
+ * answer; editing the answers happens on the idea's Research panel ("Edit on Overview"
+ * for the people who answer).
  */
-export function ResearchAppendix({ ideaKey }: { ideaKey: string }) {
+export function ResearchAppendix({
+  ideaKey,
+  onOpenResearch,
+}: {
+  ideaKey: string
+  /** Shows the idea's Research panel (the Overview tab). */
+  onOpenResearch?: () => void
+}) {
   const answered = useAnsweredResearch(ideaKey)
+  const canAnswer = useIdeaResearch(ideaKey).data?.permissions.can_answer === true
   const headingId = useId()
   if (!answered) return null
   return (
@@ -32,6 +42,21 @@ export function ResearchAppendix({ ideaKey }: { ideaKey: string }) {
           </h2>
           <p className="text-sm text-muted">
             From the idea’s research checklist; the exports end with it too.
+            {canAnswer && onOpenResearch && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="font-medium text-accent underline-offset-4 hover:underline"
+                  onClick={() => {
+                    requestResearchFocus(ideaKey)
+                    onOpenResearch()
+                  }}
+                >
+                  Edit on Overview
+                </button>
+              </>
+            )}
           </p>
         </div>
         <dl className="flex flex-col gap-4">

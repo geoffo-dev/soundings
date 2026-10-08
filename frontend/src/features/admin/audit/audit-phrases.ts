@@ -534,16 +534,32 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
         ),
       ]
     case 'idea.research_override': {
-      // An admin's "Move anyway": what it did, how much was open, and their one-line reason.
+      // An admin's "Move anyway": what it did (worded by the request it let through, so an
+      // invite doesn't read "moved … to New"), how much was open, and their reason.
       const open = num(details, 'open_items')
       const reason = str(details, 'reason')
       const to = str(details, 'to_status')
+      const operation = str(details, 'operation')
+      const what: AuditPart[] =
+        operation === 'add_evaluators'
+          ? [text(' invited evaluators to '), idea(), text(' without finishing its research')]
+          : operation === 'request_ai_evaluation'
+            ? [text(' asked AI to evaluate '), idea(), text(' without finishing its research')]
+            : operation === 'create_proposal'
+              ? [
+                  text(' started the proposal for '),
+                  idea(),
+                  text(' without finishing its research'),
+                ]
+              : [
+                  text(' moved '),
+                  idea(),
+                  text(' past research without finishing it'),
+                  ...(to ? [text(` (to ${statusLabel(to, null)})`)] : []),
+                ]
       return [
         actor,
-        text(' moved '),
-        idea(),
-        text(' past research without finishing it'),
-        ...(to ? [text(` (to ${statusLabel(to, null)})`)] : []),
+        ...what,
         ...(open !== undefined ? [text(`, ${plural(open, 'required item')} open`)] : []),
         ...(reason ? [text(': “'), name(reason), text('”')] : []),
       ]

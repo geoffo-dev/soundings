@@ -221,8 +221,12 @@ function LoadedIdeaPage({
     else if (kind === 'close-evaluation') setClosed.mutate({ closed: true })
     else if (kind === 'open-proposal') setTab('proposal')
     else if (kind === 'start-research') changeStatus.mutate({ status: 'research' })
-    else if (kind === 'start-evaluation') changeStatus.mutate({ status: 'evaluating' })
-    else if (kind === 'finish-research') {
+    else if (kind === 'start-evaluation') {
+      // Evaluation needs evaluators: invite them, and the invite moves the idea on (p7).
+      if (idea.evaluator_progress.total === 0 && idea.permissions.can_invite_evaluators) {
+        openDialog('invite')
+      } else changeStatus.mutate({ status: 'evaluating' })
+    } else if (kind === 'finish-research') {
       requestResearchFocus(ideaKey)
       setTab('overview')
     } else if (kind === 'start-proposal') {

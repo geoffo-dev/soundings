@@ -72,6 +72,7 @@ export function ProposalPanel({ ideaKey, idea, me, archived, onOpenResearch }: P
   return (
     <ProposalEditor
       key={proposal.id}
+      onOpenResearch={onOpenResearch}
       ideaKey={ideaKey}
       idea={idea}
       me={me}

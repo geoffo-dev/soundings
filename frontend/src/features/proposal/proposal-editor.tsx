@@ -60,6 +60,8 @@ export interface ProposalEditorProps {
   me: CurrentUser
   proposal: Proposal
   permissions: ProposalPermissions
+  /** Phase 8: shows the idea's Research panel (the appendix's "Edit on Overview"). */
+  onOpenResearch?: () => void
 }
 
 /**
@@ -68,7 +70,14 @@ export interface ProposalEditorProps {
  * (an auto-growing textarea with Write / Preview for editors, rendered
  * Markdown for everyone else) and its margin threads.
  */
-export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: ProposalEditorProps) {
+export function ProposalEditor({
+  ideaKey,
+  idea,
+  me,
+  proposal,
+  permissions,
+  onOpenResearch,
+}: ProposalEditorProps) {
   const queryClient = useQueryClient()
   const keptPrefix = `proposal-removed:${ideaKey.toUpperCase()}:`
   const [store] = useState(() => {
@@ -318,7 +327,7 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
               <SectionRow key={section.key} section={section} index={index} />
             ))}
             <RemovedSections store={store} activeKeys={keys} />
-            <ResearchAppendix ideaKey={ideaKey} />
+            <ResearchAppendix ideaKey={ideaKey} onOpenResearch={onOpenResearch} />
           </div>
         </div>
       </div>

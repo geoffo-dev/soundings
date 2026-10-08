@@ -61,7 +61,7 @@ test.describe('@ai Ask AI to evaluate', () => {
 
       // The owner asks from the idea's AI menu (one agent: no choice to make).
       await page.getByRole('button', { name: 'AI actions' }).first().click()
-      await expect(page.getByRole('menuitem', { name: /Research this/ })).toBeVisible()
+      await expect(page.getByRole('menuitem', { name: /Ask AI to research/ })).toBeVisible()
       await page.getByRole('menuitem', { name: /Ask AI to evaluate/ }).click()
       // Its row on Overview says so (a toast says it only when the row is out of view).
       await expect(page.locator('article[id^="ai-run-"]').first()).toBeVisible()

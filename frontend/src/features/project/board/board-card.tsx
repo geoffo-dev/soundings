@@ -15,7 +15,7 @@ import {
   OwnerAvatar,
   ResearchProgressBadge,
 } from '@/features/project/idea-meta'
-import { badgeLabel } from '@/features/research/research-copy'
+import { badgeLabel, showsResearchBadge } from '@/features/research/research-copy'
 import { useBoardFocus } from './board-focus'
 
 const MAX_TAGS = 3
@@ -89,7 +89,7 @@ export function cardDescription(idea: IdeaSummary): string {
         : null,
     idea.high_disagreement ? 'High disagreement' : null,
     idea.owner ? `Owner ${idea.owner.display_name}` : 'No owner',
-    idea.research && idea.research.total > 0 ? badgeLabel(idea.research) : null,
+    idea.research && showsResearchBadge(idea) ? badgeLabel(idea.research) : null,
     total > 0 ? `${submitted} of ${total} evaluations submitted` : null,
     idea.tags.length > 0 ? `Tags: ${idea.tags.join(', ')}` : null,
   ]
@@ -127,7 +127,7 @@ export function CardBody({ idea, lifted = false }: { idea: IdeaSummary; lifted?:
       {/* Wraps in narrow columns (six with the research step): the counts move under. */}
       <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5">
         <OwnerAvatar owner={idea.owner} size="xs" />
-        <ResearchProgressBadge research={idea.research} />
+        <ResearchProgressBadge idea={idea} />
         {idea.evaluator_progress.total > 0 && (
           <EvaluatorProgress
             progress={idea.evaluator_progress}

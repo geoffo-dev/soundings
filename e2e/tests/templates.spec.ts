@@ -100,11 +100,13 @@ test('TPL-01: an admin edits the template; the editor and both exports follow; R
   await added
     .getByRole('textbox', { name: 'Hint' })
     .fill('Where we try it first, and for how long.')
+  // No confirmation: the text is kept (Removed sections restores it, UX review S1), and
+  // focus moves to the row that took its place (M2).
   await page.getByRole('button', { name: 'Remove Cost & effort' }).click()
-  const confirm = page.getByRole('alertdialog', { name: 'Remove “Cost & effort”?' })
-  await expect(confirm).toContainText('Its text in 1 proposal is kept')
-  await confirm.getByRole('button', { name: 'Remove section' }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   await expect(rows(page)).toHaveCount(8)
+  await expect(titleField(page, 4)).toBeFocused()
+  await expect(titleField(page, 4)).toHaveValue('Risks')
   await page.getByRole('button', { name: 'Save template' }).click()
   await expect(toast(page, 'Proposal template saved')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Removed sections' })).toBeVisible()
@@ -135,10 +137,10 @@ test('TPL-01: an admin edits the template; the editor and both exports follow; R
   await expect(page.getByRole('textbox', { name: 'Customers', exact: true })).toHaveValue(
     MARKET_TEXT,
   )
-  await expect(page.getByRole('textbox', { name: 'Pilot plan', exact: true })).toHaveAttribute(
-    'placeholder',
-    'Where we try it first, and for how long.',
-  )
+  // The hint: a line under the heading, read with the field (UX review m3).
+  await expect(
+    page.getByRole('textbox', { name: 'Pilot plan', exact: true }),
+  ).toHaveAccessibleDescription(/^Where we try it first, and for how long\./)
   const outline = page.getByRole('navigation', { name: 'Outline' })
   await expect(outline.getByRole('link')).toHaveText([
     /Summary/,
@@ -199,8 +201,10 @@ test('TPL-02: a member reads the template without changing it', async ({ page, a
   const { project } = await withProposal(alice)
   await signIn(page, 'bob')
   await page.goto(`/p/${project.slug}/settings?tab=proposal-template`)
-  const tabpanel = page.getByRole('tabpanel', { name: 'Proposal' })
-  await expect(tabpanel.getByText('Only project admins can change them.')).toBeVisible()
+  const tabpanel = page.getByRole('tabpanel', { name: 'Proposal template' })
+  await expect(
+    tabpanel.getByText('Every proposal in this project has these sections'),
+  ).toBeVisible()
   await expect(tabpanel.getByText('Market & users')).toBeVisible()
   await expect(tabpanel.getByRole('textbox')).toHaveCount(0)
   // …and the API refuses a member's save.
@@ -276,10 +280,9 @@ test('TPL-04: the seeded proposals follow their projects’ templates', async ({
     /The ask/,
     'Research and consultation',
   ])
-  await expect(page.getByRole('textbox', { name: 'The ask', exact: true })).toHaveAttribute(
-    'placeholder',
-    'People, time or budget we need, and from whom.',
-  )
+  await expect(
+    page.getByRole('textbox', { name: 'The ask', exact: true }),
+  ).toHaveAccessibleDescription(/^People, time or budget we need, and from whom\./)
   const appendix = page.getByRole('region', { name: 'Research and consultation' })
   await expect(appendix).toContainText('Departments or teams consulted')
   await expect(appendix).toContainText('QA (test automation), 2 Sep')

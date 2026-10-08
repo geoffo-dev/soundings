@@ -9,7 +9,7 @@
  *   Research with every item answered. Every TOOL idea past Research has its required
  *   items answered by its owner; **TOOL-4** (Proposal) has most of the custom template
  *   written, so the editor and the exports show it and the research appendix. TOOL-5
- *   (New, before Research) shows "0/3".
+ *   (New, before Research, nothing answered) shows no badge yet.
  * - **Sustainability** (`GREEN`, Carol is its admin, Alice a member): research step
  *   **Before proposal**, the default checklist, and a **Carbon impact** section after
  *   Benefits / revenue. **GREEN-3** (Shortlisted, the status before Research here) has

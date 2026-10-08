@@ -134,8 +134,9 @@ test.describe('RS-01: project settings', () => {
     })
     await signIn(page, 'bob')
     await page.goto(`/p/${project.slug}/settings?tab=research`)
-    await expect(page.getByText('Only project admins can change the research step')).toBeVisible()
+    await expect(page.getByText('Only project admins can change these settings.')).toBeVisible()
     await expect(page.getByText(CHECKLIST.consulted)).toBeVisible()
+    await expect(page.getByRole('radio')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Save research step' })).toHaveCount(0)
   })
 
@@ -144,9 +145,9 @@ test.describe('RS-01: project settings', () => {
     const { project } = await inResearch(alice, 'Research lock')
     await signIn(page, 'alice')
     await page.goto(`/p/${project.slug}/settings?tab=research`)
-    await expect(
-      page.getByText('Move the 1 idea in Research to another status first'),
-    ).toBeVisible()
+    // One quiet line under the choice, not a warning above the checklist (UX review M3).
+    await expect(page.getByText('Can’t change while 1 idea is in Research')).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveCount(0)
     await expect(page.getByRole('radio', { name: 'Off' })).toBeDisabled()
     await expect(page.getByRole('radio', { name: 'Before proposal' })).toBeDisabled()
     // The API refuses it too, with the count.
@@ -181,8 +182,11 @@ test.describe('RS-02: the board', () => {
     await expect(
       badge(card(research, idea.key), 'Research 0 of 3 answered, 2 required items open'),
     ).toBeVisible()
-    // New is the status before Research: its cards show progress too.
-    await expect(badge(card(column(page, 'New'), fresh.key), /^Research 0 of 3/)).toBeVisible()
+    await expect(card(research, idea.key).getByText('2 open')).toBeVisible()
+    // New is the status before Research: no badge there until something is answered
+    // (UX review m1).
+    await expect(card(column(page, 'New'), fresh.key)).toBeVisible()
+    await expect(badge(card(column(page, 'New'), fresh.key), /^Research/)).toHaveCount(0)
 
     // The owner drags it to Evaluating: refused, the dialog names the open items.
     await moveRight(page, idea.key, 1)
@@ -264,7 +268,8 @@ test.describe('RS-03: the idea page', () => {
     await page.getByRole('button', { name: 'Finish research' }).first().click()
     const first = page.getByRole('textbox', { name: CHECKLIST.elsewhere })
     await expect(first).toBeFocused()
-    await expect(first).toHaveAttribute('placeholder', /Search Soundings and ask around/)
+    // The hint is a line under the title, read with the field (UX review m3).
+    await expect(first).toHaveAccessibleDescription(/Search Soundings and ask around/)
     await first.fill('Searched Soundings and asked store ops: nobody wraps gifts at the till.')
     await research.getByRole('button', { name: 'Save answer' }).click()
     await expect(first).toBeFocused()
@@ -284,9 +289,18 @@ test.describe('RS-03: the idea page', () => {
       'Legal (contracts team), 3 Oct: fine if we keep the standard terms',
     )
 
+    // Evaluation needs evaluators: Start evaluation invites them, and the invite moves
+    // the idea on (UX review p7).
     await page.getByRole('button', { name: 'Start evaluation' }).first().click()
-    await expect(toast(page, `${idea.key} moved to Evaluating`)).toBeVisible()
+    const invite = page.getByRole('dialog', { name: 'Invite evaluators' })
+    await expect(invite).toContainText(`moves ${idea.key} to Evaluating`)
+    await invite.getByRole('option', { name: /Carol/ }).click()
+    await invite.getByRole('button', { name: 'Invite', exact: true }).click()
+    await expect(toast(page, 'Invited')).toContainText(`${idea.key} moves to Evaluating`)
     await expect.poll(async () => (await alice.idea(idea.key)).status).toBe('evaluating')
+    expect((await alice.idea(idea.key)).evaluators.map((row) => row.user.display_name)).toEqual([
+      expect.stringMatching(/^Carol/),
+    ])
     expect(await alice.audit({ action: 'idea.research_override', target_id: idea.id })).toEqual([])
   })
 

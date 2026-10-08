@@ -228,6 +228,8 @@ async def queue_status_email(
         key: event.payload.get(key)
         for key in ("from_status", "from_resolution", "to_status", "to_resolution")
     }
+    if "research_step" in event.payload:  # the step of the time (L3), for the send time
+        payload["research_step"] = event.payload["research_step"]
     project = await db.get(Project, idea.project_id)
     if project is None or reported_move(project.research_step, payload) is None:
         return  # Phase 8: nothing the submitter sees changed (e.g. New -> Research)

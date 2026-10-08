@@ -25,6 +25,7 @@ from typing import Annotated, Any, Final, Literal
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StringConstraints,
@@ -33,6 +34,7 @@ from pydantic import (
 
 __all__ = [
     "BIDI_CONTROLS",
+    "BLANK_LOOKING",
     "IDEA_KEY_PATTERN",
     "INVISIBLE_CHARACTERS",
     "PROJECT_KEY_PATTERN",
@@ -44,7 +46,11 @@ __all__ = [
     "ScoreKey",
     "SingleLine",
     "TagName",
+    "VisibleLine",
+    "VisibleText",
+    "clean_visible",
     "has_tag_character",
+    "has_visible_character",
     "reject_control",
     "reject_hidden",
     "reject_nul",
@@ -169,6 +175,47 @@ def visible_text(text: str) -> str:
     """``text`` without :data:`INVISIBLE_CHARACTERS` (Phase 8: research answers, so a lone
     zero-width space or bidi control is never an answer)."""
     return INVISIBLE_CHARACTERS.sub("", text)
+
+
+BLANK_LOOKING: Final = frozenset("\u2800\u115f\u1160\u3164\uffa0")
+"""Letters and symbols that show as nothing: the braille pattern blank (a symbol) and the
+Hangul fillers (letters; :data:`INVISIBLE_CHARACTERS` removes those anyway)."""
+
+
+def has_visible_character(text: str) -> bool:
+    """True if ``text`` has a letter, digit, punctuation mark or symbol (Unicode ``L``,
+    ``N``, ``P``, ``S``) that shows (not :data:`BLANK_LOOKING`). A lone joiner (ZWJ,
+    ZWNJ), variation selector, combining mark or space is not text (Phase 8 review L2);
+    with a letter or symbol they are kept (emoji sequences, accents, Indic scripts)."""
+    return any(
+        unicodedata.category(char)[0] in "LNPS" and char not in BLANK_LOOKING for char in text
+    )
+
+
+def clean_visible(value: Any, *, one_line: bool = False) -> Any:
+    """A text field's cleaning, **before** its length check (a ``BeforeValidator``, so
+    ``Field(min_length, max_length)`` counts what is stored): NUL and tag characters are a
+    422, not dropped (:func:`reject_hidden`); with ``one_line``, so are line breaks, other
+    control characters and bidi controls (:func:`reject_control`, as :data:`SingleLine`);
+    then :data:`INVISIBLE_CHARACTERS` are removed, the ends trimmed, and at least one
+    visible character must be left (:func:`has_visible_character`). Non-strings pass
+    through to the type check."""
+    if not isinstance(value, str):
+        return value
+    reject_hidden(value)
+    if one_line:
+        reject_control(value)
+    cleaned = visible_text(value).strip()
+    if not has_visible_character(cleaned):
+        raise ValueError("needs at least one visible character")
+    return cleaned
+
+
+VisibleText = BeforeValidator(clean_visible)
+"""Phase 8 (review L2): free text that must show something (research answers)."""
+VisibleLine = BeforeValidator(lambda value: clean_visible(value, one_line=True))
+"""Phase 8 (review L2): a one-line title that must show something (proposal sections,
+checklist items); combine with :data:`SingleLine`."""
 
 
 class RequestModel(BaseModel):

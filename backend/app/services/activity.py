@@ -51,8 +51,10 @@ PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
 """The stored payload keys per event type (ids are resolved to users by the API)."""
 
 OPTIONAL_PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
-    # Phase 8: "Move anyway" past an unfinished research checklist (absent = false).
-    "status_changed": frozenset({"research_overridden"}),
+    # Phase 8: "Move anyway" past an unfinished research checklist (absent = false), and
+    # the project's research step when the move is into or out of Research (public
+    # tracking reports Research with the step of the time; never shown in the feed).
+    "status_changed": frozenset({"research_overridden", "research_step"}),
 }
 """Keys a payload may add to :data:`PAYLOAD_KEYS` (only when they say something)."""
 
