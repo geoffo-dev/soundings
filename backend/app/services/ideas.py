@@ -34,7 +34,14 @@ from app.authz import (
 from app.domain.idea_keys import IdeaKey, parse_idea_ref
 from app.domain.principal import Principal
 from app.errors import ProblemError
-from app.models.enums import EvaluationStatus, EvaluatorState, IdeaStatus, ProjectRole
+from app.models.activity import ActivityEvent
+from app.models.enums import (
+    EvaluationStatus,
+    EvaluatorState,
+    IdeaStatus,
+    ProjectRole,
+    ResearchStep,
+)
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator, IdeaTag, IdeaWatcher
 from app.models.project import Project, Tag
@@ -52,8 +59,9 @@ from app.schemas.ideas import (
 from app.schemas.ideas import (
     IdeaEvaluator as IdeaEvaluatorOut,
 )
+from app.schemas.research import crosses_gate, gated_statuses, starts_evaluation
 from app.schemas.users import UserRef
-from app.services import activity, audit
+from app.services import activity, audit, research
 from app.services.scoring import active_criteria, idea_aggregate
 from app.services.summaries import idea_row, load_context, summary_fields
 
@@ -231,7 +239,17 @@ async def idea_detail(
         extra_users=[idea.submitted_by_id],
     )
     fields = summary_fields(principal, row, context)
-    fields["permissions"] = idea_permissions(principal, resource)
+    permissions = idea_permissions(principal, resource)
+    progress = context.research.get(idea.id)
+    if (
+        permissions.can_invite_evaluators
+        and progress is not None
+        and progress.required_open > 0
+        and starts_evaluation(project.research_step, idea.status, row.evaluators)
+    ):
+        # Phase 8: the first invite would cross the research gate (409 research_incomplete).
+        permissions = permissions.model_copy(update={"invite_blocked_by_research": True})
+    fields["permissions"] = permissions
     watching, via_public_form = (
         await db.execute(
             select(
@@ -386,29 +404,79 @@ async def delete_idea(db: AsyncSession, principal: Principal, loaded: LoadedIdea
     await db.flush()
 
 
+async def _closed_from(db: AsyncSession, idea_id: UUID) -> IdeaStatus | None:
+    """The status a closed idea was closed from: the ``from_status`` of its latest
+    ``status_changed`` event into Closed from an open status (a re-resolution, Closed ->
+    Closed, doesn't count). ``None`` when there is no such event (counts as New)."""
+    payload = ActivityEvent.payload
+    found = await db.scalar(
+        select(payload["from_status"].astext)
+        .where(
+            ActivityEvent.idea_id == idea_id,
+            ActivityEvent.type == "status_changed",
+            payload["to_status"].astext == IdeaStatus.CLOSED.value,
+            payload["from_status"].astext != IdeaStatus.CLOSED.value,
+        )
+        .order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
+        .limit(1)
+    )
+    try:
+        return IdeaStatus(found) if found else None
+    except ValueError:  # pragma: no cover - payloads hold IdeaStatus values
+        return None
+
+
 async def change_status(
-    db: AsyncSession, principal: Principal, loaded: LoadedIdea, body: StatusChange
+    db: AsyncSession,
+    principal: Principal,
+    loaded: LoadedIdea,
+    body: StatusChange,
+    *,
+    operation: str = "change_idea_status",
 ) -> None:
-    """Any status to any status; no side effects, so the inverse call undoes it."""
-    require(principal, Rule.IDEA_CHANGE_STATUS, loaded.resource)
-    idea = loaded.idea
+    """Any status of the project's lifecycle to any other; no side effects, so the inverse
+    call undoes it. The only code that changes an idea's status (the API, the board, Undo,
+    and ``create_proposal``'s move: ``operation`` names the request for the audit).
+
+    Phase 8 (contract-phase8 section 3.5): ``research`` needs the project's research step
+    (409 ``research_step_off``); a move that crosses the research gate
+    (:func:`app.schemas.research.crosses_gate`; reopening counts from the status the idea
+    was closed from, read under the idea's lock) runs the research check, which refuses
+    it (409 ``research_incomplete``) while required items are open unless an admin moves
+    anyway (``override_research``, audited)."""
+    research.require_guarded(principal, Rule.IDEA_CHANGE_STATUS, loaded.resource, body)
+    idea, step = loaded.idea, loaded.project.research_step
+    if body.status is IdeaStatus.RESEARCH and step is ResearchStep.OFF:
+        raise research.ResearchStepOffProblem
     before = (idea.status, idea.resolution)
     after = (body.status, body.resolution if body.status is IdeaStatus.CLOSED else None)
     if before == after:
         return
+    closed_from = None
+    if idea.status is IdeaStatus.CLOSED and body.status in gated_statuses(step):
+        closed_from = await _closed_from(db, idea.id)
+    overridden = False
+    if crosses_gate(step, idea.status, body.status, closed_from=closed_from):
+        overridden = await research.check_gate(
+            db,
+            principal,
+            idea,
+            loaded.resource,
+            operation=operation,
+            from_status=idea.status,
+            to_status=body.status,
+            override=body,
+        )
     idea.status, idea.resolution = after
-    await activity.emit(
-        db,
-        idea,
-        "status_changed",
-        actor=principal,
-        payload={
-            "from_status": before[0],
-            "from_resolution": before[1],
-            "to_status": after[0],
-            "to_resolution": after[1],
-        },
-    )
+    payload: dict[str, object] = {
+        "from_status": before[0],
+        "from_resolution": before[1],
+        "to_status": after[0],
+        "to_resolution": after[1],
+    }
+    if overridden:
+        payload["research_overridden"] = True
+    await activity.emit(db, idea, "status_changed", actor=principal, payload=payload)
     await audit.record(
         db,
         "idea.status_change",

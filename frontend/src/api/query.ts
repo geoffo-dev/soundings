@@ -69,6 +69,8 @@ export function createQueryClient(): QueryClient {
           return
         }
         if (mutation.meta?.silent) return
+        // Phase 8: the guarded request's own hook opens the research gate's dialog instead.
+        if (isApiError(error) && error.code === 'research_incomplete') return
         const { title, description } = describeError(error)
         const errorTitle = mutation.meta?.errorTitle
         // "Couldn't change the status" · "This project is archived. Archived projects are read-only."

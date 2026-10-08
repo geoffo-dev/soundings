@@ -101,6 +101,12 @@ MATRIX: dict[str, tuple[str, ...]] = {
     "ai.draft_section": ("Y (c7, c10)", "Y (c7, c10)", "403", "403", "403", "404", "401", "+ (c7, c10)", "·"),
     "ai.cancel_run": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
     "ai.delete_note": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
+    # F (Phase 8). The proposal template and the research step
+    "project.edit_proposal_template": ("Y", "Y", "403", "403", "403", "404", "401", "·", "·"),
+    "project.edit_research": ("Y", "Y", "403", "403", "403", "404", "401", "·", "·"),
+    # K. The research step (Phase 8)
+    "idea.answer_research": ("Y (c5)", "Y (c5)", "403", "403", "403", "404", "401", "+ (c5)", "·"),
+    "idea.research_override": ("Y", "Y", "403", "403", "403", "404", "401", "·", "·"),
 }
 
 # Role matrix section 4: the response when each condition fails (c1, c14 and c15 have two
@@ -136,7 +142,7 @@ IDEA_WRITES = {
     "evaluation.submit_own", "evaluation.close", "evaluation.include_ai",
     "idea.change_status", "idea.moderate", "proposal.write", "proposal.comment",
     "proposal.suggest_section", "ai.request_evaluation", "ai.research", "ai.draft_section",
-    "ai.delete_note",
+    "ai.delete_note", "idea.answer_research", "idea.research_override",
 }
 # fmt: on
 

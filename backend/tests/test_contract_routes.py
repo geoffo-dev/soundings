@@ -246,9 +246,6 @@ CONTRACT: list[tuple[str, str, str]] = [
     # --- Phase 7: polish and hardening (docs/api/contract-phase7.md) ------------------
     ("GET", "/api/v1/me/work/counts", "get_my_work_counts"),
     ("GET", "/api/v1/me/evaluations-due", "list_my_evaluations_due"),
-]
-
-PHASE8_OPERATIONS: list[tuple[str, str, str]] = [
     # --- Phase 8: proposal templates and the research step (docs/api/contract-phase8.md)
     ("GET", "/api/v1/projects/{slug}/proposal-template", "get_proposal_template"),
     ("PUT", "/api/v1/projects/{slug}/proposal-template", "replace_proposal_template"),
@@ -259,14 +256,8 @@ PHASE8_OPERATIONS: list[tuple[str, str, str]] = [
     ("DELETE", "/api/v1/ideas/{idea}/research/items/{item_id}", "clear_research_item"),
     ("GET", "/api/v1/ideas/{idea}/similar-ideas", "list_similar_ideas"),
 ]
-"""Phase 8's new operations, pinned like ``CONTRACT`` but kept apart from it until they
-are classified for API keys (``app.authz.keys.ROUTE_KEY_ACCESS``) and their rules are
-named (``tests/authz/test_route_rules.py`` ``ROUTE_RULES``): the meta-tests that import
-``CONTRACT`` index those tables by every operation. Until then keys are refused on them
-(deny by default). Identity moves these rows into ``CONTRACT`` in the same change as the
-classification (contract-phase8 section 7)."""
 
-ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT + PHASE8_OPERATIONS
+ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the
 # Phase 2 admin, group and access operations (implemented; tests/admin covers them).
@@ -402,11 +393,15 @@ _RESEARCH_BODY: dict[str, Any] = {
 }
 
 # operation_id -> a valid request for every operation still answered with 501. Every
-# Phase 1-7 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
+# Phase 1-8 operation is implemented and tested (tests/api, tests/ideas, tests/identity,
 # tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
-# tests/moderation, tests/api_keys, tests/mcp, tests/ai). Delete a row when you
-# implement it.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+# tests/moderation, tests/api_keys, tests/mcp, tests/ai, tests/research). Add a row only
+# for a new stub.
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+
+# Phase 8 operations (tests/research, tests/proposals): a valid request each, for the
+# shape and session checks.
+PHASE8_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     # --- Phase 8: proposal templates and the research step -------------------------------
     "get_proposal_template": ("/api/v1/projects/cust/proposal-template", None),
     "replace_proposal_template": ("/api/v1/projects/cust/proposal-template", _TEMPLATE_BODY),
@@ -676,7 +671,7 @@ def test_operation_ids_are_explicit_and_match_function_names() -> None:
 
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
-    assert not {op for _, _, op in PHASE8_OPERATIONS} & {op for _, _, op in CONTRACT}
+    assert set(PHASE8_REQUESTS) <= set(_METHODS)
     assert set(PHASE2_REQUESTS) <= set(_METHODS)
     assert set(PHASE3_REQUESTS) <= set(_METHODS)
     assert set(PHASE6_REQUESTS) <= set(_METHODS)
@@ -778,7 +773,9 @@ async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
 
 
 async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
-    requests = PHASE2_REQUESTS | PHASE4_REQUESTS | PHASE5_REQUESTS | PHASE6_REQUESTS | STUBS
+    requests = (
+        PHASE2_REQUESTS | PHASE4_REQUESTS | PHASE5_REQUESTS | PHASE6_REQUESTS | PHASE8_REQUESTS
+    )
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
         url, body = requests[operation_id]
         response = await client.request(_METHODS[operation_id], url, json=body)
@@ -1494,7 +1491,7 @@ _ITEM_IN = {"title": "Carbon reviewed"}
 async def test_invalid_phase8_requests_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS[operation_id]
+    valid_url, valid_body = PHASE8_REQUESTS[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body

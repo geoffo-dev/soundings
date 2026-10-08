@@ -45,6 +45,7 @@ from app.public.emails import (
     confirmations_sent,
     queue_confirmation,
 )
+from app.public.reported import reported, reported_move
 from app.schemas.public import (
     EmailVerified,
     PublicProjectRef,
@@ -146,6 +147,9 @@ def _label(project: Project, status: IdeaStatus, resolution: Resolution | None) 
 
 
 async def _history(db: AsyncSession, idea: Idea, project: Project) -> list[TrackedStatusChange]:
+    """Each status change the submitter can see (Phase 8: a move that changes nothing
+    reported, such as New -> Research before evaluation, is left out; Research is
+    reported as the status before it)."""
     events = await db.scalars(
         select(ActivityEvent)
         .where(ActivityEvent.idea_id == idea.id, ActivityEvent.type == "status_changed")
@@ -153,12 +157,10 @@ async def _history(db: AsyncSession, idea: Idea, project: Project) -> list[Track
     )
     history = []
     for event in events:
-        try:
-            status = IdeaStatus(str(event.payload.get("to_status")))
-            raw = event.payload.get("to_resolution")
-            resolution = Resolution(str(raw)) if raw else None
-        except ValueError:
+        shown = reported_move(project.research_step, event.payload)
+        if shown is None:
             continue
+        status, resolution = shown
         history.append(
             TrackedStatusChange(
                 status=status,
@@ -190,6 +192,7 @@ async def tracked_submission(
     submission, idea, project = found
     assert submission.submitted_title is not None  # noqa: S101 - not erased (c9)
     assert submission.submitted_summary is not None  # noqa: S101
+    status, resolution = reported(project.research_step, idea.status, idea.resolution)
     return TrackedSubmission(
         project=PublicProjectRef(slug=project.slug, name=project.name),
         title=submission.submitted_title,
@@ -197,9 +200,9 @@ async def tracked_submission(
         submitted_at=submission.created_at,
         reached_team_at=None if idea.held_for is not None else submission.reached_team_at,
         held_for=idea.held_for,
-        status=idea.status,
-        resolution=idea.resolution,
-        status_label=_label(project, idea.status, idea.resolution),
+        status=status,
+        resolution=resolution,
+        status_label=_label(project, status, resolution),
         history=await _history(db, idea, project),
         email_hint=email_hint(submission.email) if submission.email else None,
         email_verified=submission.email_verified_at is not None,

@@ -12,6 +12,7 @@ from uuid import UUID
 from app.authz.policy import Resource, can
 from app.authz.rules import Rule
 from app.domain.principal import Principal
+from app.models.enums import ResearchStep
 from app.schemas.ideas import IdeaPermissions, IdeaSummaryPermissions
 from app.schemas.projects import ProjectPermissions
 
@@ -59,4 +60,10 @@ def idea_permissions(principal: Principal | None, resource: Resource) -> IdeaPer
         can_comment=can(principal, Rule.COMMENT_CREATE, resource),
         can_vote=can(principal, Rule.IDEA_VOTE, resource),
         can_delete=can(principal, Rule.IDEA_DELETE, resource),
+        # Phase 8: answering exists only while the project's research step is on (a
+        # domain rule, 409 research_step_off); invite_blocked_by_research needs the
+        # checklist and the evaluators, so the idea service sets it.
+        can_answer_research=resource.project is not None
+        and resource.project.research_step is not ResearchStep.OFF
+        and can(principal, Rule.IDEA_ANSWER_RESEARCH, resource),
     )

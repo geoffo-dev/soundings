@@ -42,8 +42,9 @@ __all__ = [
 
 ADMIN, MEMBER, VIEWER = ProjectRole.ADMIN, ProjectRole.MEMBER, ProjectRole.VIEWER
 GO, MAYBE, NO = Recommendation.GO, Recommendation.MAYBE, Recommendation.NO
-NEW, EVALUATING, SHORTLISTED, PROPOSAL, CLOSED = (
+NEW, RESEARCH, EVALUATING, SHORTLISTED, PROPOSAL, CLOSED = (
     IdeaStatus.NEW,
+    IdeaStatus.RESEARCH,
     IdeaStatus.EVALUATING,
     IdeaStatus.SHORTLISTED,
     IdeaStatus.PROPOSAL,
@@ -329,7 +330,9 @@ class IdeaSeed:
     """One idea's story. Status changes follow the lifecycle up to ``status``:
     evaluating when evaluators are invited, then shortlisted (the owner closes evaluation
     first), proposal and closed. Rejected ideas close straight from evaluating, parked
-    ones after the shortlist."""
+    ones after the shortlist. Phase 8: in a project with a research step the idea passes
+    through Research at the step's position, its owner answering the checklist there
+    (app/seed/research.py); ``status=RESEARCH`` stops there."""
 
     project: str
     title: str
@@ -1247,6 +1250,9 @@ IDEAS: Final[tuple[IdeaSeed, ...]] = (
         submitter="carol",
         age=4,
         tags=("reliability",),
+        owner="carol",
+        volunteered=True,
+        status=RESEARCH,  # Phase 8: the checklist is complete (app/seed/research.py)
         voters=("kenji", "sven"),
     ),
     IdeaSeed(
@@ -1262,6 +1268,9 @@ IDEAS: Final[tuple[IdeaSeed, ...]] = (
         submitter="sven",
         age=2,
         tags=("chatops", "security"),
+        owner="sven",
+        volunteered=True,
+        status=RESEARCH,  # Phase 8: "Departments or teams consulted" still open
     ),
     IdeaSeed(
         project="TOOLS",

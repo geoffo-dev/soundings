@@ -13,10 +13,16 @@ const ProposalPanel = lazy(() =>
 
 /** The Proposal tab: the proposal editor (features/proposal) for the idea in view. */
 export function ProposalTab() {
-  const { ideaKey, idea, me, archived } = useIdeaPage()
+  const { ideaKey, idea, me, archived, setTab } = useIdeaPage()
   return (
     <Suspense fallback={<ProposalSkeleton />}>
-      <ProposalPanel ideaKey={ideaKey} idea={idea} me={me} archived={archived} />
+      <ProposalPanel
+        ideaKey={ideaKey}
+        idea={idea}
+        me={me}
+        archived={archived}
+        onOpenResearch={() => setTab('overview')}
+      />
     </Suspense>
   )
 }

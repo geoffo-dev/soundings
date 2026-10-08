@@ -75,6 +75,8 @@ __all__ = [
     "heading_level",
     "normalise_newlines",
     "pieces",
+    "plain_html",
+    "plain_markdown",
     "printed_url",
     "render_html",
     "safe_href",
@@ -616,6 +618,61 @@ def render_html(text: str, budget: RenderBudget | None = None) -> str:
     tokens = _bound_boxes(tokens, budget)
     _add_breaks(tokens)
     return str(_md.renderer.render(tokens, _md.options, env))
+
+
+# --- Plain text (research answers, Phase 8) -------------------------------------------
+_PARAGRAPH_BREAK: Final = re.compile(r"\n[ \t]*\n")
+_MARKDOWN_PUNCTUATION: Final = re.compile(r"([\\`*_\[\]<>#|~]|&(?=#?[0-9A-Za-z]+;))")
+_LINE_START: Final = re.compile(r"^([-+=])|^(\d+)([.)])")
+
+
+def _paragraphs(text: str) -> list[list[str]]:
+    """``text``'s paragraphs (split at blank lines), each a list of its lines."""
+    return [
+        paragraph.split("\n")
+        for paragraph in _PARAGRAPH_BREAK.split(normalise_newlines(text).strip("\n"))
+        if paragraph.strip()
+    ]
+
+
+def plain_html(text: str, budget: RenderBudget | None = None) -> tuple[list[str], bool]:
+    """Plain text people typed (a research answer) as safe HTML paragraphs: escaped,
+    line breaks as ``<br>``, long runs with break opportunities and long text in pieces,
+    as for section text. Each line and each break takes boxes from ``budget``; the
+    second value is true when the text was cut there (end it with :data:`TOO_LONG`)."""
+    budget = budget or RenderBudget()
+    out: list[str] = []
+    for paragraph in _paragraphs(text):
+        if not budget.take_boxes(1):
+            return out, True
+        lines: list[str] = []
+        for index, line in enumerate(paragraph):
+            if index and not budget.take_boxes(3):  # the break (2) and the line (1)
+                out.append("<br>\n".join(lines))
+                return out, True
+            lines.append(pieces(_Run().chop(line)))
+        out.append("<br>\n".join(lines))
+    return out, False
+
+
+def _plain_line(line: str) -> str:
+    leading = len(line) - len(line.lstrip(" \t"))
+    # Leading spaces would make an indented code block: keep them as no-break spaces.
+    body = _MARKDOWN_PUNCTUATION.sub(lambda match: "\\" + match[0], line[leading:])
+    body = _LINE_START.sub(
+        lambda match: "\\" + match[1] if match[1] else match[2] + "\\" + match[3], body
+    )
+    return "\u00a0" * leading + body.rstrip()
+
+
+def plain_markdown(text: str) -> str:
+    """Plain text as Markdown that reads exactly as typed: every character that could
+    start Markdown syntax backslash-escaped (also a list marker, a setext underline or an
+    ordered-list number at the start of a line), each line break a hard break
+    (``\\`` at the end of the line), blank lines between paragraphs kept."""
+    return "\n\n".join(
+        "\\\n".join(_plain_line(line) for line in paragraph) for paragraph in _paragraphs(text)
+    )
 
 
 # --- The Markdown export ---------------------------------------------------------------

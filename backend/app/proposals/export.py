@@ -35,16 +35,21 @@ from app.config import Settings
 from app.domain.labels import status_label
 from app.domain.principal import Principal
 from app.errors import ProblemError
+from app.models.enums import ResearchStep
+from app.models.research import ResearchAnswer as AnswerRow
+from app.models.research import ResearchChecklistItem as ItemRow
 from app.models.user import User
 from app.proposals.document import (
     LOGO_TYPES,
     ExportBranding,
     ExportDocument,
+    ExportResearchItem,
     ExportSection,
     build_markdown,
 )
 from app.proposals.pdf import RETRY_AFTER, ExportBusy, RenderFailed, render_pdf
-from app.proposals.service import TEMPLATE, require_proposal, section_rows
+from app.proposals.service import require_proposal, section_rows
+from app.proposals.template import project_template
 from app.services import branding
 from app.services.ideas import LoadedIdea
 from app.services.refs import idea_key
@@ -107,7 +112,7 @@ async def export_document(
     proposal = await require_proposal(db, loaded)
     require(principal, Rule.PROPOSAL_EXPORT, loaded.resource)
     _check_limit(app, principal)
-    rows = await section_rows(db, proposal.id)
+    rows = await section_rows(db, proposal.id, await project_template(db, project.id))
     owner = (
         await db.scalar(select(User.display_name).where(User.id == idea.owner_id))
         if idea.owner_id
@@ -122,12 +127,53 @@ async def export_document(
         owner_name=owner,
         exported_at=now.astimezone(settings.tz),
         exported_by=principal.user.display_name,
-        sections=tuple(
-            ExportSection(row.key.value, TEMPLATE[row.key].title, row.body_md) for row in rows
-        ),
+        sections=tuple(ExportSection(row.key, section.title, row.body_md) for row, section in rows),
         branding=await _branding(db, project.id),
         score=idea.aggregate_score if score_visible else None,
         score_count=idea.aggregate_count if score_visible else 0,
+        research=await _research(db, loaded, settings),
+    )
+
+
+async def _research(
+    db: AsyncSession, loaded: LoadedIdea, settings: Settings
+) -> tuple[ExportResearchItem, ...]:
+    """The appendix (contract-phase8 section 3.8): while the project's research step is
+    on, each answered active item in checklist order (no score data, so every exporter
+    gets it); unanswered and removed items are left out."""
+    if loaded.project.research_step is ResearchStep.OFF:
+        return ()
+    answered = User.__table__.alias("answered_by")
+    updated = User.__table__.alias("updated_by")
+    rows = await db.execute(
+        select(
+            ItemRow.title,
+            AnswerRow.answer,
+            answered.c.display_name,
+            AnswerRow.answered_at,
+            updated.c.display_name,
+            AnswerRow.updated_at,
+        )
+        .join(AnswerRow, AnswerRow.item_id == ItemRow.id)
+        .outerjoin(answered, answered.c.id == AnswerRow.answered_by_id)
+        .outerjoin(updated, updated.c.id == AnswerRow.updated_by_id)
+        .where(
+            ItemRow.project_id == loaded.project.id,
+            ItemRow.archived_at.is_(None),
+            AnswerRow.idea_id == loaded.idea.id,
+        )
+        .order_by(ItemRow.position, ItemRow.id)
+    )
+    return tuple(
+        ExportResearchItem(
+            title=title,
+            answer=answer,
+            answered_by=answered_by,
+            answered_at=answered_at.astimezone(settings.tz),
+            updated_by=updated_by,
+            updated_at=updated_at.astimezone(settings.tz),
+        )
+        for title, answer, answered_by, answered_at, updated_by, updated_at in rows
     )
 
 

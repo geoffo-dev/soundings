@@ -14,8 +14,9 @@ from fastapi import APIRouter
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
+from app.authz import Rule, load_project
 from app.db import SessionDep
-from app.errors import NotImplementedProblem
+from app.proposals import template
 from app.schemas.proposals import ProposalTemplate, ProposalTemplateUpdate
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -35,7 +36,8 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 async def get_proposal_template(
     principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
 ) -> ProposalTemplate:
-    raise NotImplementedProblem
+    project, _ = await load_project(session, principal, slug)
+    return await template.get_template(session, project)
 
 
 @router.put(
@@ -57,4 +59,7 @@ async def get_proposal_template(
 async def replace_proposal_template(
     principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: ProposalTemplateUpdate
 ) -> ProposalTemplate:
-    raise NotImplementedProblem
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_PROPOSAL_TEMPLATE, for_update=True
+    )
+    return await template.replace_template(session, principal, project, body)

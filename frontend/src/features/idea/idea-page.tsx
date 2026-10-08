@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isApiError } from '@/api/errors'
 import {
   useCachedIdeaSummary,
+  useChangeIdeaStatus,
   useIdea,
   useSetEvaluationClosed,
   useVolunteerAsOwner,
@@ -31,6 +32,8 @@ import { AiRunsSection } from '@/features/ai/ai-runs-section'
 import { AiMenu, submittedEvaluatorIds, useAiCommands } from '@/features/ai/idea-ai'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
+import { requestResearchFocus } from '@/features/research/research-focus'
+import { ResearchPanel } from '@/features/research/research-panel'
 import { focusWhenRendered, useTyping } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
@@ -185,9 +188,15 @@ function LoadedIdeaPage({
   const volunteer = useVolunteerAsOwner(ideaKey)
   const setClosed = useSetEvaluationClosed(ideaKey)
   const createProposal = useCreateProposal(ideaKey)
-  // Shortlisted or in Proposal, the owner's next step is the proposal: ask whether one
-  // exists (the Proposal tab's own query, so it's shared) to say Start or Open.
-  const proposalStage = idea.status === 'shortlisted' || idea.status === 'proposal'
+  const changeStatus = useChangeIdeaStatus(ideaKey)
+  const researchStep = project?.research_step ?? 'off'
+  // Shortlisted or in Proposal (or in Research before the proposal), the owner's next step
+  // is the proposal: ask whether one exists (the Proposal tab's own query, so it's shared)
+  // to say Start or Open.
+  const proposalStage =
+    idea.status === 'shortlisted' ||
+    idea.status === 'proposal' ||
+    (idea.status === 'research' && researchStep === 'before_proposal')
   const proposalView = useQuery({
     ...proposalQueryOptions(ideaKey),
     enabled: proposalStage && idea.permissions.can_change_status,
@@ -197,7 +206,7 @@ function LoadedIdeaPage({
     canCreate: proposalView.data.permissions.can_create,
   }
   // On the Proposal tab the editor (or its Start button) is the primary action.
-  const statusAction = primaryAction(idea, me.id, proposalState)
+  const statusAction = primaryAction(idea, me.id, proposalState, researchStep)
   const action =
     tab === 'proposal' &&
     (statusAction?.kind === 'open-proposal' || statusAction?.kind === 'start-proposal')
@@ -211,7 +220,12 @@ function LoadedIdeaPage({
     else if (kind === 'invite') openDialog('invite')
     else if (kind === 'close-evaluation') setClosed.mutate({ closed: true })
     else if (kind === 'open-proposal') setTab('proposal')
-    else if (kind === 'start-proposal') {
+    else if (kind === 'start-research') changeStatus.mutate({ status: 'research' })
+    else if (kind === 'start-evaluation') changeStatus.mutate({ status: 'evaluating' })
+    else if (kind === 'finish-research') {
+      requestResearchFocus(ideaKey)
+      setTab('overview')
+    } else if (kind === 'start-proposal') {
       setTab('proposal')
       createProposal.mutate(undefined, {
         // Start writing in Summary, as the Proposal tab's own Start does.
@@ -244,7 +258,11 @@ function LoadedIdeaPage({
         data-primary-action=""
         aria-keyshortcuts={primaryShortcut ? ariaKeys(primaryShortcut) : undefined}
         className={className}
-        loading={action.kind === 'start-proposal' && createProposal.isPending}
+        loading={
+          (action.kind === 'start-proposal' && createProposal.isPending) ||
+          ((action.kind === 'start-research' || action.kind === 'start-evaluation') &&
+            changeStatus.isPending)
+        }
         onClick={() => runPrimary(action.kind)}
       >
         {action.label}
@@ -258,6 +276,7 @@ function LoadedIdeaPage({
     idea,
     me.id,
     project?.permissions.can_manage,
+    proposalStage,
   )
 
   return (
@@ -317,6 +336,7 @@ function LoadedIdeaPage({
               </TabsList>
               <TabsContent value="overview" className="flex flex-col gap-10">
                 <DescriptionSection />
+                <ResearchPanel />
                 <AiRunsSection />
                 <ActivitySection />
               </TabsContent>
@@ -518,8 +538,9 @@ function usePendingSuggestionCount(
   idea: IdeaDetail,
   meId: string,
   managesProject: boolean | undefined,
+  /** Shortlisted, in Proposal, or (Phase 8) in Research before the proposal (c7). */
+  open: boolean,
 ): number {
-  const open = idea.status === 'shortlisted' || idea.status === 'proposal'
   const mayDecide = open && (idea.owner?.id === meId || managesProject === true)
   const suggestions = useProposalSuggestions(ideaKey, { enabled: mayDecide })
   const data = suggestions.data

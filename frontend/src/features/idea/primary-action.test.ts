@@ -18,6 +18,8 @@ const NONE: IdeaPermissions = {
   can_remove_evaluators: false,
   can_volunteer: false,
   can_vote: false,
+  can_answer_research: false,
+  invite_blocked_by_research: false,
 }
 const OWNER_PERMISSIONS: IdeaPermissions = {
   ...NONE,
@@ -74,6 +76,7 @@ function idea(patch: Partial<IdeaDetail> = {}): IdeaDetail {
     has_voted: false,
     watching: true,
     permissions: OWNER_PERMISSIONS,
+    research: null,
     ...patch,
   }
 }
@@ -161,5 +164,43 @@ describe('primaryAction', () => {
     expect(
       primaryAction(idea({ status: 'closed', resolution: 'accepted', evaluation_open: false }), ME),
     ).toBeNull()
+  })
+})
+
+describe('primaryAction with a research step (Phase 8)', () => {
+  const open = { answered: 1, total: 3, required_open: 1 }
+  const done = { answered: 3, total: 3, required_open: 0 }
+  const answerer = { ...OWNER_PERMISSIONS, can_answer_research: true }
+
+  it('starts, then finishes research before evaluation, then starts evaluation', () => {
+    const fresh = idea({ status: 'new', research: open, permissions: answerer })
+    expect(primaryAction(fresh, ME, undefined, 'before_evaluation')).toEqual({
+      kind: 'start-research',
+      label: 'Start research',
+    })
+    const researching = idea({ status: 'research', research: open, permissions: answerer })
+    expect(primaryAction(researching, ME, undefined, 'before_evaluation')).toEqual({
+      kind: 'finish-research',
+      label: 'Finish research',
+    })
+    const finished = idea({ status: 'research', research: done, permissions: answerer })
+    expect(primaryAction(finished, ME, undefined, 'before_evaluation')).toEqual({
+      kind: 'start-evaluation',
+      label: 'Start evaluation',
+    })
+    // A complete checklist on New lets the usual first step through.
+    const ready = idea({ status: 'new', research: done, permissions: answerer })
+    expect(primaryAction(ready, ME, undefined, 'before_evaluation')?.kind).toBe('invite')
+  })
+
+  it('before the proposal: research a shortlisted idea, then start the proposal', () => {
+    const proposal = { exists: false, canCreate: true }
+    const shortlisted = idea({ status: 'shortlisted', research: open, permissions: answerer })
+    expect(primaryAction(shortlisted, ME, proposal, 'before_proposal')?.kind).toBe('start-research')
+    const finished = idea({ status: 'research', research: done, permissions: answerer })
+    expect(primaryAction(finished, ME, proposal, 'before_proposal')?.kind).toBe('start-proposal')
+    // Readers of an idea in Research get no primary action.
+    const reader = idea({ status: 'research', research: open, permissions: NONE })
+    expect(primaryAction(reader, ME, proposal, 'before_proposal')).toBeNull()
   })
 })

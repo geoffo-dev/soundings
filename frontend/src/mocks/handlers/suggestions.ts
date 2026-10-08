@@ -4,7 +4,6 @@
  * with a key) and accepted or discarded by the owner or an admin. Accepting is
  * a normal versioned section save (409 `proposal_conflict` with `current`).
  */
-import type { ProposalSectionKey } from '@/api/types'
 import { ID_KIND, newId, type MockIdea } from '@/mocks/db'
 import { projectOf } from '@/mocks/domain'
 import {
@@ -19,10 +18,11 @@ import {
   route,
   type RouteContext,
 } from '@/mocks/http'
+import { requireActiveSection, sectionKeyValue } from '@/mocks/handlers/proposals'
 import {
+  activeRow,
   proposalOf,
   proposalRules,
-  SECTION_KEYS,
   sectionOut,
   type MockProposal,
 } from '@/mocks/proposals'
@@ -60,6 +60,8 @@ function findSuggestion(ctx: RouteContext, proposal: MockProposal): MockSuggesti
     (s) => s.id === id && s.proposal_id === proposal.id,
   )
   if (!suggestion) notFound('Suggestion not found.')
+  // Phase 8: a suggestion for a removed section is hidden until the section comes back.
+  if (!activeRow(ctx.db, proposal, suggestion.section_key)) notFound('Suggestion not found.')
   return suggestion
 }
 
@@ -96,16 +98,7 @@ export const suggestionHandlers = [
   route('post', '/ideas/:idea/proposal/suggestions', async (ctx) => {
     const body = await readJson(ctx.request)
     allowOnly(body, ['section_key', 'body_md', 'base_version'])
-    const sectionKey = body.section_key
-    if (!SECTION_KEYS.includes(sectionKey as ProposalSectionKey)) {
-      failValidation([
-        {
-          loc: ['body', 'section_key'],
-          msg: `Input should be ${SECTION_KEYS.join(', ')}`,
-          type: 'enum',
-        },
-      ])
-    }
+    const sectionKey = sectionKeyValue(body.section_key, ['body', 'section_key'])
     const text = body.body_md
     if (
       typeof text !== 'string' ||
@@ -128,11 +121,10 @@ export const suggestionHandlers = [
     if (!(rules.memberish || rules.admin)) {
       forbidden('forbidden', 'Members and admins can suggest text.')
     }
+    requireActiveSection(ctx, idea, sectionKey)
     ensureOpen(ctx, idea, rules.c7)
-    const key = sectionKey as ProposalSectionKey
-    const section = ctx.db.proposalSections.find(
-      (s) => s.proposal_id === proposal.id && s.key === key,
-    )
+    const key = sectionKey
+    const section = activeRow(ctx.db, proposal, key)
     if (!section) notFound()
     if (base !== null && base > section.version) {
       failValidation([
@@ -186,9 +178,7 @@ export const suggestionHandlers = [
     if (suggestion.status !== 'pending') {
       conflict('suggestion_not_pending', 'This suggestion was already accepted or discarded.')
     }
-    const section = ctx.db.proposalSections.find(
-      (s) => s.proposal_id === proposal.id && s.key === suggestion.section_key,
-    )
+    const section = activeRow(ctx.db, proposal, suggestion.section_key)
     if (!section) notFound()
     const now = new Date().toISOString()
     // Exactly a section save: equal text is a no-op, an older base a conflict.

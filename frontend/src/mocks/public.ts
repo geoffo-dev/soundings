@@ -18,6 +18,7 @@ import type {
 import { effectiveBranding } from './branding'
 import type { MockDb, MockEvent, MockIdea, MockProject, MockUser } from './db'
 import { ideaRef, isProjectAdmin, projectOf, rowsForIdea, statusLabel } from './domain'
+import { publicStatus, type ResearchStep } from '@/lib/status'
 import { maskEmail, queueEmail } from './notifications'
 
 export interface MockPublicForm {
@@ -200,19 +201,34 @@ function history(
   submission: MockPublicSubmission,
 ): TrackedStatusChange[] {
   const project = projectOf(db, idea)
-  return rowsForIdea(db.events, idea.id)
-    .filter((event) => event.type === 'status_changed' && event.created_at >= submission.created_at)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((event) => {
-      const status = event.payload.to_status as MockIdea['status']
-      const resolution = (event.payload.to_resolution ?? null) as MockIdea['resolution']
-      return {
-        status,
-        resolution,
-        status_label: statusLabel(project, { status, resolution }),
-        at: event.created_at,
-      }
-    })
+  const step = project.research_step
+  return (
+    rowsForIdea(db.events, idea.id)
+      .filter(
+        (event) => event.type === 'status_changed' && event.created_at >= submission.created_at,
+      )
+      // Phase 8 (§3.9): Research reads as the status before it; moves that change nothing
+      // the submitter sees are left out.
+      .filter((event) => reportedChange(step, event.payload))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((event) => {
+        const status = publicStatus(step, event.payload.to_status as MockIdea['status'])
+        const resolution = (event.payload.to_resolution ?? null) as MockIdea['resolution']
+        return {
+          status,
+          resolution,
+          status_label: statusLabel(project, { status, resolution }),
+          at: event.created_at,
+        }
+      })
+  )
+}
+
+/** Whether a status change shows on the tracking page (and emails the submitter). */
+function reportedChange(step: ResearchStep, payload: Record<string, unknown>): boolean {
+  const from = publicStatus(step, payload.from_status as MockIdea['status'])
+  const to = publicStatus(step, payload.to_status as MockIdea['status'])
+  return from !== to || (payload.from_resolution ?? null) !== (payload.to_resolution ?? null)
 }
 
 export function canResendConfirmation(db: MockDb, submission: MockPublicSubmission): boolean {
@@ -235,9 +251,12 @@ export function trackedSubmission(db: MockDb, submission: MockPublicSubmission):
     submitted_at: submission.created_at,
     reached_team_at: idea.held_for ? null : (submission.reached_team_at ?? submission.created_at),
     held_for: idea.held_for ?? null,
-    status: idea.status,
+    status: publicStatus(project.research_step, idea.status),
     resolution: idea.resolution,
-    status_label: statusLabel(project, idea),
+    status_label: statusLabel(project, {
+      status: publicStatus(project.research_step, idea.status),
+      resolution: idea.resolution,
+    }),
     history: history(db, idea, submission),
     email_hint: submission.email ? maskEmail(submission.email) : null,
     email_verified: submission.email_verified_at !== null,
@@ -345,6 +364,7 @@ export function eraseSubmission(
 /** Status emails to an opted-in, confirmed submitter (fan-out of `status_changed`, §3.8). */
 export function queueSubmitterStatusEmail(db: MockDb, idea: MockIdea, event: MockEvent): void {
   if (event.type !== 'status_changed' || idea.held_for || !db.email.configured) return
+  if (!reportedChange(projectOf(db, idea).research_step, event.payload)) return
   const submission = submissionOf(db, idea)
   if (
     !submission?.email ||

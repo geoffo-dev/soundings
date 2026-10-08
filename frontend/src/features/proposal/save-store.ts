@@ -15,9 +15,11 @@ import type { ProposalSection, ProposalSectionKey } from '@/api/types'
  * Newer server text (a refetch after someone else saved) replaces a section
  * only while it has no unsaved changes here.
  */
-export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict'
+export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict' | 'removed'
 
 export interface SectionSaveState {
+  /** The section's title (kept for a section removed from the template meanwhile). */
+  title: string
   draft: string
   /** The last text the server confirmed (what `base` is the version of). */
   saved: string
@@ -39,6 +41,18 @@ export type SaveFn = (
 
 export const AUTOSAVE_DELAY_MS = 800
 
+/**
+ * Phase 8 (contract-phase8 §2.7): text typed into a section that was removed from the
+ * template meanwhile (its save answers 404, or a refetch no longer lists it) is kept
+ * as a local draft (`keep`) and never saved again, until the person discards it.
+ */
+export interface RemovedSectionKeeper {
+  keep: (key: ProposalSectionKey, title: string, text: string) => void
+  forget: (key: ProposalSectionKey) => void
+}
+
+const NO_KEEPER: RemovedSectionKeeper = { keep: () => undefined, forget: () => undefined }
+
 export class ProposalSaveStore {
   private sections = new Map<ProposalSectionKey, SectionSaveState>()
   private timers = new Map<ProposalSectionKey, ReturnType<typeof setTimeout>>()
@@ -49,16 +63,20 @@ export class ProposalSaveStore {
 
   private readonly save: SaveFn
   private readonly onSaved: (section: ProposalSection) => void
+  private readonly keeper: RemovedSectionKeeper
 
   constructor(
     sections: readonly ProposalSection[],
     save: SaveFn,
     onSaved: (section: ProposalSection) => void,
+    keeper: RemovedSectionKeeper = NO_KEEPER,
   ) {
     this.save = save
     this.onSaved = onSaved
+    this.keeper = keeper
     for (const section of sections) {
       this.sections.set(section.key, {
+        title: section.title,
         draft: section.body_md,
         saved: section.body_md,
         base: section.version,
@@ -100,6 +118,12 @@ export class ProposalSaveStore {
   edit(key: ProposalSectionKey, text: string): void {
     const current = this.sections.get(key)
     if (!current || current.draft === text) return
+    if (current.status === 'removed') {
+      // Kept locally only: the section no longer exists on the server.
+      this.set(key, { draft: text })
+      this.keeper.keep(key, current.title, text)
+      return
+    }
     let status = current.status
     if (status === 'saved' || status === 'dirty' || status === 'error') {
       status = text === current.saved ? 'saved' : 'dirty'
@@ -127,7 +151,14 @@ export class ProposalSaveStore {
   async saveNow(key: ProposalSectionKey, { keepalive = false } = {}): Promise<void> {
     this.cancel(key)
     const current = this.sections.get(key)
-    if (!current || current.status === 'saving' || current.status === 'conflict') return
+    if (
+      !current ||
+      current.status === 'saving' ||
+      current.status === 'conflict' ||
+      current.status === 'removed'
+    ) {
+      return
+    }
     if (current.draft === current.saved) {
       if (current.status !== 'saved') this.set(key, { status: 'saved', error: null })
       return
@@ -165,6 +196,11 @@ export class ProposalSaveStore {
       if (changedSince && !this.disposed) this.schedule(key)
       else if (changedSince) void this.saveNow(key, { keepalive })
     } catch (error) {
+      // Phase 8: the section was removed from the template while you typed.
+      if (isApiError(error) && error.status === 404) {
+        this.markRemoved(key)
+        return
+      }
       if (hasErrorCode(error, 'proposal_conflict')) {
         const current = (error.problem as { current?: ProposalSection | null } | undefined)?.current
         if (current) {
@@ -259,11 +295,85 @@ export class ProposalSaveStore {
     })
   }
 
-  /** Newer text from the server (a refetch): taken only where nothing is unsaved here. */
+  private markRemoved(key: ProposalSectionKey) {
+    const state = this.sections.get(key)
+    if (!state) return
+    this.cancel(key)
+    this.set(key, { status: 'removed', conflict: null, error: null })
+    this.keeper.keep(key, state.title, state.draft)
+  }
+
+  /** Text kept from earlier (a local draft of a removed section): shown until discarded. */
+  restoreKept(key: ProposalSectionKey, title: string, text: string): void {
+    if (this.sections.get(key)?.status === 'removed' || !text) return
+    if (this.sections.has(key) && this.sections.get(key)?.draft === text) return
+    // A section of the template under the same key keeps its own row; the kept text
+    // gets a row of its own.
+    const keptKey = this.sections.has(key) ? `${key}#kept` : key
+    this.sections.set(keptKey, {
+      title,
+      draft: text,
+      saved: '',
+      base: 0,
+      status: 'removed',
+      conflict: null,
+      error: null,
+      savedAt: null,
+    })
+    this.keeper.keep(key, title, text)
+    this.version += 1
+    this.listeners.forEach((listener) => listener())
+  }
+
+  /** Sections removed from the template with your text kept here. */
+  removed(): [ProposalSectionKey, SectionSaveState][] {
+    return this.all().filter(([, state]) => state.status === 'removed')
+  }
+
+  /** "Discard": the kept text goes (here and in the local draft). */
+  discardRemoved(key: ProposalSectionKey): void {
+    if (this.sections.get(key)?.status !== 'removed') return
+    this.sections.delete(key)
+    this.keeper.forget(key.replace(/#kept$/, ''))
+    this.version += 1
+    this.listeners.forEach((listener) => listener())
+  }
+
+  /**
+   * Newer text from the server (a refetch): taken only where nothing is unsaved here.
+   * Phase 8: sections added to the template join; one removed meanwhile goes, unless
+   * it has unsaved text here, which is kept (`removed`).
+   */
   receive(sections: readonly ProposalSection[]): void {
+    const listed = new Set(sections.map((section) => section.key))
+    for (const [key, state] of this.all()) {
+      if (listed.has(key) || state.status === 'removed') continue
+      if (state.status === 'saved') {
+        this.cancel(key)
+        this.sections.delete(key)
+        this.version += 1
+        this.listeners.forEach((listener) => listener())
+      } else this.markRemoved(key)
+    }
     for (const section of sections) {
       const state = this.sections.get(section.key)
-      if (!state || section.version <= state.base) continue
+      if (!state) {
+        this.sections.set(section.key, {
+          title: section.title,
+          draft: section.body_md,
+          saved: section.body_md,
+          base: section.version,
+          status: 'saved',
+          conflict: null,
+          error: null,
+          savedAt: null,
+        })
+        this.version += 1
+        this.listeners.forEach((listener) => listener())
+        continue
+      }
+      if (state.title !== section.title) this.set(section.key, { title: section.title })
+      if (section.version <= state.base) continue
       if (state.status === 'saved') {
         this.set(section.key, {
           draft: section.body_md,
@@ -275,9 +385,9 @@ export class ProposalSaveStore {
     }
   }
 
-  /** True while something isn't on the server yet (the leave warning). */
+  /** True while something isn't on the server yet (the leave warning; kept text is local). */
   hasUnsaved(): boolean {
-    return this.all().some(([, state]) => state.status !== 'saved')
+    return this.all().some(([, state]) => state.status !== 'saved' && state.status !== 'removed')
   }
 
   /** The editor (re)mounted (StrictMode mounts twice). */
@@ -305,7 +415,10 @@ export type EditorSaveSummary =
 
 /** The whole editor's "Saving… / Saved 10:42 / Not saved" line. */
 export function summarise(store: ProposalSaveStore, initialAt: string | null): EditorSaveSummary {
-  const states = store.all().map(([, state]) => state)
+  const states = store
+    .all()
+    .map(([, state]) => state)
+    .filter((state) => state.status !== 'removed')
   const conflicts = states.filter((state) => state.status === 'conflict').length
   if (conflicts) return { kind: 'conflict', count: conflicts }
   const failed = states.filter((state) => state.status === 'error').length

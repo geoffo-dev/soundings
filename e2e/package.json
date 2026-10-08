@@ -15,6 +15,7 @@
     "screenshots:phase4": "SCREENSHOTS=phase-4 playwright test --project=screenshots",
     "screenshots:phase5": "SCREENSHOTS=phase-5 playwright test --project=screenshots",
     "screenshots:phase6": "SCREENSHOTS=phase-6 E2E_AI=1 playwright test --project=screenshots",
+    "screenshots:phase8": "SCREENSHOTS=phase-8 playwright test --project=screenshots",
     "screenshots:tour": "SCREENSHOTS=tour E2E_SSO=1 E2E_AI=1 playwright test --project=screenshots",
     "stack:start": "scripts/start-stack.sh",
     "stack:stop": "scripts/stop-stack.sh",

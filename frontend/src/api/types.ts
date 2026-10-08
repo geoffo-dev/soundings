@@ -170,7 +170,8 @@ export type ProposalCommentCreate = Schemas['ProposalCommentCreate']
 export type ProposalConflictProblem = Schemas['ProposalConflictProblem']
 export type ProposalPermissions = Schemas['ProposalPermissions']
 export type ProposalSection = Schemas['ProposalSection']
-export type ProposalSectionKey = Schemas['ProposalSectionKey']
+/** Phase 8: a section's stable key in the project's template (`^[a-z][a-z0-9_]{0,39}$`). */
+export type ProposalSectionKey = string
 export type ProposalSectionUpdate = Schemas['ProposalSectionUpdate']
 export type ProposalThread = Schemas['ProposalThread']
 export type ProposalThreadCreate = Schemas['ProposalThreadCreate']
@@ -257,3 +258,35 @@ export type EvaluationInclusionUpdate = Schemas['EvaluationInclusionUpdate']
 export type EvaluationScore = Schemas['EvaluationScore']
 export type ResearchNote = Schemas['ResearchNote']
 export type RotatedAiAgentKey = Schemas['RotatedAiAgentKey']
+
+/* Phase 8: per-project proposal templates and the research step (docs/api/contract-phase8.md) */
+export type DefaultChecklistItem = Schemas['DefaultChecklistItem']
+export type IdeaResearch = Schemas['IdeaResearch']
+export type IdeaResearchItem = Schemas['IdeaResearchItem']
+export type IdeasInResearchProblem = Schemas['IdeasInResearchProblem']
+export type ProposalStart = Schemas['ProposalStart']
+export type ProposalTemplate = Schemas['ProposalTemplate']
+export type ProposalTemplateSection = Schemas['ProposalTemplateSection']
+export type ProposalTemplateUpdate = Schemas['ProposalTemplateUpdate']
+export type RemovedResearchItem = Schemas['RemovedResearchItem']
+export type RemovedTemplateSection = Schemas['RemovedTemplateSection']
+export type ResearchAnswer = Schemas['ResearchAnswer']
+export type ResearchAnswerIn = Schemas['ResearchAnswerIn']
+export type ResearchChecklistItem = Schemas['ResearchChecklistItem']
+export type ResearchIncompleteProblem = Schemas['ResearchIncompleteProblem']
+export type ResearchItemIn = Schemas['ResearchItemIn']
+export type ResearchOpenItem = Schemas['ResearchOpenItem']
+export type ResearchPermissions = Schemas['ResearchPermissions']
+export type ResearchProgress = Schemas['ResearchProgress']
+export type ResearchSettings = Schemas['ResearchSettings']
+export type ResearchSettingsUpdate = Schemas['ResearchSettingsUpdate']
+export type ResearchStep = Schemas['ResearchStep']
+export type SimilarIdea = Schemas['SimilarIdea']
+export type SimilarIdeas = Schemas['SimilarIdeas']
+export type TemplateSectionIn = Schemas['TemplateSectionIn']
+export type AiEvaluationRequest = Schemas['AiEvaluationRequest']
+/** "Move anyway" on a request the research gate guards (contract-phase8 §3.5). */
+export interface ResearchOverride {
+  override_research?: boolean | null
+  override_reason?: string | null
+}

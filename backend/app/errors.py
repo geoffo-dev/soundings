@@ -82,6 +82,8 @@ class ProblemError(Exception):
         *,
         headers: Mapping[str, str] | None = None,
         errors: Sequence[FieldError] | None = None,
+        model: type[Problem] | None = None,
+        extra: Mapping[str, Any] | None = None,
     ) -> None:
         self.status = status
         self.code = code
@@ -91,6 +93,10 @@ class ProblemError(Exception):
         # Per-field errors: the response becomes a ValidationProblem with ``errors``
         # (e.g. 422 evaluation_incomplete lists each missing score).
         self.errors = list(errors) if errors is not None else None
+        # A problem with fields of its own (Phase 8: research_incomplete's open_items and
+        # can_override): ``model`` is its schema, ``extra`` the fields' values.
+        self.model = model
+        self.extra = dict(extra or {})
         super().__init__(detail or self.title)
 
 
@@ -168,6 +174,8 @@ def problem_from_problem_error(request: Request, exc: ProblemError) -> JSONRespo
         title=exc.title,
         detail=exc.detail,
         headers=exc.headers,
+        model=exc.model or Problem,
+        **exc.extra,
     )
 
 

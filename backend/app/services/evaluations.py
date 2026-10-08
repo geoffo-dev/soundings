@@ -41,8 +41,9 @@ from app.schemas.evaluations import (
     EvaluationScore as EvaluationScoreOut,
 )
 from app.schemas.ideas import EvaluatorsAdd
+from app.schemas.research import starts_evaluation
 from app.schemas.users import UserRef
-from app.services import activity, audit
+from app.services import activity, audit, research
 from app.services.ideas import LoadedIdea, assignee_roles, watch
 from app.services.scoring import active_criteria, recompute_aggregates
 from app.services.sql import any_of
@@ -96,18 +97,35 @@ async def add_evaluators(
     db: AsyncSession, principal: Principal, loaded: LoadedIdea, body: EvaluatorsAdd
 ) -> None:
     """Invite: every new evaluator needs member/admin (c4, all or nothing); users already
-    assigned are skipped. Only the first invite sets the default due date."""
+    assigned are skipped. Only the first invite sets the default due date.
+
+    Phase 8: with the research step before evaluation, an idea's first evaluator (in New
+    or Research) starts evaluation, so the research gate guards it
+    (:func:`app.schemas.research.starts_evaluation`; 409 ``research_incomplete`` unless an
+    admin moves anyway)."""
     idea = loaded.idea
     assigned = set(
         await db.scalars(select(IdeaEvaluator.user_id).where(IdeaEvaluator.idea_id == idea.id))
     )
     new = [user_id for user_id in dict.fromkeys(body.user_ids) if user_id not in assigned]
     roles = await assignee_roles(db, loaded.project.id, new)
-    require(
+    research.require_guarded(
         principal,
         Rule.EVALUATOR_MANAGE,
         loaded.resource.replace(assignee_roles=tuple(roles[user_id] for user_id in new)),
+        body,
     )
+    if new and starts_evaluation(loaded.project.research_step, idea.status, len(assigned)):
+        await research.check_gate(
+            db,
+            principal,
+            idea,
+            loaded.resource,
+            operation="add_evaluators",
+            from_status=idea.status,
+            to_status=idea.status,
+            override=body,
+        )
     now = utcnow()
     for offset, user_id in enumerate(new):
         # Distinct microseconds keep the request's order as the invitation order.

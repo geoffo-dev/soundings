@@ -34,7 +34,8 @@ from app.models.base import utcnow
 from app.models.proposal import Proposal as ProposalRow
 from app.models.proposal import ProposalComment as CommentRow
 from app.models.proposal import ProposalThread as ThreadRow
-from app.proposals.service import SECTION_ORDER, require_proposal, user_refs
+from app.proposals.service import require_proposal, user_refs
+from app.proposals.template import Template, project_template, require_section
 from app.schemas.proposals import (
     MAX_COMMENTS_PER_THREAD,
     MAX_THREADS_PER_PROPOSAL,
@@ -129,25 +130,39 @@ async def _thread_out(
 async def list_threads(
     db: AsyncSession, principal: Principal, loaded: LoadedIdea
 ) -> ProposalThreadList:
-    """Every listed thread, by section in template order, then oldest first."""
+    """Every listed thread of an active section, by section in template order, then
+    oldest first (threads of removed sections are kept, hidden, Phase 8)."""
     proposal = await require_proposal(db, loaded)
     require(principal, Rule.PROPOSAL_VIEW, loaded.resource)
+    template = await project_template(db, loaded.project.id)
     threads = list(
         await db.scalars(
             select(ThreadRow)
-            .where(ThreadRow.proposal_id == proposal.id, _listed())
+            .where(
+                ThreadRow.proposal_id == proposal.id,
+                ThreadRow.section_key.in_(template.keys),
+                _listed(),
+            )
             .order_by(ThreadRow.created_at, ThreadRow.id)
         )
     )
-    threads.sort(key=lambda thread: SECTION_ORDER[thread.section_key])  # stable
+    threads.sort(key=lambda thread: template.position(thread.section_key))  # stable
     return ProposalThreadList(items=await _threads_out(db, principal, loaded.resource, threads))
 
 
-async def _load_thread(db: AsyncSession, proposal: ProposalRow, thread_id: UUID) -> ThreadRow:
-    """A listed thread of this proposal, locked for the change; else 404."""
+async def _load_thread(
+    db: AsyncSession, proposal: ProposalRow, thread_id: UUID, template: Template
+) -> ThreadRow:
+    """A listed thread of this proposal on an active section, locked for the change;
+    else 404 (a removed section's threads are hidden with it)."""
     thread: ThreadRow | None = await db.scalar(
         select(ThreadRow)
-        .where(ThreadRow.id == thread_id, ThreadRow.proposal_id == proposal.id, _listed())
+        .where(
+            ThreadRow.id == thread_id,
+            ThreadRow.proposal_id == proposal.id,
+            ThreadRow.section_key.in_(template.keys),
+            _listed(),
+        )
         .with_for_update(of=ThreadRow)
         .execution_options(populate_existing=True)
     )
@@ -160,7 +175,8 @@ async def create_thread(
     db: AsyncSession, principal: Principal, loaded: LoadedIdea, body: ProposalThreadCreate
 ) -> ProposalThread:
     proposal = await require_proposal(db, loaded, for_update=True)
-    require(principal, Rule.PROPOSAL_COMMENT, loaded.resource)
+    template = await project_template(db, loaded.project.id)
+    require_section(principal, Rule.PROPOSAL_COMMENT, loaded.resource, template, body.section_key)
     count = await db.scalar(
         select(func.count()).select_from(ThreadRow).where(ThreadRow.proposal_id == proposal.id)
     )
@@ -200,7 +216,8 @@ async def reply(
 ) -> ProposalThread:
     """A reply; replying to a resolved thread reopens it."""
     proposal = await require_proposal(db, loaded)
-    thread = await _load_thread(db, proposal, thread_id)
+    template = await project_template(db, loaded.project.id)
+    thread = await _load_thread(db, proposal, thread_id, template)
     require(principal, Rule.PROPOSAL_COMMENT, loaded.resource)
     count = await db.scalar(
         select(func.count()).select_from(CommentRow).where(CommentRow.thread_id == thread.id)
@@ -230,7 +247,8 @@ async def set_resolved(
 ) -> ProposalThread:
     """Resolve or reopen (idempotent: resolving a resolved thread keeps who did it)."""
     proposal = await require_proposal(db, loaded)
-    thread = await _load_thread(db, proposal, thread_id)
+    template = await project_template(db, loaded.project.id)
+    thread = await _load_thread(db, proposal, thread_id, template)
     require(principal, Rule.PROPOSAL_COMMENT, loaded.resource)
     if resolved and thread.resolved_at is None:
         thread.resolved_at = utcnow()
@@ -252,9 +270,14 @@ async def delete_comment(
 ) -> None:
     """Soft-delete a comment: its author, or a project or platform admin. Idempotent."""
     proposal = await require_proposal(db, loaded)
+    template = await project_template(db, loaded.project.id)
     thread: ThreadRow | None = await db.scalar(
         select(ThreadRow)
-        .where(ThreadRow.id == thread_id, ThreadRow.proposal_id == proposal.id)
+        .where(
+            ThreadRow.id == thread_id,
+            ThreadRow.proposal_id == proposal.id,
+            ThreadRow.section_key.in_(template.keys),
+        )
         .with_for_update(of=ThreadRow)
     )
     comment: CommentRow | None = (

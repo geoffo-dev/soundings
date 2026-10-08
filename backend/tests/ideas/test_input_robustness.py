@@ -311,6 +311,8 @@ async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
         "run_id": str(uuid4()),
         "evaluation_id": str(uuid4()),
         "note_id": str(uuid4()),
+        # Research checklist answers (contract-phase8 section 2).
+        "item_id": str(uuid4()),
     }
     params = _string_params(app)
     assert {name for _, _, name in params} >= {"q", "tag", "cursor", "slug", "idea", "project"}

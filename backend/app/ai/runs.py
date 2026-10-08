@@ -48,13 +48,15 @@ from app.models.enums import (
     AiRunKind,
     AiRunStatus,
     EvaluationStatus,
-    ProposalSectionKey,
+    IdeaStatus,
+    ResearchStep,
 )
 from app.models.evaluation import Evaluation
 from app.models.idea import IdeaEvaluator
 from app.models.user import User
 from app.observability import AI_RUNS_REQUESTED
 from app.proposals.service import find_proposal
+from app.proposals.template import project_template
 from app.schemas import ai as schemas
 from app.schemas.ai import (
     AI_RUN_QUEUE,
@@ -63,7 +65,8 @@ from app.schemas.ai import (
     AiBlockedReason,
 )
 from app.schemas.evaluations import Evaluation as EvaluationOut
-from app.services import activity, audit, evaluations
+from app.schemas.research import ResearchOverride, starts_evaluation
+from app.services import activity, audit, evaluations, research
 from app.services.ideas import LoadedIdea
 from app.services.scoring import recompute_aggregates
 from app.services.summaries import user_refs
@@ -189,6 +192,23 @@ def _blocked(decision: Decision, settings: Settings) -> AiBlockedReason | None:
     return None
 
 
+async def _evaluate_blocked_by_research(db: AsyncSession, loaded: LoadedIdea) -> bool:
+    """Phase 8: "Ask AI to evaluate" would be the idea's first evaluator before an
+    evaluation research step while required checklist items are open."""
+    idea = loaded.idea
+    if loaded.project.research_step is not ResearchStep.BEFORE_EVALUATION or idea.status not in (
+        IdeaStatus.NEW,
+        IdeaStatus.RESEARCH,
+    ):
+        return False
+    evaluators = await db.scalar(
+        select(func.count()).select_from(IdeaEvaluator).where(IdeaEvaluator.idea_id == idea.id)
+    )
+    if not starts_evaluation(loaded.project.research_step, idea.status, int(evaluators or 0)):
+        return False
+    return await research.required_open_count(db, idea) > 0
+
+
 async def permissions(
     db: AsyncSession,
     principal: Principal,
@@ -208,6 +228,8 @@ async def permissions(
         if reason is None and kind not in usable_kinds:
             reason = AiBlockedReason.NO_AGENT
         reasons[kind] = reason
+    if reasons[AiRunKind.EVALUATE] is None and await _evaluate_blocked_by_research(db, loaded):
+        reasons[AiRunKind.EVALUATE] = AiBlockedReason.RESEARCH_INCOMPLETE
     include = authorize(principal, Rule.EVALUATION_INCLUDE_AI, loaded.resource)
     include_reason: AiBlockedReason | None = None
     if not include.allowed:
@@ -285,7 +307,7 @@ async def _active_run(
     idea_id: UUID,
     agent_id: UUID,
     kind: AiRunKind,
-    section_key: ProposalSectionKey | None,
+    section_key: str | None,
 ) -> AiRun | None:
     statement = select(AiRun).where(
         AiRun.idea_id == idea_id,
@@ -371,16 +393,46 @@ async def request_run(
     loaded: LoadedIdea,
     kind: AiRunKind,
     agent_id: UUID,
-    section_key: ProposalSectionKey | None = None,
+    section_key: str | None = None,
+    override: ResearchOverride | None = None,
 ) -> tuple[schemas.AiRun, bool]:
     """``POST /ideas/{idea}/ai-runs/...`` (see the module docstring): the run, and
-    ``True`` when it is new (201) or ``False`` for the active one (200)."""
+    ``True`` when it is new (201) or ``False`` for the active one (200).
+
+    Phase 8: a draft's ``section_key`` must be an active section of the project's
+    template (422 ``unknown_section``, after the 403s and before the 409s); "Ask AI to
+    evaluate" for an idea's first evaluator before an evaluation research step is guarded
+    by the research checklist (after c10, before 429), and takes ``override``."""
     idea = loaded.idea
     if kind is AiRunKind.DRAFT_SECTION and await find_proposal(db, idea.id) is None:
         raise NotFoundProblem("This idea has no proposal yet.")
     candidate = await agent_service.usable(db, settings, agent_id, loaded.project.id, kind)
-    require(principal, RUN_RULES[kind], loaded.resource.replace(ai_available=candidate is not None))
+    resource = loaded.resource.replace(ai_available=candidate is not None)
+    decision = authorize(principal, RUN_RULES[kind], resource)
+    if not decision.allowed and decision.status in (401, 403, 404):
+        raise decision.problem()
+    if kind is AiRunKind.EVALUATE:
+        research.require_guarded(principal, RUN_RULES[kind], resource, override)
+    if kind is AiRunKind.DRAFT_SECTION:
+        (await project_template(db, loaded.project.id)).require(section_key or "")
+    if not decision.allowed:
+        raise decision.problem()
     assert candidate is not None  # noqa: S101 - c10 passed
+    if kind is AiRunKind.EVALUATE:
+        evaluators = await db.scalar(
+            select(func.count()).select_from(IdeaEvaluator).where(IdeaEvaluator.idea_id == idea.id)
+        )
+        if starts_evaluation(loaded.project.research_step, idea.status, int(evaluators or 0)):
+            await research.check_gate(
+                db,
+                principal,
+                idea,
+                loaded.resource,
+                operation="request_ai_evaluation",
+                from_status=idea.status,
+                to_status=idea.status,
+                override=override,
+            )
     now = utcnow()
     active = await _active_run(db, idea.id, agent_id, kind, section_key)
     if (

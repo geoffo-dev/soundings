@@ -1,4 +1,4 @@
-import type { IdeaDetail } from '@/api/types'
+import type { IdeaDetail, ResearchStep } from '@/api/types'
 
 /**
  * The page's one primary action (wireframe 03, "one primary action per view"),
@@ -15,6 +15,15 @@ import type { IdeaDetail } from '@/api/types'
  * 7. owner/admin once there is (or may be) a proposal: **Open proposal** (the Proposal
  *    tab, whose editor has Export);
  * 8. otherwise none — commenting is always a secondary action.
+ *
+ * Phase 8 (contract-phase8 §3.13), when the project has a research step:
+ *
+ * - the idea in the status right before Research (New before evaluation, Shortlisted
+ *   before the proposal) with required items open: **Start research** (moves it in);
+ * - in Research with required items open: **Finish research** (the Research panel),
+ *   for whoever answers; once complete: **Start evaluation** (before evaluation) or
+ *   **Start proposal** (before the proposal). A complete checklist on the status before
+ *   Research lets the usual step through (Invite evaluators, Start proposal).
  */
 export type PrimaryAction =
   | { kind: 'evaluate'; label: 'Evaluate' | 'Continue evaluation' }
@@ -25,6 +34,9 @@ export type PrimaryAction =
   | { kind: 'change-status'; label: 'Change status' }
   | { kind: 'start-proposal'; label: 'Start proposal' }
   | { kind: 'open-proposal'; label: 'Open proposal' }
+  | { kind: 'start-research'; label: 'Start research' }
+  | { kind: 'finish-research'; label: 'Finish research' }
+  | { kind: 'start-evaluation'; label: 'Start evaluation' }
 
 /** What the Proposal tab knows (its query), when it has loaded. */
 export interface ProposalState {
@@ -36,6 +48,7 @@ export function primaryAction(
   idea: IdeaDetail,
   viewerId: string,
   proposal?: ProposalState,
+  researchStep: ResearchStep = 'off',
 ): PrimaryAction | null {
   const { permissions } = idea
   const own = idea.evaluators.find((evaluator) => evaluator.user.id === viewerId)
@@ -49,6 +62,30 @@ export function primaryAction(
   if (!idea.owner) {
     if (permissions.can_assign_owner) return { kind: 'assign-owner', label: 'Assign owner' }
     if (permissions.can_volunteer) return { kind: 'volunteer', label: 'I’ll own this' }
+  }
+  const research = researchStep === 'off' ? null : idea.research
+  const researchOpen = (research?.required_open ?? 0) > 0
+  if (idea.status === 'research') {
+    if (researchOpen) {
+      return permissions.can_answer_research
+        ? { kind: 'finish-research', label: 'Finish research' }
+        : null
+    }
+    if (!permissions.can_change_status) return null
+    if (researchStep === 'before_evaluation') {
+      return { kind: 'start-evaluation', label: 'Start evaluation' }
+    }
+    if (proposal?.exists) return { kind: 'open-proposal', label: 'Open proposal' }
+    return proposal?.canCreate ? { kind: 'start-proposal', label: 'Start proposal' } : null
+  }
+  // The status before Research: the next step is Research while items are open.
+  const beforeResearch =
+    (researchStep === 'before_evaluation' &&
+      idea.status === 'new' &&
+      idea.evaluator_progress.total === 0) ||
+    (researchStep === 'before_proposal' && idea.status === 'shortlisted' && !proposal?.exists)
+  if (beforeResearch && researchOpen && permissions.can_change_status) {
+    return { kind: 'start-research', label: 'Start research' }
   }
   const proposalStage = idea.status === 'shortlisted' || idea.status === 'proposal'
   if (proposalStage) {

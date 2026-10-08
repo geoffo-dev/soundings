@@ -110,6 +110,7 @@ def _item(
                 from_resolution=payload["from_resolution"],
                 to_status=payload["to_status"],
                 to_resolution=payload["to_resolution"],
+                research_overridden=bool(payload.get("research_overridden", False)),
                 **base,
             )
         case "owner_changed":

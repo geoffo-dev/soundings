@@ -49,6 +49,11 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * Phase 7: `npm run screenshots:tour` (SCREENSHOTS=tour, E2E_SSO=1 E2E_AI=1) runs
  * screenshots/tour.spec.ts: the product tour for the README (docs/screenshots/tour/).
+ *
+ * Phase 8: per-project proposal templates and the research step need nothing new to run
+ * (tests/support/research.ts arranges them; specs use projects of their own). `npm run
+ * screenshots:phase8` (SCREENSHOTS=phase-8) runs screenshots/phase-8.spec.ts
+ * (docs/screenshots/phase-8/, with pdf/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -64,9 +69,11 @@ const screenshotSpec =
           ? /screenshots\/phase-5\.spec\.ts$/
           : process.env.SCREENSHOTS === 'phase-6'
             ? /screenshots\/phase-6\.spec\.ts$/
-            : process.env.SCREENSHOTS === 'tour'
-              ? /screenshots\/tour\.spec\.ts$/
-              : /screenshots\/phase-1\.spec\.ts$/
+            : process.env.SCREENSHOTS === 'phase-8'
+              ? /screenshots\/phase-8\.spec\.ts$/
+              : process.env.SCREENSHOTS === 'tour'
+                ? /screenshots\/tour\.spec\.ts$/
+                : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/

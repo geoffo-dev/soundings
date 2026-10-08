@@ -14,6 +14,7 @@ import { notificationHandlers } from './notifications'
 import { projectHandlers } from './projects'
 import { proposalHandlers } from './proposals'
 import { publicHandlers } from './public'
+import { researchHandlers } from './research'
 import { submissionHandlers } from './submissions'
 import { suggestionHandlers } from './suggestions'
 import { userHandlers } from './users'
@@ -46,4 +47,6 @@ export const handlers: RequestHandler[] = [
   ...suggestionHandlers,
   // Phase 6 (contract-phase6)
   ...aiHandlers,
+  // Phase 8 (contract-phase8)
+  ...researchHandlers,
 ]

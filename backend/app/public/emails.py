@@ -44,11 +44,12 @@ from app.domain.labels import status_label
 from app.email import outbox
 from app.email.model import Button, EmailContent, subject_title
 from app.models.activity import ActivityEvent
-from app.models.enums import EmailType, HoldReason, IdeaStatus, Resolution
+from app.models.enums import EmailType, HoldReason
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
 from app.models.project import Project
 from app.models.public import ConfirmationEmailSend, PublicSubmission
+from app.public.reported import reported_move
 
 if TYPE_CHECKING:
     from app.email.content import OutboxRow
@@ -227,6 +228,9 @@ async def queue_status_email(
         key: event.payload.get(key)
         for key in ("from_status", "from_resolution", "to_status", "to_resolution")
     }
+    project = await db.get(Project, idea.project_id)
+    if project is None or reported_move(project.research_step, payload) is None:
+        return  # Phase 8: nothing the submitter sees changed (e.g. New -> Research)
     await outbox.enqueue(
         db,
         settings,
@@ -256,13 +260,12 @@ async def _load(db: AsyncSession, idea_id: UUID) -> tuple[PublicSubmission, Idea
 
 
 def _status_label(project: Project, payload: Mapping[str, Any]) -> str | None:
-    try:
-        status = IdeaStatus(str(payload.get("to_status")))
-        raw = payload.get("to_resolution")
-        resolution = Resolution(str(raw)) if raw else None
-    except ValueError:
+    """The reported status's label, or ``None`` when nothing reported changed (Phase 8:
+    Research is reported as the status before it; no email for such a move)."""
+    shown = reported_move(project.research_step, payload)
+    if shown is None:
         return None
-    return status_label(project.status_labels, status, resolution)
+    return status_label(project.status_labels, *shown)
 
 
 async def submitter_email(

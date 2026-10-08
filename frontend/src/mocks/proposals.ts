@@ -11,12 +11,13 @@ import type {
   ProposalComment,
   ProposalPermissions,
   ProposalSection,
-  ProposalSectionKey,
   ProposalThread,
   ProposalView,
 } from '@/api/types'
 
 import type { MockDb, MockIdea, MockUser } from './db'
+import { activeItems, answerOf, proposalStartBlocked } from './research'
+import { activeSections, DEFAULT_TEMPLATE, sectionOrder } from './templates'
 import {
   computeAggregate,
   effectiveRole,
@@ -39,7 +40,7 @@ export interface MockProposal {
 
 export interface MockProposalSection {
   proposal_id: string
-  key: ProposalSectionKey
+  key: string
   body_md: string
   version: number
   updated_at: string
@@ -49,7 +50,7 @@ export interface MockProposalSection {
 export interface MockProposalThread {
   id: string
   proposal_id: string
-  section_key: ProposalSectionKey
+  section_key: string
   created_at: string
   resolved_at: string | null
   resolved_by_id: string | null
@@ -64,47 +65,16 @@ export interface MockProposalComment {
   deleted_at: string | null
 }
 
-/** The fixed template (`app.schemas.proposals.PROPOSAL_TEMPLATE`, SPEC section 2). */
-export const PROPOSAL_TEMPLATE: readonly {
-  key: ProposalSectionKey
-  title: string
-  prompt: string
-}[] = [
-  {
-    key: 'summary',
-    title: 'Summary',
-    prompt: 'The idea in a few sentences: what we would do and why it matters.',
-  },
-  { key: 'problem', title: 'Problem', prompt: 'Who has this problem, and how do we know?' },
-  {
-    key: 'solution',
-    title: 'Solution',
-    prompt: 'Describe what we would build or change, and how it solves the problem.',
-  },
-  {
-    key: 'market',
-    title: 'Market & users',
-    prompt: 'Who would use or buy this, how many of them are there, and how do we reach them?',
-  },
-  {
-    key: 'cost',
-    title: 'Cost & effort',
-    prompt: 'What would it take: people, time, money and dependencies?',
-  },
-  {
-    key: 'benefits',
-    title: 'Benefits / revenue',
-    prompt: 'What do we gain: revenue, savings or other benefits, and how will we measure them?',
-  },
-  { key: 'risks', title: 'Risks', prompt: 'What could go wrong, and how would we reduce it?' },
-  {
-    key: 'next_steps',
-    title: 'Next steps / the ask',
-    prompt: 'What do you need, from whom, and by when?',
-  },
-]
+/**
+ * Phase 8: the built-in eight, which every project starts from; a project's own
+ * template is in `templates.ts` (`activeSections`).
+ */
+export const PROPOSAL_TEMPLATE = DEFAULT_TEMPLATE.map(({ key, title, hint }) => ({
+  key,
+  title,
+  prompt: hint,
+}))
 
-export const SECTION_KEYS = PROPOSAL_TEMPLATE.map((section) => section.key)
 export const SECTION_MAX_LENGTH = 20_000
 export const COMMENT_MAX_LENGTH = 5_000
 export const MAX_THREADS_PER_PROPOSAL = 500
@@ -114,13 +84,37 @@ export const EXPORTS_PER_MINUTE = 10
 
 const EDITABLE: IdeaStatus[] = ['shortlisted', 'proposal']
 
+/** c7 (Phase 8): Shortlisted or Proposal, or Research while it comes before the proposal. */
+export function proposalOpenFor(db: MockDb, idea: MockIdea): boolean {
+  if (EDITABLE.includes(idea.status)) return true
+  return idea.status === 'research' && projectOf(db, idea).research_step === 'before_proposal'
+}
+
 export function proposalOf(db: MockDb, idea: MockIdea): MockProposal | undefined {
   return db.proposals.find((proposal) => proposal.idea_id === idea.id)
 }
 
+function projectIdOf(db: MockDb, proposal: MockProposal): string | undefined {
+  return db.ideas.find((idea) => idea.id === proposal.idea_id)?.project_id
+}
+
+/** The proposal's rows for the project's active sections, in template order. */
 export function sectionsOf(db: MockDb, proposal: MockProposal): MockProposalSection[] {
-  const sections = db.proposalSections.filter((section) => section.proposal_id === proposal.id)
-  return SECTION_KEYS.flatMap((key) => sections.find((section) => section.key === key) ?? [])
+  const projectId = projectIdOf(db, proposal)
+  if (!projectId) return []
+  const rows = db.proposalSections.filter((section) => section.proposal_id === proposal.id)
+  return activeSections(db, projectId).flatMap(
+    (template) => rows.find((row) => row.key === template.key) ?? [],
+  )
+}
+
+/** The proposal's row for an active section (undefined for a removed or unknown key). */
+export function activeRow(
+  db: MockDb,
+  proposal: MockProposal,
+  key: string,
+): MockProposalSection | undefined {
+  return sectionsOf(db, proposal).find((row) => row.key === key)
 }
 
 /** Who may do what (role matrix E, contract-phase4 §3.1); held ideas are read-only (§3.6). */
@@ -136,8 +130,8 @@ export function proposalRules(db: MockDb, idea: MockIdea, user: MockUser) {
     memberish,
     /** proposal.write without c7: the owner (while member or admin) and admins. */
     writer: owner || admin,
-    /** c7: Shortlisted or Proposal. */
-    c7: EDITABLE.includes(idea.status),
+    /** c7: Shortlisted or Proposal (or Research before the proposal, Phase 8). */
+    c7: proposalOpenFor(db, idea),
     open,
     commenter: admin || memberish,
   }
@@ -153,6 +147,8 @@ export function proposalPermissions(
   const write = rules.writer && rules.c7 && rules.open
   return {
     can_create: write && !exists,
+    // Phase 8: starting now would be refused by the research gate (admins may override).
+    start_blocked_by_research: write && !exists && proposalStartBlocked(db, idea),
     can_edit: write && exists,
     can_comment: rules.commenter && rules.open && exists,
     can_export: exists,
@@ -160,11 +156,15 @@ export function proposalPermissions(
 }
 
 export function sectionOut(db: MockDb, section: MockProposalSection): ProposalSection {
-  const template = PROPOSAL_TEMPLATE.find((t) => t.key === section.key)
+  const proposal = db.proposals.find((p) => p.id === section.proposal_id)
+  const projectId = proposal ? projectIdOf(db, proposal) : undefined
+  const template = db.templateSections.find(
+    (t) => t.project_id === projectId && t.key === section.key,
+  )
   return {
     key: section.key,
     title: template?.title ?? section.key,
-    prompt: template?.prompt ?? '',
+    prompt: template?.hint ?? '',
     body_md: section.body_md,
     version: section.version,
     updated_at: section.updated_at,
@@ -235,13 +235,21 @@ export function threadOut(
   }
 }
 
-/** Every listed thread in template-section order, then oldest first. */
+/** Listed threads of active sections, in template-section order, then oldest first. */
 export function listedThreads(db: MockDb, proposal: MockProposal): MockProposalThread[] {
+  const projectId = projectIdOf(db, proposal) ?? ''
+  const active = new Set(activeSections(db, projectId).map((s) => s.key))
+  const order = sectionOrder(db, projectId)
   return db.proposalThreads
-    .filter((thread) => thread.proposal_id === proposal.id && isListedThread(db, thread))
+    .filter(
+      (thread) =>
+        thread.proposal_id === proposal.id &&
+        active.has(thread.section_key) &&
+        isListedThread(db, thread),
+    )
     .sort(
       (a, b) =>
-        SECTION_KEYS.indexOf(a.section_key) - SECTION_KEYS.indexOf(b.section_key) ||
+        order(a.section_key) - order(b.section_key) ||
         a.created_at.localeCompare(b.created_at) ||
         a.id.localeCompare(b.id),
     )
@@ -329,11 +337,41 @@ export function exportMarkdown(db: MockDb, idea: MockIdea, user: MockUser): stri
     )
   }
   for (const section of sectionsOf(db, proposal)) {
-    const title = PROPOSAL_TEMPLATE.find((t) => t.key === section.key)?.title ?? section.key
+    const title = sectionOut(db, section).title
     lines.push('', `## ${title}`, '')
     lines.push(section.body_md.trim() ? demoteHeadings(section.body_md) : '_Not written yet._')
   }
+  lines.push(...researchAppendix(db, idea))
   return `${lines.join('\n')}\n`
+}
+
+/** Backslash-escapes what could start Markdown syntax; line breaks become hard breaks. */
+export function escapeMarkdown(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, (c) => `\\${c}`))
+    .join('\\\n')
+}
+
+/** "Research and consultation" (contract-phase8 §3.8): answered active items, step on. */
+export function researchAppendix(db: MockDb, idea: MockIdea): string[] {
+  const project = projectOf(db, idea)
+  if (project.research_step === 'off') return []
+  const date = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const lines: string[] = []
+  for (const item of activeItems(db, project.id)) {
+    const answer = answerOf(db, idea.id, item.id)
+    if (!answer) continue
+    const by = findUser(db, answer.answered_by_id)?.display_name ?? 'someone'
+    let footer = `Answered by ${by} on ${date(answer.answered_at)}`
+    if (answer.updated_at !== answer.answered_at) {
+      const updater = findUser(db, answer.updated_by_id)?.display_name ?? 'someone'
+      footer += `, updated by ${updater} on ${date(answer.updated_at)}`
+    }
+    lines.push('', `### ${item.title}`, '', escapeMarkdown(answer.answer), '', `_${footer}_`)
+  }
+  return lines.length ? ['', '## Research and consultation', ...lines] : []
 }
 
 /** A tiny, valid one-page PDF that names the idea (the mock has no renderer). */

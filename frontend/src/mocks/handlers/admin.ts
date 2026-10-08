@@ -100,6 +100,10 @@ const AUDIT_ACTION_SET: Record<AuditAction, true> = {
   'ai_run.cancel': true,
   'evaluation.include_ai': true,
   'ai_note.delete': true,
+  'project.proposal_template_replace': true,
+  'project.research_step_change': true,
+  'project.research_checklist_replace': true,
+  'idea.research_override': true,
 }
 const AUDIT_ACTIONS = Object.keys(AUDIT_ACTION_SET) as AuditAction[]
 

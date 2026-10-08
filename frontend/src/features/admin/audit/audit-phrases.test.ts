@@ -657,6 +657,51 @@ describe('audit sentences', () => {
     )
   })
 
+  it('words the Phase 8 template, research step, checklist and override entries', () => {
+    const inProject = { target_type: 'project' as const, target_id: CUST.id, project: CUST }
+    expect(
+      say(
+        entry('project.proposal_template_replace', {
+          ...inProject,
+          details: { added: ['the_ask'], archived: ['market'], reordered: true },
+        }),
+      ),
+    ).toBe('Alice Anders changed the proposal template of Customer Innovation')
+    expect(
+      say(
+        entry('project.research_step_change', {
+          ...inProject,
+          details: { from: 'off', to: 'before_evaluation' },
+        }),
+      ),
+    ).toBe('Alice Anders set the research step of Customer Innovation to Before evaluation')
+    expect(
+      say(entry('project.research_step_change', { ...inProject, details: { to: 'off' } })),
+    ).toBe('Alice Anders set the research step of Customer Innovation to Off')
+    expect(
+      say(entry('project.research_checklist_replace', { ...inProject, details: { added: 1 } })),
+    ).toBe('Alice Anders changed the research checklist of Customer Innovation')
+    const override = entry('idea.research_override', {
+      target_type: 'idea',
+      target_id: 'i-7',
+      target_label: 'CUST-7',
+      project: CUST,
+      details: {
+        operation: 'change_idea_status',
+        from_status: 'research',
+        to_status: 'evaluating',
+        open_items: 2,
+        reason: 'Legal asked us to start now',
+      },
+    })
+    expect(say(override)).toBe(
+      'Alice Anders moved CUST-7 past research without finishing it (to Evaluating), 2 required items open: “Legal asked us to start now”',
+    )
+    expect(say({ ...override, details: { open_items: 1 } })).toBe(
+      'Alice Anders moved CUST-7 past research without finishing it, 1 required item open',
+    )
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -714,6 +759,10 @@ describe('audit categories', () => {
       'ai_run.cancel': true,
       'evaluation.include_ai': true,
       'ai_note.delete': true,
+      'project.proposal_template_replace': true,
+      'project.research_step_change': true,
+      'project.research_checklist_replace': true,
+      'idea.research_override': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())
@@ -723,6 +772,7 @@ describe('audit categories', () => {
     expect(actionsFor(['denied', 'status'])).toEqual([
       'session.sign_in_denied',
       'idea.status_change',
+      'idea.research_override',
     ])
     expect(actionsFor(undefined)).toEqual([])
   })

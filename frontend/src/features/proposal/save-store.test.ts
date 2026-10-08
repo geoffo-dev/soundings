@@ -226,3 +226,50 @@ describe('ProposalSaveStore', () => {
     expect(save).toHaveBeenCalledWith('summary', 'Leaving', 3, { keepalive: true })
   })
 })
+
+describe('ProposalSaveStore and the template (Phase 8)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const notFound = () => new ApiError({ status: 404, code: 'not_found', title: 'Not Found' })
+
+  it('keeps text typed into a section removed meanwhile, and stops saving it', async () => {
+    const keep = vi.fn()
+    const forget = vi.fn()
+    const save = vi.fn<SaveFn>(() => Promise.reject(notFound()))
+    const store = new ProposalSaveStore([section('market', 'Old')], save, vi.fn(), {
+      keep,
+      forget,
+    })
+    store.edit('market', 'My unsaved text')
+    await store.saveNow('market')
+    expect(store.get('market')?.status).toBe('removed')
+    expect(keep).toHaveBeenCalledWith('market', 'market', 'My unsaved text')
+    // Kept text isn't "unsaved" (it is in this browser) and is never sent again.
+    expect(store.hasUnsaved()).toBe(false)
+    store.edit('market', 'More text')
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2)
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(keep).toHaveBeenLastCalledWith('market', 'market', 'More text')
+    store.discardRemoved('market')
+    expect(store.get('market')).toBeUndefined()
+    expect(forget).toHaveBeenCalledWith('market')
+  })
+
+  it('follows the template on refetch: new sections join, removed ones go unless unsaved', () => {
+    const keep = vi.fn()
+    const store = new ProposalSaveStore(
+      [section('summary', 'A'), section('market', 'B'), section('cost', 'C')],
+      vi.fn<SaveFn>(() => new Promise(() => undefined)),
+      vi.fn(),
+      { keep, forget: vi.fn() },
+    )
+    store.edit('cost', 'C, typed')
+    store.receive([section('summary', 'A'), section('carbon_impact', '')])
+    expect(store.get('market')).toBeUndefined()
+    expect(store.get('cost')?.status).toBe('removed')
+    expect(keep).toHaveBeenCalledWith('cost', 'cost', 'C, typed')
+    expect(store.get('carbon_impact')?.status).toBe('saved')
+    expect(summarise(store, null)).toEqual({ kind: 'saved', at: null })
+  })
+})

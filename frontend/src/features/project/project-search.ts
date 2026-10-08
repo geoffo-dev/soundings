@@ -22,7 +22,15 @@ export interface ProjectSearch {
 export type ProjectView = 'board' | 'list'
 
 export const PROJECT_VIEWS = ['board', 'list'] as const
-const STATUSES: IdeaStatus[] = ['new', 'evaluating', 'shortlisted', 'proposal', 'closed']
+/** Every status, Research included: `?status=research` is kept in any project's URL. */
+const STATUSES: IdeaStatus[] = [
+  'new',
+  'research',
+  'evaluating',
+  'shortlisted',
+  'proposal',
+  'closed',
+]
 const RESOLUTIONS: Resolution[] = ['accepted', 'rejected', 'parked']
 const SORTS: IdeaSort[] = [
   'score',

@@ -50,13 +50,24 @@ import type {
   MockUser,
 } from './db'
 import { citationOut, researchNoteOut } from './ai'
+import { canAnswer, inviteBlocked, summaryResearch } from './research'
+import { lifecycle } from '@/lib/status'
 import type { MockAuthMethod } from './session'
 
-export const STATUSES: IdeaStatus[] = ['new', 'evaluating', 'shortlisted', 'proposal', 'closed']
+/** The canonical order across projects (Research after New); a project's own is `lifecycle`. */
+export const STATUSES: IdeaStatus[] = [
+  'new',
+  'research',
+  'evaluating',
+  'shortlisted',
+  'proposal',
+  'closed',
+]
 export const RESOLUTIONS: Resolution[] = ['accepted', 'rejected', 'parked']
 
 export const DEFAULT_STATUS_LABELS: StatusLabels = {
   new: 'New',
+  research: 'Research',
   evaluating: 'Evaluating',
   shortlisted: 'Shortlisted',
   proposal: 'Proposal',
@@ -352,6 +363,8 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
     can_remove_evaluators: false,
     can_volunteer: false,
     can_vote: false,
+    can_answer_research: false,
+    invite_blocked_by_research: false,
   }
   if (!writable) return none
   // Held for moderation: read-only but for delete (contract-phase4 §3.6).
@@ -372,6 +385,9 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
     can_remove_evaluators: manager,
     can_volunteer: canVolunteer,
     can_vote: admin || memberish,
+    // Phase 8 (contract-phase8 §3.6).
+    can_answer_research: canAnswer(db, idea, user),
+    invite_blocked_by_research: manager && open && inviteBlocked(db, idea),
   }
 }
 
@@ -514,6 +530,8 @@ export function projectSummary(db: MockDb, project: MockProject, user: MockUser)
           .length
       : null,
     permissions: projectPermissions(db, project, user),
+    research_step: project.research_step,
+    lifecycle: [...lifecycle(project.research_step)],
   }
 }
 
@@ -593,6 +611,7 @@ export function ideaSummary(db: MockDb, idea: MockIdea, user: MockUser): IdeaSum
     vote_count: countVotes(db, idea.id),
     has_voted: db.votes.has(`${idea.id}:${user.id}`),
     permissions: { can_change_status: ideaPermissions(db, idea, user).can_change_status },
+    research: summaryResearch(db, idea),
   }
 }
 
@@ -743,6 +762,7 @@ export function activityItem(db: MockDb, event: MockEvent, user: MockUser): Acti
         from_resolution: (p.from_resolution as Resolution | null) ?? null,
         to_status: p.to_status as IdeaStatus,
         to_resolution: (p.to_resolution as Resolution | null) ?? null,
+        research_overridden: p.research_overridden === true,
       }
     case 'owner_changed':
       return {
@@ -937,7 +957,7 @@ export function board(
   const all = queryProjectIdeas(db, project, user, filters)
   const labels = statusLabels(project)
   return {
-    columns: STATUSES.map((status) => {
+    columns: lifecycle(project.research_step).map((status) => {
       const ideas = all.filter((idea) => idea.status === status)
       const fingerprint = queryFingerprint(`project:${project.id}`, {
         ...filters,

@@ -5,8 +5,10 @@
 :mod:`app.proposals.export`, picklable for the PDF child process). Both formats carry
 the idea's title; a metadata block (project, idea key, status label, owner, "Exported
 <date> by <name>" and, only for people who may see scores, the aggregate line); then
-the eight sections in template order, an empty one as "Not written yet". Comments are
-never exported.
+the project's template sections in order (Phase 8: per project), an empty one as "Not
+written yet"; then, while the project's research step is on and an item is answered,
+the "Research and consultation" appendix (each answered item, its answer as plain text,
+who answered and when). Comments are never exported.
 
 Safety of the HTML (the PDF): every value goes through Jinja's autoescaping; section
 Markdown goes through :func:`app.proposals.markdown.render_html` (no raw HTML, no
@@ -42,7 +44,15 @@ from app.proposals.fonts import (
     MONO_FONT,
     faces_for,
 )
-from app.proposals.markdown import RenderBudget, close_open_blocks, demote_headings, render_html
+from app.proposals.markdown import (
+    TOO_LONG,
+    RenderBudget,
+    close_open_blocks,
+    demote_headings,
+    plain_html,
+    plain_markdown,
+    render_html,
+)
 
 __all__ = [
     "DEFAULT_COLOR",
@@ -50,12 +60,14 @@ __all__ = [
     "EMPTY_SECTION",
     "INK",
     "LOGO_TYPES",
+    "RESEARCH_APPENDIX",
     "SHORT_DOCUMENT",
     "SHORT_TITLE",
     "TEMPLATE_DIR",
     "WHITE",
     "ExportBranding",
     "ExportDocument",
+    "ExportResearchItem",
     "ExportSection",
     "build_html",
     "build_markdown",
@@ -75,6 +87,8 @@ WHITE: Final = "#ffffff"
 MUTED: Final = "#57606a"
 """Secondary text: 6.4:1 on white."""
 EMPTY_SECTION: Final = "Not written yet."
+RESEARCH_APPENDIX: Final = "Research and consultation"
+"""The appendix's heading (Phase 8, contract-phase8 section 3.8)."""
 SHORT_DOCUMENT: Final = 8_000
 """Section text (characters, all sections) up to which the contents go on the cover
 rather than a page of their own (about three pages of prose)..."""
@@ -97,6 +111,42 @@ class ExportSection:
     @property
     def empty(self) -> bool:
         return not self.body_md.strip()
+
+
+def _day(value: datetime) -> str:
+    return f"{value.day} {value:%B %Y}"
+
+
+@dataclass(frozen=True, slots=True)
+class ExportResearchItem:
+    """An answered research checklist item (Phase 8): the answer is plain text as typed;
+    dates are in the instance time zone."""
+
+    title: str
+    answer: str
+    answered_by: str | None
+    answered_at: datetime
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+
+    @property
+    def byline(self) -> str:
+        """ "Answered by <name> on <date>", plus ", updated by <name> on <date>" when
+        someone else changed it, or it was changed on a later day."""
+        line = (
+            f"Answered by {self.answered_by} on {_day(self.answered_at)}"
+            if self.answered_by
+            else f"Answered on {_day(self.answered_at)}"
+        )
+        if self.updated_at is not None and (
+            self.updated_by != self.answered_by or self.updated_at.date() != self.answered_at.date()
+        ):
+            line += (
+                f", updated by {self.updated_by} on {_day(self.updated_at)}"
+                if self.updated_by
+                else f", updated on {_day(self.updated_at)}"
+            )
+        return line
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +176,9 @@ class ExportDocument:
     score: Decimal | None = None
     """The aggregate, only when the exporter may see scores (else ``None``)."""
     score_count: int = 0
+    research: tuple[ExportResearchItem, ...] = ()
+    """Phase 8: the answered items, in checklist order, while the project's research step
+    is on (empty: no appendix)."""
 
     @property
     def score_line(self) -> str | None:
@@ -198,6 +251,13 @@ def build_markdown(document: ExportDocument) -> str:
             else close_open_blocks(demote_headings(section.body_md)).rstrip("\n")
         )
         parts.append(f"## {_md_text(section.title)}\n\n{body}")
+    if document.research:
+        parts.append(f"## {RESEARCH_APPENDIX}")
+        for item in document.research:
+            parts.append(
+                f"### {_md_text(item.title)}\n\n{plain_markdown(item.answer)}\n\n"
+                f"_{_md_text(item.byline)}_"
+            )
     return "\n\n".join(parts) + "\n"
 
 
@@ -284,6 +344,17 @@ def build_html(document: ExportDocument) -> str:
         }
         for section in document.sections
     ]
+    research = []
+    for item in document.research:
+        paragraphs, cut = plain_html(item.answer, budget)
+        research.append(
+            {
+                "title": item.title,
+                "paragraphs": [Markup(paragraph) for paragraph in paragraphs],  # noqa: S704 - escaped by plain_html
+                "cut": cut,
+                "byline": item.byline,
+            }
+        )
     colors = {
         "primary": primary,
         "brand_text": readable_on_white(primary),
@@ -293,13 +364,18 @@ def build_html(document: ExportDocument) -> str:
     }
     contents_on_cover = (
         len(document.title) <= SHORT_TITLE
-        and sum(len(section.body_md) for section in document.sections) <= SHORT_DOCUMENT
+        and sum(len(section.body_md) for section in document.sections)
+        + sum(len(item.answer) for item in document.research)
+        <= SHORT_DOCUMENT
     )
     return _jinja.get_template("proposal.html").render(
         document=document,
         app_name=branding.app_name,
         logo=logo_data_uri(branding),
         sections=sections,
+        research=research,
+        research_title=RESEARCH_APPENDIX,
+        too_long=TOO_LONG,
         contents_on_cover=contents_on_cover,
         colors=colors,
         font_faces=Markup(font_face_css(branding.font)),  # noqa: S704 - fixed table

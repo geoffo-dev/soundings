@@ -21,6 +21,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.rubric_defaults import default_rubric_criteria
+from app.domain.template_defaults import default_template_sections
 from app.models.base import utcnow
 from app.models.enums import (
     EvaluationStatus,
@@ -29,6 +30,7 @@ from app.models.enums import (
     ProjectRole,
     ProjectVisibility,
     Recommendation,
+    ResearchStep,
     Resolution,
 )
 from app.models.evaluation import Evaluation, EvaluationScore
@@ -77,6 +79,7 @@ async def make_project(
     members: Mapping[User, ProjectRole] | None = None,
     archived: bool = False,
     allow_volunteer_owners: bool = True,
+    research_step: ResearchStep = ResearchStep.OFF,
 ) -> Project:
     n = _n()
     project = Project(
@@ -88,9 +91,11 @@ async def make_project(
         visibility=visibility,
         allow_volunteer_owners=allow_volunteer_owners,
         archived_at=utcnow() if archived else None,
+        research_step=research_step,
     )
     db.add(project)
     db.add_all(default_rubric_criteria(project.id))
+    db.add_all(default_template_sections(project.id))
     for user, role in (members or {}).items():
         db.add(ProjectMember(project_id=project.id, user_id=user.id, role=role))
     await db.commit()

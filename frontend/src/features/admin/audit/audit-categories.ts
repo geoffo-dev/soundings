@@ -55,7 +55,14 @@ export const AUDIT_CATEGORIES = [
   {
     id: 'project_settings',
     label: 'Project settings',
-    actions: ['project.create', 'project.update', 'project.rubric_replace'],
+    actions: [
+      'project.create',
+      'project.update',
+      'project.rubric_replace',
+      'project.proposal_template_replace',
+      'project.research_step_change',
+      'project.research_checklist_replace',
+    ],
   },
   {
     id: 'assignments',
@@ -67,7 +74,11 @@ export const AUDIT_CATEGORIES = [
     label: 'Evaluations',
     actions: ['evaluation.submit', 'evaluation.close', 'evaluation.reopen'],
   },
-  { id: 'status', label: 'Status changes', actions: ['idea.status_change'] },
+  {
+    id: 'status',
+    label: 'Status changes',
+    actions: ['idea.status_change', 'idea.research_override'],
+  },
   { id: 'deleted_ideas', label: 'Deleted ideas', actions: ['idea.delete'] },
   { id: 'email', label: 'Email (test and retry)', actions: ['email.test_send', 'email.retry'] },
   {

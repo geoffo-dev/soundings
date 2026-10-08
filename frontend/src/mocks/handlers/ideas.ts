@@ -40,6 +40,13 @@ import {
 } from '@/mocks/http'
 
 import {
+  checkOverrideRule,
+  overrideFields,
+  researchGate,
+  statusChangeGuarded,
+} from '@/mocks/handlers/research'
+import { startsEvaluation } from '@/mocks/research'
+import {
   addWatcher,
   deleteIdeaRows,
   emit,
@@ -131,6 +138,28 @@ function manageIdea(ctx: RouteContext) {
   const project = projectOf(ctx.db, idea)
   const who = standing(ctx.db, project, ctx.user, idea)
   return { idea, project, who }
+}
+
+/**
+ * `ideas.change_status` (contract-phase8 §3.5): the only code that changes an
+ * idea's status; the board, the menu, Undo and "Start proposal" all come here.
+ */
+export function changeStatus(
+  ctx: RouteContext,
+  idea: MockIdea,
+  status: IdeaStatus,
+  resolution: Resolution | null,
+  researchOverridden = false,
+): void {
+  const from = { from_status: idea.status, from_resolution: idea.resolution }
+  idea.status = status
+  idea.resolution = resolution
+  emit(ctx.db, idea, 'status_changed', ctx.user.id, {
+    ...from,
+    to_status: status,
+    to_resolution: resolution,
+    ...(researchOverridden ? { research_overridden: true } : {}),
+  })
 }
 
 function detail(ctx: RouteContext, idea: MockIdea) {
@@ -272,7 +301,8 @@ export const ideaHandlers = [
 
   route('post', '/ideas/:idea/status', async (ctx) => {
     const body = await readJson(ctx.request)
-    allowOnly(body, ['status', 'resolution'])
+    allowOnly(body, ['status', 'resolution', 'override_research', 'override_reason'])
+    const override = overrideFields(body)
     const status = body.status as IdeaStatus
     if (!STATUSES.includes(status)) {
       failValidation([
@@ -303,18 +333,19 @@ export const ideaHandlers = [
         },
       ])
     }
-    const { idea, who } = manageIdea(ctx)
+    const { idea, project, who } = manageIdea(ctx)
     if (!who.manager) forbidden()
+    checkOverrideRule(ctx, idea, override)
     ensureIdeaWritable(ctx.db, idea)
     if (idea.status === status && idea.resolution === resolution) return detail(ctx, idea)
-    const from = { from_status: idea.status, from_resolution: idea.resolution }
-    idea.status = status
-    idea.resolution = resolution
-    emit(ctx.db, idea, 'status_changed', ctx.user.id, {
-      ...from,
-      to_status: status,
-      to_resolution: resolution,
-    })
+    // Phase 8: Research exists only while the project's step is on.
+    if (status === 'research' && project.research_step === 'off') {
+      conflict('research_step_off', 'This project has no research step.')
+    }
+    const overridden =
+      statusChangeGuarded(ctx, idea, status) &&
+      researchGate(ctx, idea, 'change_idea_status', status, override)
+    changeStatus(ctx, idea, status, resolution, overridden)
     return detail(ctx, idea)
   }),
 
@@ -403,7 +434,8 @@ export const ideaHandlers = [
 
   route('post', '/ideas/:idea/evaluators', async (ctx) => {
     const body = await readJson(ctx.request)
-    allowOnly(body, ['user_ids', 'due_at'])
+    allowOnly(body, ['user_ids', 'due_at', 'override_research', 'override_reason'])
+    const override = overrideFields(body)
     const ids = body.user_ids
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20 || !ids.every(isUuid)) {
       failValidation([{ loc: ['body', 'user_ids'], msg: '1 to 20 user ids', type: 'too_short' }])
@@ -411,6 +443,7 @@ export const ideaHandlers = [
     const dueAt = body.due_at === undefined ? undefined : parseDueAt(body.due_at)
     const { idea, project, who } = manageIdea(ctx)
     if (!who.manager) forbidden()
+    checkOverrideRule(ctx, idea, override)
     const userIds = [...new Set(ids.map((id) => id.toLowerCase()))]
     for (const id of userIds) {
       if (!findUser(ctx.db, id)?.is_active) {
@@ -434,6 +467,10 @@ export const ideaHandlers = [
     }
     ensureIdeaWritable(ctx.db, idea)
     if (!evaluationOpen(idea)) conflict('evaluation_closed')
+    // Phase 8: the first evaluator starts evaluation, which the research step may guard.
+    if (startsEvaluation(ctx.db, idea)) {
+      researchGate(ctx, idea, 'add_evaluators', 'evaluating', override)
+    }
     const firstInvite = rowsForIdea(ctx.db.assignments, idea.id).length === 0
     const now = new Date().toISOString()
     for (const id of userIds) {

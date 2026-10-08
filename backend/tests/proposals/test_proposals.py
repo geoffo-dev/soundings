@@ -53,6 +53,7 @@ async def test_before_a_proposal_the_tab_says_who_may_start_one(
             "can_edit": False,
             "can_comment": True,
             "can_export": False,
+            "start_blocked_by_research": False,
         },
     }
     assert member["permissions"] == {
@@ -60,6 +61,7 @@ async def test_before_a_proposal_the_tab_says_who_may_start_one(
         "can_edit": False,
         "can_comment": True,
         "can_export": False,
+        "start_blocked_by_research": False,
     }
     assert viewer["permissions"]["can_comment"] is False
     assert_problem(await (await api(team.outsider)).get(proposal_url(key)), 404, "not_found")
@@ -96,6 +98,7 @@ async def test_starting_creates_the_fixed_template_in_order(
         "can_edit": True,
         "can_comment": True,
         "can_export": True,
+        "start_blocked_by_research": False,
     }
 
 
@@ -188,6 +191,7 @@ async def test_an_owner_demoted_to_viewer_can_no_longer_write(
         "can_edit": False,
         "can_comment": False,
         "can_export": True,
+        "start_blocked_by_research": False,
     }
     response = await owner.put(section_url(key, "problem"), {"body_md": "x", "base_version": 1})
     assert_problem(response, 403, "forbidden")
@@ -249,6 +253,7 @@ async def test_an_idea_held_for_moderation_has_no_proposal_writes(
         "can_edit": False,
         "can_comment": False,
         "can_export": False,
+        "start_blocked_by_research": False,
     }
     assert_problem(await admin.post(proposal_url(key)), 409, "awaiting_moderation")
     # Everyone else doesn't see the idea at all (c12).
@@ -423,6 +428,7 @@ async def test_saves_need_c7_but_the_proposal_stays_readable(
         "can_edit": False,
         "can_comment": True,
         "can_export": True,
+        "start_blocked_by_research": False,
     }
 
     ok(await owner.post(f"/ideas/{key}/status", {"status": "shortlisted"}))

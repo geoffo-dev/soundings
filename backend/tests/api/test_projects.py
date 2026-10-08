@@ -227,6 +227,7 @@ async def test_get_project(login: Login, db_session: AsyncSession) -> None:
     body = response.json()
     assert body["status_labels"] == {
         "new": "New",
+        "research": "Research",  # Phase 8: used only while the research step is on
         "evaluating": "Evaluating",
         "shortlisted": "Short list",
         "proposal": "Proposal",

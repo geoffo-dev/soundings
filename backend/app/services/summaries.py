@@ -48,7 +48,9 @@ from app.schemas.ideas import (
     IdeaSummaryPermissions,
 )
 from app.schemas.projects import ProjectRef
+from app.schemas.research import ResearchProgress
 from app.schemas.users import UserRef
+from app.services import research
 from app.services.refs import project_ref
 from app.services.sql import any_of
 
@@ -221,6 +223,8 @@ class SummaryContext:
     roles: Mapping[UUID, ProjectRole]
     users: Mapping[UUID, UserRef]
     tags: Mapping[UUID, str]
+    research: Mapping[UUID, ResearchProgress] = field(default_factory=dict)
+    """Phase 8: ``IdeaSummary.research`` of the ideas that show it."""
     project_refs: dict[UUID, ProjectRef] = field(default_factory=dict)
     project_facts: dict[UUID, ProjectFacts] = field(default_factory=dict)
     _permissions: dict[tuple[Any, ...], IdeaSummaryPermissions] = field(default_factory=dict)
@@ -275,8 +279,20 @@ async def load_context(
     if tag_ids:
         found_tags = await db.execute(select(Tag.id, Tag.name).where(any_of(Tag.id, tag_ids)))
         tags = dict(found_tags.all())
+    # Phase 8: the checklist's progress, one grouped statement for the page (none when no
+    # idea on it is in Research or the status before it in a project with the step on).
+    progress = await research.progress_by_idea(
+        db,
+        ((row.idea.id, row.idea.project_id, row.idea.status) for row in rows),
+        {project.id: project.research_step for project in projects.values()},
+    )
     return SummaryContext(
-        principal=principal, projects=projects, roles=roles, users=users, tags=tags
+        principal=principal,
+        projects=projects,
+        roles=roles,
+        users=users,
+        tags=tags,
+        research=progress,
     )
 
 
@@ -331,6 +347,7 @@ def summary_fields(principal: Principal, row: IdeaRow, context: SummaryContext) 
         "created_at": idea.created_at,
         "last_activity_at": idea.last_activity_at,
         "permissions": context.permissions(row),
+        "research": context.research.get(idea.id),
     }
 
 

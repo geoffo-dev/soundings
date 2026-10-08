@@ -42,6 +42,7 @@ from app.schemas.ai import (
     ResearchNote,
 )
 from app.schemas.evaluations import Evaluation
+from app.schemas.research import ResearchOverride
 from app.services import ideas
 
 router = APIRouter(prefix="/ideas/{idea}", tags=["ai"])
@@ -103,11 +104,19 @@ async def _request(
     idea: str,
     kind: AiRunKind,
     agent_id: UUID,
-    section_key: Any = None,
+    section_key: str | None = None,
+    override: ResearchOverride | None = None,
 ) -> AiRun:
     loaded = await ideas.load_idea(session, principal, idea, for_update=True)
     run, created = await runs.request_run(
-        session, principal, request.app.state.settings, loaded, kind, agent_id, section_key
+        session,
+        principal,
+        request.app.state.settings,
+        loaded,
+        kind,
+        agent_id,
+        section_key,
+        override,
     )
     if not created:
         response.status_code = status.HTTP_200_OK
@@ -149,7 +158,14 @@ async def request_ai_evaluation(
     body: AiEvaluationRequest,
 ) -> AiRun:
     return await _request(
-        request, response, principal, session, idea, AiRunKind.EVALUATE, body.agent_id
+        request,
+        response,
+        principal,
+        session,
+        idea,
+        AiRunKind.EVALUATE,
+        body.agent_id,
+        override=body,
     )
 
 

@@ -29,6 +29,7 @@ from app.authz.policy import ProjectFacts
 from app.domain.labels import apply_label_changes, resolved_labels
 from app.domain.principal import Principal
 from app.domain.rubric_defaults import default_rubric_criteria
+from app.domain.template_defaults import default_template_sections
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
 from app.models.enums import HoldReason, ProjectRole
@@ -53,6 +54,7 @@ from app.schemas.projects import (
     TagInfo,
 )
 from app.schemas.projects import Project as ProjectOut
+from app.schemas.research import lifecycle
 from app.schemas.rubric import Rubric, RubricUpdate
 from app.schemas.rubric import RubricCriterion as RubricCriterionOut
 from app.schemas.users import UserRef
@@ -107,6 +109,8 @@ def _summary(
         idea_count=idea_count,
         member_count=member_count,
         archived_at=project.archived_at,
+        research_step=project.research_step,
+        lifecycle=list(lifecycle(project.research_step)),
         permissions=project_permissions(principal, resource),
         pending_moderation_count=held_count if may_moderate(principal, resource) else None,
     )
@@ -229,6 +233,7 @@ async def create_project(db: AsyncSession, principal: Principal, body: ProjectCr
     )
     db.add(project)
     db.add_all(default_rubric_criteria(project.id))
+    db.add_all(default_template_sections(project.id))  # Phase 8: the built-in eight
     db.add(ProjectMember(project_id=project.id, user_id=admin.id, role=ProjectRole.ADMIN))
     try:
         await db.flush()

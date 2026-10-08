@@ -33,10 +33,10 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "get_idea": ("idea.view", "score.view_aggregate"),
     "update_idea": ("idea.edit_own", "idea.edit_any"),
     "delete_idea": ("idea.delete",),
-    "change_idea_status": ("idea.change_status",),
+    "change_idea_status": ("idea.change_status", "idea.research_override"),
     "set_idea_owner": ("idea.assign_owner", "idea.release_owner"),
     "volunteer_as_owner": ("idea.volunteer_owner",),
-    "add_evaluators": ("evaluator.manage",),
+    "add_evaluators": ("evaluator.manage", "idea.research_override"),
     "remove_evaluator": ("evaluator.manage",),
     "set_evaluation_due_date": ("idea.set_due_date",),
     "close_evaluation": ("evaluation.close",),
@@ -103,7 +103,7 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "retry_outbox_email": ("platform.configure_email",),
     # Phase 4 (docs/api/contract-phase4.md section 2)
     "get_proposal": ("proposal.view", "proposal.write", "proposal.comment", "proposal.export"),
-    "create_proposal": ("proposal.write",),
+    "create_proposal": ("proposal.write", "idea.research_override"),
     "update_proposal_section": ("proposal.write",),
     "export_proposal_markdown": ("proposal.export", "score.view_aggregate"),
     "export_proposal_pdf": ("proposal.export", "score.view_aggregate"),
@@ -165,7 +165,7 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
         "ai.cancel_run",
         "evaluation.include_ai",
     ),
-    "request_ai_evaluation": ("ai.request_evaluation",),
+    "request_ai_evaluation": ("ai.request_evaluation", "idea.research_override"),
     "request_ai_research": ("ai.research",),
     "request_ai_section_draft": ("ai.draft_section",),
     "get_ai_run": ("idea.view",),
@@ -177,6 +177,15 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     # Phase 7 (docs/api/contract-phase7.md section 2)
     "get_my_work_counts": (SIGNED_IN, "idea.view"),
     "list_my_evaluations_due": (SIGNED_IN, "idea.view"),
+    # Phase 8 (docs/api/contract-phase8.md sections 2 and 3)
+    "get_proposal_template": ("project.view",),
+    "replace_proposal_template": ("project.edit_proposal_template",),
+    "get_research_settings": ("project.view",),
+    "replace_research_settings": ("project.edit_research",),
+    "get_idea_research": ("idea.view", "idea.answer_research", "idea.research_override"),
+    "answer_research_item": ("idea.answer_research",),
+    "clear_research_item": ("idea.answer_research",),
+    "list_similar_ideas": ("idea.view",),
 }
 
 

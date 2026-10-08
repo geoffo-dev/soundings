@@ -5,6 +5,7 @@ import { useAddEvaluators, useSetEvaluationDueDate } from '@/api/ideas'
 import type { UserSearchResult } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
   Dialog,
@@ -122,6 +123,14 @@ function InviteForm({ onDone }: { onDone: () => void }) {
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="flex flex-col gap-4">
+        {idea.permissions.invite_blocked_by_research && (
+          <Callout tone="warning" title="Finish the research checklist first">
+            Inviting the first evaluator starts evaluation, and required research items are open.
+            {project?.permissions.can_manage
+              ? ' As an admin you can invite anyway: you’ll be asked to confirm.'
+              : ''}
+          </Callout>
+        )}
         <div className="flex flex-col gap-2">
           {picked.length > 0 ? (
             <ul aria-label="Selected people" className="flex flex-wrap gap-1.5">

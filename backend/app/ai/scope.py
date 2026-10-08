@@ -38,7 +38,7 @@ from app.domain.idea_keys import parse_idea_key
 from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.models.ai import AiAgent, AiRun
-from app.models.enums import AiRunKind, AiRunStatus, ProposalSectionKey
+from app.models.enums import AiRunKind, AiRunStatus
 from app.models.idea import Idea
 from app.models.project import Project
 from app.schemas.ai import AGENT_READ_TOOLS, AGENT_RUN_WRITE_TOOLS
@@ -88,7 +88,7 @@ class NamedRun:
 
     id: UUID
     kind: AiRunKind
-    section_key: ProposalSectionKey | None
+    section_key: str | None
     idea_id: UUID
     idea_number: int
     project_id: UUID
@@ -175,7 +175,7 @@ def check_write(
     principal: Principal,
     tool: str,
     run: NamedRun | None,
-    section_key: ProposalSectionKey | None = None,
+    section_key: str | None = None,
 ) -> None:
     """c22 for a write tool, with the run :func:`require_run` found: an agent writes only
     with its run kind's tool (``create_idea``, ``add_comment`` and anything else:

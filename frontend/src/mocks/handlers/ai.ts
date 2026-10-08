@@ -88,7 +88,10 @@ import {
   tooManyAttempts,
   type RouteContext,
 } from '@/mocks/http'
-import { proposalOf, SECTION_KEYS } from '@/mocks/proposals'
+import { requireActiveSection, sectionKeyValue } from '@/mocks/handlers/proposals'
+import { checkOverrideRule, overrideFields, researchGate } from '@/mocks/handlers/research'
+import { proposalOf, proposalOpenFor } from '@/mocks/proposals'
+import { startsEvaluation } from '@/mocks/research'
 import { sessionAuthMethod } from '@/mocks/session'
 
 import { emit, ensureIdeaWritable, isUuid, uuidParam, viewIdea } from './common'
@@ -786,12 +789,18 @@ export const aiHandlers = [
     const idea = viewIdea(ctx)
     checkRequestRule(ctx, idea)
     const body = await readJson(ctx.request)
-    allowOnly(body, ['agent_id'])
+    allowOnly(body, ['agent_id', 'override_research', 'override_reason'])
     const agentId = agentIdField(body)
+    const override = overrideFields(body)
+    checkOverrideRule(ctx, idea, override)
     ensureIdeaWritable(ctx.db, idea)
     if (idea.status === 'closed') conflict('idea_closed', 'This idea is closed.')
     if (!evaluationOpen(idea)) conflict('evaluation_closed', 'Evaluation is closed.')
     const agent = usableAgent(ctx.db, idea, agentId, 'evaluate')
+    // Phase 8: it assigns the agent as an evaluator, so it is guarded like a first invite.
+    if (startsEvaluation(ctx.db, idea)) {
+      researchGate(ctx, idea, 'request_ai_evaluation', 'evaluating', override)
+    }
     return requestRun(ctx, idea, agent, 'evaluate', null)
   }),
 
@@ -813,26 +822,19 @@ export const aiHandlers = [
     const body = await readJson(ctx.request)
     allowOnly(body, ['agent_id', 'section_key'])
     const agentId = agentIdField(body)
-    const sectionKey = body.section_key
-    if (!SECTION_KEYS.includes(sectionKey as ProposalSectionKey)) {
-      failValidation([
-        {
-          loc: ['body', 'section_key'],
-          msg: `Input should be ${SECTION_KEYS.join(', ')}`,
-          type: 'enum',
-        },
-      ])
-    }
+    const sectionKey = sectionKeyValue(body.section_key, ['body', 'section_key'])
     if (!proposalOf(ctx.db, idea)) notFound('This idea has no proposal yet.')
+    // Phase 8: an active section of the idea's project (after the 404s and 403, before 409s).
+    requireActiveSection(ctx, idea, sectionKey)
     ensureIdeaWritable(ctx.db, idea)
-    if (idea.status !== 'shortlisted' && idea.status !== 'proposal') {
+    if (!proposalOpenFor(ctx.db, idea)) {
       conflict(
         'proposal_not_available',
         'The proposal is read-only while the idea isn’t shortlisted.',
       )
     }
     const agent = usableAgent(ctx.db, idea, agentId, 'draft_section')
-    return requestRun(ctx, idea, agent, 'draft_section', sectionKey as ProposalSectionKey)
+    return requestRun(ctx, idea, agent, 'draft_section', sectionKey)
   }),
 
   route('get', '/ideas/:idea/ai-runs/:runId', (ctx) => {

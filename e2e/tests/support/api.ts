@@ -61,7 +61,8 @@ export type BrandAsset = Schemas['BrandAsset']
 export type EffectiveBranding = Schemas['EffectiveBranding']
 export type ProposalView = Schemas['ProposalView']
 export type ProposalSection = Schemas['ProposalSection']
-export type ProposalSectionKey = Schemas['ProposalSectionKey']
+// Phase 8: section keys are strings (the project's template), no longer an enum.
+export type ProposalSectionKey = string
 export type ProposalThread = Schemas['ProposalThread']
 export type ProposalThreadList = Schemas['ProposalThreadList']
 // Phase 5: API keys and proposal suggestions (contract-phase5).

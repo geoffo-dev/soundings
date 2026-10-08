@@ -61,13 +61,22 @@ from app.models import (
     User,
 )
 from app.models.base import utcnow
-from app.models.enums import BrandAssetKind, HoldReason, NotificationMode, NotificationType
+from app.models.enums import (
+    BrandAssetKind,
+    HoldReason,
+    NotificationMode,
+    NotificationType,
+    ResearchStep,
+)
 from app.models.group import Group, GroupMembership
 from app.models.notification import Notification
 from app.models.public import PublicSubmission
+from app.models.research import ResearchChecklistItem
 from app.models.user import UserExternalId
 from app.notifications import fanout
 from app.notifications import preferences as notification_preferences
+from app.proposals import service as proposal_service
+from app.proposals import template as proposal_template
 from app.schemas.admin_users import ExternalIdIn, ExternalIdsReplace
 from app.schemas.branding import BrandingUpdate
 from app.schemas.comments import CommentCreate
@@ -75,6 +84,12 @@ from app.schemas.evaluations import MyEvaluationIn, MyScoreIn
 from app.schemas.groups import GroupCreate, GroupMemberAdd, ProjectGroupGrantAdd
 from app.schemas.ideas import EvaluatorsAdd, IdeaCreate, StatusChange
 from app.schemas.projects import MemberAdd, ProjectCreate, ProjectUpdate
+from app.schemas.proposals import ProposalSectionUpdate, ProposalTemplateUpdate
+from app.schemas.research import (
+    DEFAULT_RESEARCH_CHECKLIST,
+    ResearchAnswerIn,
+    ResearchSettingsUpdate,
+)
 from app.schemas.rubric import RubricUpdate
 from app.seed.content import (
     GROUPS,
@@ -97,6 +112,7 @@ from app.seed.public import (
     PUBLIC_PROJECT,
     PublicIdeaSeed,
 )
+from app.seed.research import ANSWERS, PROPOSALS, RESEARCH_STEPS, TEMPLATES
 from app.services import (
     activity,
     admin_groups,
@@ -110,6 +126,7 @@ from app.services import (
     moderation,
     project_groups,
     projects,
+    research,
     votes,
 )
 from app.services.scoring import active_criteria
@@ -337,6 +354,7 @@ class _Player:
         self.criteria: dict[str, list[uuid.UUID]] = {}
         self.keys: dict[int, str] = {}
         self.public_keys: dict[int, str] = {}
+        self.items: dict[str, list[uuid.UUID]] = {}
 
     # -- helpers --------------------------------------------------------------------------
     def days_ago(self, days: float) -> datetime:
@@ -494,6 +512,51 @@ class _Player:
                 await projects.replace_rubric(self.db, principal, project, body)
 
             self.add(created + timedelta(minutes=20), f"rubric {seed.key}", customise_rubric)
+
+        if seed.key in TEMPLATES:
+            sections = TEMPLATES[seed.key]
+
+            async def customise_template() -> None:
+                principal = await self.principal(seed.admin)
+                project, _ = await load_project(
+                    self.db,
+                    principal,
+                    seed.slug,
+                    Rule.PROJECT_EDIT_PROPOSAL_TEMPLATE,
+                    for_update=True,
+                )
+                body = ProposalTemplateUpdate.model_validate(
+                    {
+                        "sections": [
+                            {"key": key, "title": title, "hint": hint}
+                            for key, title, hint in sections
+                        ]
+                    }
+                )
+                await proposal_template.replace_template(self.db, principal, project, body)
+
+            self.add(created + timedelta(minutes=25), f"template {seed.key}", customise_template)
+
+        if seed.key in RESEARCH_STEPS:
+            step = RESEARCH_STEPS[seed.key]
+
+            async def research_step() -> None:
+                principal = await self.principal(seed.admin)
+                project, _ = await load_project(
+                    self.db, principal, seed.slug, Rule.PROJECT_EDIT_RESEARCH, for_update=True
+                )
+                body = ResearchSettingsUpdate.model_validate(
+                    {
+                        "step": step,
+                        "items": [
+                            {"title": item.title, "hint": item.hint, "required": item.required}
+                            for item in DEFAULT_RESEARCH_CHECKLIST
+                        ],
+                    }
+                )
+                await research.replace_settings(self.db, principal, project, body)
+
+            self.add(created + timedelta(minutes=30), f"research step {seed.key}", research_step)
 
         for position, (username, role) in enumerate(seed.members):
 
@@ -817,12 +880,96 @@ class _Player:
 
         if seed.reviews:
             self._evaluation(index, seed, label, after(seed.invite_after))
+        elif seed.status is IdeaStatus.RESEARCH:
+            if seed.owner is None:
+                raise ValueError(f"seed content: {label} is in Research without an owner")
+            start = after(seed.owner_after + 0.1)
+            self._status(index, seed.owner, start, IdeaStatus.RESEARCH, label)
+            self._answers(index, seed, seed.owner, start + timedelta(hours=2), label)
+
+    # -- Phase 8: the research step -------------------------------------------------------
+    def _step(self, seed: IdeaSeed) -> ResearchStep:
+        return RESEARCH_STEPS.get(seed.project, ResearchStep.OFF)
+
+    async def _item_ids(self, project_key: str) -> list[uuid.UUID]:
+        if project_key not in self.items:
+            slug = self.slugs[project_key]
+            rows = await self.db.scalars(
+                select(ResearchChecklistItem.id)
+                .join(Project, Project.id == ResearchChecklistItem.project_id)
+                .where(Project.slug == slug, ResearchChecklistItem.archived_at.is_(None))
+                .order_by(ResearchChecklistItem.position)
+            )
+            self.items[project_key] = list(rows)
+        return self.items[project_key]
+
+    def _answers(self, index: int, seed: IdeaSeed, owner: str, start: datetime, label: str) -> None:
+        """The owner answers the idea's checklist (``ANSWERS``), an item every hour."""
+        answers = ANSWERS.get(seed.title)
+        if answers is None:
+            raise ValueError(f"seed content: {label} needs research answers")
+        for position, written in enumerate(answers):
+            if written is None:
+                continue
+
+            async def answer(position: int = position, written: str = written) -> None:
+                principal, loaded = await self.load(owner, index)
+                item_id = (await self._item_ids(seed.project))[position]
+                await research.answer_item(
+                    self.db,
+                    principal,
+                    loaded.idea,
+                    loaded.project,
+                    loaded.resource,
+                    item_id,
+                    ResearchAnswerIn(answer=written),
+                )
+
+            at = start + timedelta(hours=position)
+            self.add(at, f"{owner} answers research item {position + 1} of {label}", answer)
+
+    def _start_proposal(
+        self, index: int, seed: IdeaSeed, owner: str, at: datetime, label: str
+    ) -> None:
+        """The owner starts the idea's proposal (which moves it to Proposal) and writes
+        its sections over the next days (``PROPOSALS``)."""
+
+        async def start() -> None:
+            principal, loaded = await self.load(owner, index)
+            await proposal_service.create_proposal(self.db, principal, loaded)
+
+        self.add(at, f"start the proposal of {label}", start)
+        for position, (key, body_md) in enumerate(PROPOSALS[seed.title].items()):
+
+            async def write(key: str = key, body_md: str = body_md) -> None:
+                principal = await self.principal(owner)
+                loaded = await proposal_service.load_idea_shared(
+                    self.db, principal, self.keys[index]
+                )
+                await proposal_service.update_section(
+                    self.db,
+                    principal,
+                    loaded,
+                    key,
+                    ProposalSectionUpdate(body_md=body_md, base_version=1),
+                )
+
+            written = at + timedelta(hours=3 + 5 * position)
+            self.add(written, f"{owner} writes {key} of {label}", write)
 
     def _evaluation(self, index: int, seed: IdeaSeed, label: str, invited: datetime) -> None:
         owner = seed.owner
         if owner is None:
             raise ValueError(f"seed content: {label} has evaluators but no owner")
         window = timedelta(days=self.windows[seed.project])
+        if self._step(seed) is ResearchStep.BEFORE_EVALUATION:
+            # Research between taking ownership and the first invite (contract-phase8
+            # section 3.14): the move, then the answers, all before evaluation starts.
+            gap = timedelta(days=seed.invite_after - seed.owner_after)
+            if gap < timedelta(hours=6):
+                raise ValueError(f"seed content: {label} needs time for research")
+            self._status(index, owner, invited - gap * 0.8, IdeaStatus.RESEARCH, label)
+            self._answers(index, seed, owner, invited - gap * 0.6, label)
 
         async def invite() -> None:
             principal, loaded = await self.load(owner, index)
@@ -906,6 +1053,7 @@ class _Player:
         else:
             path = [(status, None) for status in stages[: stages.index(seed.status)]] + [final]
         at = last + timedelta(days=1)
+        before_proposal = self._step(seed) is ResearchStep.BEFORE_PROPOSAL
         for status, resolution in path:
             if status is IdeaStatus.SHORTLISTED:
 
@@ -916,7 +1064,22 @@ class _Player:
                 self.add(
                     at - timedelta(minutes=30), f"close evaluation of {label}", close_evaluation
                 )
-            self._status(index, owner, at, status, label, resolution)
+            if status is IdeaStatus.PROPOSAL and before_proposal:
+                # Research between the shortlist and the proposal (contract-phase8 3.14).
+                self._status(index, owner, at - timedelta(days=2), IdeaStatus.RESEARCH, label)
+                self._answers(index, seed, owner, at - timedelta(days=1.5), label)
+            if status is IdeaStatus.PROPOSAL and seed.title in PROPOSALS:
+                self._start_proposal(index, seed, owner, at, label)
+            else:
+                self._status(index, owner, at, status, label, resolution)
+            if (
+                status is IdeaStatus.SHORTLISTED
+                and seed.status is IdeaStatus.SHORTLISTED
+                and before_proposal
+                and seed.title in ANSWERS
+            ):
+                # A shortlisted idea whose owner started on the checklist early.
+                self._answers(index, seed, owner, at + timedelta(days=1), label)
             at += timedelta(days=3 if status is IdeaStatus.SHORTLISTED else 2.5)
 
     def _status(

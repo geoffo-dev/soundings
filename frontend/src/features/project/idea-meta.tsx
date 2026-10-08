@@ -1,10 +1,11 @@
-import { MessageSquare, ThumbsUp, TriangleAlert } from 'lucide-react'
+import { ListChecks, MessageSquare, ThumbsUp, TriangleAlert } from 'lucide-react'
 
 import type { IdeaSummary, UserRef } from '@/api/types'
 import { Avatar, type AvatarSize } from '@/components/ui/avatar'
 import { ProgressTicks } from '@/components/ui/progress-ticks'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { HoverTooltip } from '@/components/ui/tooltip'
+import { badgeLabel } from '@/features/research/research-copy'
 import { cn } from '@/lib/utils'
 
 /** The owner's avatar, or a dashed circle for "no owner". */
@@ -134,5 +135,40 @@ export function EngagementCounts({
         </span>
       )}
     </span>
+  )
+}
+
+/**
+ * Phase 8: the research checklist at a glance, "2/3" (contract-phase8 §3.13): only
+ * when the API sets `research` (an idea in Research or the status right before it).
+ * Quiet while items are open; the open count is in the accessible name.
+ */
+export function ResearchProgressBadge({
+  research,
+  className,
+}: {
+  research: IdeaSummary['research']
+  className?: string
+}) {
+  if (!research || research.total === 0) return null
+  const complete = research.required_open === 0
+  const label = badgeLabel(research)
+  return (
+    <HoverTooltip content={label}>
+      <span
+        role="img"
+        aria-label={label}
+        className={cn(
+          'inline-flex h-5 items-center gap-1 rounded-sm px-1.5 text-xs font-medium tabular-nums',
+          complete ? 'bg-success-subtle text-success' : 'bg-subtle text-secondary',
+          className,
+        )}
+      >
+        <ListChecks aria-hidden="true" className="size-3.5" />
+        <span aria-hidden="true">
+          {research.answered}/{research.total}
+        </span>
+      </span>
+    </HoverTooltip>
   )
 }

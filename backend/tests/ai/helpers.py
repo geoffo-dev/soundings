@@ -114,7 +114,7 @@ async def open_run(
     idea: Idea,
     kind: AiRunKind = AiRunKind.EVALUATE,
     *,
-    section_key: ProposalSectionKey | None = None,
+    section_key: str | None = None,
     status: AiRunStatus = AiRunStatus.RUNNING,
     cancel_requested: bool = False,
     requested_by: User | None = None,

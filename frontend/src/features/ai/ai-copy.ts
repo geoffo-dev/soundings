@@ -70,14 +70,18 @@ export const BLOCKED_COPY: Record<AiBlockedReason, string> = {
   awaiting_moderation: 'Waiting for moderation',
   idea_closed: 'The idea is closed',
   evaluation_closed: 'Evaluation is closed',
-  proposal_not_available:
-    'The proposal can be drafted while the idea is Shortlisted or in Proposal',
+  proposal_not_available: 'The proposal opens once the idea is shortlisted',
   no_proposal: 'Start the proposal first',
   no_agent: 'No AI agent serves this project',
+  // Phase 8: "Ask AI to evaluate" is the first evaluator, which the research step guards.
+  research_incomplete: 'Finish the research checklist first',
 }
 
-/** Template section titles (`PROPOSAL_TEMPLATE`), for text outside the editor. */
-export const SECTION_TITLES: Record<ProposalSectionKey, string> = {
+/**
+ * The built-in eight sections' titles, for text outside the editor when the project's
+ * template isn't at hand (Phase 8: projects rename and add sections; `sectionTitle`).
+ */
+export const SECTION_TITLES: Record<string, string> = {
   summary: 'Summary',
   problem: 'Problem',
   solution: 'Solution',
@@ -88,13 +92,25 @@ export const SECTION_TITLES: Record<ProposalSectionKey, string> = {
   next_steps: 'Next steps / the ask',
 }
 
+/** A section's title: from the project's template when known, else a built-in one, else "a section". */
+export function sectionTitle(
+  key: ProposalSectionKey | null | undefined,
+  titles?: ReadonlyMap<string, string> | null,
+): string {
+  if (!key) return 'a section'
+  return titles?.get(key) ?? SECTION_TITLES[key] ?? 'a section'
+}
+
 /** "Evaluating", "Drafting Risks" while active; "Evaluation", "Draft of Risks" once over. */
-export function runTitle(run: Pick<AiRun, 'kind' | 'section_key' | 'status'>): string {
+export function runTitle(
+  run: Pick<AiRun, 'kind' | 'section_key' | 'status'>,
+  titles?: ReadonlyMap<string, string> | null,
+): string {
   const copy = KIND_COPY[run.kind]
   const active = run.status === 'queued' || run.status === 'running'
   const word = active ? copy.doing : copy.noun
   if (run.kind !== 'draft_section' || !run.section_key) return word
-  return `${word}${active ? '' : ' of'} ${SECTION_TITLES[run.section_key]}`
+  return `${word}${active ? '' : ' of'} ${sectionTitle(run.section_key, titles)}`
 }
 
 export const PURPOSE_ORDER: readonly AiRunKind[] = ['evaluate', 'research', 'draft_section']

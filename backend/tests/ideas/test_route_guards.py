@@ -47,6 +47,15 @@ ROUTES: dict[str, tuple[str, str, Any]] = {
     "list_my_owned_ideas": ("GET", "/me/owned-ideas", None),
     "get_my_work_counts": ("GET", "/me/work/counts", None),
     "list_my_evaluations_due": ("GET", "/me/evaluations-due", None),
+    # Phase 8: an idea's research checklist and similar ideas
+    "get_idea_research": ("GET", "/ideas/{idea}/research", None),
+    "answer_research_item": (
+        "PUT",
+        "/ideas/{idea}/research/items/{item}",
+        {"answer": "Legal (contracts team): fine."},
+    ),
+    "clear_research_item": ("DELETE", "/ideas/{idea}/research/items/{item}", None),
+    "list_similar_ideas": ("GET", "/ideas/{idea}/similar-ideas", None),
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -84,6 +93,7 @@ async def paths(team: Team, db_session: AsyncSession) -> dict[str, str]:
         "idea": str(idea.id),
         "user": str(team.evaluators[0].id),
         "comment": str(comment.id),
+        "item": str(uuid4()),
     }
 
 

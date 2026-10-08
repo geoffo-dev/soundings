@@ -64,6 +64,7 @@ from app.models.enums import (
     EvaluatorState,
     IdeaStatus,
     Recommendation,
+    ResearchStep,
     SuggestionSource,
 )
 from app.models.evaluation import Evaluation, EvaluationScore
@@ -106,6 +107,8 @@ from app.schemas.mcp import (
     McpProjectRef,
     McpProposal,
     McpProposalSuggestion,
+    McpResearch,
+    McpResearchItem,
     McpRubricCriterion,
     McpScore,
     McpScoreEntry,
@@ -117,7 +120,8 @@ from app.schemas.mcp import (
     SubmitEvaluationInput,
     SubmitEvaluationOutput,
 )
-from app.services import comments, evaluations, ideas, projects
+from app.schemas.research import IdeaResearch
+from app.services import comments, evaluations, ideas, projects, research
 from app.services.board import Sort, fetch_page
 from app.services.ideas import LoadedIdea
 from app.services.refs import idea_ref
@@ -512,11 +516,19 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
     show_mine = run is None or run.kind is AiRunKind.EVALUATE
     others, evaluation_count = await _evaluations_out(ctx, loaded, names)
     has_proposal = await proposal_service.find_proposal(db, loaded.idea.id) is not None
+    checklist = await research.idea_research(
+        db, principal, loaded.idea, loaded.project, loaded.resource
+    )
     users = await _users(
         db,
         [
             detail.owner.id if detail.owner else None,
             detail.submitted_by.id if detail.submitted_by else None,
+            *(
+                item.answer.answered_by.id
+                for item in checklist.items
+                if item.answer and item.answer.answered_by
+            ),
         ],
     )
     summary = detail.score
@@ -570,6 +582,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
             evaluations=others,
             comments=await _comments_out(db, loaded.idea, args.comment_limit),
             has_proposal=has_proposal,
+            research=_research_out(checklist, users),
             permissions=McpIdeaPermissions(
                 can_comment=detail.permissions.can_comment,
                 can_evaluate=detail.permissions.can_evaluate,
@@ -577,6 +590,32 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
                 and can(principal, Rule.PROPOSAL_SUGGEST_SECTION, loaded.resource),
             ),
         )
+    )
+
+
+def _research_out(checklist: IdeaResearch, users: dict[UUID, McpUser]) -> McpResearch | None:
+    """Phase 8: the checklist and its answers, read only (null while the step is off)."""
+    if checklist.step is ResearchStep.OFF:
+        return None
+    return McpResearch(
+        step=checklist.step,
+        items=[
+            McpResearchItem(
+                item_id=item.item_id,
+                title=item.title,
+                hint=item.hint,
+                required=item.required,
+                answer=item.answer.answer if item.answer else None,
+                answered_by=(
+                    users.get(item.answer.answered_by.id)
+                    if item.answer and item.answer.answered_by
+                    else None
+                ),
+                answered_at=item.answer.answered_at if item.answer else None,
+            )
+            for item in checklist.items
+        ],
+        required_open=checklist.progress.required_open,
     )
 
 

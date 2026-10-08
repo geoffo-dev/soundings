@@ -23,6 +23,7 @@ import type {
   ProjectRole,
   ProjectVisibility,
   Recommendation,
+  ResearchStep,
   Resolution,
   StatusLabels,
 } from '@/api/types'
@@ -43,6 +44,9 @@ import type { MockPublicForm, MockPublicSubmission } from './public'
 import type { MockSuggestion } from './suggestions'
 import type { MockAiAgent, MockAiRun, MockAiRunEvent, MockAiSettings, MockCitation } from './ai'
 import { seedPhase6 } from './phase6-fixtures'
+import { seedPhase8 } from './phase8-fixtures'
+import type { MockResearchAnswer, MockResearchItem } from './research'
+import { defaultTemplate, type MockTemplateSection } from './templates'
 
 export interface MockUser {
   id: string
@@ -126,6 +130,8 @@ export interface MockProject {
   /** Overrides only (the API resolves them against the defaults). */
   status_labels: Partial<StatusLabels>
   next_idea_number: number
+  /** Phase 8 (contract-phase8 §3.2): where the optional Research stage sits, if anywhere. */
+  research_step: ResearchStep
 }
 
 export interface MockMember {
@@ -350,6 +356,10 @@ export interface MockDb {
   aiTests: Record<string, number[]>
   /** Open event streams per user id (5 at most). */
   aiStreams: Record<string, number>
+  /* Phase 8 (contract-phase8; records in templates.ts, research.ts) */
+  templateSections: MockTemplateSection[]
+  researchItems: MockResearchItem[]
+  researchAnswers: MockResearchAnswer[]
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -395,6 +405,8 @@ export const ID_KIND = {
   /** Phase 5: API keys, proposal suggestions, the agent and other Phase 5 people. */
   phase5: 'f',
   /** Phase 6 fixtures use `f` too, numbered from 0x300 (phase6-fixtures.ts). */
+  /** Phase 8: template sections, checklist items. */
+  phase8: '0',
 } as const
 
 const HOUR = 3_600_000
@@ -1018,8 +1030,8 @@ const IDEA_SPECS: Record<ProjectKey, IdeaSpec[]> = {
       age: 130,
     },
     {
-      title: 'Internal status page',
-      summary: 'One page that shows the health of every internal service.',
+      title: 'Service health dashboard',
+      summary: 'Show each team the health of its services, updated live.',
       status: 'new',
       by: 'grace',
       tags: ['platform', 'incidents'],
@@ -1269,6 +1281,9 @@ export function createDb({
     aiRequests: {},
     aiTests: {},
     aiStreams: {},
+    templateSections: [],
+    researchItems: [],
+    researchAnswers: [],
     seq: 1_000_000,
   }
 
@@ -1303,7 +1318,9 @@ export function createDb({
       created_at: iso(now - (400 - index * 30) * DAY),
       status_labels: row.labels ?? {},
       next_idea_number: 1,
+      research_step: 'off',
     })
+    db.templateSections.push(...defaultTemplate(projectId, () => nextId(ID_KIND.phase8)))
     for (const [user, role] of row.members) {
       db.members.push({
         project_id: projectId,
@@ -1557,6 +1574,7 @@ export function createDb({
   seedPhase4(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase5(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase6(db, { users: USERS, projects: PROJECTS, nextId })
+  seedPhase8(db, { users: USERS, projects: PROJECTS, nextId })
   return db
 }
 

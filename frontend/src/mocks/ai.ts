@@ -52,7 +52,9 @@ import {
   userRefById,
 } from './domain'
 import { flushFanOut } from './notifications'
-import { proposalOf, PROPOSAL_TEMPLATE } from './proposals'
+import { proposalOf, proposalOpenFor } from './proposals'
+import { inviteBlocked } from './research'
+import { activeSection } from './templates'
 
 /* ------------------------------------------------------------------ */
 /* Records (docs/erd.md: ai_agents, ai_agent_projects, ai_runs, …)    */
@@ -390,8 +392,8 @@ export function mayAskAi(db: MockDb, idea: MockIdea, user: MockUser): boolean {
   return idea.owner_id === user.id && (role === 'member' || role === 'admin')
 }
 
-function proposalOpen(idea: MockIdea): boolean {
-  return idea.status === 'shortlisted' || idea.status === 'proposal'
+function proposalOpen(db: MockDb, idea: MockIdea): boolean {
+  return proposalOpenFor(db, idea)
 }
 
 /** Why an AI request of this kind is unavailable now (`AiBlockedReason`, in check order). */
@@ -408,10 +410,12 @@ export function blockedReason(
   if (idea.status === 'closed') return 'idea_closed'
   if (kind === 'evaluate' && !evaluationOpen(idea)) return 'evaluation_closed'
   if (kind === 'draft_section') {
-    if (!proposalOpen(idea)) return 'proposal_not_available'
+    if (!proposalOpen(db, idea)) return 'proposal_not_available'
     if (!proposalOf(db, idea)) return 'no_proposal'
   }
   if (!db.aiAgents.some((agent) => agentPasses(db, agent, idea, kind))) return 'no_agent'
+  // Phase 8: "Ask AI to evaluate" is the first evaluator; the research gate guards it.
+  if (kind === 'evaluate' && inviteBlocked(db, idea)) return 'research_incomplete'
   return null
 }
 
@@ -928,14 +932,14 @@ function writeSuggestion(
   idea: MockIdea,
   agent: MockAiAgent,
 ): string | null {
-  if (!proposalOpen(idea)) return 'proposal_not_available'
+  if (!proposalOpen(db, idea)) return 'proposal_not_available'
   const proposal = proposalOf(db, idea)
   const sectionKey = run.section_key
   if (!proposal || !sectionKey) return 'not_found'
   const section = db.proposalSections.find(
     (s) => s.proposal_id === proposal.id && s.key === sectionKey,
   )
-  const title = PROPOSAL_TEMPLATE.find((t) => t.key === sectionKey)?.title ?? sectionKey
+  const title = activeSection(db, idea.project_id, sectionKey)?.title ?? sectionKey
   const now = new Date().toISOString()
   // Its earlier pending suggestion for the section is replaced (contract-phase5 §3.4).
   for (const old of db.proposalSuggestions) {

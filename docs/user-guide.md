@@ -130,11 +130,15 @@ you start watching it.
 
 ### Statuses: New, Evaluating, Shortlisted, Proposal, Closed
 
-The five statuses are fixed (project admins may rename them). The owner or a project
+The five statuses are fixed (project admins may rename them). A project may add one
+more, **Research**, before evaluation or before the proposal (see
+[The research step](#the-research-step-phase-8)); the board then has a Research column
+in that place. The owner or a project
 admin moves an idea to any status: from the status picker (`S`), by dragging its card on
 the board, or with the keyboard on a board card. Closing asks for a resolution:
 Accepted, Rejected or Parked. A status change has no side effects, so "Undo" in the
-toast puts it back exactly.
+toast puts it back exactly. In a project with a research step, moving an idea past
+Research waits for its research checklist (below).
 
 ### Comments, @mentions, votes and watching
 
@@ -192,8 +196,64 @@ status. **Evaluate** (or **Continue evaluation**) while you owe a score comes fi
 the owner and admins it is then **Assign owner** (or **I'll own this**) on an unowned
 idea, **Invite evaluators** while nobody is invited, **Close evaluation** while evaluation
 is open, **Change status** once it is closed (shortlist or close the idea), **Start
-proposal** on a Shortlisted idea and **Open proposal** once there is one. A closed idea,
-or one with nothing for you to do, has no blue button.
+proposal** on a Shortlisted idea and **Open proposal** once there is one. In a project
+with a research step, the button also walks the idea through it: **Start research** on
+the status before Research (New or Shortlisted) while the checklist is open, **Finish
+research** while required items are unanswered (it takes you to the first one), then
+**Start evaluation** (or **Start proposal**) once it is done. A closed idea, or one with
+nothing for you to do, has no blue button.
+
+## The research step [Phase 8]
+
+Before the team invests in an idea, its owner checks that it isn't already being done
+somewhere else in the company, and that the right departments or teams have been
+consulted. A project admin turns this on per project (Project settings → Research),
+**before evaluation** (New → Research → Evaluating …) or **before the proposal**
+(… Shortlisted → Research → Proposal). Projects without it work exactly as before.
+
+### The Research panel
+
+On the idea's Overview tab, the **Research** panel lists the project's checklist, for
+example "Not already being done elsewhere", "Departments or teams consulted" and "Data
+protection considered". The idea's owner and project admins answer each item in a few
+lines of plain text, such as "Legal (contracts team), 3 Oct: fine if we keep the
+standard terms"; the grey hint in the box says what to write. **Save answer** (or `⌘↵`)
+saves it and records who answered and when; edit it later the same way, or **Clear** it
+("Undo" in the toast brings it back). Required items are marked **Required**; the line
+at the top says how many are answered and how many required items are left ("1 required
+item left before Evaluating", or "Research complete"). The panel opens by itself while
+the idea is in Research or the status just before it, and folds once it is past.
+
+Everyone who can open the idea reads the checklist and the answers, evaluators included
+(there are no scores in it). Under the checklist:
+
+- **Similar ideas**: up to five ideas with a similar title or summary in every project
+  you can see (archived ones too), with their project, status and owner, so you know
+  whom to ask. Ideas waiting for moderation never appear.
+- **Ask AI to research** (where AI assistance is on): an AI agent looks for similar
+  work and writes a research note in the activity feed, as "Research this" does.
+
+On the board and in the list, ideas in Research (or in the status just before it) show
+the checklist's progress, for example **2/3**.
+
+### Moving past Research
+
+While a required item has no answer, an idea can't move past Research: dragging its
+card to a later column, picking a later status, inviting its first evaluator or asking
+AI to evaluate it (before evaluation), or starting its proposal (before the proposal).
+The card snaps back and a dialog lists the open items, with **Open research**. Moving an
+idea back, or closing it, is never held up, and an optional item never holds anything
+up. Changing the checklist or turning the step on never moves an idea: ideas already
+past Research stay where they are.
+
+**Move anyway** (also **Invite anyway**, **Ask anyway**, **Start anyway**): project
+and platform admins can take an idea past Research with items open, after an optional
+one-line reason. It is recorded in the audit log, and the activity feed says the idea
+was moved "without finishing research". Owners who aren't admins finish the checklist
+first.
+
+Someone who sent the idea through the public form never sees Research: their tracking
+page keeps showing the stage before it ("With the team").
 
 ### Closing and reopening evaluation
 
@@ -253,9 +313,15 @@ proposal** on the Proposal tab (also in ⌘K). Starting it moves the idea to **P
 like any status change: watchers are notified and a public submitter who asked for
 updates gets an email. Everyone else sees "The owner will write the proposal" until then.
 
-Every proposal has the same eight sections: Summary, Problem, Solution, Market & users,
-Cost & effort, Benefits / revenue, Risks, and Next steps / the ask. Summary starts with
-the idea's summary; the rest start empty. Each section is a plain Markdown box that grows
+Every proposal follows its project's **template**: by default eight sections (Summary,
+Problem, Solution, Market & users, Cost & effort, Benefits / revenue, Risks, and Next
+steps / the ask), which a project admin can rename, reorder, add to or trim (see
+[Proposal template](#proposal-template)). Each section's hint is the grey placeholder in
+its box. Summary starts with the idea's summary; the rest start empty. When the template
+changes, every proposal follows at once; a section removed from it is hidden, with its
+text kept, and comes back if an admin restores it. If a section is removed while you
+are typing in it, your text is kept in this browser at the end of the proposal, with
+**Copy text** and **Discard**. Each section is a plain Markdown box that grows
 as you type, with **Write** and **Preview** (`⌘↵` switches), a small toolbar (bold,
 italic, link, list; `⌘B`, `⌘I`) and a word count. The outline on the left shows which
 sections are written and how many open comments each has; on narrow screens it becomes a
@@ -268,6 +334,12 @@ changes marked: **Use Carol's version**, or **Keep your version** to save yours 
 it (for your own other tab: **Use the saved version** / **Keep this version**). A save that fails
 keeps your text and shows "Not saved" with **Retry**; the app asks before you leave with
 unsaved text. A section holds up to 20,000 characters.
+
+In a project with a research step before the proposal, a Shortlisted idea goes to
+Research first, and starting its proposal waits for the checklist
+([Moving past Research](#moving-past-research)); the proposal can also be written while
+the idea is in Research. The proposal ends with **Research and consultation**: the
+answered checklist items, as the exports print them.
 
 The proposal can be edited while the idea is Shortlisted or in Proposal. Moving the idea
 anywhere else makes it read-only (it can still be read, commented on and exported);
@@ -306,7 +378,9 @@ suggestions in this version.
 **Export** (top right of the Proposal tab) downloads the proposal as **PDF** or
 **Markdown**; anyone who can see the idea can export it. Both start with the title and a
 details block (project, idea key, status, owner, "Exported 2 October 2026 by …") and
-list the eight sections in order; an empty one reads "Not written yet". The aggregate
+list the template's sections in order; an empty one reads "Not written yet". While the
+project's research step is on, they end with **Research and consultation**: each
+answered checklist item with its answer and who answered it when. The aggregate
 score line is included only if you are allowed to see scores (never for an evaluator who
 hasn't submitted yet). Comments are never exported.
 
@@ -574,8 +648,10 @@ waiting for moderation, or the proposal hasn't been started.
 ## For project admins [Phase 1–4]
 
 Project settings are behind the gear icon on the project page (or Settings → Account →
-Projects you manage), in four tabs: **General** (with the status labels), **Members**, **Rubric**
-and **Public form** (with the project's branding). Members see them read-only. Each form
+Projects you manage), in six tabs: **General** (with the status labels), **Members**,
+**Rubric**, **Research** (the research step and its checklist), **Proposal** (the
+proposal template) and **Public form** (with the project's branding). Members see them
+read-only. Each form
 has its own Save (`⌘S` saves the tab you are on); if you try to leave with unsaved
 changes, the app asks first. Forms whose fields belong together keep an explicit Save;
 single preferences (notifications) and documents (proposals) save as you go.
@@ -612,10 +688,39 @@ their fields, or from their **Move** menu (Move up, Move down). Saving recalcula
 submitted evaluations stay submitted, and a new criterion is scored the next time
 someone edits their evaluation.
 
+### Research step and checklist
+
+Project settings → **Research** chooses where the Research stage goes: **Off** (the
+default), **Before evaluation** or **Before proposal**; each option shows the stages it
+gives. Turning it on with no checklist yet fills in the default three items (change them
+as you like; nothing is saved until **Save research step**). The checklist is edited like
+the rubric: 1 to 10 items, each with a title, a one-line hint (what to write) and a
+**Required** switch; reorder by dragging, Alt+↑/↓ or **Move**. Removing an item that
+ideas answered keeps their answers, hidden, under **Removed items**, and **Restore**
+brings them back.
+
+The step can't be moved or turned off while ideas are in Research: the page says how
+many and links to them, so you can move them first. Turning the step off hides the
+Research column, the checklist and every answer, and keeps them for when you turn it on
+again. Turning it on, moving it or changing the checklist never moves an idea; the next
+move past Research checks the required items.
+
+### Proposal template
+
+Project settings → **Proposal** lists the sections every proposal in the project has, 1
+to 12, each with a title and a one-line hint shown in the editor. Rename a section,
+change its hint, reorder (drag, Alt+↑/↓ or **Move**), **Add section**, or remove one (at
+least one stays). Renaming or reordering keeps each section's text; a new section starts
+empty in every proposal. Removing a section with text asks first: its text is kept,
+hidden from the editor and the exports, under **Removed sections** ("Text in 3
+proposals"), and **Restore** brings it back with its text, comments and suggestions.
+Saving changes every proposal in the project at once.
+
 ### Renaming status labels
 
 On the General tab, rename any status or resolution (for example "Shortlisted" → "Next up"); the board,
-lists and filters use the new names at once. The reset button next to a name restores
+lists and filters use the new names at once. Research is listed while the project's
+research step is on. The reset button next to a name restores
 the default.
 
 ### Project settings and branding

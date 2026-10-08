@@ -21,6 +21,8 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *   notifications ['notifications', 'summary'] · ['notifications', 'list', {unread}] ·
  *              ['notifications', 'preferences'] · ['notifications', 'unsubscribe', token]
  *   proposals  ['proposals', KEY, 'view' | 'threads' | 'suggestions']
+ *   research   ['research', KEY, 'checklist' | 'similar'] (project settings: ['projects', 'detail',
+ *              slug, 'proposal-template' | 'research'])
  *   apiKeys    ['api-keys', 'mine'] (admin: ['admin', 'api-keys', 'list', filters])
  *   ai         ['ai', KEY, 'runs'] · ['ai', KEY, 'run', runId] (admin: ['admin', 'ai-agents'])
  *   public     ['public', 'project', slug] · ['public', 'track', token] (public pages, no session)
@@ -86,6 +88,16 @@ export const queryKeys = {
       ] as const,
     accessAll: (slug: string) => ['projects', 'detail', slug, 'access'] as const,
     tags: (slug: string) => ['projects', 'detail', slug, 'tags'] as const,
+    /** Phase 8: the project's proposal template and research settings (`api/research.ts`). */
+    proposalTemplate: (slug: string) => ['projects', 'detail', slug, 'proposal-template'] as const,
+    research: (slug: string) => ['projects', 'detail', slug, 'research'] as const,
+  },
+  /** Phase 8: an idea's research checklist and "Similar ideas" (`api/research.ts`). */
+  research: {
+    all: ['research'] as const,
+    idea: (idea: string) => ['research', ideaCacheId(idea)] as const,
+    checklist: (idea: string) => ['research', ideaCacheId(idea), 'checklist'] as const,
+    similar: (idea: string) => ['research', ideaCacheId(idea), 'similar'] as const,
   },
   ideas: {
     all: ['ideas'] as const,

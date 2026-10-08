@@ -36,7 +36,9 @@ import type {
   ProposalThread,
   ProposalThreadList,
   ProposalView,
+  ResearchOverride,
 } from '@/api/types'
+import { openResearchGate, overrideBody } from '@/api/research'
 import { deferUntilToastCloses, hideItem, unhideItem, useHiddenItems } from '@/api/undo'
 
 export const proposalQueryOptions = (idea: string) =>
@@ -105,12 +107,21 @@ export function saveProposalSection(
   return observer.mutate()
 }
 
-/** "Start proposal": creates the eight sections; a Shortlisted idea moves to Proposal. */
+/**
+ * "Start proposal": creates a row per section of the project's template; a Shortlisted
+ * (or Research) idea moves to Proposal. Phase 8: a 409 `research_incomplete` opens the
+ * research gate's dialog, whose "Start anyway" (admins) sends the override.
+ */
 export function useCreateProposal(idea: string) {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: () =>
-      unwrap(api.POST('/api/v1/ideas/{idea}/proposal', { params: { path: { idea } } })),
+  const mutation = useMutation({
+    mutationFn: (override?: ResearchOverride) =>
+      unwrap(
+        api.POST('/api/v1/ideas/{idea}/proposal', {
+          params: { path: { idea } },
+          body: overrideBody(override),
+        }),
+      ),
     onSuccess: (view) => {
       queryClient.setQueryData(queryKeys.proposals.view(idea), view)
       queryClient.setQueryData<ProposalThreadList>(queryKeys.proposals.threads(idea), {
@@ -124,8 +135,15 @@ export function useCreateProposal(idea: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.activity.idea(idea) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
     },
+    onError: (error) =>
+      openResearchGate(error, {
+        ideaKey: idea,
+        action: 'proposal',
+        retry: (override) => mutation.mutate(override),
+      }),
     meta: { errorTitle: 'Couldn’t start the proposal' },
   })
+  return mutation
 }
 
 /* ------------------------------------------------------------------ */

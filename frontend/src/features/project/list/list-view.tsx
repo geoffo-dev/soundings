@@ -21,7 +21,12 @@ import {
 import { NAV_ITEM_ATTRIBUTE, useListNavigation } from '@/lib/list-navigation'
 import { cn } from '@/lib/utils'
 
-import { EvaluatorProgress, IdeaScore, OwnerAvatar } from '@/features/project/idea-meta'
+import {
+  EvaluatorProgress,
+  IdeaScore,
+  OwnerAvatar,
+  ResearchProgressBadge,
+} from '@/features/project/idea-meta'
 import { nextSort, sortDirectionFor, type SortColumn } from '@/features/project/project-search'
 
 /** Fetch the next page when the last rendered row is this close to the end. */
@@ -276,13 +281,16 @@ const IdeaTableRow = memo(function IdeaTableRow({
         <IdeaScore idea={idea} className="relative z-10" />
       </TableCell>
       <TableCell className="@max-3xl:order-1">
-        <StatusBadge
-          variant="plain"
-          status={idea.status}
-          resolution={idea.resolution}
-          label={idea.status_label}
-          className="max-w-full truncate"
-        />
+        <span className="flex min-w-0 items-center gap-2">
+          <StatusBadge
+            variant="plain"
+            status={idea.status}
+            resolution={idea.resolution}
+            label={idea.status_label}
+            className="max-w-full min-w-0 truncate"
+          />
+          <ResearchProgressBadge research={idea.research} className="relative z-10" />
+        </span>
       </TableCell>
       <TableCell
         className={cn(

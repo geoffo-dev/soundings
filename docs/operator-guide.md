@@ -243,6 +243,16 @@ values you installed with: the bundled Postgres's volume settings
 (`postgresql.persistence.*`) can't change after the first install, and Kubernetes
 refuses an upgrade that changes them.
 
+**Phase 8 (migrations 0012 and 0013, per-project proposal templates and the research
+step):** the upgrade gives every existing project the eight proposal sections it had before, and
+leaves the research step off, so nothing changes for anyone until a project admin edits
+them; existing proposals, margin threads, suggestions and AI runs carry over as they are.
+Downgrading past 0012 (an emergency only: restore a backup if you can) **deletes** what
+Phase 8 added: custom template sections and their text, research checklists and answers;
+ideas in Research go back to the status before it. 0013 only adds two indexes on idea
+titles and summaries for "Similar ideas" (a few seconds per 10,000 ideas while it runs).
+There is nothing to configure: no new values or environment variables.
+
 ### Sessions
 
 Signing in creates a server-side session: an HttpOnly, `SameSite=Lax` cookie holding a

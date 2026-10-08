@@ -80,6 +80,12 @@ class Rule(StrEnum):
     AI_DRAFT_SECTION = "ai.draft_section"
     AI_CANCEL_RUN = "ai.cancel_run"
     AI_DELETE_NOTE = "ai.delete_note"
+    # F (Phase 8). Project administration: the proposal template and the research step
+    PROJECT_EDIT_PROPOSAL_TEMPLATE = "project.edit_proposal_template"
+    PROJECT_EDIT_RESEARCH = "project.edit_research"
+    # K. The research step (Phase 8)
+    IDEA_ANSWER_RESEARCH = "idea.answer_research"
+    IDEA_RESEARCH_OVERRIDE = "idea.research_override"
 
 
 _READ: Final = frozenset(
@@ -120,6 +126,7 @@ _WRITE: Final = frozenset(
         Rule.AI_DRAFT_SECTION,
         Rule.AI_CANCEL_RUN,
         Rule.AI_DELETE_NOTE,
+        Rule.IDEA_ANSWER_RESEARCH,
     }
 )
 
@@ -139,5 +146,6 @@ PUBLIC_RULES: Final = frozenset({Rule.PUBLIC_SUBMIT, Rule.PUBLIC_TRACK, Rule.SEL
 SESSION_ONLY_RULES: Final = frozenset(set(Rule) - set(RULE_SCOPES) - PUBLIC_RULES)
 """Never available through an API key, whatever its scopes (role matrix section 5):
 project.create, project administration, public.erase_submitter, idea.delete,
-idea.moderate, platform.*, api_key.* and self.manage_profile. Routes without a rule of
+idea.moderate, platform.*, api_key.* and self.manage_profile (Phase 8: also the
+proposal template, the research settings and idea.research_override). Routes without a rule of
 their own are classified in :data:`app.authz.keys.ROUTE_KEY_ACCESS`."""

@@ -22,8 +22,9 @@ from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
+from app.authz import Rule, load_project
 from app.db import SessionDep
-from app.errors import PROBLEM_CONTENT_TYPE, NotImplementedProblem
+from app.errors import PROBLEM_CONTENT_TYPE
 from app.schemas.ideas import SimilarIdeas
 from app.schemas.research import (
     IdeaResearch,
@@ -31,6 +32,7 @@ from app.schemas.research import (
     ResearchSettings,
     ResearchSettingsUpdate,
 )
+from app.services import ideas, research
 
 router = APIRouter(tags=["research"])
 
@@ -71,7 +73,8 @@ _ANSWER_ERRORS = (
 async def get_research_settings(
     principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
 ) -> ResearchSettings:
-    raise NotImplementedProblem
+    project, _ = await load_project(session, principal, slug)
+    return await research.settings_out(session, project)
 
 
 @router.put(
@@ -96,7 +99,10 @@ async def get_research_settings(
 async def replace_research_settings(
     principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: ResearchSettingsUpdate
 ) -> ResearchSettings:
-    raise NotImplementedProblem
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_RESEARCH, for_update=True
+    )
+    return await research.replace_settings(session, principal, project, body)
 
 
 # --- An idea's research ----------------------------------------------------------------
@@ -114,7 +120,10 @@ async def replace_research_settings(
 async def get_idea_research(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> IdeaResearch:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await research.idea_research(
+        session, principal, loaded.idea, loaded.project, loaded.resource
+    )
 
 
 @router.put(
@@ -138,7 +147,13 @@ async def answer_research_item(
     item_id: ItemId,
     body: ResearchAnswerIn,
 ) -> IdeaResearch:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await research.answer_item(
+        session, principal, loaded.idea, loaded.project, loaded.resource, item_id, body
+    )
+    return await research.idea_research(
+        session, principal, loaded.idea, loaded.project, loaded.resource
+    )
 
 
 @router.delete(
@@ -155,7 +170,13 @@ async def answer_research_item(
 async def clear_research_item(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, item_id: ItemId
 ) -> IdeaResearch:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await research.clear_item(
+        session, principal, loaded.idea, loaded.project, loaded.resource, item_id
+    )
+    return await research.idea_research(
+        session, principal, loaded.idea, loaded.project, loaded.resource
+    )
 
 
 @router.get(
@@ -173,4 +194,5 @@ async def clear_research_item(
 async def list_similar_ideas(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> SimilarIdeas:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await research.similar_ideas(session, principal, loaded.idea)

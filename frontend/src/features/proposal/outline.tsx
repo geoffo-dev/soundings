@@ -1,7 +1,7 @@
 import { Circle, CircleCheck, GitCompareArrows } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
 
-import type { ProposalSection, ProposalSectionKey } from '@/api/types'
+import type { ProposalSection } from '@/api/types'
 import { CountBadge } from '@/components/ui/badge'
 import {
   Select,
@@ -126,7 +126,7 @@ export function SectionJump({
   const { store, current, focusSection } = useProposalEditor()
   const written = useWritten(store, sections)
   return (
-    <Select value={current} onValueChange={(value) => focusSection(value as ProposalSectionKey)}>
+    <Select value={current} onValueChange={(value) => focusSection(value)}>
       <SelectTrigger aria-label="Jump to section" className={cn('w-36 xs:w-44 sm:w-52', className)}>
         <SelectValue>
           {(() => {

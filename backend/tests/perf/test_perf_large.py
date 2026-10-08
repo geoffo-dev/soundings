@@ -58,6 +58,12 @@ STATEMENT_BUDGET: dict[str, int] = {
     "project.tags": 4,
     "list": 7,
     "board": 7,
+    # Phase 8: a project with the research step: the cards' progress is one more grouped
+    # statement per page (contract-phase8 section 3.6), never one per card.
+    "list (research step)": 8,
+    "board (research step)": 8,
+    "idea.research": 6,
+    "idea.similar": 6,
     "search": 3,
     "idea.get": 11,  # Phase 7 B6: 14 before (no re-read, two lookups merged); 10-11 measured
     "idea.activity": 7,
@@ -176,6 +182,17 @@ async def idea_with_evaluators(http: httpx.AsyncClient, count: int) -> str:
     raise AssertionError(f"no idea with {count} evaluators")
 
 
+def with_research(body: Any) -> bool:
+    """Whether a list, board or My work page shows research progress on any idea."""
+    if isinstance(body, dict):
+        if body.get("research"):
+            return True
+        return any(with_research(value) for value in body.values())
+    if isinstance(body, list):
+        return any(with_research(value) for value in body)
+    return False
+
+
 async def test_no_n_plus_one_queries_at_10k(perf_app: FastAPI) -> None:
     counter = Counter(perf_app)
     alice = await client_for(perf_app, "alice@example.com")
@@ -185,6 +202,8 @@ async def test_no_n_plus_one_queries_at_10k(perf_app: FastAPI) -> None:
         "list": (alice, f"/projects/{BIG_SLUG}/ideas", 10, 100),
         "list (pending evaluator)": (pat, f"/projects/{BIG_SLUG}/ideas", 10, 100),
         "board": (alice, f"/projects/{BIG_SLUG}/board", 5, 50),
+        "board (research step)": (alice, "/projects/internal-tools/board", 5, 50),
+        "list (research step)": (alice, "/projects/internal-tools/ideas", 10, 100),
         "idea.activity": (alice, "/ideas/BIG-9900/activity", 5, 50),
         "notifications.list": (pat, "/me/notifications", 5, 50),
         "admin.audit": (alice, "/admin/audit", 5, 100),
@@ -194,11 +213,15 @@ async def test_no_n_plus_one_queries_at_10k(perf_app: FastAPI) -> None:
     }
     found: dict[str, tuple[int, int]] = {}
     for name, (http, url, small, large) in pages.items():
-        few, _ = await statements(counter, http, url, limit=small)
+        few, small_response = await statements(counter, http, url, limit=small)
         many, response = await statements(counter, http, url, limit=large)
         body = response.json()
         rows = body.get("items", body.get("columns", [])) if isinstance(body, dict) else body
         assert rows, (name, "nothing listed: the test would prove nothing")
+        if with_research(response.json()) and not with_research(small_response.json()):
+            # The page's checklist progress is one statement, asked only when an idea on
+            # it shows progress (like the tags'): the larger page reached one.
+            many -= 1
         found[name] = (few, many)
     three = await idea_with_evaluators(alice, 3)
     five = await idea_with_evaluators(alice, 5)
@@ -228,6 +251,10 @@ async def test_statements_per_request_stay_within_budget(perf_app: FastAPI) -> N
         "project.tags": (alice, f"/projects/{BIG_SLUG}/tags", {}),
         "list": (pat, f"/projects/{BIG_SLUG}/ideas", {"limit": 100, "sort": "-score"}),
         "board": (pat, f"/projects/{BIG_SLUG}/board", {"limit": 50}),
+        "list (research step)": (alice, "/projects/internal-tools/ideas", {"limit": 100}),
+        "board (research step)": (alice, "/projects/internal-tools/board", {"limit": 50}),
+        "idea.research": (alice, "/ideas/TOOLS-11/research", {}),
+        "idea.similar": (alice, "/ideas/BIG-9900/similar-ideas", {}),
         "search": (pat, "/search", {"q": "pricing"}),
         "idea.get": (pat, "/ideas/BIG-9900", {}),
         "idea.activity": (pat, "/ideas/BIG-9900/activity", {"limit": 50}),
@@ -289,6 +316,8 @@ async def service_times(perf_app: FastAPI) -> dict[str, float]:
         "list q": (pat, f"/projects/{BIG_SLUG}/ideas", {"limit": 100, "q": "pricing"}),
         "board": (pat, f"/projects/{BIG_SLUG}/board", {"limit": 50}),
         "board -score": (pat, f"/projects/{BIG_SLUG}/board", {"limit": 50, "sort": "-score"}),
+        "board (research step)": (alice, "/projects/internal-tools/board", {"limit": 50}),
+        "similar ideas (12k ideas)": (alice, "/ideas/BIG-9900/similar-ideas", {}),
         "search": (pat, "/search", {"q": "pricing"}),
         "search (2 letters)": (pat, "/search", {"q": "pr"}),
         "idea.get": (pat, "/ideas/BIG-9900", {}),

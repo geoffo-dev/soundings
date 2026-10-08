@@ -13,7 +13,7 @@
  *                bg-/border-accent-control (selected radio, switch, score: ≥ 3:1 in both themes)
  *   Lists        highlight-ring (the highlighted or selected item: 2px inset ring, focus colour)
  *   Feedback     bg-danger · bg-danger-subtle · text-danger · (same for warning / success / info)
- *   Status       bg-status-new|evaluating|shortlisted|proposal|accepted|rejected|parked
+ *   Status       bg-status-new|research|evaluating|shortlisted|proposal|accepted|rejected|parked
  *   Scores       bg-score-1 … bg-score-5 (also text-/fill-/border-)
  *   Fonts        font-sans (Inter: all UI text) · font-brand (branding's font: page titles,
  *                the wordmark, public pages)
@@ -139,6 +139,7 @@
   --color-info-subtle: var(--info-subtle);
 
   --color-status-new: var(--status-new);
+  --color-status-research: var(--status-research);
   --color-status-evaluating: var(--status-evaluating);
   --color-status-shortlisted: var(--status-shortlisted);
   --color-status-proposal: var(--status-proposal);

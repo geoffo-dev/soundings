@@ -179,7 +179,7 @@ async def test_research_and_draft_runs_attach_their_results(
         ProposalSuggestion, draft_run.suggestion_id, populate_existing=True
     )
     assert suggestion is not None
-    assert (suggestion.source, suggestion.section_key.value) == (SuggestionSource.AI, "risks")
+    assert (suggestion.source, suggestion.section_key) == (SuggestionSource.AI, "risks")
     assert (await _messages(db_session, research))[-3:] == [
         "Wrote the research note",
         "Research note saved",

@@ -335,6 +335,12 @@ async def test_ac5_api_1_an_mcp_key_searches_and_evaluates_only_where_it_reaches
     )
     tools_key = tools["key"]
     await dave.send("PUT", f"/ideas/{tools_key}/owner", {"user_id": dave.id})
+    # Internal Tools runs the research step before evaluation (Phase 8 demo data): Dave
+    # answers the checklist's required items before the idea goes to evaluation.
+    for item in (await dave.get(f"/ideas/{tools_key}/research"))["items"]:
+        if item["required"]:
+            path = f"/ideas/{tools_key}/research/items/{item['item_id']}"
+            await dave.send("PUT", path, {"answer": "IT service desk, 1 Oct: happy to staff it."})
     await dave.send("POST", f"/ideas/{tools_key}/status", {"status": "evaluating"})
     await dave.send("POST", f"/ideas/{tools_key}/evaluators", {"user_ids": [carol.id]})
     # In the app Carol may evaluate both.

@@ -194,6 +194,10 @@ th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; 
 }
 .task-done { background: {{ colors.primary }}; border-color: {{ colors.primary }}; }
 .task-item { list-style: none; margin-left: -4.5mm; }
+/* The research appendix (Phase 8): each item's answer, then who answered and when. */
+.research .byline { margin: -1mm 0 4mm 0; font-size: 9pt; color: {{ colors.muted }}; }
+/* An answer stays with its title and byline (answers are short: 2,000 characters). */
+.research-item { break-inside: avoid; }
 </style>
 </head>
 <body>
@@ -207,6 +211,9 @@ th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; 
     {%- for section in sections %}
     <li><a href="#section-{{ section.key }}">{{ section.title }}{% if not section.html %} <span class="not-written">· {{ empty_section }}</span>{% endif %}</a></li>
     {%- endfor %}
+    {%- if research %}
+    <li><a href="#appendix-research">{{ research_title }}</a></li>
+    {%- endif %}
   </ol>
 </nav>
 {%- endmacro %}
@@ -253,5 +260,24 @@ th { font-weight: 600; color: {{ colors.muted }}; border-bottom-color: #8c959f; 
   {%- endif %}
 </section>
 {%- endfor %}
+{%- if research %}
+{#- Phase 8: the research appendix. Answers are plain text people typed (escaped, line
+    breaks kept); the id can't collide with a section's (keys have no hyphen). #}
+<section class="section research" id="appendix-research">
+  <h2>{{ research_title }}</h2>
+  {%- for item in research %}
+  <div class="research-item">
+    <h3>{{ item.title }}</h3>
+    {%- for paragraph in item.paragraphs %}
+    <p>{{ paragraph }}</p>
+    {%- endfor %}
+    {%- if item.cut %}
+    <p class="too-long">{{ too_long }}</p>
+    {%- endif %}
+    <p class="byline">{{ item.byline }}</p>
+  </div>
+  {%- endfor %}
+</section>
+{%- endif %}
 </body>
 </html>

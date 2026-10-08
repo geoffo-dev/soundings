@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { StatusDot } from '@/components/ui/status-badge'
-import { CLOSED_RESOLUTIONS, IDEA_STATUSES, statusTone } from '@/lib/status'
+import { CLOSED_RESOLUTIONS, crossesGate, lifecycle, statusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { useIdeaPage } from './idea-context'
@@ -54,7 +54,12 @@ export function StatusDialog({
 }
 
 function StatusPicker({ onDone }: { onDone: () => void }) {
-  const { idea, ideaKey, statusLabel } = useIdeaPage()
+  const { idea, ideaKey, project, statusLabel } = useIdeaPage()
+  // The project's own lifecycle (Phase 8: Research where its step puts it).
+  const researchStep = project?.research_step ?? 'off'
+  const statuses = project?.lifecycle ?? lifecycle(researchStep)
+  // Moves the research gate would refuse now (the dialog explains when one is chosen).
+  const researchOpen = (idea.research?.required_open ?? 0) > 0
   const change = useChangeIdeaStatus(ideaKey)
   const [step, setStep] = useState<'status' | 'resolution'>('status')
   const [search, setSearch] = useState('')
@@ -149,9 +154,10 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
       />
       <CommandList>
         <CommandGroup>
-          {IDEA_STATUSES.map((status) => {
+          {statuses.map((status) => {
             const current = idea.status === status
             const closed = status === 'closed'
+            const gated = researchOpen && !current && crossesGate(researchStep, idea.status, status)
             return (
               <CommandItem
                 key={status}
@@ -176,10 +182,13 @@ function StatusPicker({ onDone }: { onDone: () => void }) {
                     <ChevronRight aria-hidden="true" className="ml-auto" />
                   </>
                 ) : (
-                  <Check
-                    aria-hidden="true"
-                    className={cn('ml-auto text-accent!', current ? 'opacity-100' : 'opacity-0')}
-                  />
+                  <>
+                    {gated && <span className="text-sm text-muted">· research open</span>}
+                    <Check
+                      aria-hidden="true"
+                      className={cn('ml-auto text-accent!', current ? 'opacity-100' : 'opacity-0')}
+                    />
+                  </>
                 )}
                 {current && <span className="sr-only">(current)</span>}
               </CommandItem>

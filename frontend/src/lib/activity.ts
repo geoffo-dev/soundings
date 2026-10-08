@@ -36,7 +36,8 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
     case 'idea_edited':
       return `edited the ${list(item.fields.map((field) => FIELD_NAMES[field] ?? field))}`
     case 'status_changed':
-      return `moved it from ${status(item.from_status, item.from_resolution, labels)} to ${status(item.to_status, item.to_resolution, labels)}`
+      // Phase 8: an admin's "Move anyway" past open research items says so.
+      return `moved it from ${status(item.from_status, item.from_resolution, labels)} to ${status(item.to_status, item.to_resolution, labels)}${item.research_overridden ? ' without finishing research' : ''}`
     case 'owner_changed':
       if (item.volunteered) return 'volunteered to own it'
       if (item.to_owner && item.to_owner.id === item.actor?.id) return 'took ownership'

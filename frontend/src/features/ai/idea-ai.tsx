@@ -2,8 +2,19 @@ import { FileSearch, Gauge, PenLine, Sparkles } from 'lucide-react'
 import { useCallback } from 'react'
 
 import { useIdeaAiRuns, useRequestAiRun } from '@/api/ai'
+import { useIdeaResearch } from '@/api/research'
+import { queryKeys } from '@/api/keys'
+import { useProposal } from '@/api/proposals'
 import { describeError, hasErrorCode, isApiError } from '@/api/errors'
-import type { AiAgentRef, AiBlockedReason, AiRun, AiRunKind, ProposalSectionKey } from '@/api/types'
+import type {
+  AiAgentRef,
+  AiBlockedReason,
+  AiRun,
+  AiRunKind,
+  ProposalSectionKey,
+  ProposalView,
+} from '@/api/types'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import type { CommandAction } from '@/components/ui/command-palette'
 import {
@@ -24,7 +35,7 @@ import { useCommands } from '@/lib/command-registry'
 import { formatTime } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 
-import { BLOCKED_COPY, isActiveRun, KIND_COPY, SECTION_TITLES } from './ai-copy'
+import { BLOCKED_COPY, isActiveRun, KIND_COPY, sectionTitle } from './ai-copy'
 import { runDomId } from './dom-ids'
 
 /**
@@ -50,7 +61,14 @@ export function useIdeaAi(ideaKey: string) {
         ? permissions.research_blocked_by
         : permissions.draft_section_blocked_by
   }
-  const allowed = (kind: AiRunKind) => blockedBy(kind) === null && agentsFor(kind).length > 0
+  // Phase 8: only the research gate stands in the way of "Ask AI to evaluate": admins may
+  // still ask (the 409's dialog offers "Ask anyway"), so ask whether you can override.
+  const gated = permissions?.request_evaluation_blocked_by === 'research_incomplete'
+  const research = useIdeaResearch(ideaKey, { enabled: gated })
+  const overridable = (kind: AiRunKind) =>
+    kind === 'evaluate' && gated && research.data?.permissions.can_override === true
+  const allowed = (kind: AiRunKind) =>
+    (blockedBy(kind) === null || overridable(kind)) && agentsFor(kind).length > 0
   const activeRun = (kind: AiRunKind, sectionKey: ProposalSectionKey | null = null) =>
     data?.items.find(
       (run) => run.kind === kind && run.section_key === sectionKey && isActiveRun(run),
@@ -60,6 +78,7 @@ export function useIdeaAi(ideaKey: string) {
     return reason !== 'not_allowed' && reason !== 'ai_off'
   })
   return {
+    ideaKey,
     query,
     runs: data?.items ?? [],
     permissions,
@@ -67,6 +86,7 @@ export function useIdeaAi(ideaKey: string) {
     agentsFor,
     blockedBy,
     allowed,
+    overridable,
     activeRun,
     /** The AI menu has something to offer you (allowed, or explained). */
     visible: Boolean(data?.ai_enabled) && offered.length > 0,
@@ -149,6 +169,12 @@ export function describeAskError(error: unknown): { title: string; description?:
  */
 export function useAskAi(ideaKey: string, setTab?: (tab: IdeaTab) => void) {
   const request = useRequestAiRun(ideaKey)
+  const queryClient = useQueryClient()
+  // Phase 8: the section's title as the project's template has it (the cached proposal).
+  const titleOf = (key: ProposalSectionKey) =>
+    queryClient
+      .getQueryData<ProposalView>(queryKeys.proposals.view(ideaKey))
+      ?.proposal?.sections.find((section) => section.key === key)?.title ?? sectionTitle(key)
   const ask = (
     kind: AiRunKind,
     agent: AiAgentRef,
@@ -166,7 +192,7 @@ export function useAskAi(ideaKey: string, setTab?: (tab: IdeaTab) => void) {
               ? 'to evaluate this idea'
               : kind === 'research'
                 ? 'to research this idea'
-                : `to draft ${sectionKey ? SECTION_TITLES[sectionKey] : 'a section'}`
+                : `to draft ${sectionKey ? titleOf(sectionKey) : 'a section'}`
           const title = existing
             ? `${agent.display_name} is already working on this`
             : `Asked ${agent.display_name} ${what}`
@@ -191,6 +217,8 @@ export function useAskAi(ideaKey: string, setTab?: (tab: IdeaTab) => void) {
         onError: (error) => {
           // A 401 signs you out (the query client); everything else says why here.
           if (isApiError(error) && error.status === 401) return
+          // Phase 8: open research items: the request's own hook opened the gate's dialog.
+          if (hasErrorCode(error, 'research_incomplete')) return
           const { title, description } = describeAskError(error)
           toast.error(title, { description })
         },
@@ -230,7 +258,10 @@ function KindItems({
   const agents = ai.agentsFor(kind)
   const action =
     kind === 'evaluate' ? evaluateActionLabel(agents, submittedIds) : KIND_COPY[kind].action
-  if (reason !== null || agents.length === 0) {
+  const blocked = reason !== null && !ai.overridable(kind)
+  // An admin past the research gate: the action stays, with the reason as its note.
+  const note = reason !== null && !blocked ? BLOCKED_COPY[reason] : null
+  if (blocked || agents.length === 0) {
     return (
       <DropdownMenuItem disabled className="h-auto py-1.5 sm:h-auto">
         <Icon />
@@ -248,7 +279,7 @@ function KindItems({
         <Icon />
         <span className="flex flex-col">
           <span>{action}</span>
-          <span className="text-xs text-muted">{agent.display_name}</span>
+          <span className="text-xs text-muted">{note ?? agent.display_name}</span>
         </span>
       </DropdownMenuItem>
     )
@@ -336,6 +367,8 @@ function DraftItems({
   onAsk: ReturnType<typeof useAskAi>['ask']
   setTab: (tab: IdeaTab) => void
 }) {
+  // Phase 8: the project's own sections, in template order.
+  const sections = useProposal(ai.ideaKey).data?.proposal?.sections ?? []
   if (!ai.allowed('draft_section')) return null
   const agents = ai.agentsFor('draft_section')
   const agent = agents.length === 1 ? agents[0] : undefined
@@ -355,7 +388,7 @@ function DraftItems({
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
         <DropdownMenuLabel>{agent.display_name} drafts</DropdownMenuLabel>
-        {(Object.keys(SECTION_TITLES) as ProposalSectionKey[]).map((key) => (
+        {sections.map(({ key, title }) => (
           <DropdownMenuItem
             key={key}
             disabled={Boolean(ai.activeRun('draft_section', key))}
@@ -371,7 +404,7 @@ function DraftItems({
               )
             }}
           >
-            {SECTION_TITLES[key]}
+            {title}
           </DropdownMenuItem>
         ))}
       </DropdownMenuSubContent>

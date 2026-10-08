@@ -138,7 +138,7 @@ async def create_proposal(
     body: ProposalStart | None = None,
 ) -> ProposalView:
     loaded = await ideas.load_idea(session, principal, idea, for_update=True)
-    await service.create_proposal(session, principal, loaded)
+    await service.create_proposal(session, principal, loaded, body)
     return await service.proposal_view(session, principal, loaded)
 
 

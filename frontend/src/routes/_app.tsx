@@ -8,6 +8,7 @@ import { requireUser } from '@/features/auth/session'
 import { NewIdeaDialog } from '@/features/new-idea/new-idea-dialog'
 import { EmailBanner } from '@/features/notifications/email-banner'
 import { CreateProjectDialog } from '@/features/project/create-project-dialog'
+import { ResearchGateDialog } from '@/features/research/research-gate-dialog'
 
 /**
  * Pathless layout for every signed-in screen: the auth guard (redirects to
@@ -56,6 +57,7 @@ function AppLayout() {
       <Outlet />
       <NewIdeaDialog />
       <CreateProjectDialog />
+      <ResearchGateDialog />
     </AppShell>
   )
 }

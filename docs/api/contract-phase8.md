@@ -739,3 +739,15 @@ Builders record additive changes here (date, what, why), as in earlier phases.
 | 17 | The pending-suggestion cap counts active sections only; `RemovedTemplateSection.proposal_count` may be 0 (wording in §2.7). | Hidden suggestions shouldn't block new ones. |
 | 18 | "Crossing only" stays **Proposed, to confirm with the product owner** (decisions). | It reads "cannot move to any status after Research" as "cannot cross into". |
 | 19 | The downgrade's no-op status events and team emails' `new` documented (§2.5). | Known effects of an emergency path. |
+
+### 2026-10-07 · backend build (no API shape changed)
+
+| # | Change | Why |
+|---|---|---|
+| B1 | Reopening counts from the latest move into Closed **from an open status** (`app.services.ideas._closed_from`): a re-resolution (Closed → Closed) is skipped, so an idea closed from Proposal and re-resolved Accepted → Parked still reopens into Proposal freely. | Read literally, "the latest `status_changed` into closed" would be the Closed → Closed event, whose `from_status` is `closed` (counts as New), and Undo of a re-resolved idea would be refused. |
+| B2 | The `idea.research_override` audit entry of an evaluator invite or "Ask AI to evaluate" records the idea's current status as both `from_status` and `to_status` (no status changes there); `operation` says which request it was. | The details' shape is §5's; an invite moves no status. |
+| B3 | `status_changed` payloads may carry `research_overridden: true` as the one optional key (`app.services.activity.OPTIONAL_PAYLOAD_KEYS`); absent means false, so every Phase 1–7 event stays valid. | §3.5 "stored in the payload as research_overridden: true (absent = false)". |
+| B4 | A 409 with fields of its own (`ResearchIncompleteProblem.open_items` / `can_override`, `IdeasInResearchProblem.idea_count`) is raised as a `ProblemError` with a `model` and `extra` values (`app/errors.py`); the response is the contract's schema. MCP tools get the same `code` and `detail` as a tool error. | One way to raise them from any service, not only from routes. |
+| B5 | Submitter status emails are skipped at queue time too (not only at send time) when nothing reported changes, so no outbox row is queued and then cancelled for New ↔ Research. | Admin → Email's outbox would otherwise list cancelled emails for moves the submitter never sees. |
+| B6 | My work asks only for the owned groups that have ideas (one statement still): the Research group exists only while you own an idea in Research. | §3.2 "a Research group appears only for ideas in Research". |
+| B7 | Migration **0013** adds trigram **GiST** indexes `ix_ideas_title_trgm_gist` and `ix_ideas_summary_trgm_gist`; "Similar ideas" takes the 20 nearest titles and the 20 nearest summaries by `<->` (index order), then ranks them by the larger similarity as shown (2 places, >= 0.3; ties by the latest activity, then id), limit 5. Same results as a full scan (any top-5 idea is among the nearest few by its better column) unless more than 20 ideas tie for fifth place. | `%` on the GIN indexes returns every match unordered: 1.3 s on 12,000 near-identical summaries, 5-16 ms with GiST. |

@@ -3,21 +3,17 @@
  * whole proposed text of one section, from a person (REST or MCP) or an AI
  * agent's service account. Records mirror `proposal_suggestions`.
  */
-import type {
-  ProposalSectionKey,
-  ProposalSuggestion,
-  SuggestionSource,
-  SuggestionStatus,
-} from '@/api/types'
+import type { ProposalSuggestion, SuggestionSource, SuggestionStatus } from '@/api/types'
 
 import type { MockDb } from './db'
 import { userRefById } from './domain'
-import { SECTION_KEYS, type MockProposal } from './proposals'
+import type { MockProposal } from './proposals'
+import { activeSections, sectionOrder } from './templates'
 
 export interface MockSuggestion {
   id: string
   proposal_id: string
-  section_key: ProposalSectionKey
+  section_key: string
   author_id: string | null
   body_md: string
   base_version: number
@@ -51,13 +47,18 @@ export function suggestionOut(db: MockDb, suggestion: MockSuggestion): ProposalS
   }
 }
 
-/** Pending suggestions in template-section order, then oldest first. */
+/** Pending suggestions of active sections, in template-section order, then oldest first. */
 export function pendingSuggestions(db: MockDb, proposal: MockProposal): MockSuggestion[] {
+  const projectId = db.ideas.find((idea) => idea.id === proposal.idea_id)?.project_id ?? ''
+  const active = new Set(activeSections(db, projectId).map((s) => s.key))
+  const order = sectionOrder(db, projectId)
   return db.proposalSuggestions
-    .filter((s) => s.proposal_id === proposal.id && s.status === 'pending')
+    .filter(
+      (s) => s.proposal_id === proposal.id && s.status === 'pending' && active.has(s.section_key),
+    )
     .sort(
       (a, b) =>
-        SECTION_KEYS.indexOf(a.section_key) - SECTION_KEYS.indexOf(b.section_key) ||
+        order(a.section_key) - order(b.section_key) ||
         a.created_at.localeCompare(b.created_at) ||
         a.id.localeCompare(b.id),
     )

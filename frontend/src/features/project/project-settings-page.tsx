@@ -10,6 +10,14 @@ import { ProjectSettingsSkeleton } from '@/features/project/project-page-states'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GeneralSettings, GeneralSummary } from '@/features/project/settings/general-settings'
 import { MembersSettings } from '@/features/project/settings/members-settings'
+import {
+  ProposalTemplateEditor,
+  ProposalTemplateSummary,
+} from '@/features/project/settings/proposal-template-editor'
+import {
+  ResearchSettingsEditor,
+  ResearchSettingsSummary,
+} from '@/features/project/settings/research-settings-editor'
 import { RubricEditor, RubricSummary } from '@/features/project/settings/rubric-editor'
 import { UnsavedChangesGuard } from '@/features/project/settings/settings-layout'
 import { StatusLabelsSettings } from '@/features/project/settings/status-labels-settings'
@@ -25,13 +33,16 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
   members: 'Members',
   rubric: 'Rubric',
+  research: 'Research',
+  'proposal-template': 'Proposal',
   'public-form': 'Public form',
 }
 
 /**
  * Project settings (SPEC §5 screen 7, wireframe 07): General (with the status
- * labels), Members, Rubric and Public form (with the project's branding), short
- * forms each with its own Save. Admins edit; everyone else with access sees the
+ * labels), Members, Rubric, Research (Phase 8: the step and its checklist), Proposal
+ * (the template) and Public form (with the project's branding), short forms each
+ * with its own Save. Admins edit; everyone else with access sees the
  * same information read-only.
  */
 export function ProjectSettingsPage({
@@ -120,6 +131,24 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
               <RubricEditor project={project} active={current === 'rubric'} />
             ) : (
               <RubricSummary project={project} />
+            )}
+          </TabsContent>
+          <TabsContent value="research" forceMount className="pt-0 data-[state=inactive]:hidden">
+            {canManage ? (
+              <ResearchSettingsEditor project={project} active={current === 'research'} />
+            ) : (
+              <ResearchSettingsSummary project={project} />
+            )}
+          </TabsContent>
+          <TabsContent
+            value="proposal-template"
+            forceMount
+            className="pt-0 data-[state=inactive]:hidden"
+          >
+            {canManage ? (
+              <ProposalTemplateEditor project={project} active={current === 'proposal-template'} />
+            ) : (
+              <ProposalTemplateSummary project={project} />
             )}
           </TabsContent>
           {canManage && (

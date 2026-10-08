@@ -22,6 +22,7 @@ import type {
   StatusLabels,
   Work,
 } from '@/api/types'
+import { DEFAULT_RESOLUTION_LABELS, DEFAULT_STATUS_LABELS } from '@/lib/status'
 
 export type Rollback = () => void
 
@@ -202,16 +203,7 @@ export function findCachedIdea(queryClient: QueryClient, ref: string): IdeaSumma
   )
 }
 
-const DEFAULT_LABELS: StatusLabels = {
-  new: 'New',
-  evaluating: 'Evaluating',
-  shortlisted: 'Shortlisted',
-  proposal: 'Proposal',
-  closed: 'Closed',
-  accepted: 'Accepted',
-  rejected: 'Rejected',
-  parked: 'Parked',
-}
+const DEFAULT_LABELS: StatusLabels = { ...DEFAULT_STATUS_LABELS, ...DEFAULT_RESOLUTION_LABELS }
 
 /** The label an idea will show after a status change (project labels when cached). */
 export function statusLabelFor(

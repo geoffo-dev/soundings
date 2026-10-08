@@ -1,21 +1,5 @@
 import type { ProposalSectionKey } from '@/api/types'
 
-/**
- * The fixed template's keys and titles (SPEC section 2), for the outline and
- * headings while the proposal loads. The API sends the same titles (and the
- * prompts) with every section.
- */
-export const PROPOSAL_SECTIONS: readonly { key: ProposalSectionKey; title: string }[] = [
-  { key: 'summary', title: 'Summary' },
-  { key: 'problem', title: 'Problem' },
-  { key: 'solution', title: 'Solution' },
-  { key: 'market', title: 'Market & users' },
-  { key: 'cost', title: 'Cost & effort' },
-  { key: 'benefits', title: 'Benefits / revenue' },
-  { key: 'risks', title: 'Risks' },
-  { key: 'next_steps', title: 'Next steps / the ask' },
-]
-
 /** Characters per section (`SECTION_MAX_LENGTH`). */
 export const SECTION_LIMIT = 20_000
 /** Characters per margin comment (`COMMENT_MAX_LENGTH`). */

@@ -55,6 +55,7 @@ import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
+import { requestResearchFocus } from '@/features/research/research-focus'
 import { cn } from '@/lib/utils'
 
 import { DueDateField } from './due-date-field'
@@ -209,7 +210,7 @@ function OwnerField() {
 }
 
 function EvaluatorsSection() {
-  const { idea, ideaKey, me, openDialog, setTab } = useIdeaPage()
+  const { idea, ideaKey, me, project, openDialog, setTab } = useIdeaPage()
   // Phase 6: an AI evaluator's row says while its run is working (no score data).
   const aiRuns = useIdeaAiRuns(ideaKey).data?.items
   const activeAiRun = (userId: string) =>
@@ -346,18 +347,45 @@ function EvaluatorsSection() {
         </ul>
       )}
 
-      {permissions.can_invite_evaluators && (
-        <Button
-          ref={inviteRef}
-          variant="ghost"
-          size="sm"
-          className="-ml-2 self-start text-secondary"
-          onClick={() => openDialog('invite')}
-        >
-          <UserPlus />
-          Invite evaluators
-        </Button>
-      )}
+      {permissions.can_invite_evaluators &&
+        // Phase 8: the first invite waits for the research checklist. Admins keep the
+        // button (the 409's dialog offers "Invite anyway"); owners are told why.
+        (permissions.invite_blocked_by_research && !project?.permissions.can_manage ? (
+          <p className="text-sm text-muted">
+            Finish the research checklist before inviting evaluators.{' '}
+            <button
+              type="button"
+              className="font-medium text-accent underline-offset-4 hover:underline"
+              onClick={() => {
+                requestResearchFocus(ideaKey)
+                setTab('overview')
+              }}
+            >
+              Open research
+            </button>
+          </p>
+        ) : (
+          <>
+            <Button
+              ref={inviteRef}
+              variant="ghost"
+              size="sm"
+              className="-ml-2 self-start text-secondary"
+              aria-describedby={
+                permissions.invite_blocked_by_research ? 'invite-research-note' : undefined
+              }
+              onClick={() => openDialog('invite')}
+            >
+              <UserPlus />
+              Invite evaluators
+            </Button>
+            {permissions.invite_blocked_by_research && (
+              <p id="invite-research-note" className="-mt-1 text-xs text-muted">
+                Finish the research checklist first (admins can invite anyway).
+              </p>
+            )}
+          </>
+        ))}
 
       {(total > 0 || idea.evaluation_due_at) && (
         <dl className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-3 text-sm">

@@ -30,7 +30,7 @@ from app.models.idea import Idea
 from app.notifications import fanout
 from app.schemas.activity import ACTIVITY_TYPES
 
-__all__ = ["PAYLOAD_KEYS", "emit"]
+__all__ = ["OPTIONAL_PAYLOAD_KEYS", "PAYLOAD_KEYS", "emit"]
 
 PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
     "idea_created": frozenset(),
@@ -49,6 +49,12 @@ PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
     "ai_research_note": frozenset({"run_id", "agent_id", "body_md", "sources"}),
 }
 """The stored payload keys per event type (ids are resolved to users by the API)."""
+
+OPTIONAL_PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
+    # Phase 8: "Move anyway" past an unfinished research checklist (absent = false).
+    "status_changed": frozenset({"research_overridden"}),
+}
+"""Keys a payload may add to :data:`PAYLOAD_KEYS` (only when they say something)."""
 
 if set(PAYLOAD_KEYS) != set(ACTIVITY_TYPES):  # pragma: no cover - import-time guard
     raise RuntimeError("PAYLOAD_KEYS must cover exactly schemas.activity.ACTIVITY_TYPES")
@@ -88,7 +94,8 @@ async def emit(
     if expected is None:
         raise ValueError(f"unknown activity type {type_!r}")
     values = dict(payload or {})
-    if set(values) != expected:
+    optional = OPTIONAL_PAYLOAD_KEYS.get(type_, frozenset())
+    if not expected <= set(values) <= expected | optional:
         raise ValueError(f"{type_} payload must have exactly {sorted(expected)}")
     if (type_ == "comment") != (comment_id is not None):
         raise ValueError("comment events (and only they) carry comment_id")

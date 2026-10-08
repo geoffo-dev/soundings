@@ -222,7 +222,14 @@ test('members of a project see its settings read-only', async ({ page }) => {
     page.getByText('Only project admins can change these settings.').first(),
   ).toBeVisible()
   await expect(page.getByRole('textbox')).toHaveCount(0)
-  await expect(page.getByRole('tab')).toHaveText(['General', 'Members', 'Rubric'])
+  // Research and Proposal are read-only summaries for members (Phase 8).
+  await expect(page.getByRole('tab')).toHaveText([
+    'General',
+    'Members',
+    'Rubric',
+    'Research',
+    'Proposal',
+  ])
   await page.getByRole('tab', { name: 'Rubric' }).click()
   await expect(page).toHaveURL(/tab=rubric/)
   await expect(page.getByText('Strategic fit')).toBeVisible()
@@ -230,8 +237,9 @@ test('members of a project see its settings read-only', async ({ page }) => {
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`settings have no serious accessibility violations (${colorScheme})`, async ({ page }) => {
+    test.slow() // six tabs, an axe run each
     await page.emulateMedia({ colorScheme })
-    for (const tab of ['', 'members', 'rubric', 'public-form']) {
+    for (const tab of ['', 'members', 'rubric', 'research', 'proposal-template', 'public-form']) {
       await openSettings(page, tab)
       // Public form holds the branding form, whose preview has tabs of its own.
       await expect(page.getByRole('tabpanel').first()).toBeVisible()
@@ -244,7 +252,7 @@ test.describe('on a phone (390px)', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
   test('settings fit the screen', async ({ page }) => {
-    for (const tab of ['', 'members', 'rubric', 'public-form']) {
+    for (const tab of ['', 'members', 'rubric', 'research', 'proposal-template', 'public-form']) {
       await openSettings(page, tab)
       const overflow = await page.evaluate(() => {
         const main = document.querySelector('main')

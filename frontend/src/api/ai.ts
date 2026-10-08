@@ -23,6 +23,7 @@ import {
 
 import { api, unwrap } from '@/api/client'
 import { queryKeys } from '@/api/keys'
+import { openResearchGate, overrideBody } from '@/api/research'
 import type {
   AiRun,
   AiRunDetail,
@@ -31,6 +32,7 @@ import type {
   Evaluation,
   EvaluationList,
   ProposalSectionKey,
+  ResearchOverride,
 } from '@/api/types'
 
 export const ideaAiRunsQueryOptions = (idea: string) =>
@@ -119,7 +121,7 @@ export function runFinished(
   }
 }
 
-export interface AiRunAsk {
+export interface AiRunAsk extends ResearchOverride {
   kind: AiRunKind
   agentId: string
   /** draft_section only. */
@@ -133,14 +135,14 @@ export interface AiRunAsk {
  */
 export function useRequestAiRun(idea: string) {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ kind, agentId, sectionKey }: AiRunAsk) => {
+  const mutation = useMutation({
+    mutationFn: async ({ kind, agentId, sectionKey, ...override }: AiRunAsk) => {
       const params = { path: { idea } }
       const result =
         kind === 'evaluate'
           ? await api.POST('/api/v1/ideas/{idea}/ai-runs/evaluation', {
               params,
-              body: { agent_id: agentId },
+              body: { agent_id: agentId, ...overrideBody(override) },
             })
           : kind === 'research'
             ? await api.POST('/api/v1/ideas/{idea}/ai-runs/research', {
@@ -162,9 +164,17 @@ export function useRequestAiRun(idea: string) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.activity.idea(idea) })
       }
     },
+    // Phase 8: "Ask AI to evaluate" is guarded like a first invite: the gate's dialog.
+    onError: (error, vars) =>
+      openResearchGate(error, {
+        ideaKey: idea,
+        action: 'evaluate',
+        retry: (override) => mutation.mutate({ ...vars, ...override }),
+      }),
     // `useAskAi` words the failure (the hourly limit says when asking works again).
     meta: { silent: true },
   })
+  return mutation
 }
 
 export function useCancelAiRun(idea: string) {

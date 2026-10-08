@@ -70,6 +70,7 @@ export function FilterBar({
       {view === 'list' && (
         <StatusFilter
           labels={project.status_labels}
+          statuses={project.lifecycle}
           value={search.status}
           onChange={(status) => set({ status, resolution: undefined })}
         />
@@ -281,14 +282,22 @@ function summarise(values: string[]): string {
 
 function StatusFilter({
   labels,
+  statuses,
   value,
   onChange,
 }: {
   labels: StatusLabels
+  /** The project's lifecycle (Phase 8: Research where its step puts it). */
+  statuses: readonly IdeaStatus[]
   value: IdeaStatus[] | undefined
   onChange: (value: IdeaStatus[] | undefined) => void
 }) {
-  const chosen = IDEA_STATUSES.filter((status) => value?.includes(status))
+  // A status from the URL that the project doesn't use (Research after the step was
+  // turned off) stays listed while chosen, so it can be cleared.
+  const offered = IDEA_STATUSES.filter(
+    (status) => statuses.includes(status) || value?.includes(status),
+  )
+  const chosen = offered.filter((status) => value?.includes(status))
   return (
     <FilterMenu
       label="Status"
@@ -300,7 +309,7 @@ function StatusFilter({
         <Command>
           <CommandList aria-label="Statuses">
             <CommandGroup>
-              {IDEA_STATUSES.map((status) => (
+              {offered.map((status) => (
                 <OptionItem
                   key={status}
                   value={status}

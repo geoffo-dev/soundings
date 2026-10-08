@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid5
 
 import pytest
@@ -393,6 +394,90 @@ async def test_seed_tells_the_demo_story(
     listed = (await api.get(f"{API}/auth/dev/users")).json()
     assert len(listed) == 12
     assert listed[0]["email"] == "alice@example.com"
+
+    await _phase8_story(api, db_session)
+
+
+async def _phase8_story(api: Any, db: AsyncSession) -> None:
+    """Phase 8 (contract-phase8 section 3.14): Internal Tools runs research before
+    evaluation with a custom template, Sustainability before the proposal with Carbon
+    impact, Customer Innovation keeps the defaults; two ideas in Research, the ideas past
+    it answered, a proposal in each stepped project with the appendix."""
+    steps = {
+        slug: (await api.get(f"{API}/projects/{slug}/research")).json()
+        for slug in ("customer-innovation", "internal-tools", "sustainability")
+    }
+    assert {slug: s["step"] for slug, s in steps.items()} == {
+        "customer-innovation": "off",
+        "internal-tools": "before_evaluation",
+        "sustainability": "before_proposal",
+    }
+    assert [i["title"] for i in steps["internal-tools"]["items"]] == [
+        "Not already being done elsewhere",
+        "Departments or teams consulted",
+        "Data protection considered",
+    ]
+    assert steps["internal-tools"]["ideas_in_research"] == 2
+    templates = {
+        slug: [
+            s["key"]
+            for s in (await api.get(f"{API}/projects/{slug}/proposal-template")).json()["sections"]
+        ]
+        for slug in ("customer-innovation", "internal-tools", "sustainability")
+    }
+    assert templates == {
+        "customer-innovation": [
+            "summary", "problem", "solution", "market", "cost", "benefits", "risks", "next_steps",
+        ],
+        "internal-tools": ["summary", "problem", "solution", "effort_rollout", "risks", "the_ask"],
+        "sustainability": [
+            "summary", "problem", "solution", "market", "cost", "benefits", "carbon_impact",
+            "risks", "next_steps",
+        ],
+    }  # fmt: skip
+
+    board = (await api.get(f"{API}/projects/internal-tools/board")).json()
+    assert [c["status"] for c in board["columns"]] == [
+        "new", "research", "evaluating", "shortlisted", "proposal", "closed",
+    ]  # fmt: skip
+    in_research = {card["title"]: card["research"] for card in board["columns"][1]["items"]}
+    assert in_research == {
+        "Internal status page for developer tooling": {
+            "answered": 3, "total": 3, "required_open": 0,
+        },
+        "Chat command to request system access": {"answered": 1, "total": 3, "required_open": 1},
+    }  # fmt: skip
+    for column in board["columns"][2:5]:  # past Research: no badge, the checklist answered
+        for card in column["items"]:
+            assert card["research"] is None
+            panel = (await api.get(f"{API}/ideas/{card['key']}/research")).json()
+            assert panel["progress"]["required_open"] == 0, card["title"]
+            owner = card["owner"]["id"]
+            assert {i["answer"]["answered_by"]["id"] for i in panel["items"] if i["answer"]} == {
+                owner
+            }
+
+    for slug, key in (("internal-tools", "effort_rollout"), ("sustainability", "carbon_impact")):
+        [card] = [
+            card
+            for column in (await api.get(f"{API}/projects/{slug}/board")).json()["columns"]
+            if column["status"] == "proposal"
+            for card in column["items"]
+        ]
+        proposal = (await api.get(f"{API}/ideas/{card['key']}/proposal")).json()["proposal"]
+        written = {s["key"]: s["body_md"] for s in proposal["sections"]}
+        assert written[key], slug
+        assert sum(bool(text) for text in written.values()) >= len(written) - 2, slug
+        markdown = (await api.get(f"{API}/ideas/{card['key']}/proposal/markdown")).text
+        assert "## Research and consultation" in markdown, slug
+    green = (await api.get(f"{API}/projects/sustainability/board")).json()
+    shortlisted = {c["title"]: c["research"] for c in green["columns"][2]["items"]}
+    assert shortlisted["Heat pumps for the Bristol office"] == {
+        "answered": 1,
+        "total": 3,
+        "required_open": 1,
+    }
+    await db.rollback()
 
 
 async def test_reset_replaces_existing_data(settings: Settings, db_session: AsyncSession) -> None:

@@ -46,6 +46,7 @@ from app.models.enums import (
     IdeaStatus,
     ProjectRole,
     ProjectVisibility,
+    ResearchStep,
 )
 from app.models.idea import Idea
 from app.models.project import Project
@@ -90,7 +91,9 @@ ASSIGNABLE_ROLES: Final = frozenset({ProjectRole.ADMIN, ProjectRole.MEMBER})
 class ProjectFacts:
     """A project. ``public_submission_enabled`` is the project's own switch for its
     public form; ``slug_reserved``: an older project whose slug is one of the app's own
-    paths (``RESERVED_SLUGS``), which can never have a public form (c8)."""
+    paths (``RESERVED_SLUGS``), which can never have a public form (c8);
+    ``research_step``: the project's research step (Phase 8; c7 allows a proposal from
+    Research when it comes before the proposal)."""
 
     id: UUID
     visibility: ProjectVisibility
@@ -98,6 +101,7 @@ class ProjectFacts:
     allow_volunteer_owners: bool = True
     public_submission_enabled: bool = False
     slug_reserved: bool = False
+    research_step: ResearchStep = ResearchStep.OFF
 
     @classmethod
     def of(cls, project: Project) -> ProjectFacts:
@@ -108,6 +112,7 @@ class ProjectFacts:
             allow_volunteer_owners=project.allow_volunteer_owners,
             public_submission_enabled=project.public_submission_enabled,
             slug_reserved=project.slug in RESERVED_SLUGS,
+            research_step=project.research_step,
         )
 
 
@@ -273,6 +278,18 @@ def _not_issuing_for_break_glass(principal: Principal | None, resource: Resource
     )
 
 
+def _proposal_available(resource: Resource) -> bool:
+    """c7: Shortlisted or Proposal, or (Phase 8) Research while the project's research
+    step comes before the proposal (so "Start proposal" is the next step there)."""
+    status = _idea(resource).status
+    if status in (IdeaStatus.SHORTLISTED, IdeaStatus.PROPOSAL):
+        return True
+    return (
+        status is IdeaStatus.RESEARCH
+        and _project(resource).research_step is ResearchStep.BEFORE_PROPOSAL
+    )
+
+
 def _a_person(principal: Principal | None, _resource: Resource, _rule: Rule) -> bool:
     return principal is not None and not principal.user.is_service_account
 
@@ -300,14 +317,7 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
         Check("c5", 409, "idea_closed", lambda p, r, _: _idea(r).status is not IdeaStatus.CLOSED),
     ),
     "c6": (Check("c6", 409, "evaluation_closed", lambda p, r, _: _idea(r).evaluation_open),),
-    "c7": (
-        Check(
-            "c7",
-            409,
-            "proposal_not_available",
-            lambda p, r, _: _idea(r).status in (IdeaStatus.SHORTLISTED, IdeaStatus.PROPOSAL),
-        ),
-    ),
+    "c7": (Check("c7", 409, "proposal_not_available", lambda p, r, _: _proposal_available(r)),),
     # c8: the public form is available. Every part answers the same 404 as an unknown
     # project (contract-phase4 section 3.5), so nothing tells them apart.
     "c8": (
@@ -532,6 +542,8 @@ FROZEN_WHILE_HELD: Final = frozenset(
         Rule.AI_RESEARCH,
         Rule.AI_DRAFT_SECTION,
         Rule.AI_DELETE_NOTE,
+        Rule.IDEA_ANSWER_RESEARCH,
+        Rule.IDEA_RESEARCH_OVERRIDE,
     }
 )
 """c19 (contract-phase4 section 3.6): every idea write on an idea held for moderation
@@ -594,6 +606,8 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     _row(Rule.PROJECT_RENAME_STATUS_LABELS, _P, "Y", "Y",       "403",           "403",   "403",   "404", "401"),
     _row(Rule.PROJECT_EDIT_SETTINGS, _P, "Y",     "Y",          "403",           "403",   "403",   "404", "401"),
     _row(Rule.PUBLIC_ERASE_SUBMITTER, _I, "Y",    "Y",          "403",           "403",   "403",   "404", "401"),
+    _row(Rule.PROJECT_EDIT_PROPOSAL_TEMPLATE, _P, "Y", "Y",     "403",           "403",   "403",   "404", "401"),
+    _row(Rule.PROJECT_EDIT_RESEARCH, _P, "Y",     "Y",          "403",           "403",   "403",   "404", "401"),
     # G. Public submission
     _row(Rule.PUBLIC_SUBMIT, _U, "Y (c8)",        "Y (c8)",     "Y (c8)",        "Y (c8)", "Y (c8)", "Y (c8)", "Y (c8)"),
     _row(Rule.PUBLIC_TRACK, _U,  "Y (c9)",        "Y (c9)",     "Y (c9)",        "Y (c9)", "Y (c9)", "Y (c9)", "Y (c9)"),
@@ -618,6 +632,9 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     _row(Rule.AI_DRAFT_SECTION, _I, "Y (c7, c10)", "Y (c7, c10)", "403",         "403",   "403",   "404", "401", owner="+ (c7, c10)", idea_write=_W),
     _row(Rule.AI_CANCEL_RUN, _I, "Y",             "Y",          "403",           "403",   "403",   "404", "401", owner="+"),
     _row(Rule.AI_DELETE_NOTE, _I, "Y",            "Y",          "403",           "403",   "403",   "404", "401", owner="+", idea_write=_W),
+    # K. The research step (Phase 8)
+    _row(Rule.IDEA_ANSWER_RESEARCH, _I, "Y (c5)", "Y (c5)",     "403",           "403",   "403",   "404", "401", owner="+ (c5)", idea_write=_W),
+    _row(Rule.IDEA_RESEARCH_OVERRIDE, _I, "Y",    "Y",          "403",           "403",   "403",   "404", "401", idea_write=_W),
 )
 # fmt: on
 

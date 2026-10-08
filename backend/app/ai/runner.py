@@ -61,7 +61,6 @@ from app.models.enums import (
     AiRunEventType,
     AiRunKind,
     AiRunStatus,
-    ProposalSectionKey,
 )
 from app.models.idea import Idea
 from app.models.project import Project
@@ -131,7 +130,7 @@ def _failed(error: AiRunError, **kwargs: object) -> Outcome:
 class _Run:
     id: UUID
     kind: AiRunKind
-    section_key: ProposalSectionKey | None
+    section_key: str | None
     idea_key: str
     agent_id: UUID
     agent_name: str

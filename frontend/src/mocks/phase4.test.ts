@@ -107,6 +107,7 @@ describe('proposals', () => {
     const view = await proposal('CUST-3')
     expect(view.data?.permissions).toEqual({
       can_create: false,
+      start_blocked_by_research: false,
       can_edit: false,
       can_comment: false,
       can_export: true,

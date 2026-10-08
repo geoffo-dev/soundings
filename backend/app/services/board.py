@@ -49,6 +49,7 @@ from app.models.idea import Idea, IdeaEvaluator, IdeaTag
 from app.models.project import Project, Tag
 from app.pagination import InvalidCursorProblem, decode_cursor, encode_cursor
 from app.schemas.ideas import Board, BoardColumn, IdeaPage, IdeaSort, ResolutionCounts
+from app.schemas.research import CANONICAL_STATUS_ORDER, lifecycle
 from app.services.summaries import (
     IDEA_COLUMNS,
     IdeaData,
@@ -72,8 +73,10 @@ __all__ = [
     "pages_by_status",
 ]
 
-LIFECYCLE: Final = tuple(IdeaStatus)
-"""Board columns and My work groups, in lifecycle order (closed last)."""
+LIFECYCLE: Final = CANONICAL_STATUS_ORDER
+"""Every status in the canonical order (Research after New, closed last): views across
+projects (My work's owned groups). A project's board uses its own lifecycle
+(:func:`app.schemas.research.lifecycle`): Research only while its step is on."""
 
 OwnerFilter = UUID | Literal["me", "none"]
 
@@ -338,7 +341,12 @@ async def list_ideas(
 
 
 def board_statement(
-    principal: Principal, where: Sequence[ColumnElement[bool]], sort: Sort, *, limit: int
+    principal: Principal,
+    where: Sequence[ColumnElement[bool]],
+    sort: Sort,
+    *,
+    limit: int,
+    statuses: Sequence[IdeaStatus] = LIFECYCLE,
 ) -> Select[Any]:
     """The first ``limit + 1`` ideas of every status, in one statement.
 
@@ -347,21 +355,19 @@ def board_statement(
     trip and one plan. Measured at 10k ideas it beats both five separate queries and
     one ``row_number() OVER (PARTITION BY status)`` query (which sorts every idea).
     """
-    statuses = (
-        func.unnest(
-            bindparam("board_statuses", [s.value for s in LIFECYCLE], type_=ARRAY(String()))
-        )
+    columns = (
+        func.unnest(bindparam("board_statuses", [s.value for s in statuses], type_=ARRAY(String())))
         .table_valued(column("status", String()), with_ordinality="position")
         .render_derived("board_column")
     )
     page = page_statement(
-        principal, [*where, Idea.status == statuses.c.status], sort, cursor=None, limit=limit
+        principal, [*where, Idea.status == columns.c.status], sort, cursor=None, limit=limit
     ).lateral("page")
     return (
         select(page)
-        .select_from(statuses)
+        .select_from(columns)
         .join(page, true())
-        .order_by(statuses.c.position, *sort.order_by(page.c.sort_value, tie=page.c.id))
+        .order_by(columns.c.position, *sort.order_by(page.c.sort_value, tie=page.c.id))
     )
 
 
@@ -371,11 +377,13 @@ async def pages_by_status(
     where: Sequence[ColumnElement[bool]],
     sort: Sort,
     limit: int,
+    statuses: Sequence[IdeaStatus] = LIFECYCLE,
 ) -> dict[IdeaStatus, tuple[list[IdeaRow], str | None]]:
-    """The first keyset page of every status (:func:`board_statement`, one round trip):
-    the board's columns and My work's owned groups."""
-    by_status: dict[IdeaStatus, list[Row[Any]]] = {status: [] for status in LIFECYCLE}
-    for row in await db.execute(board_statement(principal, where, sort, limit=limit)):
+    """The first keyset page of every status in ``statuses`` (:func:`board_statement`,
+    one round trip): the board's columns and My work's owned groups."""
+    by_status: dict[IdeaStatus, list[Row[Any]]] = {status: [] for status in statuses}
+    statement = board_statement(principal, where, sort, limit=limit, statuses=statuses)
+    for row in await db.execute(statement):
         by_status[IdeaStatus(row.status)].append(row)
     return {status: _page(rows, sort, limit) for status, rows in by_status.items()}
 
@@ -390,8 +398,10 @@ async def get_board(
     *,
     limit: int,
 ) -> Board:
-    """Five columns in lifecycle order: counts, the first ``limit`` ideas, a cursor
-    (the same keyset cursor as ``list_ideas?status=<column>``)."""
+    """One column per status of the project's lifecycle (five, or six with the research
+    step: :func:`app.schemas.research.lifecycle`), in its order: counts, the first
+    ``limit`` ideas, a cursor (the same keyset cursor as ``list_ideas?status=<column>``)."""
+    columns_of = lifecycle(project.research_step)
     where = idea_filter_clauses(principal, project, filters)
     counts: dict[tuple[IdeaStatus, Resolution | None], int] = {
         (status, resolution): count
@@ -401,7 +411,7 @@ async def get_board(
             .group_by(Idea.status, Idea.resolution)
         )
     }
-    pages = await pages_by_status(db, principal, where, sort, limit)
+    pages = await pages_by_status(db, principal, where, sort, limit, statuses=columns_of)
     summaries = await build_summaries(
         db,
         principal,
@@ -412,7 +422,7 @@ async def get_board(
     by_id = {summary.id: summary for summary in summaries}
     labels = resolved_labels(project.status_labels)
     columns = []
-    for status in LIFECYCLE:
+    for status in columns_of:
         rows, next_cursor = pages.get(status, ([], None))
         by_resolution = {r: counts.get((status, r), 0) for r in Resolution}
         columns.append(

@@ -37,3 +37,30 @@ export function clearDrafts(): void {
     }
   }
 }
+
+/** This user's drafts whose names start with `prefix`, as `[name, value]` (localStorage). */
+export function readDrafts(userId: string, prefix: string): [string, string][] {
+  const start = draftKey(userId, prefix)
+  const out: [string, string][] = []
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (!key?.startsWith(start)) continue
+      const value = localStorage.getItem(key)
+      if (value !== null) out.push([key.slice(draftKey(userId, '').length), value])
+    }
+  } catch {
+    // Storage unavailable: nothing kept.
+  }
+  return out
+}
+
+/** Keeps (or with `null` removes) one of this user's drafts in localStorage. */
+export function writeDraft(userId: string, name: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(draftKey(userId, name))
+    else localStorage.setItem(draftKey(userId, name), value)
+  } catch {
+    // Storage unavailable or full: the text stays on the page until it is left.
+  }
+}

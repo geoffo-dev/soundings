@@ -65,6 +65,7 @@ const COLOR_GROUPS: { title: string; swatches: Swatch[] }[] = [
     title: 'Idea status · bg-status-*',
     swatches: [
       { name: 'new', className: 'bg-status-new' },
+      { name: 'research', className: 'bg-status-research' },
       { name: 'evaluating', className: 'bg-status-evaluating' },
       { name: 'shortlisted', className: 'bg-status-shortlisted' },
       { name: 'proposal', className: 'bg-status-proposal' },

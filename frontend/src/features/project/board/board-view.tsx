@@ -53,8 +53,8 @@ const statusOf = (data: unknown) =>
   (data as ColumnDropData | undefined)?.status as IdeaStatus | undefined
 
 /**
- * The Board (SPEC §5 screen 2): five columns by status with the project's
- * labels. Owners and admins drag cards between columns (mouse, long press,
+ * The Board (SPEC §5 screen 2): a column per status of the project's lifecycle (five,
+ * or six with Phase 8's Research where the project's step puts it) with its labels. Owners and admins drag cards between columns (mouse, long press,
  * or Space + arrow keys, announced to screen readers); dropping on Closed asks
  * how it was closed. Moves are optimistic with an Undo toast.
  */
@@ -153,14 +153,21 @@ export function BoardView({
     }
     // Keyboard moves keep focus on the card in its new column.
     if (activatorEvent instanceof KeyboardEvent) focus.request(idea.id)
-    move.mutate({ idea: idea.key, status: to })
+    // Refused by the research gate, the card snaps back and its dialog opens; focus
+    // goes back to the card when the dialog closes.
+    move.mutate({ idea: idea.key, status: to, gateFocus: () => cardElement(idea.id) })
   }
 
   const close = (idea: IdeaSummary, resolution: Resolution) => {
     if (picker.current) picker.current.chosen = true
     focus.request(idea.id)
     setClosing(null)
-    move.mutate({ idea: idea.key, status: 'closed', resolution })
+    move.mutate({
+      idea: idea.key,
+      status: 'closed',
+      resolution,
+      gateFocus: () => cardElement(idea.id),
+    })
   }
 
   // A drag that ends over a card must not also open it.
@@ -286,6 +293,9 @@ export function BoardView({
     </BoardFocusContext>
   )
 }
+
+const cardElement = (id: string) =>
+  document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(id)}"]`)
 
 /**
  * Phones show one column at a time and snap to column starts, so the browser's own

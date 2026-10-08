@@ -133,6 +133,9 @@ export function statusMeaning(
   resolution: TrackedSubmission['resolution'],
 ): string {
   switch (status) {
+    // Phase 8: the API reports Research as the status before it, so it never arrives here;
+    // if it did, it reads like an idea the team has and is looking into.
+    case 'research':
     case 'new':
       return 'The team has your idea and will look at it soon.'
     case 'evaluating':

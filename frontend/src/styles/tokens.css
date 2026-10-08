@@ -85,6 +85,7 @@
 
   /* Idea status — dots, column accents. Labels always accompany the colour. */
   --status-new: #3f7fe0;
+  --status-research: #c2479c;
   --status-evaluating: #e0960b;
   --status-shortlisted: #8a5cf0;
   --status-proposal: #0f9e94;
@@ -162,6 +163,7 @@
   --info-subtle: color-mix(in oklch, var(--info) 16%, var(--surface));
 
   --status-new: #5b95f0;
+  --status-research: #e06bb8;
   --status-evaluating: #f0aa2e;
   --status-shortlisted: #a07cf5;
   --status-proposal: #26b3a8;

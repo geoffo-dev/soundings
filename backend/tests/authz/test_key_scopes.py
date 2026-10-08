@@ -208,6 +208,7 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "ai.draft_section",
         "ai.cancel_run",
         "ai.delete_note",
+        "idea.answer_research",  # Phase 8
     }
     assert {str(rule) for rule in SESSION_ONLY_RULES} == {
         "project.create",
@@ -228,6 +229,10 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "api_key.manage_any",
         "api_key.manage_own",
         "self.manage_profile",
+        # Phase 8: project settings, and "Move anyway" (a key's override is refused)
+        "project.edit_proposal_template",
+        "project.edit_research",
+        "idea.research_override",
     }
 
 

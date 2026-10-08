@@ -2,6 +2,7 @@ import type { ProjectRole, ProjectVisibility, StatusLabels } from '@/api/types'
 
 import { recordAudit } from '@/mocks/access'
 import { defaultRubric, ID_KIND, newId, type MockCriterion } from '@/mocks/db'
+import { defaultTemplate } from '@/mocks/templates'
 import {
   activeAdminCount,
   activeCriteria,
@@ -157,9 +158,12 @@ export const projectHandlers = [
       created_at: now,
       status_labels: {},
       next_idea_number: 1,
+      research_step: 'off' as const,
     }
     db.projects.push(project)
     db.criteria.push(...defaultRubric(project.id, () => newId(db, ID_KIND.criterion)))
+    // Phase 8: every new project starts from the built-in eight sections.
+    db.templateSections.push(...defaultTemplate(project.id, () => newId(db, ID_KIND.phase8)))
     db.members.push({ project_id: project.id, user_id: admin.id, role: 'admin', joined_at: now })
     return created(projectDetail(db, project, user))
   }),

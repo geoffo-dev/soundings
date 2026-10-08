@@ -35,17 +35,17 @@ from app.authz import Rule, authorize, can, require, writes_as_ai
 from app.domain.principal import Principal
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
-from app.models.enums import ProposalSectionKey, SuggestionSource, SuggestionStatus
+from app.models.enums import SuggestionSource, SuggestionStatus
 from app.models.proposal import Proposal as ProposalRow
 from app.models.proposal import ProposalSection as SectionRow
 from app.models.proposal import ProposalSuggestion as SuggestionRow
 from app.proposals.service import (
-    SECTION_ORDER,
     load_idea_shared,
     require_proposal,
     update_section,
     user_refs,
 )
+from app.proposals.template import project_template
 from app.schemas.common import FieldError
 from app.schemas.proposals import (
     MAX_PENDING_SUGGESTIONS,
@@ -89,13 +89,13 @@ def suggestion_source(principal: Principal, channel: SuggestionSource) -> Sugges
     return channel
 
 
-async def _versions(db: AsyncSession, proposal_id: UUID) -> dict[ProposalSectionKey, int]:
+async def _versions(db: AsyncSession, proposal_id: UUID) -> dict[str, int]:
     rows = await db.execute(
         select(SectionRow.key, SectionRow.version)
         .where(SectionRow.proposal_id == proposal_id)
         .execution_options(populate_existing=True)
     )
-    return {ProposalSectionKey(key): version for key, version in rows}
+    return {key: version for key, version in rows.all()}  # noqa: C416 - Row pairs
 
 
 async def _out(
@@ -134,22 +134,24 @@ async def suggestion_out(
 async def list_suggestions(
     db: AsyncSession, principal: Principal, loaded: LoadedIdea
 ) -> ProposalSuggestionList:
-    """``proposal.view``: the pending suggestions in template order, then oldest first,
-    with what the principal may do. 404 when the idea has no proposal."""
+    """``proposal.view``: the pending suggestions of active sections in template order,
+    then oldest first, with what the principal may do (a removed section's are kept,
+    hidden, Phase 8). 404 when the idea has no proposal."""
     proposal = await require_proposal(db, loaded)
     require(principal, Rule.PROPOSAL_VIEW, loaded.resource)
+    template = await project_template(db, loaded.project.id)
     rows = list(
         await db.scalars(
             select(SuggestionRow)
             .where(
                 SuggestionRow.proposal_id == proposal.id,
                 SuggestionRow.status == SuggestionStatus.PENDING,
+                SuggestionRow.section_key.in_(template.keys),
             )
             .order_by(SuggestionRow.created_at, SuggestionRow.id)
-            .limit(MAX_PENDING_SUGGESTIONS)
         )
     )
-    rows.sort(key=lambda row: SECTION_ORDER[row.section_key])  # stable: oldest first within
+    rows.sort(key=lambda row: template.position(row.section_key))  # stable: oldest first
     return ProposalSuggestionList(
         items=await _out(db, rows, proposal.id),
         permissions=ProposalSuggestionPermissions(
@@ -187,19 +189,23 @@ async def create_suggestion(
 ) -> CreatedSuggestion:
     """``proposal.suggest_section`` (c7). ``loaded`` must hold the idea's ``FOR UPDATE``
     lock (``load_idea(..., for_update=True)``). 404 without a proposal; 403 for a role
-    that may not suggest; 422 for a ``base_version`` above the section's; then the
-    policy's 409s (c7, archived; the contract's check order puts them after the body's
-    422) and 409 ``too_many_suggestions`` past 50 pending."""
+    that may not suggest; 422 ``unknown_section`` for a key the project's template doesn't
+    have (or a removed section's; Phase 8) and 422 for a ``base_version`` above the
+    section's; then the policy's 409s (c7, archived; the contract's check order puts them
+    after the body's 422) and 409 ``too_many_suggestions`` past 50 pending (in active
+    sections: a removed section's never block a new one)."""
     proposal = await require_proposal(db, loaded)
     decision = authorize(principal, Rule.PROPOSAL_SUGGEST_SECTION, loaded.resource)
     if not decision.allowed and decision.status != 409:
         raise decision.problem()
+    template = await project_template(db, loaded.project.id)
+    template.require(body.section_key)
     current = await db.scalar(
         select(SectionRow.version).where(
             SectionRow.proposal_id == proposal.id, SectionRow.key == body.section_key
         )
     )
-    if current is None:  # pragma: no cover - every proposal has all eight sections
+    if current is None:  # pragma: no cover - a proposal has a row per active section
         raise NotFoundProblem("This idea has no proposal yet.")
     base_version = current if body.base_version is None else body.base_version
     if base_version > current:
@@ -225,6 +231,7 @@ async def create_suggestion(
         .where(
             SuggestionRow.proposal_id == proposal.id,
             SuggestionRow.status == SuggestionStatus.PENDING,
+            SuggestionRow.section_key.in_(template.keys),
         )
     )
     if int(pending or 0) >= MAX_PENDING_SUGGESTIONS:
@@ -254,13 +261,19 @@ async def _decision_target(
     db: AsyncSession, principal: Principal, ref: str, suggestion_id: UUID
 ) -> tuple[LoadedIdea, ProposalRow, SuggestionRow]:
     """A section save's locks (project ``FOR KEY SHARE``, idea ``FOR SHARE``), then the
-    suggestion ``FOR UPDATE``; 404 when it isn't on this idea's proposal; then
-    ``proposal.write`` (403, or 409 for c7, archived and held ideas)."""
+    suggestion ``FOR UPDATE``; 404 when it isn't on this idea's proposal (or its section
+    was removed from the template: hidden with it); then ``proposal.write`` (403, or 409
+    for c7, archived and held ideas)."""
     loaded = await load_idea_shared(db, principal, ref)
     proposal = await require_proposal(db, loaded)
+    template = await project_template(db, loaded.project.id)
     row = await db.scalar(
         select(SuggestionRow)
-        .where(SuggestionRow.id == suggestion_id, SuggestionRow.proposal_id == proposal.id)
+        .where(
+            SuggestionRow.id == suggestion_id,
+            SuggestionRow.proposal_id == proposal.id,
+            SuggestionRow.section_key.in_(template.keys),
+        )
         .with_for_update()
         .execution_options(populate_existing=True)
     )

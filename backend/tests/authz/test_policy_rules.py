@@ -27,7 +27,13 @@ from app.authz.policy import POLICY
 from app.authz.rules import RULE_SCOPES, SESSION_ONLY_RULES
 from app.domain.principal import ApiKeyScope, Principal
 from app.errors import ProblemError
-from app.models.enums import EvaluatorState, IdeaStatus, ProjectRole, ProjectVisibility
+from app.models.enums import (
+    EvaluatorState,
+    IdeaStatus,
+    ProjectRole,
+    ProjectVisibility,
+    ResearchStep,
+)
 from app.models.user import User
 
 ME = uuid4()
@@ -502,7 +508,15 @@ def test_idea_permissions_for_the_owner() -> None:
         "can_comment": True,
         "can_vote": True,
         "can_delete": False,
+        "can_answer_research": False,  # the project's research step is off
+        "invite_blocked_by_research": False,
     }
+    stepped = resource(owner_id=ME, status=IdeaStatus.NEW).replace(
+        project=ProjectFacts(
+            PROJECT, ProjectVisibility.PRIVATE, research_step=ResearchStep.BEFORE_EVALUATION
+        )
+    )
+    assert idea_permissions(principal(), stepped).can_answer_research
 
 
 def test_idea_permissions_are_all_false_in_an_archived_project() -> None:
@@ -593,3 +607,50 @@ def test_access_change_is_session_only() -> None:
     decision = authorize(key, Rule.PLATFORM_MANAGE_USERS, Resource(user_to_change=OTHER))
 
     assert (decision.status, decision.code) == (403, "insufficient_scope")
+
+
+# --- Phase 8: c7 with the research step (role matrix c7) --------------------------------------
+@pytest.mark.parametrize(
+    "rule", [Rule.PROPOSAL_WRITE, Rule.PROPOSAL_SUGGEST_SECTION, Rule.AI_DRAFT_SECTION]
+)
+@pytest.mark.parametrize(
+    ("step", "allowed"),
+    [
+        (ResearchStep.BEFORE_PROPOSAL, True),  # "Start proposal" is the next step there
+        (ResearchStep.BEFORE_EVALUATION, False),
+        (ResearchStep.OFF, False),
+    ],
+)
+def test_c7_allows_research_only_before_a_proposal_step(
+    rule: Rule, step: ResearchStep, allowed: bool
+) -> None:
+    facts = resource(role=ProjectRole.ADMIN, status=IdeaStatus.RESEARCH, ai_available=True)
+    facts = facts.replace(
+        project=ProjectFacts(PROJECT, ProjectVisibility.PRIVATE, research_step=step)
+    )
+
+    decision = authorize(principal(), rule, facts)
+
+    assert decision.allowed is allowed
+    if not allowed:
+        assert (decision.status, decision.code, decision.condition) == (
+            409,
+            "proposal_not_available",
+            "c7",
+        )
+
+
+def test_answering_and_overriding_follow_table_k() -> None:
+    owner = resource(owner_id=ME, status=IdeaStatus.RESEARCH)
+    admin = resource(role=ProjectRole.ADMIN, status=IdeaStatus.RESEARCH)
+    member = resource(status=IdeaStatus.RESEARCH)
+
+    assert can(principal(), Rule.IDEA_ANSWER_RESEARCH, owner)
+    assert not can(principal(), Rule.IDEA_RESEARCH_OVERRIDE, owner)  # owners never skip it
+    assert can(principal(), Rule.IDEA_RESEARCH_OVERRIDE, admin)
+    assert authorize(principal(), Rule.IDEA_ANSWER_RESEARCH, member).code == "forbidden"
+    closed = resource(owner_id=ME, status=IdeaStatus.CLOSED)
+    assert authorize(principal(), Rule.IDEA_ANSWER_RESEARCH, closed).code == "idea_closed"
+    key = principal(auth="api_key", scopes={"read", "write"})
+    assert can(key, Rule.IDEA_ANSWER_RESEARCH, owner)
+    assert authorize(key, Rule.IDEA_RESEARCH_OVERRIDE, admin).code == "insufficient_scope"

@@ -84,9 +84,9 @@ database by accident.
 
 | Project | Key | Visibility | Notes |
 |---|---|---|---|
-| Customer Innovation | `CUST` | internal | 20 ideas, default rubric |
-| Internal Tools | `TOOLS` | private | 13 ideas, "Shortlisted" renamed "Next up" |
-| Sustainability | `GREEN` | internal | 12 ideas, own rubric (carbon impact counts double), 14-day evaluation window |
+| Customer Innovation | `CUST` | internal | 20 ideas, default rubric and proposal template, no research step |
+| Internal Tools | `TOOLS` | private | 13 ideas, "Shortlisted" renamed "Next up"; research step **before evaluation** (the default checklist); proposal template Summary, Problem, Solution, Effort & rollout, Risks, The ask |
+| Sustainability | `GREEN` | internal | 12 ideas, own rubric (carbon impact counts double), 14-day evaluation window; research step **before the proposal**; the default template plus "Carbon impact" |
 
 Sign in with the dev login as any of them (emails are `<user>@example.com`; alice,
 bob, carol, dave, erin and kenji match Keycloak users below, and alice, bob and carol
@@ -96,16 +96,16 @@ have the external IDs `employee_no` E1001–E1003):
 |---|---|---|
 | `alice` | Alice Anders | **platform admin**; admin of CUST, member of TOOLS and GREEN. Five evaluations due (two overdue, one draft), owns ideas in five statuses |
 | `bob` | Bob Brown | member of CUST and GREEN |
-| `carol` | Carol Chen | member of CUST and TOOLS, viewer of GREEN |
-| `dave` | Dave Davies | admin of TOOLS |
+| `carol` | Carol Chen | member of CUST and TOOLS, viewer of GREEN; owns `TOOLS-11`, in Research with its checklist complete |
+| `dave` | Dave Davies | admin of TOOLS (edits its research checklist and proposal template; may "Move anyway") |
 | `erin` | Erin Evans | viewer of CUST and GREEN (can look, not submit) |
 | `farah` | Farah Haddad | member of CUST and GREEN |
-| `kenji` | Kenji Watanabe | member of all three |
-| `amara` | Amara Okafor | admin of GREEN, member of CUST |
+| `kenji` | Kenji Watanabe | member of all three; owns `TOOLS-3`, whose proposal uses the TOOLS template and ends with the research appendix |
+| `amara` | Amara Okafor | admin of GREEN, member of CUST; owns `GREEN-6`, Shortlisted with its checklist started |
 | `mateo` | Mateo Rodríguez | member of CUST and TOOLS |
 | `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN |
-| `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST |
-| `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS |
+| `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST; owns `TOOLS-12`, in Research with "Departments or teams consulted" still open (the gate refuses Evaluating) |
+| `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS; owns `GREEN-4`, whose proposal has Carbon impact written |
 
 Groups (Admin → Groups), mapped to the Keycloak realm's groups. Manual members
 already hold the granted role directly, so the dev login shows the same access as
@@ -123,8 +123,13 @@ verified email.
 Worth a look: blind evaluation on `CUST-11` (alice still owes her evaluation and sees no
 scores; bob, the owner, sees the aggregate and its high-disagreement flag), the
 disagreements on `CUST-8`, `TOOLS-2` and `GREEN-6`, and ideas that still need an owner
-or more evaluators (`CUST-15`, `GREEN-10`). The content lives in
-`backend/app/seed/content.py`.
+or more evaluators (`CUST-15`, `GREEN-10`). Phase 8: the TOOLS board's Research column
+(`TOOLS-11` complete, its "Similar ideas" finding `CUST-14`; `TOOLS-12` with one required
+item open: drag it to Evaluating as sven to see the gate, as dave to "Move anyway"); every TOOLS idea past Research was
+researched by its owner first, and GREEN ideas pass through Research between the
+shortlist and the proposal; the exports of `TOOLS-3` and `GREEN-4` end with "Research
+and consultation". The content lives in `backend/app/seed/content.py` (Phase 8:
+`backend/app/seed/research.py`).
 
 ## The whole app from the image
 

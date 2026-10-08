@@ -7,6 +7,7 @@ import { RelativeTime } from '@/components/ui/relative-time'
 import { ScoreBadge } from '@/components/ui/score-badge'
 import { StatusDot } from '@/components/ui/status-badge'
 import { HoverTooltip } from '@/components/ui/tooltip'
+import { ResearchProgressBadge } from '@/features/project/idea-meta'
 import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
 import { statusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -42,6 +43,8 @@ export function IdeaRow({ idea, showStatus = false }: { idea: IdeaSummary; showS
           <span className="shrink-0 text-sm text-muted max-sm:hidden">{idea.status_label}</span>
         )}
         <span className="flex shrink-0 items-center gap-3 sm:gap-4">
+          {/* Phase 8: the research checklist, while the idea is in Research or right before it. */}
+          <ResearchProgressBadge research={idea.research} />
           {idea.evaluator_progress.total > 0 && (
             <ProgressTicks
               done={idea.evaluator_progress.submitted}

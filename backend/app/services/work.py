@@ -243,10 +243,12 @@ async def get_my_work(db: AsyncSession, principal: Principal) -> Work:
     groups: list[tuple[IdeaStatus, list[IdeaRow], str | None]] = []
     if owned_counts:
         # Every group's first page in one statement, as the board's columns (P7 perf).
+        # Canonical order across projects (Research after New, only with ideas in it).
+        statuses = [status for status in LIFECYCLE if owned_counts.get(status)]
         pages = await pages_by_status(
-            db, principal, _owned(principal), _RECENT_FIRST, OWNED_GROUP_SIZE
+            db, principal, _owned(principal), _RECENT_FIRST, OWNED_GROUP_SIZE, statuses=statuses
         )
-        groups = [(status, *pages[status]) for status in LIFECYCLE if owned_counts.get(status)]
+        groups = [(status, *pages[status]) for status in statuses]
 
     my_projects = Idea.project_id.in_(
         select(_roles.c.project_id).where(_roles.c.user_id == principal.user_id)

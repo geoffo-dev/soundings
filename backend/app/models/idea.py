@@ -102,6 +102,19 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_using="gin",
             postgresql_ops={"summary": "gin_trgm_ops"},
         ),
+        # "Similar ideas": the nearest titles and summaries by trigram distance (<->).
+        Index(
+            "ix_ideas_title_trgm_gist",
+            "title",
+            postgresql_using="gist",
+            postgresql_ops={"title": "gist_trgm_ops"},
+        ),
+        Index(
+            "ix_ideas_summary_trgm_gist",
+            "summary",
+            postgresql_using="gist",
+            postgresql_ops={"summary": "gist_trgm_ops"},
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))

@@ -14,6 +14,7 @@ const dot = cva('size-2 shrink-0 rounded-full', {
   variants: {
     tone: {
       new: 'bg-status-new',
+      research: 'bg-status-research',
       evaluating: 'bg-status-evaluating',
       shortlisted: 'bg-status-shortlisted',
       proposal: 'bg-status-proposal',

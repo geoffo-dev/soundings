@@ -1,12 +1,14 @@
 import type { ApiKeyScope, AuditAction, AuditEntry, ProjectRole } from '@/api/types'
-import { purposeWords, SECTION_TITLES } from '@/features/ai/ai-copy'
+import { purposeWords, sectionTitle } from '@/features/ai/ai-copy'
 import { SCOPE_COPY } from '@/features/api-keys/key-rules'
 import {
   CLOSED_RESOLUTIONS,
   defaultStatusLabel,
   IDEA_STATUSES,
+  RESEARCH_STEP_LABELS,
   type ClosedResolution,
   type IdeaStatus,
+  type ResearchStep,
 } from '@/lib/status'
 
 export {
@@ -496,6 +498,22 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       ]
     case 'project.rubric_replace':
       return [actor, text(' changed the rubric of '), project]
+    // Phase 8 (contract-phase8 §5): keys and counts only, never titles or hints.
+    case 'project.proposal_template_replace':
+      return [actor, text(' changed the proposal template of '), project]
+    case 'project.research_step_change': {
+      const to = str(details, 'to')
+      return [
+        actor,
+        text(' set the research step of '),
+        project,
+        text(
+          ` to ${to && to in RESEARCH_STEP_LABELS ? RESEARCH_STEP_LABELS[to as ResearchStep] : 'something else'}`,
+        ),
+      ]
+    }
+    case 'project.research_checklist_replace':
+      return [actor, text(' changed the research checklist of '), project]
 
     /* Ideas, assignments, evaluations ------------------------------ */
     case 'idea.delete':
@@ -515,6 +533,21 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
           ` from ${statusLabel(details.from_status, details.from_resolution)} to ${statusLabel(details.to_status, details.to_resolution)}`,
         ),
       ]
+    case 'idea.research_override': {
+      // An admin's "Move anyway": what it did, how much was open, and their one-line reason.
+      const open = num(details, 'open_items')
+      const reason = str(details, 'reason')
+      const to = str(details, 'to_status')
+      return [
+        actor,
+        text(' moved '),
+        idea(),
+        text(' past research without finishing it'),
+        ...(to ? [text(` (to ${statusLabel(to, null)})`)] : []),
+        ...(open !== undefined ? [text(`, ${plural(open, 'required item')} open`)] : []),
+        ...(reason ? [text(': “'), name(reason), text('”')] : []),
+      ]
+    }
     case 'evaluator.add':
       return [actor, text(' asked '), evaluator(), text(' to evaluate '), idea()]
     case 'evaluator.remove':
@@ -658,7 +691,7 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
           : kind === 'research'
             ? 'to research '
             : kind === 'draft_section'
-              ? `to draft ${section && section in SECTION_TITLES ? SECTION_TITLES[section as keyof typeof SECTION_TITLES] : 'a section'} of `
+              ? `to draft ${sectionTitle(section)} of `
               : 'to work on '
       const agentId = str(details, 'agent_id')
       return agentId

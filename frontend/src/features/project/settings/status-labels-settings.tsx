@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { toast } from '@/components/ui/toaster'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { useShortcut } from '@/lib/shortcuts'
-import { CLOSED_RESOLUTIONS, IDEA_STATUSES, type IdeaStatus } from '@/lib/status'
+import { CLOSED_RESOLUTIONS, type IdeaStatus } from '@/lib/status'
 
 import { FormActions, SettingsSection } from './settings-layout'
 import { DEFAULT_LABELS as DEFAULTS, labelChanges, type LabelKey } from './status-labels'
@@ -18,8 +18,9 @@ import { DEFAULT_LABELS as DEFAULTS, labelChanges, type LabelKey } from './statu
 const MAX_LENGTH = 24
 
 /**
- * Rename the five stages and three resolutions (the stages themselves are
- * fixed). An empty field goes back to the default name.
+ * Rename the stages and three resolutions (the stages themselves are fixed; Phase
+ * 8: Research is listed only while the project's research step is on, at its
+ * position). An empty field goes back to the default name.
  */
 export function StatusLabelsSettings({ project, active }: { project: Project; active: boolean }) {
   const update = useUpdateProject(project.slug, { undo: false })
@@ -41,6 +42,7 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
     }
   }
   const shown = (key: LabelKey) => form[key].trim() || DEFAULTS[key]
+  const stages = project.lifecycle
 
   const set = (key: LabelKey, value: string) => {
     setForm((current) => ({ ...current, [key]: value }))
@@ -150,7 +152,7 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-primary">Stages</h3>
           <ul className="divide-y divide-subtle rounded-lg border">
-            {IDEA_STATUSES.map((status) => row(status, status))}
+            {stages.map((status) => row(status, status))}
           </ul>
         </div>
         <div className="flex flex-col gap-2">
@@ -162,7 +164,7 @@ export function StatusLabelsSettings({ project, active }: { project: Project; ac
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-primary">Preview</h3>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-background px-4 py-3">
-            {IDEA_STATUSES.map((status) => (
+            {stages.map((status) => (
               <StatusBadge key={status} variant="plain" status={status} label={shown(status)} />
             ))}
             <span aria-hidden="true" className="text-muted">

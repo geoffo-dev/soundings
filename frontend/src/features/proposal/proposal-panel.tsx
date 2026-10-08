@@ -3,16 +3,20 @@ import { CloudOff, FilePlus2, FileText, Lock } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 import { queryKeys } from '@/api/keys'
+import { useProject } from '@/api/projects'
 import { useCreateProposal, useProposal } from '@/api/proposals'
+import { useProposalTemplate } from '@/api/research'
 import type { CurrentUser, IdeaDetail, ProposalPermissions } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { requestResearchFocus } from '@/features/research/research-focus'
 import { useCommands } from '@/lib/command-registry'
 import { focusWhenRendered } from '@/lib/focus'
 
 import { ProposalEditor } from './proposal-editor'
 import { ProposalSkeleton } from './proposal-skeleton'
-import { PROPOSAL_SECTIONS } from './text'
 
 export interface ProposalPanelProps {
   /** The upper-case key from the URL. */
@@ -21,6 +25,8 @@ export interface ProposalPanelProps {
   me: CurrentUser
   /** The project is archived: everything is read-only. */
   archived: boolean
+  /** Phase 8: shows the idea's Research panel (the Overview tab). */
+  onOpenResearch?: () => void
 }
 
 /**
@@ -28,7 +34,7 @@ export interface ProposalPanelProps {
  * ("Available once shortlisted", or "Start proposal" for the owner and
  * admins), else the editor — or a read-only view for everyone else.
  */
-export function ProposalPanel({ ideaKey, idea, me, archived }: ProposalPanelProps) {
+export function ProposalPanel({ ideaKey, idea, me, archived, onOpenResearch }: ProposalPanelProps) {
   const view = useProposal(ideaKey)
   useRefetchOnStatusChange(ideaKey, idea.status)
 
@@ -54,7 +60,13 @@ export function ProposalPanel({ ideaKey, idea, me, archived }: ProposalPanelProp
   const { proposal, permissions } = view.data
   if (!proposal) {
     return (
-      <NoProposal ideaKey={ideaKey} idea={idea} archived={archived} permissions={permissions} />
+      <NoProposal
+        ideaKey={ideaKey}
+        idea={idea}
+        archived={archived}
+        permissions={permissions}
+        onOpenResearch={onOpenResearch}
+      />
     )
   }
   return (
@@ -85,14 +97,28 @@ function NoProposal({
   idea,
   archived,
   permissions,
+  onOpenResearch,
 }: {
   ideaKey: string
   idea: IdeaDetail
   archived: boolean
   permissions: ProposalPermissions
+  onOpenResearch?: () => void
 }) {
   const create = useCreateProposal(ideaKey)
-  const ready = idea.status === 'shortlisted' || idea.status === 'proposal'
+  const project = useProject(idea.project.slug).data
+  const ready =
+    idea.status === 'shortlisted' ||
+    idea.status === 'proposal' ||
+    (idea.status === 'research' && project?.research_step === 'before_proposal')
+  // Phase 8: starting would be refused for open research items. Admins keep the button
+  // (the 409's dialog offers "Start anyway"); the owner is sent to the research first.
+  const blocked = permissions.start_blocked_by_research
+  const canOverride = project?.permissions.can_manage === true
+  const openResearch = () => {
+    requestResearchFocus(ideaKey)
+    onOpenResearch?.()
+  }
   // The button (or palette entry) is gone once the editor renders: start writing in Summary.
   const start = () =>
     create.mutate(undefined, {
@@ -108,45 +134,63 @@ function NoProposal({
   useCommands({
     id: 'proposal',
     heading: 'Proposal',
-    actions: permissions.can_create
-      ? [
-          {
-            id: 'proposal-start',
-            label: 'Start proposal',
-            icon: <FilePlus2 />,
-            keywords: ['proposal', 'write', 'business case'],
-            onSelect: start,
-          },
-        ]
-      : [],
+    actions:
+      permissions.can_create && (!blocked || canOverride)
+        ? [
+            {
+              id: 'proposal-start',
+              label: 'Start proposal',
+              icon: <FilePlus2 />,
+              keywords: ['proposal', 'write', 'business case'],
+              onSelect: start,
+            },
+          ]
+        : [],
   })
 
   if (permissions.can_create) {
     return (
       <div className="rounded-lg border">
+        {blocked && (
+          <Callout
+            tone="warning"
+            role="status"
+            className="m-4 mb-0"
+            title="Finish the research checklist first"
+          >
+            Starting the proposal moves the idea past research.
+            {canOverride ? ' As an admin you can start it anyway: you’ll be asked to confirm.' : ''}
+          </Callout>
+        )}
         <EmptyState
           headingLevel={2}
           icon={<FileText />}
           title="Write the proposal"
           description={
             <>
-              A short document over a fixed outline, from the summary to the ask. It saves as you
-              type and exports as PDF or Markdown.
-              {idea.status === 'shortlisted' && ' Starting it moves the idea to Proposal.'}
+              A short document over this project’s outline, from the summary to the ask. It saves as
+              you type and exports as PDF or Markdown.
+              {idea.status !== 'proposal' && ' Starting it moves the idea to Proposal.'}
             </>
           }
           action={
-            <Button
-              variant="primary"
-              loading={create.isPending}
-              onClick={start}
-              data-primary-action=""
-            >
-              Start proposal
-            </Button>
+            blocked && !canOverride ? (
+              <Button variant="primary" onClick={openResearch} data-primary-action="">
+                Open research
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                loading={create.isPending}
+                onClick={start}
+                data-primary-action=""
+              >
+                Start proposal
+              </Button>
+            )
           }
         />
-        <TemplatePreview />
+        <TemplatePreview slug={idea.project.slug} />
       </div>
     )
   }
@@ -185,18 +229,27 @@ function NoProposal({
   )
 }
 
-/** The outline the proposal will follow, under "Start proposal". */
-function TemplatePreview() {
+/** The outline the proposal will follow (the project's template), under "Start proposal". */
+function TemplatePreview({ slug }: { slug: string }) {
+  const template = useProposalTemplate(slug)
+  const sections = template.data?.sections
+  if (template.isError) return null
   return (
     <div className="border-t border-subtle px-6 py-5">
       <h3 className="mb-3 text-center text-xs font-medium text-muted">Sections</h3>
       <ol className="mx-auto grid max-w-lg grid-cols-1 gap-x-6 gap-y-1.5 text-sm text-secondary xs:grid-cols-2">
-        {PROPOSAL_SECTIONS.map((section, index) => (
-          <li key={section.key} className="flex gap-2">
-            <span className="w-4 text-right text-muted tabular-nums">{index + 1}.</span>
-            {section.title}
-          </li>
-        ))}
+        {sections
+          ? sections.map((section, index) => (
+              <li key={section.key} className="flex gap-2">
+                <span className="w-4 text-right text-muted tabular-nums">{index + 1}.</span>
+                {section.title}
+              </li>
+            ))
+          : [0, 1, 2, 3].map((index) => (
+              <li key={index} aria-hidden="true">
+                <Skeleton className="h-4 w-28" />
+              </li>
+            ))}
       </ol>
     </div>
   )

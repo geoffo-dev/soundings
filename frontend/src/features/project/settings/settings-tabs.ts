@@ -1,11 +1,19 @@
 /**
  * Tabs of /p/$slug/settings (`?tab=`); General is the default. Light: the route
- * definition imports it. Four tabs (UX review simplification): Status labels are
- * part of General, Branding part of Public form (it only changes how the project
- * faces outward). The old `?tab=statuses` and `?tab=branding` still open the tab
- * that holds them, scrolled to the section.
+ * definition imports it. Status labels are part of General, Branding part of Public
+ * form (it only changes how the project faces outward). The old `?tab=statuses` and
+ * `?tab=branding` still open the tab that holds them, scrolled to the section.
+ * Phase 8 adds Research (the step and its checklist) and Proposal (the template):
+ * six tabs, the most the settings take.
  */
-export const SETTINGS_TABS = ['general', 'members', 'rubric', 'public-form'] as const
+export const SETTINGS_TABS = [
+  'general',
+  'members',
+  'rubric',
+  'research',
+  'proposal-template',
+  'public-form',
+] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 
 /** Tabs only project admins see (the others show non-admins a read-only summary). */

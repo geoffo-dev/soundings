@@ -142,6 +142,13 @@ ROUTE_KEY_ACCESS: Final[dict[str, KeyAccess]] = {
     "get_research_note": _P, "delete_research_note": _P,
     # Phase 7: My work's counts and its full list of evaluations due (like get_my_work)
     "get_my_work_counts": _R, "list_my_evaluations_due": _R,
+    # Phase 8: the template and the research settings are edited in a session only (like
+    # the rubric); reading them, an idea's research, answers and similar ideas follow
+    # their rules (answering needs write; the override flag is session only)
+    "get_proposal_template": _P, "replace_proposal_template": _S,
+    "get_research_settings": _P, "replace_research_settings": _S,
+    "get_idea_research": _P, "answer_research_item": _P, "clear_research_item": _P,
+    "list_similar_ideas": _P,
 }
 # fmt: on
 """Every API operation (``operation_id``) and what a key may do there."""

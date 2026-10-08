@@ -4,6 +4,7 @@ import {
   EyeOff,
   Gauge,
   Link2,
+  ListChecks,
   Lock,
   LockOpen,
   MessageSquarePlus,
@@ -23,6 +24,7 @@ import {
 } from '@/api/ideas'
 import type { CommandAction } from '@/components/ui/command-palette'
 import { toast } from '@/components/ui/toaster'
+import { requestResearchFocus } from '@/features/research/research-focus'
 import { useCommands } from '@/lib/command-registry'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
@@ -47,7 +49,17 @@ export function copyIdeaLink(key: string) {
  * allow is registered.
  */
 export function useIdeaCommands(page: IdeaPageContextValue) {
-  const { idea, ideaKey, me, ownEvaluator, openDialog, openEvaluate, focusComment, setTab } = page
+  const {
+    idea,
+    ideaKey,
+    me,
+    project,
+    ownEvaluator,
+    openDialog,
+    openEvaluate,
+    focusComment,
+    setTab,
+  } = page
   const { permissions } = idea
   const setOwner = useSetIdeaOwner(ideaKey)
   const volunteer = useVolunteerAsOwner(ideaKey)
@@ -122,6 +134,21 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
       icon: <UserMinus />,
       keywords: ['owner', 'release'],
       onSelect: () => setOwner.mutate({ owner: null }),
+    })
+  }
+  // Phase 8: the Research panel (answer for the owner and admins, read for everyone).
+  if (project && project.research_step !== 'off') {
+    actions.push({
+      id: 'research',
+      label: permissions.can_answer_research
+        ? 'Answer the research checklist'
+        : 'Read the research',
+      icon: <ListChecks />,
+      keywords: ['research', 'checklist', 'consulted', 'similar ideas'],
+      onSelect: () => {
+        requestResearchFocus(ideaKey)
+        setTab('overview')
+      },
     })
   }
   if (permissions.can_invite_evaluators) {

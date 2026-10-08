@@ -5,8 +5,15 @@
  */
 import { HttpResponse } from 'msw'
 
-import type { ProposalSectionKey } from '@/api/types'
 import { ID_KIND, newId, type MockIdea, type MockUser } from '@/mocks/db'
+import { changeStatus } from '@/mocks/handlers/ideas'
+import {
+  checkOverrideRule,
+  overrideFields,
+  researchGate,
+  statusChangeGuarded,
+} from '@/mocks/handlers/research'
+import { activeSection, activeSections, SECTION_KEY_PATTERN } from '@/mocks/templates'
 import { ideaKey, projectOf } from '@/mocks/domain'
 import {
   allowOnly,
@@ -34,11 +41,10 @@ import {
   listedThreads,
   MAX_COMMENTS_PER_THREAD,
   MAX_THREADS_PER_PROPOSAL,
-  PROPOSAL_TEMPLATE,
+  activeRow,
   proposalOf,
   proposalRules,
   proposalView,
-  SECTION_KEYS,
   SECTION_MAX_LENGTH,
   sectionOut,
   threadOut,
@@ -46,20 +52,39 @@ import {
   type MockProposalThread,
 } from '@/mocks/proposals'
 
-import { emit, ensureNotArchived, param, uuidParam, viewIdea } from '@/mocks/handlers/common'
+import { ensureNotArchived, param, uuidParam, viewIdea } from '@/mocks/handlers/common'
 
-function sectionKey(ctx: RouteContext): ProposalSectionKey {
-  const key = param(ctx, 'sectionKey')
-  if (!SECTION_KEYS.includes(key as ProposalSectionKey)) {
-    failValidation([
-      {
-        loc: ['path', 'section_key'],
-        msg: `Input should be ${SECTION_KEYS.join(', ')}`,
-        type: 'enum',
-      },
-    ])
+/** A section key in a path or body (Phase 8: the project's own keys; 422 when malformed). */
+export function sectionKeyValue(value: unknown, loc: (string | number)[]): string {
+  if (typeof value !== 'string' || !SECTION_KEY_PATTERN.test(value)) {
+    failValidation([{ loc, msg: 'Not a section key', type: 'string_pattern_mismatch' }])
   }
-  return key as ProposalSectionKey
+  return value
+}
+
+function sectionKey(ctx: RouteContext): string {
+  return sectionKeyValue(param(ctx, 'sectionKey'), ['path', 'section_key'])
+}
+
+/** 422 `unknown_section`: a key the idea's project template doesn't have (or has removed). */
+export function requireActiveSection(
+  ctx: RouteContext,
+  idea: MockIdea,
+  key: string,
+  loc: (string | number)[] = ['body', 'section_key'],
+): void {
+  if (!activeSection(ctx.db, idea.project_id, key)) {
+    failValidation(
+      [
+        {
+          loc,
+          msg: 'This project’s proposal template has no such section',
+          type: 'unknown_section',
+        },
+      ],
+      'unknown_section',
+    )
+  }
 }
 
 /** 409s shared by every proposal write: archived project, held idea (c19). */
@@ -74,10 +99,12 @@ function existingProposal(ctx: RouteContext, idea: MockIdea): MockProposal {
   return proposal
 }
 
-function findThread(ctx: RouteContext, proposal: MockProposal): MockProposalThread {
+function findThread(ctx: RouteContext, proposal: MockProposal, idea: MockIdea): MockProposalThread {
   const id = uuidParam(ctx, 'threadId')
   const thread = ctx.db.proposalThreads.find((t) => t.id === id && t.proposal_id === proposal.id)
   if (!thread || !isListedThread(ctx.db, thread)) notFound('Thread not found.')
+  // Phase 8: a thread of a removed section is hidden.
+  if (!activeSection(ctx.db, idea.project_id, thread.section_key)) notFound('Thread not found.')
   return thread
 }
 
@@ -121,15 +148,33 @@ export const proposalHandlers = [
     return proposalView(ctx.db, idea, ctx.user)
   }),
 
-  route('post', '/ideas/:idea/proposal', (ctx) => {
+  route('post', '/ideas/:idea/proposal', async (ctx) => {
+    // Phase 8: an optional `ProposalStart` body ("Move anyway").
+    const text = await ctx.request.text()
+    let body: Record<string, unknown> = {}
+    if (text.trim()) {
+      try {
+        body = JSON.parse(text) as Record<string, unknown>
+      } catch {
+        failValidation([{ loc: ['body'], msg: 'Body must be JSON.', type: 'json_invalid' }])
+      }
+    }
+    allowOnly(body, ['override_research', 'override_reason'])
+    const override = overrideFields(body)
     const idea = viewIdea(ctx)
     const rules = proposalRules(ctx.db, idea, ctx.user)
     if (!rules.writer) forbidden('forbidden', 'Only the owner and admins can start a proposal.')
+    checkOverrideRule(ctx, idea, override)
     ensureWritable(ctx, idea)
     if (proposalOf(ctx.db, idea)) conflict('proposal_exists', 'This idea already has a proposal.')
     if (!rules.c7) {
       conflict('proposal_not_available', 'Proposals open once the idea is shortlisted.')
     }
+    const moves = idea.status !== 'proposal'
+    const overridden =
+      moves &&
+      statusChangeGuarded(ctx, idea, 'proposal') &&
+      researchGate(ctx, idea, 'create_proposal', 'proposal', override)
     const now = new Date().toISOString()
     const proposal: MockProposal = {
       id: newId(ctx.db, ID_KIND.phase4),
@@ -139,7 +184,7 @@ export const proposalHandlers = [
       updated_at: now,
     }
     ctx.db.proposals.push(proposal)
-    for (const template of PROPOSAL_TEMPLATE) {
+    for (const template of activeSections(ctx.db, idea.project_id)) {
       ctx.db.proposalSections.push({
         proposal_id: proposal.id,
         key: template.key,
@@ -149,16 +194,8 @@ export const proposalHandlers = [
         updated_by_id: null,
       })
     }
-    // A Shortlisted idea moves to Proposal, exactly like change_idea_status (§3.1).
-    if (idea.status === 'shortlisted') {
-      emit(ctx.db, idea, 'status_changed', ctx.user.id, {
-        from_status: idea.status,
-        from_resolution: idea.resolution,
-        to_status: 'proposal',
-        to_resolution: null,
-      })
-      idea.status = 'proposal'
-    }
+    // A Shortlisted (or Research) idea moves to Proposal through change_status (§3.5).
+    if (moves) changeStatus(ctx, idea, 'proposal', null, overridden)
     return created(proposalView(ctx.db, idea, ctx.user))
   }),
 
@@ -205,10 +242,9 @@ export const proposalHandlers = [
         'The proposal is read-only while the idea isn’t shortlisted.',
       )
     }
-    const section = ctx.db.proposalSections.find(
-      (s) => s.proposal_id === proposal.id && s.key === key,
-    )
-    if (!section) notFound()
+    // Phase 8: a key the template doesn't have (or a removed section's) is 404.
+    const section = activeRow(ctx.db, proposal, key)
+    if (!section) notFound('This section isn’t in the proposal template.')
     // Identical text: nothing changes, even from an older version (a retried save).
     if (section.body_md === text) return sectionOut(ctx.db, section)
     if (section.version !== base) {
@@ -265,20 +301,12 @@ export const proposalHandlers = [
   route('post', '/ideas/:idea/proposal/threads', async (ctx) => {
     const body = await readJson(ctx.request)
     allowOnly(body, ['section_key', 'body_md'])
-    const key = body.section_key
-    if (typeof key !== 'string' || !SECTION_KEYS.includes(key as ProposalSectionKey)) {
-      failValidation([
-        {
-          loc: ['body', 'section_key'],
-          msg: `Input should be ${SECTION_KEYS.join(', ')}`,
-          type: 'enum',
-        },
-      ])
-    }
+    const key = sectionKeyValue(body.section_key, ['body', 'section_key'])
     const text = commentBody(body)
     const idea = viewIdea(ctx)
     const proposal = existingProposal(ctx, idea)
     if (!proposalRules(ctx.db, idea, ctx.user).commenter) forbidden()
+    requireActiveSection(ctx, idea, key)
     ensureWritable(ctx, idea)
     const threads = ctx.db.proposalThreads.filter((t) => t.proposal_id === proposal.id)
     if (threads.length >= MAX_THREADS_PER_PROPOSAL) {
@@ -288,7 +316,7 @@ export const proposalHandlers = [
     const thread: MockProposalThread = {
       id: newId(ctx.db, ID_KIND.phase4),
       proposal_id: proposal.id,
-      section_key: key as ProposalSectionKey,
+      section_key: key,
       created_at: now,
       resolved_at: null,
       resolved_by_id: null,
@@ -311,7 +339,7 @@ export const proposalHandlers = [
     const text = commentBody(body)
     const idea = viewIdea(ctx)
     const proposal = existingProposal(ctx, idea)
-    const thread = findThread(ctx, proposal)
+    const thread = findThread(ctx, proposal, idea)
     if (!proposalRules(ctx.db, idea, ctx.user).commenter) forbidden()
     ensureWritable(ctx, idea)
     if (commentsOf(ctx.db, thread).length >= MAX_COMMENTS_PER_THREAD) {
@@ -333,7 +361,7 @@ export const proposalHandlers = [
 
   route('put', '/ideas/:idea/proposal/threads/:threadId/resolved', (ctx) => {
     const idea = viewIdea(ctx)
-    const thread = findThread(ctx, existingProposal(ctx, idea))
+    const thread = findThread(ctx, existingProposal(ctx, idea), idea)
     if (!proposalRules(ctx.db, idea, ctx.user).commenter) forbidden()
     ensureWritable(ctx, idea)
     if (!thread.resolved_at) {
@@ -345,7 +373,7 @@ export const proposalHandlers = [
 
   route('delete', '/ideas/:idea/proposal/threads/:threadId/resolved', (ctx) => {
     const idea = viewIdea(ctx)
-    const thread = findThread(ctx, existingProposal(ctx, idea))
+    const thread = findThread(ctx, existingProposal(ctx, idea), idea)
     if (!proposalRules(ctx.db, idea, ctx.user).commenter) forbidden()
     ensureWritable(ctx, idea)
     thread.resolved_at = null

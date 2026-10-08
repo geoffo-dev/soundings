@@ -31,6 +31,7 @@ import {
 import { SM_UP, useMediaQuery } from '@/lib/media'
 import type { CommandAction } from '@/components/ui/command-palette'
 import { useCommands } from '@/lib/command-registry'
+import { readDrafts, writeDraft } from '@/lib/drafts'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
 import {
@@ -40,6 +41,8 @@ import {
 } from './editor-context'
 import { EditorBar, useExportRunner } from './editor-bar'
 import { Outline } from './outline'
+import { RemovedSections } from './removed-sections'
+import { ResearchAppendix } from './research-appendix'
 import { ProposalSaveStore } from './save-store'
 import { SectionRow } from './section'
 import { CommentsSheet } from './threads'
@@ -66,15 +69,32 @@ export interface ProposalEditorProps {
  */
 export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: ProposalEditorProps) {
   const queryClient = useQueryClient()
-  const [store] = useState(
-    () =>
-      new ProposalSaveStore(
-        proposal.sections,
-        (key, bodyMd, baseVersion, options) =>
-          saveProposalSection(queryClient, ideaKey, key, bodyMd, baseVersion, options),
-        (section) => storeProposalSection(queryClient, ideaKey, section),
-      ),
-  )
+  const keptPrefix = `proposal-removed:${ideaKey.toUpperCase()}:`
+  const [store] = useState(() => {
+    const created = new ProposalSaveStore(
+      proposal.sections,
+      (key, bodyMd, baseVersion, options) =>
+        saveProposalSection(queryClient, ideaKey, key, bodyMd, baseVersion, options),
+      (section) => storeProposalSection(queryClient, ideaKey, section),
+      {
+        // Phase 8: text of a section removed from the template meanwhile, kept locally.
+        keep: (key, title, text) =>
+          writeDraft(me.id, `${keptPrefix}${key}`, JSON.stringify({ title, text })),
+        forget: (key) => writeDraft(me.id, `${keptPrefix}${key}`, null),
+      },
+    )
+    for (const [name, value] of readDrafts(me.id, keptPrefix)) {
+      try {
+        const kept = JSON.parse(value) as { title?: unknown; text?: unknown }
+        if (typeof kept.title === 'string' && typeof kept.text === 'string') {
+          created.restoreKept(name.slice(keptPrefix.length), kept.title, kept.text)
+        }
+      } catch {
+        // Not ours: leave it.
+      }
+    }
+    return created
+  })
   // Newer text from a refetch (someone else saved) where nothing is unsaved here.
   useEffect(() => store.receive(proposal.sections), [store, proposal.sections])
   // Leaving the tab sends what is waiting instead of dropping it.
@@ -200,7 +220,7 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
       const key = body?.closest('[data-section-key]')?.getAttribute('data-section-key')
       if (!key) return
       event.preventDefault()
-      toggleSectionMode(key as ProposalSectionKey)
+      toggleSectionMode(key)
     },
     { enabled: permissions.can_edit, preventDefault: false },
   )
@@ -268,7 +288,10 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
   }
 
   const readOnlyBecauseOfStatus =
-    !permissions.can_edit && idea.status !== 'shortlisted' && idea.status !== 'proposal'
+    !permissions.can_edit &&
+    idea.status !== 'shortlisted' &&
+    idea.status !== 'proposal' &&
+    idea.status !== 'research'
 
   return (
     <ProposalEditorProvider value={context}>
@@ -291,6 +314,8 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
             {proposal.sections.map((section, index) => (
               <SectionRow key={section.key} section={section} index={index} />
             ))}
+            <RemovedSections store={store} activeKeys={keys} />
+            <ResearchAppendix ideaKey={ideaKey} />
           </div>
         </div>
       </div>
@@ -375,12 +400,12 @@ function useScrollSpy(
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
         const key = visible?.target.getAttribute('data-section-key')
-        if (key) setCurrent(key as ProposalSectionKey)
+        if (key) setCurrent(key)
       },
       { root, rootMargin: '-15% 0px -70% 0px' },
     )
     for (const key of joined.split(',')) {
-      const element = document.getElementById(sectionDomId(key as ProposalSectionKey))
+      const element = document.getElementById(sectionDomId(key))
       if (element) observer.observe(element)
     }
     return () => observer.disconnect()

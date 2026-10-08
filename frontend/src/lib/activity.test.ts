@@ -132,3 +132,25 @@ describe('AI assistance (Phase 6)', () => {
     expect(describeActivity(note(true))).toBe('wrote a research note, since deleted')
   })
 })
+
+describe('describeActivity (Phase 8)', () => {
+  const moved = (overridden: boolean): ActivityItem => ({
+    id: 'e-moved',
+    idea_id: 'i-1',
+    type: 'status_changed',
+    actor: alice,
+    created_at: '2026-10-07T10:00:00Z',
+    from_status: 'research',
+    from_resolution: null,
+    to_status: 'evaluating',
+    to_resolution: null,
+    research_overridden: overridden,
+  })
+
+  it('names Research like any status, and says when an admin moved past it anyway', () => {
+    expect(describeActivity(moved(false))).toBe('moved it from Research to Evaluating')
+    expect(describeActivity(moved(true))).toBe(
+      'moved it from Research to Evaluating without finishing research',
+    )
+  })
+})

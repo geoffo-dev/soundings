@@ -19,12 +19,14 @@ import {
 } from '@/api/cache'
 import { api, unwrap } from '@/api/client'
 import { normaliseFilters, queryKeys } from '@/api/keys'
+import { openResearchGate, overrideBody } from '@/api/research'
 import type {
   CurrentUser,
   IdeaCreate,
   IdeaDetail,
   IdeaFilters,
   IdeaStatus,
+  ResearchOverride,
   IdeaSummary,
   IdeaUpdate,
   Resolution,
@@ -202,6 +204,7 @@ export function summaryFields(idea: IdeaDetail): Partial<IdeaSummary> {
     has_voted: idea.has_voted,
     last_activity_at: idea.last_activity_at,
     permissions: { can_change_status: idea.permissions.can_change_status },
+    research: idea.research,
   }
 }
 
@@ -297,10 +300,12 @@ export function useDeleteIdea(idea: string) {
 /* Status (board drag, status menu)                                    */
 /* ------------------------------------------------------------------ */
 
-export interface StatusTarget {
+export interface StatusTarget extends ResearchOverride {
   status: IdeaStatus
   /** Required for `closed`, ignored otherwise. */
   resolution?: Resolution | null
+  /** If the research gate refuses the move: where focus goes after its dialog (the card). */
+  gateFocus?: () => HTMLElement | null
 }
 
 /**
@@ -323,10 +328,12 @@ export function useChangeIdeaStatus(idea?: string, { undo = true }: UndoOption =
       unwrap(
         api.POST('/api/v1/ideas/{idea}/status', {
           ...path(target(vars)),
-          body:
-            vars.status === 'closed'
+          body: {
+            ...(vars.status === 'closed'
               ? { status: vars.status, resolution: vars.resolution ?? null }
-              : { status: vars.status },
+              : { status: vars.status }),
+            ...overrideBody(vars),
+          },
         }),
       ),
     onMutate: async (vars) => {
@@ -343,7 +350,23 @@ export function useChangeIdeaStatus(idea?: string, { undo = true }: UndoOption =
       patchIdea(queryClient, ref, () => ({ ...to, last_activity_at: new Date().toISOString() }))
       return { rollback, previous }
     },
-    onError: (_error, _vars, context) => context?.rollback(),
+    onError: (error, vars, context) => {
+      context?.rollback()
+      // Phase 8: required research items are open: the dialog lists them (and, for
+      // admins, "Move anyway" sends the same move with the override).
+      openResearchGate(error, {
+        ideaKey: target(vars),
+        action: 'move',
+        targetLabel: statusLabelFor(
+          queryClient,
+          context?.previous?.project.slug,
+          vars.status,
+          vars.resolution ?? null,
+        ),
+        retry: (override) => mutation.mutate({ ...vars, ...override }),
+        returnFocus: vars.gateFocus,
+      })
+    },
     onSuccess: (data, vars, context) => {
       const ref = target(vars)
       settleIdea(queryClient, ref, data)
@@ -451,14 +474,19 @@ export function useVolunteerAsOwner(idea: string, { undo = true }: UndoOption = 
 /** Invite evaluators (optimistic rows in the sidebar). The first invite sets the default due date. */
 export function useAddEvaluators(idea: string) {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ users, dueAt }: { users: UserRef[]; dueAt?: string | null }) =>
+  const mutation = useMutation({
+    mutationFn: ({
+      users,
+      dueAt,
+      ...override
+    }: { users: UserRef[]; dueAt?: string | null } & ResearchOverride) =>
       unwrap(
         api.POST('/api/v1/ideas/{idea}/evaluators', {
           ...path(idea),
           body: {
             user_ids: users.map((user) => user.id),
             ...(dueAt !== undefined && { due_at: dueAt }),
+            ...overrideBody(override),
           },
         }),
       ),
@@ -485,10 +513,19 @@ export function useAddEvaluators(idea: string) {
       })
       return { rollback }
     },
-    onError: (_error, _vars, context) => context?.rollback(),
+    onError: (error, vars, context) => {
+      context?.rollback()
+      // Phase 8: the first evaluator starts evaluation, which the research step guards.
+      openResearchGate(error, {
+        ideaKey: idea,
+        action: 'invite',
+        retry: (override) => mutation.mutate({ ...vars, ...override }),
+      })
+    },
     onSuccess: (data) => settleIdea(queryClient, idea, data),
     meta: { errorTitle: 'Couldn’t invite evaluators' },
   })
+  return mutation
 }
 
 /**

@@ -27,6 +27,7 @@ const PAGE_SIZE = 50
 
 const COLUMN_HINTS: Record<BoardColumnData['status'], string> = {
   new: 'New ideas land here.',
+  research: 'Ideas being checked: done elsewhere already? The right teams consulted?',
   evaluating: 'Ideas being scored by evaluators.',
   shortlisted: 'The most promising ideas.',
   proposal: 'Ideas with a proposal in the works.',

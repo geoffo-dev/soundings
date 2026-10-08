@@ -81,6 +81,8 @@ async def test_member_submits_an_idea(api: AsUser, team: Team, db_session: Async
         "can_comment": True,
         "can_vote": True,
         "can_delete": False,
+        "can_answer_research": False,  # Phase 8: the project's research step is off
+        "invite_blocked_by_research": False,
     }
     assert await events(db_session, idea["id"]) == [("idea_created", {})]
 
@@ -103,6 +105,8 @@ async def test_admin_permissions_on_a_new_idea(api: AsUser, team: Team) -> None:
         "can_comment": True,
         "can_vote": True,
         "can_delete": True,
+        "can_answer_research": False,  # Phase 8: the project's research step is off
+        "invite_blocked_by_research": False,
     }
 
 

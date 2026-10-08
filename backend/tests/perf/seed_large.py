@@ -18,6 +18,9 @@ rubrics and dev logins), bulk SQL adds:
   submitted: about 120,000 events in all), watchers;
 * about 20,000 notifications (invited, comment, status changed; most older ones read)
   and about 60,000 audit entries;
+* Phase 8: in the demo projects with a research step (Internal Tools, Sustainability), a
+  third of the ideas at the step's place in Research and about half of every checklist
+  answered;
 
 then recomputes every cached aggregate through ``app.services.scoring`` and runs
 ``ANALYZE``. Every count is deterministic (``hashtext``), so runs compare.
@@ -50,6 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.db import create_engine, create_sessionmaker
 from app.domain.principal import Principal
+from app.models.enums import ResearchStep
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.projects import ProjectCreate
@@ -205,6 +209,25 @@ INSERT INTO perf_new_ideas
 SELECT id, project_id, number, status, owner_id, submitted_by_id, created_at,
        abs(hashtext(id::text))
 FROM ideas WHERE project_id = :project AND number >= :start
+"""
+
+# Phase 8: in a project with the research step, a third of the ideas at the step's place
+# (New before evaluation, Shortlisted before the proposal) are in Research, and every
+# idea has about half of its checklist answered, so cards carry progress (contract-phase8
+# section 3.6: one grouped statement per page).
+RESEARCH = """
+UPDATE ideas SET status = 'research'
+FROM perf_new_ideas i
+WHERE ideas.id = i.id AND i.project_id = :project AND i.h % 3 = 0
+  AND i.status = CASE WHEN :step = 'before_evaluation' THEN 'new' ELSE 'shortlisted' END;
+INSERT INTO research_answers (idea_id, item_id, answer, answered_by_id, answered_at,
+                              updated_by_id, updated_at)
+SELECT i.id, r.id, 'Asked the team that runs it about ' || lower(r.title) || ': no objections.',
+       coalesce(i.owner_id, i.submitted_by_id), i.created_at + interval '1 day',
+       coalesce(i.owner_id, i.submitted_by_id), i.created_at + interval '1 day'
+FROM perf_new_ideas i
+JOIN research_checklist_items r ON r.project_id = i.project_id AND r.archived_at IS NULL
+WHERE i.project_id = :project AND (i.h + r.position) % 2 = 0
 """
 
 IDEA_TAGS = """
@@ -482,6 +505,8 @@ async def _fill_project(
     await _execute(db, VOTES, base)
     for statement in (NOTIFICATIONS, AUDIT):
         await db.execute(text(statement), base)
+    if project.research_step is not ResearchStep.OFF:
+        await _execute(db, RESEARCH, {"project": project.id, "step": project.research_step.value})
 
 
 async def seed_large(db: AsyncSession, size: Size | None = None) -> dict[str, int]:
