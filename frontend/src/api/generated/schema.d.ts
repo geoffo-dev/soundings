@@ -939,7 +939,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Research this
+         * Ask AI to research
          * @description ai.research (the owner and admins; c5: the idea isn't closed). Queues a run: the agent reads the idea through MCP and writes one cited research note into the activity feed (add_research_note). 201 with the new run, or 200 with the active one. 409 ai_unavailable (c10: AI is off, or the agent isn't enabled, doesn't serve this project with a member role and a usable key, or lacks the purpose), project_archived, awaiting_moderation; 429 too_many_attempts (20 runs an hour per person, with Retry-After). Audited as ai_run.request.
          */
         post: operations["request_ai_research"];
@@ -1513,6 +1513,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/research/assignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Assign the research
+         * @description idea.assign_researcher (the idea's owner, project admins and platform admins; c5): the complete new assignment, the researcher (any active person, a member of the project or not, the owner included; null = nobody, the owner does it) and the research due date (null = none). Idempotent. A new researcher watches the idea and, when someone else assigned them, gets "Asked to research" (by email per their preference). A researcher with no role in a private project sees only this idea (role matrix column R). Emits researcher_changed / research_due_date_changed; a researcher change is audited as idea.researcher_change. Returns the whole panel. Last write wins. Session only: an API key gets 403 insufficient_scope (an assignment can open the idea to someone and would outlive the key). 422 researcher_not_eligible (c23: a service account, the break-glass account, a deactivated or unknown user). 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         */
+        put: operations["set_research_assignment"];
+        post?: never;
+        /**
+         * Remove the researcher or hand the research back
+         * @description idea.assign_researcher (the owner and admins: remove the researcher) or idea.release_researcher (the researcher: "Hand back"). Nobody is assigned afterwards: the owner does the research; the research due date is kept. Idempotent (204 when nobody is assigned). A guest researcher's access to the idea ends with the request. Emits researcher_changed (handed_back when the researcher did it); audited as idea.researcher_change. An API key with write may remove or hand back. (Closing the idea or turning the step off clears the assignment by itself.) 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         */
+        delete: operations["remove_researcher"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/research/items/{item_id}": {
         parameters: {
             query?: never;
@@ -1523,13 +1547,13 @@ export interface paths {
         get?: never;
         /**
          * Answer a research item
-         * @description idea.answer_research (the owner and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.answer_research (the owner, the researcher and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
          */
         put: operations["answer_research_item"];
         post?: never;
         /**
          * Clear a research item's answer
-         * @description idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.answer_research (the owner, the researcher and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
          */
         delete: operations["clear_research_item"];
         options?: never;
@@ -1913,6 +1937,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/research-to-do": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Research I do
+         * @description Phase 8b: every idea whose research you do (as its researcher, or as its owner while nobody is assigned) and that still needs it (the step on, the idea in Research or before it with a required item open; for an owner: in Research or the status right before it, or with a research due date; only ideas you may answer), in My work's order (overdue first, then soonest due, no due date last; then by idea id). 'Show all' in My work: cursor=<work.research_to_do_next_cursor>. Includes ideas you see only as a guest researcher; never held ideas or archived projects.
+         */
+        get: operations["list_my_research_to_do"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/work": {
         parameters: {
             query?: never;
@@ -1922,7 +1966,7 @@ export interface paths {
         };
         /**
          * My work
-         * @description Evaluations due, ideas I own by status, recent ideas, sidebar counts.
+         * @description Evaluations due, research to do (Phase 8b), ideas I own by status (the first 10 of each group), recent ideas, sidebar counts.
          */
         get: operations["get_my_work"];
         put?: never;
@@ -1942,7 +1986,7 @@ export interface paths {
         };
         /**
          * My work counts (sidebar badges)
-         * @description The sidebar's badges alone: evaluations you owe (and how many are overdue) and the ideas you own that are not closed. The same numbers as GET /me/work's counts.
+         * @description The sidebar's badges alone: evaluations you owe (and how many are overdue), the research you do that is still to do (and how many are overdue; Phase 8b) and the ideas you own that are not closed. The same numbers as GET /me/work's counts.
          */
         get: operations["get_my_work_counts"];
         put?: never;
@@ -2550,7 +2594,7 @@ export interface paths {
         };
         /**
          * Search users
-         * @description Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role. An AI agent's service account finds only people who share a project with it (inside its key's projects).
+         * @description Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role; Phase 8b: with project and include_non_members=true (the researcher picker), every active person is returned, members with their project_role and everyone else with null ("not in this project"). An AI agent's service account finds only people who share a project with it (inside its key's projects).
          */
         get: operations["search_users"];
         put?: never;
@@ -2580,7 +2624,7 @@ export interface components {
          */
         ActivityPage: {
             /** Items */
-            items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"])[];
+            items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"] | components["schemas"]["ResearcherChangedActivity"] | components["schemas"]["ResearchDueDateChangedActivity"])[];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -3224,7 +3268,7 @@ export interface components {
         };
         /**
          * AiResearchNoteActivity
-         * @description Phase 6: a research note an AI agent wrote for a "Research this" run (actor: the
+         * @description Phase 6: a research note an AI agent wrote for an "Ask AI to research" run (actor: the
          *     agent's service account; the SPA's ``describeActivity`` says "wrote a research note",
          *     or "deleted a research note" once ``note.deleted``). Stored as an ``activity_events``
          *     row of type :data:`AI_RESEARCH_NOTE` whose payload is ``{run_id, agent_id, body_md,
@@ -3715,7 +3759,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -4354,7 +4398,7 @@ export interface components {
          * @description What an outbox email is (``outbound_email.type``).
          * @enum {string}
          */
-        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "digest" | "test" | "submission_received" | "submission_status_changed";
+        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "digest" | "test" | "submission_received" | "submission_status_changed";
         /**
          * EmailVerified
          * @description The confirmation page after the person clicked "Confirm" (the page posts the
@@ -5164,6 +5208,13 @@ export interface components {
             project: components["schemas"]["ProjectRef"];
             /** @description Phase 8: the research checklist at a glance ("2/3" on cards), only for an idea in Research or in the status right before it (New when Research comes before evaluation, Shortlisted when it comes before the proposal) while the project's research step is on; null otherwise (step off, past Research, closed). Holds no score data. */
             research: components["schemas"]["ResearchProgress"] | null;
+            /**
+             * Research Due At
+             * @description Phase 8b: the research due date ("Research: <name> · due <date>" in the sidebar; the instance time zone), or null; null while the step is off.
+             */
+            research_due_at: string | null;
+            /** @description Phase 8b: the person asked to do the idea's research (cards in the Research column show their avatar); null when nobody is assigned (the owner does it) or the project's research step is off. */
+            researcher: components["schemas"]["UserRef"] | null;
             /** @description Set if and only if status is closed. */
             resolution: components["schemas"]["Resolution"] | null;
             /** @description Null when there are no included submitted evaluations, or when hidden. */
@@ -5271,12 +5322,13 @@ export interface components {
          * @description What the current user may do with this idea (the API enforces the same rules).
          *
          *     In an archived project every flag is false (idea writes answer 409
-         *     project_archived).
+         *     project_archived), except the view flag ``can_view_project`` (Phase 8b), which says
+         *     what the caller may read, not do.
          */
         IdeaPermissions: {
             /**
              * Can Answer Research
-             * @description Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner and admins; false while the project's step is off).
+             * @description Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner, the researcher (Phase 8b) and admins; false while the project's step is off).
              * @default false
              */
             can_answer_research: boolean;
@@ -5285,6 +5337,12 @@ export interface components {
              * @description idea.assign_owner: pick any eligible owner.
              */
             can_assign_owner: boolean;
+            /**
+             * Can Assign Researcher
+             * @description Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the research step is off or the idea is closed, and through an API key: assigning is session only).
+             * @default false
+             */
+            can_assign_researcher: boolean;
             /**
              * Can Change Status
              * @description idea.change_status: show the board drag handle and status menu.
@@ -5316,6 +5374,12 @@ export interface components {
              */
             can_evaluate: boolean;
             /**
+             * Can Hand Back Research
+             * @description Phase 8b: idea.release_researcher: you are the researcher: offer "Hand back".
+             * @default false
+             */
+            can_hand_back_research: boolean;
+            /**
              * Can Invite Evaluators
              * @description evaluator.manage while evaluation is open (c6): invite evaluators. Also idea.set_due_date, which has the same conditions: edit the due date.
              */
@@ -5330,6 +5394,12 @@ export interface components {
              * @description evaluator.manage without c6: remove evaluators, open or closed. Offer it only on rows of others who have not submitted (403 cannot_remove_self, 409 evaluator_has_submitted).
              */
             can_remove_evaluators: boolean;
+            /**
+             * Can View Project
+             * @description Phase 8b: project.view. False only for a guest researcher (role matrix column R): show the project's name as text (no link), and hide the evaluation area (evaluators, progress, due date), the Evaluations and Proposal tabs, the AI menu and anything else that reads the project (board, members, rubric, tags).
+             * @default true
+             */
+            can_view_project: boolean;
             /**
              * Can Volunteer
              * @description idea.volunteer_owner: "I'll own this".
@@ -5382,6 +5452,8 @@ export interface components {
          *     off, no items, nothing blocking (answers kept from before stay hidden).
          */
         IdeaResearch: {
+            /** @description Phase 8b: who does the research and by when (nobody and no date while off). */
+            assignment: components["schemas"]["ResearchAssignment"];
             /**
              * Blocking
              * @description Moving this idea past Research would be refused now: required items open, the step on, and the idea neither past Research nor closed (false for a closed idea). Say "N required items left before <gate status label>".
@@ -5389,6 +5461,11 @@ export interface components {
             blocking: boolean;
             /** @description The status right after Research (evaluating or proposal); null while off. */
             gate_status: components["schemas"]["IdeaStatus"] | null;
+            /**
+             * Gate Status Label
+             * @description Phase 8b: the project's label for gate_status (null while off), so the panel needs no project read (a guest researcher can't read the project).
+             */
+            gate_status_label: string | null;
             /**
              * Items
              * @description The active checklist, in order.
@@ -5520,6 +5597,8 @@ export interface components {
             project: components["schemas"]["ProjectRef"];
             /** @description Phase 8: the research checklist at a glance ("2/3" on cards), only for an idea in Research or in the status right before it (New when Research comes before evaluation, Shortlisted when it comes before the proposal) while the project's research step is on; null otherwise (step off, past Research, closed). Holds no score data. */
             research: components["schemas"]["ResearchProgress"] | null;
+            /** @description Phase 8b: the person asked to do the idea's research (cards in the Research column show their avatar); null when nobody is assigned (the owner does it) or the project's research step is off. */
+            researcher: components["schemas"]["UserRef"] | null;
             /** @description Set if and only if status is closed. */
             resolution: components["schemas"]["Resolution"] | null;
             /** @description Null when there are no included submitted evaluations, or when hidden. */
@@ -5970,7 +6049,7 @@ export interface components {
          */
         NotificationPage: {
             /** Items */
-            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"])[];
+            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"] | components["schemas"]["ResearcherAssignedNotification"] | components["schemas"]["ResearchReminderNotification"])[];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -6019,6 +6098,8 @@ export interface components {
             evaluator_invited?: components["schemas"]["NotificationMode"] | null;
             mention?: components["schemas"]["NotificationMode"] | null;
             owner_assigned?: components["schemas"]["NotificationMode"] | null;
+            research_reminder?: components["schemas"]["NotificationMode"] | null;
+            researcher_assigned?: components["schemas"]["NotificationMode"] | null;
             status_changed?: components["schemas"]["NotificationMode"] | null;
         };
         /**
@@ -6048,7 +6129,7 @@ export interface components {
          *     email preference; the in-app inbox always gets every notification.
          * @enum {string}
          */
-        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention";
+        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder";
         /**
          * OutboxEmail
          * @description One email in the outbox. Its content isn't stored (rendered when sent).
@@ -7208,6 +7289,12 @@ export interface components {
              */
             id: string;
             /**
+             * Position
+             * @description Phase 8b: where it was in the checklist when it was removed (0-based): Restore puts it back there (at the end when the list is shorter now).
+             * @default 0
+             */
+            position: number;
+            /**
              * Removed At
              * Format: date-time
              */
@@ -7228,6 +7315,12 @@ export interface components {
             hint: string;
             /** Key */
             key: string;
+            /**
+             * Position
+             * @description Phase 8b: where it was in the template when it was removed (0-based): Restore puts it back there (at the end when the template is shorter now).
+             * @default 0
+             */
+            position: number;
             /**
              * Proposal Count
              * @description Proposals with text in it ("Text in 3 proposals"). May be 0: a section is also kept for a margin thread, a suggestion or an AI run ("Kept for its comments and suggestions").
@@ -7283,6 +7376,58 @@ export interface components {
             answer: string;
         };
         /**
+         * ResearchAssignment
+         * @description Phase 8b: who does the idea's research, and by when. While nobody is assigned the
+         *     idea's owner does it: show "Research: <owner> (owner)".
+         */
+        ResearchAssignment: {
+            /**
+             * Assigned At
+             * @description When the current researcher was asked; null while nobody is.
+             */
+            assigned_at: string | null;
+            /**
+             * Due At
+             * @description The research due date (show it in the instance time zone, like evaluation due dates), or null. Kept when the researcher changes or hands it back.
+             */
+            due_at: string | null;
+            /**
+             * Overdue
+             * @description due_at has passed while the research is still to do (awaits_research and a required item open).
+             * @default false
+             */
+            overdue: boolean;
+            /** @description The person asked to do the research; null = nobody is assigned (the owner does it). Never a service account or the break-glass account. */
+            researcher: components["schemas"]["UserRef"] | null;
+            /**
+             * Researcher In Project
+             * @description The researcher has a role in the idea's project. False for a researcher without one (in a private project a guest who sees only this idea, never scores, the evaluation or the proposal) and while nobody is assigned. Show "not in this project" next to their name, so the team sees who outside it reads the idea.
+             * @default false
+             */
+            researcher_in_project: boolean;
+        };
+        /**
+         * ResearchAssignmentUpdate
+         * @description ``PUT /ideas/{idea}/research/assignment``: the complete new assignment (both fields
+         *     required; null clears). Idempotent: the same values change nothing (no event, no
+         *     notification, no audit entry). Last write wins (two people changing it at once: the
+         *     later request's state stands, like the proposal template). **Session only** (review
+         *     M3): an API key gets 403 ``insufficient_scope``, because an assignment can open an
+         *     idea to someone and would outlive a revoked key.
+         */
+        ResearchAssignmentUpdate: {
+            /**
+             * Due At
+             * @description The research due date (at most a year ago and five years ahead), or null for none.
+             */
+            due_at: string | null;
+            /**
+             * Researcher Id
+             * @description Who does the research: any active person (a member of the project or not), or null for nobody (the owner does it). Naming the owner assigns them explicitly (the research then stays theirs if the idea changes owner). A service account, the break-glass account, a deactivated or unknown user: 422 researcher_not_eligible.
+             */
+            researcher_id: string | null;
+        };
+        /**
          * ResearchChecklistItem
          * @description An active checklist item, in order.
          */
@@ -7309,6 +7454,39 @@ export interface components {
             required: boolean;
             /** Title */
             title: string;
+        };
+        /**
+         * ResearchDueDateChangedActivity
+         * @description Phase 8b: the research due date changed (``research_due_date_changed``, payload
+         *     ``{from_due_at, to_due_at}``). No notification: reminders follow the current date.
+         */
+        ResearchDueDateChangedActivity: {
+            /** @description Who did it; null if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** From Due At */
+            from_due_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Idea Id
+             * Format: uuid
+             */
+            idea_id: string;
+            /** To Due At */
+            to_due_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "research_due_date_changed";
         };
         /**
          * ResearchIncompleteProblem
@@ -7446,9 +7624,21 @@ export interface components {
         ResearchPermissions: {
             /**
              * Can Answer
-             * @description idea.answer_research: answer, edit and clear items (owner and admins).
+             * @description idea.answer_research: answer, edit and clear items (the owner, the researcher (Phase 8b) and admins).
              */
             can_answer: boolean;
+            /**
+             * Can Assign
+             * @description Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the step is off, the idea is closed or the project archived, and through an API key: assigning is session only, review M3).
+             * @default false
+             */
+            can_assign: boolean;
+            /**
+             * Can Hand Back
+             * @description Phase 8b: idea.release_researcher: you are the researcher: offer "Hand back" (DELETE /ideas/{idea}/research/assignment).
+             * @default false
+             */
+            can_hand_back: boolean;
             /**
              * Can Override
              * @description idea.research_override: offer "Move anyway" (project and platform admins).
@@ -7475,6 +7665,54 @@ export interface components {
              * @description Items in the checklist.
              */
             total: number;
+        };
+        /**
+         * ResearchReminderNotification
+         * @description Phase 8b: research you do is due soon or today and a required checklist item is
+         *     still open. Show the date ("Research due Fri 9 Oct"), never a countdown. Link:
+         *     ``/ideas/{key}?research=1``.
+         */
+        ResearchReminderNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * As Owner
+             * @description You do the research as the idea's owner (nobody is assigned).
+             */
+            as_owner: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Days Before
+             * @description Which reminder this was (days before the due date, 0 = on the due date); not a countdown: phrase the reminder with due_at.
+             */
+            days_before: number;
+            /**
+             * Due At
+             * Format: date-time
+             * @description The research due date the reminder was sent for.
+             */
+            due_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "research_reminder";
         };
         /**
          * ResearchSettings
@@ -7530,6 +7768,86 @@ export interface components {
          * @enum {string}
          */
         ResearchStep: "off" | "before_evaluation" | "before_proposal";
+        /**
+         * ResearcherAssignedNotification
+         * @description Phase 8b, "Asked to research": someone else made you the idea's researcher. Link:
+         *     ``/ideas/{key}?research=1`` (opens the idea at its Research panel). At most one per
+         *     idea, person and local day (review S6: ``dedupe_key`` =
+         *     ``researcher_assigned:<idea id>:<local date>``), so assigning and removing someone
+         *     again and again doesn't flood their inbox or mailbox.
+         */
+        ResearcherAssignedNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Due At
+             * @description The research due date set by the request that assigned you (the idea page and the email show the current one).
+             */
+            due_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "researcher_assigned";
+        };
+        /**
+         * ResearcherChangedActivity
+         * @description Phase 8b: the idea's researcher changed (assigned, changed, removed, or handed back
+         *     by the researcher: ``handed_back``). Stored as ``researcher_changed`` with payload
+         *     ``{from_researcher_id, to_researcher_id, handed_back}``. "Asked to research" notifies
+         *     the new researcher from it. Deactivating a researcher clears the assignment without
+         *     an event.
+         */
+        ResearcherChangedActivity: {
+            /** @description Who did it; null if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** @description Null: nobody was assigned (the owner). */
+            from_researcher: components["schemas"]["UserRef"] | null;
+            /**
+             * Handed Back
+             * @description The researcher removed themselves ("Hand back").
+             */
+            handed_back: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Idea Id
+             * Format: uuid
+             */
+            idea_id: string;
+            /** @description Null: nobody now (the owner does it). */
+            to_researcher: components["schemas"]["UserRef"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "researcher_changed";
+        };
         /**
          * Resolution
          * @description Why a closed idea was closed. Set if and only if the status is ``closed``.
@@ -7856,6 +8174,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * From Label
+             * @description Phase 8b: the project's label for from_status / from_resolution when the feed is read (not stored), so the sentence needs no project read (a guest researcher can't read the project); null: use the default label.
+             */
+            from_label: string | null;
             from_resolution: components["schemas"]["Resolution"] | null;
             from_status: components["schemas"]["IdeaStatus"];
             /**
@@ -7874,6 +8197,11 @@ export interface components {
              * @default false
              */
             research_overridden: boolean;
+            /**
+             * To Label
+             * @description Phase 8b: the project's label for to_status / to_resolution, like from_label.
+             */
+            to_label: string | null;
             to_resolution: components["schemas"]["Resolution"] | null;
             to_status: components["schemas"]["IdeaStatus"];
             /**
@@ -8168,7 +8496,7 @@ export interface components {
          *     currently sent in the digest (the digest's link), or every type.
          * @enum {string}
          */
-        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "digest" | "all";
+        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "digest" | "all";
         /**
          * UserGroup
          * @description A group the user belongs to, with provenance (both flags can be true).
@@ -8349,6 +8677,16 @@ export interface components {
              * @description The 20 most recently active ideas in projects you are a member of, one entry per idea.
              */
             recent: components["schemas"]["WorkRecentIdea"][];
+            /**
+             * Research To Do
+             * @description Phase 8b: "Research to do": overdue first, then soonest due; no due date last. The first 50 (counts.research_to_do has the total).
+             */
+            research_to_do: components["schemas"]["WorkResearch"][];
+            /**
+             * Research To Do Next Cursor
+             * @description More research to do: GET /me/research-to-do?cursor=<this>; null when research_to_do holds it all.
+             */
+            research_to_do_next_cursor: string | null;
         };
         /**
          * WorkCounts
@@ -8367,6 +8705,18 @@ export interface components {
              * @description Ideas you own that are not closed.
              */
             owned_open: number;
+            /**
+             * Research Overdue
+             * @description Phase 8b: those of them past their research due date.
+             * @default 0
+             */
+            research_overdue: number;
+            /**
+             * Research To Do
+             * @description Phase 8b: all ideas whose research you do and that still need it (Work.research_to_do lists the first 50).
+             * @default 0
+             */
+            research_to_do: number;
         };
         /**
          * WorkEvaluation
@@ -8409,7 +8759,7 @@ export interface components {
             count: number;
             /**
              * Ideas
-             * @description Most recently active first; the first 50 (count has the total).
+             * @description Most recently active first; the first 10 (Phase 8b; was 50). count has the total; page on with next_cursor.
              */
             ideas: components["schemas"]["IdeaSummary"][];
             /**
@@ -8431,7 +8781,55 @@ export interface components {
         WorkRecentIdea: {
             idea: components["schemas"]["IdeaSummary"];
             /** Latest Activity */
-            latest_activity: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"]) | null;
+            latest_activity: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"] | components["schemas"]["ResearcherChangedActivity"] | components["schemas"]["ResearchDueDateChangedActivity"]) | null;
+        };
+        /**
+         * WorkResearch
+         * @description Phase 8b: an idea whose research you do (as its researcher, or as its owner while
+         *     nobody is assigned) and that still needs it: the project's step is on, the idea is in
+         *     Research or before it (``research_to_do``) and a required checklist item is open. Only
+         *     for someone who may answer it (``idea.answer_research``: the researcher while the
+         *     assignment is live; the owner while their role counts, or a platform admin).
+         */
+        WorkResearch: {
+            /**
+             * As Owner
+             * @description You do it as the idea's owner (nobody is assigned), not as its researcher.
+             */
+            as_owner: boolean;
+            /**
+             * Can View Project
+             * @description project.view on the idea's project: link the project's name. False for a guest researcher (role matrix column R): show it as text, never a link (project routes are 404 for them).
+             * @default true
+             */
+            can_view_project: boolean;
+            /**
+             * Due At
+             * @description The research due date, or null.
+             */
+            due_at: string | null;
+            /** @description The idea and its project. A guest researcher can't open the project: show its name as text (can_view_project). */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Overdue
+             * @description due_at is in the past.
+             */
+            overdue: boolean;
+            owner: components["schemas"]["UserRef"] | null;
+            /** @description The checklist at a glance: "2 open" is progress.required_open. */
+            progress: components["schemas"]["ResearchProgress"];
+        };
+        /**
+         * WorkResearchPage
+         * @description Research you do, in My work's order (overdue first, then soonest due, no due date
+         *     last; then by idea id, like evaluations due). "Show all" pages on from
+         *     ``Work.research_to_do_next_cursor``.
+         */
+        WorkResearchPage: {
+            /** Items */
+            items: components["schemas"]["WorkResearch"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
     };
     responses: never;
@@ -14642,6 +15040,162 @@ export interface operations {
             };
         };
     };
+    set_research_assignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchAssignmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdeaResearch"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_researcher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     answer_research_item: {
         parameters: {
             query?: never;
@@ -16143,6 +16697,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IdeaPage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_my_research_to_do: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkResearchPage"];
                 };
             };
             /** @description Bad request (e.g. invalid_cursor) */
@@ -19042,6 +19657,8 @@ export interface operations {
                 q?: string | null;
                 /** @description Project slug: members only. */
                 project?: string | null;
+                /** @description Phase 8b, with project: everyone active, not only members (project_role null for non-members). Needs project.view on the project, like project. Without project it changes nothing (the directory lists everyone). */
+                include_non_members?: boolean;
                 /** @description Opaque cursor from next_cursor. */
                 cursor?: string | null;
                 /** @description Page size. */

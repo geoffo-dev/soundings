@@ -192,9 +192,9 @@ scopes and projects.
 
 - Find work: list_projects, then search_ideas (by project, status or text; \
 awaiting_my_evaluation=true lists the ideas you have been asked to evaluate).
-- Read: get_idea (by key such as CUST-12, or id; with the research checklist and its \
-answers when the project has a research step), get_rubric, get_proposal (with the \
-project's proposal sections and their keys).
+- Read: get_idea (by key such as CUST-12, or id; with the research checklist, its \
+answers, the researcher and the research due date when the project has a research step), \
+get_rubric, get_proposal (with the project's proposal sections and their keys).
 - Evaluate: get_rubric for the criteria, get_idea for the idea, then submit_evaluation \
 with a 1-5 score and a short comment for every criterion, a recommendation (go, maybe \
 or no) and an overall comment. AI agents give their rationale in each criterion's \
@@ -446,6 +446,16 @@ class McpResearch(McpOutput):
     step: ResearchStep = Field(description="before_evaluation or before_proposal.")
     items: list[McpResearchItem] = Field(description="The checklist, in order.")
     required_open: int = Field(description="Required items without an answer.")
+    researcher: McpUser | None = Field(
+        default=None,
+        description=(
+            "Phase 8b: the person asked to do the research (display_name is untrusted); null "
+            "= nobody is assigned: the idea's owner does it."
+        ),
+    )
+    due_at: datetime | None = Field(
+        default=None, description="Phase 8b: the research due date, or null."
+    )
 
 
 class McpIdeaPermissions(McpOutput):
@@ -493,6 +503,15 @@ class McpIdeaDetail(McpIdeaSummary):
         default=None,
         description="Phase 8: the research checklist and answers; null while the project's "
         "research step is off.",
+    )
+    research_guest: bool = Field(
+        default=False,
+        description=(
+            "Phase 8b: you see this idea only as its researcher (you have no role in its "
+            "private project): the evaluation fields are empty (evaluators, my_evaluation, "
+            "aggregate, evaluations, evaluation_count 0, score_hidden true), has_proposal is "
+            "false, and the project's other ideas, rubric and proposal are not found."
+        ),
     )
     permissions: McpIdeaPermissions
 
@@ -759,7 +778,7 @@ class ProposeProposalSectionOutput(McpOutput):
 
 # --- add_research_note (Phase 6) ------------------------------------------------------------
 class AddResearchNoteInput(McpInput):
-    """A research note for a "Research this" run: only an AI agent's service account,
+    """A research note for an "Ask AI to research" run: only an AI agent's service account,
     while its research run on the idea is running (else ``forbidden`` for people,
     ``ai_run_not_active`` for an agent without one). One note per run: calling again
     replaces the run's note."""
@@ -973,7 +992,7 @@ ADD_RESEARCH_NOTE: Final = McpTool(
     name="add_research_note",
     title="Write a research note",
     description=(
-        'AI agents only, during a research run on the idea ("Research this"): write a '
+        'AI agents only, during a research run on the idea ("Ask AI to research"): write a '
         "cited research note into the idea's activity feed, shown with an AI label. One "
         "note per run: calling again replaces it. Not for scores or recommendations."
     ),

@@ -42,6 +42,18 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     moderation: held ideas are in no list, board, search, count, My work or
     notification, and only project and platform admins can open one held for
     moderation (c12; contract-phase4 section 3.6).
+
+    Phase 8b (product owner, 2026-10-08; contract-phase8b): ``researcher_id`` is the
+    person asked to do the idea's research (null = nobody: the idea's owner does it, as
+    in Phase 8), ``research_assigned_at`` when they were asked (the reminders' "already
+    told" check; set whenever ``researcher_id`` is, ``ck_ideas_researcher_assigned_at``;
+    meaningless while ``researcher_id`` is null, cleared with it) and
+    ``research_due_at`` the optional research due date (kept when the researcher
+    changes or hands it back: it then applies to the owner). The researcher is any
+    active person, a member of the project or not; deactivation, closing the idea and
+    turning the project's research step off clear the assignment (review S8).
+    A researcher without a role in a private project sees this one idea as its guest
+    (role matrix column R).
     """
 
     __tablename__ = "ideas"
@@ -54,6 +66,13 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("vote_count >= 0", name="vote_count_non_negative"),
         CheckConstraint(
             "aggregate_score IS NULL OR aggregate_score BETWEEN 1 AND 5", name="aggregate_range"
+        ),
+        # Phase 8b: a researcher always has the time they were asked (the reminders'
+        # "already told" check). One way only: ON DELETE SET NULL clears researcher_id
+        # alone (users are deactivated, never deleted, in the app).
+        CheckConstraint(
+            "researcher_id IS NULL OR research_assigned_at IS NOT NULL",
+            name="researcher_assigned_at",
         ),
         # Keyset pages in the default order (-updated), overall and per board column /
         # status filter; the status index also serves the board's per-status counts.
@@ -84,6 +103,20 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
                 "evaluation_due_at IS NOT NULL AND evaluation_closed_at IS NULL"
                 " AND status <> 'closed'"
             ),
+        ),
+        # Phase 8b: a researcher's ideas by status (My work's "Research to do", the
+        # sidebar count, guest access in lists, deactivation clearing the assignments).
+        Index(
+            "ix_ideas_researcher_id_status",
+            "researcher_id",
+            "status",
+            postgresql_where=text("researcher_id IS NOT NULL"),
+        ),
+        # Phase 8b: the research reminder scan (open ideas with a research due date).
+        Index(
+            "ix_ideas_research_due_at_open",
+            "research_due_at",
+            postgresql_where=text("research_due_at IS NOT NULL AND status <> 'closed'"),
         ),
         # Phase 4: the moderation queue (oldest first) and the cleanup of submissions
         # nobody confirmed (contract-phase4 section 3.6).
@@ -155,6 +188,12 @@ class Idea(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     # Phase 4: a public submission not visible yet (null = visible; HoldReason).
     held_for: Mapped[HoldReason | None] = mapped_column(str_enum(HoldReason, "held_for"))
+    # Phase 8b: who does the research (null = the owner), since when, and by when.
+    researcher_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    research_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    research_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class IdeaTag(Base):

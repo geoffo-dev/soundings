@@ -65,6 +65,10 @@ class AuditAction(StrEnum):
     # Ideas, assignments and evaluations
     IDEA_DELETE = "idea.delete"
     IDEA_OWNER_CHANGE = "idea.owner_change"
+    # Phase 8b: the researcher assigned, changed, removed or handed back, or cleared by
+    # deactivation, closing the idea or turning the step off (details.reason:
+    # assigned, removed, handed_back, deactivated, closed, step_off; contract-phase8b §13)
+    IDEA_RESEARCHER_CHANGE = "idea.researcher_change"
     IDEA_STATUS_CHANGE = "idea.status_change"
     IDEA_RESEARCH_OVERRIDE = "idea.research_override"  # Phase 8: "Move anyway"
     EVALUATOR_ADD = "evaluator.add"

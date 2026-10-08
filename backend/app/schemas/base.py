@@ -20,10 +20,12 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Final, Literal
 
 from pydantic import (
     AfterValidator,
+    AwareDatetime,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -35,10 +37,13 @@ from pydantic import (
 __all__ = [
     "BIDI_CONTROLS",
     "BLANK_LOOKING",
+    "DUE_DATE_MAX_AHEAD",
+    "DUE_DATE_MAX_BACK",
     "IDEA_KEY_PATTERN",
     "INVISIBLE_CHARACTERS",
     "PROJECT_KEY_PATTERN",
     "SLUG_PATTERN",
+    "DueAt",
     "NoNul",
     "RequestModel",
     "ResponseModel",
@@ -246,3 +251,25 @@ TagName = Annotated[
     NoNul,
 ]
 """A tag name: 1-32 characters, no commas or line breaks. Case-insensitive per project."""
+
+
+# --- Due dates (evaluations; Phase 8b: research) -------------------------------------
+DUE_DATE_MAX_BACK: Final = timedelta(days=366)
+DUE_DATE_MAX_AHEAD: Final = timedelta(days=5 * 366)
+
+
+def _near_now(value: datetime) -> datetime:
+    try:
+        utc = value.astimezone(UTC)
+    except OverflowError:  # e.g. 0001-01-01T00:00+05:00
+        raise ValueError("the due date is out of range") from None
+    now = datetime.now(UTC)
+    if not now - DUE_DATE_MAX_BACK <= utc <= now + DUE_DATE_MAX_AHEAD:
+        raise ValueError("the due date must be at most a year ago and five years ahead")
+    return value
+
+
+DueAt = Annotated[AwareDatetime, AfterValidator(_near_now)]
+"""A request's due date: with an offset, at most a year ago and five years ahead (the
+evaluation due date; Phase 8b the research due date). ``app.schemas.ideas`` re-exports
+it."""

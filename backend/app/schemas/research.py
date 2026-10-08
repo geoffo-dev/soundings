@@ -24,6 +24,19 @@ else in the company and that the right departments or teams have been consulted.
 
 Answers are plain text people wrote: no score data, so everyone who can view the idea
 (pending evaluators included) reads them.
+
+**Phase 8b (product owner, 2026-10-08; contract-phase8b):** the research can be
+**assigned to a person**, the idea's researcher (:class:`ResearchAssignment`; nobody
+assigned = the idea's owner does it), with an optional research due date and reminders.
+Anyone with an active person account may be the researcher, a member of the project or
+not; a researcher without a role in a private project sees that one idea as its **guest**
+(role matrix column R: the overview, the feed and comments, this checklist, Similar
+ideas; never score data, the evaluation, the proposal or the AI panel). The owner,
+project admins and platform admins assign, change or remove the researcher and set the
+due date (``idea.assign_researcher``); the researcher may hand it back
+(``idea.release_researcher``) and answers the checklist (``idea.answer_research`` widened
+by the researcher overlay). :func:`awaits_research` and :func:`research_to_do` decide My
+work's "Research to do" and the research reminders.
 """
 
 from __future__ import annotations
@@ -37,7 +50,14 @@ from pydantic import Field, field_validator, model_validator
 
 from app.models.enums import IdeaStatus, ResearchStep
 from app.models.research import RESEARCH_ANSWER_MAX_LENGTH
-from app.schemas.base import RequestModel, ResponseModel, SingleLine, VisibleLine, VisibleText
+from app.schemas.base import (
+    DueAt,
+    RequestModel,
+    ResponseModel,
+    SingleLine,
+    VisibleLine,
+    VisibleText,
+)
 from app.schemas.common import Problem
 from app.schemas.users import UserRef
 
@@ -58,6 +78,8 @@ __all__ = [
     "RemovedResearchItem",
     "ResearchAnswer",
     "ResearchAnswerIn",
+    "ResearchAssignment",
+    "ResearchAssignmentUpdate",
     "ResearchChecklistItem",
     "ResearchIncompleteProblem",
     "ResearchItemIn",
@@ -68,11 +90,13 @@ __all__ = [
     "ResearchSettings",
     "ResearchSettingsUpdate",
     "ResearchStep",
+    "awaits_research",
     "crosses_gate",
     "gate_status",
     "gated_statuses",
     "lifecycle",
     "public_status",
+    "research_to_do",
     "shows_research_progress",
     "starts_evaluation",
     "status_before_research",
@@ -206,6 +230,47 @@ def public_status(step: ResearchStep, status: IdeaStatus) -> IdeaStatus:
     return status_before_research(step) or IdeaStatus.NEW
 
 
+def awaits_research(step: ResearchStep, status: IdeaStatus) -> bool:
+    """Phase 8b: the idea's research can still be done: the project's step is on and the
+    idea is open and not past Research (in Research or a status before it: New before
+    evaluation; New, Evaluating or Shortlisted before the proposal). A research
+    assignment is **live** (role matrix column R and the researcher overlay) while the
+    step is on, the idea isn't closed and the project isn't archived; this narrower test
+    decides only what is still to do (My work, reminders, ``overdue``)."""
+    return (
+        step is not ResearchStep.OFF
+        and status is not IdeaStatus.CLOSED
+        and status not in gated_statuses(step)
+    )
+
+
+def research_to_do(
+    step: ResearchStep,
+    status: IdeaStatus,
+    *,
+    required_open: int,
+    assigned: bool,
+    has_due_date: bool,
+) -> bool:
+    """Phase 8b: My work's "Research to do" lists the idea for the person doing its
+    research, and research reminders go to them, when it :func:`awaits_research` with a
+    required item open, and
+
+    * ``assigned`` (they are its researcher): in any status that awaits research;
+    * else (they own it and nobody is assigned): while it is in Research or the status
+      right before it (:func:`shows_research_progress`), or whenever a research due date
+      is set (so an owner's whole pipeline before a "Before proposal" step isn't listed,
+      but a date someone set always is).
+
+    The project must not be archived and the idea not held, and the person must be able
+    to answer it (``idea.answer_research``: the researcher while the assignment is live;
+    the owner while their role counts, or a platform admin; review S3): the callers'
+    filters."""
+    if required_open <= 0 or not awaits_research(step, status):
+        return False
+    return assigned or has_due_date or shows_research_progress(step, status)
+
+
 # --- Shared pieces -------------------------------------------------------------------
 class ResearchProgress(ResponseModel):
     """An idea's checklist at a glance ("2/3" on cards): active items only."""
@@ -269,6 +334,14 @@ class RemovedResearchItem(ResponseModel):
     title: str
     hint: str
     required: bool
+    position: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Phase 8b: where it was in the checklist when it was removed (0-based): Restore "
+            "puts it back there (at the end when the list is shorter now)."
+        ),
+    )
     removed_at: datetime
     answer_count: int = Field(ge=1, description="Ideas whose answer to it is kept.")
 
@@ -412,10 +485,92 @@ class IdeaResearchItem(ResponseModel):
 
 class ResearchPermissions(ResponseModel):
     can_answer: bool = Field(
-        description="idea.answer_research: answer, edit and clear items (owner and admins)."
+        description=(
+            "idea.answer_research: answer, edit and clear items (the owner, the researcher "
+            "(Phase 8b) and admins)."
+        )
     )
     can_override: bool = Field(
         description='idea.research_override: offer "Move anyway" (project and platform admins).'
+    )
+    can_assign: bool = Field(
+        default=False,
+        description=(
+            "Phase 8b: idea.assign_researcher: assign, change or remove the researcher and "
+            "set the research due date (the owner, project admins and platform admins; "
+            "false while the step is off, the idea is closed or the project archived, and "
+            "through an API key: assigning is session only, review M3)."
+        ),
+    )
+    can_hand_back: bool = Field(
+        default=False,
+        description=(
+            'Phase 8b: idea.release_researcher: you are the researcher: offer "Hand back" '
+            "(DELETE /ideas/{idea}/research/assignment)."
+        ),
+    )
+
+
+class ResearchAssignment(ResponseModel):
+    """Phase 8b: who does the idea's research, and by when. While nobody is assigned the
+    idea's owner does it: show "Research: <owner> (owner)"."""
+
+    researcher: UserRef | None = Field(
+        default=None,
+        description=(
+            "The person asked to do the research; null = nobody is assigned (the owner does "
+            "it). Never a service account or the break-glass account."
+        ),
+    )
+    researcher_in_project: bool = Field(
+        default=False,
+        description=(
+            "The researcher has a role in the idea's project. False for a researcher without "
+            "one (in a private project a guest who sees only this idea, never scores, the "
+            'evaluation or the proposal) and while nobody is assigned. Show "not in this '
+            'project" next to their name, so the team sees who outside it reads the idea.'
+        ),
+    )
+    assigned_at: datetime | None = Field(
+        default=None, description="When the current researcher was asked; null while nobody is."
+    )
+    due_at: datetime | None = Field(
+        default=None,
+        description=(
+            "The research due date (show it in the instance time zone, like evaluation due "
+            "dates), or null. Kept when the researcher changes or hands it back."
+        ),
+    )
+    overdue: bool = Field(
+        default=False,
+        description=(
+            "due_at has passed while the research is still to do (awaits_research and a "
+            "required item open)."
+        ),
+    )
+
+
+class ResearchAssignmentUpdate(RequestModel):
+    """``PUT /ideas/{idea}/research/assignment``: the complete new assignment (both fields
+    required; null clears). Idempotent: the same values change nothing (no event, no
+    notification, no audit entry). Last write wins (two people changing it at once: the
+    later request's state stands, like the proposal template). **Session only** (review
+    M3): an API key gets 403 ``insufficient_scope``, because an assignment can open an
+    idea to someone and would outlive a revoked key."""
+
+    researcher_id: UUID | None = Field(
+        description=(
+            "Who does the research: any active person (a member of the project or not), or "
+            "null for nobody (the owner does it). Naming the owner assigns them explicitly "
+            "(the research then stays theirs if the idea changes owner). A "
+            "service account, the break-glass account, a deactivated or unknown user: 422 "
+            "researcher_not_eligible."
+        )
+    )
+    due_at: DueAt | None = Field(
+        description=(
+            "The research due date (at most a year ago and five years ahead), or null for none."
+        )
     )
 
 
@@ -435,6 +590,17 @@ class IdeaResearch(ResponseModel):
             "step on, and the idea neither past Research nor closed (false for a closed "
             'idea). Say "N required items left before <gate status label>".'
         )
+    )
+    gate_status_label: str | None = Field(
+        default=None,
+        description=(
+            "Phase 8b: the project's label for gate_status (null while off), so the panel "
+            "needs no project read (a guest researcher can't read the project)."
+        ),
+    )
+    assignment: ResearchAssignment = Field(
+        default_factory=ResearchAssignment,
+        description="Phase 8b: who does the research and by when (nobody and no date while off).",
     )
     permissions: ResearchPermissions
 

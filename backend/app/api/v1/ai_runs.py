@@ -1,4 +1,4 @@
-"""AI runs on an idea: "Ask AI to evaluate", "Research this", "Draft section", their
+"""AI runs on an idea: "Ask AI to evaluate", "Ask AI to research", "Draft section", their
 progress (live over SSE, or by polling), cancel; including an AI evaluation in the
 aggregate; deleting a research note (SPEC section 9; contract-phase6 sections 2 and 3;
 ``ai.delete_note``: the owner and admins, the lead's decision on review item C4).
@@ -173,7 +173,7 @@ async def request_ai_evaluation(
     "/ai-runs/research",
     operation_id="request_ai_research",
     status_code=status.HTTP_201_CREATED,
-    summary="Research this",
+    summary="Ask AI to research",
     description=(
         "ai.research (the owner and admins; c5: the idea isn't closed). Queues a run: the "
         "agent reads the idea through MCP and writes one cited research note into the "

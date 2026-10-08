@@ -36,6 +36,8 @@
                   "idea_created": "#/components/schemas/IdeaCreatedActivity",
                   "idea_edited": "#/components/schemas/IdeaEditedActivity",
                   "owner_changed": "#/components/schemas/OwnerChangedActivity",
+                  "research_due_date_changed": "#/components/schemas/ResearchDueDateChangedActivity",
+                  "researcher_changed": "#/components/schemas/ResearcherChangedActivity",
                   "status_changed": "#/components/schemas/StatusChangedActivity"
                 },
                 "propertyName": "type"
@@ -76,6 +78,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/AiResearchNoteActivity"
+                },
+                {
+                  "$ref": "#/components/schemas/ResearcherChangedActivity"
+                },
+                {
+                  "$ref": "#/components/schemas/ResearchDueDateChangedActivity"
                 }
               ]
             },
@@ -1394,7 +1402,7 @@
         "type": "object"
       },
       "AiResearchNoteActivity": {
-        "description": "Phase 6: a research note an AI agent wrote for a \"Research this\" run (actor: the\nagent's service account; the SPA's ``describeActivity`` says \"wrote a research note\",\nor \"deleted a research note\" once ``note.deleted``). Stored as an ``activity_events``\nrow of type :data:`AI_RESEARCH_NOTE` whose payload is ``{run_id, agent_id, body_md,\nsources: [{title, url}]}`` (a deleted note keeps ``run_id`` and ``agent_id`` and gets\n``deleted: true``, ``body_md: \"\"``, ``sources: []``). Never holds score data\n(contract-phase6 sections 3.8 and 5).",
+        "description": "Phase 6: a research note an AI agent wrote for an \"Ask AI to research\" run (actor: the\nagent's service account; the SPA's ``describeActivity`` says \"wrote a research note\",\nor \"deleted a research note\" once ``note.deleted``). Stored as an ``activity_events``\nrow of type :data:`AI_RESEARCH_NOTE` whose payload is ``{run_id, agent_id, body_md,\nsources: [{title, url}]}`` (a deleted note keeps ``run_id`` and ``agent_id`` and gets\n``deleted: true``, ``body_md: \"\"``, ``sources: []``). Never holds score data\n(contract-phase6 sections 3.8 and 5).",
         "properties": {
           "actor": {
             "anyOf": [
@@ -2339,6 +2347,7 @@
           "project.research_checklist_replace",
           "idea.delete",
           "idea.owner_change",
+          "idea.researcher_change",
           "idea.status_change",
           "idea.research_override",
           "evaluator.add",
@@ -3741,6 +3750,8 @@
           "status_changed",
           "comment",
           "mention",
+          "researcher_assigned",
+          "research_reminder",
           "digest",
           "test",
           "submission_received",
@@ -5267,6 +5278,30 @@
             ],
             "description": "Phase 8: the research checklist at a glance (\"2/3\" on cards), only for an idea in Research or in the status right before it (New when Research comes before evaluation, Shortlisted when it comes before the proposal) while the project's research step is on; null otherwise (step off, past Research, closed). Holds no score data."
           },
+          "research_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 8b: the research due date (\"Research: <name> · due <date>\" in the sidebar; the instance time zone), or null; null while the step is off.",
+            "title": "Research Due At"
+          },
+          "researcher": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 8b: the person asked to do the idea's research (cards in the Research column show their avatar); null when nobody is assigned (the owner does it) or the project's research step is off."
+          },
           "resolution": {
             "anyOf": [
               {
@@ -5365,6 +5400,7 @@
           "created_at",
           "last_activity_at",
           "research",
+          "researcher",
           "permissions",
           "description_md",
           "submitted_by",
@@ -5372,6 +5408,7 @@
           "evaluation_due_at",
           "evaluation_closed_at",
           "evaluation_open",
+          "research_due_at",
           "aggregate",
           "watching",
           "held_for",
@@ -5518,17 +5555,23 @@
         "type": "object"
       },
       "IdeaPermissions": {
-        "description": "What the current user may do with this idea (the API enforces the same rules).\n\nIn an archived project every flag is false (idea writes answer 409\nproject_archived).",
+        "description": "What the current user may do with this idea (the API enforces the same rules).\n\nIn an archived project every flag is false (idea writes answer 409\nproject_archived), except the view flag ``can_view_project`` (Phase 8b), which says\nwhat the caller may read, not do.",
         "properties": {
           "can_answer_research": {
             "default": false,
-            "description": "Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner and admins; false while the project's step is off).",
+            "description": "Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner, the researcher (Phase 8b) and admins; false while the project's step is off).",
             "title": "Can Answer Research",
             "type": "boolean"
           },
           "can_assign_owner": {
             "description": "idea.assign_owner: pick any eligible owner.",
             "title": "Can Assign Owner",
+            "type": "boolean"
+          },
+          "can_assign_researcher": {
+            "default": false,
+            "description": "Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the research step is off or the idea is closed, and through an API key: assigning is session only).",
+            "title": "Can Assign Researcher",
             "type": "boolean"
           },
           "can_change_status": {
@@ -5561,6 +5604,12 @@
             "title": "Can Evaluate",
             "type": "boolean"
           },
+          "can_hand_back_research": {
+            "default": false,
+            "description": "Phase 8b: idea.release_researcher: you are the researcher: offer \"Hand back\".",
+            "title": "Can Hand Back Research",
+            "type": "boolean"
+          },
           "can_invite_evaluators": {
             "description": "evaluator.manage while evaluation is open (c6): invite evaluators. Also idea.set_due_date, which has the same conditions: edit the due date.",
             "title": "Can Invite Evaluators",
@@ -5574,6 +5623,12 @@
           "can_remove_evaluators": {
             "description": "evaluator.manage without c6: remove evaluators, open or closed. Offer it only on rows of others who have not submitted (403 cannot_remove_self, 409 evaluator_has_submitted).",
             "title": "Can Remove Evaluators",
+            "type": "boolean"
+          },
+          "can_view_project": {
+            "default": true,
+            "description": "Phase 8b: project.view. False only for a guest researcher (role matrix column R): show the project's name as text (no link), and hide the evaluation area (evaluators, progress, due date), the Evaluations and Proposal tabs, the AI menu and anything else that reads the project (board, members, rubric, tags).",
+            "title": "Can View Project",
             "type": "boolean"
           },
           "can_volunteer": {
@@ -5607,7 +5662,10 @@
           "can_vote",
           "can_delete",
           "can_answer_research",
-          "invite_blocked_by_research"
+          "invite_blocked_by_research",
+          "can_assign_researcher",
+          "can_hand_back_research",
+          "can_view_project"
         ],
         "title": "IdeaPermissions",
         "type": "object"
@@ -5672,6 +5730,10 @@
       "IdeaResearch": {
         "description": "The Research panel of the idea page. While the project's step is off: ``step``\noff, no items, nothing blocking (answers kept from before stay hidden).",
         "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/ResearchAssignment",
+            "description": "Phase 8b: who does the research and by when (nobody and no date while off)."
+          },
           "blocking": {
             "description": "Moving this idea past Research would be refused now: required items open, the step on, and the idea neither past Research nor closed (false for a closed idea). Say \"N required items left before <gate status label>\".",
             "title": "Blocking",
@@ -5687,6 +5749,18 @@
               }
             ],
             "description": "The status right after Research (evaluating or proposal); null while off."
+          },
+          "gate_status_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 8b: the project's label for gate_status (null while off), so the panel needs no project read (a guest researcher can't read the project).",
+            "title": "Gate Status Label"
           },
           "items": {
             "description": "The active checklist, in order.",
@@ -5712,6 +5786,8 @@
           "items",
           "progress",
           "blocking",
+          "gate_status_label",
+          "assignment",
           "permissions"
         ],
         "title": "IdeaResearch",
@@ -5940,6 +6016,17 @@
             ],
             "description": "Phase 8: the research checklist at a glance (\"2/3\" on cards), only for an idea in Research or in the status right before it (New when Research comes before evaluation, Shortlisted when it comes before the proposal) while the project's research step is on; null otherwise (step off, past Research, closed). Holds no score data."
           },
+          "researcher": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 8b: the person asked to do the idea's research (cards in the Research column show their avatar); null when nobody is assigned (the owner does it) or the project's research step is off."
+          },
           "resolution": {
             "anyOf": [
               {
@@ -6018,6 +6105,7 @@
           "created_at",
           "last_activity_at",
           "research",
+          "researcher",
           "permissions"
         ],
         "title": "IdeaSummary",
@@ -6896,6 +6984,8 @@
                   "evaluator_invited": "#/components/schemas/EvaluatorInvitedNotification",
                   "mention": "#/components/schemas/MentionNotification",
                   "owner_assigned": "#/components/schemas/OwnerAssignedNotification",
+                  "research_reminder": "#/components/schemas/ResearchReminderNotification",
+                  "researcher_assigned": "#/components/schemas/ResearcherAssignedNotification",
                   "status_changed": "#/components/schemas/StatusChangedNotification"
                 },
                 "propertyName": "type"
@@ -6921,6 +7011,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/MentionNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/ResearcherAssignedNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/ResearchReminderNotification"
                 }
               ]
             },
@@ -7069,6 +7165,26 @@
               }
             ]
           },
+          "research_reminder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "researcher_assigned": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status_changed": {
             "anyOf": [
               {
@@ -7121,7 +7237,9 @@
           "evaluations_complete",
           "status_changed",
           "comment",
-          "mention"
+          "mention",
+          "researcher_assigned",
+          "research_reminder"
         ],
         "title": "NotificationType",
         "type": "string"
@@ -9296,6 +9414,13 @@
             "title": "Id",
             "type": "string"
           },
+          "position": {
+            "default": 0,
+            "description": "Phase 8b: where it was in the checklist when it was removed (0-based): Restore puts it back there (at the end when the list is shorter now).",
+            "minimum": 0.0,
+            "title": "Position",
+            "type": "integer"
+          },
           "removed_at": {
             "format": "date-time",
             "title": "Removed At",
@@ -9315,6 +9440,7 @@
           "title",
           "hint",
           "required",
+          "position",
           "removed_at",
           "answer_count"
         ],
@@ -9331,6 +9457,13 @@
           "key": {
             "title": "Key",
             "type": "string"
+          },
+          "position": {
+            "default": 0,
+            "description": "Phase 8b: where it was in the template when it was removed (0-based): Restore puts it back there (at the end when the template is shorter now).",
+            "minimum": 0.0,
+            "title": "Position",
+            "type": "integer"
           },
           "proposal_count": {
             "description": "Proposals with text in it (\"Text in 3 proposals\"). May be 0: a section is also kept for a margin thread, a suggestion or an AI run (\"Kept for its comments and suggestions\").",
@@ -9352,6 +9485,7 @@
           "key",
           "title",
           "hint",
+          "position",
           "removed_at",
           "proposal_count"
         ],
@@ -9427,6 +9561,107 @@
         "title": "ResearchAnswerIn",
         "type": "object"
       },
+      "ResearchAssignment": {
+        "description": "Phase 8b: who does the idea's research, and by when. While nobody is assigned the\nidea's owner does it: show \"Research: <owner> (owner)\".",
+        "properties": {
+          "assigned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the current researcher was asked; null while nobody is.",
+            "title": "Assigned At"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The research due date (show it in the instance time zone, like evaluation due dates), or null. Kept when the researcher changes or hands it back.",
+            "title": "Due At"
+          },
+          "overdue": {
+            "default": false,
+            "description": "due_at has passed while the research is still to do (awaits_research and a required item open).",
+            "title": "Overdue",
+            "type": "boolean"
+          },
+          "researcher": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The person asked to do the research; null = nobody is assigned (the owner does it). Never a service account or the break-glass account."
+          },
+          "researcher_in_project": {
+            "default": false,
+            "description": "The researcher has a role in the idea's project. False for a researcher without one (in a private project a guest who sees only this idea, never scores, the evaluation or the proposal) and while nobody is assigned. Show \"not in this project\" next to their name, so the team sees who outside it reads the idea.",
+            "title": "Researcher In Project",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "researcher",
+          "researcher_in_project",
+          "assigned_at",
+          "due_at",
+          "overdue"
+        ],
+        "title": "ResearchAssignment",
+        "type": "object"
+      },
+      "ResearchAssignmentUpdate": {
+        "additionalProperties": false,
+        "description": "``PUT /ideas/{idea}/research/assignment``: the complete new assignment (both fields\nrequired; null clears). Idempotent: the same values change nothing (no event, no\nnotification, no audit entry). Last write wins (two people changing it at once: the\nlater request's state stands, like the proposal template). **Session only** (review\nM3): an API key gets 403 ``insufficient_scope``, because an assignment can open an\nidea to someone and would outlive a revoked key.",
+        "properties": {
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The research due date (at most a year ago and five years ahead), or null for none.",
+            "title": "Due At"
+          },
+          "researcher_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who does the research: any active person (a member of the project or not), or null for nobody (the owner does it). Naming the owner assigns them explicitly (the research then stays theirs if the idea changes owner). A service account, the break-glass account, a deactivated or unknown user: 422 researcher_not_eligible.",
+            "title": "Researcher Id"
+          }
+        },
+        "required": [
+          "researcher_id",
+          "due_at"
+        ],
+        "title": "ResearchAssignmentUpdate",
+        "type": "object"
+      },
       "ResearchChecklistItem": {
         "description": "An active checklist item, in order.",
         "properties": {
@@ -9463,6 +9698,77 @@
           "required"
         ],
         "title": "ResearchChecklistItem",
+        "type": "object"
+      },
+      "ResearchDueDateChangedActivity": {
+        "description": "Phase 8b: the research due date changed (``research_due_date_changed``, payload\n``{from_due_at, to_due_at}``). No notification: reminders follow the current date.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who did it; null if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Due At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea_id": {
+            "format": "uuid",
+            "title": "Idea Id",
+            "type": "string"
+          },
+          "to_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Due At"
+          },
+          "type": {
+            "const": "research_due_date_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "idea_id",
+          "created_at",
+          "actor",
+          "type",
+          "from_due_at",
+          "to_due_at"
+        ],
+        "title": "ResearchDueDateChangedActivity",
         "type": "object"
       },
       "ResearchIncompleteProblem": {
@@ -9706,8 +10012,20 @@
       "ResearchPermissions": {
         "properties": {
           "can_answer": {
-            "description": "idea.answer_research: answer, edit and clear items (owner and admins).",
+            "description": "idea.answer_research: answer, edit and clear items (the owner, the researcher (Phase 8b) and admins).",
             "title": "Can Answer",
+            "type": "boolean"
+          },
+          "can_assign": {
+            "default": false,
+            "description": "Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the step is off, the idea is closed or the project archived, and through an API key: assigning is session only, review M3).",
+            "title": "Can Assign",
+            "type": "boolean"
+          },
+          "can_hand_back": {
+            "default": false,
+            "description": "Phase 8b: idea.release_researcher: you are the researcher: offer \"Hand back\" (DELETE /ideas/{idea}/research/assignment).",
+            "title": "Can Hand Back",
             "type": "boolean"
           },
           "can_override": {
@@ -9718,7 +10036,9 @@
         },
         "required": [
           "can_answer",
-          "can_override"
+          "can_override",
+          "can_assign",
+          "can_hand_back"
         ],
         "title": "ResearchPermissions",
         "type": "object"
@@ -9751,6 +10071,84 @@
           "required_open"
         ],
         "title": "ResearchProgress",
+        "type": "object"
+      },
+      "ResearchReminderNotification": {
+        "description": "Phase 8b: research you do is due soon or today and a required checklist item is\nstill open. Show the date (\"Research due Fri 9 Oct\"), never a countdown. Link:\n``/ideas/{key}?research=1``.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "as_owner": {
+            "description": "You do the research as the idea's owner (nobody is assigned).",
+            "title": "As Owner",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "days_before": {
+            "description": "Which reminder this was (days before the due date, 0 = on the due date); not a countdown: phrase the reminder with due_at.",
+            "minimum": 0.0,
+            "title": "Days Before",
+            "type": "integer"
+          },
+          "due_at": {
+            "description": "The research due date the reminder was sent for.",
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "research_reminder",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "due_at",
+          "days_before",
+          "as_owner"
+        ],
+        "title": "ResearchReminderNotification",
         "type": "object"
       },
       "ResearchSettings": {
@@ -9832,6 +10230,153 @@
         ],
         "title": "ResearchStep",
         "type": "string"
+      },
+      "ResearcherAssignedNotification": {
+        "description": "Phase 8b, \"Asked to research\": someone else made you the idea's researcher. Link:\n``/ideas/{key}?research=1`` (opens the idea at its Research panel). At most one per\nidea, person and local day (review S6: ``dedupe_key`` =\n``researcher_assigned:<idea id>:<local date>``), so assigning and removing someone\nagain and again doesn't flood their inbox or mailbox.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The research due date set by the request that assigned you (the idea page and the email show the current one).",
+            "title": "Due At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "researcher_assigned",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type",
+          "due_at"
+        ],
+        "title": "ResearcherAssignedNotification",
+        "type": "object"
+      },
+      "ResearcherChangedActivity": {
+        "description": "Phase 8b: the idea's researcher changed (assigned, changed, removed, or handed back\nby the researcher: ``handed_back``). Stored as ``researcher_changed`` with payload\n``{from_researcher_id, to_researcher_id, handed_back}``. \"Asked to research\" notifies\nthe new researcher from it. Deactivating a researcher clears the assignment without\nan event.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who did it; null if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_researcher": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: nobody was assigned (the owner)."
+          },
+          "handed_back": {
+            "description": "The researcher removed themselves (\"Hand back\").",
+            "title": "Handed Back",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea_id": {
+            "format": "uuid",
+            "title": "Idea Id",
+            "type": "string"
+          },
+          "to_researcher": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: nobody now (the owner does it)."
+          },
+          "type": {
+            "const": "researcher_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "idea_id",
+          "created_at",
+          "actor",
+          "type",
+          "from_researcher",
+          "to_researcher",
+          "handed_back"
+        ],
+        "title": "ResearcherChangedActivity",
+        "type": "object"
       },
       "Resolution": {
         "description": "Why a closed idea was closed. Set if and only if the status is ``closed``.",
@@ -10487,6 +11032,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "from_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 8b: the project's label for from_status / from_resolution when the feed is read (not stored), so the sentence needs no project read (a guest researcher can't read the project); null: use the default label.",
+            "title": "From Label"
+          },
           "from_resolution": {
             "anyOf": [
               {
@@ -10515,6 +11072,18 @@
             "description": "Phase 8: an admin moved it past an unfinished research checklist (\"Move anyway\"): say \"without finishing research\". Stored in the payload as research_overridden: true (absent = false).",
             "title": "Research Overridden",
             "type": "boolean"
+          },
+          "to_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 8b: the project's label for to_status / to_resolution, like from_label.",
+            "title": "To Label"
           },
           "to_resolution": {
             "anyOf": [
@@ -10545,7 +11114,9 @@
           "from_resolution",
           "to_status",
           "to_resolution",
-          "research_overridden"
+          "research_overridden",
+          "from_label",
+          "to_label"
         ],
         "title": "StatusChangedActivity",
         "type": "object"
@@ -11185,6 +11756,8 @@
           "status_changed",
           "comment",
           "mention",
+          "researcher_assigned",
+          "research_reminder",
           "digest",
           "all"
         ],
@@ -11542,12 +12115,34 @@
             },
             "title": "Recent",
             "type": "array"
+          },
+          "research_to_do": {
+            "description": "Phase 8b: \"Research to do\": overdue first, then soonest due; no due date last. The first 50 (counts.research_to_do has the total).",
+            "items": {
+              "$ref": "#/components/schemas/WorkResearch"
+            },
+            "title": "Research To Do",
+            "type": "array"
+          },
+          "research_to_do_next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "More research to do: GET /me/research-to-do?cursor=<this>; null when research_to_do holds it all.",
+            "title": "Research To Do Next Cursor"
           }
         },
         "required": [
           "counts",
           "evaluations_due",
           "evaluations_due_next_cursor",
+          "research_to_do",
+          "research_to_do_next_cursor",
           "owned",
           "recent"
         ],
@@ -11570,12 +12165,26 @@
             "description": "Ideas you own that are not closed.",
             "title": "Owned Open",
             "type": "integer"
+          },
+          "research_overdue": {
+            "default": 0,
+            "description": "Phase 8b: those of them past their research due date.",
+            "title": "Research Overdue",
+            "type": "integer"
+          },
+          "research_to_do": {
+            "default": 0,
+            "description": "Phase 8b: all ideas whose research you do and that still need it (Work.research_to_do lists the first 50).",
+            "title": "Research To Do",
+            "type": "integer"
           }
         },
         "required": [
           "evaluations_due",
           "evaluations_overdue",
-          "owned_open"
+          "owned_open",
+          "research_to_do",
+          "research_overdue"
         ],
         "title": "WorkCounts",
         "type": "object"
@@ -11670,7 +12279,7 @@
             "type": "integer"
           },
           "ideas": {
-            "description": "Most recently active first; the first 50 (count has the total).",
+            "description": "Most recently active first; the first 10 (Phase 8b; was 50). count has the total; page on with next_cursor.",
             "items": {
               "$ref": "#/components/schemas/IdeaSummary"
             },
@@ -11730,6 +12339,8 @@
                     "idea_created": "#/components/schemas/IdeaCreatedActivity",
                     "idea_edited": "#/components/schemas/IdeaEditedActivity",
                     "owner_changed": "#/components/schemas/OwnerChangedActivity",
+                    "research_due_date_changed": "#/components/schemas/ResearchDueDateChangedActivity",
+                    "researcher_changed": "#/components/schemas/ResearcherChangedActivity",
                     "status_changed": "#/components/schemas/StatusChangedActivity"
                   },
                   "propertyName": "type"
@@ -11770,6 +12381,12 @@
                   },
                   {
                     "$ref": "#/components/schemas/AiResearchNoteActivity"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResearcherChangedActivity"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResearchDueDateChangedActivity"
                   }
                 ]
               },
@@ -11785,6 +12402,98 @@
           "latest_activity"
         ],
         "title": "WorkRecentIdea",
+        "type": "object"
+      },
+      "WorkResearch": {
+        "description": "Phase 8b: an idea whose research you do (as its researcher, or as its owner while\nnobody is assigned) and that still needs it: the project's step is on, the idea is in\nResearch or before it (``research_to_do``) and a required checklist item is open. Only\nfor someone who may answer it (``idea.answer_research``: the researcher while the\nassignment is live; the owner while their role counts, or a platform admin).",
+        "properties": {
+          "as_owner": {
+            "description": "You do it as the idea's owner (nobody is assigned), not as its researcher.",
+            "title": "As Owner",
+            "type": "boolean"
+          },
+          "can_view_project": {
+            "default": true,
+            "description": "project.view on the idea's project: link the project's name. False for a guest researcher (role matrix column R): show it as text, never a link (project routes are 404 for them).",
+            "title": "Can View Project",
+            "type": "boolean"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The research due date, or null.",
+            "title": "Due At"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea and its project. A guest researcher can't open the project: show its name as text (can_view_project)."
+          },
+          "overdue": {
+            "description": "due_at is in the past.",
+            "title": "Overdue",
+            "type": "boolean"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ResearchProgress",
+            "description": "The checklist at a glance: \"2 open\" is progress.required_open."
+          }
+        },
+        "required": [
+          "idea",
+          "can_view_project",
+          "owner",
+          "as_owner",
+          "due_at",
+          "overdue",
+          "progress"
+        ],
+        "title": "WorkResearch",
+        "type": "object"
+      },
+      "WorkResearchPage": {
+        "description": "Research you do, in My work's order (overdue first, then soonest due, no due date\nlast; then by idea id, like evaluations due). \"Show all\" pages on from\n``Work.research_to_do_next_cursor``.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkResearch"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkResearchPage",
         "type": "object"
       }
     },
@@ -17360,7 +18069,7 @@
             "api_key": []
           }
         ],
-        "summary": "Research this",
+        "summary": "Ask AI to research",
         "tags": [
           "ai"
         ]
@@ -21045,9 +21754,220 @@
         ]
       }
     },
+    "/api/v1/ideas/{idea}/research/assignment": {
+      "delete": {
+        "description": "idea.assign_researcher (the owner and admins: remove the researcher) or idea.release_researcher (the researcher: \"Hand back\"). Nobody is assigned afterwards: the owner does the research; the research due date is kept. Idempotent (204 when nobody is assigned). A guest researcher's access to the idea ends with the request. Emits researcher_changed (handed_back when the researcher did it); audited as idea.researcher_change. An API key with write may remove or hand back. (Closing the idea or turning the step off clears the assignment by itself.) 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
+        "operationId": "remove_researcher",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove the researcher or hand the research back",
+        "tags": [
+          "research"
+        ]
+      },
+      "put": {
+        "description": "idea.assign_researcher (the idea's owner, project admins and platform admins; c5): the complete new assignment, the researcher (any active person, a member of the project or not, the owner included; null = nobody, the owner does it) and the research due date (null = none). Idempotent. A new researcher watches the idea and, when someone else assigned them, gets \"Asked to research\" (by email per their preference). A researcher with no role in a private project sees only this idea (role matrix column R). Emits researcher_changed / research_due_date_changed; a researcher change is audited as idea.researcher_change. Returns the whole panel. Last write wins. Session only: an API key gets 403 insufficient_scope (an assignment can open the idea to someone and would outlive the key). 422 researcher_not_eligible (c23: a service account, the break-glass account, a deactivated or unknown user). 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
+        "operationId": "set_research_assignment",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchAssignmentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdeaResearch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Assign the research",
+        "tags": [
+          "research"
+        ]
+      }
+    },
     "/api/v1/ideas/{idea}/research/items/{item_id}": {
       "delete": {
-        "description": "idea.answer_research (the owner and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
+        "description": "idea.answer_research (the owner, the researcher and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
         "operationId": "clear_research_item",
         "parameters": [
           {
@@ -21162,7 +22082,7 @@
         ]
       },
       "put": {
-        "description": "idea.answer_research (the owner and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
+        "description": "idea.answer_research (the owner, the researcher and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.",
         "operationId": "answer_research_item",
         "parameters": [
           {
@@ -23269,9 +24189,114 @@
         ]
       }
     },
+    "/api/v1/me/research-to-do": {
+      "get": {
+        "description": "Phase 8b: every idea whose research you do (as its researcher, or as its owner while nobody is assigned) and that still needs it (the step on, the idea in Research or before it with a required item open; for an owner: in Research or the status right before it, or with a research due date; only ideas you may answer), in My work's order (overdue first, then soonest due, no due date last; then by idea id). 'Show all' in My work: cursor=<work.research_to_do_next_cursor>. Includes ideas you see only as a guest researcher; never held ideas or archived projects.",
+        "operationId": "list_my_research_to_do",
+        "parameters": [
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkResearchPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Research I do",
+        "tags": [
+          "work"
+        ]
+      }
+    },
     "/api/v1/me/work": {
       "get": {
-        "description": "Evaluations due, ideas I own by status, recent ideas, sidebar counts.",
+        "description": "Evaluations due, research to do (Phase 8b), ideas I own by status (the first 10 of each group), recent ideas, sidebar counts.",
         "operationId": "get_my_work",
         "responses": {
           "200": {
@@ -23321,7 +24346,7 @@
     },
     "/api/v1/me/work/counts": {
       "get": {
-        "description": "The sidebar's badges alone: evaluations you owe (and how many are overdue) and the ideas you own that are not closed. The same numbers as GET /me/work's counts.",
+        "description": "The sidebar's badges alone: evaluations you owe (and how many are overdue), the research you do that is still to do (and how many are overdue; Phase 8b) and the ideas you own that are not closed. The same numbers as GET /me/work's counts.",
         "operationId": "get_my_work_counts",
         "responses": {
           "200": {
@@ -27593,7 +28618,7 @@
     },
     "/api/v1/users": {
       "get": {
-        "description": "Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role. An AI agent's service account finds only people who share a project with it (inside its key's projects).",
+        "description": "Active, non-service-account users whose name or email contains q (case-insensitive), ordered by display name. With project, only members of that project are returned and each result carries project_role; Phase 8b: with project and include_non_members=true (the researcher picker), every active person is returned, members with their project_role and everyone else with null (\"not in this project\"). An AI agent's service account finds only people who share a project with it (inside its key's projects).",
         "operationId": "search_users",
         "parameters": [
           {
@@ -27633,6 +28658,18 @@
               ],
               "description": "Project slug: members only.",
               "title": "Project"
+            }
+          },
+          {
+            "description": "Phase 8b, with project: everyone active, not only members (project_role null for non-members). Needs project.view on the project, like project. Without project it changes nothing (the directory lists everyone).",
+            "in": "query",
+            "name": "include_non_members",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Phase 8b, with project: everyone active, not only members (project_role null for non-members). Needs project.view on the project, like project. Without project it changes nothing (the directory lists everyone).",
+              "title": "Include Non Members",
+              "type": "boolean"
             }
           },
           {

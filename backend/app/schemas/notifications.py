@@ -27,6 +27,7 @@ from app.schemas.users import UserRef
 
 __all__ = [
     "DEFAULT_MODES",
+    "RESEARCH_GUEST_NOTIFICATION_TYPES",
     "UNREAD_COUNT_CAP",
     "CommentExcerpt",
     "CommentNotification",
@@ -43,6 +44,8 @@ __all__ = [
     "NotificationSummary",
     "NotificationType",
     "OwnerAssignedNotification",
+    "ResearchReminderNotification",
+    "ResearcherAssignedNotification",
     "StatusChangedNotification",
     "UnsubscribeInfo",
     "UnsubscribeScope",
@@ -57,10 +60,29 @@ DEFAULT_MODES: Final[Mapping[NotificationType, NotificationMode]] = MappingProxy
         NotificationType.STATUS_CHANGED: NotificationMode.DIGEST,
         NotificationType.COMMENT: NotificationMode.DIGEST,
         NotificationType.MENTION: NotificationMode.IMMEDIATE,
+        NotificationType.RESEARCHER_ASSIGNED: NotificationMode.IMMEDIATE,
+        NotificationType.RESEARCH_REMINDER: NotificationMode.IMMEDIATE,
     }
 )
 """Email preference per type for anyone who hasn't chosen (contract-phase3 section 3.4):
-what you must act on arrives now; what you follow arrives once a day."""
+what you must act on arrives now; what you follow arrives once a day. Phase 8b's two
+research types are things you must act on (migration 0015 gives them ``off`` for anyone
+who had every earlier type off)."""
+
+RESEARCH_GUEST_NOTIFICATION_TYPES: Final = frozenset(
+    {
+        NotificationType.STATUS_CHANGED,
+        NotificationType.COMMENT,
+        NotificationType.MENTION,
+        NotificationType.RESEARCHER_ASSIGNED,
+        NotificationType.RESEARCH_REMINDER,
+    }
+)
+"""Phase 8b review S5: the notification types a guest researcher (role matrix column R)
+can hold about the idea they research. The inbox (list, unread count, mark all read)
+shows notifications about an idea the person sees **only** as its guest researcher when
+their type is one of these: older ones (from when they were its evaluator or owner as a
+member) stay hidden, and their emails are cancelled at send time by the same check."""
 
 UNREAD_COUNT_CAP: Final = 100
 """``NotificationSummary.unread_count`` stops counting here (the bell shows "99+")."""
@@ -158,6 +180,41 @@ class MentionNotification(_NotificationBase):
     comment: CommentExcerpt
 
 
+class ResearcherAssignedNotification(_NotificationBase):
+    """Phase 8b, "Asked to research": someone else made you the idea's researcher. Link:
+    ``/ideas/{key}?research=1`` (opens the idea at its Research panel). At most one per
+    idea, person and local day (review S6: ``dedupe_key`` =
+    ``researcher_assigned:<idea id>:<local date>``), so assigning and removing someone
+    again and again doesn't flood their inbox or mailbox."""
+
+    type: Literal["researcher_assigned"]
+    due_at: datetime | None = Field(
+        description=(
+            "The research due date set by the request that assigned you (the idea page "
+            "and the email show the current one)."
+        )
+    )
+
+
+class ResearchReminderNotification(_NotificationBase):
+    """Phase 8b: research you do is due soon or today and a required checklist item is
+    still open. Show the date ("Research due Fri 9 Oct"), never a countdown. Link:
+    ``/ideas/{key}?research=1``."""
+
+    type: Literal["research_reminder"]
+    due_at: datetime = Field(description="The research due date the reminder was sent for.")
+    days_before: int = Field(
+        ge=0,
+        description=(
+            "Which reminder this was (days before the due date, 0 = on the due date); "
+            "not a countdown: phrase the reminder with due_at."
+        ),
+    )
+    as_owner: bool = Field(
+        description="You do the research as the idea's owner (nobody is assigned)."
+    )
+
+
 NotificationItem = Annotated[
     OwnerAssignedNotification
     | EvaluatorInvitedNotification
@@ -165,7 +222,9 @@ NotificationItem = Annotated[
     | EvaluationsCompleteNotification
     | StatusChangedNotification
     | CommentNotification
-    | MentionNotification,
+    | MentionNotification
+    | ResearcherAssignedNotification
+    | ResearchReminderNotification,
     Field(discriminator="type"),
 ]
 """One inbox entry; branch on ``type`` (skip types you don't know)."""
@@ -229,6 +288,8 @@ class NotificationPreferencesUpdate(RequestModel):
     status_changed: NotificationMode | None = None
     comment: NotificationMode | None = None
     mention: NotificationMode | None = None
+    researcher_assigned: NotificationMode | None = None
+    research_reminder: NotificationMode | None = None
 
 
 # --- Unsubscribe links ------------------------------------------------------------------
@@ -243,6 +304,8 @@ class UnsubscribeScope(StrEnum):
     STATUS_CHANGED = "status_changed"
     COMMENT = "comment"
     MENTION = "mention"
+    RESEARCHER_ASSIGNED = "researcher_assigned"
+    RESEARCH_REMINDER = "research_reminder"
     DIGEST = "digest"
     ALL = "all"
 

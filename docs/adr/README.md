@@ -21,6 +21,7 @@ go in [../decisions.md](../decisions.md) instead.
 | [0013](0013-api-keys-and-mcp-server.md) | API keys as a principal source; an MCP server built on the REST services | Accepted |
 | [0014](0014-kagent-a2a-integration.md) | kagent over A2A with URLs built from one controller origin; results through MCP; runs as durable records with SSE progress | Proposed |
 | [0015](0015-proposal-templates-and-research-step.md) | Per-project proposal templates (key rows, no FK) and an optional research step with a checklist gate | Proposed |
+| [0016](0016-research-assignment-and-guest-researcher.md) | A researcher per idea (columns on ideas) and guest access to that one idea as a policy column (R) with a researcher overlay and a deny-by-default route table | Proposed |
 
 ## Writing a new ADR
 

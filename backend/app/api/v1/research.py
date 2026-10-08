@@ -9,6 +9,18 @@ an idea write: 409 ``project_archived``, ``awaiting_moderation``); a key needs `
 and an AI agent's key never answers (c22: REST is refused to agents). Order of checks: 401
 -> 404 (the project or idea; an item that isn't active in the idea's project) -> 403 ->
 422 -> 409.
+
+Phase 8b (contract-phase8b): the research can be assigned to a person, the idea's
+researcher. ``set_research_assignment`` (``idea.assign_researcher``: the owner, project
+admins and platform admins; c5, c23; **session only**, review M3) sets the researcher and
+the research due date; ``remove_researcher`` removes the researcher
+(``idea.assign_researcher``, also through a ``write`` key) or hands the research back
+(``idea.release_researcher``: the researcher). Both are idea writes (409
+``project_archived``, ``awaiting_moderation``) refused while the step is off (409
+``research_step_off``); closing the idea or turning the step off clears the assignment
+(review S8). The researcher (also a guest without a role in a private project: role
+matrix column R) reads this panel and answers its items (``idea.answer_research``
+widened by the researcher overlay).
 """
 
 from __future__ import annotations
@@ -16,7 +28,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, status
 
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
@@ -24,11 +36,12 @@ from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
 from app.authz import Rule, load_project
 from app.db import SessionDep
-from app.errors import PROBLEM_CONTENT_TYPE
+from app.errors import PROBLEM_CONTENT_TYPE, NotImplementedProblem
 from app.schemas.ideas import SimilarIdeas
 from app.schemas.research import (
     IdeaResearch,
     ResearchAnswerIn,
+    ResearchAssignmentUpdate,
     ResearchSettings,
     ResearchSettingsUpdate,
 )
@@ -131,7 +144,8 @@ async def get_idea_research(
     operation_id="answer_research_item",
     summary="Answer a research item",
     description=(
-        "idea.answer_research (the owner and admins; c5): the item's answer (plain text, "
+        "idea.answer_research (the owner, the researcher and admins; c5): the item's answer "
+        "(plain text, "
         "1-2,000 characters with at least one visible character; invisible characters "
         "such as zero-width spaces and bidi controls are removed), replacing any earlier "
         "one (last write wins; the first "
@@ -161,7 +175,8 @@ async def answer_research_item(
     operation_id="clear_research_item",
     summary="Clear a research item's answer",
     description=(
-        "idea.answer_research (the owner and admins; c5): delete the item's answer "
+        "idea.answer_research (the owner, the researcher and admins; c5): delete the item's "
+        "answer "
         "(idempotent: an unanswered item stays unanswered). Clearing never moves the idea. "
         "Once the idea is past Research (in a status after it), a required item's answer "
         "is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). "
@@ -198,3 +213,60 @@ async def list_similar_ideas(
 ) -> SimilarIdeas:
     loaded = await ideas.load_idea(session, principal, idea)
     return await research.similar_ideas(session, principal, loaded.idea)
+
+
+# --- Phase 8b: who does the research ----------------------------------------------------
+_ASSIGNMENT_CONFLICTS = (
+    " 409 research_step_off while the project's step is off, idea_closed (c5), "
+    "project_archived, awaiting_moderation."
+)
+
+
+@router.put(
+    "/ideas/{idea}/research/assignment",
+    operation_id="set_research_assignment",
+    summary="Assign the research",
+    description=(
+        "idea.assign_researcher (the idea's owner, project admins and platform admins; c5): "
+        "the complete new assignment, the researcher (any active person, a member of the "
+        "project or not, the owner included; null = nobody, the owner does it) and "
+        "the research due date (null = none). Idempotent. A new researcher watches the idea "
+        'and, when someone else assigned them, gets "Asked to research" (by email per their '
+        "preference). A researcher with no role in a private project sees only this idea "
+        "(role matrix column R). Emits researcher_changed / research_due_date_changed; a "
+        "researcher change is audited as idea.researcher_change. Returns the whole panel. "
+        "Last write wins. Session only: an API key gets 403 insufficient_scope (an "
+        "assignment can open the idea to someone and would outlive the key). "
+        "422 researcher_not_eligible (c23: a service account, the break-glass account, a "
+        "deactivated or unknown user)." + _ASSIGNMENT_CONFLICTS
+    ),
+    responses=problems(401, 403, 404, 409, 422),
+)
+async def set_research_assignment(
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: ResearchAssignmentUpdate,
+) -> IdeaResearch:
+    raise NotImplementedProblem
+
+
+@router.delete(
+    "/ideas/{idea}/research/assignment",
+    operation_id="remove_researcher",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove the researcher or hand the research back",
+    description=(
+        "idea.assign_researcher (the owner and admins: remove the researcher) or "
+        'idea.release_researcher (the researcher: "Hand back"). Nobody is assigned '
+        "afterwards: the owner does the research; the research due date is kept. Idempotent "
+        "(204 when nobody is assigned). A guest researcher's access to the idea ends with "
+        "the request. Emits researcher_changed (handed_back when the researcher did it); "
+        "audited as idea.researcher_change. An API key with write may remove or hand back. "
+        "(Closing the idea or turning the step off clears the assignment by itself.)"
+        + _ASSIGNMENT_CONFLICTS
+    ),
+    responses=problems(401, 403, 404, 409),
+)
+async def remove_researcher(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> None:
+    raise NotImplementedProblem

@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 8): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 8b): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -257,7 +257,17 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/ideas/{idea}/similar-ideas", "list_similar_ideas"),
 ]
 
-ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT
+# Phase 8b (docs/api/contract-phase8b.md): kept apart from CONTRACT until identity adds
+# their ROUTE_KEY_ACCESS rows, ROUTE_RULES and research-guest decisions (the meta-tests
+# index those tables by every CONTRACT operation), then moves them into CONTRACT.
+PHASE8B_OPERATIONS: list[tuple[str, str, str]] = [
+    # --- Phase 8b: assign the research to a person ------------------------------------
+    ("PUT", "/api/v1/ideas/{idea}/research/assignment", "set_research_assignment"),
+    ("DELETE", "/api/v1/ideas/{idea}/research/assignment", "remove_researcher"),
+    ("GET", "/api/v1/me/research-to-do", "list_my_research_to_do"),
+]
+
+ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT + PHASE8B_OPERATIONS
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the
 # Phase 2 admin, group and access operations (implemented; tests/admin covers them).
@@ -397,7 +407,14 @@ _RESEARCH_BODY: dict[str, Any] = {
 # tests/admin, tests/notifications, tests/proposals, tests/public, tests/branding,
 # tests/moderation, tests/api_keys, tests/mcp, tests/ai, tests/research). Add a row only
 # for a new stub.
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+_ASSIGNMENT = {"researcher_id": USER, "due_at": "2026-10-11T17:00:00+01:00"}
+
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Phase 8b: assign the research to a person (contract-phase8b) --------------------
+    "set_research_assignment": ("/api/v1/ideas/CUST-12/research/assignment", _ASSIGNMENT),
+    "remove_researcher": ("/api/v1/ideas/CUST-12/research/assignment", None),
+    "list_my_research_to_do": ("/api/v1/me/research-to-do?limit=20", None),
+}
 
 # Phase 8 operations (tests/research, tests/proposals): a valid request each, for the
 # shape and session checks.
@@ -671,6 +688,7 @@ def test_operation_ids_are_explicit_and_match_function_names() -> None:
 
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
+    assert not {op for _, _, op in PHASE8B_OPERATIONS} & {op for _, _, op in CONTRACT}
     assert set(PHASE8_REQUESTS) <= set(_METHODS)
     assert set(PHASE2_REQUESTS) <= set(_METHODS)
     assert set(PHASE3_REQUESTS) <= set(_METHODS)
@@ -774,7 +792,12 @@ async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
 
 async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
     requests = (
-        PHASE2_REQUESTS | PHASE4_REQUESTS | PHASE5_REQUESTS | PHASE6_REQUESTS | PHASE8_REQUESTS
+        PHASE2_REQUESTS
+        | PHASE4_REQUESTS
+        | PHASE5_REQUESTS
+        | PHASE6_REQUESTS
+        | PHASE8_REQUESTS
+        | STUBS
     )
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
         url, body = requests[operation_id]
@@ -1622,3 +1645,116 @@ def test_research_and_status_labels_are_in_the_contract(app: FastAPI) -> None:
     assert "research_overridden" in schemas["StatusChangedActivity"]["required"]
     assert "start_blocked_by_research" in schemas["ProposalPermissions"]["required"]
     assert "research_incomplete" in schemas["AiBlockedReason"]["enum"]
+
+
+# --- Phase 8b (contract-phase8b) --------------------------------------------------------
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        # The assignment is the complete new state: both fields, nothing else.
+        ("set_research_assignment", None, {}),
+        ("set_research_assignment", None, {"researcher_id": USER}),
+        ("set_research_assignment", None, {"due_at": "2026-10-11T17:00:00+01:00"}),
+        ("set_research_assignment", None, {"researcher_id": "bob", "due_at": None}),
+        ("set_research_assignment", None, {**_ASSIGNMENT, "researcher_ids": [USER]}),
+        ("set_research_assignment", None, {**_ASSIGNMENT, "notify": False}),
+        # Due dates like evaluations': with an offset, a year back to five years ahead.
+        ("set_research_assignment", None, {"researcher_id": None, "due_at": "2026-10-11"}),
+        (
+            "set_research_assignment",
+            None,
+            {"researcher_id": None, "due_at": "2026-10-11T17:00:00"},
+        ),
+        (
+            "set_research_assignment",
+            None,
+            {"researcher_id": None, "due_at": "1999-01-01T00:00:00Z"},
+        ),
+        (
+            "set_research_assignment",
+            None,
+            {"researcher_id": None, "due_at": "2099-01-01T00:00:00Z"},
+        ),
+        ("set_research_assignment", "/api/v1/ideas/CUST12/research/assignment", None),
+        ("remove_researcher", "/api/v1/ideas/CUST12/research/assignment", None),
+        ("list_my_research_to_do", "/api/v1/me/research-to-do?limit=0", None),
+        ("list_my_research_to_do", "/api/v1/me/research-to-do?limit=201", None),
+    ],
+)
+async def test_invalid_phase8b_requests_are_rejected_before_the_stub(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS[operation_id]
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.usefixtures("signed_in")
+async def test_the_researcher_picker_is_a_search_users_option(client: httpx.AsyncClient) -> None:
+    """Phase 8b: search_users?project=&include_non_members=true is the researcher picker
+    (501 until the backend builds it); a non-boolean is a 422."""
+    response = await client.get("/api/v1/users?project=cust&include_non_members=maybe")
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+def test_research_assignment_is_in_the_contract(app: FastAPI) -> None:
+    document = app.openapi()
+    schemas = document["components"]["schemas"]
+
+    assert set(schemas["ResearchAssignmentUpdate"]["required"]) == {"researcher_id", "due_at"}
+    assert {"researcher", "researcher_in_project", "assigned_at", "due_at", "overdue"} == set(
+        schemas["ResearchAssignment"]["required"]
+    )
+    assert {"assignment", "gate_status_label"} <= set(schemas["IdeaResearch"]["required"])
+    assert {"can_assign", "can_hand_back"} <= set(schemas["ResearchPermissions"]["required"])
+    assert "researcher" in schemas["IdeaSummary"]["required"]
+    assert "research_due_at" in schemas["IdeaDetail"]["required"]
+    assert {"can_assign_researcher", "can_hand_back_research", "can_view_project"} <= set(
+        schemas["IdeaPermissions"]["required"]
+    )
+    assert {"research_to_do", "research_overdue"} <= set(schemas["WorkCounts"]["required"])
+    assert {"research_to_do", "research_to_do_next_cursor"} <= set(schemas["Work"]["required"])
+    assert {
+        "idea",
+        "can_view_project",
+        "owner",
+        "as_owner",
+        "due_at",
+        "overdue",
+        "progress",
+    } == set(schemas["WorkResearch"]["required"])
+    # Review C6: the feed's status sentence carries the project's labels.
+    assert {"from_label", "to_label"} <= set(schemas["StatusChangedActivity"]["required"])
+    assert "position" in schemas["RemovedTemplateSection"]["required"]
+    assert "position" in schemas["RemovedResearchItem"]["required"]
+    removed = document["paths"]["/api/v1/ideas/{idea}/research/assignment"]["delete"]
+    assert "204" in removed["responses"]
+    picker = document["paths"]["/api/v1/users"]["get"]["parameters"]
+    assert "include_non_members" in {parameter["name"] for parameter in picker}
+
+
+def test_research_notifications_are_in_the_contract(app: FastAPI) -> None:
+    schemas = app.openapi()["components"]["schemas"]
+    types = ["researcher_assigned", "research_reminder"]
+
+    assert schemas["NotificationType"]["enum"][-2:] == types
+    assert schemas["UnsubscribeScope"]["enum"][-4:] == [*types, "digest", "all"]
+    assert set(types) <= set(schemas["NotificationPreferencesUpdate"]["properties"])
+    assert {"due_at"} <= set(schemas["ResearcherAssignedNotification"]["required"])
+    assert {"due_at", "days_before", "as_owner"} <= set(
+        schemas["ResearchReminderNotification"]["required"]
+    )
+    assert {"from_researcher", "to_researcher", "handed_back"} <= set(
+        schemas["ResearcherChangedActivity"]["required"]
+    )
+    assert {"from_due_at", "to_due_at"} <= set(
+        schemas["ResearchDueDateChangedActivity"]["required"]
+    )

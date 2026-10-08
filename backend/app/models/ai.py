@@ -10,7 +10,7 @@ they serve, AI runs and their progress events.
   runs keep their author).
 * ``ai_agent_projects``: the projects an agent serves. Its key is restricted to exactly
   these, and the service account is a member of them (contract-phase6 section 3.1).
-* ``ai_runs``: one request to an agent ("Ask AI to evaluate", "Research this", "Draft
+* ``ai_runs``: one request to an agent ("Ask AI to evaluate", "Ask AI to research", "Draft
   section"), executed by the worker over A2A with a hard deadline and cooperative cancel.
   At most one active run (``queued`` / ``running``) per idea, agent, kind and section
   (``uq_ai_runs_active``). The result is a reference to what the agent recorded through

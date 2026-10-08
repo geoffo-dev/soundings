@@ -18,7 +18,7 @@ cited sources and research notes, and the A2A message Soundings sends to an agen
   ``SOUNDINGS_KAGENT_URL`` (validated at start-up), the protocol's fixed path and the
   agent's namespace and name (DNS-1123 labels). No request field and no agent card can
   make Soundings call another host or path (SSRF).
-* **Runs** ("Ask AI to evaluate", "Research this", "Draft section") are durable records
+* **Runs** ("Ask AI to evaluate", "Ask AI to research", "Draft section") are durable records
   executed by the worker on their own queue (:data:`AI_RUN_QUEUE`): one A2A message per
   run (:func:`run_message`: instructions and references only, never secrets, URLs or
   idea text), streaming task updates, a hard deadline and cooperative cancel

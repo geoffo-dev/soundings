@@ -481,6 +481,14 @@ class RemovedTemplateSection(ResponseModel):
     key: str
     title: str
     hint: str
+    position: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Phase 8b: where it was in the template when it was removed (0-based): Restore "
+            "puts it back there (at the end when the template is shorter now)."
+        ),
+    )
     removed_at: datetime
     proposal_count: int = Field(
         ge=0,

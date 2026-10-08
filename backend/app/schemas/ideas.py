@@ -3,18 +3,36 @@
 Blind evaluation (docs/api/contract-phase1.md#37-blind-evaluation): anything derived
 from other people's scores (``score``, ``aggregate``, ``high_disagreement``) is withheld
 from an assigned evaluator until they submit their own evaluation (``score_hidden``).
+
+Phase 8b: a **guest researcher** (role matrix column R: the idea's researcher without a
+role in its private project) gets the same shapes with no score or evaluation data:
+``score`` / ``aggregate`` null, ``score_hidden`` true, ``high_disagreement`` false,
+``evaluators`` empty, ``evaluator_progress`` 0/0, no evaluation dates,
+``evaluation_open`` false, and ``permissions.can_view_project`` false (hide the
+evaluation area, the Evaluations, Proposal and AI parts, and show the project as text).
+Score data follows ``score.view_aggregate`` and the evaluation area
+``evaluation.view_own`` on every surface that builds these shapes (review M1: lists
+included; in SQL the idea's project must be one the caller can view).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import Annotated, Final, Literal
+from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, AwareDatetime, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.models.enums import EvaluatorState, HoldReason, IdeaStatus, Resolution
-from app.schemas.base import RequestModel, ResponseModel, SingleLine, TagName
+from app.schemas.base import (
+    DUE_DATE_MAX_AHEAD,
+    DUE_DATE_MAX_BACK,
+    DueAt,
+    RequestModel,
+    ResponseModel,
+    SingleLine,
+    TagName,
+)
 from app.schemas.common import Page
 from app.schemas.projects import ProjectRef
 from app.schemas.research import ResearchOverride, ResearchProgress
@@ -156,7 +174,8 @@ class IdeaPermissions(IdeaSummaryPermissions):
     """What the current user may do with this idea (the API enforces the same rules).
 
     In an archived project every flag is false (idea writes answer 409
-    project_archived).
+    project_archived), except the view flag ``can_view_project`` (Phase 8b), which says
+    what the caller may read, not do.
     """
 
     can_edit: bool = Field(description="idea.edit_own / idea.edit_any: title, summary, tags.")
@@ -185,7 +204,8 @@ class IdeaPermissions(IdeaSummaryPermissions):
         default=False,
         description=(
             "Phase 8: idea.answer_research: answer, edit and clear research checklist items "
-            "(the owner and admins; false while the project's step is off)."
+            "(the owner, the researcher (Phase 8b) and admins; false while the project's step "
+            "is off)."
         ),
     )
     invite_blocked_by_research: bool = Field(
@@ -196,6 +216,30 @@ class IdeaPermissions(IdeaSummaryPermissions):
             'evaluator yet and required checklist items are open. Say so next to "Invite '
             'evaluators" (and "Ask AI to evaluate"); admins may invite anyway '
             "(IdeaResearch.permissions.can_override)."
+        ),
+    )
+    can_assign_researcher: bool = Field(
+        default=False,
+        description=(
+            "Phase 8b: idea.assign_researcher: assign, change or remove the researcher and "
+            "set the research due date (the owner, project admins and platform admins; false "
+            "while the research step is off or the idea is closed, and through an API key: "
+            "assigning is session only)."
+        ),
+    )
+    can_hand_back_research: bool = Field(
+        default=False,
+        description=(
+            'Phase 8b: idea.release_researcher: you are the researcher: offer "Hand back".'
+        ),
+    )
+    can_view_project: bool = Field(
+        default=True,
+        description=(
+            "Phase 8b: project.view. False only for a guest researcher (role matrix column R): "
+            "show the project's name as text (no link), and hide the evaluation area "
+            "(evaluators, progress, due date), the Evaluations and Proposal tabs, the AI "
+            "menu and anything else that reads the project (board, members, rubric, tags)."
         ),
     )
 
@@ -235,6 +279,14 @@ class IdeaSummary(IdeaRef):
             "no score data."
         ),
     )
+    researcher: UserRef | None = Field(
+        default=None,
+        description=(
+            "Phase 8b: the person asked to do the idea's research (cards in the Research "
+            "column show their avatar); null when nobody is assigned (the owner does it) or "
+            "the project's research step is off."
+        ),
+    )
     permissions: IdeaSummaryPermissions
 
 
@@ -248,6 +300,13 @@ class IdeaDetail(IdeaSummary):
     evaluation_closed_at: datetime | None
     evaluation_open: bool = Field(
         description="Evaluations can be saved: evaluation not closed and the idea not closed."
+    )
+    research_due_at: datetime | None = Field(
+        default=None,
+        description=(
+            'Phase 8b: the research due date ("Research: <name> · due <date>" in the '
+            "sidebar; the instance time zone), or null; null while the step is off."
+        ),
     )
     aggregate: AggregateScore | None = Field(
         description="Null when there is nothing to aggregate yet, or when score_hidden."
@@ -376,25 +435,6 @@ class OwnerAssign(RequestModel):
     user_id: UUID | None = Field(
         description="New owner (effective role member or admin), or null to leave it unowned."
     )
-
-
-DUE_DATE_MAX_BACK: Final = timedelta(days=366)
-DUE_DATE_MAX_AHEAD: Final = timedelta(days=5 * 366)
-
-
-def _near_now(value: datetime) -> datetime:
-    try:
-        utc = value.astimezone(UTC)
-    except OverflowError:  # e.g. 0001-01-01T00:00+05:00
-        raise ValueError("the due date is out of range") from None
-    now = datetime.now(UTC)
-    if not now - DUE_DATE_MAX_BACK <= utc <= now + DUE_DATE_MAX_AHEAD:
-        raise ValueError("the due date must be at most a year ago and five years ahead")
-    return value
-
-
-DueAt = Annotated[AwareDatetime, AfterValidator(_near_now)]
-"""A request's due date: with an offset, at most a year ago and five years ahead."""
 
 
 class EvaluatorsAdd(ResearchOverride):

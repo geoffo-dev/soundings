@@ -111,6 +111,12 @@ class NotificationType(StrEnum):
     """A new comment on an idea you watch."""
     MENTION = "mention"
     """Someone @mentioned you in a comment."""
+    RESEARCHER_ASSIGNED = "researcher_assigned"
+    """Phase 8b: someone else asked you to do an idea's research ("Asked to research",
+    with the research due date and a link to the idea's Research panel)."""
+    RESEARCH_REMINDER = "research_reminder"
+    """Phase 8b: research you do (as the idea's researcher, or as its owner when nobody is
+    assigned) is due soon or today and a required checklist item is still open."""
 
 
 class NotificationMode(StrEnum):
@@ -134,6 +140,10 @@ class EmailType(StrEnum):
     STATUS_CHANGED = "status_changed"
     COMMENT = "comment"
     MENTION = "mention"
+    RESEARCHER_ASSIGNED = "researcher_assigned"
+    """Phase 8b: "Asked to research"."""
+    RESEARCH_REMINDER = "research_reminder"
+    """Phase 8b: research due soon or today."""
     DIGEST = "digest"
     """The daily digest: every pending digest notification of one person."""
     TEST = "test"
@@ -286,8 +296,8 @@ class AiRunKind(StrEnum):
     cited evaluation through MCP ``submit_evaluation`` (left out of the aggregate by
     default)."""
     RESEARCH = "research"
-    """"Research this": the agent writes a cited research note into the idea's activity
-    feed through MCP ``add_research_note``."""
+    """"Ask AI to research" (Phase 6's "Research this"): the agent writes a cited research
+    note into the idea's activity feed through MCP ``add_research_note``."""
     DRAFT_SECTION = "draft_section"
     """"Draft section": the agent suggests the text of one proposal section through MCP
     ``propose_proposal_section`` (a Phase 5 suggestion the owner accepts or discards)."""
