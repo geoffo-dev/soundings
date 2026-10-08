@@ -210,7 +210,11 @@ function NoProposal({
         : idea.owner
           ? [
               'The owner will write the proposal',
-              `${idea.owner.display_name} can start it now. It will appear here, and you can comment on it as it takes shape.`,
+              // Phase 8: the research before the proposal comes first.
+              project?.research_step === 'before_proposal' &&
+              (idea.research?.required_open ?? 0) > 0
+                ? `${idea.owner.display_name} can start it once the research checklist is done. It will appear here, and you can comment on it as it takes shape.`
+                : `${idea.owner.display_name} can start it now. It will appear here, and you can comment on it as it takes shape.`,
             ]
           : [
               'The owner will write the proposal',

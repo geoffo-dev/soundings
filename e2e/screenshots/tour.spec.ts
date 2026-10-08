@@ -13,7 +13,7 @@ import { renderPdfPages } from '../tests/support/pdf'
 import { fillPublicForm, humanCheckDone } from '../tests/support/public'
 
 /**
- * The product tour: a dozen hero screenshots that tell Soundings' story in order, from the
+ * The product tour: fourteen hero screenshots that tell Soundings' story in order, from the
  * real app with the demo data (for the root README and the release notes). Not a
  * regression test.
  *
@@ -291,6 +291,31 @@ const SHOTS: Shot[] = [
         .filter({ hasText: 'Idea evaluator' })
       await expect(card).toContainText('Not in score')
       await scrollTo(card, phone ? 64 : 24)
+    },
+  },
+  {
+    // Phase 8: Internal Tools checks ideas before evaluation. TOOLS-11's checklist is
+    // complete, and "Similar ideas" found Customer Innovation's status page.
+    name: '13-research',
+    as: 'carol',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page, phone) => {
+      await page.goto('/ideas/TOOLS-11')
+      const panel = page.getByRole('region', { name: 'Research' })
+      await expect(panel.getByRole('link', { name: /CUST-14/ })).toBeVisible()
+      await scrollTo(panel, phone ? 64 : 24)
+    },
+  },
+  {
+    // Phase 8: Internal Tools' own proposal template, as its admin edits it.
+    name: '14-proposal-template',
+    as: 'dave',
+    variants: ['1440-light', '1440-dark'],
+    open: async (page) => {
+      await page.goto('/p/internal-tools/settings?tab=proposal-template')
+      await expect(page.getByRole('list', { name: 'Sections' }).getByRole('listitem')).toHaveCount(
+        6,
+      )
     },
   },
 ]

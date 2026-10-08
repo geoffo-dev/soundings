@@ -338,8 +338,9 @@ unsaved text. A section holds up to 20,000 characters.
 In a project with a research step before the proposal, a Shortlisted idea goes to
 Research first, and starting its proposal waits for the checklist
 ([Moving past Research](#moving-past-research)); the proposal can also be written while
-the idea is in Research. The proposal ends with **Research and consultation**: the
-answered checklist items, as the exports print them.
+the idea is in Research. In any project with a research step, the proposal ends with
+**Research and consultation**: the answered checklist items, as the exports print them
+(the outline's last link goes there).
 
 The proposal can be edited while the idea is Shortlisted or in Proposal. Moving the idea
 anywhere else makes it read-only (it can still be read, commented on and exported);

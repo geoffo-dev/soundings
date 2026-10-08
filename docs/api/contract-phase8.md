@@ -407,8 +407,9 @@ nothing (no audit). Owners can't override: only project and platform admins, in 
 ### 3.7 "Similar ideas"
 
 `list_similar_ideas`: at most **5** ideas, most similar first, whose `pg_trgm`
-`similarity()` with this idea is **≥ 0.3** (the `%` operator's default threshold, served
-by the existing trigram indexes on `title` and `summary`): the higher of
+`similarity()` with this idea is **≥ 0.3** (the `%` operator's default threshold; served
+by migration 0013's trigram GiST indexes: the 20 nearest titles and the 20 nearest
+summaries by `<->`, then ranked as follows, backend build B7): the higher of
 `similarity(title, :title)` and `similarity(summary, :summary)`, rounded to 2 places,
 ties by `last_activity_at` then id. Candidates: ideas the principal passes `idea.view` on
 (`listed_ideas`: **never a held idea**, never this idea, a key's project restriction
@@ -751,3 +752,11 @@ Builders record additive changes here (date, what, why), as in earlier phases.
 | B5 | Submitter status emails are skipped at queue time too (not only at send time) when nothing reported changes, so no outbox row is queued and then cancelled for New ↔ Research. | Admin → Email's outbox would otherwise list cancelled emails for moves the submitter never sees. |
 | B6 | My work asks only for the owned groups that have ideas (one statement still): the Research group exists only while you own an idea in Research. | §3.2 "a Research group appears only for ideas in Research". |
 | B7 | Migration **0013** adds trigram **GiST** indexes `ix_ideas_title_trgm_gist` and `ix_ideas_summary_trgm_gist`; "Similar ideas" takes the 20 nearest titles and the 20 nearest summaries by `<->` (index order), then ranks them by the larger similarity as shown (2 places, >= 0.3; ties by the latest activity, then id), limit 5. Same results as a full scan (any top-5 idea is among the nearest few by its better column) unless more than 20 ideas tie for fifth place. | `%` on the GIN indexes returns every match unordered: 1.3 s on 12,000 near-identical summaries, 5-16 ms with GiST. |
+
+### 2026-10-08 · integration (no API shape changed)
+
+| # | Change | Why |
+|---|---|---|
+| I1 | The SPA re-reads the proposal after a section save answers 404 (§2.7): the removed section leaves the editor and the kept text says "was removed"; a section restored meanwhile is edited again, the kept text beside it. | QA P8-QA-F1. |
+| I2 | Soundings' fake agent drafts any key matching `SECTION_KEY_PATTERN`, finding the section in `get_proposal` (§3.12). | QA P8-QA-P1: it refused sections a project added. |
+| I3 | Project settings' two tabs, Research and Proposal (§3.13), replace the Proposed "Workflow" tab. | Two long editors (decisions, Phase 8 build and integration). |

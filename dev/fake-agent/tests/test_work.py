@@ -83,6 +83,36 @@ def test_draft_section_suggests_text_for_that_section(agent: Agent) -> None:
     assert suggestion["body_md"].startswith("Known risks.")
 
 
+def test_draft_section_follows_the_projects_template(agent: Agent) -> None:
+    """A section the project added to its template (Phase 8) is read from get_proposal."""
+    agent.mcp.open_kind = "draft_section"
+    agent.mcp.open_section = "carbon_impact"
+    _run_id, body = run_message("draft_section", section_key="carbon_impact")
+    events = stream(agent.http, agent.url(), body)
+    assert state_of(events[-1]) == "completed"
+    assert agent.mcp.tools() == ["get_idea", "get_proposal", "propose_proposal_section"]
+    suggestion = agent.mcp.arguments("propose_proposal_section")
+    assert suggestion["section_key"] == "carbon_impact"
+    assert suggestion["base_version"] == 1
+
+
+def test_draft_section_not_in_the_proposal_saves_nothing(agent: Agent) -> None:
+    agent.mcp.open_kind = "draft_section"
+    agent.mcp.open_section = "pilot_plan"
+    _run_id, body = run_message("draft_section", section_key="pilot_plan")
+    events = stream(agent.http, agent.url(), body)
+    assert state_of(events[-1]) == "completed"
+    assert agent.mcp.tools() == ["get_idea", "get_proposal"]
+
+
+@pytest.mark.parametrize("section_key", [None, "", "Risks", "next-steps", "x" * 41, 7])
+def test_draft_section_with_a_malformed_key_is_not_a_run(agent: Agent, section_key: Any) -> None:
+    _run_id, body = run_message("draft_section", section_key=section_key)
+    events = stream(agent.http, agent.url(), body)
+    assert state_of(events[-1]) == "completed"
+    assert agent.mcp.tools() == []
+
+
 def test_a_refused_tool_ends_the_task_completed_without_a_result(agent: Agent) -> None:
     agent.mcp.run_open = False
     run_id, body = run_message("evaluate")

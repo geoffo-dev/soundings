@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, CircleAlert, Info, Plus, RotateCcw } from 'lucide-react'
-import { Fragment, useId, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { describeError, hasErrorCode, isApiError } from '@/api/errors'
 import { useReplaceResearchSettings, useResearchSettings } from '@/api/research'
@@ -483,8 +483,8 @@ function LifecyclePreview({ project, step }: { project: Project; step: ResearchS
       className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-0.5 text-xs text-muted"
     >
       {statuses.map((status, index) => (
-        <Fragment key={status}>
-          {index > 0 && <span>→</span>}
+        // Each stage keeps the arrow after it, so a wrapped line never starts with "→".
+        <span key={status} className="inline-flex items-center gap-x-1.5">
           <StatusBadge
             variant="plain"
             status={status}
@@ -495,7 +495,8 @@ function LifecyclePreview({ project, step }: { project: Project; step: ResearchS
                 : 'h-5 text-xs font-normal text-muted'
             }
           />
-        </Fragment>
+          {index < statuses.length - 1 && <span>→</span>}
+        </span>
       ))}
     </span>
   )

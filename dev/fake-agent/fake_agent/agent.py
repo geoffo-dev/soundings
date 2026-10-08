@@ -30,16 +30,10 @@ from fake_agent.observations import Observations, message_checks
 
 log = logging.getLogger("fake_agent")
 
-SECTION_KEYS = (
-    "summary",
-    "problem",
-    "solution",
-    "market",
-    "cost",
-    "benefits",
-    "risks",
-    "next_steps",
-)
+SECTION_KEY = re.compile(r"[a-z][a-z0-9_]{0,39}")
+"""A proposal section's key as Soundings writes it (each project has its own template:
+``summary``, ``risks``, ``carbon_impact``…). The fake checks only its shape; whether the
+section exists is read from ``get_proposal``, as a real agent would."""
 KINDS = ("evaluate", "research", "draft_section")
 WRITE_TOOLS = {
     "evaluate": "submit_evaluation",
@@ -89,7 +83,7 @@ def _run_from(context: RequestContext) -> Run | None:
     if not IDEA_KEY.fullmatch(idea) or not re.fullmatch(r"[0-9a-f-]{36}", run_id):
         return None
     if kind == "draft_section":
-        if section not in SECTION_KEYS:
+        if not (isinstance(section, str) and SECTION_KEY.fullmatch(section)):
             return None
     else:
         section = None
@@ -373,7 +367,7 @@ class FakeAgentExecutor(AgentExecutor):
         idea = await self._call(mcp, run, "get_idea", {"idea": run.idea}, phase="stray")
         project = ((idea.content.get("idea") or {}).get("project") or {}).get("slug")
         prefix, number = IDEA_KEY.fullmatch(run.idea).groups()  # type: ignore[union-attr]
-        other_section = next(s for s in SECTION_KEYS if s != run.section_key)
+        other_section = "summary" if run.section_key != "summary" else "problem"
         attempts: list[tuple[str, str, dict[str, Any]]] = [
             ("add_comment", "add_comment", {"idea": run.idea, "body_md": "A stray comment."}),
             (

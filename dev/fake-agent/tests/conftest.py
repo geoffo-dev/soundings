@@ -162,7 +162,7 @@ def run_message(
     *,
     run_id: str | None = None,
     idea: str = IDEA,
-    section_key: str | None = None,
+    section_key: object = None,
     protocol: str = "0.3",
 ) -> tuple[str, dict[str, Any]]:
     """A run's message as Soundings builds it (contract-phase6 section 3.4)."""

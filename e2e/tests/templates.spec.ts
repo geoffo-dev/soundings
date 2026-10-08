@@ -239,10 +239,6 @@ test('TPL-03: text typed into a section removed meanwhile is kept and the editor
   page,
   api,
 }) => {
-  // Frontend defect P8-QA-F1: after the 404 the proposal isn't refetched, so Risks stays
-  // in the editor and the kept text says "“Risks” is back in the template … copy it into
-  // the section above" (contract-phase8 §2.7: "This section was removed from the template").
-  test.fail(true, 'P8-QA-F1: the editor keeps showing a removed section after its save 404s')
   const alice = await api('alice')
   await removeRisksWhileOpen(page, alice)
   await expect(page.getByText('“Risks” was removed from the template')).toBeVisible()
@@ -278,6 +274,7 @@ test('TPL-04: the seeded proposals follow their projects’ templates', async ({
     /Effort & rollout/,
     /Risks/,
     /The ask/,
+    'Research and consultation',
   ])
   await expect(page.getByRole('textbox', { name: 'The ask', exact: true })).toHaveAttribute(
     'placeholder',
@@ -340,11 +337,6 @@ test.describe('@ai TPL-05: "Draft with AI" follows the template', () => {
   })
 
   test('a draft for a section the project added becomes its suggestion', async ({ api }) => {
-    // Platform defect P8-QA-P1: the fake agent accepts only the built-in eight keys
-    // (dev/fake-agent/fake_agent/agent.py SECTION_KEYS), so a run for `pilot_plan` ends
-    // `failed` against it. Soundings' side is right (backend tests); delete the mark when
-    // the fake accepts any key of the right shape.
-    test.fail(true, 'P8-QA-P1: the fake agent only drafts the eight default sections')
     const alice = await api('alice')
     const { team, key, agent } = await drafting(alice)
     try {

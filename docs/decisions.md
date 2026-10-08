@@ -1013,3 +1013,30 @@ lead's default; build it this way unless told otherwise.
 |---|---|---|
 | The eight new operations are pinned in `PHASE8_OPERATIONS` (test_contract_routes), apart from `CONTRACT`, until identity adds their `ROUTE_KEY_ACCESS` rows and `ROUTE_RULES` and moves them into `CONTRACT`; meanwhile keys are refused on them. | Proposed | The meta-tests index identity's tables by every `CONTRACT` operation, so adding them earlier stops the whole backend suite at collection. This phase's contract owns no identity paths. |
 | New response fields have server defaults in the schemas (`research_step = off`, `lifecycle` = the five, `research = null`, permission flags false) so the backend keeps building them until it implements Phase 8; the OpenAPI document still marks them required. | Proposed | Builders work in parallel on a compiling backend. |
+
+## 2026-10-08 · Phase 8 build and integration
+
+What the builders decided while building Phase 8, and the integration's fixes. The
+backend's API-level choices are B1–B7 in
+[contract-phase8 §10](api/contract-phase8.md#10-changes-after-the-contract); no API shape
+changed after the contract review.
+
+### Screens
+
+| Decision | Status | Why |
+|---|---|---|
+| Project settings has **two** new tabs, **Research** (`?tab=research`) and **Proposal** (`?tab=proposal-template`), not one "Workflow" tab: six tabs for project admins (General · Members · Rubric · Research · Proposal · Public form), five for members. Supersedes the contract's Proposed "Workflow". | Decided (lead, integration) | Each is a long editor of its own (radio cards with the stages, a checklist with Removed items; a template with Removed sections); one tab meant scrolling past one to reach the other. |
+| "Move anyway" is worded for the action it overrides: **Move**, **Invite**, **Ask** or **Start anyway**, each after an optional one-line reason. | Decided | The admin confirms what will happen, not an abstract override. |
+| Admins keep Invite and "Ask AI to evaluate" while research is open, with a note (the 409's dialog offers the override); owners who aren't admins get **Open research** instead. | Decided | No dead buttons for the people who may override; a clear next step for everyone else. |
+| The list's status filter keeps a chosen status the project no longer has (its research step was turned off). | Decided | A shared link still says what it filters on; it simply matches nothing. |
+| A board with six columns (the research step) fits beside the sidebar at 1440 px: columns shrink to 176 px (were 192), and a card's footer wraps its counts under the badges instead of clipping them. | Decided (integration) | At 1440 px the Closed column was cut off and footers with a research badge ran past the card's edge. |
+| The proposal editor's outline ends with a **Research and consultation** link while the appendix shows, and the appendix keeps to the text column. | Decided (integration, QA N1) | It is part of the document the exports print; it ran under the margin. |
+| Text typed into a section removed meanwhile: after the save's 404 the editor reads the proposal again, so the section leaves the editor and the kept text says it was removed; if an admin restores the section, it is editable again and the kept text stays, saying it is back. | Decided (integration, QA P8-QA-F1) | Until a reload the removed section stayed in the editor and the kept text claimed it was "back in the template". |
+| An idea's Proposal tab tells viewers the owner can start the proposal "once the research checklist is done" while required items are open before the proposal. | Decided (integration) | "Can start it now" was untrue there. |
+
+### Platform and demo
+
+| Decision | Status | Why |
+|---|---|---|
+| Soundings' fake agent drafts any section key of Soundings' shape (`^[a-z][a-z0-9_]{0,39}$`) and finds the section in `get_proposal`, as a real agent would; a key not in the proposal saves nothing. | Decided (integration, QA P8-QA-P1) | It accepted only the eight built-in keys, so "Draft with AI" for a project's own section (`carbon_impact`) failed against it. |
+| The demo's amounts carry a currency (GREEN-4: "£18 each", "£40,000 a year"). | Decided (QA N3) | Bare numbers in an exported proposal read as a mistake. |

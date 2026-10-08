@@ -13,6 +13,11 @@ import {
 import { cn } from '@/lib/utils'
 
 import { openThreadCount, useProposalEditor } from './editor-context'
+import {
+  focusResearchAppendix,
+  RESEARCH_APPENDIX_ID,
+  useAnsweredResearch,
+} from './research-appendix'
 import type { ProposalSaveStore } from './save-store'
 import { hasContent, sectionDomId } from './text'
 
@@ -47,8 +52,9 @@ export function Outline({
   sections: readonly ProposalSection[]
   className?: string
 }) {
-  const { store, threads, suggestions, current, focusSection } = useProposalEditor()
+  const { store, threads, suggestions, current, focusSection, ideaKey } = useProposalEditor()
   const written = useWritten(store, sections)
+  const appendix = useAnsweredResearch(ideaKey)
   const done = [...written.values()].filter(Boolean).length
   return (
     <nav
@@ -111,6 +117,19 @@ export function Outline({
           )
         })}
       </ol>
+      {appendix && (
+        // Phase 8: the research appendix the exports end with (not a section to write).
+        <a
+          href={`#${RESEARCH_APPENDIX_ID}`}
+          onClick={(event) => {
+            event.preventDefault()
+            focusResearchAppendix()
+          }}
+          className="mt-1 flex items-center gap-2 rounded-md border-t border-subtle px-2 pt-2.5 pb-1.5 text-sm text-secondary transition-colors hover:bg-subtle hover:text-primary"
+        >
+          <span className="min-w-0 flex-1 truncate">Research and consultation</span>
+        </a>
+      )}
     </nav>
   )
 }

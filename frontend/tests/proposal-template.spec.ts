@@ -84,7 +84,11 @@ test('keeps one section at least, twelve at most', async ({ page }) => {
 test('the proposal ends with the research appendix while the step is on', async ({ page }) => {
   await page.goto('/ideas/TOOL-4?tab=proposal')
   const appendix = page.getByRole('region', { name: 'Research and consultation' })
-  await expect(appendix).toBeVisible()
+  // The lazy editor, then its research query: under load in dev mode this takes over 5 s.
+  await expect(appendix).toBeVisible({ timeout: 10_000 })
+  await expect(
+    page.getByRole('navigation', { name: 'Outline' }).getByRole('link').last(),
+  ).toHaveText('Research and consultation')
   await expect(appendix).toContainText('Departments or teams consulted')
   await expect(appendix).toContainText('Security (Raj), 21 Jul')
   await expect(appendix).toContainText('Answered by Bob Chen on')

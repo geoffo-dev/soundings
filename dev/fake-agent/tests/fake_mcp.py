@@ -23,7 +23,10 @@ CRITERIA = [
 SECTIONS = [
     {"key": "summary", "title": "Summary", "body_md": "", "version": 1},
     {"key": "risks", "title": "Risks", "body_md": "Known risks.", "version": 3},
+    {"key": "carbon_impact", "title": "Carbon impact", "body_md": "", "version": 1},
 ]
+"""The idea's proposal: each project has its own template, so a section a project added
+(``carbon_impact``) is drafted like a built-in one."""
 AGENT_WRITES = {"submit_evaluation", "add_research_note", "propose_proposal_section"}
 
 

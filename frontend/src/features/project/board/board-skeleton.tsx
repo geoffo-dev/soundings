@@ -10,7 +10,7 @@ export function BoardSkeleton() {
           key={index}
           className={cn(
             'flex w-11/12 shrink-0 flex-col gap-2 rounded-lg bg-background p-2',
-            index === 4 ? 'sm:w-40' : 'sm:w-auto sm:max-w-sm sm:min-w-48 sm:flex-1',
+            index === 4 ? 'sm:w-40' : 'sm:w-auto sm:max-w-sm sm:min-w-44 sm:flex-1',
           )}
         >
           <div className="flex h-8 items-center gap-2 px-1.5">

@@ -198,8 +198,10 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   (`gateFocus`). The primary action adds Start research / Finish research / Start evaluation. The
   proposal editor follows `Proposal.sections` (hints as placeholders), keeps text typed into a
   section removed meanwhile as a local draft (`save-store` status `removed`, `lib/drafts.ts`
-  `writeDraft`/`readDrafts`, `removed-sections.tsx`), and ends with "Research and consultation"
-  (`research-appendix.tsx`).
+  `writeDraft`/`readDrafts`, `removed-sections.tsx`; after the save's 404 the keeper's `refresh`
+  re-reads the proposal, and a section restored meanwhile is edited again with the kept text
+  under `<key>#kept`), and ends with "Research and consultation" (`research-appendix.tsx`; the
+  outline's last link while it shows).
 - **Untrusted text (agents):** `Markdown untrusted` keeps http/https links only (no `mailto:`),
   opens them with `rel="noopener noreferrer nofollow"` in a new tab with the host after each
   (`urlHost`: the browser's ASCII/punycode reading, isolated with `<bdi dir="ltr">` by `LinkHost`;

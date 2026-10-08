@@ -139,14 +139,26 @@ Soundings' AI agents only (section 5); people leave it out, and it is ignored fo
 |---|---|---|
 | `list_projects` | `read` | The projects you can see (inside the key's projects), with your role, the idea count and whether you can create ideas there. Archived ones with `include_archived`. |
 | `search_ideas` | `read` | Ideas by `query` (title or summary text, or a key), `project`, `status`, `owner` (`me`, `none`), `awaiting_my_evaluation`, `sort`; 20 a page (`limit` up to 50, `cursor`). Scores follow blind evaluation. |
-| `get_idea` | `read` | One idea: description, status, owner, evaluators (invited or submitted), the aggregate and others' evaluations when you may see them, your own evaluation, and the latest comments (`comment_limit`, 10 by default, 20 at most; long comments are cut, `truncated`). |
+| `get_idea` | `read` | One idea: description, status, owner, evaluators (invited or submitted), the aggregate and others' evaluations when you may see them, your own evaluation, and the latest comments (`comment_limit`, 10 by default, 20 at most; long comments are cut, `truncated`). Phase 8: `research`, the project's research checklist with this idea's answers (`step`, `items` with `title`, `hint`, `required`, `answer`, who answered and when, `required_open`), or null while the project's research step is off. |
 | `get_rubric` | `read` | A project's criteria (by `project` or `idea`) with guidance, weights and which are inverted (a high Effort or Risk score is bad: score what you see). |
-| `get_proposal` | `read` | The idea's proposal, section by section, or null if none has been started, and whether you may suggest text. |
+| `get_proposal` | `read` | The idea's proposal, section by section in the order of **its project's template** (each with its `key`, `title`, `prompt` (the hint), `body_md` and `version`), or null if none has been started, and whether you may suggest text. |
 | `create_idea` | `write` | A new idea in a project, as you (status New; you watch it). |
 | `add_comment` | `write` | A comment on an idea, with @mentions as in the app; people are notified as usual. |
 | `submit_evaluation` | `evaluate` | Saves your evaluation: a 1-5 score for every criterion, a recommendation (`go`, `maybe`, `no`) and a comment. Submits by default (`submit: false` saves a draft); the arguments replace what was saved. Only if you were asked to evaluate the idea and evaluation is open. |
-| `propose_proposal_section` | `write` | Suggests the whole new text of one proposal section. It is only a suggestion: the idea's owner sees it in the proposal editor and accepts or discards it. A newer suggestion of yours for the same section replaces the older one. |
+| `propose_proposal_section` | `write` | Suggests the whole new text of one proposal section, named by its `section_key` from `get_proposal` (a section removed from the template, or a key the project never had, is the tool error `unknown_section`). It is only a suggestion: the idea's owner sees it in the proposal editor and accepts or discards it. A newer suggestion of yours for the same section replaces the older one. |
 | `add_research_note` | `write` | Phase 6, **for Soundings' AI agents only**: saves the research note of a "Research this" run (Markdown and up to 20 cited sources) into the idea's activity feed. Anyone else's key gets `forbidden`. |
+
+**Proposal sections and statuses (Phase 8).** Each project has its own proposal template
+(1 to 12 sections, edited by its admins). A section's `key` never changes: the eight
+built-in sections keep `summary`, `problem`, `solution`, `market`, `cost`, `benefits`,
+`risks` and `next_steps` (even when renamed), and a section a project adds gets a key made
+from its title (`carbon_impact`, `effort_rollout`; lower-case letters, digits and `_`).
+Read the keys from `get_proposal` rather than assuming the eight. A project may also have
+a research step: its ideas can then be in status `research` (`search_ideas` takes it as a
+`status`; cross-project results order it right after `new`). Moving an idea past Research
+needs the required checklist items answered; MCP has no tool that moves an idea or answers
+the checklist (people do that in the app, or with a `write` key through the REST API:
+`PUT /api/v1/ideas/{key}/research/items/{item_id}`).
 
 Results are structured JSON (`structuredContent`, snake_case, with an `outputSchema` per
 tool) plus the same JSON as text. Errors are results with `isError: true`, text
@@ -244,9 +256,17 @@ matrix §3 rule 9):
   aggregate until the idea's owner or an admin includes it; a re-submission that changes a
   score or the recommendation is left out again.
 - **What the agent is told.** Each run's A2A message holds the run id, kind, idea key,
-  section and the agent's name, plus standing instructions; never a key, a URL or idea
-  text. The agent reads the idea through `get_idea` (text labelled untrusted) and must use
-  the MCP server its operator configured.
+  section **key** and the agent's name, plus standing instructions; never a key, a URL or
+  idea text (nor a section's title: Phase 8 titles are project admins' text). The agent
+  reads the idea through `get_idea` and the section's title and hint through
+  `get_proposal` (text labelled untrusted), and must use the MCP server its operator
+  configured. A section a project added to its template (`carbon_impact`) is drafted like
+  a built-in one; a draft still running when its section is removed gets `unknown_section`
+  and ends without a result (`no_result`).
+- **Never the research checklist.** An agent reads the checklist and answers in
+  `get_idea` like anyone who can see the idea, but nothing lets it answer an item or move
+  the idea ("Ask AI to research" writes a research note into the feed; the idea's owner
+  turns what is useful into answers).
 - **Recorded.** Every call is an `mcp.call` audit entry with the agent's key, and its
   results (the evaluation, note or suggestion) appear in the app with an AI badge.
 

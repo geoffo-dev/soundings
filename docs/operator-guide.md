@@ -1200,7 +1200,10 @@ ignored. Narrow `trustedProxies` to your ingress pods' range where you can.
 
 Admin → Audit log (platform admins) records sign-ins, admin and access changes,
 assignments, evaluations, status changes, deletions, public-submission decisions,
-branding, API keys and every MCP tool call, with ids and outcome codes only. Entries are
+branding, API keys and every MCP tool call, with ids and outcome codes only. Phase 8
+adds a project's proposal template and research settings (step and checklist) saves, and
+every "Move anyway" past an unfinished research checklist (`idea.research_override`,
+with the admin's optional reason); research answers themselves are not audited. Entries are
 kept indefinitely except `mcp.call`, which the worker deletes after 90 days
 ([above](#audit-and-logs)).
 
@@ -1263,7 +1266,7 @@ tokens or text.
 | `api_keys` | key name, lookup id, SHA-256 of the key, scopes, last use; revoked keys stay for the audit trail | for good (revoked at deactivation) |
 | `notifications`, `notification_preferences` | their inbox and email choices | inbox 90 days; preferences until anonymised |
 | `outbound_email` | emails to them, by user id (the address is read when sending, not stored) | sent 30 days, failed 90 days |
-| ideas, comments, evaluations, votes, watches, proposals, suggestions, `activity_events`, `ai_runs` | what they wrote and did, by user id; @mentions of them carry their name in the comment text | the organisation's record: kept with the idea (deleted with it) |
+| ideas, comments, evaluations, votes, watches, proposals, suggestions, research answers (Phase 8), `activity_events`, `ai_runs` | what they wrote and did, by user id; @mentions of them carry their name in the comment text | the organisation's record: kept with the idea (deleted with it) |
 | `audit_log` | the actor's and target's ids, the action, ids and field names (never names, emails, tokens or claims) | for good, except `mcp.call` entries (90 days) |
 
 **When someone leaves:** deactivate them in Admin → Users (signs them out,

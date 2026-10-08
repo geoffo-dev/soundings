@@ -82,10 +82,10 @@ seeded Internal Tools and Sustainability story without changing it.
 | RS-10 | `research.spec.ts` | A public submission in a "Before proposal" project moved Evaluating → Shortlisted → Research: tracking reads Shortlisted, no Research in the history or on the page. "Before evaluation": New → Research reads New (with the team), and Evaluating → Research reads New again; no Research row in the history. |
 | TPL-01 | `templates.spec.ts` | Project settings → Proposal: rename Market & users → Customers, Move Risks up (menu), Add section (focused) with a hint, Remove Cost & effort (asks: "Its text in 1 proposal is kept"), Save → toast, "Removed sections" with "Text in 1 proposal"; keys stable and the new one a slug; the owner's editor follows (headings, outline order, the hint as placeholder, the renamed section's text, no removed section); **Markdown and PDF downloads** follow; Restore → nine sections (the restored one focused), Save, its text back in the editor. |
 | TPL-02 | `templates.spec.ts` | A member reads the template ("Only project admins can change them.") with no fields; the API refuses a member's save. |
-| TPL-03 | `templates.spec.ts` | Text typed into a section removed meanwhile: the autosave's 404 keeps it ("Your text for Risks") **and the editor says it was removed** — pinned as an expected failure (`test.fail`, P8-QA-F1 below). |
+| TPL-03 | `templates.spec.ts` | Text typed into a section removed meanwhile: the autosave's 404 keeps it ("Your text for Risks") **and the editor says it was removed** (P8-QA-F1, fixed at integration; the mark is gone). |
 | TPL-03b | `templates.spec.ts` | After a reload the kept text is there, "“Risks” was removed from the template", the section gone. |
 | TPL-04 | `templates.spec.ts` | TOOLS-3 (Kenji): outline Summary, Problem, Solution, Effort & rollout, Risks, The ask; The ask's hint; the appendix region with the seeded consultation and "Answered by Kenji Watanabe". GREEN-4 (Zanele): Carbon impact written. |
-| TPL-05 `@ai` | `templates.spec.ts` | "Draft with AI" against the fake agent in a project whose template removed Cost & effort and added Pilot plan: a draft for the removed (`cost`) or an unknown key is 422 `unknown_section` before any run; a draft for `pilot_plan` should end as that section's suggestion — pinned as an expected failure (`test.fail`, P8-QA-P1: the fake agent accepts only the eight default keys). |
+| TPL-05 `@ai` | `templates.spec.ts` | "Draft with AI" against the fake agent in a project whose template removed Cost & effort and added Pilot plan: a draft for the removed (`cost`) or an unknown key is 422 `unknown_section` before any run; a draft for `pilot_plan` ends as that section's suggestion (P8-QA-P1, fixed at integration; the mark is gone). |
 | A11Y8-* | `a11y-phase8.spec.ts` | axe WCAG 2.2 AA (serious/critical none), light and dark: Research settings (locked, checklist), Proposal settings with a removed section, the TOOLS board, the gate dialog, TOOLS-12's answerable panel, TOOLS-11's complete panel with Similar ideas, TOOLS-3's editor with the appendix; axe best-practice rules on the screens without overlays (light). |
 | MO8-01 | `a11y-phase8.spec.ts` | The same screens at 390 px without sideways scrolling. |
 
@@ -111,6 +111,18 @@ seeded Internal Tools and Sustainability story without changing it.
 | `npm --prefix e2e run check` | tsc and prettier clean |
 | `npm --prefix e2e run screenshots:phase8` | 25 passed: `docs/screenshots/phase-8/` (8 screens × 1440 light, 1440 dark, 390 light) and `pdf/` |
 
+### Integration (2026-10-08)
+
+| Run | Result |
+|---|---|
+| `make -C backend check` | ruff, format, mypy (435 files) clean; 6,938 passed, 1 skipped (no 501 stubs left) |
+| `make -C backend test-slow` | statement budgets and N+1 checks pass; p95: only "me.work (owner)" over 150 ms (156-214 ms over three runs; 0.1.0's code, `git archive 0046a9a`, 162 ms on the same machine), board by score 130-160 ms |
+| `npm --prefix frontend run check` / `test:pw` | 626 vitest; 403 passed + 2 timing failures under load (the palette's My work heading; the appendix behind the lazy editor), both green on rerun, the second given 10 s |
+| e2e default / `E2E_AI=1` / `E2E_SSO=1` (full suites) | 286 / 326 / 307 passed, 0 failed (TPL-03 and TPL-05 without their marks) |
+| `make check-fake-agent`, `check-helm`, `check-scripts`, `gen-api` | pass; no API diff |
+| `make image` | 524 MB |
+| k3s (`p8-int-k3s`) | 0.1.0 with demo data, upgraded to the Phase 8 image (0011 → 0013), smoke; then `SSO=1 SMTP=1 MCP=1 AI=1` install and every smoke; the gate, `ideas_in_research` and answers live through the ingress on the migrated data |
+
 No earlier spec needed a change for the new demo story (the Internal Tools ideas that moved
 through Research and the custom templates touch no earlier assertion). The only edit to
 shared e2e support: `ProposalSectionKey` is now `string` in `tests/support/api.ts` (the
@@ -125,3 +137,10 @@ contract dropped the enum).
 | P8-QA-N1 | frontend | The proposal editor's "Research and consultation" appendix isn't in the Outline, and its lines run under the comments margin (full width) where the sections stop at the text column. | `/ideas/TOOLS-3?tab=proposal` at 1440 px. |
 | P8-QA-N2 | frontend | Research settings at 390 px: the stage preview wraps so a line starts with "→" ("→ ● Closed"). | `/p/internal-tools/settings?tab=research` at 390 px. |
 | P8-QA-N3 | backend (seed) | GREEN-4's seeded proposal has amounts without a currency ("2,400 crates at 18 each", "roughly 40,000 a year"). | GREEN-4's PDF or Markdown. |
+
+All five were fixed at integration (2026-10-08): F1 (`save-store.ts` asks the editor to
+re-read the proposal after a 404; a restored section is editable again with the kept text
+beside it; two vitest cases), P1 (`dev/fake-agent` takes any key of Soundings' shape and
+finds the section in `get_proposal`; three fake-agent tests), N1 (the outline links the
+appendix, which keeps to the text column; TPL-04 expects the link), N2 (each stage keeps
+its arrow after it), N3 (£ amounts). TPL-03 and TPL-05 pass without their marks.

@@ -77,7 +77,7 @@ ended):
 |---|---|---|
 | `evaluate` | `get_rubric`, `get_idea`, `submit_evaluation` (`submit: true`) | each criterion scored by its position (3, 4, 5, 1, 2, ...), a rationale starting `fake-rationale:` that names the criterion and the idea, two sources under `https://example.org/fake-agent/...`; recommendation `maybe`; a summary |
 | `research` | `get_idea`, `add_research_note` | a short Markdown note with three sources |
-| `draft_section` | `get_idea`, `get_proposal`, `propose_proposal_section` | the section's text plus a marked paragraph, with its `base_version` |
+| `draft_section` | `get_idea`, `get_proposal`, `propose_proposal_section` | the section's text plus a marked paragraph, with its `base_version`. The section is found by its key in `get_proposal`'s sections, so a section a project added to its template (`carbon_impact`) works like a built-in one; a key that isn't in the proposal saves nothing, and a key not shaped like Soundings' (`^[a-z][a-z0-9_]{0,39}$`) isn't a run |
 
 A tool error ends the task `completed` with a reply saying so (Soundings: `no_result`); an
 unreachable MCP server or a refused key ends it `failed`. `fake-rationale` and

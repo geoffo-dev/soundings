@@ -256,6 +256,38 @@ describe('ProposalSaveStore and the template (Phase 8)', () => {
     expect(forget).toHaveBeenCalledWith('market')
   })
 
+  it('reads the proposal again after a save answered 404', async () => {
+    const refresh = vi.fn()
+    const store = new ProposalSaveStore(
+      [section('risks', '')],
+      vi.fn<SaveFn>(() => Promise.reject(notFound())),
+      vi.fn(),
+      { keep: vi.fn(), forget: vi.fn(), refresh },
+    )
+    store.edit('risks', 'Typed')
+    await store.saveNow('risks')
+    expect(refresh).toHaveBeenCalledTimes(1)
+    // The refetch no longer lists it: the kept text stays, under its own key.
+    store.receive([])
+    expect(store.removed()).toEqual([['risks', expect.objectContaining({ draft: 'Typed' })]])
+  })
+
+  it('a removed section restored to the template is edited again; the kept text stays', async () => {
+    const store = new ProposalSaveStore(
+      [section('risks', 'Old')],
+      vi.fn<SaveFn>(() => Promise.reject(notFound())),
+      vi.fn(),
+      { keep: vi.fn(), forget: vi.fn() },
+    )
+    store.edit('risks', 'Typed')
+    await store.saveNow('risks')
+    store.receive([section('risks', 'Old', 2)])
+    expect(store.get('risks')).toMatchObject({ status: 'saved', draft: 'Old', base: 2 })
+    expect(store.removed()).toEqual([['risks#kept', expect.objectContaining({ draft: 'Typed' })]])
+    store.edit('risks', 'Edited again')
+    expect(store.get('risks')?.status).toBe('dirty')
+  })
+
   it('follows the template on refetch: new sections join, removed ones go unless unsaved', () => {
     const keep = vi.fn()
     const store = new ProposalSaveStore(

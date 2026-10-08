@@ -43,7 +43,10 @@ backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the whe
   app/notifications/  fan-out, preferences, digests, reminders, mentions, inbox, unsubscribe
   app/email/          outbox, worker tasks, SMTP, rendering; app/templates/email/ (Jinja2)
   app/proposals/      sections, margin threads, suggestions, Markdown, exports; PDF child process
-                      (pdf.py, pdf_child.py), app/templates/pdf/, app/assets/fonts/ (woff2)
+                      (pdf.py, pdf_child.py), app/templates/pdf/, app/assets/fonts/ (woff2);
+                      template.py (Phase 8: each project's sections, archive/restore by key)
+  app/services/research.py  the research step (Phase 8): settings, checklist, answers, the
+                      gate (`research_incomplete`, "Move anyway"), card progress, Similar ideas
   app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention
   app/services/branding.py brand_assets.py moderation.py  branding (cached), images, queue
   app/ai/             AI runs (Phase 6): registry (agents.py), runs.py, runner.py + tasks.py (the
@@ -132,6 +135,12 @@ holds the timing seams (deadline, heartbeat, poll, retries, clock, `transport`) 
 `app.state.ai_transport` replaces the network for Test connection. Agents' keys are
 MCP-only (REST: 403), so tests of agents go through `/mcp` with an open run that each
 call names: `mcp_as(key).for_run(run)` passes its `run_id` (`tests/mcp/conftest.py`).
+Research tests (Phase 8, `tests/research/conftest.py`): `set_step(db, project, step)` turns
+the step on with the default checklist (straight in the database), `answer(db, idea, item,
+user)` / `answer_required(db, idea, items, user)` write answers, `open_titles(body)` reads a
+409's open items; `test_phase8_acceptance.py` (about 80 s) plays the Phase 8 stories
+through the API (`tests/proposals/test_template.py` for templates, `tests/ai/
+test_research_gate.py`, `tests/mcp/test_research.py`, `tests/public/test_research_public.py`).
 API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
 layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
 `make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
@@ -232,7 +241,15 @@ under the serial ones) and restore the profile in `finally`. PDFs
 are read with `tests/support/pdf.ts` (`pdfjs-dist`, an e2e dev dependency: text,
 metadata, colours, embedded fonts, page renders; there is no poppler here). The demo seed
 has 48 ideas (CUST-21 approved from the public form, CUST-22/23 in the moderation
-queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators.
+queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators. Phase 8
+(contract-phase8 §3.14, `app/seed/research.py`): Internal Tools (13 ideas) has the research
+step before evaluation, the default checklist and a six-section template; TOOLS-11
+(complete; "Similar ideas" finds CUST-14) and TOOLS-12 (one required item open) are in
+Research, TOOLS-3's proposal ends with the research appendix. Sustainability (12 ideas)
+has it before the proposal and a "Carbon impact" section (GREEN-4's proposal); GREEN-6
+(Shortlisted) is partly answered, GREEN-5 not yet. Customer Innovation is unchanged (step off). So a New
+TOOLS idea needs its checklist answered (or an admin's "Move anyway") before Evaluating or
+its first evaluator.
 `screenshots:phase4` writes `docs/screenshots/phase-4/` (12 screens × 1440 light/dark and
 390), `pdf/` (the exported PDF and its pages) and `emails/` (as Mailpit received them).
 **API keys and MCP (Phase 5):** specs use keys only through `tests/support/mcp.ts`
@@ -262,8 +279,19 @@ product tour, `docs/screenshots/tour/` (`NN-<screen>-<variant>.png`: 12 screens 
 light, most also dark or 390, the PDF's first page and an email). Contract rules not built yet are pinned as
 expected failures (`test.fail(true, …)` in Playwright, `@pytest.mark.xfail(strict=True)`
 in pytest), which fail loudly once fixed: then delete the mark.
+**Templates and research (Phase 8):** specs use `tests/support/research.ts`
+(`researchTeam(alice, name, step, members)`: a private project with the step on and the
+default checklist; `setResearchStep`, `answerItem`, `answerRequired`, `ideaResearch`,
+`proposalTemplate` / `setProposalTemplate`, `similarIdeas`; `CHECKLIST`, `DEFAULT_SECTIONS`):
+RS-01…RS-10 (`research.spec.ts`; RS-09 `@ai`), TPL-01…TPL-05 (`templates.spec.ts`;
+TPL-05 `@ai`, the fake drafts any section key), A11Y8/MO8 (`a11y-phase8.spec.ts`). Keyboard
+drags wait for the drag library's announcements ("Picked up"). Board cards in a project
+with the step show "n/m" research badges; outlines list "Research and consultation" after
+the sections when the appendix shows. `screenshots:phase8` writes
+`docs/screenshots/phase-8/` (8 screens × 1440 light/dark and 390 light) and `pdf/`
+(TOOLS-3 and GREEN-4).
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
-`docs/test-plans/phase-1.md` … `phase-6.md`.
+`docs/test-plans/phase-1.md` … `phase-8.md` (Phase 7: `performance.md`).
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
@@ -279,6 +307,9 @@ N`, `--think 0`), `npm --prefix e2e run perf` (browser timings, 4x CPU throttlin
 Timings in `tests/perf` freeze the test process's heap first (`frozen_heap`), as the API
 does after startup; without it one full garbage collection over earlier tests' objects
 lands on a single sample (a 400 ms "board -score" outlier in a full `-m slow` run).
+Phase 8 added "board (research step)" (Internal Tools) and "similar ideas (12k ideas)"
+timings and the statement budgets `list`/`board (research step)` 8, `idea.research` 6,
+`idea.similar` 6 (`STATEMENT_BUDGET`); `seed_large` gives Internal Tools research data.
 Before/after comparisons: run the old commit's `backend/app` (`git archive`) with the
 backend venv on another port against the same database (section 8 of the test plan).
 
@@ -536,6 +567,43 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   OpenAPI and Swagger UI need a caller in production; account-kind decisions are policy
   traits (`app.authz.is_agent` …, role matrix §1a); PDFs are tagged; emails are one
   `role="article"` landmark; the bundled Postgres's app role is not a superuser.
+- **Proposal templates** (contract-phase8 §2, ADR 0015, `app/proposals/template.py`): a
+  section is always addressed by its **key** (`varchar(40)`, `^[a-z][a-z0-9_]{0,39}$`, no
+  foreign key; the eight built-in keys `summary` … `next_steps` stay even when renamed); a
+  new section's key comes from its title (`section_key_for`: slug, `_2` on a clash with any
+  key the project ever had) and never changes; the API never takes a key for a new
+  section. `replace_proposal_template` (project `FOR UPDATE`, audited, last write wins)
+  archives a removed key that anything refers to (text, thread, suggestion, AI run), else
+  deletes it; putting the key back restores it with its text. Proposals, threads,
+  suggestions, exports, "Draft with AI" and MCP list only active sections in template
+  order; a removed or unknown key is 422 `unknown_section` (after the 403s, before the
+  409s). New projects get `app/domain/template_defaults.py`. Never assume eight sections
+  (the fake agent reads them from `get_proposal`).
+- **The research step** (contract-phase8 §3, role matrix F/K, `app/services/research.py`):
+  `IdeaStatus.research` exists in a project only while its step is on (else 409
+  `research_step_off`); per-project order is `app.schemas.research.lifecycle(step)`
+  (board, status dialog, `Project.lifecycle`), cross-project views use
+  `CANONICAL_STATUS_ORDER` (Research after New). Turning the step off or moving it is 409
+  `ideas_in_research` (with the count). **The gate** guards crossings only
+  (`crosses_gate`; reopening counts from the status the idea was closed from), in one
+  place: `ideas.change_status` (also `create_proposal`'s move) plus one research-service
+  check for the first evaluator invite and "Ask AI to evaluate"; refused moves are 409
+  `research_incomplete` with `open_items` and `can_override`. "Move anyway" is the request
+  flag `override_research` (+ optional `override_reason`), rule `idea.research_override`
+  (project and platform admins, session only), audited, `research_overridden: true` in the
+  status event. Never bypass it (the seed answers first). Answers (`idea.answer_research`:
+  the owner and admins; a `write`-scope key; never an agent) are plain text without
+  invisible characters, need a visible one, are not audited or notified.
+  `IdeaSummary.research` ("2/3") only for an idea in Research or the status before it, in
+  one grouped statement per page. "Similar ideas" uses the trigram GiST indexes (0013):
+  the 20 nearest titles and summaries, ≥ 0.3, top 5, never held ideas, no scores. Public
+  tracking shows the status before Research (`public_status`) and emails the submitter
+  only when that changes. The exports end with "Research and consultation" while the step
+  is on and an item is answered. SPA: statuses from `Project.lifecycle` (`lib/status.ts`),
+  one gate dialog for every guarded action (`features/research/research-gate-dialog.tsx`,
+  state in `api/research.ts`); text typed into a section removed meanwhile is kept per
+  user (`proposal-removed:<KEY>:<section>` draft) and the editor re-reads the proposal
+  after the save's 404.
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -636,7 +704,10 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
 - **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
   stop what you start, never kill other agents' processes or containers. `make -C backend
   test-slow`'s My work p95 sits near its 150 ms budget here (about 140 ms): run it on an
-  idle machine, not straight after another test session.
+  idle machine, not straight after another test session. On 2026-10-08 this machine was
+  slower: an owner's My work 150-187 ms and the board by score 128-182 ms from run to run,
+  for 0.1.0's code too (`git archive 0046a9a`, same venv), so compare against the old
+  commit before calling a p95 miss a regression.
 
 ## Claude Code multi-agent setup
 
@@ -863,3 +934,26 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   and the remaining misses in `docs/test-plans/performance.md` §8–9 and the release notes'
   known issues; decisions `docs/decisions.md` (Phase 7 sections). Stop for the human's
   review.
+- **Phase 8** (product owner's change after 0.1.0; `docs/decisions.md` "Phase 8 (product
+  owner, 2026-10-07)", contract-phase8, ADR 0015): **per-project proposal templates** (1-12
+  sections with a title and hint, stable keys, archive/restore with text kept; editor,
+  threads, suggestions, "Draft with AI", MCP and both exports follow the template live) and
+  an optional **research step** per project (Off / Before evaluation / Before proposal; the
+  Research status and column; a checklist of free-text answers; the gate with an admin's
+  "Move anyway", audited; "Similar ideas" over trigram GiST indexes; the "Research and
+  consultation" appendix in the editor and exports; public tracking shows the stage before
+  it). Migrations 0012 (templates and research, existing projects keep the eight sections,
+  step off) and 0013 (GiST indexes); head 0013. Project settings has six tabs (General ·
+  Members · Rubric · Research · Proposal · Public form). Demo: Internal Tools before
+  evaluation with a six-section template, Sustainability before the proposal with "Carbon
+  impact", Customer Innovation unchanged. Integration (2026-10-08): QA's P8-QA-F1 (the editor
+  re-reads the proposal after a removed section's 404), P8-QA-P1 (the fake agent drafts any
+  section key) and nits N1-N3 fixed and their marks removed; six board columns fit at 1440
+  px with wrapping card footers. Checks: backend (6,938 tests), frontend check (626 vitest)
+  + test:pw, e2e in all three modes (default 286, `E2E_AI=1` 326, `E2E_SSO=1` 307 passed,
+  none failed), fake agent, Helm, scripts, `make gen-api` (no diff), `make image` (524 MB);
+  on k3s an upgrade from 0.1.0's image with demo data (0011 → 0013) and every smoke as CI
+  (`SSO=1 SMTP=1 MCP=1 AI=1`). `test-slow`: only an owner's My work p95 misses its 150 ms
+  here (156-214 ms; 0.1.0's code 162 ms on the same machine that day). Test plan
+  `docs/test-plans/phase-8.md`; screenshots `docs/screenshots/phase-8/` (+ `pdf/`), every
+  earlier set re-captured, tour shots 13-14. Stop for the human's review.

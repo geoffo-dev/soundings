@@ -3,6 +3,7 @@ import { useBlocker } from '@tanstack/react-router'
 import { FileDown, FileText, Info, MessageSquarePlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
+import { queryKeys } from '@/api/keys'
 import {
   saveProposalSection,
   storeProposalSection,
@@ -81,6 +82,8 @@ export function ProposalEditor({ ideaKey, idea, me, proposal, permissions }: Pro
         keep: (key, title, text) =>
           writeDraft(me.id, `${keptPrefix}${key}`, JSON.stringify({ title, text })),
         forget: (key) => writeDraft(me.id, `${keptPrefix}${key}`, null),
+        refresh: () =>
+          void queryClient.invalidateQueries({ queryKey: queryKeys.proposals.view(ideaKey) }),
       },
     )
     for (const [name, value] of readDrafts(me.id, keptPrefix)) {

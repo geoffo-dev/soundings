@@ -232,13 +232,13 @@ PROPOSALS: Final[MappingProxyType[str, MappingProxyType[str, str]]] = MappingPro
                 ),
                 "cost": md(
                     """
-                    About 2,400 crates at 18 each, plus washing at the depot. Crates last
+                    About 2,400 crates at £18 each, plus washing at the depot. Crates last
                     five years.
                     """
                 ),
                 "benefits": md(
                     """
-                    Cardboard and tape savings of roughly 40,000 a year at full rollout,
+                    Cardboard and tape savings of roughly £40,000 a year at full rollout,
                     and a visible change customers asked for.
                     """
                 ),

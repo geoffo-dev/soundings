@@ -4,7 +4,9 @@
 anonymously too through a public form. Each idea gets one accountable **owner** and
 several **evaluators**, who score it **blind** against a short rubric. The scores roll
 up into a weighted aggregate with a "high disagreement" flag. Strong ideas become a
-commercial proposal, exported as a branded PDF or as Markdown. AI agents in
+commercial proposal over the project's own template, exported as a branded PDF or as
+Markdown. A project can add a research step: before the team invests, the owner checks
+the idea isn't already being done elsewhere and records which teams were consulted. AI agents in
 [kagent](https://kagent.dev) can act as an extra evaluator or research assistant
 through Soundings' own MCP server.
 
@@ -23,9 +25,10 @@ Version **0.1.0**: [release notes](docs/RELEASE-NOTES.md).
 | ![Sign in with single sign-on](docs/screenshots/tour/01-sign-in-1440-light.png) **1. Sign in** with your organisation's single sign-on (OIDC: Keycloak, Entra ID, Google). Project access follows your directory groups. | ![My work](docs/screenshots/tour/02-my-work-1440-light.png) **2. My work**: evaluations due (overdue first), the ideas you own by status, and what changed recently. |
 | ![The board](docs/screenshots/tour/03-board-1440-light.png) **3. Board and list** for each project, sorted by aggregate score and filtered in a keystroke. It stays fast with 10,000 ideas. | ![An idea](docs/screenshots/tour/04-idea-page-1440-light.png) **4. The idea page**: the owner's next step as the one blue button, the activity feed, @mentions and votes. |
 | ![Evaluating blind](docs/screenshots/tour/05-evaluate-sheet-1440-light.png) **5. Evaluate blind**: score each criterion 1–5 and recommend Go, Maybe or No. Nobody else's scores are in sight until you submit. | ![Scores revealed](docs/screenshots/tour/06-evaluate-reveal-1440-light.png) **6. Then see everyone's scores**, the weighted aggregate and where evaluators disagree. |
-| ![The proposal editor](docs/screenshots/tour/07-proposal-1440-light.png) **7. Proposals** from a fixed eight-section template, with comments in the margin and suggestions to accept or discard. | ![The exported PDF](docs/screenshots/tour/08-proposal-pdf.png) **8. Export** a branded, tagged PDF or Markdown. |
+| ![The proposal editor](docs/screenshots/tour/07-proposal-1440-light.png) **7. Proposals** over the project's template, with comments in the margin and suggestions to accept or discard. | ![The exported PDF](docs/screenshots/tour/08-proposal-pdf.png) **8. Export** a branded, tagged PDF or Markdown. |
 | ![The public form](docs/screenshots/tour/09-public-form-1440-light.png) **9. Public form**: anyone can send an idea, protected by a proof of work. Submitters track it through a private link. | ![Notifications](docs/screenshots/tour/10-notifications-1440-light.png) **10. Notifications** in the app and by email, immediately or as a daily digest. ([An email](docs/screenshots/tour/10-email-1440-light.png).) |
 | ![Admin](docs/screenshots/tour/11-admin-1440-light.png) **11. Admin**: users, groups and IdP mappings, single sign-on, branding, email, API keys, AI agents and the audit log. | ![An AI evaluation](docs/screenshots/tour/12-ai-evaluation-1440-light.png) **12. AI evaluation** by a kagent agent: a rationale and cited sources per criterion. It stays out of the score until the owner includes it. (Here Soundings' deterministic stand-in agent wrote it.) |
+| ![The research step](docs/screenshots/tour/13-research-1440-light.png) **13. Research step** (optional, per project): a short checklist ("Not already being done elsewhere", "Departments or teams consulted") answered before evaluation or before the proposal, with similar ideas from every project you can see. | ![A project's proposal template](docs/screenshots/tour/14-proposal-template-1440-light.png) **14. Your own proposal template**: project admins rename, reorder, add and remove sections; removed text is kept and comes back on restore. |
 
 Dark mode and phone layouts: [docs/screenshots/tour/](docs/screenshots/tour/). Every
 screen at 1440 px light and dark, and at 390 px:

@@ -124,7 +124,8 @@ export function CardBody({ idea, lifted = false }: { idea: IdeaSummary; lifted?:
           {moreTags > 0 && <Badge variant="outline">+{moreTags}</Badge>}
         </div>
       )}
-      <div className="flex min-h-6 items-center gap-3 pt-0.5">
+      {/* Wraps in narrow columns (six with the research step): the counts move under. */}
+      <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5">
         <OwnerAvatar owner={idea.owner} size="xs" />
         <ResearchProgressBadge research={idea.research} />
         {idea.evaluator_progress.total > 0 && (

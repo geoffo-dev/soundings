@@ -49,6 +49,11 @@ export const AUTOSAVE_DELAY_MS = 800
 export interface RemovedSectionKeeper {
   keep: (key: ProposalSectionKey, title: string, text: string) => void
   forget: (key: ProposalSectionKey) => void
+  /**
+   * A save answered 404: the template changed under the editor, so the proposal is read
+   * again (the removed section leaves the editor; `receive` then keeps its text).
+   */
+  refresh?: () => void
 }
 
 const NO_KEEPER: RemovedSectionKeeper = { keep: () => undefined, forget: () => undefined }
@@ -74,18 +79,7 @@ export class ProposalSaveStore {
     this.save = save
     this.onSaved = onSaved
     this.keeper = keeper
-    for (const section of sections) {
-      this.sections.set(section.key, {
-        title: section.title,
-        draft: section.body_md,
-        saved: section.body_md,
-        base: section.version,
-        status: 'saved',
-        conflict: null,
-        error: null,
-        savedAt: null,
-      })
-    }
+    for (const section of sections) this.sections.set(section.key, this.fromServer(section))
   }
 
   subscribe = (listener: () => void) => {
@@ -199,6 +193,7 @@ export class ProposalSaveStore {
       // Phase 8: the section was removed from the template while you typed.
       if (isApiError(error) && error.status === 404) {
         this.markRemoved(key)
+        this.keeper.refresh?.()
         return
       }
       if (hasErrorCode(error, 'proposal_conflict')) {
@@ -303,6 +298,20 @@ export class ProposalSaveStore {
     this.keeper.keep(key, state.title, state.draft)
   }
 
+  /** A section's entry as the server has it (saved, nothing typed here). */
+  private fromServer(section: ProposalSection): SectionSaveState {
+    return {
+      title: section.title,
+      draft: section.body_md,
+      saved: section.body_md,
+      base: section.version,
+      status: 'saved',
+      conflict: null,
+      error: null,
+      savedAt: null,
+    }
+  }
+
   /** Text kept from earlier (a local draft of a removed section): shown until discarded. */
   restoreKept(key: ProposalSectionKey, title: string, text: string): void {
     if (this.sections.get(key)?.status === 'removed' || !text) return
@@ -357,17 +366,18 @@ export class ProposalSaveStore {
     }
     for (const section of sections) {
       const state = this.sections.get(section.key)
+      if (state?.status === 'removed') {
+        // Restored to the template: the section is edited again as the server has it,
+        // and the text kept from before keeps a row of its own ("back in the template").
+        const keptKey = `${section.key}#kept`
+        if (!this.sections.has(keptKey)) this.sections.set(keptKey, state)
+        this.sections.set(section.key, this.fromServer(section))
+        this.version += 1
+        this.listeners.forEach((listener) => listener())
+        continue
+      }
       if (!state) {
-        this.sections.set(section.key, {
-          title: section.title,
-          draft: section.body_md,
-          saved: section.body_md,
-          base: section.version,
-          status: 'saved',
-          conflict: null,
-          error: null,
-          savedAt: null,
-        })
+        this.sections.set(section.key, this.fromServer(section))
         this.version += 1
         this.listeners.forEach((listener) => listener())
         continue

@@ -116,8 +116,9 @@ export function BoardColumn({
       className={cn(
         'flex max-h-full min-h-0 shrink-0 snap-start flex-col gap-2 rounded-lg bg-background p-2',
         'transition-[background-color,box-shadow] duration-150',
-        // Phones: one column per screen, snapping. Wider: columns share the width.
-        collapsed ? 'w-11/12 sm:w-40' : 'w-11/12 sm:w-auto sm:max-w-sm sm:min-w-48 sm:flex-1',
+        // Phones: one column per screen, snapping. Wider: columns share the width (six,
+        // with the research step, still fit beside the sidebar at 1440 px).
+        collapsed ? 'w-11/12 sm:w-40' : 'w-11/12 sm:w-auto sm:max-w-sm sm:min-w-44 sm:flex-1',
         canDrop && 'ring-1 ring-border',
         isOver && 'bg-accent-subtle ring-accent/40',
       )}
