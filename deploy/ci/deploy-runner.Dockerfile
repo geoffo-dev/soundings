@@ -18,7 +18,7 @@
 # registry-mirrors for docker.io). Nothing is downloaded from the internet otherwise.
 
 FROM docker.io/alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec AS helm
-FROM docker.io/rancher/kubectl:v1.31.14@sha256:c01afebbff02d9e67108604f48a8cc780ff7dd1af0ea12d108f0fc019e532301 AS kubectl
+FROM docker.io/rancher/kubectl:v1.36.2@sha256:06c7a7a9772737494ae1e0c3af90f1b5385630c147e47c1c7cea92f4bed55fbe AS kubectl
 
 # --- tools: GitLab's deploy jobs, people ------------------------------------------------
 FROM docker.io/alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec AS tools
