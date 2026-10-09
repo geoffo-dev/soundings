@@ -224,7 +224,8 @@ class IdeaPermissions(IdeaSummaryPermissions):
             "Phase 8b: idea.assign_researcher: assign, change or remove the researcher and "
             "set the research due date (the owner, project admins and platform admins; false "
             "while the research step is off or the idea is closed, and through an API key: "
-            "assigning is session only)."
+            "assigning is session only). Past Research nobody new can be named (409 "
+            "research_finished); the researcher can still be kept or removed."
         ),
     )
     can_assign_outside_researcher: bool = Field(

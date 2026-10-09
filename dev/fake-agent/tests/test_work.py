@@ -243,6 +243,7 @@ def test_a_research_run_strays_into_the_proposal_and_the_rubric(agent: Agent) ->
     strays = agent.observations(run_id)["strays"]
     assert strays["get_proposal"] == "ai_run_not_active"
     assert strays["get_rubric"] == "ai_run_not_active"
+    assert strays["list_projects"] == "ai_run_not_active"  # Soundings' adversarial check L1
     assert strays["submit_evaluation"] == "ai_run_not_active"
     assert agent.mcp.tools()[-1] == "add_research_note"
 

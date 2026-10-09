@@ -79,10 +79,14 @@ async def _researched(
     step: ResearchStep = ResearchStep.BEFORE_EVALUATION,
 ) -> tuple[Idea, list[ResearchChecklistItem]]:
     """An idea of the owner in ``status`` with ``researcher`` assigned by an admin (who may
-    name anyone) and every item answered by the owner."""
+    name anyone) while it was New (past Research nobody new is asked: adversarial check
+    L2), and every item answered by the owner."""
     items = await set_step(db, team.project, step)
-    idea = await make_idea(db, team.project, status=status, owner=team.owner)
+    idea = await make_idea(db, team.project, status=S.NEW, owner=team.owner)
     ok(await assign(await api(team.admin), key_of(team.project, idea), researcher, DUE))
+    await db.execute(update(Idea).where(Idea.id == idea.id).values(status=status))
+    await db.commit()
+    await db.refresh(idea)
     for item in items:
         await answer(db, idea, item, team.owner)
     return idea, items
@@ -268,9 +272,7 @@ async def test_a_researchers_write_key_gets_the_same_answers(
 ) -> None:
     researcher = await _who(team, db_session, who)
     before, before_items = await _researched(api, team, db_session, researcher, status=S.RESEARCH)
-    after = await make_idea(db_session, team.project, status=S.EVALUATING, owner=team.owner)
-    ok(await assign(await api(team.admin), key_of(team.project, after), researcher))
-    await answer(db_session, after, before_items[0], team.owner)
+    after, _ = await _researched(api, team, db_session, researcher, status=S.EVALUATING)
     secret = await make_key(db_session, researcher, scopes=["read", "write"])
 
     async with key_client(app, secret) as client:

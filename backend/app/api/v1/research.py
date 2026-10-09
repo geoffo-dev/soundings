@@ -243,7 +243,12 @@ _ASSIGNMENT_CONFLICTS = (
         "only project and platform admins may name someone without a role there; the owner "
         "names people with a role). "
         "422 researcher_not_eligible (c23: a service account, the break-glass account, a "
-        "deactivated or unknown user)." + _ASSIGNMENT_CONFLICTS
+        "deactivated or unknown user)."
+        + _ASSIGNMENT_CONFLICTS
+        + " 409 research_finished (adversarial check L2) when it names a researcher other "
+        "than the current one once the idea is past Research: nobody new is asked then "
+        "(removing the researcher and changing only the due date still work; move the idea "
+        "back to Research to ask someone)."
     ),
     responses=problems(401, 403, 404, 409, 422),
 )

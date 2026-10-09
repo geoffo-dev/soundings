@@ -26,6 +26,7 @@ import {
 } from '@/api/ideas'
 import type { CommandAction } from '@/components/ui/command-palette'
 import { toast } from '@/components/ui/toaster'
+import { researchFinished } from '@/features/research/research-assignment'
 import { requestResearchFocus } from '@/features/research/research-focus'
 import { useCommands } from '@/lib/command-registry'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
@@ -155,10 +156,20 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
     })
   }
   // Phase 8b: who does the research (owners and admins), "Hand back" (the researcher).
-  if (permissions.can_assign_researcher) {
+  // Past Research nobody new is asked (adversarial check L2): only Remove, when someone is.
+  const finished = researchFinished(researchStep, idea.status)
+  const someoneAsked =
+    idea.researcher !== null &&
+    idea.researcher.id !== idea.owner?.id &&
+    idea.researcher.id !== me.id
+  if (permissions.can_assign_researcher && (!finished || someoneAsked)) {
     actions.push({
       id: 'assign-researcher',
-      label: idea.researcher ? 'Change researcher…' : 'Assign the research…',
+      label: finished
+        ? 'Remove the researcher…'
+        : idea.researcher
+          ? 'Change researcher…'
+          : 'Assign the research…',
       icon: <UserSearch />,
       // Removing the researcher is choosing the owner in the same dialog (UX review S2).
       keywords: ['research', 'researcher', 'assign', 'due date', 'remove'],

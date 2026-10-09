@@ -1119,6 +1119,19 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
     assert set(nora_types) <= set(RESEARCH_GUEST_NOTIFICATION_TYPES), nora_types
 
     # --- Dave reassigns to Farah: Nora's access ends on her next request --------------------
+    # Past Research nobody new is asked (adversarial check L2: they could only read it), so
+    # Dave moves the idea back to Research first.
+    await refused(
+        dave,
+        "PUT",
+        f"/ideas/{key}/research/assignment",
+        {"researcher_id": farah.id, "due_at": due.isoformat()},
+        status=409,
+        code="research_finished",
+    )
+    assert (await dave.get(f"/ideas/{key}/research"))["assignment"]["researcher"]["id"] == nora.id
+    back = await dave.send("POST", f"/ideas/{key}/status", {"status": "research"})
+    assert back["status"] == "research"
     await assign(dave, key, farah, due)
     for path in (
         f"/ideas/{key}",
@@ -1177,10 +1190,8 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
     assert [m["Subject"] for m in farah_mail] == [
         f'[{key}] Please research "{TITLE}" by {day(due)}'
     ]
-    # Past Research (Evaluating): a guest reads the answers, no longer changes them (D1).
-    assert_guest_shape(
-        await farah.get(f"/ideas/{key}"), granted=GUEST_GRANTS - {"can_answer_research"}
-    )
+    # Back in Research, the guest researcher answers again (D1 applies past Research only).
+    assert_guest_shape(await farah.get(f"/ideas/{key}"), granted=GUEST_GRANTS)
 
     # --- Farah hands it back; asked again, her inbox holds the live request only (L2) ------
     await farah.send("DELETE", f"/ideas/{key}/research/assignment", status=204)

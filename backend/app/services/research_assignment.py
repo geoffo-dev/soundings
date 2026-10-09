@@ -2,7 +2,8 @@
 sections 3 and 17).
 
 * :func:`set_assignment` (``set_research_assignment``, ``idea.assign_researcher``: the
-  owner, project admins and platform admins; c5, c23, c25) and :func:`remove_researcher`
+  owner, project admins and platform admins; c5, c23, c25; past Research nobody new:
+  409 ``research_finished``, adversarial check L2) and :func:`remove_researcher`
   (also ``idea.release_researcher``: the researcher's "Hand back"). The caller holds the
   idea ``FOR UPDATE`` (``load_idea(for_update=True)``: the project ``FOR KEY SHARE``
   first); once the caller may assign at all (review N2: so a viewer never takes the
@@ -39,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import NamedResearcher, Resource, Rule, effective_role_of, require, require_any
 from app.domain.principal import Principal
+from app.errors import ProblemError
 from app.models.base import utcnow
 from app.models.enums import ProjectVisibility, ResearchStep
 from app.models.idea import Idea, IdeaWatcher
@@ -50,6 +52,7 @@ from app.services import activity, audit
 
 __all__ = [
     "ClearReason",
+    "ResearchFinishedProblem",
     "RoleSnapshot",
     "assignment_out",
     "clear_idea",
@@ -68,6 +71,22 @@ of researchers without a role in it)."""
 _roles = project_effective_roles
 
 _ASSIGN_RULES: Final = (Rule.IDEA_ASSIGN_RESEARCHER, Rule.IDEA_RELEASE_RESEARCHER)
+
+
+class ResearchFinishedProblem(ProblemError):
+    """Adversarial check L2: past Research nobody new is asked to research the idea (after
+    lead decision D1 they could only read it). Removing, handing back and keeping the same
+    researcher still work; moving the idea back to Research lets the owner ask again."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            409,
+            "research_finished",
+            detail=(
+                "The idea has moved past Research, so nobody new can be asked to research "
+                "it. You can still remove the researcher."
+            ),
+        )
 
 
 def _step_off() -> Exception:
@@ -134,7 +153,8 @@ async def set_assignment(
 ) -> None:
     """``set_research_assignment`` (contract-phase8b section 3.3): the complete new state,
     idempotent, last write wins. Checks: 403 (the rule; c25) -> 422 (c23) -> 409
-    (archived, c19, c5) -> 409 ``research_step_off``."""
+    (archived, c19, c5) -> 409 ``research_step_off`` -> 409 ``research_finished``
+    (adversarial check L2: a researcher other than the current one, past Research)."""
     changes_researcher = body.researcher_id != idea.researcher_id
     # Review N2: the rule with nobody named first (the owner or an admin), so someone who
     # may only view the idea never locks the named person's row; then c23 and c25.
@@ -145,6 +165,12 @@ async def set_assignment(
         require(principal, Rule.IDEA_ASSIGN_RESEARCHER, resource.replace(researcher_named=named))
     if project.research_step is ResearchStep.OFF:
         raise _step_off()
+    if (
+        changes_researcher
+        and body.researcher_id is not None
+        and not awaits_research(project.research_step, idea.status)
+    ):
+        raise ResearchFinishedProblem
     if changes_researcher:
         previous = idea.researcher_id
         # Review N3: the researcher (an admin, say) clearing it themselves hands it back,

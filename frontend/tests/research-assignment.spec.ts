@@ -26,6 +26,32 @@ async function openIdea(page: Page, key: string, title: string) {
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible()
 }
 
+/**
+ * Someone else (Alice, an Internal Tools admin) moves the idea on behind the page's back;
+ * the tab regains focus and reads it again. `as` signs the page back in afterwards.
+ */
+async function movedOnElsewhere(page: Page, key: string, as: string) {
+  await page.evaluate(
+    async ([alice, back, idea]) => {
+      // Each sign-in starts a new CSRF token: read it for every request.
+      const csrf = () =>
+        decodeURIComponent(/soundings_csrf=([^;]+)/.exec(document.cookie)?.[1] ?? '')
+      const send = (path: string, body: unknown) =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+          body: JSON.stringify(body),
+        })
+      await send('/api/v1/auth/dev/login', { user_id: alice })
+      await send(`/api/v1/ideas/${idea}/status`, { status: 'evaluating', override_research: true })
+      await send('/api/v1/auth/dev/login', { user_id: back })
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('visibilitychange'))
+    },
+    [USERS.alice, as, key],
+  )
+}
+
 test.describe('a guest researcher (no role in the private project)', () => {
   test.use({ signedInAs: USERS.ivan })
 
@@ -233,6 +259,91 @@ test.describe('past Research (lead decision D1)', () => {
   })
 })
 
+test.describe('an unsaved answer when the idea moves past Research (adversarial check N2)', () => {
+  test.use({ signedInAs: USERS.ivan })
+
+  test('stays on screen to copy or discard, and comes back after leaving the page', async ({
+    page,
+  }) => {
+    await openIdea(page, 'TOOL-7', 'Service health dashboard')
+    await page.getByRole('button', { name: 'Answer the checklist' }).click()
+    const answer = page.getByRole('textbox', {
+      name: 'Departments or teams consulted',
+      exact: true,
+    })
+    await answer.fill('Platform and SRE leads, not saved yet.')
+    await movedOnElsewhere(page, 'TOOL-7', USERS.ivan)
+    await expect(answer).toHaveCount(0)
+    const kept = page.getByRole('textbox', {
+      name: 'Your unsaved answer to Departments or teams consulted',
+    })
+    await expect(kept).toHaveValue('Platform and SRE leads, not saved yet.')
+    await expect(kept).toHaveAttribute('readonly', '')
+    await expect(page.getByText('Your answer wasn’t saved')).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+    // Discard asks nothing and can be undone.
+    await page.getByRole('button', { name: 'Discard' }).click()
+    await expect(kept).toHaveCount(0)
+    await toast(page, 'Your unsaved answer discarded').getByRole('button', { name: 'Undo' }).click()
+    await expect(kept).toHaveValue('Platform and SRE leads, not saved yet.')
+    // Leaving the page and coming back (an in-app navigation keeps the mock's data).
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await expect(page.getByRole('heading', { level: 1, name: 'My work' })).toBeVisible()
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/ideas/TOOL-7')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await page.getByRole('button', { name: 'Research', exact: true }).click()
+    await expect(kept).toHaveValue('Platform and SRE leads, not saved yet.')
+  })
+})
+
+test.describe('past Research, nobody new is asked (adversarial check L2)', () => {
+  // Alice, an Internal Tools admin; Kofi researches TOOL-10 (in Research, complete).
+  test('Change becomes Remove, which hands the research back to the owner', async ({ page }) => {
+    await openIdea(page, 'TOOL-10', 'Code owners linting')
+    await expect(
+      researcherLine(page).getByRole('button', { name: 'Change researcher or due date' }),
+    ).toBeVisible()
+    // Alice moves it on (its checklist is complete).
+    await page.keyboard.press('s')
+    const status = page.getByRole('dialog', { name: 'Change status' })
+    await status.getByRole('option', { name: 'Evaluating' }).click()
+    await expect(status).toBeHidden()
+    const remove = researcherLine(page).getByRole('button', { name: 'Remove the researcher' })
+    await expect(remove).toBeVisible()
+    await expect(
+      researcherLine(page).getByRole('button', { name: 'Change researcher or due date' }),
+    ).toHaveCount(0)
+    // The server agrees: naming anyone new is 409 research_finished.
+    const refused = await page.evaluate(async (carol) => {
+      const csrf = decodeURIComponent(/soundings_csrf=([^;]+)/.exec(document.cookie)?.[1] ?? '')
+      const response = await fetch('/api/v1/ideas/TOOL-10/research/assignment', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ researcher_id: carol, due_at: null }),
+      })
+      return [response.status, ((await response.json()) as { code: string }).code]
+    }, CAROL)
+    expect(refused).toEqual([409, 'research_finished'])
+
+    await remove.click()
+    const confirm = page.getByRole('alertdialog', { name: 'Remove Kofi Boateng as researcher?' })
+    await expect(confirm).toContainText('past Research, so nobody new can be asked to research it')
+    await expect(confirm).toContainText('Farid Haddad (the owner) does the research again.')
+    expect(await seriousViolations(page)).toEqual([])
+    await confirm.getByRole('button', { name: 'Remove' }).click()
+    await expect(confirm).toHaveCount(0)
+    await expect(toast(page, 'Farid Haddad (owner) will do the research')).toBeVisible()
+    // Nobody left to remove: no Change or Remove, and focus is on the panel's heading.
+    await expect(researcherLine(page).getByRole('button')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Research', exact: true })).toBeFocused()
+  })
+})
+
 test.describe('making an internal project private (lead decision D2)', () => {
   test.use({ signedInAs: USERS.priya })
 
@@ -276,6 +387,29 @@ test.describe('making an internal project private (lead decision D2)', () => {
     await page.getByRole('radio', { name: /Private/ }).check()
     await save.click()
     await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  })
+
+  test('counts again on Save: an outsider asked while the page was open (adversarial N1)', async ({
+    page,
+  }) => {
+    await page.goto('/p/sustainability/settings')
+    await expect(page.getByRole('heading', { level: 1, name: 'Project settings' })).toBeVisible()
+    // Nobody outside the project researches its ideas yet; then Priya asks Ivan on GREEN-3
+    // from another tab (the page doesn't hear of it).
+    await page.evaluate(async (ivan) => {
+      const csrf = decodeURIComponent(/soundings_csrf=([^;]+)/.exec(document.cookie)?.[1] ?? '')
+      await fetch('/api/v1/ideas/GREEN-3/research/assignment', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ researcher_id: ivan, due_at: null }),
+      })
+    }, USERS.ivan)
+    await page.getByRole('radio', { name: /Private/ }).check()
+    await page.getByRole('button', { name: /Save changes/ }).click()
+    const confirm = page.getByRole('alertdialog', { name: 'Make this project private?' })
+    await expect(confirm).toContainText(
+      '1 person researching an idea here isn’t in the project and will lose access to it.',
+    )
   })
 })
 

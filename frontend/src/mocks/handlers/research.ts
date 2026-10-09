@@ -54,6 +54,7 @@ import {
 } from '@/mocks/templates'
 import { crossesGate, gatedStatuses } from '@/lib/status'
 import {
+  awaitsResearch,
   clearAssignment,
   eligibleResearcher,
   hasRole,
@@ -741,6 +742,13 @@ export const researchHandlers = [
       }
     }
     checkAssignmentWritable(ctx, idea)
+    // Adversarial check L2: past Research nobody new is asked (keep or remove only).
+    if (changes && targetId !== null && !awaitsResearch(project, idea.status)) {
+      conflict(
+        'research_finished',
+        'The idea has moved past Research, so nobody new can be asked to research it. You can still remove the researcher.',
+      )
+    }
     const now = new Date().toISOString()
     if (changes) {
       const from = idea.researcher_id ?? null

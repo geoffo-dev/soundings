@@ -516,7 +516,8 @@ class McpIdeaDetail(McpIdeaSummary):
             "evaluation_open false, evaluation dates null, score_hidden true), "
             "has_proposal is false even when the idea has a proposal, last_activity_at is "
             "the newest event you can see, and the project's other ideas, rubric and "
-            "proposal are not found."
+            "proposal are not found (in a research run list_projects is refused too: the "
+            "idea's project field names the project)."
         ),
     )
     permissions: McpIdeaPermissions

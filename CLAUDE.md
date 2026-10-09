@@ -661,7 +661,10 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   only by `idea.assign_researcher` (owner, project and platform admins; c25: in a private
   project only admins name someone without a role there), handed back with
   `idea.release_researcher` (a `write` key may); never a service account, break-glass or
-  inactive account (422 `researcher_not_eligible`). Closing the idea, turning the step off,
+  inactive account (422 `researcher_not_eligible`). Past Research the researcher (not the
+  owner or an admin) can't change answers (c26) and nobody new is asked (both 409
+  `research_finished`; the SPA offers Remove there); tests that need a researcher past
+  Research assign while it is New or in Research, then move it. Closing the idea, turning the step off,
   deactivation and losing one's role in a private project (`left_project`: every path that
   removes project roles calls `research_assignment.roles_before` / `end_after_role_loss`)
   clear it, audited, answers and the due date kept; archiving only suspends it. A

@@ -13,16 +13,18 @@ has no runs, so it can do nothing):
   (project) to be that run's, else ``ai_run_not_active``, whether the other idea exists
   or not (nothing tells the agent which ideas exist); then the idea is loaded as for
   anyone (``not_found`` while held); ``list_projects`` and ``search_ideas`` list only the
-  named run's project and idea (nothing without an open run);
+  named run's project and idea (nothing without an open run; ``list_projects`` is a read
+  tool a research run doesn't have, below);
 * the only write is the named run's kind's tool (:data:`~app.schemas.ai.AGENT_RUN_WRITE_TOOLS`;
   ``propose_proposal_section`` only for the run's section); ``create_idea`` and
   ``add_comment`` are always ``forbidden``;
 * (Phase 8b guest review M1) the reads depend on the run's kind (:data:`RUN_READ_TOOLS`):
   a research run's note lands in the idea's feed, which its guest researcher reads (role
   matrix table L), so a research run reads what that guest may read and no more
-  (:func:`reads_as_guest`): no proposal, no rubric (``ai_run_not_active``, like another
-  kind's write tool), and ``get_idea`` / ``search_ideas`` in the guest's shape (no
-  evaluation area, no sign of a proposal, the guest feed's ``last_activity_at``).
+  (:func:`reads_as_guest`): no proposal, no rubric and (adversarial check L1) no
+  ``list_projects`` (``ai_run_not_active``, like another kind's write tool), and
+  ``get_idea`` / ``search_ideas`` in the guest's shape (no evaluation area, no sign of a
+  proposal, the guest feed's ``last_activity_at``).
 
 For people, ``run_id`` is ignored and c22 refuses only ``add_research_note``
 (``forbidden``). So two runs of one agent open at once can't reach each other, a run that
@@ -60,6 +62,7 @@ __all__ = [
     "named_run",
     "reads_as_guest",
     "refuse_agent_write",
+    "require_read",
     "require_run",
 ]
 
@@ -68,8 +71,11 @@ _KIND_OF_TOOL: Final = {tool: kind for kind, tool in AGENT_RUN_WRITE_TOOLS.items
 RUN_READ_TOOLS: Final[dict[AiRunKind, frozenset[str]]] = {
     AiRunKind.EVALUATE: AGENT_READ_TOOLS,
     AiRunKind.DRAFT_SECTION: AGENT_READ_TOOLS,
-    # Phase 8b guest review M1: what a guest researcher may read through MCP.
-    AiRunKind.RESEARCH: frozenset({"list_projects", "search_ideas", "get_idea"}),
+    # Phase 8b guest review M1: what a guest researcher may read through MCP. Not
+    # list_projects (adversarial check L1): a private project's description, idea count
+    # and the agent's role there are 404 for its guest; get_idea and search_ideas name
+    # the project (id, slug, key, name).
+    AiRunKind.RESEARCH: frozenset({"search_ideas", "get_idea"}),
 }
 """c22: the read tools of :data:`~app.schemas.ai.AGENT_READ_TOOLS` each run kind may call
 on its idea; another one is ``ai_run_not_active`` (before anything is looked up)."""
@@ -189,6 +195,14 @@ async def require_run(
     if read is not None and read not in RUN_READ_TOOLS[run.kind]:
         raise RunNotActiveProblem
     return run
+
+
+def require_read(run: NamedRun | None, tool: str) -> None:
+    """c22 for a read tool that lists without naming an idea (``list_projects``): the named
+    run's kind must read it (:data:`RUN_READ_TOOLS`), else ``ai_run_not_active``. Nothing
+    to check without a run (people; an agent without an open run lists nothing)."""
+    if run is not None and tool not in RUN_READ_TOOLS[run.kind]:
+        raise RunNotActiveProblem
 
 
 def reads_as_guest(run: NamedRun | None) -> bool:

@@ -56,7 +56,12 @@ project's visibility); a non-member of a private project got 404 for everything 
   warning with `Project.outside_researcher_count`), so only an admin's choice ever makes
   someone R.
 - An AI agent's research run writes into the feed R reads, so it reads the idea as R would
-  (c22 by run kind: no proposal, rubric or evaluation area; guest review M1).
+  (c22 by run kind: no proposal, rubric, evaluation area or project list; guest review M1,
+  adversarial check L1).
+- Research has an end: past Research a researcher who isn't the owner or an admin no
+  longer changes the answers (D1), and nobody new is asked (409 `research_finished`;
+  adversarial check L2), so an assignment past Research can only be kept or removed and
+  never opens a private idea to someone for reading alone.
 - Every surface that builds idea data for R must use the policy's decisions (the guest
   shape); the tests are a table over principal kinds × assignment states × every route and
   tool, with score data checked on every path.

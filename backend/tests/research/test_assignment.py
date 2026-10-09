@@ -333,10 +333,13 @@ async def test_only_an_active_person_may_be_named(
     assert (await _fresh(db_session, idea)).researcher_id is None
 
 
-async def test_assigning_is_allowed_in_any_open_status(
-    api: AsUser, team: Team, db_session: AsyncSession
+@pytest.mark.parametrize("status", [IdeaStatus.NEW, IdeaStatus.RESEARCH])
+async def test_assigning_is_allowed_in_research_and_before_it(
+    api: AsUser, team: Team, db_session: AsyncSession, status: IdeaStatus
 ) -> None:
-    _, key = await _idea(db_session, team, status=IdeaStatus.SHORTLISTED)
+    """Past Research nobody new is asked (409 ``research_finished``, adversarial check L2:
+    tests/research/test_assignment_past_research.py)."""
+    _, key = await _idea(db_session, team, status=status)
 
     ok(await assign(await api(team.owner), key, team.member, DUE))
 

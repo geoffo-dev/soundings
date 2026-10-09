@@ -283,6 +283,28 @@ describe('the lead’s decisions on the review leftovers', () => {
   })
 })
 
+describe('the adversarial check (L2)', () => {
+  it('past Research nobody new is asked; the researcher is kept or removed', async () => {
+    const tool10 = getDb().ideas.find((i) => i.researcher_id === USERS.kofi)
+    if (!tool10) throw new Error('fixture: Kofi researches TOOL-10')
+    tool10.status = 'evaluating'
+    await signIn(USERS.alice) // an Internal Tools admin
+    const named = await rejection(assign('TOOL-10', USERS.carol))
+    expect(named).toMatchObject({ status: 409, code: 'research_finished' })
+    expect(tool10.researcher_id).toBe(USERS.kofi)
+    const kept = await assign('TOOL-10', USERS.kofi, '2030-01-04T17:00:00Z')
+    expect(kept.response.status).toBe(200)
+    const removed = await assign('TOOL-10', null)
+    expect(removed.data?.assignment.researcher).toBeNull()
+    const again = await rejection(assign('TOOL-10', USERS.kofi))
+    expect(again).toMatchObject({ status: 409, code: 'research_finished' })
+    // Back in Research, the owner and admins ask someone again.
+    tool10.status = 'research'
+    const asked = await assign('TOOL-10', USERS.kofi)
+    expect(asked.data?.assignment.researcher?.id).toBe(USERS.kofi)
+  })
+})
+
 describe('My work: Research to do', () => {
   it('lists Alice’s overdue research first, with the counts', async () => {
     await signIn(USERS.alice)

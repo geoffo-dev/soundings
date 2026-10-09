@@ -501,7 +501,9 @@ class ResearchPermissions(ResponseModel):
             "Phase 8b: idea.assign_researcher: assign, change or remove the researcher and "
             "set the research due date (the owner, project admins and platform admins; "
             "false while the step is off, the idea is closed or the project archived, and "
-            "through an API key: assigning is session only, review M3)."
+            "through an API key: assigning is session only, review M3). Past Research it "
+            "stays true, but nobody new can be named (409 research_finished): keep or "
+            "remove the researcher, or change the due date."
         ),
     )
     can_assign_outside_researcher: bool = Field(

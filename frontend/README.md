@@ -516,7 +516,8 @@ backend and its tests are.
   `clearOutsideResearchers`, lead decision D2: an internal project made private, and
   `outsideResearcherCount` for `Project.outside_researcher_count`); `research.ts`
   `researchFinishedFor` (c26, D1: past Research a researcher who isn't the owner or an admin
-  gets 409 `research_finished`); handlers
+  gets 409 `research_finished`; the assignment PUT gives the same 409 for anyone new past
+  Research, adversarial check L2); handlers
   `handlers/research.ts`, `work.ts`): **Ivan** (no role anywhere) researches **TOOL-7** as its
   guest, asked by Alice (a TOOL admin), due in 3 days; **Kofi** (a member through a group)
   researches **TOOL-10**; **Alice** researches **GREEN-3**, due 2 days ago (the overdue row of her

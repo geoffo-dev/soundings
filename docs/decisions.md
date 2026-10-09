@@ -1152,6 +1152,19 @@ built after the review fixes; API changes are in
 | **D4:** an explicitly assigned owner stays the researcher when the idea changes owner (contract §3.7: "the owner changes: nothing"); with nobody assigned the new owner does the research. | Decided (lead; kept as the contract says) | An explicit assignment is a person asked by name, not a role; the assigner can change it in one step. |
 | **D5:** docs the review fixers asked for: contract-phase8b §6.1 (dedupe key per event, payload `{due_at, assigned_at}`) and §17 (the `outside_researchers` audit detail, then D2); the role matrix's c22 reads by run kind (a research run reads as its guest researcher would; among the research assistant's runs only drafting reads the proposal); docs/mcp.md (what research runs read; masked guest values: `score` null, `evaluator_progress` 0/0, `has_proposal` false); MCP `research_guest`'s description; `DueAt` returns UTC at the schema level (the root of code review N1; the API shape is unchanged); the kagent idea-researcher's system message says `get_proposal` works only in drafting runs (both manifests); the composer's line for a guest reader uses `assignment.researcher_in_project` (guest review L3). | Decided (lead) | One place for each rule; agents and MCP clients told what the masked values mean. |
 
+## Phase 8b adversarial check (2026-10-09)
+
+An adversarial check of D1, D2 and the research-run reads found two low findings and two
+nits; all four are fixed
+([contract-phase8b §17](api/contract-phase8b.md#2026-10-09--the-adversarial-check-of-d1-d2-and-the-research-run-reads-backend-frontend)).
+
+| Decision | Status | Why |
+|---|---|---|
+| **L1:** a research run can't call `list_projects` (`ai_run_not_active`, like `get_rubric` and `get_proposal`); `get_idea` and `search_ideas` already name the idea's project. Evaluate and drafting runs list the run's project as before. | Decided (fix) | It returned a private project's description, idea count and the agent's role, which the guest researcher reading the note can't see (404); the run must read no more than its guest. |
+| **L2:** past Research nobody new is asked: `set_research_assignment` naming a researcher other than the current one is 409 `research_finished`, for owners and admins alike; removing, handing back and keeping the same researcher still work; moving the idea back to Research lets the owner ask again. The SPA shows **Remove** instead of Change past Research (a confirmation that says why), and nothing while only the owner does it. | Decided (fix; chosen over documenting a "read-only consultation") | After D1 such a researcher could only read the idea, so the assignment would just open a private idea to someone and email them "Please research" for work they can't do. Simple beats configurable: one rule, no new flag (`can_assign` still covers Remove). |
+| **N1:** "Make this project private?" counts the outside researchers again on Save (the project is read afresh) instead of using the count from when the page loaded. | Decided (fix) | An outsider asked while the settings page was open was otherwise dropped without the warning. |
+| **N2:** an answer typed but not saved when the answers turn read only (the idea moved on) stays under its item with Copy and Discard (with Undo), and comes back from the browser's drafts on the next visit. | Decided (fix) | The draft was kept but nothing showed it, so the text was lost to the person who wrote it. |
+
 ## Phase 9 (product owner, 2026-10-09)
 
 Continuous delivery, asked for by the product owner; the lead's build decisions follow

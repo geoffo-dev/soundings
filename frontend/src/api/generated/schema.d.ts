@@ -1523,7 +1523,7 @@ export interface paths {
         get?: never;
         /**
          * Assign the research
-         * @description idea.assign_researcher (the idea's owner, project admins and platform admins; c5): the complete new assignment, the researcher (any active person, a member of the project or not, the owner included; null = nobody, the owner does it) and the research due date (null = none). Idempotent. A new researcher watches the idea and, when someone else assigned them, gets "Asked to research" (by email per their preference). A researcher with no role in a private project sees only this idea (role matrix column R). Emits researcher_changed / research_due_date_changed; a researcher change is audited as idea.researcher_change. Returns the whole panel. Last write wins. Session only: an API key gets 403 insufficient_scope (an assignment can open the idea to someone and would outlive the key). 403 outside_researcher_needs_admin (c25, product owner S1 a: in a private project only project and platform admins may name someone without a role there; the owner names people with a role). 422 researcher_not_eligible (c23: a service account, the break-glass account, a deactivated or unknown user). 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.assign_researcher (the idea's owner, project admins and platform admins; c5): the complete new assignment, the researcher (any active person, a member of the project or not, the owner included; null = nobody, the owner does it) and the research due date (null = none). Idempotent. A new researcher watches the idea and, when someone else assigned them, gets "Asked to research" (by email per their preference). A researcher with no role in a private project sees only this idea (role matrix column R). Emits researcher_changed / research_due_date_changed; a researcher change is audited as idea.researcher_change. Returns the whole panel. Last write wins. Session only: an API key gets 403 insufficient_scope (an assignment can open the idea to someone and would outlive the key). 403 outside_researcher_needs_admin (c25, product owner S1 a: in a private project only project and platform admins may name someone without a role there; the owner names people with a role). 422 researcher_not_eligible (c23: a service account, the break-glass account, a deactivated or unknown user). 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation. 409 research_finished (adversarial check L2) when it names a researcher other than the current one once the idea is past Research: nobody new is asked then (removing the researcher and changing only the due date still work; move the idea back to Research to ask someone).
          */
         put: operations["set_research_assignment"];
         post?: never;
@@ -5345,7 +5345,7 @@ export interface components {
             can_assign_owner: boolean;
             /**
              * Can Assign Researcher
-             * @description Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the research step is off or the idea is closed, and through an API key: assigning is session only).
+             * @description Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the research step is off or the idea is closed, and through an API key: assigning is session only). Past Research nobody new can be named (409 research_finished); the researcher can still be kept or removed.
              * @default false
              */
             can_assign_researcher: boolean;
@@ -7640,7 +7640,7 @@ export interface components {
             can_answer: boolean;
             /**
              * Can Assign
-             * @description Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the step is off, the idea is closed or the project archived, and through an API key: assigning is session only, review M3).
+             * @description Phase 8b: idea.assign_researcher: assign, change or remove the researcher and set the research due date (the owner, project admins and platform admins; false while the step is off, the idea is closed or the project archived, and through an API key: assigning is session only, review M3). Past Research it stays true, but nobody new can be named (409 research_finished): keep or remove the researcher, or change the due date.
              * @default false
              */
             can_assign: boolean;

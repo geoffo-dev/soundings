@@ -1,6 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { CalendarClock, Check, ChevronDown, TriangleAlert, Undo2, UserRoundPen } from 'lucide-react'
+import {
+  CalendarClock,
+  Check,
+  ChevronDown,
+  TriangleAlert,
+  Undo2,
+  UserRoundMinus,
+  UserRoundPen,
+} from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 
 import { describeError } from '@/api/errors'
@@ -11,7 +19,13 @@ import {
   useRemoveResearcher,
   useSetResearchAssignment,
 } from '@/api/research'
-import type { ResearchAssignment, UserRef, UserSearchResult } from '@/api/types'
+import type {
+  IdeaStatus,
+  ResearchAssignment,
+  ResearchStep,
+  UserRef,
+  UserSearchResult,
+} from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
@@ -48,6 +62,7 @@ import { dueOn } from '@/features/notifications/notification-text'
 import { formatDate } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
+import { gatedStatuses } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 /*
@@ -56,6 +71,8 @@ import { cn } from '@/lib/utils'
  * owners and admins change it (a person picker over everyone active, people
  * outside the project marked, and a due date); the researcher hands it back.
  * Removing the researcher is choosing the owner in Change (UX review S2: one path).
+ * Past Research nobody new is asked (adversarial check L2: they could only read it),
+ * so Change becomes Remove there, and goes when there is nobody to remove.
  */
 
 /** Where focus goes when the control that was used is gone (WCAG 2.4.3): Change, else the panel's heading. */
@@ -78,12 +95,19 @@ export const OUTSIDER_LINES = {
   internal: 'They’ll be able to answer the checklist and comment.',
 } as const
 
+/** Past Research (a status after it, not closed): nobody new is asked to research it. */
+export function researchFinished(step: ResearchStep, status: IdeaStatus): boolean {
+  return gatedStatuses(step).includes(status)
+}
+
 /**
  * The idea's assignment as the page knows it: the Research panel's query (shared
- * cache), else what the idea itself carries while that loads.
+ * cache), else what the idea itself carries while that loads. `canAssign` is false
+ * past Research when only the owner does it (nothing left to change: L2), and
+ * `finished` turns Change into Remove.
  */
 export function useAssignment() {
-  const { ideaKey, idea, researchStep } = useIdeaPage()
+  const { ideaKey, idea, me, researchStep } = useIdeaPage()
   const research = useIdeaResearch(ideaKey, { enabled: researchStep !== 'off' })
   const data = research.data
   const assignment: ResearchAssignment = data?.assignment ?? {
@@ -96,9 +120,16 @@ export function useAssignment() {
   // The owner named explicitly: handing it back would hand it to themselves (UX m1).
   const ownerResearches =
     assignment.researcher !== null && assignment.researcher.id === idea.owner?.id
+  const finished = researchFinished(researchStep, idea.status)
+  // Past Research: someone to remove (an admin researching it hands it back instead).
+  const someoneAsked =
+    assignment.researcher !== null && !ownerResearches && assignment.researcher.id !== me.id
   return {
     assignment,
-    canAssign: data?.permissions.can_assign ?? idea.permissions.can_assign_researcher,
+    finished,
+    canAssign:
+      (data?.permissions.can_assign ?? idea.permissions.can_assign_researcher) &&
+      (!finished || someoneAsked),
     canAssignOutside:
       data?.permissions.can_assign_outside_researcher ??
       idea.permissions.can_assign_outside_researcher,
@@ -213,7 +244,9 @@ function ResearcherFacts({ assignment }: { assignment: ResearchAssignment }) {
  */
 export function ResearcherField() {
   const { idea, me, openDialog } = useIdeaPage()
-  const { assignment, canAssign, canHandBack } = useAssignment()
+  const { assignment, canAssign, canHandBack, finished } = useAssignment()
+  const change = finished ? 'Remove the researcher' : 'Change researcher or due date'
+  const ChangeIcon = finished ? UserRoundMinus : UserRoundPen
   const name = assignmentText(assignment, idea.owner, me.id)
   const value = <ResearcherValue assignment={assignment} />
   const trigger = (action: string, onClick?: () => void) => (
@@ -236,7 +269,7 @@ export function ResearcherField() {
           <DropdownMenuTrigger asChild>{trigger('Change or hand back')}</DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem onSelect={() => openDialog('researcher')}>
-              <UserRoundPen /> Change researcher or due date…
+              <ChangeIcon /> {change}…
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => openDialog('hand-back')}>
               <Undo2 /> Hand back the research…
@@ -244,7 +277,7 @@ export function ResearcherField() {
           </DropdownMenuContent>
         </DropdownMenu>
       ) : canAssign ? (
-        trigger('Change researcher or due date', () => openDialog('researcher'))
+        trigger(change, () => openDialog('researcher'))
       ) : canHandBack ? (
         trigger('Hand back the research', () => openDialog('hand-back'))
       ) : (
@@ -262,7 +295,7 @@ export function ResearcherField() {
  */
 export function ResearcherLine() {
   const { me, idea, openDialog } = useIdeaPage()
-  const { assignment, canAssign, canHandBack } = useAssignment()
+  const { assignment, canAssign, canHandBack, finished } = useAssignment()
   const person = assignment.researcher ?? idea.owner
   const outside = outsideResearcher(assignment, me.id)
   return (
@@ -303,10 +336,18 @@ export function ResearcherLine() {
               size="sm"
               variant="ghost"
               className="text-secondary"
-              aria-label="Change researcher or due date"
+              aria-label={finished ? 'Remove the researcher' : 'Change researcher or due date'}
               onClick={() => openDialog('researcher')}
             >
-              <CalendarClock /> Change
+              {finished ? (
+                <>
+                  <UserRoundMinus /> Remove
+                </>
+              ) : (
+                <>
+                  <CalendarClock /> Change
+                </>
+              )}
             </Button>
           )}
           {canHandBack && (
@@ -346,12 +387,104 @@ export function ResearchAssignmentDialog({
   onOpenChange: (open: boolean) => void
   mode: 'change' | 'start'
 }) {
+  const { finished } = useAssignment()
+  const removing = mode === 'change' && finished
+  const removed = useRef(false)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md" mobile="fullscreen" className="overflow-hidden">
-        {open && <AssignmentForm mode={mode} onDone={() => onOpenChange(false)} />}
-      </DialogContent>
+      {removing ? (
+        <DialogContent
+          size="sm"
+          role="alertdialog"
+          onCloseAutoFocus={() => {
+            // Remove went with the researcher: focus the Research heading (WCAG 2.4.3).
+            if (!removed.current) return
+            removed.current = false
+            focusWhenRendered(researchFocusFallback)
+          }}
+        >
+          {open && (
+            <RemoveResearcherForm
+              onDone={(done) => {
+                removed.current = done
+                onOpenChange(false)
+              }}
+            />
+          )}
+        </DialogContent>
+      ) : (
+        <DialogContent size="md" mobile="fullscreen" className="overflow-hidden">
+          {open && <AssignmentForm mode={mode} onDone={() => onOpenChange(false)} />}
+        </DialogContent>
+      )}
     </Dialog>
+  )
+}
+
+/**
+ * Past Research (adversarial check L2): nobody new is asked, so Change only removes the
+ * researcher (the owner does it again; the answers and the due date stay).
+ */
+function RemoveResearcherForm({ onDone }: { onDone: (removed: boolean) => void }) {
+  const { idea, ideaKey, me, project, statusLabel } = useIdeaPage()
+  const { assignment } = useAssignment()
+  const remove = useRemoveResearcher(ideaKey)
+  const person = assignment.researcher
+  if (!person) return null
+  const name = person.id === me.id ? 'You' : person.display_name
+  const owner = idea.owner
+  const ownerDoes = !owner
+    ? 'The idea’s owner does'
+    : owner.id === me.id
+      ? 'You (the owner) do'
+      : `${owner.display_name} (the owner) does`
+  const loses =
+    !assignment.researcher_in_project &&
+    (project?.visibility ?? 'private') === 'private' &&
+    person.id !== me.id
+  const confirm = () =>
+    remove.mutate(
+      {},
+      {
+        onSuccess: () => {
+          onDone(true)
+          toast.success(
+            owner
+              ? `${owner.id === me.id ? 'You (owner)' : `${owner.display_name} (owner)`} will do the research`
+              : 'The owner will do the research',
+          )
+        },
+      },
+    )
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          Remove {person.id === me.id ? 'yourself' : person.display_name} as researcher?
+        </DialogTitle>
+        <DialogDescription className="truncate">
+          {idea.key} · {idea.title}
+        </DialogDescription>
+      </DialogHeader>
+      <DialogBody className="flex flex-col gap-2 text-sm text-secondary">
+        <p>
+          {idea.key} is in {statusLabel(idea.status)}, past Research, so nobody new can be asked to
+          research it.
+        </p>
+        <p>
+          {ownerDoes} the research again. {name === 'You' ? 'Your' : `${name}’s`} answers stay.
+          {loses && ` ${person.display_name} will no longer see ${idea.key}.`}
+        </p>
+      </DialogBody>
+      <DialogFooter className="pt-5">
+        <Button variant="ghost" onClick={() => onDone(false)}>
+          Cancel
+        </Button>
+        <Button variant="primary" loading={remove.isPending} onClick={confirm}>
+          Remove
+        </Button>
+      </DialogFooter>
+    </>
   )
 }
 

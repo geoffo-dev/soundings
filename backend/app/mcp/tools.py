@@ -302,6 +302,7 @@ async def list_projects(ctx: ToolContext, args: ListProjectsInput) -> ListProjec
     run = await ai_scope.named_run(ctx.db, ctx.principal, args.run_id)
     if ai_scope.is_agent(ctx.principal) and run is None:  # c22: only the named run's project
         return ListProjectsOutput(projects=[])
+    ai_scope.require_read(run, "list_projects")  # not in a research run (adversarial L1)
     found = await projects.list_projects(
         ctx.db, ctx.principal, include_archived=args.include_archived
     )

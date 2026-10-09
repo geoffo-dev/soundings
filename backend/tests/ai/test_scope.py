@@ -345,8 +345,9 @@ async def test_two_open_runs_of_one_agent_never_reach_each_other(
     evaluate = mcp_as(agent_row.key).for_run(on_tools)
     tools_ref = f"TOOLS-{secret.number}"
 
-    # The research run (on CUST) sees CUST's idea only.
-    assert [p["slug"] for p in (await research.ok("list_projects"))["projects"]] == [team.slug]
+    # The research run (on CUST) sees CUST's idea only (adversarial check L1: and no
+    # project details, which its guest researcher can't read either).
+    assert await research.fails("list_projects") == "ai_run_not_active"
     assert [i["key"] for i in (await research.ok("search_ideas"))["items"]] == [crew.ref]
     assert (await research.ok("search_ideas", project="tools"))["items"] == []
     assert await research.fails("get_idea", idea=tools_ref) == "ai_run_not_active"
@@ -483,6 +484,11 @@ async def test_a_research_run_reads_the_idea_as_its_guest_researcher_would(
         await researching.fails("get_proposal", idea=crew.ref),
         await researching.fails("get_rubric", idea=crew.ref),
         await researching.fails("get_rubric", project=crew.team.slug),
+        # Adversarial check L1: the project's description, counts and the agent's role
+        # aren't the guest's to read (a private project is 404 for them); get_idea and
+        # search_ideas name the project (id, slug, key, name).
+        await researching.fails("list_projects"),
+        await researching.fails("list_projects", include_archived=True),
     ]
     evaluator_view = (await evaluating.ok("get_idea", idea=crew.ref))["idea"]
     note = await researching.ok("add_research_note", idea=crew.ref, body_md="Two vendors.")
@@ -498,10 +504,16 @@ async def test_a_research_run_reads_the_idea_as_its_guest_researcher_would(
     assert listed["evaluator_progress"] == {"submitted": 0, "total": 0}
     assert listed["my_evaluation_state"] is None
     assert datetime.fromisoformat(listed["last_activity_at"]) == seen
-    assert refused == ["ai_run_not_active"] * 3
+    assert refused == ["ai_run_not_active"] * 5
+    assert detail["project"]["slug"] == crew.team.slug
+    assert listed["project"]["slug"] == crew.team.slug
     assert note["idea"]["key"] == crew.ref
-    # The evaluate run still reads the rubric, the evaluation area and the proposal.
+    # The evaluate run still reads the rubric, the evaluation area, the proposal and its
+    # project.
     assert (await evaluating.ok("get_rubric", idea=crew.ref))["criteria"]
+    assert [p["slug"] for p in (await evaluating.ok("list_projects"))["projects"]] == [
+        crew.team.slug
+    ]
     assert (await evaluating.ok("get_proposal", idea=crew.ref))["proposal"] is not None
     assert evaluator_view["research_guest"] is False
     assert evaluator_view["has_proposal"] is True

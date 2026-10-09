@@ -1,9 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 import { Archive, ArchiveRestore, CircleAlert, Globe, Lock } from 'lucide-react'
 import { useState } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
-import { useUpdateProject } from '@/api/projects'
+import { projectQueryOptions, useUpdateProject } from '@/api/projects'
 import type { Project, ProjectUpdate, ProjectVisibility } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
@@ -92,6 +93,9 @@ export function GeneralSettings({ project, active }: { project: Project; active:
   const [errors, setErrors] = useState<Errors>({})
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmPrivate, setConfirmPrivate] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [outsiders, setOutsiders] = useState(0)
+  const queryClient = useQueryClient()
 
   const body = changes(form, saved)
   const dirty = Object.keys(body).length > 0
@@ -121,7 +125,7 @@ export function GeneralSettings({ project, active }: { project: Project; active:
   }
 
   const save = () => {
-    if (update.isPending) return
+    if (update.isPending || checking) return
     if (!dirty) {
       setNotice('No changes to save.')
       return
@@ -135,9 +139,20 @@ export function GeneralSettings({ project, active }: { project: Project; active:
       if (first) document.getElementById(`project-${first}`)?.focus()
       return
     }
-    const outsiders = project.outside_researcher_count ?? 0
-    if (body.visibility === 'private' && saved.visibility === 'internal' && outsiders > 0) {
-      setConfirmPrivate(true)
+    if (body.visibility === 'private' && saved.visibility === 'internal') {
+      // Adversarial check N1: count the outside researchers now, not as the page loaded
+      // (someone may have asked one meanwhile); if that fails, the count we have.
+      setChecking(true)
+      void queryClient
+        .query({ ...projectQueryOptions(project.slug), staleTime: 0 })
+        .then((fresh) => fresh.outside_researcher_count ?? 0)
+        .catch(() => project.outside_researcher_count ?? 0)
+        .then((count) => {
+          setChecking(false)
+          setOutsiders(count)
+          if (count > 0) setConfirmPrivate(true)
+          else submit()
+        })
       return
     }
     submit()
@@ -276,7 +291,7 @@ export function GeneralSettings({ project, active }: { project: Project; active:
         <FormActions
           form="the general settings"
           dirty={dirty}
-          saving={update.isPending}
+          saving={update.isPending || checking}
           notice={notice}
           onDiscard={() => {
             setForm(saved)
@@ -289,7 +304,7 @@ export function GeneralSettings({ project, active }: { project: Project; active:
         open={confirmPrivate}
         onOpenChange={setConfirmPrivate}
         title="Make this project private?"
-        description={outsideResearchersWarning(project.outside_researcher_count ?? 0)}
+        description={outsideResearchersWarning(outsiders)}
         confirmLabel="Make private"
         tone="danger"
         pending={update.isPending}

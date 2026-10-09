@@ -115,7 +115,9 @@ review M3) → 422 shape (the body; an idea key that isn't one) → 404 (`idea.v
 the idea, so R gets 403 next) → 403 (`idea.assign_researcher`) → 422
 `researcher_not_eligible` (c23, only when `researcher_id` names someone new) →
 409 `project_archived`, `awaiting_moderation` (c19), `idea_closed` (c5) → 409
-`research_step_off` (the project's step is off; a domain rule, as for answers) → apply.
+`research_step_off` (the project's step is off; a domain rule, as for answers) → 409
+`research_finished` (a researcher other than the current one, once the idea is past
+Research; §17, adversarial check L2) → apply.
 
 Apply, in the request's transaction, with the idea loaded `load_idea(for_update=True)`
 (project `FOR KEY SHARE`, then the idea `FOR UPDATE`) and, **when the researcher changes
@@ -135,10 +137,12 @@ deactivation committing meanwhile either clears the new assignment or makes this
 
 **Idempotent:** the same researcher and date change nothing (no event, notification or
 audit entry). **Last write wins** (the complete state: two people changing it at once,
-the later request's state stands, like the proposal template). Assigning is allowed in
-**any open status** (also New before evaluation, or past Research: then nothing is "to
-do", §7). The fan-out sends "Asked to research" to a new researcher who isn't the actor
-(§6.2).
+the later request's state stands, like the proposal template). Asking someone is allowed
+while the idea **awaits research** (in Research or a status before it, also New before
+evaluation); **past Research nobody new is asked** (409 `research_finished`: since D1 they
+could only read the idea; §17, adversarial check L2), while removing the researcher and
+keeping the same one (a due-date change) still work. The fan-out sends "Asked to
+research" to a new researcher who isn't the actor (§6.2).
 
 ### 3.4 `remove_researcher` ("Remove" and "Hand back")
 
@@ -379,9 +383,10 @@ the inbox disappear from it; queued emails about the idea are cancelled at send 
   the display name untrusted) and `due_at` for everyone. MCP never reaches beyond REST.
 - **Agents' research runs read as the guest would** (Phase 8b guest review M1; role matrix
   c22): their note lands in the feed R reads, so a research run's agent reads only
-  `list_projects`, `search_ideas` and `get_idea` (in the guest shape, `research_guest:
-  true`); `get_rubric` and `get_proposal` are `ai_run_not_active` there. Evaluate and
-  drafting runs read as before (drafting is the research assistant's only proposal read).
+  `search_ideas` and `get_idea` (in the guest shape, `research_guest: true`; both name the
+  idea's project); `get_rubric`, `get_proposal` and (adversarial check L1, §17)
+  `list_projects` are `ai_run_not_active` there. Evaluate and drafting runs read as before
+  (drafting is the research assistant's only proposal read).
 - **Agents** never assign (REST is refused to them, c22; they are never owners or admins)
   and are never assigned (c23).
 
@@ -775,7 +780,7 @@ feed records it, like evaluation due dates).
 | Code | Status | When |
 |---|---|---|
 | `researcher_not_eligible` | 422 | `set_research_assignment` names a service account, the break-glass account, a deactivated or unknown user (c23). |
-| `research_finished` | 409 | `answer_research_item` / `clear_research_item` by a researcher who isn't the owner or an admin once the idea is past Research (c26, §17: the lead's D1). |
+| `research_finished` | 409 | `answer_research_item` / `clear_research_item` by a researcher who isn't the owner or an admin once the idea is past Research (c26, §17: the lead's D1); `set_research_assignment` naming a researcher other than the current one once the idea is past Research (§3.3, §17: adversarial check L2). |
 | `outside_researcher_needs_admin` | 403 | `set_research_assignment` by the idea's owner (not a project or platform admin) names someone without a role in a **private** project (c25, §17). |
 
 `research_step_off`, `idea_closed`, `project_archived`, `awaiting_moderation` keep their
@@ -909,6 +914,33 @@ change; the lead then decided what they left open
   `IdeaPermissions.can_answer_research` and `ResearchPermissions.can_answer`. MCP
   `McpIdeaDetail.research_guest`'s description now names the research runs and the masked
   values (`score` and `aggregate` null, `evaluator_progress` 0/0, `has_proposal` false).
+
+### 2026-10-09 · The adversarial check of D1, D2 and the research-run reads (backend, frontend)
+
+No schema change; descriptions only (`make gen-api`: `set_research_assignment`,
+`IdeaPermissions.can_assign_researcher`, `ResearchPermissions.can_assign`; MCP
+`McpIdeaDetail.research_guest`).
+
+- **L1, research runs and `list_projects`:** a research run's `list_projects` returned the
+  project's description, idea count and the agent's role, which a guest of a private
+  project can't read (404). It is now `ai_run_not_active` in a research run
+  (`app.ai.scope.RUN_READ_TOOLS`); `get_idea` and `search_ideas` name the project (id,
+  slug, key, name). Evaluate and drafting runs list the run's project as before (§4.7).
+- **L2, nobody new past Research:** after D1 a researcher named past Research could only
+  read the idea (and was told "Please research"). `set_research_assignment` naming a
+  researcher **other than the current one** once the idea is past Research is **409
+  `research_finished`** (after the 403s, the 422 and the other 409s; for owners and admins
+  alike, whoever is named). Removing (`researcher_id: null` or `remove_researcher`),
+  handing back and keeping the same researcher (a due-date change) still work; moving the
+  idea back to Research lets the owner ask again. `can_assign` / `can_assign_researcher`
+  are unchanged (they cover Remove); the SPA shows **Remove** instead of Change past
+  Research (a confirmation that says why), and nothing while only the owner does it.
+- **N1, the "Make this project private?" count:** the SPA reads the project again on Save
+  before deciding whether to warn, so an outsider asked while the settings page was open
+  is counted.
+- **N2, an unsaved answer past Research:** an answer typed but not saved when the answers
+  turn read only (the idea moved on) stays visible under its item, with Copy and Discard
+  (Undo), and comes back from the browser's drafts like before.
 
 ## 18. Contract review (2026-10-08)
 

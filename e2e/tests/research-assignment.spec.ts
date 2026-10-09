@@ -687,13 +687,15 @@ test('RA-13 making an internal project private asks first, then ends outside res
       summary: 'Two pool bikes at reception.',
     })
     await alice.setOwner(idea.key, 'alice')
-    await assignResearcher(alice, idea.key, nora.user, daysFromNow(5))
-    expect((await alice.project(team.slug)).outside_researcher_count).toBe(1)
-    expect((await nora.api.get<{ key: string }>(`/ideas/${idea.key}`)).key).toBe(idea.key)
 
     await signIn(page, 'alice')
     await page.goto(`/p/${team.slug}/settings`)
     await expect(heading(page, 'Project settings')).toBeVisible()
+    // Nora is asked while the settings page is open (adversarial check N1: Save counts
+    // the outside researchers again instead of trusting the page's count, 0 here).
+    await assignResearcher(alice, idea.key, nora.user, daysFromNow(5))
+    expect((await alice.project(team.slug)).outside_researcher_count).toBe(1)
+    expect((await nora.api.get<{ key: string }>(`/ideas/${idea.key}`)).key).toBe(idea.key)
     await page.getByRole('radio', { name: /Private/ }).check()
     await page.getByRole('button', { name: /Save changes/ }).click()
     const confirm = page.getByRole('alertdialog', { name: 'Make this project private?' })
@@ -711,6 +713,70 @@ test('RA-13 making an internal project private asks first, then ends outside res
     const [entry] = await alice.audit({ action: 'idea.researcher_change', target_id: idea.id })
     expect(entry?.details).toMatchObject({ reason: 'made_private', from_user_id: nora.user.id })
     expect((await alice.project(team.slug)).outside_researcher_count).toBe(0)
+  } finally {
+    await disposePeople(people)
+  }
+})
+
+test('RA-14 past Research nobody new is asked: Remove instead of Change; an unsaved answer stays on screen (adversarial check L2, N2)', async ({
+  page,
+  api,
+}) => {
+  const alice = await api('alice')
+  const people = await newPeople(alice, ['nora', 'theo'])
+  const { nora, theo } = people
+  try {
+    const project = await researchTeam(alice, 'Research over', 'before_evaluation', {})
+    const idea = await alice.createIdea(project.slug, {
+      title: `Standing desks by the windows ${project.key}`,
+      summary: 'Six standing desks along the south windows.',
+    })
+    await alice.setOwner(idea.key, 'alice')
+    await alice.changeStatus(idea.key, 'research')
+    await assignResearcher(alice, idea.key, nora.user, null)
+    await answerRequired(alice, idea.key)
+
+    // N2: Nora types an answer; the idea moves on before she saves it. The save is refused
+    // (409 research_finished), the answers turn read only, and what she typed stays.
+    await signInAs(page, nora)
+    await openIdea(page, idea.key)
+    const answer = page.getByRole('textbox', { name: CHECKLIST.privacy, exact: true })
+    await answer.fill('Privacy team, 9 Oct: no personal data involved.')
+    await alice.changeStatus(idea.key, 'evaluating')
+    await answer.press('ControlOrMeta+Enter')
+    const kept = page.getByRole('textbox', { name: `Your unsaved answer to ${CHECKLIST.privacy}` })
+    await expect(kept).toHaveValue('Privacy team, 9 Oct: no personal data involved.')
+    await expect(answer).toHaveCount(0)
+    await expect(page.getByText('Your answer wasn’t saved')).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+
+    // L2: past Research nobody new is asked (they could only read it).
+    const named = await alice.raw('PUT', `/ideas/${idea.key}/research/assignment`, {
+      researcher_id: theo.user.id,
+      due_at: null,
+    })
+    expect(named.status()).toBe(409)
+    expect((await named.json()).code).toBe('research_finished')
+    expect((await ideaResearch(alice, idea.key)).assignment.researcher?.id).toBe(nora.user.id)
+
+    // The owner sees Remove, not Change; removing hands the research back to her.
+    await signIn(page, 'alice')
+    await page.goto(`/ideas/${idea.key}`)
+    // Past Research the panel starts folded.
+    const panel = page.getByRole('region', { name: 'Research' })
+    await panel.getByRole('button', { name: 'Research', exact: true }).click()
+    await expect(researcherLine(page)).toBeVisible()
+    await expect(
+      researcherLine(page).getByRole('button', { name: 'Change researcher or due date' }),
+    ).toHaveCount(0)
+    await researcherLine(page).getByRole('button', { name: 'Remove the researcher' }).click()
+    const confirm = page.getByRole('alertdialog', { name: 'Remove Nora Quinn as researcher?' })
+    await expect(confirm).toContainText('past Research, so nobody new can be asked to research it')
+    await expect(confirm).toContainText(`Nora Quinn will no longer see ${idea.key}.`)
+    await confirm.getByRole('button', { name: 'Remove' }).click()
+    await expect(toast(page, 'You (owner) will do the research')).toBeVisible()
+    await expect(researcherLine(page).getByRole('button')).toHaveCount(0)
+    expect((await nora.api.raw('GET', `/ideas/${idea.key}`)).status()).toBe(404)
   } finally {
     await disposePeople(people)
   }

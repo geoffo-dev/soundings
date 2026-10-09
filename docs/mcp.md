@@ -261,18 +261,19 @@ matrix §3 rule 9):
   that run's result. Without `run_id`, or naming a run that has ended, another kind of
   run or another idea (whether it exists or not), a tool answers `ai_run_not_active`
   before anything is looked up; `list_projects` and `search_ideas` list only the named
-  run's project and idea. After a cancel, the deadline or a worker restart the run stays
+  run's project and idea (a research run doesn't list projects at all, below). After a cancel, the deadline or a worker restart the run stays
   over, even while a newer run on the same idea is open. So two runs of one agent can't
   reach each other's ideas, and someone who reaches the agent directly in kagent can't
   use the key for anything else.
 - **What each kind of run reads.** An evaluate run and a section-draft run may call every
   read tool on their idea (`list_projects`, `search_ideas`, `get_idea`, `get_rubric`,
   `get_proposal`). A **research run reads the idea as its guest researcher would**,
-  because its note lands in the feed a guest researcher reads: `list_projects`,
-  `search_ideas` and `get_idea` only, `get_idea` and `search_ideas` with
-  `research_guest: true` and the masked values above (no evaluators or progress, no sign
-  of a proposal, the guest feed's `last_activity_at`); `get_rubric` and `get_proposal`
-  answer `ai_run_not_active`. So among the research assistant's runs only drafting reads
+  because its note lands in the feed a guest researcher reads: `search_ideas` and
+  `get_idea` only, with `research_guest: true` and the masked values above (no evaluators
+  or progress, no sign of a proposal, the guest feed's `last_activity_at`); the idea's
+  `project` field names its project. `get_rubric`, `get_proposal` and `list_projects` (a
+  private project's description and counts are hidden from its guest) answer
+  `ai_run_not_active`. So among the research assistant's runs only drafting reads
   the proposal, and a note can never pass the proposal or the evaluation area on to a
   guest.
 - **One write tool per kind of run.** An evaluate run may call `submit_evaluation` (each

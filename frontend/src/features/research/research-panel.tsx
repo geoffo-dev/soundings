@@ -5,6 +5,7 @@ import {
   CircleAlert,
   CircleCheck,
   CloudOff,
+  Copy,
   FileSearch,
   Lock,
   Sparkles,
@@ -18,9 +19,11 @@ import type { IdeaResearch, IdeaResearchItem } from '@/api/types'
 import { deferUntilToastCloses } from '@/api/undo'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { toast, toastUndo } from '@/components/ui/toaster'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -274,9 +277,10 @@ function ResearchItemRow({
   const saved = item.answer?.answer ?? ''
   const draftName = answerDraftName(ideaKey, item.item_id)
   // An answer typed and not saved survives leaving the page (UX review M1): it comes
-  // back from lib/drafts with "Unsaved draft restored" and the usual Discard.
+  // back from lib/drafts with "Unsaved draft restored" and the usual Discard. Read only
+  // (the idea moved past Research meanwhile: adversarial check N2), it is shown with
+  // Copy and Discard instead of disappearing.
   const [draft, setDraft] = useState(() => {
-    if (!canAnswer) return saved
     const kept = readDraft(me.id, draftName)
     if (!kept?.trim() || kept.trim() === saved.trim()) return saved
     return kept
@@ -498,18 +502,86 @@ function ResearchItemRow({
               {notice}
             </span>
           </>
-        ) : item.answer ? (
-          <>
-            <p className="text-sm break-words whitespace-pre-wrap text-secondary">
-              {item.answer.answer}
-            </p>
-            <AnswerMeta item={item} />
-          </>
         ) : (
-          <p className="text-sm text-muted italic">Not answered yet</p>
+          <>
+            {item.answer ? (
+              <>
+                <p className="text-sm break-words whitespace-pre-wrap text-secondary">
+                  {item.answer.answer}
+                </p>
+                <AnswerMeta item={item} />
+              </>
+            ) : (
+              <p className="text-sm text-muted italic">Not answered yet</p>
+            )}
+            {dirty && draft.trim() && (
+              <UnsentAnswer
+                fieldId={fieldId}
+                title={item.title}
+                text={draft}
+                onDiscard={() => {
+                  const text = draft
+                  setDraft(saved)
+                  forget()
+                  toastUndo('Your unsaved answer discarded', { onUndo: () => keep(text) })
+                }}
+              />
+            )}
+          </>
         )}
       </div>
     </li>
+  )
+}
+
+/**
+ * Adversarial check N2: an answer typed but not saved before the answers turned read
+ * only (the idea moved past Research) stays in lib/drafts; here it stays visible too,
+ * to copy and pass on (say, in a comment to the owner) or discard.
+ */
+function UnsentAnswer({
+  fieldId,
+  title,
+  text,
+  onDiscard,
+}: {
+  fieldId: string
+  title: string
+  text: string
+  onDiscard: () => void
+}) {
+  const id = `${fieldId}-unsent`
+  return (
+    <Callout tone="warning" title="Your answer wasn’t saved" className="mt-1">
+      <div className="flex flex-col gap-2 pt-1">
+        <p>You can no longer change this answer here. Copy what you wrote to pass it on.</p>
+        <label htmlFor={id} className="sr-only">
+          Your unsaved answer to {title}
+        </label>
+        <Textarea id={id} value={text} readOnly minRows={2} maxRows={8} className="bg-surface" />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              navigator.clipboard
+                .writeText(text)
+                .then(() => toast.message('Answer copied'))
+                .catch(() =>
+                  toast.error('Couldn’t copy the answer', {
+                    description: 'Select it and copy it by hand.',
+                  }),
+                )
+            }}
+          >
+            <Copy /> Copy answer
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDiscard}>
+            Discard
+          </Button>
+        </div>
+      </div>
+    </Callout>
   )
 }
 
