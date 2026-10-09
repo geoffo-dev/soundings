@@ -149,6 +149,10 @@ ROUTE_KEY_ACCESS: Final[dict[str, KeyAccess]] = {
     "get_research_settings": _P, "replace_research_settings": _S,
     "get_idea_research": _P, "answer_research_item": _P, "clear_research_item": _P,
     "list_similar_ideas": _P,
+    # Phase 8b: assigning the researcher is session only (review M3: it can open a private
+    # idea to an account and would outlive a leaked key); removing or handing it back
+    # follows its rules (write); the research to do is a read route like My work
+    "set_research_assignment": _S, "remove_researcher": _P, "list_my_research_to_do": _R,
 }
 # fmt: on
 """Every API operation (``operation_id``) and what a key may do there."""

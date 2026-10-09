@@ -202,3 +202,26 @@ async def add_evaluator(
                 )
             )
     await db.commit()
+
+
+async def set_researcher(
+    db: AsyncSession,
+    idea: Idea,
+    user: User | None,
+    *,
+    due_at: datetime | None = None,
+    assigned_at: datetime | None = None,
+) -> None:
+    """Phase 8b: the idea's researcher (None = nobody) and research due date, straight in
+    the database (the service is tested on its own: ``tests/research``)."""
+    await db.execute(
+        update(Idea)
+        .where(Idea.id == idea.id)
+        .values(
+            researcher_id=user.id if user else None,
+            research_assigned_at=(assigned_at or utcnow()) if user else None,
+            research_due_at=due_at,
+        )
+    )
+    await db.commit()
+    await db.refresh(idea)

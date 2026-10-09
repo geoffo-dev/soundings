@@ -86,6 +86,9 @@ class Rule(StrEnum):
     # K. The research step (Phase 8)
     IDEA_ANSWER_RESEARCH = "idea.answer_research"
     IDEA_RESEARCH_OVERRIDE = "idea.research_override"
+    # K (Phase 8b). Who does the research
+    IDEA_ASSIGN_RESEARCHER = "idea.assign_researcher"
+    IDEA_RELEASE_RESEARCHER = "idea.release_researcher"
 
 
 _READ: Final = frozenset(
@@ -127,6 +130,10 @@ _WRITE: Final = frozenset(
         Rule.AI_CANCEL_RUN,
         Rule.AI_DELETE_NOTE,
         Rule.IDEA_ANSWER_RESEARCH,
+        # Phase 8b: both in write, but assigning (set_research_assignment) is a session-only
+        # route (app.authz.keys.ROUTE_KEY_ACCESS, review M3): a key removes or hands back.
+        Rule.IDEA_ASSIGN_RESEARCHER,
+        Rule.IDEA_RELEASE_RESEARCHER,
     }
 )
 

@@ -17,6 +17,8 @@ export const EMAIL_TYPE_LABEL: Record<EmailType, string> = {
   status_changed: TYPE_COPY.status_changed.one,
   comment: TYPE_COPY.comment.one,
   mention: TYPE_COPY.mention.one,
+  researcher_assigned: TYPE_COPY.researcher_assigned.one,
+  research_reminder: TYPE_COPY.research_reminder.one,
   digest: 'Daily digest',
   test: 'Test email',
   submission_received: 'Submission received',

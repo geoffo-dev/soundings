@@ -59,11 +59,14 @@ async def search_users(
     project: Project | None,
     page: PageParams,
     co_members_of: Principal | None = None,
+    include_non_members: bool = False,
 ) -> UserPage:
     """Active people whose name or email contains ``q``, by display name (never
     service accounts or the break-glass admin).
 
-    With ``project``: only users with an effective role there, ``project_role`` set.
+    With ``project``: only users with an effective role there, ``project_role`` set;
+    Phase 8b ``include_non_members`` (the researcher picker): everyone, ``project_role``
+    null for people without a role there.
     With ``co_members_of`` (an AI agent's service account): only people with an
     effective role in a project where it has one too, inside its key's projects; an
     agent doesn't need the whole directory.
@@ -80,9 +83,11 @@ async def search_users(
             User.id.in_(select(_roles.c.user_id).where(_roles.c.project_id.in_(own)))
         )
     if project is not None:
-        statement = statement.join(
-            _roles, and_(_roles.c.user_id == User.id, _roles.c.project_id == project.id)
-        ).add_columns(_roles.c.role)
+        on = and_(_roles.c.user_id == User.id, _roles.c.project_id == project.id)
+        joined = (
+            statement.outerjoin(_roles, on) if include_non_members else statement.join(_roles, on)
+        )
+        statement = joined.add_columns(_roles.c.role)
     if q:
         pattern = f"%{escape_like(q)}%"
         statement = statement.where(
@@ -107,7 +112,9 @@ async def search_users(
                 display_name=row[0].display_name,
                 avatar_url=row[0].avatar_url,
                 email=row[0].email,
-                project_role=ProjectRole(row[2]) if project is not None else None,
+                project_role=(
+                    ProjectRole(row[2]) if project is not None and row[2] is not None else None
+                ),
             )
             for row in items
         ],

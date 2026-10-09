@@ -13,6 +13,8 @@ import {
   UserPlus,
   UserRoundCheck,
   UserRoundPen,
+  UserSearch,
+  Undo2,
 } from 'lucide-react'
 
 import {
@@ -53,7 +55,7 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
     idea,
     ideaKey,
     me,
-    project,
+    researchStep,
     ownEvaluator,
     openDialog,
     openEvaluate,
@@ -79,8 +81,9 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
     enabled: permissions.can_comment && page.tab !== 'proposal',
   })
   useShortcut('overviewTab', () => setTab('overview'))
-  useShortcut('evaluationsTab', () => setTab('evaluations'))
-  useShortcut('proposalTab', () => setTab('proposal'))
+  // A guest researcher has the Overview only (Phase 8b).
+  useShortcut('evaluationsTab', () => setTab('evaluations'), { enabled: !page.guest })
+  useShortcut('proposalTab', () => setTab('proposal'), { enabled: !page.guest })
 
   const actions: CommandAction[] = []
   if (ownEvaluator) {
@@ -137,7 +140,7 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
     })
   }
   // Phase 8: the Research panel (answer for the owner and admins, read for everyone).
-  if (project && project.research_step !== 'off') {
+  if (researchStep !== 'off') {
     actions.push({
       id: 'research',
       label: permissions.can_answer_research
@@ -149,6 +152,25 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
         requestResearchFocus(ideaKey)
         setTab('overview')
       },
+    })
+  }
+  // Phase 8b: who does the research (owners and admins), "Hand back" (the researcher).
+  if (permissions.can_assign_researcher) {
+    actions.push({
+      id: 'assign-researcher',
+      label: idea.researcher ? 'Change researcher…' : 'Assign the research…',
+      icon: <UserSearch />,
+      keywords: ['research', 'researcher', 'assign', 'due date'],
+      onSelect: () => openDialog('researcher'),
+    })
+  }
+  if (permissions.can_hand_back_research) {
+    actions.push({
+      id: 'hand-back-research',
+      label: 'Hand back the research…',
+      icon: <Undo2 />,
+      keywords: ['research', 'researcher', 'release'],
+      onSelect: () => openDialog('hand-back'),
     })
   }
   if (permissions.can_invite_evaluators) {

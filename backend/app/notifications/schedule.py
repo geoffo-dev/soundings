@@ -1,5 +1,6 @@
-"""The hourly ``notification_schedule`` job: evaluation reminders, then daily digests,
-then the cleanup (contract-phase3 sections 3.6, 3.7 and 3.9).
+"""The hourly ``notification_schedule`` job: evaluation and (Phase 8b) research reminders,
+then daily digests, then the cleanup (contract-phase3 sections 3.6, 3.7 and 3.9;
+contract-phase8b section 6.3).
 
 Everything follows the instance time zone (``SOUNDINGS_TIMEZONE``) and takes ``now``
 as an argument, so tests drive it with any clock. Both jobs are idempotent: reminders
@@ -30,6 +31,7 @@ from app.models.enums import (
     IdeaStatus,
     NotificationMode,
     NotificationType,
+    ResearchStep,
 )
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
@@ -39,7 +41,7 @@ from app.models.user import User
 from app.notifications import access, preferences
 from app.notifications.fanout import NotificationWriter, usable_address
 from app.public import retention as public_retention
-from app.services import brand_assets, sessions
+from app.services import brand_assets, research, sessions
 from app.services.sql import any_of
 
 __all__ = [
@@ -53,6 +55,7 @@ __all__ = [
     "digest_key",
     "run_schedule",
     "send_reminders",
+    "send_research_reminders",
 ]
 
 logger = logging.getLogger("soundings.notifications")
@@ -150,6 +153,86 @@ async def send_reminders(db: AsyncSession, settings: Settings, now: datetime) ->
     return reminded
 
 
+async def send_research_reminders(db: AsyncSession, settings: Settings, now: datetime) -> int:
+    """Phase 8b (contract-phase8b section 6.3): the same timing as evaluation reminders,
+    for research due dates (``ix_ideas_research_due_at_open``): on local day ``d - n`` from
+    the digest hour, while ``now`` is before the due time, to whoever does the research
+    (the researcher, or the owner while nobody is assigned) while it is still to do and
+    they may answer it; an assigned researcher only when asked before that hour (the
+    "Asked to research" gave the date). Returns how many people were reminded."""
+    if not settings.reminder_days:
+        return 0
+    today = now.astimezone(settings.tz).date()
+    fire = _local_hour_start(today, settings.digest_hour, settings)
+    if fire > now:
+        return 0
+    offsets = {today + timedelta(days=n): n for n in settings.reminder_days}
+    horizon = _local_hour_start(max(offsets) + timedelta(days=1), 0, settings)
+    rows = (
+        await db.execute(
+            select(Idea, Project)
+            .join(Project, Project.id == Idea.project_id)
+            .where(
+                Idea.research_due_at.is_not(None),
+                Idea.status != IdeaStatus.CLOSED,
+                Idea.research_due_at > now,
+                Idea.research_due_at < horizon,
+                Idea.held_for.is_(None),
+                Project.research_step != ResearchStep.OFF,
+                Project.archived_at.is_(None),
+            )
+            .order_by(Idea.research_due_at, Idea.id)
+        )
+    ).all()
+    writer = NotificationWriter(db, settings, now=now)
+    reminded = 0
+    for idea, project in rows:
+        assert idea.research_due_at is not None  # noqa: S101 - filtered above
+        due_day = idea.research_due_at.astimezone(settings.tz).date()
+        days_before = offsets.get(due_day)
+        if days_before is None:
+            continue
+        person = idea.researcher_id or idea.owner_id
+        if person is None:
+            continue
+        if (
+            idea.researcher_id is not None
+            and idea.research_assigned_at is not None
+            and idea.research_assigned_at >= fire
+        ):
+            continue  # asked after this reminder's hour: "Asked to research" had the date
+        payload = {
+            "due_at": idea.research_due_at.isoformat(),
+            "days_before": days_before,
+            "as_owner": idea.researcher_id is None,
+        }
+        open_items = await research.required_open_count(db, idea)
+        found = await access.recipients(db, idea, project, [person])
+        recipients = [
+            recipient
+            for recipient in found.values()
+            if access.applies(
+                NotificationType.RESEARCH_REMINDER,
+                recipient,
+                idea,
+                payload=payload,
+                now=now,
+                required_open=open_items,
+            )
+        ]
+        reminded += len(
+            await writer.notify(
+                NotificationType.RESEARCH_REMINDER,
+                idea,
+                recipients,
+                actor_id=None,
+                dedupe_key=f"research_reminder:{idea.id}:{due_day.isoformat()}:{days_before}",
+                payload=payload,
+            )
+        )
+    return reminded
+
+
 # --- Digests ------------------------------------------------------------------------------
 def _pending(now: datetime) -> list[ColumnElement[bool]]:
     return [
@@ -226,17 +309,20 @@ async def _digest_for(
         and not user.is_break_glass
         and usable_address(user.email)
     )
-    viewable: dict[UUID, bool] = {}
+    viewable: dict[UUID, access.Recipient | None] = {}
     for notification, idea, project in items:
         if not deliverable:
             drop.append(notification.id)
             continue
         if idea.id not in viewable:
-            viewable[idea.id] = bool(await access.recipients(db, idea, project, [user_id]))
+            found = await access.recipients(db, idea, project, [user_id])
+            viewable[idea.id] = found.get(user_id)
+        recipient = viewable[idea.id]
         if (
             notification.read_at is not None
             or modes[notification.type] is NotificationMode.OFF
-            or not viewable[idea.id]
+            or recipient is None
+            or not access.holds(notification.type, recipient)  # Phase 8b review S5
         ):
             drop.append(notification.id)
         else:
@@ -318,6 +404,7 @@ async def run_schedule(
     would skip it."""
     async with session_scope(sessionmaker, settings=settings) as db:
         reminders = await send_reminders(db, settings, now)
+        reminders += await send_research_reminders(db, settings, now)
     digests = await build_digests(sessionmaker, settings, now)
     async with session_scope(sessionmaker) as db:
         await cleanup(db, now)

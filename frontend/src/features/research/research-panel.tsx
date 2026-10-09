@@ -36,6 +36,7 @@ import { focusWhenRendered } from '@/lib/focus'
 import { gatedStatuses } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
+import { ResearcherLine } from './research-assignment'
 import { progressWords } from './research-copy'
 import { takeResearchFocus, useResearchFocusRequest } from './research-focus'
 import { SimilarIdeas } from './similar-ideas'
@@ -54,8 +55,7 @@ export const answerFieldId = (itemId: string) => `research-answer-${itemId}`
  * people who answer (the owner and admins); folded otherwise (UX review m2).
  */
 export function ResearchPanel() {
-  const { ideaKey, idea, project, statusLabel } = useIdeaPage()
-  const step = project?.research_step ?? 'off'
+  const { ideaKey, idea, guest, researchStep: step, statusLabel } = useIdeaPage()
   const research = useIdeaResearch(ideaKey, { enabled: step !== 'off' })
   const [open, setOpen] = useState(
     () =>
@@ -86,7 +86,9 @@ export function ResearchPanel() {
 
   if (step === 'off') return null
 
-  const gateLabel = data?.gate_status ? statusLabel(data.gate_status) : null
+  // Phase 8b: the label comes with the panel (a guest researcher can't read the project).
+  const gateLabel =
+    data?.gate_status_label ?? (data?.gate_status ? statusLabel(data.gate_status) : null)
   return (
     <section
       id="research"
@@ -134,6 +136,7 @@ export function ResearchPanel() {
           </div>
         ) : (
           <>
+            <ResearcherLine />
             {data && data.items.length > 0 ? (
               <ol className="flex flex-col divide-y divide-subtle" aria-label="Research checklist">
                 {data.items.map((item) => (
@@ -151,7 +154,8 @@ export function ResearchPanel() {
               <p className="text-sm text-muted">This project’s checklist has no items yet.</p>
             )}
             <SimilarIdeas ideaKey={ideaKey} />
-            <AiResearch />
+            {/* No AI panel for a guest researcher (role matrix column R). */}
+            {!guest && <AiResearch />}
           </>
         )}
       </div>

@@ -46,6 +46,7 @@ import {
   statusChangeGuarded,
 } from '@/mocks/handlers/research'
 import { startsEvaluation } from '@/mocks/research'
+import { clearAssignment } from '@/mocks/researchers'
 import {
   addWatcher,
   deleteIdeaRows,
@@ -154,6 +155,8 @@ export function changeStatus(
   const from = { from_status: idea.status, from_resolution: idea.resolution }
   idea.status = status
   idea.resolution = resolution
+  // Phase 8b (review S8): closing ends the research assignment, before the fan-out.
+  if (status === 'closed') clearAssignment(ctx.db, idea, ctx.user, 'closed')
   emit(ctx.db, idea, 'status_changed', ctx.user.id, {
     ...from,
     to_status: status,

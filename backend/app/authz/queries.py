@@ -14,9 +14,19 @@ roles only through the ``project_effective_roles`` view.
   the policy (c12) allows and :func:`app.services.ideas.load_idea` checks per idea.
 * :func:`score_visible`: ``score.view_aggregate`` / ``evaluation.view_others`` for
   ideas already filtered by :func:`viewable_ideas`: false while the principal is a
-  pending evaluator (blind evaluation). :func:`visible_aggregate_score` and
-  :func:`visible_high_disagreement` mask the cached columns with it, for responses,
-  ``sort=score`` (masked scores sort as unscored) and the disagreement filter.
+  pending evaluator (blind evaluation), and (Phase 8b, review M1) unless the idea's
+  project is one the principal can view, so a guest researcher's idea never carries a
+  score. :func:`visible_aggregate_score` and :func:`visible_high_disagreement` mask the
+  cached columns with it, for responses, ``sort=score`` (masked scores sort as unscored)
+  and the disagreement filter.
+* :func:`evaluation_visible` (Phase 8b): ``evaluation.view_own`` in SQL, the evaluation
+  area of a summary (evaluator progress, ``my_evaluation``): the idea's project is
+  viewable (every column that views an idea holds it; the guest researcher doesn't).
+* :func:`researched_ideas` (Phase 8b): the ideas a person researches while the
+  assignment is live (column R and the +Rsr overlay, c24). **Only** search and ⌘K, MCP
+  ``search_ideas``, the inbox, My work's "Research to do" and Similar ideas add it to
+  :func:`listed_ideas` (contract-phase8b section 4.5, review C1); every other list
+  stays project-scoped.
 """
 
 from __future__ import annotations
@@ -40,16 +50,24 @@ from sqlalchemy import (
 )
 
 from app.domain.principal import Principal
-from app.models.enums import EvaluationStatus, ProjectRole, ProjectVisibility
+from app.models.enums import (
+    EvaluationStatus,
+    IdeaStatus,
+    ProjectRole,
+    ProjectVisibility,
+    ResearchStep,
+)
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project, project_effective_roles
 
 __all__ = [
     "effective_role",
+    "evaluation_visible",
     "listed_ideas",
     "pending_evaluator",
     "pending_ideas",
+    "researched_ideas",
     "score_visible",
     "viewable_ideas",
     "visible_aggregate_score",
@@ -110,6 +128,38 @@ def listed_ideas(principal: Principal | None) -> ColumnElement[bool]:
     )
 
 
+def _viewable_project_ids(principal: Principal | None) -> Select[UUID]:
+    """Uncorrelated: Postgres hashes it once per query."""
+    return select(Project.id).where(visible_projects(principal)).correlate(None)
+
+
+def researched_ideas(principal: Principal | None) -> ColumnElement[bool]:
+    """Phase 8b: the ideas the principal researches with the assignment **live** (c24):
+    ``researcher_id`` is them, the project's research step is on and it isn't archived,
+    the idea is open and not held, inside a key's projects (the key with ``read``); never
+    for a service account (c23). One index range on ``ix_ideas_researcher_id_status``.
+
+    Add it (``listed_ideas(p) | researched_ideas(p)``) only to the lists the contract
+    names (module docstring); a guest's idea carries no score there (:func:`score_visible`
+    needs the project viewable)."""
+    if not _may_read(principal):
+        return false()
+    assert principal is not None  # noqa: S101 - narrowed by _may_read
+    if principal.user.is_service_account or principal.user.is_break_glass:
+        return false()
+    live_projects = select(Project.id).where(
+        Project.research_step != ResearchStep.OFF, Project.archived_at.is_(None)
+    )
+    if principal.project_ids is not None:
+        live_projects = live_projects.where(Project.id.in_(principal.project_ids))
+    return and_(
+        Idea.researcher_id == principal.user_id,
+        Idea.status != IdeaStatus.CLOSED,
+        Idea.held_for.is_(None),
+        Idea.project_id.in_(live_projects.correlate(None)),
+    )
+
+
 def viewable_ideas(principal: Principal | None) -> ColumnElement[bool]:
     """The list filter, by its Phase 1 name: :func:`listed_ideas`.
 
@@ -152,21 +202,39 @@ def pending_evaluator(
 
 
 def score_visible(
-    principal: Principal | None, idea_id: ColumnElement[Any] | Any = Idea.id
+    principal: Principal | None,
+    idea_id: ColumnElement[Any] | Any = Idea.id,
+    project_id: ColumnElement[Any] | Any = Idea.project_id,
 ) -> ColumnElement[bool]:
     """``score.view_aggregate`` (and ``evaluation.view_others``) for a viewable idea.
 
     False for a pending evaluator, whatever their role: blind evaluation (role
-    matrix section 3), and for a service account everywhere (rule 9). Combine with
-    :func:`viewable_ideas`; this does not re-check view.
+    matrix section 3), for a service account everywhere (rule 9) and (Phase 8b, rule 11)
+    wherever the idea's project isn't one the principal can view (a guest researcher's
+    idea). Combine with :func:`viewable_ideas`.
     """
     if not _may_read(principal):
         return false()
     assert principal is not None  # noqa: S101 - narrowed by _may_read
     if principal.user.is_service_account:
         return false()  # rule 9: AI agents never see others' score data
-    # NOT IN over a non-null column: a hashed subplan, evaluated once per query.
-    return idea_id.not_in(pending_ideas(principal))
+    # NOT IN over a non-null column: a hashed subplan, evaluated once per query; the
+    # project condition is one more (uncorrelated) hashed subplan.
+    return and_(
+        idea_id.not_in(pending_ideas(principal)),
+        project_id.in_(_viewable_project_ids(principal)),
+    )
+
+
+def evaluation_visible(
+    principal: Principal | None, project_id: ColumnElement[Any] | Any = Idea.project_id
+) -> ColumnElement[bool]:
+    """Phase 8b: ``evaluation.view_own`` for an idea a list shows: its evaluation area
+    (evaluator progress, ``my_evaluation``) only where the idea's project is viewable, so
+    never for a guest researcher (role matrix table L, section 3 rule 11)."""
+    if not _may_read(principal):
+        return false()
+    return project_id.in_(_viewable_project_ids(principal))
 
 
 def visible_aggregate_score(principal: Principal | None) -> ColumnElement[Decimal | None]:

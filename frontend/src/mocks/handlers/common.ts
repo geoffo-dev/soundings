@@ -18,6 +18,7 @@ import {
 } from '@/mocks/domain'
 import { conflict, failValidation, notFound, type RouteContext } from '@/mocks/http'
 import { forgetProposal } from '@/mocks/proposals'
+import { guestAccess, isResearchGuest } from '@/mocks/researchers'
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -50,6 +51,13 @@ export function viewIdea(ctx: RouteContext): MockIdea {
   }
   const idea = findIdea(ctx.db, ref)
   if (!idea || !canViewIdea(ctx.db, idea, ctx.user)) notFound('Idea not found.')
+  // Phase 8b (role matrix table L): a guest researcher reaches only some routes.
+  if (
+    isResearchGuest(ctx.db, idea, ctx.user) &&
+    guestAccess(ctx.request.method, ctx.url.pathname) === 'hidden'
+  ) {
+    notFound('Idea not found.')
+  }
   return idea
 }
 

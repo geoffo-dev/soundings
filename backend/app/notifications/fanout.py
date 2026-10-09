@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from email.headerregistry import Address
 from typing import Any, Final
 from uuid import UUID, uuid4
@@ -35,7 +35,7 @@ from sqlalchemy import DateTime, String, Uuid, bindparam, func, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings, is_mail_address
+from app.config import Settings, get_settings, is_mail_address
 from app.db import SessionMaker, before_commit, session_scope, session_settings
 from app.email import outbox
 from app.models.activity import ActivityEvent, Comment
@@ -113,6 +113,11 @@ class _Mentions:
     comment_id: UUID
     author_id: UUID | None
     user_ids: tuple[UUID, ...]
+
+
+def _zone(settings: Settings | None) -> tzinfo:
+    """The instance time zone (``SOUNDINGS_TIMEZONE``) for local-day dedupe keys."""
+    return (settings or get_settings()).tz
 
 
 def queue_event(db: AsyncSession, event: ActivityEvent) -> None:
@@ -474,9 +479,11 @@ async def _notify_event(
                     {"evaluator_count": submitted},
                 )
         case "status_changed":
-            # The owner and evaluators always; watchers while they watch.
+            # The owner, evaluators and (Phase 8b) the researcher always; watchers while
+            # they watch. Closing clears the researcher before this runs (review S8).
             people = [
                 *([idea.owner_id] if idea.owner_id else []),
+                *([idea.researcher_id] if idea.researcher_id else []),
                 *await access.evaluator_ids(db, idea.id),
                 *await _watchers(db, idea.id),
             ]
@@ -495,7 +502,36 @@ async def _notify_event(
                 skip = mentioned.get(comment.id, set())
                 watchers = [user for user in await _watchers(db, idea.id) if user not in skip]
                 await notify(NotificationType.COMMENT, watchers, {}, comment=comment)
+        case "researcher_changed":
+            # Phase 8b: "Asked to research" for the new researcher (not the actor, not on
+            # removal or hand back), at most once per idea, person and local day (review
+            # S6), with the research due date after the request's last write.
+            researcher = access.parse_uuid(payload.get("to_researcher_id"))
+            if researcher is None or researcher == actor_id:
+                return
+            data = {
+                "due_at": idea.research_due_at.isoformat() if idea.research_due_at else None
+            }
+            recipients = await _candidates(
+                writer,
+                NotificationType.RESEARCHER_ASSIGNED,
+                idea,
+                project,
+                [researcher],
+                actor_id=actor_id,
+                payload=data,
+            )
+            day = writer.now.astimezone(_zone(writer.settings)).date().isoformat()
+            await writer.notify(
+                NotificationType.RESEARCHER_ASSIGNED,
+                idea,
+                recipients,
+                actor_id=actor_id,
+                dedupe_key=f"researcher_assigned:{idea.id}:{day}",
+                payload=data,
+            )
         case _:
-            # idea created or edited, due date changed, evaluation closed or reopened:
-            # no notifications (contract-phase3 section 3.3 notes).
+            # idea created or edited, due date changed (evaluation or research),
+            # evaluation closed or reopened: no notifications (contract-phase3 section 3.3
+            # notes; contract-phase8b section 3.6).
             return

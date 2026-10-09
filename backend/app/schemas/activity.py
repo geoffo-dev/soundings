@@ -220,16 +220,14 @@ ACTIVITY_TYPES: tuple[str, ...] = (
     "evaluation_reopened",
     "due_date_changed",
     AI_RESEARCH_NOTE,
+    "researcher_changed",
+    "research_due_date_changed",
 )
-"""Every ``activity_events.type`` value (Phase 1, plus Phase 6's research notes).
-
-Phase 8b: backend adds :data:`PHASE8B_ACTIVITY_TYPES` here together with their
-``app.services.activity.PAYLOAD_KEYS`` (an import-time guard ties the two), when it
-emits them; the union above already has their items (contract-phase8b section 8)."""
+"""Every ``activity_events.type`` value (Phase 1, Phase 6's research notes and Phase 8b's
+research assignment; ``app.services.activity.PAYLOAD_KEYS`` covers exactly these)."""
 
 PHASE8B_ACTIVITY_TYPES: tuple[str, ...] = ("researcher_changed", "research_due_date_changed")
-"""Phase 8b's two feed events (the research assignment), until they join
-:data:`ACTIVITY_TYPES`."""
+"""Phase 8b's two feed events (the research assignment), part of :data:`ACTIVITY_TYPES`."""
 
 EVALUATION_ACTIVITY_TYPES: frozenset[str] = frozenset(
     {

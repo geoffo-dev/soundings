@@ -60,6 +60,25 @@ export function useMoreEvaluationsDue(initialCursor: string | null, enabled: boo
   return useInfiniteQuery({ ...evaluationsDueInfiniteOptions(initialCursor), enabled })
 }
 
+/** Phase 8b: My work's "Show more" for research to do, from `research_to_do_next_cursor`. */
+export const researchToDoInfiniteOptions = (initialCursor: string | null, pageSize = 100) =>
+  infiniteQueryOptions({
+    queryKey: [...queryKeys.work.research(), { from: initialCursor, pageSize }] as const,
+    queryFn: ({ pageParam, signal }) =>
+      unwrap(
+        api.GET('/api/v1/me/research-to-do', {
+          params: { query: { cursor: pageParam ?? undefined, limit: pageSize } },
+          signal,
+        }),
+      ),
+    initialPageParam: initialCursor,
+    getNextPageParam: (page) => page.next_cursor,
+  })
+
+export function useMoreResearchToDo(initialCursor: string | null, enabled: boolean) {
+  return useInfiniteQuery({ ...researchToDoInfiniteOptions(initialCursor), enabled })
+}
+
 /**
  * "Load more" for one My work group: ideas you own in `status`, starting from
  * the group's `next_cursor`.

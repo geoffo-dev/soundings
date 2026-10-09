@@ -1523,7 +1523,7 @@ export interface paths {
         get?: never;
         /**
          * Assign the research
-         * @description idea.assign_researcher (the idea's owner, project admins and platform admins; c5): the complete new assignment, the researcher (any active person, a member of the project or not, the owner included; null = nobody, the owner does it) and the research due date (null = none). Idempotent. A new researcher watches the idea and, when someone else assigned them, gets "Asked to research" (by email per their preference). A researcher with no role in a private project sees only this idea (role matrix column R). Emits researcher_changed / research_due_date_changed; a researcher change is audited as idea.researcher_change. Returns the whole panel. Last write wins. Session only: an API key gets 403 insufficient_scope (an assignment can open the idea to someone and would outlive the key). 422 researcher_not_eligible (c23: a service account, the break-glass account, a deactivated or unknown user). 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.assign_researcher (the idea's owner, project admins and platform admins; c5): the complete new assignment, the researcher (any active person, a member of the project or not, the owner included; null = nobody, the owner does it) and the research due date (null = none). Idempotent. A new researcher watches the idea and, when someone else assigned them, gets "Asked to research" (by email per their preference). A researcher with no role in a private project sees only this idea (role matrix column R). Emits researcher_changed / research_due_date_changed; a researcher change is audited as idea.researcher_change. Returns the whole panel. Last write wins. Session only: an API key gets 403 insufficient_scope (an assignment can open the idea to someone and would outlive the key). 403 outside_researcher_needs_admin (c25, product owner S1 a: in a private project only project and platform admins may name someone without a role there; the owner names people with a role). 422 researcher_not_eligible (c23: a service account, the break-glass account, a deactivated or unknown user). 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
          */
         put: operations["set_research_assignment"];
         post?: never;
@@ -5333,6 +5333,12 @@ export interface components {
              */
             can_answer_research: boolean;
             /**
+             * Can Assign Outside Researcher
+             * @description Phase 8b (product owner, S1 a): may name someone **without a role in the project** as researcher. Always true with can_assign_researcher in an internal project; in a private project only for project admins and platform admins (the owner names people with a role there: naming an outsider is 403 outside_researcher_needs_admin). The picker offers people outside the project only when this is true.
+             * @default false
+             */
+            can_assign_outside_researcher: boolean;
+            /**
              * Can Assign Owner
              * @description idea.assign_owner: pick any eligible owner.
              */
@@ -7633,6 +7639,12 @@ export interface components {
              * @default false
              */
             can_assign: boolean;
+            /**
+             * Can Assign Outside Researcher
+             * @description Phase 8b (product owner, S1 a): may name someone without a role in the project as researcher: with can_assign in an internal project; in a private project only project and platform admins (the owner gets 403 outside_researcher_needs_admin). The picker offers people outside the project only when this is true.
+             * @default false
+             */
+            can_assign_outside_researcher: boolean;
             /**
              * Can Hand Back
              * @description Phase 8b: idea.release_researcher: you are the researcher: offer "Hand back" (DELETE /ideas/{idea}/research/assignment).

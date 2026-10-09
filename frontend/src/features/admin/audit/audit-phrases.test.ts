@@ -717,6 +717,48 @@ describe('audit sentences', () => {
     )
   })
 
+  it('words the Phase 8b research assignment entries', () => {
+    const base = {
+      target_type: 'idea' as const,
+      target_id: 'i-12',
+      target_label: 'TOOL-12',
+      project: CUST,
+    }
+    const people: NameResolver = {
+      ...names,
+      user: (id) => ({ 'u-bob': 'Bob Brown', 'u-ann': 'Ann Lee' })[id],
+    }
+    const change = (details: Record<string, unknown>) =>
+      say(entry('idea.researcher_change', { ...base, details }), people)
+    expect(
+      change({ from_user_id: null, to_user_id: 'u-bob', reason: 'assigned', outside_project: true }),
+    ).toBe('Alice Anders asked Bob Brown to research TOOL-12, outside the project')
+    expect(
+      change({ from_user_id: 'u-ann', to_user_id: 'u-bob', reason: 'assigned' }),
+    ).toBe('Alice Anders asked Bob Brown to research TOOL-12')
+    expect(change({ from_user_id: null, to_user_id: 'u-alice', reason: 'assigned' })).toBe(
+      'Alice Anders took on the research of TOOL-12',
+    )
+    expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'removed' })).toBe(
+      'Alice Anders removed Bob Brown as researcher of TOOL-12',
+    )
+    expect(change({ from_user_id: 'u-alice', to_user_id: null, reason: 'handed_back' })).toBe(
+      'Alice Anders handed back the research of TOOL-12',
+    )
+    expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'deactivated' })).toBe(
+      'Bob Brown was removed as researcher of TOOL-12 (account deactivated)',
+    )
+    expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'closed' })).toBe(
+      'Bob Brown was removed as researcher of TOOL-12 (idea closed)',
+    )
+    expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'step_off' })).toBe(
+      'Bob Brown was removed as researcher of TOOL-12 (research step turned off)',
+    )
+    expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'left_project' })).toBe(
+      'Bob Brown was removed as researcher of TOOL-12 (left the project)',
+    )
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })
@@ -778,6 +820,7 @@ describe('audit categories', () => {
       'project.research_step_change': true,
       'project.research_checklist_replace': true,
       'idea.research_override': true,
+      'idea.researcher_change': true,
     }
     const listed = AUDIT_CATEGORIES.flatMap((c) => [...c.actions])
     expect([...listed].sort()).toEqual(Object.keys(every).sort())

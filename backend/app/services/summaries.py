@@ -10,6 +10,11 @@ only for the page's rows, through the per-idea indexes, in the same round trip.
 
 Blind evaluation (contract section 3.7): where the score is not visible,
 ``score`` is null, ``score_hidden`` true and ``high_disagreement`` false.
+
+Phase 8b (review M1): the evaluation area (``evaluator_progress``, the viewer's own
+evaluator state) follows ``evaluation.view_own`` (:func:`app.authz.evaluation_visible`),
+so a guest researcher's idea shows ``0/0`` and no state; ``researcher`` is the idea's
+researcher while the project's research step is on.
 """
 
 from __future__ import annotations
@@ -25,7 +30,14 @@ from sqlalchemy import ColumnElement, Row, String, exists, func, select, type_co
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from app.authz import IdeaFacts, ProjectFacts, Resource, idea_summary_permissions, score_visible
+from app.authz import (
+    IdeaFacts,
+    ProjectFacts,
+    Resource,
+    evaluation_visible,
+    idea_summary_permissions,
+    score_visible,
+)
 from app.domain.idea_keys import format_key
 from app.domain.labels import status_label
 from app.domain.principal import Principal
@@ -35,6 +47,7 @@ from app.models.enums import (
     EvaluatorState,
     IdeaStatus,
     ProjectRole,
+    ResearchStep,
     Resolution,
 )
 from app.models.evaluation import Evaluation
@@ -93,6 +106,7 @@ class IdeaData:
     vote_count: int
     created_at: datetime
     last_activity_at: datetime
+    researcher_id: UUID | None = None  # Phase 8b
 
     @classmethod
     def of(cls, source: Any) -> IdeaData:
@@ -121,6 +135,8 @@ class IdeaRow:
 
     idea: IdeaData
     score_visible: bool
+    evaluation_visible: bool = True
+    """Phase 8b: ``evaluation.view_own`` (progress and your own state; never a guest's)."""
     tag_ids: Sequence[UUID] = ()
     evaluators: int = 0
     submitted: int = 0
@@ -129,15 +145,26 @@ class IdeaRow:
     has_voted: bool = False
 
     @classmethod
-    def of(cls, idea: IdeaData, row: Row[Any], *, score_visible: bool | None = None) -> IdeaRow:
+    def of(
+        cls,
+        idea: IdeaData,
+        row: Row[Any],
+        *,
+        score_visible: bool | None = None,
+        evaluation_visible: bool | None = None,
+    ) -> IdeaRow:
         """From a row selected with :func:`summary_columns`."""
+        evaluation = bool(
+            row.evaluation_visible if evaluation_visible is None else evaluation_visible
+        )
         return cls(
             idea=idea,
             score_visible=bool(row.score_visible if score_visible is None else score_visible),
+            evaluation_visible=evaluation,
             tag_ids=row.tag_ids or (),
             evaluators=row.evaluators,
             submitted=row.submitted,
-            my_state=EvaluatorState(row.my_state) if row.my_state else None,
+            my_state=EvaluatorState(row.my_state) if row.my_state and evaluation else None,
             comment_count=row.comment_count,
             has_voted=bool(row.has_voted),
         )
@@ -183,6 +210,7 @@ def summary_columns(
     voted = exists().where(IdeaVote.idea_id == idea_id, IdeaVote.user_id == me)
     return [
         score_visible(principal, idea_id).label("score_visible"),
+        evaluation_visible(principal).label("evaluation_visible"),
         tag_ids.scalar_subquery().label("tag_ids"),
         evaluators.label("evaluators"),
         submitted.label("submitted"),
@@ -193,13 +221,23 @@ def summary_columns(
 
 
 async def idea_row(
-    db: AsyncSession, principal: Principal, idea: Idea, *, score_visible: bool
+    db: AsyncSession,
+    principal: Principal,
+    idea: Idea,
+    *,
+    score_visible: bool,
+    evaluation_visible: bool = True,
 ) -> IdeaRow:
     """One idea's summary columns (the idea page); visibility comes from the policy."""
     row = (
-        await db.execute(select(*summary_columns(principal)[1:]).where(Idea.id == idea.id))
+        await db.execute(select(*summary_columns(principal)[2:]).where(Idea.id == idea.id))
     ).one()
-    return IdeaRow.of(IdeaData.of(idea), row, score_visible=score_visible)
+    return IdeaRow.of(
+        IdeaData.of(idea),
+        row,
+        score_visible=score_visible,
+        evaluation_visible=evaluation_visible,
+    )
 
 
 async def user_refs(db: AsyncSession, user_ids: Iterable[UUID | None]) -> dict[UUID, UserRef]:
@@ -295,7 +333,14 @@ async def load_context(
             projects = {project.id: project for project in found}
     if roles is None:
         roles = await roles_in(db, principal, project_ids)
-    users = await user_refs(db, [*(row.idea.owner_id for row in rows), *extra_users])
+    users = await user_refs(
+        db,
+        [
+            *(row.idea.owner_id for row in rows),
+            *(row.idea.researcher_id for row in rows),  # Phase 8b
+            *extra_users,
+        ],
+    )
     tag_ids = {tag_id for row in rows for tag_id in row.tag_ids}
     tags: dict[UUID, str] = {}
     if tag_ids:
@@ -330,6 +375,7 @@ def idea_facts(row: IdeaRow, context: SummaryContext) -> Resource:
             submitted_by_id=idea.submitted_by_id,
             evaluation_closed=idea.evaluation_closed_at is not None,
             my_evaluation=row.my_state,
+            researcher_id=idea.researcher_id,
         ),
     )
 
@@ -359,7 +405,11 @@ def summary_fields(principal: Principal, row: IdeaRow, context: SummaryContext) 
             (context.tags[tag_id] for tag_id in row.tag_ids if tag_id in context.tags),
             key=lambda name: (name.casefold(), name),
         ),
-        "evaluator_progress": EvaluatorProgress(submitted=row.submitted, total=row.evaluators),
+        "evaluator_progress": (
+            EvaluatorProgress(submitted=row.submitted, total=row.evaluators)
+            if row.evaluation_visible
+            else EvaluatorProgress(submitted=0, total=0)
+        ),
         "score": score,
         "score_hidden": not visible,
         "high_disagreement": visible and idea.high_disagreement,
@@ -370,6 +420,12 @@ def summary_fields(principal: Principal, row: IdeaRow, context: SummaryContext) 
         "last_activity_at": idea.last_activity_at,
         "permissions": context.permissions(row),
         "research": context.research.get(idea.id),
+        # Phase 8b: who does the research, while the project has the step.
+        "researcher": (
+            context.users.get(idea.researcher_id)
+            if idea.researcher_id and project.research_step is not ResearchStep.OFF
+            else None
+        ),
     }
 
 

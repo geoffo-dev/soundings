@@ -51,6 +51,7 @@ from app.authz import (
     load_project,
     not_found,
     require,
+    researched_ideas,
 )
 from app.authz.queries import pending_ideas
 from app.config import Settings
@@ -364,7 +365,9 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
     evaluator by the summary builder."""
     principal = ctx.principal
     _require_read(principal, Rule.IDEA_VIEW)
-    where: list[ColumnElement[bool]] = [listed_ideas(principal)]
+    # Phase 8b: a person's researched ideas too (a guest's one idea, no score data: the
+    # summary builder masks it; contract-phase8b section 4.5).
+    where: list[ColumnElement[bool]] = [or_(listed_ideas(principal), researched_ideas(principal))]
     if ai_scope.is_agent(principal):  # c22: only the named run's idea, nothing looked up
         run = await ai_scope.named_run(ctx.db, principal, args.run_id)
         if run is None or (args.project is not None and not run.names_project(args.project)):
@@ -510,12 +513,18 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
     require(principal, Rule.IDEA_VIEW, loaded.resource)  # the key's read scope
     detail = await ideas.idea_detail(db, principal, loaded)
     names = {c.id: c.name for c in await _criteria(db, loaded.project.id)}
-    mine = await evaluations.my_evaluation(db, principal, loaded)
+    # Phase 8b: a guest researcher has no evaluation area (evaluation.view_own) and no
+    # proposal (proposal.view): nothing of either, not even whether one exists.
+    evaluation_area = can(principal, Rule.EVALUATION_VIEW_OWN, loaded.resource)
+    proposal_area = can(principal, Rule.PROPOSAL_VIEW, loaded.resource)
+    mine = await evaluations.my_evaluation(db, principal, loaded) if evaluation_area else None
     # M1 (rule 9): an agent sees its own scores only in its evaluate run; a research note
     # or a draft could otherwise pass them on to people who are still blind.
     show_mine = run is None or run.kind is AiRunKind.EVALUATE
     others, evaluation_count = await _evaluations_out(ctx, loaded, names)
-    has_proposal = await proposal_service.find_proposal(db, loaded.idea.id) is not None
+    has_proposal = (
+        proposal_area and await proposal_service.find_proposal(db, loaded.idea.id) is not None
+    )
     checklist = await research.idea_research(
         db, principal, loaded.idea, loaded.project, loaded.resource
     )
@@ -524,6 +533,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
         [
             detail.owner.id if detail.owner else None,
             detail.submitted_by.id if detail.submitted_by else None,
+            checklist.assignment.researcher.id if checklist.assignment.researcher else None,
             *(
                 item.answer.answered_by.id
                 for item in checklist.items
@@ -583,6 +593,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
             comments=await _comments_out(db, loaded.idea, args.comment_limit),
             has_proposal=has_proposal,
             research=_research_out(checklist, users),
+            research_guest=not detail.permissions.can_view_project,
             permissions=McpIdeaPermissions(
                 can_comment=detail.permissions.can_comment,
                 can_evaluate=detail.permissions.can_evaluate,
@@ -616,6 +627,13 @@ def _research_out(checklist: IdeaResearch, users: dict[UUID, McpUser]) -> McpRes
             for item in checklist.items
         ],
         required_open=checklist.progress.required_open,
+        # Phase 8b: who does it (the display name is untrusted text) and by when.
+        researcher=(
+            users.get(checklist.assignment.researcher.id)
+            if checklist.assignment.researcher
+            else None
+        ),
+        due_at=checklist.assignment.due_at,
     )
 
 

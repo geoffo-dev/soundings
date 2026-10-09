@@ -46,6 +46,8 @@ TYPE_LABELS: Final[Mapping[NotificationType, str]] = {
     NotificationType.STATUS_CHANGED: "status changes",
     NotificationType.COMMENT: "new comments",
     NotificationType.MENTION: "mentions",
+    NotificationType.RESEARCHER_ASSIGNED: "research requests",
+    NotificationType.RESEARCH_REMINDER: "research reminders",
 }
 """"Unsubscribe from <label>" in an email's footer."""
 
@@ -153,10 +155,19 @@ class Links:
     def __init__(self, base_url: str) -> None:
         self.base = base_url.rstrip("/")
 
-    def idea(self, key: str, *, evaluate: bool = False, comment_id: object = None) -> str:
+    def idea(
+        self,
+        key: str,
+        *,
+        evaluate: bool = False,
+        comment_id: object = None,
+        research: bool = False,
+    ) -> str:
         url = f"{self.base}/ideas/{quote(key)}"
         if evaluate:
             url += "?evaluate=1"
+        elif research:  # Phase 8b: open the idea at its Research panel
+            url += "?research=1"
         if comment_id is not None:
             url += f"#comment-{quote(str(comment_id))}"
         return url

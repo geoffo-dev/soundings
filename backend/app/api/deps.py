@@ -9,6 +9,7 @@ the :class:`~app.domain.principal.Principal` on ``request.state`` for
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Annotated
 
 from fastapi import Depends, Request, Security
@@ -97,7 +98,10 @@ async def get_current_user(
     if principal is None:
         raise UnauthorizedProblem
     route = request.scope.get("route")
-    check_route_for_key(principal, getattr(route, "operation_id", None))
+    operation = getattr(route, "operation_id", None)
+    check_route_for_key(principal, operation)
+    # Phase 8b: the operation decides what a guest researcher may reach (app.authz.guest).
+    principal = dataclasses.replace(principal, operation=operation)
     request.state.principal = principal
     return principal.user
 

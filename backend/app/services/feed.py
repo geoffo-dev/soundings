@@ -5,6 +5,11 @@ resolved to ``UserRef`` (``null`` for users that no longer exist) and comment ev
 carry their comment with your ``can_edit`` / ``can_delete``. Payloads hold ids and
 from/to values only (:mod:`app.services.activity` refuses anything else), so the feed
 is the same for everyone who can view the idea, pending evaluators included.
+
+Phase 8b (review M2): a caller without ``evaluation.view_own`` on the idea (a guest
+researcher, role matrix column R) gets only ``RESEARCH_GUEST_ACTIVITY_TYPES`` (an
+allow-list, filtered in the query so cursors page over it); status sentences carry the
+project's labels (``from_label`` / ``to_label``), so no project read is needed.
 """
 
 from __future__ import annotations
@@ -20,11 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import notes
 from app.authz import Resource, Rule, can
+from app.domain.labels import status_label
 from app.domain.principal import Principal
 from app.models.activity import ActivityEvent, Comment
+from app.models.enums import IdeaStatus, Resolution
 from app.pagination import InvalidCursorProblem, decode_cursor, encode_cursor
 from app.schemas.activity import (
     AI_RESEARCH_NOTE,
+    RESEARCH_GUEST_ACTIVITY_TYPES,
     ActivityItem,
     ActivityPage,
     AiResearchNoteActivity,
@@ -39,6 +47,8 @@ from app.schemas.activity import (
     IdeaCreatedActivity,
     IdeaEditedActivity,
     OwnerChangedActivity,
+    ResearchDueDateChangedActivity,
+    ResearcherChangedActivity,
     StatusChangedActivity,
 )
 from app.schemas.ai import ResearchNote
@@ -48,7 +58,16 @@ from app.services.summaries import user_refs
 
 __all__ = ["activity_items", "comment_body", "latest_activity", "list_activity"]
 
-_USER_KEYS = ("from_owner_id", "to_owner_id", "evaluator_id")
+_USER_KEYS = (
+    "from_owner_id",
+    "to_owner_id",
+    "evaluator_id",
+    "from_researcher_id",
+    "to_researcher_id",
+)
+
+Labels = Mapping[str, str]
+"""A project's status label overrides (``projects.status_labels``)."""
 
 
 def _uuid(value: object) -> UUID | None:
@@ -74,11 +93,20 @@ def comment_body(principal: Principal, comment: Comment, resource: Resource) -> 
     )
 
 
+def _label(labels: Labels | None, status: object, resolution: object) -> str | None:
+    if labels is None:
+        return None
+    return status_label(
+        labels, IdeaStatus(str(status)), Resolution(str(resolution)) if resolution else None
+    )
+
+
 def _item(
     event: ActivityEvent,
     users: Mapping[UUID, UserRef],
     comment: CommentBody | None,
     note: ResearchNote | None = None,
+    labels: Labels | None = None,
 ) -> ActivityItem | None:
     payload = event.payload
     base: dict[str, Any] = {
@@ -111,6 +139,8 @@ def _item(
                 to_status=payload["to_status"],
                 to_resolution=payload["to_resolution"],
                 research_overridden=bool(payload.get("research_overridden", False)),
+                from_label=_label(labels, payload["from_status"], payload["from_resolution"]),
+                to_label=_label(labels, payload["to_status"], payload["to_resolution"]),
                 **base,
             )
         case "owner_changed":
@@ -150,6 +180,21 @@ def _item(
                 if note is None
                 else AiResearchNoteActivity(type="ai_research_note", note=note, **base)
             )
+        case "researcher_changed":
+            return ResearcherChangedActivity(
+                type="researcher_changed",
+                from_researcher=user("from_researcher_id"),
+                to_researcher=user("to_researcher_id"),
+                handed_back=bool(payload["handed_back"]),
+                **base,
+            )
+        case "research_due_date_changed":
+            return ResearchDueDateChangedActivity(
+                type="research_due_date_changed",
+                from_due_at=_datetime(payload["from_due_at"]),
+                to_due_at=_datetime(payload["to_due_at"]),
+                **base,
+            )
     return None  # a type from a later phase: clients skip it too
 
 
@@ -168,10 +213,13 @@ async def activity_items(
     resource_for: Callable[[UUID], Resource],
     *,
     users: Mapping[UUID, UserRef] | None = None,
+    labels_for: Callable[[UUID], Labels | None] | None = None,
 ) -> list[ActivityItem]:
     """Feed items for ``events`` (users and comments loaded in batches);
     ``resource_for(idea_id)`` gives the facts for comment permissions. ``users``: the
-    people already loaded for :func:`event_user_ids` (My work), else loaded here."""
+    people already loaded for :func:`event_user_ids` (My work), else loaded here.
+    ``labels_for(idea_id)``: the idea's project's status labels (``from_label`` /
+    ``to_label``; Phase 8b)."""
     if users is None:
         users = await user_refs(db, event_user_ids(events))
     comment_ids = [event.comment_id for event in events if event.comment_id is not None]
@@ -197,7 +245,8 @@ async def activity_items(
             if event.type == AI_RESEARCH_NOTE and event.idea_id is not None
             else None
         )
-        item = _item(event, users, body, note)
+        labels = labels_for(event.idea_id) if labels_for and event.idea_id else None
+        item = _item(event, users, body, note, labels)
         if item is not None:
             items.append(item)
     return items
@@ -211,9 +260,15 @@ async def list_activity(
     *,
     cursor: str | None,
     limit: int,
+    labels: Labels | None = None,
 ) -> ActivityPage:
-    """The idea's feed, newest first (``idea.view`` is checked by the caller)."""
+    """The idea's feed, newest first (``idea.view`` is checked by the caller).
+
+    Without ``evaluation.view_own`` on the idea (a guest researcher), only the allow-list
+    ``RESEARCH_GUEST_ACTIVITY_TYPES`` (review M2), filtered before paging."""
     statement = select(ActivityEvent).where(ActivityEvent.idea_id == idea_id)
+    if not can(principal, Rule.EVALUATION_VIEW_OWN, resource):
+        statement = statement.where(ActivityEvent.type.in_(sorted(RESEARCH_GUEST_ACTIVITY_TYPES)))
     if cursor:
         after = decode_cursor(cursor)
         try:
@@ -238,7 +293,9 @@ async def list_activity(
     next_cursor = None
     if len(events) > limit and page:
         next_cursor = encode_cursor({"t": page[-1].created_at, "id": page[-1].id})
-    items = await activity_items(db, principal, page, lambda _: resource)
+    items = await activity_items(
+        db, principal, page, lambda _: resource, labels_for=lambda _: labels
+    )
     return ActivityPage(items=items, next_cursor=next_cursor)
 
 
@@ -265,7 +322,10 @@ async def latest_activity(
     resource_for: Callable[[UUID], Resource],
     *,
     users: Mapping[UUID, UserRef] | None = None,
+    labels_for: Callable[[UUID], Labels | None] | None = None,
 ) -> dict[UUID, ActivityItem]:
     """The feed item of each of :func:`latest_events`, by idea."""
-    items = await activity_items(db, principal, events, resource_for, users=users)
+    items = await activity_items(
+        db, principal, events, resource_for, users=users, labels_for=labels_for
+    )
     return {item.idea_id: item for item in items}

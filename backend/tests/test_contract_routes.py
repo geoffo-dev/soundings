@@ -255,19 +255,13 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("PUT", "/api/v1/ideas/{idea}/research/items/{item_id}", "answer_research_item"),
     ("DELETE", "/api/v1/ideas/{idea}/research/items/{item_id}", "clear_research_item"),
     ("GET", "/api/v1/ideas/{idea}/similar-ideas", "list_similar_ideas"),
-]
-
-# Phase 8b (docs/api/contract-phase8b.md): kept apart from CONTRACT until identity adds
-# their ROUTE_KEY_ACCESS rows, ROUTE_RULES and research-guest decisions (the meta-tests
-# index those tables by every CONTRACT operation), then moves them into CONTRACT.
-PHASE8B_OPERATIONS: list[tuple[str, str, str]] = [
-    # --- Phase 8b: assign the research to a person ------------------------------------
+    # --- Phase 8b: assign the research to a person (docs/api/contract-phase8b.md) ------
     ("PUT", "/api/v1/ideas/{idea}/research/assignment", "set_research_assignment"),
     ("DELETE", "/api/v1/ideas/{idea}/research/assignment", "remove_researcher"),
     ("GET", "/api/v1/me/research-to-do", "list_my_research_to_do"),
 ]
 
-ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT + PHASE8B_OPERATIONS
+ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT
 
 # operation_id -> a valid request (url with query string, JSON body or None) for the
 # Phase 2 admin, group and access operations (implemented; tests/admin covers them).
@@ -409,7 +403,11 @@ _RESEARCH_BODY: dict[str, Any] = {
 # for a new stub.
 _ASSIGNMENT = {"researcher_id": USER, "due_at": "2026-10-11T17:00:00+01:00"}
 
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+
+# Phase 8b operations (tests/research): a valid request each, for the shape and session
+# checks.
+PHASE8B_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     # --- Phase 8b: assign the research to a person (contract-phase8b) --------------------
     "set_research_assignment": ("/api/v1/ideas/CUST-12/research/assignment", _ASSIGNMENT),
     "remove_researcher": ("/api/v1/ideas/CUST-12/research/assignment", None),
@@ -688,7 +686,7 @@ def test_operation_ids_are_explicit_and_match_function_names() -> None:
 
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
-    assert not {op for _, _, op in PHASE8B_OPERATIONS} & {op for _, _, op in CONTRACT}
+    assert set(PHASE8B_REQUESTS) <= set(_METHODS)
     assert set(PHASE8_REQUESTS) <= set(_METHODS)
     assert set(PHASE2_REQUESTS) <= set(_METHODS)
     assert set(PHASE3_REQUESTS) <= set(_METHODS)
@@ -797,6 +795,7 @@ async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
         | PHASE5_REQUESTS
         | PHASE6_REQUESTS
         | PHASE8_REQUESTS
+        | PHASE8B_REQUESTS
         | STUBS
     )
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
@@ -1682,10 +1681,10 @@ def test_research_and_status_labels_are_in_the_contract(app: FastAPI) -> None:
         ("list_my_research_to_do", "/api/v1/me/research-to-do?limit=201", None),
     ],
 )
-async def test_invalid_phase8b_requests_are_rejected_before_the_stub(
+async def test_invalid_phase8b_requests_are_rejected(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS[operation_id]
+    valid_url, valid_body = PHASE8B_REQUESTS[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -1697,8 +1696,8 @@ async def test_invalid_phase8b_requests_are_rejected_before_the_stub(
 
 @pytest.mark.usefixtures("signed_in")
 async def test_the_researcher_picker_is_a_search_users_option(client: httpx.AsyncClient) -> None:
-    """Phase 8b: search_users?project=&include_non_members=true is the researcher picker
-    (501 until the backend builds it); a non-boolean is a 422."""
+    """Phase 8b: search_users?project=&include_non_members=true is the researcher picker;
+    a non-boolean is a 422."""
     response = await client.get("/api/v1/users?project=cust&include_non_members=maybe")
 
     assert response.status_code == 422, response.text

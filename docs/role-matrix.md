@@ -101,13 +101,19 @@ it immediately.
   answers they wrote stay), audited `idea.researcher_change` with `reason: deactivated`;
   so an account `soundings anonymise-user` handles (always deactivated first) holds none.
   Closing an idea or turning a project's research step off clears those assignments the
-  same way (`reason: closed` / `step_off`; contract-phase8b §3.5).
+  same way (`reason: closed` / `step_off`; contract-phase8b §3.5), and so does **losing
+  one's role in a private project** (`reason: left_project`; product owner's answer to
+  review S1 (b), contract-phase8b §17).
 - **Researcher** (Phase 8b): one per idea, optional; **any active person** may be it (c23:
   never a service account, the break-glass account or a deactivated user), a member of
   the project or not. A member or an internal project's non-member keeps their column
   and gains the +Rsr overlay; a person without a role in a **private** project becomes
   column **R** for that one idea (table L). Nobody assigned = the idea's owner does the
-  research (the owner overlay already answers).
+  research (the owner overlay already answers). In a private project only project and
+  platform admins may name someone without a role there (c25); the owner names people
+  with a role. Someone who **loses** their role in a private project (removed by an admin,
+  through a group, a group's deletion or a sign-in group sync) stops being the researcher
+  of its ideas at once (product owner, 2026-10-08).
 - **How someone signed in** (SSO, break-glass, dev login) changes nothing in these
   tables: a session is a session. Sign-in itself is not a rule (section 2a).
 
@@ -445,7 +451,7 @@ Notes ([contract-phase6 §3.5](api/contract-phase6.md#35-authorisation-role-matr
 |---|---|---|---|---|---|---|---|---|---|---|
 | `idea.answer_research` | Answer, edit or clear the idea's research checklist items | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · |
 | `idea.research_override` | "Move anyway": take the idea past Research with required items open (a flag on the guarded request) | Y | Y | 403 | 403 | 403 | 404 | 401 | · | · |
-| `idea.assign_researcher` | Assign, change or remove the idea's researcher and set the research due date (Phase 8b) | Y (c5, c23) | Y (c5, c23) | 403 | 403 | 403 | 404 | 401 | + (c5, c23) | · |
+| `idea.assign_researcher` | Assign, change or remove the idea's researcher and set the research due date (Phase 8b) | Y (c5, c23) | Y (c5, c23) | 403 | 403 | 403 | 404 | 401 | + (c5, c23, c25) | · |
 | `idea.release_researcher` | Hand the research back: the researcher removes themselves (Phase 8b; granted only by +Rsr, table L) | 403 | 403 | 403 | 403 | 403 | 404 | 401 | · | · |
 
 Notes ([contract-phase8 §3](api/contract-phase8.md#3-the-research-step)):
@@ -535,10 +541,14 @@ Two parts, decided by the one policy module (ADR 0010, [ADR 0016](adr/0016-resea
   `researched_ideas` (the person's live researched ideas). Every score mask in SQL
   (`score_visible`) also needs the idea's project to be viewable, and the evaluation
   fields of summaries follow `evaluation.view_own`.
-- **Open for the product owner** (contract review S1, [decisions](decisions.md#phase-8b-contract-review-2026-10-08)):
-  as built, the idea's owner (any member who volunteered for it too) may name anyone, and
-  a member removed from a private project keeps R on the idea they research. Everyone who
-  sees the idea sees "not in this project" beside such a researcher; the audit marks
+- **Who may open a private idea to an outsider** (contract review S1, decided by the
+  product owner on 2026-10-08, [decisions](decisions.md#phase-8b-product-owner-answers-2026-10-08)):
+  (a) in a private project only project and platform admins may name someone without a
+  role there (c25: the owner gets 403 `outside_researcher_needs_admin`; the flag
+  `can_assign_outside_researcher`); (b) losing one's role in a private project ends one's
+  research assignments there (audited `reason: left_project`, answers kept, no feed event
+  or notification), so a member removed from the project never keeps R. Everyone who sees
+  the idea sees "not in this project" beside an outside researcher; the audit marks
   `outside_project`.
 
 Rule names are written without backticks here so the tables' parser
@@ -726,6 +736,7 @@ evaluations and one AI evaluation present.
 | c22 | **Run scope** (a property of the principal, like c20/c21; not written in the cells). For a service-account principal: REST is refused; every MCP call **names its run** (`run_id`, required for agents) and must be an **open run** of its agent (`running`, no cancel request), checked **before any idea is looked up**; every tool must target that run's idea (`get_rubric` also by its project; `list_projects` / `search_ideas` list only that run's project / idea); the only write is the named run's kind's tool (evaluate → `submit_evaluation`, research → `add_research_note`, draft_section → `propose_proposal_section` for the run's section); `create_idea` and `add_comment` never. For people: `run_id` is ignored and `add_research_note` is refused (contract-phase6 §3.5) | REST → 403 `insufficient_scope`; no `run_id`, a run that isn't open, another idea (existing or not), another kind or section → `ai_run_not_active`; `create_idea`, `add_comment` by an agent, `add_research_note` by a person → `forbidden` |
 | c23 | Phase 8b: the user being made the idea's researcher is an **active person**: not a service account (an AI agent), not the break-glass account, not deactivated (an unknown id alike). Applies to `idea.assign_researcher` when it names someone (removing the researcher has nobody to check) | 422 `researcher_not_eligible` |
 | c24 | Phase 8b, **live research assignment** (a property of column R and the +Rsr overlay, like c20–c22 not written in the cells): the principal is the idea's assigned researcher, the project's research step is on, the idea isn't closed and the project isn't archived (closing and turning the step off also clear the assignment, so in practice only an archived project suspends one) | R: the column doesn't apply, so the principal is NMp (404); +Rsr: grants nothing (the column's own cell decides) |
+| c25 | Phase 8b, product owner's answer to review S1 (a): in a **private** project, the person the **owner** names as researcher holds a role in the project (an internal project's owner may name anyone). Only on the owner overlay of `idea.assign_researcher`: project and platform admins may name someone outside a private project. Checked on the person's role read after their user row is locked (contract-phase8b §17) | 403 `outside_researcher_needs_admin` |
 
 ## 5. API keys
 

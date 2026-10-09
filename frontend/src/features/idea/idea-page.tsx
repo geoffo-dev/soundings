@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Archive, ChevronRight, CloudOff } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { Archive, ChevronRight, CloudOff, FileSearch } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isApiError } from '@/api/errors'
@@ -14,6 +14,7 @@ import {
 import { useMarkIdeaNotificationsRead } from '@/api/notifications'
 import { proposalQueryOptions, useCreateProposal, useProposalSuggestions } from '@/api/proposals'
 import { useProject } from '@/api/projects'
+import { forgetIdea, useIdeaResearch } from '@/api/research'
 import type { IdeaDetail, IdeaSummary } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { CountBadge } from '@/components/ui/badge'
@@ -32,6 +33,7 @@ import { AiRunsSection } from '@/features/ai/ai-runs-section'
 import { AiMenu, submittedEvaluatorIds, useAiCommands } from '@/features/ai/idea-ai'
 import { useCurrentUser } from '@/features/auth/current-user'
 import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
+import { HandBackDialog, ResearchAssignmentDialog } from '@/features/research/research-assignment'
 import { requestResearchFocus } from '@/features/research/research-focus'
 import { ResearchPanel } from '@/features/research/research-panel'
 import { focusWhenRendered, useTyping } from '@/lib/focus'
@@ -68,14 +70,21 @@ import { StatusDialog } from './status-dialog'
 export function IdeaPage({ ideaKey, search }: { ideaKey: string; search: IdeaSearch }) {
   const idea = useIdea(ideaKey)
   const cached = useCachedIdeaSummary(ideaKey)
+  const queryClient = useQueryClient()
+  const gone =
+    idea.isError &&
+    isApiError(idea.error) &&
+    (idea.error.status === 404 || idea.error.status === 422)
+  // Access ended (a guest researcher unassigned, the idea deleted): nothing of it stays cached.
+  useEffect(() => {
+    if (gone) forgetIdea(queryClient, ideaKey)
+  }, [gone, queryClient, ideaKey])
 
   if (idea.data) {
     return <LoadedIdeaPage key={idea.data.id} idea={idea.data} ideaKey={ideaKey} search={search} />
   }
   if (idea.isError) {
-    if (isApiError(idea.error) && (idea.error.status === 404 || idea.error.status === 422)) {
-      return <IdeaNotFound />
-    }
+    if (gone) return <IdeaNotFound />
     return <IdeaLoadError onRetry={() => void idea.refetch()} />
   }
   return <IdeaPageLoading summary={cached} />
@@ -94,9 +103,14 @@ function LoadedIdeaPage({
   const navigate = useNavigate()
   // Visiting an idea reads its notifications (contract-phase3 §3.2).
   useMarkIdeaNotificationsRead(ideaKey, idea.id)
-  const project = useProject(idea.project.slug).data
+  // Phase 8b: a guest researcher (column R) reads this idea only: never its project.
+  const guest = !idea.permissions.can_view_project
+  const project = useProject(idea.project.slug, { enabled: !guest }).data
+  const guestResearch = useIdeaResearch(ideaKey, { enabled: guest })
+  const researchStep = project?.research_step ?? guestResearch.data?.step ?? 'off'
   const archived = Boolean(project?.archived_at)
-  const tab: IdeaTab = search.tab ?? 'overview'
+  // A guest has the Overview only (no Evaluations or Proposal: no dead tabs).
+  const tab: IdeaTab = guest ? 'overview' : (search.tab ?? 'overview')
   // The Proposal tab spans the page; the details fold into the summary line and sheet.
   const wide = tab === 'proposal'
   const [dialog, setDialog] = useState<IdeaDialog | null>(null)
@@ -142,6 +156,13 @@ function LoadedIdeaPage({
     if (ownEvaluator) setSearch({ evaluate: true })
   }, [ownEvaluator, setSearch])
 
+  // `?research=1` (the "Asked to research" email and inbox links): the Research panel.
+  useEffect(() => {
+    if (!search.research) return
+    setSearch({ research: undefined, tab: undefined })
+    requestResearchFocus(ideaKey)
+  }, [search.research, setSearch, ideaKey])
+
   const openDialog = useCallback(
     (next: IdeaDialog) => {
       // From the phone details sheet: close it first and let the dialog take focus.
@@ -171,6 +192,8 @@ function LoadedIdeaPage({
     me,
     ownEvaluator,
     archived,
+    guest,
+    researchStep,
     statusLabel,
     openDialog,
     openEvaluate,
@@ -183,13 +206,12 @@ function LoadedIdeaPage({
 
   useIdeaCommands(page)
   const submittedIds = submittedEvaluatorIds(idea.evaluators)
-  useAiCommands(ideaKey, setTab, submittedIds)
+  useAiCommands(ideaKey, setTab, submittedIds, !guest)
 
   const volunteer = useVolunteerAsOwner(ideaKey)
   const setClosed = useSetEvaluationClosed(ideaKey)
   const createProposal = useCreateProposal(ideaKey)
   const changeStatus = useChangeIdeaStatus(ideaKey)
-  const researchStep = project?.research_step ?? 'off'
   // Shortlisted or in Proposal (or in Research before the proposal), the owner's next step
   // is the proposal: ask whether one exists (the Proposal tab's own query, so it's shared)
   // to say Start or Open.
@@ -220,7 +242,8 @@ function LoadedIdeaPage({
     else if (kind === 'invite') openDialog('invite')
     else if (kind === 'close-evaluation') setClosed.mutate({ closed: true })
     else if (kind === 'open-proposal') setTab('proposal')
-    else if (kind === 'start-research') changeStatus.mutate({ status: 'research' })
+    // Phase 8b: who does the research and by when, then the move (lead decision on S3).
+    else if (kind === 'start-research') openDialog('start-research')
     else if (kind === 'start-evaluation') {
       // Evaluation needs evaluators: invite them, and the invite moves the idea on (p7).
       if (idea.evaluator_progress.total === 0 && idea.permissions.can_invite_evaluators) {
@@ -264,8 +287,7 @@ function LoadedIdeaPage({
         className={className}
         loading={
           (action.kind === 'start-proposal' && createProposal.isPending) ||
-          ((action.kind === 'start-research' || action.kind === 'start-evaluation') &&
-            changeStatus.isPending)
+          (action.kind === 'start-evaluation' && changeStatus.isPending)
         }
         onClick={() => runPrimary(action.kind)}
       >
@@ -297,6 +319,12 @@ function LoadedIdeaPage({
           </p>
         )}
         <HeldIdeaBanner idea={idea} ideaKey={ideaKey} />
+        {guest && (
+          <p className="mb-5 flex items-center gap-2 rounded-lg border bg-background px-3.5 py-2.5 text-sm text-secondary">
+            <FileSearch aria-hidden="true" className="size-4 shrink-0 text-muted" />
+            You can see this idea because you’re researching it.
+          </p>
+        )}
         <div
           className={cn(
             'grid gap-x-10 gap-y-6',
@@ -306,51 +334,63 @@ function LoadedIdeaPage({
           <div className="flex min-w-0 flex-col gap-5">
             <IdeaHeader
               primary={primaryButton()}
-              ai={<AiMenu ideaKey={ideaKey} setTab={setTab} submittedIds={submittedIds} />}
+              ai={
+                guest ? undefined : (
+                  <AiMenu ideaKey={ideaKey} setTab={setTab} submittedIds={submittedIds} />
+                )
+              }
             />
             <MobileSummary onOpenDetails={() => setDetailsOpen(true)} always={wide} />
-            <Tabs value={tab} onValueChange={(value) => setTab(value as IdeaTab)}>
-              <TabsList aria-label="Idea sections">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="evaluations">
-                  Evaluations
-                  {total > 0 && (
-                    <>
-                      <CountBadge aria-hidden="true">
-                        {submitted}/{total}
-                      </CountBadge>
-                      <span className="sr-only">
-                        , {submitted} of {total} submitted
-                      </span>
-                    </>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="proposal">
-                  Proposal
-                  {pendingSuggestions > 0 && (
-                    <>
-                      <CountBadge aria-hidden="true">{pendingSuggestions}</CountBadge>
-                      <span className="sr-only">
-                        , {pendingSuggestions}{' '}
-                        {pendingSuggestions === 1 ? 'suggestion' : 'suggestions'} to decide on
-                      </span>
-                    </>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="overview" className="flex flex-col gap-10">
+            {guest ? (
+              <div className="flex flex-col gap-10">
                 <DescriptionSection />
                 <ResearchPanel />
-                <AiRunsSection />
                 <ActivitySection />
-              </TabsContent>
-              <TabsContent value="evaluations">
-                <EvaluationsTab />
-              </TabsContent>
-              <TabsContent value="proposal">
-                <ProposalTab />
-              </TabsContent>
-            </Tabs>
+              </div>
+            ) : (
+              <Tabs value={tab} onValueChange={(value) => setTab(value as IdeaTab)}>
+                <TabsList aria-label="Idea sections">
+                  <TabsTrigger value="overview">Overview</TabsTrigger>
+                  <TabsTrigger value="evaluations">
+                    Evaluations
+                    {total > 0 && (
+                      <>
+                        <CountBadge aria-hidden="true">
+                          {submitted}/{total}
+                        </CountBadge>
+                        <span className="sr-only">
+                          , {submitted} of {total} submitted
+                        </span>
+                      </>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="proposal">
+                    Proposal
+                    {pendingSuggestions > 0 && (
+                      <>
+                        <CountBadge aria-hidden="true">{pendingSuggestions}</CountBadge>
+                        <span className="sr-only">
+                          , {pendingSuggestions}{' '}
+                          {pendingSuggestions === 1 ? 'suggestion' : 'suggestions'} to decide on
+                        </span>
+                      </>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="overview" className="flex flex-col gap-10">
+                  <DescriptionSection />
+                  <ResearchPanel />
+                  <AiRunsSection />
+                  <ActivitySection />
+                </TabsContent>
+                <TabsContent value="evaluations">
+                  <EvaluationsTab />
+                </TabsContent>
+                <TabsContent value="proposal">
+                  <ProposalTab />
+                </TabsContent>
+              </Tabs>
+            )}
           </div>
           {!wide && (
             <aside aria-label="Idea details" className="hidden lg:block">
@@ -397,6 +437,15 @@ function LoadedIdeaPage({
       <InviteDialog open={dialog === 'invite'} onOpenChange={(open) => !open && setDialog(null)} />
       <DeleteIdeaDialog
         open={dialog === 'delete'}
+        onOpenChange={(open) => !open && setDialog(null)}
+      />
+      <ResearchAssignmentDialog
+        mode={dialog === 'start-research' ? 'start' : 'change'}
+        open={dialog === 'researcher' || dialog === 'start-research'}
+        onOpenChange={(open) => !open && setDialog(null)}
+      />
+      <HandBackDialog
+        open={dialog === 'hand-back'}
         onOpenChange={(open) => !open && setDialog(null)}
       />
       {ownEvaluator && (

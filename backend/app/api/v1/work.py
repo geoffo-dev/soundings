@@ -10,7 +10,6 @@ from fastapi import APIRouter, Query
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
 from app.db import SessionDep
-from app.errors import NotImplementedProblem
 from app.models.enums import IdeaStatus
 from app.pagination import PageParamsDep
 from app.schemas.ideas import IdeaPage
@@ -84,7 +83,9 @@ async def list_my_evaluations_due(
 async def list_my_research_to_do(
     principal: PrincipalDep, session: SessionDep, page: PageParamsDep
 ) -> WorkResearchPage:
-    raise NotImplementedProblem
+    return await work.list_research_to_do(
+        session, principal, cursor=page.cursor, limit=page.limit
+    )
 
 
 @router.get(

@@ -51,7 +51,7 @@ from app.schemas.groups import (
 )
 from app.schemas.projects import ProjectRef
 from app.schemas.users import UserRef
-from app.services import audit
+from app.services import audit, research_assignment
 from app.services.users import escape_like
 
 __all__ = [
@@ -321,6 +321,16 @@ async def delete_group(db: AsyncSession, principal: Principal, group: Group) -> 
             .order_by(ProjectGroupGrant.project_id)
         )
     )
+    # Phase 8b (product owner, review S1 b): the projects the group gave roles in, locked
+    # like a membership change (an assignment there waits), then who researches there.
+    if project_ids:
+        await db.execute(
+            select(Project.id)
+            .where(Project.id.in_(project_ids))
+            .order_by(Project.id)
+            .with_for_update()
+        )
+    held = await research_assignment.roles_before(db, project_ids=project_ids)
     group_id = group.id
     await db.execute(delete(Group).where(Group.id == group_id))
     db.expunge(group)
@@ -332,6 +342,7 @@ async def delete_group(db: AsyncSession, principal: Principal, group: Group) -> 
         target_id=group_id,
         details={"rule": _RULE, "member_count": int(members or 0), "project_ids": project_ids},
     )
+    await research_assignment.end_after_role_loss(db, held, actor=principal)
 
 
 async def replace_mapping(
@@ -467,6 +478,7 @@ async def remove_member(
     if membership is None:
         raise NotFoundProblem("Not a member of this group.")
     was: Mapping[str, Any] = {"manual": membership.manual, "synced": membership.synced}
+    held = await research_assignment.roles_before(db, user_ids=[user_id])
     await db.delete(membership)
     await db.flush()
     await audit.record(
@@ -477,3 +489,6 @@ async def remove_member(
         target_id=group.id,
         details={"rule": _RULE, "user_id": user_id, **was},
     )
+    # Phase 8b (product owner, review S1 b): a role lost through the group ends research
+    # assignments in those private projects.
+    await research_assignment.end_after_role_loss(db, held, actor=principal)

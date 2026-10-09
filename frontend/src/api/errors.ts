@@ -157,6 +157,10 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     description: 'Only its owner or an admin can edit it now.',
   },
   idea_closed: { title: 'This idea is closed', description: 'Reopen it to make changes.' },
+  research_step_off: {
+    title: 'This project has no research step',
+    description: 'A project admin can turn it on in the project’s settings.',
+  },
   idea_has_owner: { title: 'Someone already owns this idea' },
   evaluation_closed: {
     title: 'Evaluation is closed',
@@ -173,6 +177,15 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
   assignee_not_eligible: {
     title: 'That person can’t be assigned',
     description: 'Owners and evaluators need a member or admin role in the project.',
+  },
+  // Phase 8b (contract-phase8b §14, §17).
+  researcher_not_eligible: {
+    title: 'That person can’t do the research',
+    description: 'Only an active person can: not an AI agent or a deactivated account.',
+  },
+  outside_researcher_needs_admin: {
+    title: 'Only a project admin can ask someone outside this project',
+    description: 'Pick someone with a role in the project, or ask a project admin.',
   },
   user_not_found: { title: 'We couldn’t find that person' },
   slug_taken: { title: 'That URL name is taken' },

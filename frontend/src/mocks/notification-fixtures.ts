@@ -28,6 +28,8 @@ const DEFAULTS: Record<NotificationType, NotificationMode> = {
   status_changed: 'digest',
   comment: 'digest',
   mention: 'immediate',
+  researcher_assigned: 'immediate',
+  research_reminder: 'immediate',
 }
 
 interface NotificationSpec {

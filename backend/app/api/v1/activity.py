@@ -36,6 +36,7 @@ async def list_idea_activity(
         loaded.resource,
         cursor=page.cursor,
         limit=page.limit,
+        labels=loaded.project.status_labels,
     )
 
 

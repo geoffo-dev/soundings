@@ -21,7 +21,9 @@ import { api, unwrap } from '@/api/client'
 import { hasErrorCode } from '@/api/errors'
 import { queryKeys } from '@/api/keys'
 import type {
+  IdeaDetail,
   IdeaResearch,
+  ResearchAssignmentUpdate,
   ProposalTemplate,
   ProposalTemplateUpdate,
   ResearchIncompleteProblem,
@@ -161,6 +163,91 @@ export function useClearResearchItem(idea: string) {
     onSuccess: (research) => settleResearch(queryClient, idea, research),
     meta: { errorTitle: 'Couldn’t clear the answer' },
   })
+}
+
+/* ------------------------------------------------------------------ */
+/* The research assignment (contract-phase8b §3.3, §3.4)               */
+/* ------------------------------------------------------------------ */
+
+/** After an assignment changed: the panel, the idea everywhere, and what lists it. */
+function settleAssignment(
+  queryClient: ReturnType<typeof useQueryClient>,
+  idea: string,
+  research: IdeaResearch | null,
+) {
+  if (research) {
+    queryClient.setQueryData(queryKeys.research.checklist(idea), research)
+    const { researcher, due_at } = research.assignment
+    patchIdea(queryClient, idea, () => ({ researcher }))
+    queryClient.setQueryData<IdeaDetail>(queryKeys.ideas.detail(idea), (current) =>
+      current ? { ...current, researcher, research_due_at: due_at } : current,
+    )
+  }
+  void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.detail(idea) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.research.checklist(idea) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.activity.idea(idea) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.boards() })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.lists() })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
+}
+
+/**
+ * Assign, change or remove the researcher and set the research due date, in one
+ * request (both fields: the complete state). Errors are shown by the dialog.
+ */
+export function useSetResearchAssignment(idea: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ResearchAssignmentUpdate) =>
+      unwrap(
+        api.PUT('/api/v1/ideas/{idea}/research/assignment', {
+          params: { path: { idea } },
+          body,
+        }),
+      ),
+    onSuccess: (research) => settleAssignment(queryClient, idea, research),
+    meta: { silent: true },
+  })
+}
+
+/**
+ * "Remove" (the owner, admins) and "Hand back" (the researcher): nobody is
+ * assigned, the due date stays. A guest researcher's access ends with it, so the
+ * caller leaves the page (`guest`): the idea's queries are dropped, not refetched.
+ */
+export function useRemoveResearcher(idea: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (_options: { guest?: boolean } = {}) =>
+      unwrap(
+        api.DELETE('/api/v1/ideas/{idea}/research/assignment', { params: { path: { idea } } }),
+      ),
+    onSuccess: (_data, options) => {
+      if (options.guest) {
+        forgetIdea(queryClient, idea)
+        void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all })
+        return
+      }
+      settleAssignment(queryClient, idea, null)
+    },
+    meta: { errorTitle: 'Couldn’t change the researcher' },
+  })
+}
+
+/**
+ * Drops every cached query about an idea the viewer can no longer open (a guest
+ * researcher after "Hand back", or a 404), so nothing of it stays on screen.
+ */
+export function forgetIdea(queryClient: ReturnType<typeof useQueryClient>, idea: string) {
+  for (const key of [
+    queryKeys.ideas.detail(idea),
+    queryKeys.research.idea(idea),
+    queryKeys.activity.idea(idea),
+    queryKeys.ai.runs(idea),
+  ]) {
+    queryClient.removeQueries({ queryKey: key })
+  }
 }
 
 export const similarIdeasQueryOptions = (idea: string) =>

@@ -13,6 +13,7 @@ import { methodAvailable } from './auth-config'
 import { getDb, type MockDb, type MockUser } from './db'
 import { findUser, InvalidCursorError, invalidateIndexes } from './domain'
 import { flushFanOut } from './notifications'
+import { clearLostResearchers, researcherRoles } from './researchers'
 import { csrfToken, sessionUserId, storedAuthMethod } from './session'
 
 /** Matches the API on any origin (the dev server, jsdom, Playwright). */
@@ -314,7 +315,15 @@ export function route(method: Method, path: string, resolver: Resolver<RouteCont
       const user = sessionUser(db)
       if (!user) fail(401, 'unauthorized', 'Sign in to continue.')
       checkCsrf(method, request)
-      return resolver({ request, params, url, db, user })
+      if (method === 'get') return resolver({ request, params, url, db, user })
+      // Phase 8b (S1 b): whatever takes someone's role in a private project away ends
+      // their research assignments there; compare before and after every write.
+      const before = researcherRoles(db)
+      const result = resolver({ request, params, url, db, user })
+      const settle = () => clearLostResearchers(db, user, before)
+      if (result instanceof Promise) return result.then((value: unknown) => (settle(), value))
+      settle()
+      return result
     })
   })
 }

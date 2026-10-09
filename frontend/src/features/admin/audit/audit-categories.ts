@@ -66,8 +66,8 @@ export const AUDIT_CATEGORIES = [
   },
   {
     id: 'assignments',
-    label: 'Owners and evaluators',
-    actions: ['idea.owner_change', 'evaluator.add', 'evaluator.remove'],
+    label: 'Owners, researchers and evaluators',
+    actions: ['idea.owner_change', 'idea.researcher_change', 'evaluator.add', 'evaluator.remove'],
   },
   {
     id: 'evaluations',

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { KbdShortcut } from '@/components/ui/kbd'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { NotificationBell } from '@/features/notifications/notification-bell'
+import { cn } from '@/lib/utils'
 import { SHORTCUTS } from '@/lib/shortcuts'
 
 export interface Crumb {
@@ -91,7 +92,8 @@ export function TopBar({ crumbs, actions, showBell = true }: TopBarProps) {
                   {last || !crumb.to ? (
                     <span
                       aria-current={last ? 'page' : undefined}
-                      className="truncate font-medium text-primary"
+                      // A level that isn't a link (a guest researcher's project): quiet text.
+                      className={cn('truncate', last ? 'font-medium text-primary' : 'text-muted')}
                     >
                       {crumb.label}
                     </span>

@@ -26,6 +26,8 @@ export const KNOWN_TYPES = new Set<string>([
   'status_changed',
   'comment',
   'mention',
+  'researcher_assigned',
+  'research_reminder',
 ])
 
 export function isKnownNotification(item: { type: string }): item is NotificationItem {
@@ -88,6 +90,21 @@ export function describeNotification(
       return item.comment.deleted
         ? { actor, text: `${someone}mentioned you in a comment (since deleted)`, quote: null }
         : { actor, text: `${someone}mentioned you`, quote: item.comment.excerpt || null }
+    // Phase 8b (contract-phase8b §6): a date, never a countdown; never score data.
+    case 'researcher_assigned':
+      return {
+        actor,
+        text: `${someone}asked you to research it${item.due_at ? `, ${dueOn(item.due_at, now)}` : ''}`,
+        quote: null,
+        ...(item.due_at ? { keepTogether: formatDate(item.due_at, { now }) } : {}),
+      }
+    case 'research_reminder':
+      return {
+        actor: null,
+        text: `${item.as_owner ? 'Research on your idea' : 'Your research'} is ${dueOn(item.due_at, now)}`,
+        quote: null,
+        keepTogether: formatDate(item.due_at, { now }),
+      }
   }
 }
 
@@ -101,6 +118,8 @@ export interface NotificationLink {
   ideaKey: string
   /** `?evaluate=1` opens the evaluate sheet (invitations and reminders). */
   evaluate: boolean
+  /** `?research=1` opens the idea at its Research panel (Phase 8b). */
+  research?: boolean
   /** `#comment-<id>` for comments and mentions that still exist. */
   hash?: string
 }
@@ -116,6 +135,9 @@ export function notificationLink(item: NotificationItem): NotificationLink {
       return item.comment.deleted
         ? { ideaKey, evaluate: false }
         : { ideaKey, evaluate: false, hash: `comment-${item.comment.id}` }
+    case 'researcher_assigned':
+    case 'research_reminder':
+      return { ideaKey, evaluate: false, research: true }
     default:
       return { ideaKey, evaluate: false }
   }
@@ -235,6 +257,22 @@ export const TYPE_COPY: Record<
     phrase: 'mentions',
     when: 'someone mentions you in a comment',
     description: 'Someone mentions you in a comment.',
+  },
+  researcher_assigned: {
+    label: 'Asked to research',
+    one: 'Asked to research',
+    phrase: 'research requests',
+    when: 'someone asks you to research an idea',
+    description:
+      'Someone asks you to do an idea’s research: with the due date and a link to its checklist.',
+  },
+  research_reminder: {
+    label: 'Research reminders',
+    one: 'Research reminder',
+    phrase: 'research reminders',
+    when: 'research you do is nearly due',
+    description:
+      'Before research you do is due, and on the day, while a required checklist item is open.',
   },
 }
 

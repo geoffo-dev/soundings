@@ -58,7 +58,7 @@ from app.schemas.research import lifecycle
 from app.schemas.rubric import Rubric, RubricUpdate
 from app.schemas.rubric import RubricCriterion as RubricCriterionOut
 from app.schemas.users import UserRef
-from app.services import audit
+from app.services import audit, research_assignment
 from app.services.scoring import recompute_aggregates
 from app.services.sql import require_unique_lower
 from app.services.users import active_user
@@ -418,6 +418,7 @@ async def remove_member(
     nothing without a member/admin role)."""
     member = await _direct_member(db, project, user_id)
     previous = member.role
+    held = await research_assignment.roles_before(db, user_ids=[user_id], project_ids=[project.id])
     await db.delete(member)
     await _require_an_admin_left(db, principal, project, resource)
     await audit.record(
@@ -429,6 +430,9 @@ async def remove_member(
         project_id=project.id,
         details={"rule": Rule.PROJECT_MANAGE_MEMBERS, "from_role": previous},
     )
+    # Phase 8b (product owner, review S1 b): leaving a private project ends one's research
+    # assignments there (unless a group still gives a role).
+    await research_assignment.end_after_role_loss(db, held, actor=principal)
 
 
 # --- Rubric --------------------------------------------------------------------------------

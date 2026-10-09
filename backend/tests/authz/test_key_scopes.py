@@ -209,6 +209,8 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "ai.cancel_run",
         "ai.delete_note",
         "idea.answer_research",  # Phase 8
+        "idea.assign_researcher",  # Phase 8b: removing only (assigning is a session route)
+        "idea.release_researcher",  # Phase 8b
     }
     assert {str(rule) for rule in SESSION_ONLY_RULES} == {
         "project.create",

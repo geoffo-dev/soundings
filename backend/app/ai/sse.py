@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import time
 from collections import Counter
@@ -239,6 +240,9 @@ async def still_allowed(
                 )
         if live is None:
             return False
+        # The stream's own operation, so a guest researcher (who can't open one) never
+        # passes the re-check either (app.authz.guest; Phase 8b).
+        live = dataclasses.replace(live, operation=principal.operation)
         try:
             await load_idea(db, live, str(idea_id))
         except ProblemError:

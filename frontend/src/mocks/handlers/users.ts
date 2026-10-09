@@ -6,7 +6,7 @@ import {
   paginate,
   userSearchResult,
 } from '@/mocks/domain'
-import { failValidation, notFound, queryLimit, route } from '@/mocks/http'
+import { failValidation, notFound, queryBool, queryLimit, route } from '@/mocks/http'
 
 export const userHandlers = [
   route('get', '/users', ({ url, db, user }) => {
@@ -21,6 +21,8 @@ export const userHandlers = [
       ])
     }
     const slug = url.searchParams.get('project')
+    // Phase 8b: the researcher picker lists everyone, members with their role.
+    const everyone = queryBool(url, 'include_non_members')
     const limit = queryLimit(url)
     let projectId: string | null = null
     if (slug) {
@@ -40,13 +42,13 @@ export const userHandlers = [
         candidate,
         role: projectId ? effectiveRole(db, projectId, candidate.id) : null,
       }))
-      .filter(({ role }) => !projectId || role !== null)
+      .filter(({ role }) => !projectId || everyone || role !== null)
       .sort((a, b) => a.candidate.display_name.localeCompare(b.candidate.display_name))
     const { page, next_cursor } = paginate(
       matches,
       url.searchParams.get('cursor'),
       limit,
-      `users:${q}:${slug ?? ''}`,
+      `users:${q}:${slug ?? ''}:${everyone ? 'all' : ''}`,
     )
     return {
       items: page.map(({ candidate, role }) => userSearchResult(candidate, role)),

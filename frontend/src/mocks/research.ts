@@ -31,8 +31,17 @@ import {
   isProjectAdmin,
   projectOf,
   rowsForIdea,
+  statusLabels,
   userRefById,
 } from './domain'
+import {
+  canAssignOutsideResearcher,
+  canAssignResearcher,
+  canHandBack,
+  isLiveResearcher,
+  researchAssignment,
+  researchedIdeas,
+} from './researchers'
 
 export interface MockResearchItem {
   id: string
@@ -131,11 +140,15 @@ export function summaryResearch(db: MockDb, idea: MockIdea): ResearchProgress | 
   return showsResearchProgress(step, idea.status) ? researchProgress(db, idea) : null
 }
 
-/** `idea.answer_research` without its conditions: the owner (member or admin) and admins. */
+/**
+ * `idea.answer_research` without its conditions: the owner (member or admin), admins
+ * and (Phase 8b, +Rsr) the idea's live researcher, guest or not.
+ */
 export function mayAnswer(db: MockDb, idea: MockIdea, user: MockUser): boolean {
   if (user.is_service_account) return false
   const project = projectOf(db, idea)
   if (isProjectAdmin(db, project, user)) return true
+  if (isLiveResearcher(db, idea, user)) return true
   const role = effectiveRole(db, project.id, user.id)
   return idea.owner_id === user.id && (role === 'member' || role === 'admin')
 }
@@ -196,9 +209,12 @@ export function ideaResearch(db: MockDb, idea: MockIdea, user: MockUser): IdeaRe
   const progress: ResearchProgress = on
     ? researchProgress(db, idea)
     : { answered: 0, total: 0, required_open: 0 }
+  const gate = gateStatus(step)
   return {
     step,
-    gate_status: gateStatus(step),
+    gate_status: gate,
+    gate_status_label: gate ? statusLabels(project)[gate] : null,
+    assignment: researchAssignment(db, idea),
     items: on
       ? activeItems(db, project.id).map((item) => {
           const answer = answerOf(db, idea.id, item.id)
@@ -228,6 +244,9 @@ export function ideaResearch(db: MockDb, idea: MockIdea, user: MockUser): IdeaRe
     permissions: {
       can_answer: canAnswer(db, idea, user),
       can_override: on && mayOverride(db, project, user),
+      can_assign: canAssignResearcher(db, idea, user),
+      can_assign_outside_researcher: canAssignOutsideResearcher(db, idea, user),
+      can_hand_back: canHandBack(db, idea, user),
     },
   }
 }
@@ -254,6 +273,8 @@ export function researchSettingsOut(db: MockDb, project: MockProject): ResearchS
         title: item.title,
         hint: item.hint,
         required: item.required,
+        // Phase 8b (D): where it was, so Restore puts it back there.
+        position: item.position,
         removed_at: item.archived_at ?? '',
         answer_count: Math.max(1, answers.get(item.id) ?? 0),
       })),
@@ -289,12 +310,14 @@ export function similarity(a: string, b: string): number {
 }
 
 export function similarIdeas(db: MockDb, idea: MockIdea, user: MockUser): SimilarIdea[] {
+  // Phase 8b: the ideas the viewer can list, or researches (never a private project's others).
+  const researched = new Set(researchedIdeas(db, user).map((i) => i.id))
   const candidates = db.ideas.filter(
     (other) =>
       other.id !== idea.id &&
       isListed(other) &&
-      canViewProject(db, projectOf(db, other), user) &&
-      canViewIdea(db, other, user),
+      ((canViewProject(db, projectOf(db, other), user) && canViewIdea(db, other, user)) ||
+        researched.has(other.id)),
   )
   return candidates
     .map((other) => ({

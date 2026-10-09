@@ -45,6 +45,7 @@ import type { MockSuggestion } from './suggestions'
 import type { MockAiAgent, MockAiRun, MockAiRunEvent, MockAiSettings, MockCitation } from './ai'
 import { seedPhase6 } from './phase6-fixtures'
 import { seedPhase8 } from './phase8-fixtures'
+import { seedPhase8b } from './phase8b-fixtures'
 import type { MockResearchAnswer, MockResearchItem } from './research'
 import { defaultTemplate, type MockTemplateSection } from './templates'
 
@@ -175,6 +176,13 @@ export interface MockIdea {
    * confirmation or for moderation. Held ideas are in no list or count.
    */
   held_for?: HoldReason | null
+  /**
+   * Phase 8b (contract-phase8b §3.1): the idea's researcher (null = nobody: the
+   * owner does the research), when they were asked, and the research due date.
+   */
+  researcher_id?: string | null
+  research_assigned_at?: string | null
+  research_due_at?: string | null
 }
 
 export interface MockTag {
@@ -235,6 +243,10 @@ export type MockEventType =
   | 'comment'
   /** Phase 6: an AI research note (payload: run_id, agent_id, body_md, sources, deleted). */
   | 'ai_research_note'
+  /** Phase 8b: payload from_researcher_id, to_researcher_id, handed_back. */
+  | 'researcher_changed'
+  /** Phase 8b: payload from_due_at, to_due_at. */
+  | 'research_due_date_changed'
 
 export interface MockEvent {
   id: string
@@ -375,6 +387,11 @@ export interface DbOptions {
   publicSubmission?: 'default' | 'off'
   /** Phase 6: `off` = `features.ai` is off (runs can't start). */
   ai?: 'default' | 'off'
+  /**
+   * Phase 8b: `private` makes every fixture project private, so a person without a
+   * role (Ivan, Internal Tools' guest researcher) has no projects at all.
+   */
+  projects?: 'default' | 'private'
 }
 
 /* ------------------------------------------------------------------ */
@@ -1208,6 +1225,7 @@ export function createDb({
   email = 'default',
   publicSubmission = 'default',
   ai = 'default',
+  projects = 'default',
 }: DbOptions = {}): MockDb {
   const rand = prng(20260930)
   const iso = (ms: number) => new Date(ms).toISOString()
@@ -1575,6 +1593,8 @@ export function createDb({
   seedPhase5(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase6(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase8(db, { users: USERS, projects: PROJECTS, nextId })
+  seedPhase8b(db, { users: USERS, projects: PROJECTS, nextId })
+  if (projects === 'private') for (const project of db.projects) project.visibility = 'private'
   return db
 }
 
@@ -1590,6 +1610,7 @@ export function getDb(): MockDb {
     email: readEmailPreference(),
     publicSubmission: readPublicPreference(),
     ai: readAiPreference(),
+    projects: readProjectsPreference(),
   })
   return current
 }
@@ -1647,6 +1668,23 @@ function readAiPreference(): 'default' | 'off' {
     return typeof localStorage !== 'undefined' &&
       localStorage.getItem(MOCK_AI_STORAGE_KEY) === 'off'
       ? 'off'
+      : 'default'
+  } catch {
+    return 'default'
+  }
+}
+
+/**
+ * `localStorage['soundings-mock-projects']`: `private` makes every project private,
+ * so Ivan (Internal Tools' guest researcher, no roles) has no projects at all.
+ */
+export const MOCK_PROJECTS_STORAGE_KEY = 'soundings-mock-projects'
+
+function readProjectsPreference(): 'default' | 'private' {
+  try {
+    return typeof localStorage !== 'undefined' &&
+      localStorage.getItem(MOCK_PROJECTS_STORAGE_KEY) === 'private'
+      ? 'private'
       : 'default'
   } catch {
     return 'default'

@@ -45,6 +45,11 @@ import {
   userRefById,
 } from './domain'
 import { queueSubmitterStatusEmail } from './public'
+import {
+  isLiveResearcher,
+  isResearchGuest,
+  RESEARCH_GUEST_NOTIFICATION_TYPES,
+} from './researchers'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -58,6 +63,8 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'status_changed',
   'comment',
   'mention',
+  'researcher_assigned',
+  'research_reminder',
 ]
 
 /** `app.schemas.notifications.DEFAULT_MODES`. */
@@ -69,6 +76,8 @@ export const DEFAULT_MODES: Record<NotificationType, NotificationMode> = {
   status_changed: 'digest',
   comment: 'digest',
   mention: 'immediate',
+  researcher_assigned: 'immediate',
+  research_reminder: 'immediate',
 }
 
 /** The mock instance's schedule (`SOUNDINGS_TIMEZONE`, `_DIGEST_HOUR`, `_REMINDER_DAYS`). */
@@ -272,11 +281,16 @@ function watchersOf(db: MockDb, ideaId: string): string[] {
     .map((key) => key.slice(prefix.length))
 }
 
-/** People mentioned in `body` who have a role in the idea's project (the picker's people). */
+/**
+ * People mentioned in `body` who have a role in the idea's project (the picker's
+ * people), and (Phase 8b) the idea's live researcher, guest or not.
+ */
 function mentionRecipients(db: MockDb, idea: MockIdea, body: string): string[] {
-  return mentionedUserIds(body).filter(
-    (userId) => effectiveRole(db, idea.project_id, userId) !== null,
-  )
+  return mentionedUserIds(body).filter((userId) => {
+    if (effectiveRole(db, idea.project_id, userId) !== null) return true
+    const user = findUser(db, userId)
+    return Boolean(user && isLiveResearcher(db, idea, user))
+  })
 }
 
 /** `mention` notifications for the people a comment newly mentions (§3.8). */
@@ -343,6 +357,9 @@ export function fanOut(db: MockDb, event: MockEvent): void {
     case 'evaluator_removed': {
       const count = allEvaluationsIn(db, idea)
       if (count === null || !idea.owner_id) return
+      // Phase 8b (review S3): needs evaluation.view_own, so never a guest researcher.
+      const owner = findUser(db, idea.owner_id)
+      if (!owner || isResearchGuest(db, idea, owner)) return
       notify(db, idea, actor, [
         {
           userId: idea.owner_id,
@@ -358,6 +375,8 @@ export function fanOut(db: MockDb, event: MockEvent): void {
       const people = [
         ...(idea.owner_id ? [idea.owner_id] : []),
         ...rowsForIdea(db.assignments, idea.id).map((a) => a.user_id),
+        // Phase 8b: the live researcher always hears about status changes (§6.4).
+        ...(idea.researcher_id ? [idea.researcher_id] : []),
         ...watchersOf(db, idea.id),
       ]
       notify(
@@ -396,6 +415,23 @@ export function fanOut(db: MockDb, event: MockEvent): void {
             dedupeKey: key('comment'),
           })),
       )
+      return
+    }
+    case 'researcher_changed': {
+      // "Asked to research": the new researcher, unless they assigned themselves.
+      const to = typeof payload.to_researcher_id === 'string' ? payload.to_researcher_id : null
+      if (!to || idea.researcher_id !== to) return
+      const user = findUser(db, to)
+      if (!user || !isLiveResearcher(db, idea, user)) return
+      const day = new Date(Date.parse(event.created_at)).toISOString().slice(0, 10)
+      notify(db, idea, actor, [
+        {
+          userId: to,
+          type: 'researcher_assigned',
+          payload: { due_at: idea.research_due_at ?? null },
+          dedupeKey: `researcher_assigned:${idea.id}:${day}`,
+        },
+      ])
       return
     }
     default:
@@ -457,13 +493,16 @@ export function notificationItem(
   viewer: MockUser,
 ): NotificationItem | null {
   const idea = db.ideas.find((i) => i.id === n.idea_id)
-  if (!idea || !canViewIdea(db, idea, viewer)) return null
+  if (!idea || !visibleInInbox(db, n, idea, viewer)) return null
   const base = {
     id: n.id,
     created_at: n.created_at,
     read_at: n.read_at,
     idea: ideaRef(db, idea),
-    actor: n.type === 'evaluation_reminder' ? null : userRefById(db, n.actor_id),
+    actor:
+      n.type === 'evaluation_reminder' || n.type === 'research_reminder'
+        ? null
+        : userRefById(db, n.actor_id),
   }
   const p = n.payload
   switch (n.type) {
@@ -522,7 +561,36 @@ export function notificationItem(
         },
       }
     }
+    case 'researcher_assigned':
+      return {
+        ...base,
+        type: 'researcher_assigned',
+        due_at: typeof p.due_at === 'string' ? p.due_at : null,
+      }
+    case 'research_reminder':
+      return {
+        ...base,
+        type: 'research_reminder',
+        due_at: String(p.due_at),
+        days_before: Number(p.days_before ?? 0),
+        as_owner: p.as_owner === true,
+      }
   }
+}
+
+/**
+ * Whether an item shows in its owner's inbox now: they can view the idea, and for
+ * an idea they see only as its guest researcher, only the guest types (review S5).
+ */
+function visibleInInbox(
+  db: MockDb,
+  n: MockNotification,
+  idea: MockIdea,
+  viewer: MockUser,
+): boolean {
+  if (!canViewIdea(db, idea, viewer)) return false
+  if (isResearchGuest(db, idea, viewer)) return RESEARCH_GUEST_NOTIFICATION_TYPES.includes(n.type)
+  return true
 }
 
 /** The viewer's notifications they can view now, newest first. */
@@ -531,7 +599,7 @@ export function inbox(db: MockDb, viewer: MockUser, unreadOnly = false): MockNot
     .filter((n) => n.user_id === viewer.id && (!unreadOnly || n.read_at === null))
     .filter((n) => {
       const idea = db.ideas.find((i) => i.id === n.idea_id)
-      return Boolean(idea && canViewIdea(db, idea, viewer))
+      return Boolean(idea && visibleInInbox(db, n, idea, viewer))
     })
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
 }

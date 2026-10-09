@@ -564,6 +564,35 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
         ...(reason ? [text(': “'), name(reason), text('”')] : []),
       ]
     }
+    case 'idea.researcher_change': {
+      // Phase 8b (contract-phase8b §13): who does the research, and why it changed.
+      const from = str(details, 'from_user_id')
+      const to = str(details, 'to_user_id')
+      const reason = str(details, 'reason')
+      const person = (id: string | undefined): AuditPart =>
+        id ? { type: 'user', id } : text('someone')
+      const cleared: Record<string, string> = {
+        deactivated: 'account deactivated',
+        closed: 'idea closed',
+        step_off: 'research step turned off',
+        left_project: 'left the project',
+      }
+      if (reason && reason in cleared) {
+        return [
+          person(from),
+          text(' was removed as researcher of '),
+          idea(),
+          text(` (${cleared[reason] ?? ''})`),
+        ]
+      }
+      if (reason === 'handed_back' || (to === undefined && from && sameAsActor(from))) {
+        return [actor, text(' handed back the research of '), idea()]
+      }
+      if (!to) return [actor, text(' removed '), person(from), text(' as researcher of '), idea()]
+      const outside = details.outside_project === true ? [text(', outside the project')] : []
+      if (sameAsActor(to)) return [actor, text(' took on the research of '), idea(), ...outside]
+      return [actor, text(' asked '), person(to), text(' to research '), idea(), ...outside]
+    }
     case 'evaluator.add':
       return [actor, text(' asked '), evaluator(), text(' to evaluate '), idea()]
     case 'evaluator.remove':

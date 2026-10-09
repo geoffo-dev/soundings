@@ -277,7 +277,10 @@ describe('permissions booleans', () => {
     const project = findProjectBySlug(db, 'customer-innovation')
     if (!project) throw new Error('missing')
     project.archived_at = '2026-09-01T00:00:00Z'
-    expect(Object.values(ideaPermissions(db, target, user(USERS.priya))).some(Boolean)).toBe(false)
+    // can_view_project says what you may read, not do (contract-phase8b §8): it stays true.
+    const { can_view_project: canView, ...writes } = ideaPermissions(db, target, user(USERS.priya))
+    expect(canView).toBe(true)
+    expect(Object.values(writes).some(Boolean)).toBe(false)
   })
 
   it('respect "allow volunteer owners"', () => {

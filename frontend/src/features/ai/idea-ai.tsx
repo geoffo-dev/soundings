@@ -44,8 +44,9 @@ import { runDomId } from './dom-ids'
  * `visible` is false for people who may not ask (members, viewers) and while AI
  * assistance is off: they see runs, never the actions.
  */
-export function useIdeaAi(ideaKey: string) {
-  const query = useIdeaAiRuns(ideaKey)
+export function useIdeaAi(ideaKey: string, options: { enabled?: boolean } = {}) {
+  // Off for a guest researcher (Phase 8b): the AI routes are 404 for them.
+  const query = useIdeaAiRuns(ideaKey, { enabled: options.enabled ?? true })
   const data = query.data
   const permissions = data?.permissions
   const agentsFor = useCallback(
@@ -417,8 +418,9 @@ export function useAiCommands(
   ideaKey: string,
   setTab: (tab: IdeaTab) => void,
   submittedIds: readonly string[] = [],
+  enabled = true,
 ) {
-  const ai = useIdeaAi(ideaKey)
+  const ai = useIdeaAi(ideaKey, { enabled })
   const { ask } = useAskAi(ideaKey, setTab)
   const actions: CommandAction[] = []
   for (const kind of ['evaluate', 'research'] as const) {

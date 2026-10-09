@@ -40,6 +40,18 @@ export interface PeopleListProps {
   before?: ReactNode
   /** Extra rows below the people (e.g. "Remove owner"), hidden while searching. */
   after?: ReactNode
+  /**
+   * Phase 8b (the researcher picker): everyone active, not only the project's
+   * people; those without a role read "Not in this project".
+   */
+  includeNonMembers?: boolean
+  /**
+   * Why a person can't be picked (shown in place of their role), or undefined when
+   * they can. Default: owners and evaluators need a member or admin role (c4).
+   */
+  ineligible?: (person: UserSearchResult) => string | undefined
+  /** People left out of the list (e.g. the owner, offered as its own row). */
+  exclude?: readonly string[]
 }
 
 /**
@@ -56,14 +68,22 @@ export function PeopleList({
   label,
   before,
   after,
+  includeNonMembers = false,
+  ineligible,
+  exclude,
 }: PeopleListProps) {
   const [search, setSearch] = useState('')
   const q = useDebouncedValue(search, 150)
-  const people = useUserSearch({ q, project: projectSlug, limit: 50 })
-  const items = people.data?.items ?? []
+  const people = useUserSearch({ q, project: projectSlug, includeNonMembers, limit: 50 })
+  const items = (people.data?.items ?? []).filter((person) => !exclude?.includes(person.id))
   const searching = search.trim() !== ''
   const reasonFor = (person: UserSearchResult) =>
-    unavailable?.get(person.id) ?? (isEligible(person) ? undefined : 'Viewer · can’t be assigned')
+    unavailable?.get(person.id) ??
+    (ineligible
+      ? ineligible(person)
+      : isEligible(person)
+        ? undefined
+        : 'Viewer · can’t be assigned')
   // Type a name, press Enter: the top person. Not searching, the highlight starts on the
   // current choice (the owner), so an Enter straight away changes nothing.
   const pickable = items.filter((person) => !reasonFor(person)).map((person) => person.id)
@@ -103,8 +123,12 @@ export function PeopleList({
         empty={
           people.isSuccess
             ? q
-              ? `No one in this project matches “${q}”.`
-              : 'No people in this project yet.'
+              ? includeNonMembers
+                ? `No one matches “${q}”.`
+                : `No one in this project matches “${q}”.`
+              : includeNonMembers
+                ? 'No people found.'
+                : 'No people in this project yet.'
             : undefined
         }
       >
@@ -132,7 +156,14 @@ export function PeopleList({
                     </span>
                     <span className="truncate text-xs text-muted">
                       {reason ??
-                        [person.project_role ? ROLE_NAMES[person.project_role] : null, person.email]
+                        [
+                          person.project_role
+                            ? ROLE_NAMES[person.project_role]
+                            : includeNonMembers
+                              ? 'Not in this project'
+                              : null,
+                          person.email,
+                        ]
                           .filter(Boolean)
                           .join(' · ')}
                     </span>

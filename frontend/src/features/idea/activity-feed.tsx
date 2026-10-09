@@ -14,6 +14,7 @@ import {
   UserMinus,
   UserPlus,
   UserRound,
+  UserSearch,
 } from 'lucide-react'
 import { useLocation } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -48,6 +49,7 @@ import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
 import { useIdeaPage } from './idea-context'
+import type { MentionOptions } from './mention-picker'
 import { MarkdownEditor } from './markdown-editor'
 
 export const COMMENT_LIMIT = 10_000
@@ -185,6 +187,20 @@ function ActivitySkeleton() {
   )
 }
 
+/**
+ * Who "@" offers (contract-phase8b §6.4): the project's people plus the idea's
+ * researcher (who may have no role there); for a guest researcher, who can't read
+ * the project's people, the people directory.
+ */
+function mentionOptions(idea: IdeaDetail, meId: string): MentionOptions {
+  if (!idea.permissions.can_view_project) return { excludeUserId: meId }
+  return {
+    project: idea.project.slug,
+    excludeUserId: meId,
+    extra: idea.researcher ? [idea.researcher] : [],
+  }
+}
+
 const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> = {
   idea_created: <Sparkle />,
   idea_edited: <Pencil />,
@@ -197,6 +213,8 @@ const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> =
   evaluation_reopened: <LockOpen />,
   due_date_changed: <CalendarClock />,
   ai_research_note: <Sparkles />,
+  researcher_changed: <UserSearch />,
+  research_due_date_changed: <CalendarClock />,
 }
 
 /**
@@ -206,7 +224,8 @@ const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> =
  * wherever its work appears).
  */
 function useIdeaAgents(ideaKey: string, idea: IdeaDetail): Map<string, string> {
-  const runs = useIdeaAiRuns(ideaKey).data
+  // A guest researcher can't read the AI runs (404): only an idea's people ask.
+  const runs = useIdeaAiRuns(ideaKey, { enabled: idea.permissions.can_view_project }).data
   const agents = new Map<string, string>()
   for (const evaluator of idea.evaluators) {
     if (evaluator.is_ai) agents.set(evaluator.user.id, evaluator.user.display_name)
@@ -247,7 +266,11 @@ function EventItem({ entry }: { entry: ActivityEntry }) {
   const { item } = entry
   // A public idea's "sent it through the public form" names its sender, like the header.
   const submitter = useIdeaSubmission(ideaKey, {
-    enabled: idea.via_public_form && item.type === 'idea_created' && !item.actor,
+    enabled:
+      idea.via_public_form &&
+      item.type === 'idea_created' &&
+      !item.actor &&
+      idea.permissions.can_view_project,
   }).data?.name
   const icon = item.type === 'comment' ? <MessageSquare /> : EVENT_ICONS[item.type]
   const evaluator =
@@ -383,7 +406,7 @@ function CommentItem({ item, highlighted }: { item: CommentActivity; highlighted
               maxLength={COMMENT_LIMIT}
               minRows={2}
               focusOnMount
-              mentions={{ project: idea.project.slug, excludeUserId: me.id }}
+              mentions={mentionOptions(idea, me.id)}
               mentionSelfId={me.id}
               actions={
                 <>
@@ -471,7 +494,7 @@ function CommentComposer() {
         maxLength={COMMENT_LIMIT}
         minRows={2}
         className="min-w-0 flex-1"
-        mentions={{ project: idea.project.slug, excludeUserId: me.id }}
+        mentions={mentionOptions(idea, me.id)}
         mentionSelfId={me.id}
         hint={
           <span className="inline-flex items-center gap-1">

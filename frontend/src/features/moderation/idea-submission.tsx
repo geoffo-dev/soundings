@@ -27,7 +27,10 @@ import { focusWhenRendered } from '@/lib/focus'
 
 /** The submission behind a public idea (no request for ideas from members). */
 function useSubmissionOf(idea: IdeaDetail, ideaKey: string) {
-  return useIdeaSubmission(ideaKey, { enabled: idea.via_public_form })
+  // A guest researcher can't read the submission (Phase 8b: 404 for column R).
+  return useIdeaSubmission(ideaKey, {
+    enabled: idea.via_public_form && idea.permissions.can_view_project,
+  })
 }
 
 /** "· Submitted by Jo via the public form 2 days ago" in the idea's header line. */

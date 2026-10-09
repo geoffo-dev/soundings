@@ -46,6 +46,9 @@ SESSION_BY_DECISION = frozenset(
         "mark_all_notifications_read",
         "list_moderation_queue",
         "get_idea_submission",
+        # Phase 8b, review M3: an assignment can open a private idea to an account and
+        # would outlive a leaked key (removing or handing back takes a write key).
+        "set_research_assignment",
     }
 )
 
@@ -83,6 +86,7 @@ def test_routes_without_a_rule_need_read() -> None:
         "list_my_evaluations_due",
         "list_my_owned_ideas",
         "global_search",
+        "list_my_research_to_do",  # Phase 8b
     }
 
 

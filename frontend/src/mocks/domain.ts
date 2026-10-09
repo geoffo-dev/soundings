@@ -51,6 +51,16 @@ import type {
 } from './db'
 import { citationOut, researchNoteOut } from './ai'
 import { canAnswer, inviteBlocked, summaryResearch } from './research'
+import {
+  canAssignOutsideResearcher,
+  canAssignResearcher,
+  canHandBack,
+  isLiveResearcher,
+  isResearchGuest,
+  researchedIdeas,
+  summaryResearchDue,
+  summaryResearcher,
+} from './researchers'
 import { lifecycle } from '@/lib/status'
 import type { MockAuthMethod } from './session'
 
@@ -283,7 +293,8 @@ export function canViewIdea(db: MockDb, idea: MockIdea, user: MockUser): boolean
   if (idea.held_for === 'email_verification') return false
   const project = projectOf(db, idea)
   if (idea.held_for === 'moderation') return isProjectAdmin(db, project, user)
-  return canViewProject(db, project, user)
+  // Phase 8b: column R, the live researcher of a private project's idea (c12, c24).
+  return canViewProject(db, project, user) || isLiveResearcher(db, idea, user)
 }
 
 /** `listed_ideas` (contract-phase4 §3.6): held ideas are in no list, board, search or count. */
@@ -352,6 +363,10 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
       (role === 'member' && project.allow_volunteer_owners))
   const none: IdeaPermissions = {
     can_assign_owner: false,
+    can_assign_researcher: false,
+    can_assign_outside_researcher: false,
+    can_hand_back_research: false,
+    can_view_project: canViewProject(db, project, user),
     can_change_status: false,
     can_close_evaluation: false,
     can_comment: false,
@@ -369,11 +384,25 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
   if (!writable) return none
   // Held for moderation: read-only but for delete (contract-phase4 §3.6).
   if (idea.held_for) return { ...none, can_delete: admin }
+  // Phase 8b: +Rsr adds commenting, answering and "Hand back" with or without a role.
+  const researcher = isLiveResearcher(db, idea, user)
+  if (isResearchGuest(db, idea, user)) {
+    return {
+      ...none,
+      can_comment: true,
+      can_answer_research: canAnswer(db, idea, user),
+      can_hand_back_research: true,
+    }
+  }
   return {
     can_assign_owner: admin,
+    can_assign_researcher: canAssignResearcher(db, idea, user),
+    can_assign_outside_researcher: canAssignOutsideResearcher(db, idea, user),
+    can_hand_back_research: canHandBack(db, idea, user),
+    can_view_project: true,
     can_change_status: manager,
     can_close_evaluation: manager && notClosed,
-    can_comment: admin || memberish,
+    can_comment: admin || memberish || researcher,
     can_delete: admin,
     can_edit:
       admin ||
@@ -595,7 +624,10 @@ function evaluatorProgress(db: MockDb, idea: MockIdea) {
 }
 
 export function ideaSummary(db: MockDb, idea: MockIdea, user: MockUser): IdeaSummary {
-  const { hidden, aggregate } = visibleScore(db, idea, user)
+  const guest = isResearchGuest(db, idea, user)
+  const { hidden, aggregate } = guest
+    ? { hidden: true, aggregate: null }
+    : visibleScore(db, idea, user)
   return {
     ...ideaRef(db, idea),
     summary: idea.summary,
@@ -603,7 +635,7 @@ export function ideaSummary(db: MockDb, idea: MockIdea, user: MockUser): IdeaSum
     owner: userRefById(db, idea.owner_id),
     created_at: idea.created_at,
     last_activity_at: idea.last_activity_at,
-    evaluator_progress: evaluatorProgress(db, idea),
+    evaluator_progress: guest ? { submitted: 0, total: 0 } : evaluatorProgress(db, idea),
     score: aggregate ? { overall: aggregate.overall, count: aggregate.count } : null,
     score_hidden: hidden,
     high_disagreement: aggregate?.high_disagreement ?? false,
@@ -612,6 +644,7 @@ export function ideaSummary(db: MockDb, idea: MockIdea, user: MockUser): IdeaSum
     has_voted: db.votes.has(`${idea.id}:${user.id}`),
     permissions: { can_change_status: ideaPermissions(db, idea, user).can_change_status },
     research: summaryResearch(db, idea),
+    researcher: summaryResearcher(db, idea),
   }
 }
 
@@ -638,15 +671,18 @@ function userRefFallback(id: string): UserRef {
 }
 
 export function ideaDetail(db: MockDb, idea: MockIdea, user: MockUser): IdeaDetail {
-  const { aggregate } = visibleScore(db, idea, user)
+  // Phase 8b (contract-phase8b §4.4): a guest researcher gets no evaluation area or scores.
+  const guest = isResearchGuest(db, idea, user)
+  const { aggregate } = guest ? { aggregate: null } : visibleScore(db, idea, user)
   return {
     ...ideaSummary(db, idea, user),
     description_md: idea.description_md,
     submitted_by: userRefById(db, idea.submitted_by),
-    evaluators: ideaEvaluators(db, idea, user),
-    evaluation_due_at: idea.evaluation_due_at,
-    evaluation_closed_at: idea.evaluation_closed_at,
-    evaluation_open: evaluationOpen(idea),
+    evaluators: guest ? [] : ideaEvaluators(db, idea, user),
+    evaluation_due_at: guest ? null : idea.evaluation_due_at,
+    evaluation_closed_at: guest ? null : idea.evaluation_closed_at,
+    evaluation_open: guest ? false : evaluationOpen(idea),
+    research_due_at: summaryResearchDue(db, idea),
     aggregate,
     watching: db.watchers.has(`${idea.id}:${user.id}`),
     permissions: ideaPermissions(db, idea, user),
@@ -754,16 +790,30 @@ export function activityItem(db: MockDb, event: MockEvent, user: MockUser): Acti
         type: 'idea_edited',
         fields: (p.fields as ('title' | 'summary' | 'description_md' | 'tags')[] | undefined) ?? [],
       }
-    case 'status_changed':
+    case 'status_changed': {
+      const idea = db.ideas.find((i) => i.id === event.idea_id)
+      const project = idea ? projectOf(db, idea) : undefined
+      const from = {
+        status: p.from_status as IdeaStatus,
+        resolution: (p.from_resolution as Resolution | null) ?? null,
+      }
+      const to = {
+        status: p.to_status as IdeaStatus,
+        resolution: (p.to_resolution as Resolution | null) ?? null,
+      }
       return {
         ...base,
         type: 'status_changed',
-        from_status: p.from_status as IdeaStatus,
-        from_resolution: (p.from_resolution as Resolution | null) ?? null,
-        to_status: p.to_status as IdeaStatus,
-        to_resolution: (p.to_resolution as Resolution | null) ?? null,
+        from_status: from.status,
+        from_resolution: from.resolution,
+        to_status: to.status,
+        to_resolution: to.resolution,
         research_overridden: p.research_overridden === true,
+        // Phase 8b (review C6): the project's labels, so a guest needs no project read.
+        from_label: project ? statusLabel(project, from) : null,
+        to_label: project ? statusLabel(project, to) : null,
       }
+    }
     case 'owner_changed':
       return {
         ...base,
@@ -788,6 +838,21 @@ export function activityItem(db: MockDb, event: MockEvent, user: MockUser): Acti
       }
     case 'ai_research_note':
       return { ...base, type: 'ai_research_note', note: researchNoteOut(db, event, user) }
+    case 'researcher_changed':
+      return {
+        ...base,
+        type: 'researcher_changed',
+        from_researcher: userRefById(db, str('from_researcher_id')),
+        to_researcher: userRefById(db, str('to_researcher_id')),
+        handed_back: p.handed_back === true,
+      }
+    case 'research_due_date_changed':
+      return {
+        ...base,
+        type: 'research_due_date_changed',
+        from_due_at: str('from_due_at'),
+        to_due_at: str('to_due_at'),
+      }
   }
 }
 
@@ -1034,6 +1099,8 @@ export function ownedIdeas(db: MockDb, user: MockUser, statuses?: IdeaStatus[] |
       projects.has(idea.project_id) &&
       isListed(idea) &&
       canViewIdea(db, idea, user) &&
+      // Owned lists stay project-scoped (contract-phase8b §4.5): never a guest's idea.
+      canViewProject(db, projectOf(db, idea), user) &&
       (!statuses?.length || statuses.includes(idea.status)),
   )
   ideas.sort(
@@ -1042,7 +1109,8 @@ export function ownedIdeas(db: MockDb, user: MockUser, statuses?: IdeaStatus[] |
   return ideas
 }
 
-export const OWNED_GROUP_SIZE = 50
+/** Phase 8b (D): each owned group holds its first 10 ideas (was 50). */
+export const OWNED_GROUP_SIZE = 10
 
 export function ownedGroups(db: MockDb, user: MockUser): WorkOwnedGroup[] {
   return STATUSES.flatMap((status) => {
@@ -1103,10 +1171,14 @@ export function search(db: MockDb, user: MockUser, q: string, limit: number) {
     (project) => project.archived_at === null && canViewProject(db, project, user),
   )
   const projectIds = new Set(projects.map((project) => project.id))
+  // Phase 8b: the ideas the viewer researches as a guest are searchable too (§4.5).
+  const researched = new Set(researchedIdeas(db, user).map((idea) => idea.id))
+  const searchable = (idea: MockIdea) =>
+    isListed(idea) && (projectIds.has(idea.project_id) || researched.has(idea.id))
   const found = findIdea(db, needle)
-  const exact = found && isListed(found) ? found : undefined
+  const exact = found && searchable(found) ? found : undefined
   const scored = db.ideas
-    .filter((idea) => projectIds.has(idea.project_id) && isListed(idea) && idea !== exact)
+    .filter((idea) => searchable(idea) && idea !== exact)
     .flatMap((idea) => {
       const title = idea.title.toLowerCase()
       let rank = -1
@@ -1120,7 +1192,7 @@ export function search(db: MockDb, user: MockUser, q: string, limit: number) {
       (a, b) => a.rank - b.rank || b.idea.last_activity_at.localeCompare(a.idea.last_activity_at),
     )
     .map(({ idea }) => idea)
-  const ideas = [...(exact && projectIds.has(exact.project_id) ? [exact] : []), ...scored]
+  const ideas = [...(exact ? [exact] : []), ...scored]
   return {
     ideas: ideas.slice(0, limit).map((idea) => ideaRef(db, idea)),
     projects: projects

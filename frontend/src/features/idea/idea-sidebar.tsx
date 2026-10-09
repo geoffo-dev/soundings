@@ -55,6 +55,7 @@ import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
+import { ResearcherField } from '@/features/research/research-assignment'
 import { requestResearchFocus } from '@/features/research/research-focus'
 import { cn } from '@/lib/utils'
 
@@ -69,7 +70,7 @@ import { ScorePanel } from './score-panel'
  * only when the API's `permissions` allow it.
  */
 export function IdeaProperties({ className }: { className?: string }) {
-  const { idea, ideaKey } = useIdeaPage()
+  const { idea, ideaKey, guest, researchStep } = useIdeaPage()
   return (
     <div className={cn('flex flex-col gap-6', className)}>
       <dl className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 text-sm">
@@ -79,11 +80,18 @@ export function IdeaProperties({ className }: { className?: string }) {
         <PropertyRow label="Owner">
           <OwnerField />
         </PropertyRow>
+        {/* Phase 8b: who does the research and by when, while the project has the step. */}
+        {researchStep !== 'off' && (
+          <PropertyRow label="Research">
+            <ResearcherField />
+          </PropertyRow>
+        )}
       </dl>
-      <EvaluatorsSection />
-      <ScorePanel />
+      {/* A guest researcher sees no evaluation area or score (role matrix column R). */}
+      {!guest && <EvaluatorsSection />}
+      {!guest && <ScorePanel />}
       <TagsSection />
-      <SubmissionPanel idea={idea} ideaKey={ideaKey} />
+      {!guest && <SubmissionPanel idea={idea} ideaKey={ideaKey} />}
     </div>
   )
 }

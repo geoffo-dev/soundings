@@ -34,6 +34,8 @@ TEMPLATES: Final = (
     "status_changed",
     "comment",
     "mention",
+    "researcher_assigned",  # Phase 8b
+    "research_reminder",  # Phase 8b
     "digest",
     "test",
     "submission_received",

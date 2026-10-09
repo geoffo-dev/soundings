@@ -137,7 +137,7 @@ function InboxRow({
     <Link
       to="/ideas/$ideaKey"
       params={{ ideaKey: link.ideaKey }}
-      search={link.evaluate ? { evaluate: true } : {}}
+      search={link.evaluate ? { evaluate: true } : link.research ? { research: true } : {}}
       hash={link.hash}
       onClick={(event: MouseEvent) => {
         // Modified clicks open a new tab: still read, but this view stays.

@@ -5,6 +5,13 @@ fan-out when a notification is created, by the reminder scan, and by the worker 
 before an email goes out. Permissions go through the policy (ADR 0010):
 ``idea.view`` for everyone, ``evaluation.submit_own`` for the evaluator types; facts
 about the idea (its owner, due date, a comment's state) are plain data checks.
+
+Phase 8b (contract-phase8b section 6): a guest researcher passes ``idea.view`` through
+column R, and holds only ``RESEARCH_GUEST_NOTIFICATION_TYPES`` about that idea (review S5:
+someone who can't view the project, :func:`holds`); ``evaluations_complete`` also needs
+``evaluation.view_own`` (review S3); "Asked to research" needs the recipient to be the
+idea's live researcher (c24); research reminders need them to do the research, may answer
+it and it still to be to do (:func:`does_research`).
 """
 
 from __future__ import annotations
@@ -18,7 +25,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import IdeaFacts, ProjectFacts, Resource, Rule, can, effective_roles_of
+from app.authz import (
+    IdeaFacts,
+    ProjectFacts,
+    Resource,
+    Rule,
+    can,
+    effective_roles_of,
+    researcher_live,
+)
 from app.domain.principal import Principal
 from app.models.activity import Comment
 from app.models.enums import EvaluationStatus, EvaluatorState, NotificationType
@@ -27,11 +42,15 @@ from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.comments import mentioned_user_ids
+from app.schemas.notifications import RESEARCH_GUEST_NOTIFICATION_TYPES
+from app.schemas.research import research_to_do
 from app.services.sql import any_of
 
 __all__ = [
     "Recipient",
     "applies",
+    "does_research",
+    "holds",
     "evaluator_ids",
     "notifiable_users",
     "parse_time",
@@ -136,6 +155,40 @@ def _owes_evaluation(recipient: Recipient) -> bool:
     )
 
 
+def holds(type_: NotificationType, recipient: Recipient) -> bool:
+    """Phase 8b review S5: someone who sees the idea without its project (a guest
+    researcher, role matrix column R) holds only ``RESEARCH_GUEST_NOTIFICATION_TYPES``
+    about it, so an evaluator's or owner's older items never reach them as a guest."""
+    return type_ in RESEARCH_GUEST_NOTIFICATION_TYPES or can(
+        recipient.principal, Rule.PROJECT_VIEW, recipient.resource
+    )
+
+
+def does_research(recipient: Recipient, idea: Idea, *, required_open: int) -> bool:
+    """Phase 8b: the recipient does the idea's research (its live researcher, or its
+    owner while nobody is assigned), may answer it (``idea.answer_research``: so not an
+    owner who lost their role; review S3), and it is still to do (``research_to_do``):
+    My work's "Research to do" and the research reminders."""
+    project = recipient.resource.project
+    if project is None or project.archived or idea.held_for is not None:
+        return False
+    assigned = idea.researcher_id is not None
+    if assigned:
+        if not researcher_live(recipient.principal, recipient.resource):
+            return False
+    elif idea.owner_id != recipient.id:
+        return False
+    return can(recipient.principal, Rule.IDEA_ANSWER_RESEARCH, recipient.resource) and (
+        research_to_do(
+            project.research_step,
+            idea.status,
+            required_open=required_open,
+            assigned=assigned,
+            has_due_date=idea.research_due_at is not None,
+        )
+    )
+
+
 def applies(
     type_: NotificationType,
     recipient: Recipient,
@@ -144,12 +197,21 @@ def applies(
     payload: Mapping[str, Any],
     comment: Comment | None = None,
     now: datetime,
+    required_open: int | None = None,
 ) -> bool:
     """The type's own condition (contract-phase3 section 3.3 table), for a recipient
-    who already passed ``idea.view`` (:func:`recipients`)."""
+    who already passed ``idea.view`` (:func:`recipients`). ``required_open``: the idea's
+    open required research items, for research reminders (unknown: not sent)."""
+    if not holds(type_, recipient):
+        return False
     match type_:
-        case NotificationType.OWNER_ASSIGNED | NotificationType.EVALUATIONS_COMPLETE:
+        case NotificationType.OWNER_ASSIGNED:
             return idea.owner_id == recipient.id
+        case NotificationType.EVALUATIONS_COMPLETE:
+            # Phase 8b review S3: the count of evaluations is the evaluation area.
+            return idea.owner_id == recipient.id and can(
+                recipient.principal, Rule.EVALUATION_VIEW_OWN, recipient.resource
+            )
         case NotificationType.EVALUATOR_INVITED:
             return _owes_evaluation(recipient)
         case NotificationType.EVALUATION_REMINDER:
@@ -165,12 +227,31 @@ def applies(
         case NotificationType.COMMENT:
             return comment is not None and comment.deleted_at is None
         case NotificationType.MENTION:
-            # People with a role in the project (not every viewer of an internal one).
+            # People with a role in the project (not every viewer of an internal one),
+            # and (Phase 8b) the idea's live researcher, guest or not.
             return (
                 comment is not None
                 and comment.deleted_at is None
-                and recipient.resource.role is not None
+                and (
+                    recipient.resource.role is not None
+                    or researcher_live(recipient.principal, recipient.resource)
+                )
                 and recipient.id in mentioned_user_ids(comment.body_md)
+            )
+        case NotificationType.RESEARCHER_ASSIGNED:
+            # Phase 8b: still the idea's researcher, with the assignment live (c24).
+            return idea.researcher_id == recipient.id and researcher_live(
+                recipient.principal, recipient.resource
+            )
+        case NotificationType.RESEARCH_REMINDER:
+            due_at = parse_time(payload.get("due_at"))
+            return (
+                due_at is not None
+                and idea.research_due_at == due_at
+                and now < due_at
+                and required_open is not None
+                and bool(payload.get("as_owner")) is (idea.researcher_id is None)
+                and does_research(recipient, idea, required_open=required_open)
             )
 
 

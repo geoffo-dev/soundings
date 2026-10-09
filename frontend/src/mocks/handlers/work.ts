@@ -11,18 +11,24 @@ import {
 } from '@/mocks/domain'
 import type { MockDb, MockUser } from '@/mocks/db'
 import { failValidation, queryEnum, queryLimit, route } from '@/mocks/http'
+import { researchToDo } from '@/mocks/researchers'
 
 /** My work lists the first 50 evaluations due; "Show more" pages on (contract-phase7 C1). */
 const WORK_DUE_SHOWN = 50
+/** Phase 8b: and the first 50 ideas of "Research to do" (`RESEARCH_TO_DO_PAGE`). */
+const RESEARCH_SHOWN = 50
 
 function workCounts(db: MockDb, user: MockUser) {
   const due = evaluationsDue(db, user)
+  const research = researchToDo(db, user)
   return {
     evaluations_due: due.length,
     evaluations_overdue: due.filter((row) => row.overdue).length,
     owned_open: ownedGroups(db, user)
       .filter((group) => group.status !== 'closed')
       .reduce((sum, group) => sum + group.count, 0),
+    research_to_do: research.length,
+    research_overdue: research.filter((row) => row.overdue).length,
   }
 }
 
@@ -30,9 +36,12 @@ export const workHandlers = [
   route('get', '/me/work', ({ db, user }) => {
     const due = evaluationsDue(db, user)
     const { page, next_cursor } = paginate(due, null, WORK_DUE_SHOWN, `due:${user.id}`)
+    const research = paginate(researchToDo(db, user), null, RESEARCH_SHOWN, `research:${user.id}`)
     return {
       evaluations_due: page,
       evaluations_due_next_cursor: next_cursor,
+      research_to_do: research.page,
+      research_to_do_next_cursor: research.next_cursor,
       owned: ownedGroups(db, user),
       recent: recentIdeas(db, user),
       counts: workCounts(db, user),
@@ -47,6 +56,16 @@ export const workHandlers = [
       url.searchParams.get('cursor'),
       queryLimit(url),
       `due:${user.id}`,
+    )
+    return { items: page, next_cursor }
+  }),
+
+  route('get', '/me/research-to-do', ({ url, db, user }) => {
+    const { page, next_cursor } = paginate(
+      researchToDo(db, user),
+      url.searchParams.get('cursor'),
+      queryLimit(url),
+      `research:${user.id}`,
     )
     return { items: page, next_cursor }
   }),

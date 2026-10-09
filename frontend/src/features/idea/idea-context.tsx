@@ -6,6 +6,7 @@ import type {
   IdeaEvaluator,
   IdeaStatus,
   Project,
+  ResearchStep,
   Resolution,
   StatusLabels,
 } from '@/api/types'
@@ -14,14 +15,31 @@ import { DEFAULT_RESOLUTION_LABELS, DEFAULT_STATUS_LABELS } from '@/lib/status'
 import type { IdeaTab } from './idea-search'
 
 /** Pickers opened from the sidebar, the palette, shortcuts or the phone details sheet. */
-export type IdeaDialog = 'status' | 'owner' | 'invite' | 'delete'
+export type IdeaDialog =
+  | 'status'
+  | 'owner'
+  | 'invite'
+  | 'delete'
+  /** Phase 8b: who does the research and by when ("Change"). */
+  | 'researcher'
+  /** Phase 8b: "Start research": who and by when, then the move into Research. */
+  | 'start-research'
+  /** Phase 8b: the researcher's "Hand back" (confirmed). */
+  | 'hand-back'
 
 export interface IdeaPageContextValue {
   /** The upper-case key from the URL (every `/ideas/{idea}` call uses it). */
   ideaKey: string
   idea: IdeaDetail
-  /** Settings, rubric and labels; undefined while loading. */
+  /** Settings, rubric and labels; undefined while loading, and always for a guest researcher. */
   project: Project | undefined
+  /**
+   * Phase 8b: you see this idea only as its researcher (role matrix column R:
+   * `permissions.can_view_project` false): no project, scores, evaluation or proposal.
+   */
+  guest: boolean
+  /** The project's research step (a guest reads it from the idea's research panel). */
+  researchStep: ResearchStep
   me: CurrentUser
   /** Your evaluator row, if you were asked to evaluate. */
   ownEvaluator: IdeaEvaluator | undefined

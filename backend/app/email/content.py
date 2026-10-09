@@ -20,6 +20,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.authz import Rule, can
 from app.config import Settings
 from app.domain.labels import status_label
 from app.email.model import (
@@ -210,6 +211,7 @@ async def _notification(
     idea, project = found
     comment = await db.get(Comment, notification.comment_id) if notification.comment_id else None
     recipient = (await access.recipients(db, idea, project, [user.id])).get(user.id)
+    required_open = await _required_open(db, notification.type, idea)
     if recipient is None or not access.applies(
         notification.type,
         recipient,
@@ -217,6 +219,7 @@ async def _notification(
         payload=notification.payload,
         comment=comment,
         now=context.now,
+        required_open=required_open,
     ):
         return Cancelled(NO_LONGER_APPLIES)
     if await preferences.mode_of(db, user.id, notification.type) is NotificationMode.OFF:
@@ -337,6 +340,61 @@ async def _notification(
                 ),
                 **base,
             )
+        case NotificationType.RESEARCHER_ASSIGNED:
+            # Phase 8b: the research due date now (the request's may have changed since).
+            due_at = idea.research_due_at
+            by = f" by {context.day(due_at)}" if due_at else ""
+            return EmailContent(
+                template="researcher_assigned",
+                subject=f'[{key}] Please research "{title}"{by}',
+                preheader=f"{actor} asked you to research {key}{by}.",
+                context={
+                    "actor": actor,
+                    "idea": info,
+                    "due": context.moment(due_at) if due_at else None,
+                    # Review S2: the guest line only for column R (no view of the project).
+                    "guest": not can(recipient.principal, Rule.PROJECT_VIEW, recipient.resource),
+                },
+                button=Button(
+                    "Open the research checklist", context.links.idea(key, research=True)
+                ),
+                reason=f"You're researching {key}.",
+                **base,
+            )
+        case NotificationType.RESEARCH_REMINDER:
+            due_at = access.parse_time(payload.get("due_at"))
+            assert due_at is not None  # noqa: S101 - checked by access.applies
+            today = context.same_day(due_at)
+            day = context.day(due_at)
+            when = f"today, {day}" if today else day
+            as_owner = bool(payload.get("as_owner"))
+            return EmailContent(
+                template="research_reminder",
+                subject=f'[{key}] Reminder: research for "{title}" is due {when}',
+                preheader=f"Research for {key} is due {when}.",
+                context={
+                    "idea": info,
+                    "due": context.moment(due_at),
+                    "due_day": day,
+                    "due_today": today,
+                    "open_items": plural(required_open or 1, "required item"),
+                },
+                button=Button(
+                    "Open the research checklist", context.links.idea(key, research=True)
+                ),
+                reason=f"You own {key}." if as_owner else f"You're researching {key}.",
+                **base,
+            )
+
+
+async def _required_open(db: AsyncSession, type_: NotificationType, idea: Idea) -> int | None:
+    """Phase 8b: the idea's open required research items, for a research reminder's
+    send-time check (no query for other types)."""
+    if type_ is not NotificationType.RESEARCH_REMINDER:
+        return None
+    from app.services.research import required_open_count
+
+    return await required_open_count(db, idea)
 
 
 def _unsubscribe_all_url(context: _Context, user: User) -> str:
@@ -390,6 +448,13 @@ def _digest_line(
         case NotificationType.MENTION:
             excerpt = comment_excerpt(comment.body_md) if comment else ""
             return f"{actor} mentioned you: “{excerpt}”"
+        case NotificationType.RESEARCHER_ASSIGNED:
+            due_at = access.parse_time(payload.get("due_at"))
+            due = f" (due {context.day(due_at)})" if due_at else ""
+            return f"{actor} asked you to research it{due}"
+        case NotificationType.RESEARCH_REMINDER:
+            due_at = access.parse_time(payload.get("due_at"))
+            return f"Research due {context.day(due_at)}" if due_at else "Research reminder"
 
 
 async def _digest(
@@ -432,6 +497,7 @@ async def _digest(
                 payload=notification.payload,
                 comment=comment,
                 now=context.now,
+                required_open=await _required_open(db, notification.type, idea),
             ):
                 kept.append((notification, idea, project))
     if not kept:

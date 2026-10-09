@@ -10,7 +10,6 @@ from app.api.v1.principal import PrincipalDep
 from app.api.v1.responses import problems
 from app.authz import Rule, load_project, require, searches_co_members_only
 from app.db import SessionDep
-from app.errors import NotImplementedProblem
 from app.pagination import PageParamsDep
 from app.schemas.base import SLUG_PATTERN, NoNul
 from app.schemas.users import UserPage
@@ -60,12 +59,11 @@ async def search_users(
     in_project = None
     if project is not None:
         in_project, _ = await load_project(session, principal, project)
-        if include_non_members:  # Phase 8b: the researcher picker (backend builds it)
-            raise NotImplementedProblem
     return await users.search_users(
         session,
         q=q,
         project=in_project,
         page=page,
         co_members_of=principal if searches_co_members_only(principal) else None,
+        include_non_members=include_non_members,
     )

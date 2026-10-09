@@ -44,7 +44,7 @@ from app.schemas.admin_users import (
     UserGroup,
 )
 from app.schemas.groups import GroupRef
-from app.services import audit, sessions
+from app.services import audit, research_assignment, sessions
 from app.services.users import escape_like
 
 __all__ = [
@@ -354,6 +354,14 @@ async def update_user(
             # Every key goes too (contract-phase5 §2), each with its own api_key.revoke
             # entry; it flushes the users update first, so a racing create serialises.
             await api_keys.revoke_all_for_user(db, user.id, actor=principal)
+            # Phase 8b: and every research assignment they hold (the users row is updated
+            # first, then their ideas' projects and the ideas are locked by id: review S4).
+            await research_assignment.clear_where(
+                db,
+                research_assignment.ideas_of([user.id]),
+                actor=principal,
+                reason="deactivated",
+            )
     if is_platform_admin != user.is_platform_admin:
         user.is_platform_admin = is_platform_admin
         fields.append("is_platform_admin")

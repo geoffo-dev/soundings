@@ -74,6 +74,11 @@ async def sync_groups(
     await lock_user(db, user.id)
     matched = await matching_groups(db, extracted.values, lock=True)
     current = await memberships_of(db, user.id)
+    # Phase 8b (product owner, review S1 b): who the user researches for while holding a
+    # role in a private project, compared after the sync (lazy import: no cycle).
+    from app.services import research_assignment
+
+    held = await research_assignment.roles_before(db, user_ids=[user.id])
     plan = plan_group_sync(matched=matched, memberships=current)
 
     now = utcnow()
@@ -144,6 +149,8 @@ async def sync_groups(
                 "auth_method": AuthMethod.SSO,
             },
         )
+    if removed:
+        await research_assignment.end_after_role_loss(db, held, actor=user.id)
     return GroupSyncResult(
         claim_found=extracted.claim_found, added_group_ids=added, removed_group_ids=removed
     )

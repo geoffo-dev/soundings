@@ -47,6 +47,9 @@ PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
     # Phase 6: the note itself (agent text, untrusted; never score data). Deleting it
     # clears body_md and sources and adds deleted: true (app.ai.notes).
     "ai_research_note": frozenset({"run_id", "agent_id", "body_md", "sources"}),
+    # Phase 8b: who does the research and by when (contract-phase8b section 3.6).
+    "researcher_changed": frozenset({"from_researcher_id", "to_researcher_id", "handed_back"}),
+    "research_due_date_changed": frozenset({"from_due_at", "to_due_at"}),
 }
 """The stored payload keys per event type (ids are resolved to users by the API)."""
 

@@ -66,6 +66,8 @@ function WithProject({
     me,
     ownEvaluator: idea.evaluators.find((e) => e.user.id === me.id),
     archived: Boolean(project.data.archived_at),
+    guest: !idea.permissions.can_view_project,
+    researchStep: project.data.research_step,
     statusLabel: statusLabeller(project.data.status_labels),
     openDialog: vi.fn(),
     openEvaluate: vi.fn(),

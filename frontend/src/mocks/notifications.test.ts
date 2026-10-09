@@ -50,7 +50,8 @@ describe('the inbox', () => {
     expect(items.length).toBeGreaterThanOrEqual(10)
     const times = items.map((item) => item.created_at)
     expect([...times].sort().reverse()).toEqual(times)
-    expect(new Set(items.map((item) => item.type)).size).toBe(7)
+    // Every type, Phase 8b's two included (read: the unread count stays five).
+    expect(new Set(items.map((item) => item.type)).size).toBe(9)
     const { data: summary } = await api.GET('/api/v1/me/notifications/summary')
     expect(summary).toEqual({ unread_count: 5, email_available: true, email_trouble: false })
     expect(JSON.stringify(items)).not.toMatch(/"score|aggregate|recommendation/)
@@ -212,7 +213,12 @@ describe('email preferences', () => {
       'status_changed',
       'comment',
       'mention',
+      'researcher_assigned',
+      'research_reminder',
     ])
+    expect(data?.items.find((item) => item.type === 'researcher_assigned')?.default_mode).toBe(
+      'immediate',
+    )
     expect(data?.items.find((item) => item.type === 'comment')).toEqual({
       type: 'comment',
       mode: 'immediate',
@@ -259,7 +265,7 @@ describe('unsubscribe links', () => {
       params: { query: { token: unsubscribeToken(USERS.alice, 'all') } },
     })
     expect(all).toMatchObject({ scope: 'all', unsubscribed: true })
-    expect(all?.types).toHaveLength(7)
+    expect(all?.types).toHaveLength(9)
   })
 
   it('answers 404 for forged, truncated or inactive users’ tokens, 422 for junk', async () => {

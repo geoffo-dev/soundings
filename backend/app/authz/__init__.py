@@ -18,6 +18,7 @@ rule X on resource Y", for every rule in docs/role-matrix.md. Deny by default.
 Nothing else inspects roles: routes, MCP tools, jobs and emails call this package.
 """
 
+from app.authz.guest import RESEARCH_GUEST_ACCESS, GuestAccess, guest_access, mcp_operation
 from app.authz.keys import (
     ROUTE_KEY_ACCESS,
     InsufficientScopeProblem,
@@ -36,13 +37,19 @@ from app.authz.loaders import (
     other_platform_admins,
     project_resource,
 )
-from app.authz.permissions import idea_permissions, idea_summary_permissions, project_permissions
+from app.authz.permissions import (
+    idea_permissions,
+    idea_summary_permissions,
+    project_permissions,
+    research_assignment_flags,
+)
 from app.authz.policy import (
     ASSIGNABLE_ROLES,
     FROZEN_WHILE_HELD,
     POLICY,
     Decision,
     IdeaFacts,
+    NamedResearcher,
     ProjectFacts,
     Resource,
     authorize,
@@ -55,14 +62,17 @@ from app.authz.policy import (
     require,
     require_any,
     require_view,
+    researcher_live,
     searches_co_members_only,
     sees_email_trouble,
     writes_as_ai,
 )
 from app.authz.queries import (
     effective_role,
+    evaluation_visible,
     listed_ideas,
     pending_evaluator,
+    researched_ideas,
     score_visible,
     viewable_ideas,
     visible_aggregate_score,
@@ -75,13 +85,16 @@ __all__ = [
     "ASSIGNABLE_ROLES",
     "FROZEN_WHILE_HELD",
     "POLICY",
+    "RESEARCH_GUEST_ACCESS",
     "ROUTE_KEY_ACCESS",
     "RULE_SCOPES",
     "SESSION_ONLY_RULES",
     "Decision",
+    "GuestAccess",
     "IdeaFacts",
     "InsufficientScopeProblem",
     "KeyAccess",
+    "NamedResearcher",
     "ProjectFacts",
     "Resource",
     "Rule",
@@ -94,7 +107,9 @@ __all__ = [
     "effective_role",
     "effective_role_of",
     "effective_roles_of",
+    "evaluation_visible",
     "evaluator_state",
+    "guest_access",
     "idea_permissions",
     "idea_resource",
     "idea_summary_permissions",
@@ -102,6 +117,7 @@ __all__ = [
     "listed_ideas",
     "load_project",
     "may_cite_sources",
+    "mcp_operation",
     "not_found",
     "other_platform_admins",
     "pending_evaluator",
@@ -112,6 +128,9 @@ __all__ = [
     "require_key_scope",
     "require_session",
     "require_view",
+    "research_assignment_flags",
+    "researched_ideas",
+    "researcher_live",
     "score_visible",
     "searches_co_members_only",
     "sees_email_trouble",

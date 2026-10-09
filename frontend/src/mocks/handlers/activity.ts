@@ -30,6 +30,11 @@ import {
   viewIdea,
 } from '@/mocks/handlers/common'
 import { notifyMentions, rewriteMentions } from '@/mocks/notifications'
+import {
+  isLiveResearcher,
+  isResearchGuest,
+  RESEARCH_GUEST_ACTIVITY_TYPES,
+} from '@/mocks/researchers'
 
 /** Mentions rewritten as the API stores them (contract-phase3 §3.8), or the 422. */
 function storedBody(ctx: RouteContext, text: string): string {
@@ -64,7 +69,11 @@ export const activityHandlers = [
   route('get', '/ideas/:idea/activity', (ctx) => {
     const limit = queryLimit(ctx.url)
     const idea = viewIdea(ctx)
-    const events = [...rowsForIdea(ctx.db.events, idea.id)].sort(
+    // Phase 8b (review M2): a guest researcher reads only the allow-listed types.
+    const guest = isResearchGuest(ctx.db, idea, ctx.user)
+    const events = [...rowsForIdea(ctx.db.events, idea.id)]
+      .filter((event) => !guest || RESEARCH_GUEST_ACTIVITY_TYPES.includes(event.type))
+      .sort(
       (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
     )
     const { page, next_cursor } = paginate(
@@ -85,7 +94,8 @@ export const activityHandlers = [
     const text = stringField(body, 'body_md', { required: true, max: 10_000 }) ?? ''
     const idea = viewIdea(ctx)
     const who = standing(ctx.db, projectOf(ctx.db, idea), ctx.user, idea)
-    if (!who.admin && !who.memberish) forbidden()
+    // Phase 8b: +Rsr comments too, with or without a role.
+    if (!who.admin && !who.memberish && !isLiveResearcher(ctx.db, idea, ctx.user)) forbidden()
     ensureIdeaWritable(ctx.db, idea)
     const comment: MockComment = {
       id: newId(ctx.db, ID_KIND.comment),
@@ -113,7 +123,7 @@ export const activityHandlers = [
     const who = standing(ctx.db, projectOf(ctx.db, idea), ctx.user, idea)
     if (comment.author_id !== ctx.user.id)
       forbidden('not_author', 'You can only edit your own comments.')
-    if (!who.admin && !who.memberish) forbidden()
+    if (!who.admin && !who.memberish && !isLiveResearcher(ctx.db, idea, ctx.user)) forbidden()
     ensureIdeaWritable(ctx.db, idea)
     const stored = storedBody(ctx, text)
     if (stored !== comment.body_md) {
@@ -134,7 +144,9 @@ export const activityHandlers = [
     const project = projectOf(ctx.db, idea)
     const admin = isProjectAdmin(ctx.db, project, ctx.user)
     const who = standing(ctx.db, project, ctx.user, idea)
-    const own = comment.author_id === ctx.user.id && (who.admin || who.memberish)
+    const own =
+      comment.author_id === ctx.user.id &&
+      (who.admin || who.memberish || isLiveResearcher(ctx.db, idea, ctx.user))
     if (!own && !admin) forbidden('not_author', 'You can only delete your own comments.')
     ensureIdeaWritable(ctx.db, idea)
     comment.deleted_at = new Date().toISOString()

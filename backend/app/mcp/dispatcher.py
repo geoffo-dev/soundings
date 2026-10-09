@@ -31,6 +31,7 @@ failures (409 and 422 from the service, ``invalid_cursor``), crashes and cancell
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 from collections.abc import Mapping
@@ -42,7 +43,7 @@ from pydantic import BaseModel, ValidationError
 from app.ai import results as ai_results
 from app.api_keys.verify import reload_api_key
 from app.auth.key_auth import refuse_reloaded_key, take_key_write
-from app.authz import writes_as_ai
+from app.authz import mcp_operation, writes_as_ai
 from app.db import session_scope
 from app.domain.principal import Principal
 from app.errors import ProblemError
@@ -180,6 +181,8 @@ async def _run(
     try:
         async with session_scope(app.state.sessionmaker, settings=app.state.settings) as db:
             principal = await _live_principal(db, request.principal, app.state.settings)
+            # Phase 8b: the tool decides what a guest researcher may reach (app.authz.guest).
+            principal = dataclasses.replace(principal, operation=mcp_operation(tool.name))
             context = ToolContext(
                 db=db, principal=principal, settings=app.state.settings, target=target
             )

@@ -18,7 +18,16 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.authz import POLICY, Decision, IdeaFacts, ProjectFacts, Resource, Rule, authorize
+from app.authz import (
+    POLICY,
+    Decision,
+    IdeaFacts,
+    NamedResearcher,
+    ProjectFacts,
+    Resource,
+    Rule,
+    authorize,
+)
 from app.domain.principal import Principal
 from app.models.enums import (
     EvaluatorState,
@@ -107,6 +116,9 @@ MATRIX: dict[str, tuple[str, ...]] = {
     # K. The research step (Phase 8)
     "idea.answer_research": ("Y (c5)", "Y (c5)", "403", "403", "403", "404", "401", "+ (c5)", "·"),
     "idea.research_override": ("Y", "Y", "403", "403", "403", "404", "401", "·", "·"),
+    # K (Phase 8b). Who does the research
+    "idea.assign_researcher": ("Y (c5, c23)", "Y (c5, c23)", "403", "403", "403", "404", "401", "+ (c5, c23, c25)", "·"),
+    "idea.release_researcher": ("403", "403", "403", "403", "403", "404", "401", "·", "·"),
 }
 
 # Role matrix section 4: the response when each condition fails (c1, c14 and c15 have two
@@ -132,6 +144,11 @@ CONDITION_RESPONSES: dict[str, dict[str, tuple[int, str]]] = {
     "c13": {"owned": (409, "idea_has_owner")},
     "c14": {"no_token": (404, "not_found"), "narrow_token": (403, "insufficient_scope")},
     "c15": {"session": (401, "unauthorized"), "no_scope": (403, "insufficient_scope")},
+    "c23": {
+        "service_account": (422, "researcher_not_eligible"),
+        "deactivated": (422, "researcher_not_eligible"),
+    },
+    "c25": {"outsider": (403, "outside_researcher_needs_admin")},
 }
 
 # Contract section 2: in an archived project every idea-level write is 409.
@@ -143,6 +160,7 @@ IDEA_WRITES = {
     "idea.change_status", "idea.moderate", "proposal.write", "proposal.comment",
     "proposal.suggest_section", "ai.request_evaluation", "ai.research", "ai.draft_section",
     "ai.delete_note", "idea.answer_research", "idea.research_override",
+    "idea.assign_researcher", "idea.release_researcher",
 }
 # fmt: on
 
@@ -229,6 +247,7 @@ class State:
     ai_available: bool = True
     token_valid: bool = True
     token_covers_request: bool = True
+    researcher_named: NamedResearcher | None = None
 
     def build(self) -> tuple[Principal | None, Resource]:
         principal = None
@@ -264,6 +283,7 @@ class State:
             token_valid=self.token_valid,
             token_covers_request=self.token_covers_request,
             public_submission_on=self.public_submission_on,
+            researcher_named=self.researcher_named,
         )
 
 
@@ -309,6 +329,13 @@ def satisfy(state: State, condition: str, rule: str) -> State:
             return replace(state, admins_after_change=1)
         case "c15":
             return replace(state, auth="api_key", scopes=frozenset({"mcp"}))
+        case "c23" | "c25":
+            # A person outside the project (c25 holds for the column's grants; the
+            # owner's breaks it below), or with a role there for the owner.
+            return replace(
+                state,
+                researcher_named=NamedResearcher(eligible=True, role=ProjectRole.VIEWER),
+            )
     return state  # the default state already satisfies the others
 
 
@@ -357,6 +384,18 @@ BREAKS: dict[str, dict[str, Callable[[State, str], State]]] = {
         "session": lambda s, _: replace(s, auth="session", scopes=None),
         "no_scope": lambda s, _: replace(s, scopes=frozenset({"read", "write", "evaluate"})),
     },
+    # c23: the person named isn't an active person (an agent, a deactivated user) but holds
+    # a role (else the owner hears c25's 403 first: 403s come before 422s).
+    "c23": {
+        "service_account": lambda s, _: replace(
+            s, researcher_named=NamedResearcher(eligible=False, role=ProjectRole.MEMBER)
+        ),
+        "deactivated": lambda s, _: replace(
+            s, researcher_named=NamedResearcher(eligible=False, role=ProjectRole.VIEWER)
+        ),
+    },
+    # c25: the owner names someone without a role in a private project.
+    "c25": {"outsider": lambda s, _: replace(s, researcher_named=NamedResearcher(eligible=True))},
 }
 
 

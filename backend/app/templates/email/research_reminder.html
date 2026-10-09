@@ -1,0 +1,8 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">{% if due_today %}Research is due today{% else %}Research is due {{ due_day }}{% endif %}</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">A reminder that the research checklist still has {{ open_items }} to answer for:</p>
+{{ m.idea_card(idea, c, s) }}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};"><strong>Due {% if due_today %}today, {% endif %}{{ due }}</strong></p>
+{% endblock %}

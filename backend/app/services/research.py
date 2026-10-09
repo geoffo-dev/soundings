@@ -26,10 +26,19 @@ from dataclasses import dataclass
 from typing import Any, Final
 from uuid import UUID, uuid4
 
-from sqlalchemy import Numeric, String, and_, cast, exists, func, literal, select, union
+from sqlalchemy import Numeric, String, and_, cast, exists, func, literal, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import Resource, Rule, authorize, can, listed_ideas, require
+from app.authz import (
+    Resource,
+    Rule,
+    authorize,
+    can,
+    listed_ideas,
+    require,
+    research_assignment_flags,
+    researched_ideas,
+)
 from app.domain.idea_keys import format_key
 from app.domain.labels import status_label
 from app.domain.principal import Principal
@@ -64,7 +73,7 @@ from app.schemas.research import (
     shows_research_progress,
 )
 from app.schemas.users import UserRef
-from app.services import audit
+from app.services import audit, research_assignment
 from app.services.refs import project_ref
 from app.services.sql import any_of, require_unique_lower
 
@@ -321,6 +330,7 @@ async def settings_out(db: AsyncSession, project: Project) -> ResearchSettings:
                 title=row.title,
                 hint=row.hint,
                 required=row.required,
+                position=row.position,  # Phase 8b: Restore puts it back there
                 removed_at=row.archived_at,
                 answer_count=counts[row.id],
             )
@@ -451,6 +461,12 @@ async def replace_settings(
             project_id=project.id,
             details={"rule": Rule.PROJECT_EDIT_RESEARCH, "from": previous, "to": body.step},
         )
+        if body.step is ResearchStep.OFF:
+            # Phase 8b (review S8): turning the step off ends every research assignment in
+            # the project (audited, no event; moving the step keeps them).
+            await research_assignment.clear_where(
+                db, Idea.project_id == project.id, actor=principal, reason="step_off"
+            )
     if step_on:
         counts = await _replace_checklist(db, project, rows, body)
         if any(counts.values()):
@@ -478,13 +494,19 @@ async def _users(db: AsyncSession, ids: Iterable[UUID | None]) -> dict[UUID, Use
 async def idea_research(
     db: AsyncSession, principal: Principal, idea: Idea, project: Project, resource: Resource
 ) -> IdeaResearch:
-    """``get_idea_research`` (``idea.view``, checked by the caller)."""
+    """``get_idea_research`` (``idea.view``, checked by the caller). Phase 8b: who does
+    the research (``assignment``) and the gate status's label (a guest researcher can't
+    read the project's labels)."""
     step = project.research_step
+    assign, assign_outside, hand_back = research_assignment_flags(principal, resource)
     permissions = ResearchPermissions(
         can_answer=step is not ResearchStep.OFF
         and can(principal, Rule.IDEA_ANSWER_RESEARCH, resource),
         can_override=step is not ResearchStep.OFF
         and can(principal, Rule.IDEA_RESEARCH_OVERRIDE, resource),
+        can_assign=assign,
+        can_assign_outside_researcher=assign_outside,
+        can_hand_back=hand_back,
     )
     if step is ResearchStep.OFF:
         return IdeaResearch(
@@ -539,9 +561,14 @@ async def idea_research(
         and idea.status is not IdeaStatus.CLOSED
         and idea.status not in gated_statuses(step)
     )
+    gate = gate_status(step)
     return IdeaResearch(
         step=step,
-        gate_status=gate_status(step),
+        gate_status=gate,
+        gate_status_label=status_label(project.status_labels, gate, None) if gate else None,
+        assignment=await research_assignment.assignment_out(
+            db, idea, project, required_open=required_open
+        ),
         items=items,
         progress=ResearchProgress(
             answered=sum(1 for item in items if item.answer is not None),
@@ -658,7 +685,8 @@ async def clear_item(
 async def similar_ideas(db: AsyncSession, principal: Principal, idea: Idea) -> SimilarIdeas:
     """Up to 5 ideas like this one (contract-phase8 section 3.7): the principal may list
     them (``listed_ideas``: ``idea.view`` in every project they can view, archived ones
-    included, inside a key's projects, never a held idea), never this idea, ``pg_trgm``
+    included, inside a key's projects, never a held idea; Phase 8b: or the ideas they
+    research, ``researched_ideas``), never this idea, ``pg_trgm``
     similarity >= 0.3 on the title or the summary, most similar first, then the most
     recently active. No score data.
 
@@ -669,7 +697,9 @@ async def similar_ideas(db: AsyncSession, principal: Principal, idea: Idea) -> S
     among the nearest few by that column, so ``SIMILAR_CANDIDATES`` per column (well
     above 5, for ties at the shown two decimals) finds the same ideas as a full scan
     unless more than that many tie for fifth place."""
-    visible = (listed_ideas(principal), Idea.id != idea.id)
+    # Phase 8b: ideas a guest researcher researches count as ones they may list (never
+    # the private project's others: contract-phase8b section 4.5).
+    visible = (or_(listed_ideas(principal), researched_ideas(principal)), Idea.id != idea.id)
     nearest = [
         select(Idea.id)
         .where(*visible)

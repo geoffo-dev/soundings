@@ -24,6 +24,7 @@ from app.authz import (
     Rule,
     authorize,
     best_decision,
+    can,
     effective_roles_of,
     idea_permissions,
     idea_resource,
@@ -61,7 +62,7 @@ from app.schemas.ideas import (
 )
 from app.schemas.research import crosses_gate, gated_statuses, starts_evaluation
 from app.schemas.users import UserRef
-from app.services import activity, audit, research
+from app.services import activity, audit, research, research_assignment
 from app.services.scoring import active_criteria, idea_aggregate
 from app.services.summaries import idea_row, load_context, summary_fields
 
@@ -229,7 +230,13 @@ async def idea_detail(
     idea, project = loaded.idea, loaded.project
     resource = await idea_resource(db, principal, idea, project) if reread else loaded.resource
     visible = authorize(principal, Rule.SCORE_VIEW_AGGREGATE, resource).allowed
-    row = await idea_row(db, principal, idea, score_visible=visible)
+    # Phase 8b: the evaluation area (evaluators, progress, the evaluation window) follows
+    # evaluation.view_own: every column that views the idea holds it, a guest researcher
+    # (column R) doesn't (contract-phase8b section 4.4).
+    evaluation_area = can(principal, Rule.EVALUATION_VIEW_OWN, resource)
+    row = await idea_row(
+        db, principal, idea, score_visible=visible, evaluation_visible=evaluation_area
+    )
     context = await load_context(
         db,
         principal,
@@ -264,10 +271,15 @@ async def idea_detail(
         **fields,
         description_md=idea.description_md,
         submitted_by=context.users.get(idea.submitted_by_id) if idea.submitted_by_id else None,
-        evaluators=await _evaluators(db, principal, idea),
-        evaluation_due_at=idea.evaluation_due_at,
-        evaluation_closed_at=idea.evaluation_closed_at,
-        evaluation_open=resource.idea is not None and resource.idea.evaluation_open,
+        evaluators=await _evaluators(db, principal, idea) if evaluation_area else [],
+        evaluation_due_at=idea.evaluation_due_at if evaluation_area else None,
+        evaluation_closed_at=idea.evaluation_closed_at if evaluation_area else None,
+        evaluation_open=evaluation_area
+        and resource.idea is not None
+        and resource.idea.evaluation_open,
+        research_due_at=(
+            idea.research_due_at if project.research_step is not ResearchStep.OFF else None
+        ),
         aggregate=await _aggregate(db, idea) if visible else None,
         watching=bool(watching),
         held_for=idea.held_for,
@@ -468,6 +480,10 @@ async def change_status(
             override=body,
         )
     idea.status, idea.resolution = after
+    if after[0] is IdeaStatus.CLOSED:
+        # Phase 8b (review S8): closing ends the research assignment (audited, no event;
+        # reopening doesn't bring it back), before the fan-out runs at commit.
+        await research_assignment.clear_idea(db, idea, actor=principal, reason="closed")
     payload: dict[str, object] = {
         "from_status": before[0],
         "from_resolution": before[1],

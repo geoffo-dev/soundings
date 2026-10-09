@@ -16,6 +16,7 @@ import {
   testMapping,
 } from '@/mocks/access'
 import { revokeAllKeys } from '@/mocks/api-keys'
+import { clearAssignment } from '@/mocks/researchers'
 import { ID_KIND, newId, type MockDb, type MockUser } from '@/mocks/db'
 import { findUser, isPickable, paginate } from '@/mocks/domain'
 import {
@@ -104,6 +105,7 @@ const AUDIT_ACTION_SET: Record<AuditAction, true> = {
   'project.research_step_change': true,
   'project.research_checklist_replace': true,
   'idea.research_override': true,
+  'idea.researcher_change': true,
 }
 const AUDIT_ACTIONS = Object.keys(AUDIT_ACTION_SET) as AuditAction[]
 
@@ -436,7 +438,13 @@ export const adminHandlers = [
       )
     }
     // Deactivating revokes every key, each audited (contract-phase5 §2), after the update.
-    if (isActive === false && fields.includes('is_active')) revokeAllKeys(db, ctx.user, user)
+    if (isActive === false && fields.includes('is_active')) {
+      revokeAllKeys(db, ctx.user, user)
+      // Phase 8b (contract-phase8b §3.5): deactivation ends their research assignments.
+      for (const idea of db.ideas) {
+        if (idea.researcher_id === user.id) clearAssignment(db, idea, ctx.user, 'deactivated')
+      }
+    }
     return adminUser(db, user)
   }),
 

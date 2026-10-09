@@ -502,6 +502,15 @@ class ResearchPermissions(ResponseModel):
             "through an API key: assigning is session only, review M3)."
         ),
     )
+    can_assign_outside_researcher: bool = Field(
+        default=False,
+        description=(
+            "Phase 8b (product owner, S1 a): may name someone without a role in the project "
+            "as researcher: with can_assign in an internal project; in a private project only "
+            "project and platform admins (the owner gets 403 outside_researcher_needs_admin). "
+            "The picker offers people outside the project only when this is true."
+        ),
+    )
     can_hand_back: bool = Field(
         default=False,
         description=(

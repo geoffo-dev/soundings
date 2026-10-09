@@ -9,14 +9,24 @@ import { IdeaPage } from '@/features/idea/idea-page'
 import { IdeaNotFound, IdeaPageSkeleton } from '@/features/idea/idea-page-states'
 import { validateIdeaSearch } from '@/features/idea/idea-search'
 
-function crumbsFor(idea: Pick<IdeaSummary, 'key' | 'title' | 'project'>) {
+/**
+ * Project › key. A guest researcher (Phase 8b, `can_view_project` false) sees the
+ * project's name as text: project routes are 404 for them, so it is never a link.
+ */
+function crumbsFor(idea: Pick<IdeaSummary, 'key' | 'title' | 'project' | 'permissions'>) {
+  const linked = !('can_view_project' in idea.permissions) || idea.permissions.can_view_project
   return {
-    crumbs: [{ label: idea.project.name, to: `/p/${idea.project.slug}` }, { label: idea.key }],
+    crumbs: [
+      linked
+        ? { label: idea.project.name, to: `/p/${idea.project.slug}` }
+        : { label: idea.project.name },
+      { label: idea.key },
+    ],
     title: `${idea.key} ${idea.title}`,
   }
 }
 
-/** /ideas/$ideaKey?tab=overview|evaluations|proposal&evaluate=1 */
+/** /ideas/$ideaKey?tab=overview|evaluations|proposal&evaluate=1&research=1 */
 export const Route = createFileRoute('/_app/ideas/$ideaKey')({
   validateSearch: validateIdeaSearch,
   beforeLoad: ({ params, search }) => {

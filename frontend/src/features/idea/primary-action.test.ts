@@ -20,6 +20,10 @@ const NONE: IdeaPermissions = {
   can_vote: false,
   can_answer_research: false,
   invite_blocked_by_research: false,
+  can_assign_researcher: false,
+  can_assign_outside_researcher: false,
+  can_hand_back_research: false,
+  can_view_project: true,
 }
 const OWNER_PERMISSIONS: IdeaPermissions = {
   ...NONE,
@@ -77,6 +81,8 @@ function idea(patch: Partial<IdeaDetail> = {}): IdeaDetail {
     watching: true,
     permissions: OWNER_PERMISSIONS,
     research: null,
+    researcher: null,
+    research_due_at: null,
     ...patch,
   }
 }

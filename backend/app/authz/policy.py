@@ -18,6 +18,13 @@ When several grants apply (the column and the owner/evaluator overlays), the pri
 is allowed if any grant passes; otherwise the failure that got furthest wins, so the
 owner of a closed idea hears ``409 idea_closed`` rather than ``403``.
 
+Phase 8b, the researcher (role matrix table L, ADR 0016): column **R** is the idea's
+live researcher (c24) without a role in its **private** project, for idea-scoped rules on
+that one idea (its cells replace NMp's; :data:`GUEST_CELLS`), and while a request is
+served, :mod:`app.authz.guest` hides every operation R may not reach (404). The overlay
+**+Rsr** (:data:`RESEARCHER_OVERLAY`) adds commenting, answering and "Hand back" to the
+live researcher in **any** column, without a role (unlike +Own and +Evl).
+
 Blind evaluation (✱) is part of the policy: ``evaluation.view_others`` and
 ``score.view_aggregate`` are denied with ``hidden=True`` for a pending evaluator
 (assigned, not submitted), whatever their role, and always for a service account (an AI
@@ -37,6 +44,7 @@ from enum import StrEnum
 from typing import Final
 from uuid import UUID
 
+from app.authz.guest import GuestAccess, guest_access
 from app.authz.rules import RULE_SCOPES, Rule
 from app.domain.principal import Principal
 from app.errors import NotFoundProblem, ProblemError
@@ -63,6 +71,7 @@ __all__ = [
     "Column",
     "Decision",
     "IdeaFacts",
+    "NamedResearcher",
     "ProjectFacts",
     "Resource",
     "RuleSpec",
@@ -77,6 +86,7 @@ __all__ = [
     "require",
     "require_any",
     "require_view",
+    "researcher_live",
     "searches_co_members_only",
     "sees_email_trouble",
     "writes_as_ai",
@@ -123,6 +133,7 @@ class IdeaFacts:
     ``my_evaluation``: ``None`` when the principal is not an assigned evaluator,
     else their state (``invited`` = nothing saved yet, ``draft``, ``submitted``).
     ``held_for``: a public submission not visible yet (``ideas.held_for``; c12, c19).
+    ``researcher_id``: Phase 8b, the idea's assigned researcher (column R, +Rsr, c24).
     """
 
     id: UUID
@@ -132,6 +143,7 @@ class IdeaFacts:
     evaluation_closed: bool = False
     held_for: HoldReason | None = None
     my_evaluation: EvaluatorState | None = None
+    researcher_id: UUID | None = None
 
     @property
     def awaiting_moderation(self) -> bool:
@@ -163,7 +175,20 @@ class IdeaFacts:
             evaluation_closed=idea.evaluation_closed_at is not None,
             held_for=idea.held_for,
             my_evaluation=my_evaluation,
+            researcher_id=idea.researcher_id,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class NamedResearcher:
+    """Phase 8b: the person a request names as the idea's new researcher.
+
+    ``eligible``: an active person (not a service account, the break-glass account or a
+    deactivated user; an unknown id is not eligible): c23. ``role``: their effective role
+    in the idea's project, read after their user row is locked (c25)."""
+
+    eligible: bool
+    role: ProjectRole | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -200,6 +225,9 @@ class Resource:
       (``SOUNDINGS_PUBLIC_SUBMISSION_ENABLED``) for c8 and c9; unset fails.
     * ``token_covers_request``: c14, the unsubscribe token's scope covers what is
       asked (``all=true`` needs a token scoped to ``all``); unset fails.
+    * ``researcher_named``: Phase 8b, c23 and c25 for ``idea.assign_researcher``: the
+      person a request makes the idea's researcher. ``None`` = nobody new is named
+      (permission flags, removing the researcher, the same researcher again).
     """
 
     project: ProjectFacts | None = None
@@ -217,6 +245,7 @@ class Resource:
     token_covers_request: bool = False
     public_submission_on: bool = False
     issuing_api_key: bool = False
+    researcher_named: NamedResearcher | None = None
 
     def replace(self, **changes: object) -> Resource:
         return dataclasses.replace(self, **changes)  # type: ignore[arg-type]
@@ -292,6 +321,20 @@ def _proposal_available(resource: Resource) -> bool:
 
 def _a_person(principal: Principal | None, _resource: Resource, _rule: Rule) -> bool:
     return principal is not None and not principal.user.is_service_account
+
+
+def _researcher_eligible(_p: Principal | None, resource: Resource, _rule: Rule) -> bool:
+    """c23: whoever is named researcher is an active person (nobody named: passes)."""
+    return resource.researcher_named is None or resource.researcher_named.eligible
+
+
+def _researcher_in_private_project(_p: Principal | None, resource: Resource, _: Rule) -> bool:
+    """c25 (product owner, review S1 (a)): the owner names, in a private project, only
+    someone with a role there; an internal project's owner names anyone."""
+    named = resource.researcher_named
+    if named is None or named.role is not None:
+        return True
+    return _project(resource).visibility is ProjectVisibility.INTERNAL
 
 
 CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
@@ -390,6 +433,9 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     # Not in the cells (role matrix section 4): properties of the principal.
     "c20": (Check("c20", 403, "break_glass_account", _not_issuing_for_break_glass),),
     "c21": (Check("c21", 403, "forbidden", _a_person),),
+    # Phase 8b: who may be named the idea's researcher.
+    "c23": (Check("c23", 422, "researcher_not_eligible", _researcher_eligible),),
+    "c25": (Check("c25", 403, "outside_researcher_needs_admin", _researcher_in_private_project),),
 }
 
 _PHASE: Final = {404: 0, 401: 1, 403: 1, 422: 2, 409: 3}
@@ -407,6 +453,12 @@ class Column(StrEnum):
     NMI = "NMi"
     NMP = "NMp"
     PUB = "Pub"
+    R = "R"
+    """Phase 8b: the guest researcher (table L), never a column of tables A-K."""
+
+
+MATRIX_COLUMNS: Final = tuple(column for column in Column if column is not Column.R)
+"""The nine-column tables' principal columns (A-K)."""
 
 
 class Scope(StrEnum):
@@ -440,6 +492,11 @@ class RuleSpec:
     cells: Mapping[Column, Cell]
     owner: Grant | None = None
     evaluator: Grant | None = None
+    guest: Cell | None = None
+    """Phase 8b, column R's cell (table L); ``None`` = NMp's (every rule table L doesn't
+    list: project-scoped, global, public)."""
+    researcher: Grant | None = None
+    """Phase 8b, the +Rsr overlay (table L); ``None`` = ``·``."""
     blind: bool = False
     idea_write: bool = False
     """Refused with 409 ``project_archived`` in an archived project (contract section 2)."""
@@ -451,6 +508,11 @@ class RuleSpec:
         """c19 applies: refused with 409 ``awaiting_moderation`` on an idea held for
         moderation (:data:`FROZEN_WHILE_HELD`)."""
         return self.rule in FROZEN_WHILE_HELD
+
+    def cell(self, column: Column) -> Cell:
+        if column is Column.R:
+            return self.guest if self.guest is not None else self.cells[Column.NMP]
+        return self.cells[column]
 
     def conditions_for(self, grant: Grant) -> tuple[Check, ...]:
         """The grant's checks in evaluation order: by phase, then as listed; the
@@ -503,12 +565,12 @@ def _row(
     evaluator: str = "·",
     idea_write: bool = False,
 ) -> RuleSpec:
-    if len(cells) != len(Column):
-        raise ValueError(f"{rule}: expected {len(Column)} cells")
+    if len(cells) != len(MATRIX_COLUMNS):
+        raise ValueError(f"{rule}: expected {len(MATRIX_COLUMNS)} cells")
     return RuleSpec(
         rule=rule,
         scope=scope,
-        cells=dict(zip(Column, (_cell(cell) for cell in cells), strict=True)),
+        cells=dict(zip(MATRIX_COLUMNS, (_cell(cell) for cell in cells), strict=True)),
         owner=_overlay(owner),
         evaluator=_overlay(evaluator),
         blind=any("✱" in cell for cell in (*cells, owner, evaluator)),
@@ -544,6 +606,8 @@ FROZEN_WHILE_HELD: Final = frozenset(
         Rule.AI_DELETE_NOTE,
         Rule.IDEA_ANSWER_RESEARCH,
         Rule.IDEA_RESEARCH_OVERRIDE,
+        Rule.IDEA_ASSIGN_RESEARCHER,
+        Rule.IDEA_RELEASE_RESEARCHER,
     }
 )
 """c19 (contract-phase4 section 3.6): every idea write on an idea held for moderation
@@ -635,10 +699,66 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     # K. The research step (Phase 8)
     _row(Rule.IDEA_ANSWER_RESEARCH, _I, "Y (c5)", "Y (c5)",     "403",           "403",   "403",   "404", "401", owner="+ (c5)", idea_write=_W),
     _row(Rule.IDEA_RESEARCH_OVERRIDE, _I, "Y",    "Y",          "403",           "403",   "403",   "404", "401", idea_write=_W),
+    _row(Rule.IDEA_ASSIGN_RESEARCHER, _I, "Y (c5, c23)", "Y (c5, c23)", "403",   "403",   "403",   "404", "401", owner="+ (c5, c23, c25)", idea_write=_W),
+    _row(Rule.IDEA_RELEASE_RESEARCHER, _I, "403", "403",        "403",           "403",   "403",   "404", "401", idea_write=_W),
 )
+
+# L. Researcher access (Phase 8b): column R's cell and the +Rsr overlay of every
+# idea-scoped rule. Rules not listed: R = NMp's cell, +Rsr = "·".
+#                                         R          +Rsr
+TABLE_L: Final[Mapping[Rule, tuple[str, str]]] = {
+    Rule.IDEA_VIEW:                      ("Y (c12)", "·"),
+    Rule.IDEA_EDIT_OWN:                  ("403",     "·"),
+    Rule.IDEA_EDIT_ANY:                  ("403",     "·"),
+    Rule.IDEA_DELETE:                    ("403",     "·"),
+    Rule.COMMENT_CREATE:                 ("403",     "+"),
+    Rule.COMMENT_EDIT_OWN:               ("403",     "+ (c2)"),
+    Rule.COMMENT_DELETE_ANY:             ("403",     "·"),
+    Rule.IDEA_VOTE:                      ("403",     "·"),
+    Rule.IDEA_WATCH:                     ("Y",       "·"),
+    Rule.IDEA_VOLUNTEER_OWNER:           ("403",     "·"),
+    Rule.IDEA_RELEASE_OWNER:             ("403",     "·"),
+    Rule.IDEA_ASSIGN_OWNER:              ("403",     "·"),
+    Rule.EVALUATOR_MANAGE:               ("404",     "·"),
+    Rule.IDEA_SET_DUE_DATE:              ("404",     "·"),
+    Rule.EVALUATION_SUBMIT_OWN:          ("404",     "·"),
+    Rule.EVALUATION_CLOSE:               ("404",     "·"),
+    Rule.EVALUATION_INCLUDE_AI:          ("404",     "·"),
+    Rule.IDEA_CHANGE_STATUS:             ("403",     "·"),
+    Rule.IDEA_MODERATE:                  ("404",     "·"),
+    Rule.EVALUATION_VIEW_OWN:            ("404",     "·"),
+    Rule.EVALUATION_VIEW_OTHERS:         ("404",     "·"),
+    Rule.SCORE_VIEW_AGGREGATE:           ("404",     "·"),
+    Rule.PROPOSAL_VIEW:                  ("404",     "·"),
+    Rule.PROPOSAL_WRITE:                 ("404",     "·"),
+    Rule.PROPOSAL_COMMENT:               ("404",     "·"),
+    Rule.PROPOSAL_SUGGEST_SECTION:       ("404",     "·"),
+    Rule.PROPOSAL_EXPORT:                ("404",     "·"),
+    Rule.PUBLIC_ERASE_SUBMITTER:         ("404",     "·"),
+    Rule.AI_REQUEST_EVALUATION:          ("404",     "·"),
+    Rule.AI_RESEARCH:                    ("404",     "·"),
+    Rule.AI_DRAFT_SECTION:               ("404",     "·"),
+    Rule.AI_CANCEL_RUN:                  ("404",     "·"),
+    Rule.AI_DELETE_NOTE:                 ("403",     "·"),
+    Rule.IDEA_ANSWER_RESEARCH:           ("403",     "+"),
+    Rule.IDEA_RESEARCH_OVERRIDE:         ("403",     "·"),
+    Rule.IDEA_ASSIGN_RESEARCHER:         ("403",     "·"),
+    Rule.IDEA_RELEASE_RESEARCHER:        ("403",     "+"),
+}
 # fmt: on
 
-POLICY: Final[Mapping[Rule, RuleSpec]] = {spec.rule: spec for spec in _ROWS}
+
+def _with_table_l(spec: RuleSpec) -> RuleSpec:
+    row = TABLE_L.get(spec.rule)
+    if row is None:
+        return spec
+    if spec.scope is not Scope.IDEA:
+        raise ValueError(f"{spec.rule}: table L lists idea-scoped rules only")
+    guest, researcher = row
+    return dataclasses.replace(spec, guest=_cell(guest), researcher=_overlay(researcher))
+
+
+POLICY: Final[Mapping[Rule, RuleSpec]] = {spec.rule: _with_table_l(spec) for spec in _ROWS}
 """Every rule of the role matrix. Anything else is denied."""
 
 EVALUATOR_REMOVE: Final = dataclasses.replace(
@@ -692,6 +812,10 @@ _DETAILS: Final[Mapping[str, str]] = {
     "awaiting_moderation": "This idea is waiting for review: approve it first.",
     "break_glass_account": (
         "The break-glass account can't create API keys: a key would outlive the emergency."
+    ),
+    "researcher_not_eligible": "Only an active person can do the research.",
+    "outside_researcher_needs_admin": (
+        "Only a project admin can ask someone outside this project to research it."
     ),
 }
 
@@ -754,6 +878,26 @@ def best_decision(decisions: Iterable[Decision]) -> Decision:
     return max(denials, key=lambda decision: decision._rank)  # first of equals wins
 
 
+def researcher_live(principal: Principal | None, resource: Resource) -> bool:
+    """c24: the principal is the idea's assigned researcher and the assignment is live
+    (the project's research step on, the idea not closed, the project not archived), and
+    a person (c23 holds for whoever is assigned; checked again here; a deactivated user
+    can't sign in, holds no assignment and is never a recipient)."""
+    idea, project = resource.idea, resource.project
+    return (
+        principal is not None
+        and idea is not None
+        and project is not None
+        and idea.researcher_id is not None
+        and idea.researcher_id == principal.user_id
+        and not principal.user.is_service_account
+        and not principal.user.is_break_glass
+        and project.research_step is not ResearchStep.OFF
+        and idea.status is not IdeaStatus.CLOSED
+        and not project.archived
+    )
+
+
 def _column(principal: Principal, spec: RuleSpec, resource: Resource) -> Column:
     if principal.is_platform_admin:
         return Column.PA
@@ -770,7 +914,11 @@ def _column(principal: Principal, spec: RuleSpec, resource: Resource) -> Column:
         # A service account needs a real project role (role matrix section 1,
         # contract-phase5 section 3.7): never the internal-project non-member.
         return Column.NMP
-    return Column.NMI if _project(resource).visibility is ProjectVisibility.INTERNAL else Column.NMP
+    if _project(resource).visibility is ProjectVisibility.INTERNAL:
+        return Column.NMI
+    if spec.scope is Scope.IDEA and researcher_live(principal, resource):
+        return Column.R  # Phase 8b: that one idea, as its guest researcher (table L)
+    return Column.NMP
 
 
 def _evaluate_grant(
@@ -799,12 +947,16 @@ def _locate(principal: Principal, spec: RuleSpec, resource: Resource) -> Column 
             # c12: not a submission until its address is confirmed; 404 for everyone.
             return _deny(spec.rule, 404, condition="c12")
     column = _column(principal, spec, resource)
-    cell = spec.cells[column]
+    if column is Column.R and guest_access(principal.operation) is GuestAccess.HIDDEN:
+        # Phase 8b: the request's operation isn't part of the guest's view (deny by
+        # default; app.authz.guest), whatever rule it checks.
+        return _deny(spec.rule, 404, condition="guest_route")
+    cell = spec.cell(column)
     if isinstance(cell, Refuse) and cell.status in (401, 404):
         return _deny(spec.rule, cell.status)
     if spec.scope is not Scope.GLOBAL:
         view = POLICY[Rule.IDEA_VIEW if spec.scope is Scope.IDEA else Rule.PROJECT_VIEW]
-        view_cell = view.cells[column]
+        view_cell = view.cell(column)
         if not isinstance(view_cell, Grant):
             return _deny(spec.rule, 404)
         seen = _evaluate_grant(principal, view, view_cell, resource)
@@ -835,7 +987,7 @@ def authorize(
     located = _locate(principal, spec, resource)
     if isinstance(located, Decision):
         return located
-    cell = spec.cells[located]
+    cell = spec.cell(located)
 
     # 403: the API key's scopes (session-only rules have no scope at all).
     if principal.auth == "api_key":
@@ -851,6 +1003,9 @@ def authorize(
             grants.append(spec.owner)
         if spec.evaluator is not None and idea.my_evaluation is not None:
             grants.append(spec.evaluator)
+    if spec.researcher is not None and researcher_live(principal, resource):
+        # +Rsr counts whatever the role, or without one (Phase 8b, table L).
+        grants.append(spec.researcher)
     if not grants:
         return _deny(rule, 403)
 

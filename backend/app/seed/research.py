@@ -16,6 +16,11 @@ research step and its answers, and the two proposals that show them, as plain da
 Answers are written as consultation records ("Legal (contracts team), 3 Oct: ..."): who
 was asked and what they said, never a person picker. The runner plays them through the
 same services as a person would (:mod:`app.seed.runner`): no gate bypass.
+
+Phase 8b (contract-phase8b section 11, :data:`ASSIGNMENTS`): bob, who isn't a member of the
+private Internal Tools, researches TOOLS-12 as its guest (asked by dave, the project's
+admin: in a private project only admins name someone outside it); amara researches GREEN-6,
+which she owns (asked by alice); alice's research of GREEN-5 is overdue.
 """
 
 from __future__ import annotations
@@ -27,7 +32,15 @@ from app.models.enums import ResearchStep
 from app.schemas.proposals import DEFAULT_PROPOSAL_TEMPLATE
 from app.seed.content import md
 
-__all__ = ["ANSWERS", "PROPOSALS", "RESEARCH_STEPS", "TEMPLATES", "TemplateSeed"]
+__all__ = [
+    "ANSWERS",
+    "ASSIGNMENTS",
+    "PROPOSALS",
+    "RESEARCH_STEPS",
+    "TEMPLATES",
+    "AssignmentSeed",
+    "TemplateSeed",
+]
 
 TemplateSeed = tuple[str | None, str, str]
 """A template section: its key (``None``: a new section, keyed from its title), title, hint."""
@@ -178,6 +191,19 @@ ANSWERS: Final[MappingProxyType[str, tuple[str | None, str | None, str | None]]]
 )
 """Per idea title: an answer per default checklist item (``None``: unanswered), written
 by the idea's owner before the idea moved past Research."""
+
+AssignmentSeed = tuple[str, str, str, float, float | None]
+"""Phase 8b: (idea title, researcher, asked by, asked how many days ago, due in how many
+days from now: negative = overdue, ``None`` = no due date)."""
+
+ASSIGNMENTS: Final[tuple[AssignmentSeed, ...]] = (
+    # TOOLS-12 (one required item open): bob, outside the private project, as its guest.
+    ("Chat command to request system access", "bob", "dave", 1.0, 3.0),
+    # GREEN-6 (Shortlisted, partly answered): its owner, asked explicitly by alice.
+    ("Heat pumps for the Bristol office", "amara", "alice", 3.0, None),
+    # GREEN-5 (Shortlisted, nothing answered): overdue, for My work's screenshot.
+    ("Move cloud workloads to a low-carbon region", "alice", "sven", 6.0, -2.0),
+)
 
 PROPOSALS: Final[MappingProxyType[str, MappingProxyType[str, str]]] = MappingProxyType(
     {

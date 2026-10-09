@@ -174,6 +174,7 @@ it again).
 | **Deactivating a user** (`update_admin_user {is_active: false}`, after the user row update, as it ends sessions and revokes keys) | every assignment they hold | `deactivated` |
 | **Closing the idea** (`change_idea_status` to Closed, any resolution; review S8) | that idea's | `closed` |
 | **Turning the project's research step off** (`replace_research_settings` with `step: off`; moving the step keeps them) | every assignment in the project | `step_off` |
+| **Losing one's role in a private project** (§17: the product owner's answer to review S1 (b)) | that person's assignments in the project | `left_project` |
 
 - **`soundings anonymise-user`** runs on deactivated accounts only, so the account holds no
   assignment by then (review C3: nothing to clear; a test pins it). Its answers stay under
@@ -215,7 +216,7 @@ them (an import-time guard ties the two; until then `PHASE8B_ACTIVITY_TYPES`).
 | Event | Effect |
 |---|---|
 | The researcher joins the project | They hold a role: their column (Mem, Vwr, PAd) + Rsr instead of R. |
-| A member researcher is removed from a private project (by an admin or a group sync) | They become R for that idea (guest view); the assignment stays (the product owner's rule: access ends when unassigned; review S1 asks them to confirm, §18). |
+| A member researcher loses their role in a private project (an admin removes them or a group grant, a group membership or the group goes, a sign-in group sync) | **Cleared** (§17, the product owner's answer to review S1 (b)): audited `left_project`, answers kept, no feed event or notification; they never become R through it. |
 | The project's visibility changes | Private → internal: R becomes NMi + Rsr; internal → private: a non-member researcher becomes R. |
 | The owner changes | Nothing (an explicit researcher stays; with nobody assigned the new owner does the research). |
 | The idea is closed, or the project's step turned off | Cleared (§3.5, review S8): nobody is assigned; reopening or turning the step on again doesn't bring it back. |
@@ -744,7 +745,7 @@ Through the same services a person uses; keep `dev/README.md`'s who's who cohere
 
 | Action | When | Target, details | SPA |
 |---|---|---|---|
-| `idea.researcher_change` | the researcher was assigned, changed, removed or handed back, or cleared by deactivating them, closing the idea or turning the project's step off (§3.5) | idea (project set); `from_user_id`, `to_user_id`, `reason` (`assigned`, `removed`, `handed_back`, `deactivated`, `closed`, `step_off`), `outside_project` (the new researcher has no role in the project), `rule` | "asked {user} to research {idea}" (with "outside the project" when `outside_project`), "removed {user} as researcher of {idea}", "{user} handed back the research of {idea}", "{user} was removed as researcher of {idea} (account deactivated)", "… (idea closed)", "… (research step turned off)"; category Ideas |
+| `idea.researcher_change` | the researcher was assigned, changed, removed or handed back, or cleared by deactivating them, closing the idea or turning the project's step off (§3.5) | idea (project set); `from_user_id`, `to_user_id`, `reason` (`assigned`, `removed`, `handed_back`, `deactivated`, `closed`, `step_off`, `left_project` (§17)), `outside_project` (the new researcher has no role in the project), `rule` | "asked {user} to research {idea}" (with "outside the project" when `outside_project`), "removed {user} as researcher of {idea}", "{user} handed back the research of {idea}", "{user} was removed as researcher of {idea} (account deactivated)", "… (idea closed)", "… (research step turned off)"; category Ideas |
 
 It needs, in the SPA's same change: its phrase, its category, the mock list and the
 exhaustive `Record` in `audit-phrases.test.ts`. The research due date isn't audited (the
@@ -755,6 +756,7 @@ feed records it, like evaluation due dates).
 | Code | Status | When |
 |---|---|---|
 | `researcher_not_eligible` | 422 | `set_research_assignment` names a service account, the break-glass account, a deactivated or unknown user (c23). |
+| `outside_researcher_needs_admin` | 403 | `set_research_assignment` by the idea's owner (not a project or platform admin) names someone without a role in a **private** project (c25, §17). |
 
 `research_step_off`, `idea_closed`, `project_archived`, `awaiting_moderation` keep their
 meanings on the two new writes.
@@ -792,6 +794,52 @@ contract"); the security design in [ADR 0016](../adr/0016-research-assignment-an
 ## 17. Changes after the contract
 
 Builders record additive changes here (date, what, why), as in earlier phases.
+
+### 2026-10-08 · The product owner's answers to review S1 and S8 (backend)
+
+The product owner answered the review's open questions ([decisions](../decisions.md#phase-8b-product-owner-answers-2026-10-08)):
+
+- **S1 (a), accepted: in a private project only project and platform admins name someone
+  outside it.** New condition **c25** on the owner overlay of `idea.assign_researcher`
+  (role matrix: `+ (c5, c23, c25)`): when the idea's owner, who isn't a project or
+  platform admin, names a person **without a role in a private project**,
+  `set_research_assignment` answers **403 `outside_researcher_needs_admin`** ("Only a
+  project admin can ask someone outside this project to research it."). The owner may
+  still name anyone with a role there, themselves included; internal projects are
+  unchanged (the owner names anyone). Check order: after the rule's 403, before c23's
+  422 (403s come first): an owner naming an unknown id or a service account outside the
+  project hears 403, with a role there 422. The person's role is read **after their user
+  row is locked `FOR SHARE`** (§3.3), so a removal from the project that commits
+  meanwhile is seen. New permission flags (additive, default false):
+  `IdeaPermissions.can_assign_outside_researcher` and
+  `ResearchPermissions.can_assign_outside_researcher`: with the assign flag in an
+  internal project; in a private project only for project and platform admins. The SPA's
+  picker offers people outside the project only when it is true (with
+  `include_non_members=true`; otherwise it lists members).
+- **S1 (b), accepted: losing one's role in a private project ends one's research
+  assignments there**, like §3.5's automatic clears: `researcher_id` and
+  `research_assigned_at` null, the due date and answers kept, audited
+  `idea.researcher_change` with `reason: left_project` (actor: whoever made the change;
+  none for a sign-in sync, whose audit actor is the user), no feed event or notification.
+  "Losing" = an effective role before the change and none after it, in a project that is
+  private; someone who never had a role there (an outsider an admin named) is untouched.
+  Every path that can take a role away compares before and after, in its transaction:
+  removing a direct member (`remove_project_member`), removing a group grant
+  (`remove_project_group_grant`), removing someone from a group
+  (`remove_group_member`), deleting a group (`delete_group`), and the sign-in group sync
+  (managed mappings; a changed mapping applies at the next sign-in). Changing a role
+  (admin, member, viewer) keeps a role, so nothing ends; deactivation already clears
+  everything (`deactivated`). Locks: the project paths hold the project `FOR UPDATE`
+  (an assignment holds it `FOR KEY SHARE`, so the two serialise), and deleting a group
+  locks its granted projects `FOR UPDATE` in id order the same way; a group membership
+  change and the sync lock the user row (`group_sync.lock_user`), which the assignment's
+  `FOR SHARE` on the new researcher waits for; then the cleared ideas' projects
+  `FOR KEY SHARE` and the ideas `FOR UPDATE`, each in id order. A project made
+  private later (internal → private) ends nothing: nobody lost a role, and the "not in
+  this project" marker shows the outsiders.
+- **S8, accepted as built:** closing the idea or turning the research step off clears the
+  assignment (audited `closed` / `step_off`, the due date kept); reopening doesn't bring
+  it back; archiving only suspends it (§3.5, §3.7).
 
 ## 18. Contract review (2026-10-08)
 

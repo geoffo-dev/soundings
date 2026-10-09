@@ -36,7 +36,7 @@ from app.schemas.groups import (
 )
 from app.schemas.groups import ProjectGroupGrant as ProjectGroupGrantOut
 from app.schemas.users import UserRef
-from app.services import audit
+from app.services import audit, research_assignment
 from app.services.admin_groups import member_counts
 from app.services.users import escape_like
 
@@ -178,6 +178,7 @@ async def remove_grant(
     the group ends at once."""
     grant, group = await _grant(db, project, group_id)
     previous = grant.role
+    held = await research_assignment.roles_before(db, project_ids=[project.id])
     await db.delete(grant)
     await _require_an_admin_left(db, principal, project, resource)
     await audit.record(
@@ -189,6 +190,9 @@ async def remove_grant(
         project_id=project.id,
         details={"rule": _RULE, "from_role": previous},
     )
+    # Phase 8b (product owner, review S1 b): the group's members who lose their role here
+    # stop researching the project's ideas.
+    await research_assignment.end_after_role_loss(db, held, actor=principal)
 
 
 # --- Everyone with access ------------------------------------------------------------------------

@@ -186,6 +186,10 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "answer_research_item": ("idea.answer_research",),
     "clear_research_item": ("idea.answer_research",),
     "list_similar_ideas": ("idea.view",),
+    # Phase 8b (docs/api/contract-phase8b.md sections 2 and 3)
+    "set_research_assignment": ("idea.assign_researcher",),
+    "remove_researcher": ("idea.assign_researcher", "idea.release_researcher"),
+    "list_my_research_to_do": (SIGNED_IN, "idea.view", "idea.answer_research"),
 }
 
 

@@ -163,6 +163,8 @@ export function templateOut(db: MockDb, projectId: string): ProposalTemplate {
       key: s.key,
       title: s.title,
       hint: s.hint,
+      // Phase 8b (D): where it was, so Restore puts it back there.
+      position: s.position,
       removed_at: s.archived_at ?? '',
       proposal_count: counts.get(s.key) ?? 0,
     }))

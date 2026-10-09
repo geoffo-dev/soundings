@@ -45,6 +45,10 @@ class Principal:
     api_key_id: UUID | None = None
     session_id: UUID | None = None
     auth_method: AuthMethod | None = None
+    operation: str | None = None
+    """Phase 8b: the API operation (``operation_id``) or MCP tool (``mcp.<tool>``) being
+    served, for the guest researcher's route table (:mod:`app.authz.guest`). ``None``
+    outside a request (jobs, fan-out, the CLI): no route to decide, the rules do."""
 
     @property
     def user_id(self) -> UUID:

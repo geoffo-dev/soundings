@@ -204,6 +204,7 @@ async def _template_out(db: AsyncSession, project_id: UUID) -> ProposalTemplate:
                 key=row.key,
                 title=row.title,
                 hint=row.hint,
+                position=row.position,  # Phase 8b: Restore puts it back there
                 removed_at=row.archived_at,
                 proposal_count=counts.get(row.key, 0),
             )

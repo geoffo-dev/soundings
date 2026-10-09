@@ -1,0 +1,10 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Please research this idea</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{{ actor }} asked you to do the research for:</p>
+{{ m.idea_card(idea, c, s) }}
+{% if due %}<p class="sx-text" style="{{ s.p }}color:{{ c.text }};"><strong>Due {{ due }}</strong></p>{% endif %}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Answer the research checklist on the idea's Research panel. When the required items are answered, the owner moves the idea on.</p>
+{% if guest %}<p class="sx-muted" style="{{ s.p }}color:{{ c.muted }};">You'll see this idea, its comments and activity and its research checklist, not its scores, evaluations or proposal.</p>{% endif %}
+{% endblock %}

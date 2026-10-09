@@ -24,6 +24,10 @@ import type { IdeaDetail, ResearchStep } from '@/api/types'
  *   for whoever answers; once complete: **Start evaluation** (before evaluation) or
  *   **Start proposal** (before the proposal). A complete checklist on the status before
  *   Research lets the usual step through (Invite evaluators, Start proposal).
+ *
+ * Phase 8b: "Start research" opens a dialog (who does it, by when) before the move;
+ * the idea's researcher, who can't move it, gets **Answer the checklist** while it
+ * waits in the status before Research with required items open.
  */
 export type PrimaryAction =
   | { kind: 'evaluate'; label: 'Evaluate' | 'Continue evaluation' }
@@ -35,7 +39,7 @@ export type PrimaryAction =
   | { kind: 'start-proposal'; label: 'Start proposal' }
   | { kind: 'open-proposal'; label: 'Open proposal' }
   | { kind: 'start-research'; label: 'Start research' }
-  | { kind: 'finish-research'; label: 'Finish research' }
+  | { kind: 'finish-research'; label: 'Finish research' | 'Answer the checklist' }
   | { kind: 'start-evaluation'; label: 'Start evaluation' }
 
 /** What the Proposal tab knows (its query), when it has loaded. */
@@ -86,6 +90,15 @@ export function primaryAction(
     (researchStep === 'before_proposal' && idea.status === 'shortlisted' && !proposal?.exists)
   if (beforeResearch && researchOpen && permissions.can_change_status) {
     return { kind: 'start-research', label: 'Start research' }
+  }
+  if (
+    research &&
+    researchOpen &&
+    idea.researcher?.id === viewerId &&
+    permissions.can_answer_research &&
+    !permissions.can_change_status
+  ) {
+    return { kind: 'finish-research', label: 'Answer the checklist' }
   }
   const proposalStage = idea.status === 'shortlisted' || idea.status === 'proposal'
   if (proposalStage) {

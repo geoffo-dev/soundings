@@ -68,8 +68,16 @@ export const queryKeys = {
   },
   users: {
     all: ['users'] as const,
-    search: (params: { q?: string; project?: string }) =>
-      ['users', 'search', { q: params.q ?? '', project: params.project ?? null }] as const,
+    search: (params: { q?: string; project?: string; includeNonMembers?: boolean }) =>
+      [
+        'users',
+        'search',
+        {
+          q: params.q ?? '',
+          project: params.project ?? null,
+          everyone: params.includeNonMembers ?? false,
+        },
+      ] as const,
   },
   projects: {
     all: ['projects'] as const,
@@ -127,6 +135,8 @@ export const queryKeys = {
     summary: () => ['work', 'summary'] as const,
     counts: () => ['work', 'counts'] as const,
     due: () => ['work', 'due'] as const,
+    /** Phase 8b: "Research to do" pages after the first 50 (`GET /me/research-to-do`). */
+    research: () => ['work', 'research'] as const,
     owned: (status?: IdeaStatus) => ['work', 'owned', status ?? 'all'] as const,
   },
   search: {

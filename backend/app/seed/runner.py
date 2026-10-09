@@ -112,7 +112,7 @@ from app.seed.public import (
     PUBLIC_PROJECT,
     PublicIdeaSeed,
 )
-from app.seed.research import ANSWERS, PROPOSALS, RESEARCH_STEPS, TEMPLATES
+from app.seed.research import ANSWERS, ASSIGNMENTS, PROPOSALS, RESEARCH_STEPS, TEMPLATES
 from app.services import (
     activity,
     admin_groups,
@@ -151,7 +151,7 @@ _LOCK_KEY: Final = 0x5EED_50D1
 _MARGIN: Final = timedelta(minutes=5)
 """The latest step happens at least this long before the seed runs."""
 
-_FUTURE_COLUMNS: Final = frozenset({"ideas.evaluation_due_at"})
+_FUTURE_COLUMNS: Final = frozenset({"ideas.evaluation_due_at", "ideas.research_due_at"})
 """Timestamps a step sets to a future value on purpose: never shifted."""
 
 _READ_AFTER: Final = timedelta(days=3)
@@ -396,6 +396,8 @@ class _Player:
             self._group(group)
         for index, idea in enumerate(IDEAS):
             self._idea(index, idea)
+        for assignment in ASSIGNMENTS:
+            self._assignment(*assignment)
         self._branding()
         self._public_form()
         for index, public_idea in enumerate(PUBLIC_IDEAS):
@@ -886,6 +888,26 @@ class _Player:
             start = after(seed.owner_after + 0.1)
             self._status(index, seed.owner, start, IdeaStatus.RESEARCH, label)
             self._answers(index, seed, seed.owner, start + timedelta(hours=2), label)
+
+    # -- Phase 8b: who does the research ---------------------------------------------------
+    def _assignment(
+        self, title: str, researcher: str, asked_by: str, days_ago: float, due_in: float | None
+    ) -> None:
+        index = next(i for i, seed in enumerate(IDEAS) if seed.title == title)
+        due_at = None if due_in is None else self.now + timedelta(days=due_in)
+
+        async def assign() -> None:
+            principal, loaded = await self.load(asked_by, index)
+            await research_assignment.set_assignment(
+                self.db,
+                principal,
+                loaded.idea,
+                loaded.project,
+                loaded.resource,
+                ResearchAssignmentUpdate(researcher_id=self.user_ids[researcher], due_at=due_at),
+            )
+
+        self.add(self.days_ago(days_ago), f"{asked_by} asks {researcher} to research {title!r}", assign)
 
     # -- Phase 8: the research step -------------------------------------------------------
     def _step(self, seed: IdeaSeed) -> ResearchStep:

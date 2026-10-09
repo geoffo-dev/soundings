@@ -53,6 +53,13 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
         status="Shortlisted",
         url=links.idea("OPS-4"),
     )
+    research = IdeaInfo(
+        key="TOOLS-12",
+        title="Shared on-call calendar for the support desk",
+        project="Internal Tools",
+        status="Research",
+        url=links.idea("TOOLS-12"),
+    )
     token = "sample-token.preview-only"  # noqa: S105 - not a secret
     all_token = "sample-all-token.preview-only"  # noqa: S105 - not a secret
 
@@ -135,12 +142,36 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             button=Button("Reply", links.idea(idea.key, comment_id=_COMMENT)),
             **footer(NotificationType.MENTION, "You were mentioned in a comment on CUST-12."),
         ),
+        # Phase 8b: a guest researcher's (no role in the private project): with the line
+        # saying what they will and won't see.
+        "researcher_assigned": EmailContent(
+            template="researcher_assigned",
+            subject=f'[TOOLS-12] Please research "{research.title}" by {day}',
+            preheader=f"Sven Lindqvist asked you to research TOOLS-12 by {day}.",
+            context={"actor": "Sven Lindqvist", "idea": research, "due": moment, "guest": True},
+            button=Button("Open the research checklist", links.idea("TOOLS-12", research=True)),
+            **footer(NotificationType.RESEARCHER_ASSIGNED, "You're researching TOOLS-12."),
+        ),
+        "research_reminder": EmailContent(
+            template="research_reminder",
+            subject=f'[TOOLS-12] Reminder: research for "{research.title}" is due {day}',
+            preheader=f"Research for TOOLS-12 is due {day}.",
+            context={
+                "idea": research,
+                "due": moment,
+                "due_day": day,
+                "due_today": False,
+                "open_items": "1 required item",
+            },
+            button=Button("Open the research checklist", links.idea("TOOLS-12", research=True)),
+            **footer(NotificationType.RESEARCH_REMINDER, "You're researching TOOLS-12."),
+        ),
         "digest": EmailContent(
             template="digest",
-            subject="Soundings digest: 4 updates on 2 ideas",
-            preheader="4 updates on 2 ideas you follow.",
+            subject="Soundings digest: 5 updates on 2 ideas",
+            preheader="5 updates on 2 ideas you follow.",
             context={
-                "summary": "4 updates on 2 ideas you follow.",
+                "summary": "5 updates on 2 ideas you follow.",
                 "groups": [
                     {
                         "idea": idea,
@@ -154,6 +185,7 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
                         "lines": [
                             "Erin Evans moved it from Evaluating to Shortlisted",
                             "Carol Chen commented: “Shall we pilot it in October?”",
+                            f"Erin Evans asked you to research it (due {day})",
                         ],
                     },
                 ],

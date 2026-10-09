@@ -35,9 +35,14 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
       return item.actor ? 'submitted the idea' : 'sent it through the public form'
     case 'idea_edited':
       return `edited the ${list(item.fields.map((field) => FIELD_NAMES[field] ?? field))}`
-    case 'status_changed':
+    case 'status_changed': {
+      // Phase 8b (review C6): the project's labels come with the event (a guest
+      // researcher can't read the project); older shapes fall back to the lookup.
+      const from = item.from_label ?? status(item.from_status, item.from_resolution, labels)
+      const to = item.to_label ?? status(item.to_status, item.to_resolution, labels)
       // Phase 8: an admin's "Move anyway" past open research items says so.
-      return `moved it from ${status(item.from_status, item.from_resolution, labels)} to ${status(item.to_status, item.to_resolution, labels)}${item.research_overridden ? ' without finishing research' : ''}`
+      return `moved it from ${from} to ${to}${item.research_overridden ? ' without finishing research' : ''}`
+    }
     case 'owner_changed':
       if (item.volunteered) return 'volunteered to own it'
       if (item.to_owner && item.to_owner.id === item.actor?.id) return 'took ownership'
@@ -66,6 +71,23 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
     case 'ai_research_note':
       // The actor is the agent; someone else deleted it (the agent never deletes).
       return item.note.deleted ? 'wrote a research note, since deleted' : 'wrote a research note'
+    // Phase 8b (contract-phase8b §3.6).
+    case 'researcher_changed': {
+      if (item.handed_back) return 'handed the research back'
+      const to = item.to_researcher
+      const from = item.from_researcher
+      if (!to) return from ? `removed ${from.display_name} as researcher` : 'removed the researcher'
+      if (to.id === item.actor?.id) {
+        return from ? `took on the research instead of ${from.display_name}` : 'took on the research'
+      }
+      return from
+        ? `asked ${to.display_name} instead of ${from.display_name} to research`
+        : `asked ${to.display_name} to research`
+    }
+    case 'research_due_date_changed':
+      return item.to_due_at
+        ? `set the research due date to ${formatDate(item.to_due_at)}`
+        : 'removed the research due date'
   }
 }
 

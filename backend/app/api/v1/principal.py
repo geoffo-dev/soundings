@@ -28,7 +28,8 @@ async def get_principal(request: Request, user: CurrentUserDep) -> Principal:
     principal = getattr(request.state, "principal", None)
     if isinstance(principal, Principal):
         return principal
-    return Principal(user=user)
+    route = request.scope.get("route")
+    return Principal(user=user, operation=getattr(route, "operation_id", None))
 
 
 PrincipalDep = Annotated[Principal, Depends(get_principal)]

@@ -53,8 +53,9 @@ export const projectQueryOptions = (slug: string) =>
     staleTime: 60_000,
   })
 
-export function useProject(slug: string) {
-  return useQuery(projectQueryOptions(slug))
+/** `enabled: false` for a guest researcher, who may read the idea but never its project. */
+export function useProject(slug: string, options: { enabled?: boolean } = {}) {
+  return useQuery({ ...projectQueryOptions(slug), enabled: options.enabled ?? true })
 }
 
 export const projectMembersQueryOptions = (slug: string) =>

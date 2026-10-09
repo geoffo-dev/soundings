@@ -8,7 +8,7 @@ import type { IdeaStatus, ResearchStep } from '@/api/types'
 
 import { recordAudit } from '@/mocks/access'
 import { ID_KIND, newId, type MockIdea, type MockProject } from '@/mocks/db'
-import { projectOf } from '@/mocks/domain'
+import { findUser, projectOf } from '@/mocks/domain'
 import {
   allowOnly,
   conflict,
@@ -52,8 +52,25 @@ import {
   templateOut,
 } from '@/mocks/templates'
 import { crossesGate, gatedStatuses } from '@/lib/status'
+import {
+  clearAssignment,
+  eligibleResearcher,
+  hasRole,
+  isLiveResearcher,
+  mayAssignResearcher,
+  mayNameOutsider,
+} from '@/mocks/researchers'
 
-import { ensureIdeaWritable, isUuid, standing, uuidParam, viewIdea, viewProject } from './common'
+import {
+  addWatcher,
+  emit,
+  ensureIdeaWritable,
+  isUuid,
+  standing,
+  uuidParam,
+  viewIdea,
+  viewProject,
+} from './common'
 
 const STEPS: ResearchStep[] = ['off', 'before_evaluation', 'before_proposal']
 /** One line: no line breaks or other control characters. */
@@ -249,12 +266,46 @@ function researchItem(ctx: RouteContext, idea: MockIdea): MockResearchItem {
 /** `idea.answer_research` with its conditions, in the contract's order. */
 function checkAnswer(ctx: RouteContext, idea: MockIdea): void {
   if (!mayAnswer(ctx.db, idea, ctx.user)) {
-    forbidden('forbidden', 'Only the owner and admins answer the research checklist.')
+    forbidden('forbidden', 'Only the owner, the researcher and admins answer the checklist.')
   }
   if (idea.status === 'closed') conflict('idea_closed', 'This idea is closed.')
   ensureIdeaWritable(ctx.db, idea)
   if (projectOf(ctx.db, idea).research_step === 'off') {
     conflict('research_step_off', 'This project has no research step.')
+  }
+}
+
+/** The DueAt shape: an offset, at most a year back and five years ahead (422 otherwise). */
+function parseResearchDue(value: unknown): string | null {
+  if (value === null) return null
+  const text = typeof value === 'string' ? value : ''
+  const ms = Date.parse(text)
+  const issue = (msg: string): FieldIssue => ({ loc: ['body', 'due_at'], msg, type: 'value_error' })
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(text) || Number.isNaN(ms)) {
+    failValidation([issue('Input should be a datetime with a timezone offset')])
+  }
+  const year = 365 * 86_400_000
+  if (ms < Date.now() - year || ms > Date.now() + 5 * year) {
+    failValidation([issue('At most a year ago and five years ahead')])
+  }
+  return new Date(ms).toISOString()
+}
+
+/** The 409s of both assignment writes (c5, c19, archived), then the step. */
+function checkAssignmentWritable(ctx: RouteContext, idea: MockIdea): void {
+  ensureIdeaWritable(ctx.db, idea)
+  if (idea.status === 'closed') conflict('idea_closed', 'This idea is closed.')
+  if (projectOf(ctx.db, idea).research_step === 'off') {
+    conflict('research_step_off', 'This project has no research step.')
+  }
+}
+
+/** Ends every assignment in a project whose step was turned off (review S8). */
+export function clearProjectAssignments(ctx: RouteContext, project: MockProject): void {
+  for (const idea of ctx.db.ideas) {
+    if (idea.project_id === project.id && idea.researcher_id) {
+      clearAssignment(ctx.db, idea, ctx.user, 'step_off')
+    }
   }
 }
 
@@ -489,6 +540,8 @@ export const researchHandlers = [
         project.id,
       )
       project.research_step = step
+      // Phase 8b (review S8): turning the step off ends every assignment in the project.
+      if (step === 'off') clearProjectAssignments(ctx, project)
     }
     // While the step is off the checklist is kept as it is (items ignored).
     if (step !== 'off') {
@@ -627,6 +680,130 @@ export const researchHandlers = [
       (a) => !(a.idea_id === idea.id && a.item_id === item.id),
     )
     return ideaResearch(ctx.db, idea, ctx.user)
+  }),
+
+  /* The research assignment (contract-phase8b §3.3, §3.4) ------------- */
+  route('put', '/ideas/:idea/research/assignment', async (ctx) => {
+    const body = await readJson(ctx.request)
+    allowOnly(body, ['researcher_id', 'due_at'])
+    for (const field of ['researcher_id', 'due_at']) {
+      if (!(field in body)) {
+        failValidation([{ loc: ['body', field], msg: 'Field required', type: 'missing' }])
+      }
+    }
+    const target = body.researcher_id
+    if (target !== null && !isUuid(target)) {
+      failValidation([
+        {
+          loc: ['body', 'researcher_id'],
+          msg: 'Input should be a valid UUID',
+          type: 'uuid_parsing',
+        },
+      ])
+    }
+    const dueAt = parseResearchDue(body.due_at)
+    const idea = viewIdea(ctx)
+    const db = ctx.db
+    const project = projectOf(db, idea)
+    if (!mayAssignResearcher(db, idea, ctx.user)) {
+      forbidden('forbidden', 'Only the owner and admins assign the research.')
+    }
+    const targetId = target === null ? null : target.toLowerCase()
+    const changes = targetId !== (idea.researcher_id ?? null)
+    if (changes && targetId !== null) {
+      const person = findUser(db, targetId)
+      const outside =
+        project.visibility === 'private' && !hasRole(db, project.id, targetId)
+      // c25 (product owner S1 a) comes before c23: 403s first.
+      if (outside && !mayNameOutsider(db, idea, ctx.user)) {
+        forbidden(
+          'outside_researcher_needs_admin',
+          'Only a project admin can ask someone outside this project to research it.',
+        )
+      }
+      if (!eligibleResearcher(person)) {
+        failValidation(
+          [
+            {
+              loc: ['body', 'researcher_id'],
+              msg: 'Only an active person can do the research.',
+              type: 'researcher_not_eligible',
+            },
+          ],
+          'researcher_not_eligible',
+        )
+      }
+    }
+    checkAssignmentWritable(ctx, idea)
+    const now = new Date().toISOString()
+    if (changes) {
+      const from = idea.researcher_id ?? null
+      idea.researcher_id = targetId
+      idea.research_assigned_at = targetId ? now : null
+      if (targetId) addWatcher(db, idea.id, targetId)
+      emit(db, idea, 'researcher_changed', ctx.user.id, {
+        from_researcher_id: from,
+        to_researcher_id: targetId,
+        handed_back: false,
+      })
+      recordAudit(
+        db,
+        ctx.user,
+        'idea.researcher_change',
+        { type: 'idea', id: idea.id },
+        {
+          rule: 'idea.assign_researcher',
+          from_user_id: from,
+          to_user_id: targetId,
+          reason: targetId ? 'assigned' : 'removed',
+          outside_project: targetId ? !hasRole(db, project.id, targetId) : false,
+        },
+        project.id,
+      )
+    }
+    if (dueAt !== (idea.research_due_at ?? null)) {
+      emit(db, idea, 'research_due_date_changed', ctx.user.id, {
+        from_due_at: idea.research_due_at ?? null,
+        to_due_at: dueAt,
+      })
+      idea.research_due_at = dueAt
+    }
+    return ideaResearch(db, idea, ctx.user)
+  }),
+
+  route('delete', '/ideas/:idea/research/assignment', (ctx) => {
+    const idea = viewIdea(ctx)
+    const db = ctx.db
+    const researcher = isLiveResearcher(db, idea, ctx.user)
+    if (!mayAssignResearcher(db, idea, ctx.user) && !researcher) {
+      forbidden('forbidden', 'Only the owner, admins and the researcher can do this.')
+    }
+    checkAssignmentWritable(ctx, idea)
+    if (!idea.researcher_id) return undefined
+    const from = idea.researcher_id
+    const handedBack = from === ctx.user.id
+    idea.researcher_id = null
+    idea.research_assigned_at = null
+    emit(db, idea, 'researcher_changed', ctx.user.id, {
+      from_researcher_id: from,
+      to_researcher_id: null,
+      handed_back: handedBack,
+    })
+    recordAudit(
+      db,
+      ctx.user,
+      'idea.researcher_change',
+      { type: 'idea', id: idea.id },
+      {
+        rule: handedBack ? 'idea.release_researcher' : 'idea.assign_researcher',
+        from_user_id: from,
+        to_user_id: null,
+        reason: handedBack ? 'handed_back' : 'removed',
+        outside_project: false,
+      },
+      idea.project_id,
+    )
+    return undefined
   }),
 
   route('get', '/ideas/:idea/similar-ideas', (ctx) => {

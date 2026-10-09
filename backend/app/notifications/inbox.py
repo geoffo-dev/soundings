@@ -3,7 +3,8 @@
 Only notifications about ideas the caller can view **now** are listed or counted (the
 same SQL filter as every list: :func:`app.authz.viewable_ideas`); others are skipped,
 not shown as gaps. Items carry the idea's current title and status labels, never
-score data.
+score data. Phase 8b (review S5): about an idea the caller sees only as its guest
+researcher (:func:`app.authz.researched_ideas`), only ``RESEARCH_GUEST_NOTIFICATION_TYPES``.
 """
 
 from __future__ import annotations
@@ -13,10 +14,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select, tuple_, update
+from sqlalchemy import and_, exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import sees_email_trouble, viewable_ideas
+from app.authz import researched_ideas, sees_email_trouble, viewable_ideas
 from app.config import Settings
 from app.domain.labels import status_label
 from app.domain.principal import Principal
@@ -31,6 +32,7 @@ from app.notifications.access import parse_time
 from app.notifications.excerpt import comment_excerpt
 from app.pagination import InvalidCursorProblem, decode_cursor, encode_cursor
 from app.schemas.notifications import (
+    RESEARCH_GUEST_NOTIFICATION_TYPES,
     UNREAD_COUNT_CAP,
     CommentExcerpt,
     CommentNotification,
@@ -42,6 +44,8 @@ from app.schemas.notifications import (
     NotificationPage,
     NotificationSummary,
     OwnerAssignedNotification,
+    ResearcherAssignedNotification,
+    ResearchReminderNotification,
     StatusChangedNotification,
 )
 from app.services.refs import idea_ref
@@ -78,8 +82,14 @@ def decode_time_cursor(cursor: str) -> tuple[datetime, UUID]:
         raise InvalidCursorProblem from exc
 
 
+_GUEST_TYPES: Final = sorted(type_.value for type_ in RESEARCH_GUEST_NOTIFICATION_TYPES)
+
+
 def _mine(principal: Principal) -> Any:
-    return (Notification.user_id == principal.user_id) & viewable_ideas(principal)
+    return (Notification.user_id == principal.user_id) & or_(
+        viewable_ideas(principal),
+        and_(researched_ideas(principal), Notification.type.in_(_GUEST_TYPES)),
+    )
 
 
 async def list_notifications(
@@ -201,6 +211,21 @@ def _item(
         case NotificationType.MENTION:
             return MentionNotification(
                 type="mention", comment=_excerpt(notification.comment_id, comments), **base
+            )
+        case NotificationType.RESEARCHER_ASSIGNED:
+            return ResearcherAssignedNotification(
+                type="researcher_assigned", due_at=parse_time(payload.get("due_at")), **base
+            )
+        case NotificationType.RESEARCH_REMINDER:
+            due_at = parse_time(payload.get("due_at"))
+            if due_at is None:
+                return None
+            return ResearchReminderNotification(
+                type="research_reminder",
+                due_at=due_at,
+                days_before=int(payload.get("days_before") or 0),
+                as_owner=bool(payload.get("as_owner")),
+                **base,
             )
 
 

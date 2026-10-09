@@ -4,7 +4,9 @@ Ideas and projects the principal can view, in non-archived projects. An exact id
 key (``cust-12`` -> ``CUST-12``) is always the first idea; then ideas whose title or
 summary contains ``q`` (``pg_trgm`` indexes), most similar title first (for one or two
 letters, most recently active first: :data:`SHORT_QUERY`). Projects
-match on name or slug, by name. Results never carry scores.
+match on name or slug, by name. Results never carry scores. Phase 8b: the ideas a
+person researches (``researched_ideas``: a guest researcher's one idea) are found too;
+never their project or its other ideas.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from typing import Any, Final
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import viewable_ideas, visible_projects
+from app.authz import researched_ideas, viewable_ideas, visible_projects
 from app.domain.principal import Principal
 from app.models.idea import Idea
 from app.models.project import Project
@@ -41,7 +43,10 @@ async def global_search(
     ideas = (
         select(Idea, Project)
         .join(Project, Project.id == Idea.project_id)
-        .where(viewable_ideas(principal), Project.archived_at.is_(None))
+        .where(
+            or_(viewable_ideas(principal), researched_ideas(principal)),
+            Project.archived_at.is_(None),
+        )
     )
 
     found: list[tuple[Idea, Project]] = []

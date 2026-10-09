@@ -227,6 +227,17 @@ class IdeaPermissions(IdeaSummaryPermissions):
             "assigning is session only)."
         ),
     )
+    can_assign_outside_researcher: bool = Field(
+        default=False,
+        description=(
+            "Phase 8b (product owner, S1 a): may name someone **without a role in the "
+            "project** as researcher. Always true with can_assign_researcher in an internal "
+            "project; in a private project only for project admins and platform admins (the "
+            "owner names people with a role there: naming an outsider is 403 "
+            "outside_researcher_needs_admin). The picker offers people outside the project "
+            "only when this is true."
+        ),
+    )
     can_hand_back_research: bool = Field(
         default=False,
         description=(

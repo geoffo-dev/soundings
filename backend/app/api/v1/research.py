@@ -34,9 +34,9 @@ from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
-from app.authz import Rule, load_project
+from app.authz import Rule, idea_resource, load_project
 from app.db import SessionDep
-from app.errors import PROBLEM_CONTENT_TYPE, NotImplementedProblem
+from app.errors import PROBLEM_CONTENT_TYPE
 from app.schemas.ideas import SimilarIdeas
 from app.schemas.research import (
     IdeaResearch,
@@ -45,7 +45,7 @@ from app.schemas.research import (
     ResearchSettings,
     ResearchSettingsUpdate,
 )
-from app.services import ideas, research
+from app.services import ideas, research, research_assignment
 
 router = APIRouter(tags=["research"])
 
@@ -237,6 +237,9 @@ _ASSIGNMENT_CONFLICTS = (
         "researcher change is audited as idea.researcher_change. Returns the whole panel. "
         "Last write wins. Session only: an API key gets 403 insufficient_scope (an "
         "assignment can open the idea to someone and would outlive the key). "
+        "403 outside_researcher_needs_admin (c25, product owner S1 a: in a private project "
+        "only project and platform admins may name someone without a role there; the owner "
+        "names people with a role). "
         "422 researcher_not_eligible (c23: a service account, the break-glass account, a "
         "deactivated or unknown user)." + _ASSIGNMENT_CONFLICTS
     ),
@@ -248,7 +251,12 @@ async def set_research_assignment(
     idea: IdeaParam,
     body: ResearchAssignmentUpdate,
 ) -> IdeaResearch:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await research_assignment.set_assignment(
+        session, principal, loaded.idea, loaded.project, loaded.resource, body
+    )
+    resource = await idea_resource(session, principal, loaded.idea, loaded.project)
+    return await research.idea_research(session, principal, loaded.idea, loaded.project, resource)
 
 
 @router.delete(
@@ -269,4 +277,7 @@ async def set_research_assignment(
     responses=problems(401, 403, 404, 409),
 )
 async def remove_researcher(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> None:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    await research_assignment.remove_researcher(
+        session, principal, loaded.idea, loaded.project, loaded.resource
+    )

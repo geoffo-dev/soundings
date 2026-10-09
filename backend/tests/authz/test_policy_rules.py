@@ -348,6 +348,20 @@ def _fits_everything(rule: Rule) -> Resource:
         admins_after_change=1,
         ai_available=True,
         assignee_roles=(ProjectRole.MEMBER,),
+        # Phase 8b: they are also the idea's live researcher (idea.release_researcher).
+        idea=IdeaFacts(
+            id=uuid4(),
+            status=IdeaStatus.SHORTLISTED,
+            owner_id=None if rule is Rule.IDEA_VOLUNTEER_OWNER else ME,
+            submitted_by_id=OTHER,
+            my_evaluation=(
+                None if rule not in {Rule.EVALUATION_SUBMIT_OWN} else EvaluatorState.INVITED
+            ),
+            researcher_id=ME,
+        ),
+        project=ProjectFacts(
+            PROJECT, ProjectVisibility.PRIVATE, research_step=ResearchStep.BEFORE_PROPOSAL
+        ),
     )
 
 
@@ -510,13 +524,23 @@ def test_idea_permissions_for_the_owner() -> None:
         "can_delete": False,
         "can_answer_research": False,  # the project's research step is off
         "invite_blocked_by_research": False,
+        # Phase 8b: nothing about the researcher while the step is off; the project shows.
+        "can_assign_researcher": False,
+        "can_assign_outside_researcher": False,
+        "can_hand_back_research": False,
+        "can_view_project": True,
     }
     stepped = resource(owner_id=ME, status=IdeaStatus.NEW).replace(
         project=ProjectFacts(
             PROJECT, ProjectVisibility.PRIVATE, research_step=ResearchStep.BEFORE_EVALUATION
         )
     )
-    assert idea_permissions(principal(), stepped).can_answer_research
+    flags = idea_permissions(principal(), stepped)
+    assert flags.can_answer_research
+    # Phase 8b: the owner assigns, but only people with a role in a private project (c25).
+    assert flags.can_assign_researcher
+    assert not flags.can_assign_outside_researcher
+    assert not flags.can_hand_back_research
 
 
 def test_idea_permissions_are_all_false_in_an_archived_project() -> None:
@@ -527,7 +551,9 @@ def test_idea_permissions_are_all_false_in_an_archived_project() -> None:
         admin.replace(project=ProjectFacts(PROJECT, ProjectVisibility.PRIVATE, archived=True)),
     )
 
-    assert not any(flags.model_dump().values())
+    # Every action flag; can_view_project says what may be read (Phase 8b).
+    assert flags.can_view_project
+    assert not any(flags.model_dump(exclude={"can_view_project"}).values())
 
 
 def test_idea_permissions_after_evaluation_closes() -> None:

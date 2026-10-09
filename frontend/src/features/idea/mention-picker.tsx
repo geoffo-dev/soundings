@@ -2,7 +2,7 @@ import { useCallback, useId, useMemo, useState, type KeyboardEvent, type RefObje
 import { flushSync } from 'react-dom'
 
 import { useDebouncedValue } from '@/api/search'
-import type { UserSearchResult } from '@/api/types'
+import type { UserRef, UserSearchResult } from '@/api/types'
 import { useUserSearch } from '@/api/users'
 import { Avatar } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
@@ -18,10 +18,16 @@ import { cn } from '@/lib/utils'
 const PICKER_LIMIT = 8
 
 export interface MentionOptions {
-  /** The idea's project slug: the picker offers people with a role in it (contract-phase3 §3.8). */
-  project: string
+  /**
+   * The idea's project slug: the picker offers people with a role in it (contract-phase3
+   * §3.8). Undefined (a guest researcher, who can't read the project's people): the people
+   * directory; mentioning someone who can't view the idea notifies nobody (Phase 8b §6.4).
+   */
+  project?: string
   /** Left out of the list (you don't mention yourself). */
   excludeUserId?: string
+  /** Phase 8b: also offered (the idea's researcher, who may have no role in the project). */
+  extra?: readonly UserRef[]
 }
 
 /**
@@ -54,9 +60,15 @@ export function useMentionPicker({
     { enabled },
   )
   const typed = query?.query.trim().toLowerCase() ?? ''
+  const extra = options?.extra
   const people = useMemo(
     () =>
-      (search.data?.items ?? [])
+      [
+        ...(search.data?.items ?? []),
+        ...(extra ?? [])
+          .filter((person) => !search.data?.items.some((found) => found.id === person.id))
+          .map((person) => ({ ...person, email: '', project_role: null }) as UserSearchResult),
+      ]
         .filter((person) => person.id !== options?.excludeUserId)
         // Narrow the last results to what is typed now, so Enter never picks a stale match
         // while the next search is still on its way (the server matches the same way).
@@ -66,7 +78,7 @@ export function useMentionPicker({
             person.email.toLowerCase().includes(typed),
         )
         .slice(0, PICKER_LIMIT),
-    [search.data, options?.excludeUserId, typed],
+    [search.data, extra, options?.excludeUserId, typed],
   )
   const loading = search.isFetching && people.length === 0
   // A space after "@word" with nobody matching: probably not a mention after all.

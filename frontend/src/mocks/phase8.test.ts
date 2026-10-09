@@ -197,7 +197,13 @@ describe('answers', () => {
     endSession()
     await signIn(USERS.dave) // a TOOL member who doesn't own TOOL-7
     const read = await api.GET('/api/v1/ideas/{idea}/research', idea('TOOL-7'))
-    expect(read.data?.permissions).toEqual({ can_answer: false, can_override: false })
+    expect(read.data?.permissions).toEqual({
+      can_answer: false,
+      can_override: false,
+      can_assign: false,
+      can_assign_outside_researcher: false,
+      can_hand_back: false,
+    })
     const refused = await rejection(
       api.DELETE('/api/v1/ideas/{idea}/research/items/{item_id}', {
         params: { path: { idea: 'TOOL-7', item_id: RESEARCH_ITEMS.toolElsewhere } },

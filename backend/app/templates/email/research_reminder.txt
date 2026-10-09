@@ -1,0 +1,11 @@
+{% extends "_layout.txt" %}
+{% block content %}
+{% if due_today %}Research is due today{% else %}Research is due {{ due_day }}{% endif %}
+
+
+A reminder that the research checklist still has {{ open_items }} to answer for:
+
+{% include "_idea.txt" %}
+
+Due {% if due_today %}today, {% endif %}{{ due }}
+{%- endblock %}

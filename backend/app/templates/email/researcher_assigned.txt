@@ -1,0 +1,18 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Please research this idea
+
+{{ actor }} asked you to do the research for:
+
+{% include "_idea.txt" %}
+{% if due %}
+
+Due {{ due }}
+{% endif %}
+
+Answer the research checklist on the idea's Research panel. When the required items are answered, the owner moves the idea on.
+{% if guest %}
+
+You'll see this idea, its comments and activity and its research checklist, not its scores, evaluations or proposal.
+{% endif %}
+{%- endblock %}

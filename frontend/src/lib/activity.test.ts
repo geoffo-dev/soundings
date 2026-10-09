@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ActivityItem } from '@/api/types'
 import { activityActor, describeActivity, describeEntry, groupActivity } from '@/lib/activity'
+import { formatDate } from '@/lib/dates'
 
 const person = (id: string, display_name: string) => ({
   id,
@@ -145,6 +146,8 @@ describe('describeActivity (Phase 8)', () => {
     to_status: 'evaluating',
     to_resolution: null,
     research_overridden: overridden,
+    from_label: null,
+    to_label: null,
   })
 
   it('names Research like any status, and says when an admin moved past it anyway', () => {
@@ -152,5 +155,57 @@ describe('describeActivity (Phase 8)', () => {
     expect(describeActivity(moved(true))).toBe(
       'moved it from Research to Evaluating without finishing research',
     )
+  })
+})
+
+describe('describeActivity (Phase 8b)', () => {
+  const bob = { id: 'u-bob', display_name: 'Bob Brown', avatar_url: null, initials: 'BB' }
+  const ann = { id: 'u-ann', display_name: 'Ann Lee', avatar_url: null, initials: 'AL' }
+  const base = { id: 'e-r', idea_id: 'i-1', actor: alice, created_at: '2026-10-08T10:00:00Z' }
+  const changed = (
+    from: typeof bob | null,
+    to: typeof bob | null,
+    handedBack = false,
+    actor = alice,
+  ): ActivityItem => ({
+    ...base,
+    actor,
+    type: 'researcher_changed',
+    from_researcher: from,
+    to_researcher: to,
+    handed_back: handedBack,
+  })
+
+  it('says who was asked to research, instead of whom, removed or handed back', () => {
+    expect(describeActivity(changed(null, bob))).toBe('asked Bob Brown to research')
+    expect(describeActivity(changed(ann, bob))).toBe('asked Bob Brown instead of Ann Lee to research')
+    expect(describeActivity(changed(bob, null))).toBe('removed Bob Brown as researcher')
+    expect(describeActivity(changed(bob, null, true, bob))).toBe('handed the research back')
+    expect(describeActivity(changed(null, alice))).toBe('took on the research')
+  })
+
+  it('words the research due date, and prefers the event’s own status labels', () => {
+    const due = (to: string | null): ActivityItem => ({
+      ...base,
+      type: 'research_due_date_changed',
+      from_due_at: null,
+      to_due_at: to,
+    })
+    expect(describeActivity(due('2026-10-09T16:00:00Z'))).toBe(
+      `set the research due date to ${formatDate('2026-10-09T16:00:00Z')}`,
+    )
+    expect(describeActivity(due(null))).toBe('removed the research due date')
+    const moved: ActivityItem = {
+      ...base,
+      type: 'status_changed',
+      from_status: 'new',
+      from_resolution: null,
+      to_status: 'research',
+      to_resolution: null,
+      research_overridden: false,
+      from_label: 'Triage',
+      to_label: 'Research',
+    }
+    expect(describeActivity(moved)).toBe('moved it from Triage to Research')
   })
 })

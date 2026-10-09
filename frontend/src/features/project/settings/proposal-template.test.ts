@@ -25,6 +25,7 @@ const TEMPLATE: ProposalTemplate = {
       key: 'market',
       title: 'Market & users',
       hint: 'Who buys it?',
+      position: 1,
       removed_at: '2026-10-01T10:00:00Z',
       proposal_count: 1,
     },

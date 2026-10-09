@@ -285,6 +285,15 @@ export type SimilarIdea = Schemas['SimilarIdea']
 export type SimilarIdeas = Schemas['SimilarIdeas']
 export type TemplateSectionIn = Schemas['TemplateSectionIn']
 export type AiEvaluationRequest = Schemas['AiEvaluationRequest']
+/* Phase 8b: the research assignment (docs/api/contract-phase8b.md) */
+export type ResearchAssignment = Schemas['ResearchAssignment']
+export type ResearchAssignmentUpdate = Schemas['ResearchAssignmentUpdate']
+export type ResearcherChangedActivity = Schemas['ResearcherChangedActivity']
+export type ResearchDueDateChangedActivity = Schemas['ResearchDueDateChangedActivity']
+export type ResearcherAssignedNotification = Schemas['ResearcherAssignedNotification']
+export type ResearchReminderNotification = Schemas['ResearchReminderNotification']
+export type WorkResearch = Schemas['WorkResearch']
+export type WorkResearchPage = Schemas['WorkResearchPage']
 /** "Move anyway" on a request the research gate guards (contract-phase8 §3.5). */
 export interface ResearchOverride {
   override_research?: boolean | null
