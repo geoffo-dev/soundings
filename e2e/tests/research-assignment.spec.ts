@@ -26,6 +26,7 @@ import {
 } from './support/fixtures'
 import {
   answerItem,
+  answerRequired,
   assignResearcher,
   CHECKLIST,
   GUEST_EMAIL_LINE,
@@ -618,4 +619,99 @@ test('RA-11 the team can @mention the outside researcher; the guest’s own pick
   await expect(picker).toContainText('No one on this idea matches “Farah”')
   await page.keyboard.press('Escape')
   await composer.fill('')
+})
+
+test('RA-12 past Research the guest reads the answers but no longer changes them (lead decision D1)', async ({
+  page,
+  api,
+}) => {
+  const alice = await api('alice')
+  const people = await newPeople(alice, ['nora'])
+  const { nora } = people
+  try {
+    const project = await researchTeam(alice, 'Research done', 'before_evaluation', {})
+    const idea = await alice.createIdea(project.slug, {
+      title: `Quiet room on the fourth floor ${project.key}`,
+      summary: 'Turn the small meeting room into a quiet room.',
+    })
+    await alice.setOwner(idea.key, 'alice')
+    await alice.changeStatus(idea.key, 'research')
+    await assignResearcher(alice, idea.key, nora.user, daysFromNow(3))
+    await answerItem(nora.api, idea.key, CHECKLIST.elsewhere, 'Facilities: nothing planned.')
+    const research = await answerRequired(alice, idea.key)
+    await alice.changeStatus(idea.key, 'evaluating')
+
+    await signInAs(page, nora)
+    await page.goto(`/ideas/${idea.key}`)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    // Past Research the panel starts folded for her (she has nothing left to do there).
+    const panel = page.getByRole('region', { name: 'Research' })
+    await panel.getByRole('button', { name: 'Research', exact: true }).click()
+    await expect(
+      panel.getByText(
+        'The idea has moved past Research, so only its owner or an admin can change these answers now.',
+      ),
+    ).toBeVisible()
+    await expect(page.getByText('Facilities: nothing planned.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Answer the checklist' })).toHaveCount(0)
+    await expect(page.getByRole('textbox', { name: CHECKLIST.elsewhere })).toHaveCount(0)
+    await expect(researcherLine(page).getByRole('button', { name: 'Hand back' })).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+    // The API says the same: 409 research_finished for her, the owner still edits.
+    const item = research.items.find((candidate) => candidate.title === CHECKLIST.elsewhere)
+    if (!item) throw new Error('no checklist item')
+    const refused = await nora.api.raw('PUT', `/ideas/${idea.key}/research/items/${item.item_id}`, {
+      answer: 'Rewritten after the move.',
+    })
+    expect(refused.status()).toBe(409)
+    expect((await refused.json()).code).toBe('research_finished')
+    expect((await ideaResearch(nora.api, idea.key)).permissions.can_answer).toBe(false)
+    await answerItem(alice, idea.key, CHECKLIST.elsewhere, 'Facilities, 9 Oct: still nothing.')
+  } finally {
+    await disposePeople(people)
+  }
+})
+
+test('RA-13 making an internal project private asks first, then ends outside researchers’ access (lead decision D2)', async ({
+  page,
+  api,
+}) => {
+  const alice = await api('alice')
+  const people = await newPeople(alice, ['nora'])
+  const { nora } = people
+  try {
+    const team = await researchTeam(alice, 'Going private', 'before_evaluation', {})
+    await alice.send('PATCH', `/projects/${team.slug}`, { visibility: 'internal' })
+    const idea = await alice.createIdea(team.slug, {
+      title: `Shared bikes for site visits ${team.key}`,
+      summary: 'Two pool bikes at reception.',
+    })
+    await alice.setOwner(idea.key, 'alice')
+    await assignResearcher(alice, idea.key, nora.user, daysFromNow(5))
+    expect((await alice.project(team.slug)).outside_researcher_count).toBe(1)
+    expect((await nora.api.get<{ key: string }>(`/ideas/${idea.key}`)).key).toBe(idea.key)
+
+    await signIn(page, 'alice')
+    await page.goto(`/p/${team.slug}/settings`)
+    await expect(heading(page, 'Project settings')).toBeVisible()
+    await page.getByRole('radio', { name: /Private/ }).check()
+    await page.getByRole('button', { name: /Save changes/ }).click()
+    const confirm = page.getByRole('alertdialog', { name: 'Make this project private?' })
+    await expect(confirm).toContainText(
+      '1 person researching an idea here isn’t in the project and will lose access to it.',
+    )
+    await confirm.getByRole('button', { name: 'Make private' }).click()
+    await expect(toast(page, 'Settings saved')).toBeVisible()
+
+    const gone = await nora.api.raw('GET', `/ideas/${idea.key}`)
+    expect(gone.status()).toBe(404)
+    const research = await ideaResearch(alice, idea.key)
+    expect(research.assignment.researcher).toBeNull()
+    expect(research.assignment.due_at).not.toBeNull() // the due date is the idea's
+    const [entry] = await alice.audit({ action: 'idea.researcher_change', target_id: idea.id })
+    expect(entry?.details).toMatchObject({ reason: 'made_private', from_user_id: nora.user.id })
+    expect((await alice.project(team.slug)).outside_researcher_count).toBe(0)
+  } finally {
+    await disposePeople(people)
+  }
 })

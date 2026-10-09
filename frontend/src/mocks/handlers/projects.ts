@@ -33,6 +33,7 @@ import {
 } from '@/mocks/http'
 
 import { isUuid, standing, uuidParam, viewProject } from '@/mocks/handlers/common'
+import { clearOutsideResearchers } from '@/mocks/researchers'
 
 const ROLES: ProjectRole[] = ['admin', 'member', 'viewer']
 const VISIBILITIES: ProjectVisibility[] = ['private', 'internal']
@@ -240,6 +241,9 @@ export const projectHandlers = [
     const project = requireManage(ctx)
     if (name !== undefined) project.name = name
     if (description !== undefined) project.description = description
+    if (body.visibility === 'private' && project.visibility === 'internal') {
+      clearOutsideResearchers(ctx.db, project, ctx.user) // lead decision D2
+    }
     if (body.visibility != null) project.visibility = body.visibility as ProjectVisibility
     if (typeof body.allow_volunteer_owners === 'boolean') {
       project.allow_volunteer_owners = body.allow_volunteer_owners

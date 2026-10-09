@@ -28,6 +28,7 @@ import {
   ideaResearch,
   mayAnswer,
   mayOverride,
+  researchFinishedFor,
   MAX_RESEARCH_ITEMS,
   openRequired,
   OVERRIDE_REASON_MAX_LENGTH,
@@ -270,6 +271,12 @@ function checkAnswer(ctx: RouteContext, idea: MockIdea): void {
   }
   if (idea.status === 'closed') conflict('idea_closed', 'This idea is closed.')
   ensureIdeaWritable(ctx.db, idea)
+  if (researchFinishedFor(ctx.db, idea, ctx.user)) {
+    conflict(
+      'research_finished',
+      "The research is finished: past Research only the idea's owner or an admin can change its answers.",
+    )
+  }
   if (projectOf(ctx.db, idea).research_step === 'off') {
     conflict('research_step_off', 'This project has no research step.')
   }

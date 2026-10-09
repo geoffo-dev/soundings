@@ -762,6 +762,9 @@ describe('audit sentences', () => {
     expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'left_project' })).toBe(
       'Bob Brown was removed as researcher of TOOL-12 (left the project)',
     )
+    expect(change({ from_user_id: 'u-bob', to_user_id: null, reason: 'made_private' })).toBe(
+      'Bob Brown was removed as researcher of TOOL-12 (project made private)',
+    )
   })
 
   it('falls back to the raw action for unknown actions', () => {

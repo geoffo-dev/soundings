@@ -57,6 +57,7 @@ import {
   canHandBack,
   isLiveResearcher,
   isResearchGuest,
+  outsideResearcherCount,
   researchedIdeas,
   summaryResearchDue,
   summaryResearcher,
@@ -584,6 +585,10 @@ export function projectDetail(db: MockDb, project: MockProject, user: MockUser):
     created_at: project.created_at,
     status_labels: statusLabels(project),
     rubric: activeCriteria(db, project.id).map(rubricCriterion),
+    // Lead decision D2: for project and platform admins, so the visibility change warns.
+    outside_researcher_count: isProjectAdmin(db, project, user)
+      ? outsideResearcherCount(db, project)
+      : null,
   }
 }
 

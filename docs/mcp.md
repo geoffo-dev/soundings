@@ -139,7 +139,7 @@ Soundings' AI agents only (section 5); people leave it out, and it is ignored fo
 |---|---|---|
 | `list_projects` | `read` | The projects you can see (inside the key's projects), with your role, the idea count and whether you can create ideas there. Archived ones with `include_archived`. |
 | `search_ideas` | `read` | Ideas by `query` (title or summary text, or a key), `project`, `status`, `owner` (`me`, `none`), `awaiting_my_evaluation`, `sort`; 20 a page (`limit` up to 50, `cursor`). Scores follow blind evaluation. |
-| `get_idea` | `read` | One idea: description, status, owner, evaluators (invited or submitted), the aggregate and others' evaluations when you may see them, your own evaluation, and the latest comments (`comment_limit`, 10 by default, 20 at most; long comments are cut, `truncated`). Phase 8: `research`, the project's research checklist with this idea's answers (`step`, `items` with `title`, `hint`, `required`, `answer`, who answered and when, `required_open`), or null while the project's research step is off. Phase 8b: `research.researcher`, the person asked to do the research (null: the owner does it; `display_name` is untrusted), and `research.due_at`; `research_guest: true` when you see the idea only as its researcher (below). |
+| `get_idea` | `read` | One idea: description, status, owner, evaluators (invited or submitted), the aggregate and others' evaluations when you may see them, your own evaluation, and the latest comments (`comment_limit`, 10 by default, 20 at most; long comments are cut, `truncated`). Phase 8: `research`, the project's research checklist with this idea's answers (`step`, `items` with `title`, `hint`, `required`, `answer`, who answered and when, `required_open`), or null while the project's research step is off. Phase 8b: `research.researcher`, the person asked to do the research (null: the owner does it; `display_name` is untrusted), and `research.due_at`; `research_guest: true` when you see the idea only as its guest researcher, or as an AI agent in a research run (below: the evaluation and proposal values are then masked). |
 | `get_rubric` | `read` | A project's criteria (by `project` or `idea`) with guidance, weights and which are inverted (a high Effort or Risk score is bad: score what you see). |
 | `get_proposal` | `read` | The idea's proposal, section by section in the order of **its project's template** (each with its `key`, `title`, `prompt` (the hint), `body_md` and `version`), or null if none has been started, and whether you may suggest text. |
 | `create_idea` | `write` | A new idea in a project, as you (status New; you watch it). |
@@ -174,6 +174,17 @@ name a private project its owner isn't in. Assigning the researcher is session o
 key, no tool); handing the research back takes a `write` key on the REST API
 (`DELETE /api/v1/ideas/{key}/research/assignment`). Soundings' AI agents are never
 assigned and never assign.
+
+**`research_guest: true` means the values are masked, not facts about the idea.** For a
+guest (and for an AI agent in an "Ask AI to research" run, below) `score` and `aggregate`
+are null with `score_hidden: true`, `evaluator_progress` is `{submitted: 0, total: 0}`,
+`evaluators` and `evaluations` are empty, `evaluation_count` is 0, `evaluation_open` is
+false and the evaluation dates are null, and `has_proposal` is false **even when the idea
+is being evaluated or has a proposal** (its `status` may well say `evaluating` or
+`proposal`). `last_activity_at` is the newest event the guest can see. So a client should
+read "no evaluators" or "no proposal" there as "not shown to you", never as "there are
+none". Past Research a guest reads the checklist answers but no longer changes them
+(REST: 409 `research_finished`); only the idea's owner or an admin does.
 
 Results are structured JSON (`structuredContent`, snake_case, with an `outputSchema` per
 tool) plus the same JSON as text. Errors are results with `isError: true`, text
@@ -254,6 +265,16 @@ matrix §3 rule 9):
   over, even while a newer run on the same idea is open. So two runs of one agent can't
   reach each other's ideas, and someone who reaches the agent directly in kagent can't
   use the key for anything else.
+- **What each kind of run reads.** An evaluate run and a section-draft run may call every
+  read tool on their idea (`list_projects`, `search_ideas`, `get_idea`, `get_rubric`,
+  `get_proposal`). A **research run reads the idea as its guest researcher would**,
+  because its note lands in the feed a guest researcher reads: `list_projects`,
+  `search_ideas` and `get_idea` only, `get_idea` and `search_ideas` with
+  `research_guest: true` and the masked values above (no evaluators or progress, no sign
+  of a proposal, the guest feed's `last_activity_at`); `get_rubric` and `get_proposal`
+  answer `ai_run_not_active`. So among the research assistant's runs only drafting reads
+  the proposal, and a note can never pass the proposal or the evaluation area on to a
+  guest.
 - **One write tool per kind of run.** An evaluate run may call `submit_evaluation` (each
   score with a non-empty `comment`, its rationale, and up to 5 `sources`, `{title, url}`
   with http/https URLs), a research run `add_research_note`, a section-draft run

@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
+import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { useShortcut } from '@/lib/shortcuts'
 
 import { FormActions, SettingsSection } from './settings-layout'
@@ -55,6 +56,16 @@ function validate(form: GeneralForm): Errors {
   return errors
 }
 
+/**
+ * Lead decision D2: making an internal project private ends the research of people who
+ * aren't in it, so the save asks first ("N people … will lose access").
+ */
+export function outsideResearchersWarning(count: number): string {
+  return count === 1
+    ? '1 person researching an idea here isn’t in the project and will lose access to it.'
+    : `${count} people researching ideas here aren’t in the project and will lose access.`
+}
+
 /** Only the fields that changed, so a save never overwrites someone else's edit elsewhere. */
 function changes(form: GeneralForm, saved: GeneralForm): ProjectUpdate {
   const body: ProjectUpdate = {}
@@ -80,6 +91,7 @@ export function GeneralSettings({ project, active }: { project: Project; active:
   const [form, setForm] = useState(saved)
   const [errors, setErrors] = useState<Errors>({})
   const [notice, setNotice] = useState<string | null>(null)
+  const [confirmPrivate, setConfirmPrivate] = useState(false)
 
   const body = changes(form, saved)
   const dirty = Object.keys(body).length > 0
@@ -123,8 +135,18 @@ export function GeneralSettings({ project, active }: { project: Project; active:
       if (first) document.getElementById(`project-${first}`)?.focus()
       return
     }
+    const outsiders = project.outside_researcher_count ?? 0
+    if (body.visibility === 'private' && saved.visibility === 'internal' && outsiders > 0) {
+      setConfirmPrivate(true)
+      return
+    }
+    submit()
+  }
+
+  const submit = () => {
     update.mutate(body, {
       onSuccess: (next) => {
+        setConfirmPrivate(false)
         const fresh = fromProject(next)
         setSaved(fresh)
         setForm(fresh)
@@ -133,6 +155,7 @@ export function GeneralSettings({ project, active }: { project: Project; active:
         if (body.name) void router.invalidate()
       },
       onError: (error) => {
+        setConfirmPrivate(false)
         const fields = isApiError(error) ? error.fieldErrors : {}
         if (Object.keys(fields).length > 0) setErrors(fields)
         else {
@@ -262,6 +285,19 @@ export function GeneralSettings({ project, active }: { project: Project; active:
           }}
         />
       </form>
+      <ConfirmDialog
+        open={confirmPrivate}
+        onOpenChange={setConfirmPrivate}
+        title="Make this project private?"
+        description={outsideResearchersWarning(project.outside_researcher_count ?? 0)}
+        confirmLabel="Make private"
+        tone="danger"
+        pending={update.isPending}
+        onConfirm={submit}
+      >
+        Their research assignments end now; their answers stay. Only project admins can ask someone
+        outside a private project to research an idea.
+      </ConfirmDialog>
       <ArchiveProject project={project} />
     </SettingsSection>
   )

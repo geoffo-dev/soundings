@@ -85,7 +85,13 @@ async def get_project(principal: PrincipalDep, session: SessionDep, slug: Projec
     "/{slug}",
     operation_id="update_project",
     summary="Update project settings",
-    description="Project admins. Omitted or null fields are unchanged.",
+    description=(
+        "Project admins. Omitted or null fields are unchanged. Phase 8b (lead decision D2): "
+        "making an internal project private ends the research assignments of researchers "
+        "without a role in it (outside_researcher_count of them; audited "
+        "idea.researcher_change with reason made_private, answers kept, no feed event or "
+        "notification)."
+    ),
     responses=problems(401, 403, 404, 422),
 )
 async def update_project(

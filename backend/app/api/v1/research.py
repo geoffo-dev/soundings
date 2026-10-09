@@ -67,7 +67,8 @@ _STEP_CONFLICT: dict[int | str, dict[str, Any]] = {
 _ANSWER_ERRORS = (
     " 404 when the item isn't an active item of the idea's project's checklist; 409 "
     "research_step_off while the project's step is off, idea_closed (c5), project_archived, "
-    "awaiting_moderation."
+    "awaiting_moderation; research_finished (c26, Phase 8b lead decision D1) for a "
+    "researcher who isn't the owner or an admin once the idea is past Research."
 )
 
 
@@ -144,8 +145,8 @@ async def get_idea_research(
     operation_id="answer_research_item",
     summary="Answer a research item",
     description=(
-        "idea.answer_research (the owner, the researcher and admins; c5): the item's answer "
-        "(plain text, "
+        "idea.answer_research (the owner, the researcher until Research ends, and admins; "
+        "c5): the item's answer (plain text, "
         "1-2,000 characters with at least one visible character; invisible characters "
         "such as zero-width spaces and bidi controls are removed), replacing any earlier "
         "one (last write wins; the first "
@@ -175,7 +176,8 @@ async def answer_research_item(
     operation_id="clear_research_item",
     summary="Clear a research item's answer",
     description=(
-        "idea.answer_research (the owner, the researcher and admins; c5): delete the item's "
+        "idea.answer_research (the owner, the researcher until Research ends, and admins; "
+        "c5): delete the item's "
         "answer "
         "(idempotent: an unanswered item stays unanswered). Clearing never moves the idea. "
         "Once the idea is past Research (in a status after it), a required item's answer "

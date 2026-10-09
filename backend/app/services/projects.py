@@ -184,11 +184,14 @@ async def project_detail(
         select(
             func.count().filter(viewable_ideas(principal)),
             func.count().filter(Idea.held_for == HoldReason.MODERATION),
+            # Lead decision D2: the people researching an idea here without a role in it
+            # (Project.outside_researcher_count), in the same statement.
+            func.count(func.distinct(Idea.researcher_id)).filter(_researched_from_outside(project)),
         )
         .select_from(Idea)
         .where(Idea.project_id == project.id)
     )
-    idea_count, held_count = counted.one()
+    idea_count, held_count, outside_count = counted.one()
     member_count = await db.scalar(
         select(func.count())
         .select_from(_roles)
@@ -210,9 +213,9 @@ async def project_detail(
         status_labels=StatusLabels(**resolved_labels(project.status_labels)),
         rubric=[_criterion_out(criterion) for criterion in await _active_criteria(db, project.id)],
         created_at=project.created_at,
-        outside_researcher_count=(
-            await _outside_researcher_count(db, project) if summary.permissions.can_manage else None
-        ),
+        outside_researcher_count=int(outside_count or 0)
+        if summary.permissions.can_manage
+        else None,
     )
 
 
@@ -329,19 +332,6 @@ def _researched_from_outside(project: Project) -> ColumnElement[bool]:
         ~exists().where(
             _roles.c.project_id == Idea.project_id, _roles.c.user_id == Idea.researcher_id
         ),
-    )
-
-
-async def _outside_researcher_count(db: AsyncSession, project: Project) -> int:
-    """``Project.outside_researcher_count``: the people behind :func:`_researched_from_outside`
-    (one statement over ``ix_ideas_researcher_id_status``'s rows of the project)."""
-    return int(
-        await db.scalar(
-            select(func.count(func.distinct(Idea.researcher_id))).where(
-                _researched_from_outside(project)
-            )
-        )
-        or 0
     )
 
 

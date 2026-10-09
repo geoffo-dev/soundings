@@ -675,9 +675,16 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   to do" and Similar ideas add `researched_ideas()`. In internal projects an outside
   researcher keeps the non-member view and gains answering, commenting and Hand back. In
   nested `EXISTS` subqueries use `correlate_except` (an uncorrelated `ideas` once counted
-  any idea's answer). Notifications `researcher_assigned` ("Asked to research", once per
-  idea, person and local day) and `research_reminder` (2 days before and on the day at the
-  digest hour while research is to do). SPA: `features/research/research-assignment.tsx`
+  any idea's answer). Notifications `researcher_assigned` ("Asked to research", one per
+  assignment) and `research_reminder` (2 days before and on the day at the
+  digest hour while research is to do). "Asked to research" emails wait
+  `RESEARCHER_EMAIL_HOLD` (5 min, `app/notifications/fanout.py`) when the idea asked
+  someone less than 5 minutes before (and at most `RESEARCHER_EMAIL_CAP`, 20, per person
+  an hour): a test that reassigns within 5 minutes fast-forwards the outbox row and its
+  `send_email` job (`test_phase8b_acceptance.py`). A list that may show a guest's idea
+  sorts `updated` with `Sort(token, guests=True)` (`app/services/board.py`: on
+  `visible_last_activity`, the guest feed's newest event), as MCP `search_ideas` does;
+  project-scoped lists keep the column. SPA: `features/research/research-assignment.tsx`
   (the line, the picker dialog, "Start research", Hand back), `features/work/research-to-
   do.tsx`; `IdeaPermissions.can_view_project` false = the guest's page (Overview only,
   breadcrumb text); any write refused with 404 re-checks the idea on screen

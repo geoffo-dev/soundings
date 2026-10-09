@@ -161,6 +161,11 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'This project has no research step',
     description: 'A project admin can turn it on in the project’s settings.',
   },
+  research_finished: {
+    title: 'The research is finished',
+    description:
+      'The idea has moved past Research, so only its owner or an admin can change the answers.',
+  },
   idea_has_owner: { title: 'Someone already owns this idea' },
   evaluation_closed: {
     title: 'Evaluation is closed',

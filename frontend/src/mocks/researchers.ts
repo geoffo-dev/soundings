@@ -183,7 +183,7 @@ export function clearAssignment(
   db: MockDb,
   idea: MockIdea,
   actor: MockUser | null,
-  reason: 'deactivated' | 'closed' | 'step_off' | 'left_project',
+  reason: 'deactivated' | 'closed' | 'step_off' | 'left_project' | 'made_private',
 ): void {
   if (!idea.researcher_id) return
   const from = idea.researcher_id
@@ -197,6 +197,29 @@ export function clearAssignment(
     { from_user_id: from, to_user_id: null, reason, outside_project: false },
     idea.project_id,
   )
+}
+
+/**
+ * Lead decision D2: making an internal project private ends the assignments of
+ * researchers without a role there (audited `made_private`, answers kept, no event).
+ */
+export function clearOutsideResearchers(db: MockDb, project: MockProject, actor: MockUser): void {
+  for (const idea of db.ideas) {
+    if (idea.project_id !== project.id || !idea.researcher_id) continue
+    if (!hasRole(db, project.id, idea.researcher_id)) {
+      clearAssignment(db, idea, actor, 'made_private')
+    }
+  }
+}
+
+/** `Project.outside_researcher_count`: people researching an idea here without a role. */
+export function outsideResearcherCount(db: MockDb, project: MockProject): number {
+  const people = new Set<string>()
+  for (const idea of db.ideas) {
+    if (idea.project_id !== project.id || !idea.researcher_id) continue
+    if (!hasRole(db, project.id, idea.researcher_id)) people.add(idea.researcher_id)
+  }
+  return people.size
 }
 
 /** Who researches an idea of a private project while holding a role there (S1 b). */

@@ -35,6 +35,7 @@ import {
   userRefById,
 } from './domain'
 import {
+  awaitsResearch,
   canAssignOutsideResearcher,
   canAssignResearcher,
   canHandBack,
@@ -146,11 +147,27 @@ export function summaryResearch(db: MockDb, idea: MockIdea): ResearchProgress | 
  */
 export function mayAnswer(db: MockDb, idea: MockIdea, user: MockUser): boolean {
   if (user.is_service_account) return false
+  return answersAsOwnerOrAdmin(db, idea, user) || isLiveResearcher(db, idea, user)
+}
+
+/** Phase 8's answerers: project and platform admins, the owner while a member or admin. */
+function answersAsOwnerOrAdmin(db: MockDb, idea: MockIdea, user: MockUser): boolean {
   const project = projectOf(db, idea)
   if (isProjectAdmin(db, project, user)) return true
-  if (isLiveResearcher(db, idea, user)) return true
   const role = effectiveRole(db, project.id, user.id)
   return idea.owner_id === user.id && (role === 'member' || role === 'admin')
+}
+
+/**
+ * c26 (lead decision D1): a researcher who isn't the owner or an admin answers only
+ * while the idea still awaits research; past Research it is 409 `research_finished`.
+ */
+export function researchFinishedFor(db: MockDb, idea: MockIdea, user: MockUser): boolean {
+  return (
+    !answersAsOwnerOrAdmin(db, idea, user) &&
+    isLiveResearcher(db, idea, user) &&
+    !awaitsResearch(projectOf(db, idea), idea.status)
+  )
 }
 
 /** `idea.research_override`: project and platform admins, in a session. */
@@ -163,6 +180,7 @@ export function canAnswer(db: MockDb, idea: MockIdea, user: MockUser): boolean {
   const project = projectOf(db, idea)
   return (
     mayAnswer(db, idea, user) &&
+    !researchFinishedFor(db, idea, user) &&
     project.research_step !== 'off' &&
     idea.status !== 'closed' &&
     project.archived_at === null &&

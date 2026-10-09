@@ -497,3 +497,26 @@ def test_due_at_returns_utc_at_the_schema_level() -> None:
         assert parsed == when
         assert parsed.utcoffset() == timedelta(0)
         assert parsed.tzinfo is UTC
+
+
+# --- D4: an explicitly assigned owner stays the researcher when the owner changes ---------
+async def test_an_owner_asked_by_name_stays_the_researcher_when_the_idea_changes_owner(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    await set_step(db_session, team.project, ResearchStep.BEFORE_EVALUATION)
+    idea = await make_idea(db_session, team.project, status=S.RESEARCH, owner=team.owner)
+    implicit = await make_idea(db_session, team.project, status=S.RESEARCH, owner=team.owner)
+    admin = await api(team.admin)
+    ok(await assign(admin, key_of(team.project, idea), team.owner, DUE))  # asked by name
+
+    for target in (idea, implicit):
+        ok(await admin.put(f"/ideas/{target.id}/owner", {"user_id": str(team.member.id)}))
+
+    assert await _researcher(db_session, idea) == team.owner.id
+    panel = ok(await (await api(team.owner)).get(f"/ideas/{idea.id}/research"))
+    assert panel["assignment"]["researcher"]["id"] == str(team.owner.id)
+    assert panel["permissions"]["can_answer"] is True  # +Rsr, not the owner overlay now
+    # Nobody assigned: the new owner does the research.
+    assert await _researcher(db_session, implicit) is None
+    new_owner = ok(await (await api(team.member)).get(f"/ideas/{implicit.id}/research"))
+    assert new_owner["permissions"]["can_answer"] is True

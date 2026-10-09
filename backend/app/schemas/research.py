@@ -486,8 +486,10 @@ class IdeaResearchItem(ResponseModel):
 class ResearchPermissions(ResponseModel):
     can_answer: bool = Field(
         description=(
-            "idea.answer_research: answer, edit and clear items (the owner, the researcher "
-            "(Phase 8b) and admins)."
+            "idea.answer_research: answer, edit and clear items (the owner, admins and, "
+            "Phase 8b, the researcher while the idea is in Research or a status before it: "
+            "false for a researcher who isn't the owner or an admin once it is past "
+            "Research, c26)."
         )
     )
     can_override: bool = Field(

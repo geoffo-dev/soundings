@@ -36,7 +36,7 @@ and the migration.
 | Who assigns | `idea.assign_researcher`: the idea's owner, project admins, platform admins (c5; c23 for the person named); **in a session only** (an API key can remove, never assign: §4.7). The researcher hands it back with `idea.release_researcher`. Only while the project's research step is on and the idea open; **closing the idea or turning the step off ends the assignment** (§3.7). |
 | Who can be researcher | Any **active person**: never a service account (AI agent), the break-glass account or a deactivated user (422 `researcher_not_eligible`). Deactivation clears the assignment (so an account `soundings anonymise-user` handles, always deactivated first, holds none). |
 | Researcher access | Members and internal non-members keep their view and gain answering, commenting and "Hand back" on that idea (**+Rsr**). A person without a role in a **private** project gets **column R** for that idea only: overview, feed (without the evaluation events) and comments, the research panel, Similar ideas; never scores, the evaluation, the proposal, the AI panel or anything of the project. Ends when unassigned, deactivated, the idea deleted or closed, or the step turned off; suspended while the project is archived. |
-| Answering | `idea.answer_research` widens to the researcher (+Rsr). The gate and "Move anyway" are unchanged (a researcher can't override). |
+| Answering | `idea.answer_research` widens to the researcher (+Rsr) while the idea still awaits research (c26, §17: past Research 409 `research_finished` for them). The gate and "Move anyway" are unchanged (a researcher can't override). |
 | Notifications | "Asked to research" (`researcher_assigned`) and "Research reminder" (`research_reminder`): inbox, email per preference (default immediate), digest, unsubscribe; never score data. |
 | My work | "Research to do" (the researcher's, else the owner's ideas still awaiting research with a required item open), `WorkCounts.research_to_do` / `research_overdue`, `GET /me/research-to-do`. Owned groups hold their first **10** ideas (D). |
 | UI | "Research: <name> · due <date>" on the idea, a person picker over everyone active (people outside the project marked), "Hand back", the "Start research" dialog, the researcher's avatar on Research cards, a working shell for a guest with no projects. |
@@ -175,6 +175,7 @@ it again).
 | **Closing the idea** (`change_idea_status` to Closed, any resolution; review S8) | that idea's | `closed` |
 | **Turning the project's research step off** (`replace_research_settings` with `step: off`; moving the step keeps them) | every assignment in the project | `step_off` |
 | **Losing one's role in a private project** (§17: the product owner's answer to review S1 (b)) | that person's assignments in the project | `left_project` |
+| **Making an internal project private** (`update_project {visibility: private}`; §17, the lead's D2) | the project's assignments whose researcher has no role in it | `made_private` |
 
 - **`soundings anonymise-user`** runs on deactivated accounts only, so the account holds no
   assignment by then (review C3: nothing to clear; a test pins it). Its answers stay under
@@ -217,7 +218,7 @@ them (an import-time guard ties the two; until then `PHASE8B_ACTIVITY_TYPES`).
 |---|---|
 | The researcher joins the project | They hold a role: their column (Mem, Vwr, PAd) + Rsr instead of R. |
 | A member researcher loses their role in a private project (an admin removes them or a group grant, a group membership or the group goes, a sign-in group sync) | **Cleared** (§17, the product owner's answer to review S1 (b)): audited `left_project`, answers kept, no feed event or notification; they never become R through it. |
-| The project's visibility changes | Private → internal: R becomes NMi + Rsr; internal → private: a non-member researcher becomes R. |
+| The project's visibility changes | Private → internal: R becomes NMi + Rsr. Internal → private: a researcher without a role there is **cleared** (§17, the lead's D2: audited `made_private`, answers kept, no feed event or notification), so nobody becomes R by it; project admins see how many people that is first (`Project.outside_researcher_count`). |
 | The owner changes | Nothing (an explicit researcher stays; with nobody assigned the new owner does the research). |
 | The idea is closed, or the project's step turned off | Cleared (§3.5, review S8): nobody is assigned; reopening or turning the step on again doesn't bring it back. |
 | The project is archived | Suspended, not live (c24): no R access (404), no +Rsr, no reminders, not in My work; unarchiving brings it back (archiving freezes the whole project). |
@@ -284,7 +285,7 @@ with scores, so being researcher there grants no guest view, only the three acti
 | `evaluation_due_at`, `evaluation_closed_at` | null |
 | `evaluation_open` | false |
 | `held_for` | null (a held idea has no researcher) |
-| `permissions` | `can_comment`, `can_answer_research`, `can_hand_back_research` true while live; `can_view_project` **false**; every other flag false (`can_vote`, `can_change_status`, `can_assign_researcher` …) |
+| `permissions` | `can_comment`, `can_hand_back_research` true while live, `can_answer_research` while live and the idea is in Research or a status before it (c26, §17); `can_view_project` **false**; every other flag false (`can_vote`, `can_change_status`, `can_assign_researcher` …) |
 
 Every `IdeaSummary` (and MCP `McpIdeaSummary`) built for R (MCP `search_ideas`, the only
 list that returns summaries of a guest's idea, §4.5) has the same score and evaluation
@@ -293,7 +294,7 @@ the idea's project to be one the caller can view, and `evaluator_progress` and
 `my_evaluation` come only with `evaluation.view_own` (its SQL form: the project is one the
 caller can view). MCP `get_idea` / `search_ideas` give `has_proposal: false` and no
 proposal permission without `proposal.view`. `get_idea_research` is the same for R as for
-anyone (it holds no score data) with `permissions {can_answer: true, can_override: false,
+anyone (it holds no score data) with `permissions {can_answer: true (until Research ends, c26), can_override: false,
 can_assign: false, can_hand_back: true}` and `gate_status_label` (R can't read the
 project's labels).
 
@@ -376,6 +377,11 @@ the inbox disappear from it; queued emails about the idea are cancelled at send 
   `create_idea`, `propose_proposal_section`, `submit_evaluation` → `not_found`;
   `list_projects` leaves the project out. `McpResearch` gains `researcher` (`McpUser`,
   the display name untrusted) and `due_at` for everyone. MCP never reaches beyond REST.
+- **Agents' research runs read as the guest would** (Phase 8b guest review M1; role matrix
+  c22): their note lands in the feed R reads, so a research run's agent reads only
+  `list_projects`, `search_ideas` and `get_idea` (in the guest shape, `research_guest:
+  true`); `get_rubric` and `get_proposal` are `ai_run_not_active` there. Evaluate and
+  drafting runs read as before (drafting is the research assistant's only proposal read).
 - **Agents** never assign (REST is refused to them, c22; they are never owners or admins)
   and are never assigned (c23).
 
@@ -418,8 +424,14 @@ the inbox disappear from it; queued emails about the idea are cancelled at send 
   column, guest included, while live)**, project admins and platform admins; c5; idea
   write; `research_step_off`. `ResearchPermissions.can_answer` / `IdeaPermissions.can_answer_research`
   follow.
-- **Phase 8's M1 rule stays:** once the idea is past Research a required item's answer
-  can be edited but not cleared (409 `research_answer_required`), for the researcher too.
+- **Phase 8's M1 rule stays** for the owner and admins: once the idea is past Research a
+  required item's answer can be edited but not cleared (409 `research_answer_required`).
+- **Past Research the researcher stops** (§17, the lead's D1, condition c26): a researcher
+  who isn't the owner (with a member or admin role) or a project or platform admin
+  answers, edits and clears only while the idea is in Research or a status before it;
+  afterwards every answer, edit or clear of theirs is **409 `research_finished`** (session
+  or key) and `can_answer_research` / `can_answer` are false for them. The SPA shows them
+  the answers read only, with one line saying why.
 - **The gate and "Move anyway" are unchanged.** A researcher can't override
   (`idea.research_override` stays project and platform admins', session only) and can't
   move the idea (`idea.change_status` is the owner's and admins'): when the checklist is
@@ -434,7 +446,7 @@ the inbox disappear from it; queued emails about the idea are cancelled at send 
 
 | Type | Trigger | Candidate recipients | Type condition (at creation and at send) | Payload | `dedupe_key` |
 |---|---|---|---|---|---|
-| `researcher_assigned` ("Asked to research") | `researcher_changed` with a new researcher | the new researcher (not when they are the actor) | *R* is the idea's researcher now and the assignment is live (c24) | `{due_at}` (the research due date after the request, may be null) | `researcher_assigned:<idea id>:<local date>` (review S6: at most one per idea, person and day in `SOUNDINGS_TIMEZONE`) |
+| `researcher_assigned` ("Asked to research") | `researcher_changed` with a new researcher | the new researcher (not when they are the actor) | *R* is the idea's researcher now and the assignment is live (c24) | `{due_at, assigned_at}` (the research due date after the request, may be null; `research_assigned_at` of this assignment: the inbox, the digest and the send-time check keep only the live one) | `researcher_assigned:<event id>`: one per assignment (§17: replaces review S6's once per idea, person and day, which swallowed a real re-assignment) |
 | `research_reminder` | the hourly reminder scan (§6.3), no event | the researcher, or the owner while nobody is assigned | *R* does the research, may answer it (`idea.answer_research`, review S3) and it is still to do (`research_to_do`, §7) with a due date; the due date is still `due_at`; *now* < `due_at` | `{due_at, days_before, as_owner}` | `research_reminder:<idea id>:<local due date>:<days_before>` |
 
 Both: in-app inbox items, email per the recipient's preference (default **immediate**,
@@ -463,7 +475,11 @@ Phase 3's types, for a researcher (review S3 and S5):
 ### 6.2 "Asked to research"
 
 - From the fan-out of `set_research_assignment` (its `researcher_changed` event, after
-  the request's last write, so `due_at` is the final one). Assigning yourself notifies
+  the request's last write, so `due_at` is the final one). **Throttled** (§17, the lead's
+  D3): when the idea asked someone less than 5 minutes before, the email waits 5 minutes
+  (`RESEARCHER_EMAIL_HOLD`; the send-time check cancels it if that assignment is over), and
+  one person's requests email at most 20 people per rolling hour (`RESEARCHER_EMAIL_CAP`;
+  beyond: in-app only, like mentions). Assigning yourself notifies
   nobody; reassigning to someone else notifies the new researcher only; removal and hand
   back notify nobody.
 - Inbox: `ResearcherAssignedNotification {due_at}` ("Alice asked you to research TOOLS-12
@@ -598,7 +614,8 @@ Phase 3's types, for a researcher (review S3 and S5):
 | `search_users` | + `include_non_members` query parameter. |
 | MCP `McpResearch` | + `researcher: McpUser \| null` (untrusted name), + `due_at`. |
 | MCP `McpIdeaDetail` | + `research_guest`. |
-| `DueAt` | moved to `app.schemas.base` (re-exported by `app.schemas.ideas`); unchanged. |
+| `DueAt` | moved to `app.schemas.base` (re-exported by `app.schemas.ideas`); returns the value in UTC (§17, review N1; the API shape is unchanged). |
+| `Project` | + `outside_researcher_count` (§17, the lead's D2: project and platform admins; null for everyone else). |
 | `ideas` (model, migration 0015) | + `ck_ideas_researcher_assigned_at`: `researcher_id IS NULL OR research_assigned_at IS NOT NULL` (review C5). |
 
 New response fields have server defaults (nobody, false, `can_view_project` true, empty
@@ -645,8 +662,10 @@ still marks them required (generated types have no optional response fields).
   the same person serialise (never an inactive researcher), and deactivation against
   `replace_rubric` on the same project doesn't deadlock (`tests/ideas/test_lock_order.py`,
   review S4).
-- **Answering:** the researcher in every column answers and clears (M1 still refuses
-  clearing a required answer past Research); can't override; can't move the idea.
+- **Answering:** the researcher in every column answers and clears while the idea is in
+  Research or a status before it, and past Research gets 409 `research_finished` (§17, the
+  lead's D1; the owner and admins keep M1: edit, never clear, a required answer); can't
+  override; can't move the idea.
 - **Notifications:** "Asked to research" to the new researcher only (not the actor, not on
   removal; once per idea, person and local day however often they are assigned, review
   S6), its email (the guest line only for column R, review S2; link; no score data),
@@ -745,7 +764,7 @@ Through the same services a person uses; keep `dev/README.md`'s who's who cohere
 
 | Action | When | Target, details | SPA |
 |---|---|---|---|
-| `idea.researcher_change` | the researcher was assigned, changed, removed or handed back, or cleared by deactivating them, closing the idea or turning the project's step off (§3.5) | idea (project set); `from_user_id`, `to_user_id`, `reason` (`assigned`, `removed`, `handed_back`, `deactivated`, `closed`, `step_off`, `left_project` (§17)), `outside_project` (the new researcher has no role in the project), `rule` | "asked {user} to research {idea}" (with "outside the project" when `outside_project`), "removed {user} as researcher of {idea}", "{user} handed back the research of {idea}", "{user} was removed as researcher of {idea} (account deactivated)", "… (idea closed)", "… (research step turned off)"; category Ideas |
+| `idea.researcher_change` | the researcher was assigned, changed, removed or handed back, or cleared by deactivating them, closing the idea or turning the project's step off (§3.5) | idea (project set); `from_user_id`, `to_user_id`, `reason` (`assigned`, `removed`, `handed_back`, `deactivated`, `closed`, `step_off`, `left_project`, `made_private` (§17)), `outside_project` (the new researcher has no role in the project), `rule` | "asked {user} to research {idea}" (with "outside the project" when `outside_project`), "removed {user} as researcher of {idea}", "{user} handed back the research of {idea}", "{user} was removed as researcher of {idea} (account deactivated)", "… (idea closed)", "… (research step turned off)", "… (left the project)", "… (project made private)"; category Ideas |
 
 It needs, in the SPA's same change: its phrase, its category, the mock list and the
 exhaustive `Record` in `audit-phrases.test.ts`. The research due date isn't audited (the
@@ -756,6 +775,7 @@ feed records it, like evaluation due dates).
 | Code | Status | When |
 |---|---|---|
 | `researcher_not_eligible` | 422 | `set_research_assignment` names a service account, the break-glass account, a deactivated or unknown user (c23). |
+| `research_finished` | 409 | `answer_research_item` / `clear_research_item` by a researcher who isn't the owner or an admin once the idea is past Research (c26, §17: the lead's D1). |
 | `outside_researcher_needs_admin` | 403 | `set_research_assignment` by the idea's owner (not a project or platform admin) names someone without a role in a **private** project (c25, §17). |
 
 `research_step_off`, `idea_closed`, `project_archived`, `awaiting_moderation` keep their
@@ -835,11 +855,60 @@ The product owner answered the review's open questions ([decisions](../decisions
   change and the sync lock the user row (`group_sync.lock_user`), which the assignment's
   `FOR SHARE` on the new researcher waits for; then the cleared ideas' projects
   `FOR KEY SHARE` and the ideas `FOR UPDATE`, each in id order. A project made
-  private later (internal → private) ends nothing: nobody lost a role, and the "not in
-  this project" marker shows the outsiders.
+  private later (internal → private) ended nothing at first (nobody lost a role); the
+  lead's D2 (below) changed that.
 - **S8, accepted as built:** closing the idea or turning the research step off clears the
   assignment (audited `closed` / `step_off`, the due date kept); reopening doesn't bring
   it back; archiving only suspends it (§3.5, §3.7).
+
+### 2026-10-09 · Review fixes and the lead's decisions on the leftovers (backend, frontend)
+
+The Phase 8b code, guest-access and UX reviews' fixes changed behaviour without a schema
+change; the lead then decided what they left open
+([decisions](../decisions.md#phase-8b-review-leftovers-lead-2026-10-09), D1-D5):
+
+- **"Asked to research" (code review M1, L2; D3):** `dedupe_key`
+  `researcher_assigned:<event id>` (one per assignment) and payload `{due_at,
+  assigned_at}` (§6.1); the inbox, the digest and the send-time check keep only the live
+  assignment's request. The email waits `RESEARCHER_EMAIL_HOLD` (5 minutes) when the idea
+  asked someone less than 5 minutes before; one person's requests email at most
+  `RESEARCHER_EMAIL_CAP` (20) people per rolling hour, beyond that in-app only (§6.2).
+- **Research runs read as the guest would (guest review M1):** c22's reads depend on the
+  run kind; a research run reads `list_projects`, `search_ideas` and `get_idea` in the
+  guest shape, `get_rubric` / `get_proposal` are `ai_run_not_active` (§4.7; role matrix
+  c22; [mcp.md](../mcp.md)). The guest's `last_activity_at` is the newest event of the
+  guest feed (guest review L1).
+- **Due dates in UTC (code review N1):** stored, answered and put in the feed in UTC; since
+  D5 `DueAt` itself returns UTC (the API shape is unchanged).
+- **`project.update` audit details** gained `outside_researchers` when a change makes the
+  project private (code review L1): first the number of outside researchers who kept their
+  idea; since D2 the number of research assignments the change ended.
+- **D1, research finished (guest review L2, code review C1):** past Research, a researcher
+  who isn't the idea's owner (with a member or admin role) or a project or platform admin
+  can't answer, edit or clear: **409 `research_finished`** (new condition **c26** on the
+  +Rsr overlay of `idea.answer_research`, role matrix table L; sessions and keys alike),
+  and `IdeaPermissions.can_answer_research` / `ResearchPermissions.can_answer` are false
+  for them (§5). The owner and admins keep Phase 8's M1 rule. Check order unchanged: 404
+  (the item) → 403 → 409 (`project_archived`, `awaiting_moderation`, `research_finished`)
+  → `research_step_off` → `research_answer_required`.
+- **D2, made private (code review L1, guest review L4):** `update_project` changing
+  `visibility` from internal to private ends, in its transaction (the project is held
+  `FOR UPDATE`; the ideas are locked `FOR UPDATE` in id order by the same clear as §3.5),
+  every assignment of the project whose researcher has no role there: audited
+  `idea.researcher_change` with `reason: made_private` (actor: the admin), answers and the
+  due date kept, no feed event or notification (§3.5, §3.7, §13). New field, additive:
+  **`Project.outside_researcher_count`** (`get_project`, `update_project`; project and
+  platform admins, `project.edit_settings`; null for everyone else): the people researching
+  an open idea there without a role. The SPA's visibility change asks first ("N people
+  researching ideas here aren't in the project and will lose access") when N > 0. "No
+  role" is role-based as in c25 and S1 (b), so a platform admin without a role counts too.
+- **D4:** an explicitly assigned owner stays the researcher when the idea changes owner
+  (§3.7, unchanged).
+- `make gen-api` (additive only): `Project.outside_researcher_count`; descriptions of
+  `answer_research_item`, `clear_research_item`, `update_project`,
+  `IdeaPermissions.can_answer_research` and `ResearchPermissions.can_answer`. MCP
+  `McpIdeaDetail.research_guest`'s description now names the research runs and the masked
+  values (`score` and `aggregate` null, `evaluator_progress` 0/0, `has_proposal` false).
 
 ## 18. Contract review (2026-10-08)
 

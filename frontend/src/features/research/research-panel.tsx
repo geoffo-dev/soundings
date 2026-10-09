@@ -6,6 +6,7 @@ import {
   CircleCheck,
   CloudOff,
   FileSearch,
+  Lock,
   Sparkles,
 } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
@@ -55,7 +56,7 @@ export const answerFieldId = (itemId: string) => `research-answer-${itemId}`
  * people who answer (the owner and admins); folded otherwise (UX review m2).
  */
 export function ResearchPanel() {
-  const { ideaKey, idea, guest, researchStep: step, statusLabel } = useIdeaPage()
+  const { ideaKey, idea, guest, me, researchStep: step, statusLabel } = useIdeaPage()
   const research = useIdeaResearch(ideaKey, { enabled: step !== 'off' })
   const [open, setOpen] = useState(
     () =>
@@ -89,6 +90,16 @@ export function ResearchPanel() {
   // Phase 8b: the label comes with the panel (a guest researcher can't read the project).
   const gateLabel =
     data?.gate_status_label ?? (data?.gate_status ? statusLabel(data.gate_status) : null)
+  // Both carry idea.answer_research; the idea is read again more often (a guest's on
+  // every focus), so either saying no makes the answers read only.
+  const canAnswer = Boolean(data?.permissions.can_answer) && idea.permissions.can_answer_research
+  // Lead decision D1: past Research the researcher (not the owner or an admin) reads the
+  // answers but no longer changes them; say why instead of just hiding the buttons.
+  const finishedForMe =
+    data !== undefined &&
+    !canAnswer &&
+    data.assignment.researcher?.id === me.id &&
+    gatedStatuses(step).includes(idea.status)
   return (
     <section
       id="research"
@@ -138,13 +149,20 @@ export function ResearchPanel() {
         ) : (
           <>
             <ResearcherLine />
+            {finishedForMe && (
+              <p className="flex items-start gap-1.5 text-sm text-muted">
+                <Lock aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                The idea has moved past Research, so only its owner or an admin can change these
+                answers now.
+              </p>
+            )}
             {data && data.items.length > 0 ? (
               <ol className="flex flex-col divide-y divide-subtle" aria-label="Research checklist">
                 {data.items.map((item) => (
                   <ResearchItemRow
                     key={item.item_id}
                     item={item}
-                    canAnswer={data.permissions.can_answer}
+                    canAnswer={canAnswer}
                     // Past Research a required answer is kept: edit it, never clear it
                     // (code review M1: answers that let the idea through stay on record).
                     keepAnswer={item.required && gatedStatuses(step).includes(idea.status)}

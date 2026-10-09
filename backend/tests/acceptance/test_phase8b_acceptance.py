@@ -1105,7 +1105,9 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
         )
     assert (await nora.get(f"/ideas/{key}/research"))["permissions"]["can_answer"] is False
     # She still sees it (assigned, open, the step on), and her inbox has the move.
-    assert_guest_shape(await nora.get(f"/ideas/{key}"))
+    assert_guest_shape(
+        await nora.get(f"/ideas/{key}"), granted=GUEST_GRANTS - {"can_answer_research"}
+    )
     mention = f"@[Nora Quinn](user:{nora.id})"
     await dave.send(
         "POST", f"/ideas/{key}/comments", {"body_md": f"{mention} thanks, great work"}, 201
@@ -1175,7 +1177,10 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
     assert [m["Subject"] for m in farah_mail] == [
         f'[{key}] Please research "{TITLE}" by {day(due)}'
     ]
-    assert_guest_shape(await farah.get(f"/ideas/{key}"))
+    # Past Research (Evaluating): a guest reads the answers, no longer changes them (D1).
+    assert_guest_shape(
+        await farah.get(f"/ideas/{key}"), granted=GUEST_GRANTS - {"can_answer_research"}
+    )
 
     # --- Farah hands it back; asked again, her inbox holds the live request only (L2) ------
     await farah.send("DELETE", f"/ideas/{key}/research/assignment", status=204)

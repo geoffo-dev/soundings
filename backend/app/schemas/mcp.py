@@ -507,10 +507,16 @@ class McpIdeaDetail(McpIdeaSummary):
     research_guest: bool = Field(
         default=False,
         description=(
-            "Phase 8b: you see this idea only as its researcher (you have no role in its "
-            "private project): the evaluation fields are empty (evaluators, my_evaluation, "
-            "aggregate, evaluations, evaluation_count 0, score_hidden true), has_proposal is "
-            "false, and the project's other ideas, rubric and proposal are not found."
+            "Phase 8b: you see this idea only as its researcher would without a role in "
+            "its private project: you are that guest researcher, or an AI agent in an 'Ask "
+            "AI to research' run (its note lands in the feed a guest reads). Then the values "
+            "below are masked, not facts about the idea: the evaluation fields are empty "
+            "(evaluators [], evaluator_progress 0/0, my_evaluation and my_evaluation_state "
+            "null, score and aggregate null, evaluations [], evaluation_count 0, "
+            "evaluation_open false, evaluation dates null, score_hidden true), "
+            "has_proposal is false even when the idea has a proposal, last_activity_at is "
+            "the newest event you can see, and the project's other ideas, rubric and "
+            "proposal are not found."
         ),
     )
     permissions: McpIdeaPermissions

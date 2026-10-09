@@ -186,6 +186,99 @@ test.describe('a guest researcher (no role in the private project)', () => {
   })
 })
 
+test.describe('past Research (lead decision D1)', () => {
+  test.use({ signedInAs: USERS.ivan })
+
+  test('the guest reads the answers but no longer changes them, and is told why', async ({
+    page,
+  }) => {
+    await openIdea(page, 'TOOL-7', 'Service health dashboard')
+    await expect(page.getByRole('button', { name: 'Answer the checklist' })).toBeVisible()
+    // Alice (an Internal Tools admin) moves the idea on behind the page's back ("Move
+    // anyway"); the tab regains focus and reads the idea again.
+    await page.evaluate(
+      async ([alice, ivan]) => {
+        // Each sign-in starts a new CSRF token: read it for every request.
+        const csrf = () =>
+          decodeURIComponent(/soundings_csrf=([^;]+)/.exec(document.cookie)?.[1] ?? '')
+        const send = (path: string, body: unknown) =>
+          fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+            body: JSON.stringify(body),
+          })
+        await send('/api/v1/auth/dev/login', { user_id: alice })
+        await send('/api/v1/ideas/TOOL-7/status', {
+          status: 'evaluating',
+          override_research: true,
+        })
+        await send('/api/v1/auth/dev/login', { user_id: ivan })
+        document.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('visibilitychange'))
+      },
+      [USERS.alice, USERS.ivan],
+    )
+    await expect(
+      page.getByText(
+        'The idea has moved past Research, so only its owner or an admin can change these answers now.',
+      ),
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Answer the checklist' })).toHaveCount(0)
+    await expect(page.getByRole('textbox', { name: 'Departments or teams consulted' })).toHaveCount(
+      0,
+    )
+    // Still their assignment: they can hand it back.
+    await expect(researcherLine(page).getByRole('button', { name: 'Hand back' })).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
+})
+
+test.describe('making an internal project private (lead decision D2)', () => {
+  test.use({ signedInAs: USERS.priya })
+
+  test('asks first when people outside it research its ideas, then ends their research', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { level: 1, name: 'My work' })).toBeVisible()
+    // Priya asks Ivan (no role in Sustainability, which is internal) to research GREEN-3,
+    // then opens the project's settings in the same page (the mock keeps its data).
+    await page.evaluate(async (ivan) => {
+      const csrf = decodeURIComponent(/soundings_csrf=([^;]+)/.exec(document.cookie)?.[1] ?? '')
+      await fetch('/api/v1/ideas/GREEN-3/research/assignment', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ researcher_id: ivan, due_at: null }),
+      })
+      window.history.pushState({}, '', '/p/sustainability/settings')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }, USERS.ivan)
+    await expect(page.getByRole('heading', { level: 1, name: 'Project settings' })).toBeVisible()
+    await page.getByRole('radio', { name: /Private/ }).check()
+    const save = page.getByRole('button', { name: /Save changes/ })
+    // Cancel keeps everything as it was.
+    await save.click()
+    const confirm = page.getByRole('alertdialog', { name: 'Make this project private?' })
+    await expect(confirm).toContainText(
+      '1 person researching an idea here isn’t in the project and will lose access to it.',
+    )
+    await confirm.getByRole('button', { name: 'Cancel' }).click()
+    await expect(confirm).toHaveCount(0)
+    await expect(page.getByText('Unsaved changes')).toBeVisible()
+    await save.click()
+    await confirm.getByRole('button', { name: 'Make private' }).click()
+    await expect(toast(page, 'Settings saved')).toBeVisible()
+    await expect(confirm).toHaveCount(0)
+    // No outsider any more: switching back and forth again asks nothing.
+    await page.getByRole('radio', { name: /Internal/ }).check()
+    await save.click()
+    await expect(toast(page, 'Settings saved').first()).toBeVisible()
+    await page.getByRole('radio', { name: /Private/ }).check()
+    await save.click()
+    await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  })
+})
+
 test.describe('a member researcher (Kofi on TOOL-10)', () => {
   test.use({ signedInAs: KOFI })
 

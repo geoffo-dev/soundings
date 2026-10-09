@@ -135,6 +135,20 @@ function settleResearch(
   void queryClient.invalidateQueries({ queryKey: queryKeys.ai.runs(idea) })
 }
 
+/**
+ * Lead decision D1: past Research a researcher's save is 409 `research_finished`; read
+ * the panel and the idea again so the answers turn read only with the line saying why.
+ */
+function rereadWhenFinished(
+  queryClient: ReturnType<typeof useQueryClient>,
+  idea: string,
+  error: unknown,
+) {
+  if (!hasErrorCode(error, 'research_finished')) return
+  void queryClient.invalidateQueries({ queryKey: queryKeys.research.checklist(idea) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.detail(idea) })
+}
+
 /** Answer (or change the answer to) one item; the panel shows errors inline. */
 export function useAnswerResearchItem(idea: string) {
   const queryClient = useQueryClient()
@@ -147,6 +161,7 @@ export function useAnswerResearchItem(idea: string) {
         }),
       ),
     onSuccess: (research) => settleResearch(queryClient, idea, research),
+    onError: (error) => rereadWhenFinished(queryClient, idea, error),
     meta: { silent: true },
   })
 }
@@ -161,6 +176,7 @@ export function useClearResearchItem(idea: string) {
         }),
       ),
     onSuccess: (research) => settleResearch(queryClient, idea, research),
+    onError: (error) => rereadWhenFinished(queryClient, idea, error),
     meta: { errorTitle: 'Couldn’t clear the answer' },
   })
 }

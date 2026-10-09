@@ -230,6 +230,59 @@ describe('assigning the research', () => {
   })
 })
 
+describe('the lead’s decisions on the review leftovers', () => {
+  it('D1: past Research the guest reads the answers but no longer changes them', async () => {
+    const tool7 = getDb().ideas.find((i) => i.researcher_id === USERS.ivan)
+    if (!tool7) throw new Error('fixture: Ivan researches TOOL-7')
+    tool7.status = 'evaluating'
+    await signIn(USERS.ivan)
+    const item = { params: { path: { idea: 'TOOL-7', item_id: RESEARCH_ITEMS.toolConsulted } } }
+    const refused = await rejection(
+      api.PUT('/api/v1/ideas/{idea}/research/items/{item_id}', { ...item, body: { answer: 'x' } }),
+    )
+    expect(refused).toMatchObject({ status: 409, code: 'research_finished' })
+    const cleared = await rejection(
+      api.DELETE('/api/v1/ideas/{idea}/research/items/{item_id}', item),
+    )
+    expect(cleared).toMatchObject({ status: 409, code: 'research_finished' })
+    const panel = await api.GET('/api/v1/ideas/{idea}/research', idea('TOOL-7'))
+    expect(panel.data?.permissions).toMatchObject({ can_answer: false, can_hand_back: true })
+    const detail = await api.GET('/api/v1/ideas/{idea}', idea('TOOL-7'))
+    expect(detail.data?.permissions.can_answer_research).toBe(false)
+    // The owner and admins keep Phase 8's rule (Alice administers Internal Tools).
+    endSession()
+    await signIn(USERS.alice)
+    const edited = await api.PUT('/api/v1/ideas/{idea}/research/items/{item_id}', {
+      ...item,
+      body: { answer: 'Ops (Marta), 8 Oct: they want it.' },
+    })
+    expect(edited.response.status).toBe(200)
+  })
+
+  it('D2: making an internal project private ends outside researchers’ assignments', async () => {
+    await signIn(USERS.priya) // a platform admin
+    await assign('GREEN-3', USERS.ivan) // Ivan has no role in Sustainability (internal)
+    const before = await api.GET('/api/v1/projects/{slug}', {
+      params: { path: { slug: 'sustainability' } },
+    })
+    expect(before.data?.outside_researcher_count).toBe(1)
+    const after = await api.PATCH('/api/v1/projects/{slug}', {
+      params: { path: { slug: 'sustainability' } },
+      body: { visibility: 'private' },
+    })
+    expect(after.data?.outside_researcher_count).toBe(0)
+    expect(getDb().ideas.some((i) => i.researcher_id === USERS.ivan && i.number === 3)).toBe(false)
+    expect(getDb().audit.at(-1)?.details).toMatchObject({ reason: 'made_private' })
+    // Only admins see the count.
+    endSession()
+    await signIn(USERS.bob)
+    const project = await api.GET('/api/v1/projects/{slug}', {
+      params: { path: { slug: 'customer-innovation' } },
+    })
+    expect(project.data?.outside_researcher_count).toBeNull()
+  })
+})
+
 describe('My work: Research to do', () => {
   it('lists Alice’s overdue research first, with the counts', async () => {
     await signIn(USERS.alice)

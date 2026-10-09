@@ -1547,13 +1547,13 @@ export interface paths {
         get?: never;
         /**
          * Answer a research item
-         * @description idea.answer_research (the owner, the researcher and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.answer_research (the owner, the researcher until Research ends, and admins; c5): the item's answer (plain text, 1-2,000 characters with at least one visible character; invisible characters such as zero-width spaces and bidi controls are removed), replacing any earlier one (last write wins; the first answer's author and time are kept, the editor's recorded). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation; research_finished (c26, Phase 8b lead decision D1) for a researcher who isn't the owner or an admin once the idea is past Research.
          */
         put: operations["answer_research_item"];
         post?: never;
         /**
          * Clear a research item's answer
-         * @description idea.answer_research (the owner, the researcher and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation.
+         * @description idea.answer_research (the owner, the researcher until Research ends, and admins; c5): delete the item's answer (idempotent: an unanswered item stays unanswered). Clearing never moves the idea. Once the idea is past Research (in a status after it), a required item's answer is kept: 409 research_answer_required (edit it instead; Phase 8 review M1). Returns the whole panel. 404 when the item isn't an active item of the idea's project's checklist; 409 research_step_off while the project's step is off, idea_closed (c5), project_archived, awaiting_moderation; research_finished (c26, Phase 8b lead decision D1) for a researcher who isn't the owner or an admin once the idea is past Research.
          */
         delete: operations["clear_research_item"];
         options?: never;
@@ -2040,7 +2040,7 @@ export interface paths {
         head?: never;
         /**
          * Update project settings
-         * @description Project admins. Omitted or null fields are unchanged.
+         * @description Project admins. Omitted or null fields are unchanged. Phase 8b (lead decision D2): making an internal project private ends the research assignments of researchers without a role in it (outside_researcher_count of them; audited idea.researcher_change with reason made_private, answers kept, no feed event or notification).
          */
         patch: operations["update_project"];
         trace?: never;
@@ -5328,7 +5328,7 @@ export interface components {
         IdeaPermissions: {
             /**
              * Can Answer Research
-             * @description Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner, the researcher (Phase 8b) and admins; false while the project's step is off).
+             * @description Phase 8: idea.answer_research: answer, edit and clear research checklist items (the owner, admins and, Phase 8b, the researcher until the idea is past Research (c26); false while the project's step is off).
              * @default false
              */
             can_answer_research: boolean;
@@ -6409,6 +6409,11 @@ export interface components {
             my_role: components["schemas"]["ProjectRole"] | null;
             /** Name */
             name: string;
+            /**
+             * Outside Researcher Count
+             * @description Phase 8b (lead decision D2): how many people research an open idea of this project without a role in it, for project and platform admins (project.edit_settings); null for everyone else. Making an internal project private ends their research assignments (audited idea.researcher_change, reason made_private), so the settings page warns before it saves.
+             */
+            outside_researcher_count: number | null;
             /**
              * Pending Moderation Count
              * @description Ideas from the public form held for moderation (the queue's total), for people who may moderate this project (idea.moderate: project and platform admins); null for everyone else. Phase 7: the sidebar's review counts come from here, not from one moderation request per project.
@@ -7630,7 +7635,7 @@ export interface components {
         ResearchPermissions: {
             /**
              * Can Answer
-             * @description idea.answer_research: answer, edit and clear items (the owner, the researcher (Phase 8b) and admins).
+             * @description idea.answer_research: answer, edit and clear items (the owner, admins and, Phase 8b, the researcher while the idea is in Research or a status before it: false for a researcher who isn't the owner or an admin once it is past Research, c26).
              */
             can_answer: boolean;
             /**

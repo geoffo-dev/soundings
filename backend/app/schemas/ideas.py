@@ -204,8 +204,8 @@ class IdeaPermissions(IdeaSummaryPermissions):
         default=False,
         description=(
             "Phase 8: idea.answer_research: answer, edit and clear research checklist items "
-            "(the owner, the researcher (Phase 8b) and admins; false while the project's step "
-            "is off)."
+            "(the owner, admins and, Phase 8b, the researcher until the idea is past "
+            "Research (c26); false while the project's step is off)."
         ),
     )
     invite_blocked_by_research: bool = Field(

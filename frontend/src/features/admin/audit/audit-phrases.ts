@@ -576,6 +576,7 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
         closed: 'idea closed',
         step_off: 'research step turned off',
         left_project: 'left the project',
+        made_private: 'project made private',
       }
       if (reason && reason in cleared) {
         return [

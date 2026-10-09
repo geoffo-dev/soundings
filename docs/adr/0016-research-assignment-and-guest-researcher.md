@@ -28,7 +28,10 @@ project's visibility); a non-member of a private project got 404 for everything 
    by default.
 3. **A researcher overlay, +Rsr**, counts without a role (unlike +Own and +Evl): answering,
    commenting and "Hand back" for viewers, internal non-members and R. Internal projects
-   get no guest view: assignment adds, never takes away.
+   get no guest view: assignment adds, never takes away. Answering lasts only while the
+   idea still awaits research (c26, the lead's D1, 2026-10-09: past Research the answers
+   feed the proposal's appendix, which a guest can't see, so only the owner and admins
+   change them there, 409 `research_finished` for the researcher).
 4. **A route table for R** (`view` / `rule` / `hidden`, missing = hidden) applied where the
    idea is loaded, so reads that only checked `idea.view` (evaluations, AI runs and their
    stream, the submission panel, proposal reads) are 404 for R by default, and a meta-test
@@ -46,7 +49,14 @@ project's visibility); a non-member of a private project got 404 for everything 
   cached. Closing the idea or turning the step off ends the assignment itself (removal is
   refused then, so a dormant one would come back on reopening); archiving only suspends
   it. Who may open a private idea to an outsider, and whether leaving the project ends it,
-  is open for the product owner (decisions, Phase 8b contract review S1).
+  was decided by the product owner (contract review S1: only project and platform admins
+  name an outsider in a private project, c25; losing one's role there ends one's
+  assignments, `left_project`); the lead added that making an internal project private
+  ends the assignments of researchers without a role there (`made_private`, D2, after a
+  warning with `Project.outside_researcher_count`), so only an admin's choice ever makes
+  someone R.
+- An AI agent's research run writes into the feed R reads, so it reads the idea as R would
+  (c22 by run kind: no proposal, rubric or evaluation area; guest review M1).
 - Every surface that builds idea data for R must use the policy's decisions (the guest
   shape); the tests are a table over principal kinds × assignment states × every route and
   tool, with score data checked on every path.
