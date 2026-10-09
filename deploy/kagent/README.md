@@ -3,7 +3,7 @@
 Soundings uses [kagent](https://kagent.dev) for its two AI jobs (SPEC.md section 9): an
 **AI evaluator** ("Ask AI to evaluate": a cited evaluation, shown with an AI badge and
 left out of the aggregate unless the idea's owner includes it) and a **research and
-drafting assistant** ("Research this": a cited research note in the activity feed;
+drafting assistant** ("Ask AI to research": a cited research note in the activity feed;
 "Draft section": proposal text the owner accepts or discards). The worker starts each run
 at kagent's controller over A2A; the agent does the work through Soundings' MCP server
 (`/mcp`) as its own service account. Contract: `docs/api/contract-phase6.md`; design: ADR

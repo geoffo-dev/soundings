@@ -88,6 +88,7 @@ from app.schemas.proposals import ProposalSectionUpdate, ProposalTemplateUpdate
 from app.schemas.research import (
     DEFAULT_RESEARCH_CHECKLIST,
     ResearchAnswerIn,
+    ResearchAssignmentUpdate,
     ResearchSettingsUpdate,
 )
 from app.schemas.rubric import RubricUpdate
@@ -127,6 +128,7 @@ from app.services import (
     project_groups,
     projects,
     research,
+    research_assignment,
     votes,
 )
 from app.services.scoring import active_criteria
@@ -907,7 +909,9 @@ class _Player:
                 ResearchAssignmentUpdate(researcher_id=self.user_ids[researcher], due_at=due_at),
             )
 
-        self.add(self.days_ago(days_ago), f"{asked_by} asks {researcher} to research {title!r}", assign)
+        self.add(
+            self.days_ago(days_ago), f"{asked_by} asks {researcher} to research {title!r}", assign
+        )
 
     # -- Phase 8: the research step -------------------------------------------------------
     def _step(self, seed: IdeaSeed) -> ResearchStep:

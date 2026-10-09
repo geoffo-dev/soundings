@@ -67,7 +67,7 @@ export function useMentionPicker({
         ...(search.data?.items ?? []),
         ...(extra ?? [])
           .filter((person) => !search.data?.items.some((found) => found.id === person.id))
-          .map((person) => ({ ...person, email: '', project_role: null }) as UserSearchResult),
+          .map((person): UserSearchResult => ({ ...person, email: '', project_role: null })),
       ]
         .filter((person) => person.id !== options?.excludeUserId)
         // Narrow the last results to what is typed now, so Enter never picks a stale match

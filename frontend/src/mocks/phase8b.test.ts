@@ -46,8 +46,7 @@ const assign = (key: string, researcher_id: string | null, due_at: string | null
     ...idea(key),
     body: { researcher_id, due_at },
   })
-const handBack = (key: string) =>
-  api.DELETE('/api/v1/ideas/{idea}/research/assignment', idea(key))
+const handBack = (key: string) => api.DELETE('/api/v1/ideas/{idea}/research/assignment', idea(key))
 
 describe('the guest researcher (column R)', () => {
   it('sees the one idea without scores, the evaluation area or the project', async () => {
@@ -219,7 +218,7 @@ describe('assigning the research', () => {
       ...idea('TOOL-10'),
       body: { status: 'closed', resolution: 'parked' },
     })
-    const tool10 = getDb().ideas.find((i) => i.researcher_id === USERS.dave)
+    const tool10 = getDb().ideas.find((i) => i.researcher_id === USERS.kofi)
     expect(tool10).toBeUndefined()
     // Grace (a direct viewer) researches TOOL-5; removing her from Internal Tools ends it (S1 b).
     await assign('TOOL-5', USERS.grace)
@@ -249,9 +248,6 @@ describe('My work: Research to do', () => {
   it('lists an owner’s idea with a research due date as their own', async () => {
     await signIn(USERS.carol)
     const { data } = await api.GET('/api/v1/me/research-to-do')
-    expect(data?.items.map((row) => [row.idea.key, row.as_owner])).toContainEqual([
-      'GREEN-1',
-      true,
-    ])
+    expect(data?.items.map((row) => [row.idea.key, row.as_owner])).toContainEqual(['GREEN-1', true])
   })
 })

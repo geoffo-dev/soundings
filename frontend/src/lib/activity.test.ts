@@ -178,7 +178,9 @@ describe('describeActivity (Phase 8b)', () => {
 
   it('says who was asked to research, instead of whom, removed or handed back', () => {
     expect(describeActivity(changed(null, bob))).toBe('asked Bob Brown to research')
-    expect(describeActivity(changed(ann, bob))).toBe('asked Bob Brown instead of Ann Lee to research')
+    expect(describeActivity(changed(ann, bob))).toBe(
+      'asked Bob Brown instead of Ann Lee to research',
+    )
     expect(describeActivity(changed(bob, null))).toBe('removed Bob Brown as researcher')
     expect(describeActivity(changed(bob, null, true, bob))).toBe('handed the research back')
     expect(describeActivity(changed(null, alice))).toBe('took on the research')

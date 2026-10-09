@@ -47,6 +47,9 @@ backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the whe
                       template.py (Phase 8: each project's sections, archive/restore by key)
   app/services/research.py  the research step (Phase 8): settings, checklist, answers, the
                       gate (`research_incomplete`, "Move anyway"), card progress, Similar ideas
+  app/services/research_assignment.py  the researcher (Phase 8b): assign/remove/hand back, the
+                      automatic clears (close, step off, deactivation, `left_project`)
+  app/authz/guest.py  the guest researcher's route table `RESEARCH_GUEST_ACCESS` (Phase 8b)
   app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention
   app/services/branding.py brand_assets.py moderation.py  branding (cached), images, queue
   app/ai/             AI runs (Phase 6): registry (agents.py), runs.py, runner.py + tasks.py (the
@@ -141,6 +144,17 @@ user)` / `answer_required(db, idea, items, user)` write answers, `open_titles(bo
 409's open items; `test_phase8_acceptance.py` (about 80 s) plays the Phase 8 stories
 through the API (`tests/proposals/test_template.py` for templates, `tests/ai/
 test_research_gate.py`, `tests/mcp/test_research.py`, `tests/public/test_research_public.py`).
+Phase 8b (the researcher): `tests/research/conftest.py` also has `assign(client, key, user,
+due_at)` (the PUT), `researcher_audit`, `feed_types` and the MCP fixtures (`as_agent`,
+`connect`, `make_key`); `tests/factories.py` `set_researcher` writes an assignment straight
+in the database. The guest's table tests are `tests/research/test_guest_access.py` (every
+idea route as the guest and as a stranger, every project GET) and
+`tests/authz/test_researcher_access.py` (its meta-test fails for an idea route or MCP tool
+without a `RESEARCH_GUEST_ACCESS` row); `test_role_loss.py` (S1 b on every role path),
+`test_research_to_do.py`, `tests/notifications/test_research_reminders.py` (the worked
+example, DST, every stop condition). `test_phase8b_acceptance.py` (about 75 s, Mailpit like
+Phase 3's) probes every `{idea}` operation of the OpenAPI document as a guest and drives the
+reminders with a moved clock.
 API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
 layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
 `make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
@@ -190,7 +204,10 @@ real steps and streams them as SSE. Knobs: `soundings-mock-ai=off`,
 `soundings-mock-ai-outcome` = `fail|timeout|no_result|unreachable|slow|queued`,
 `soundings-mock-ai-pace` (ms per step); agents named `*-down`/`*-broken` fail Test
 connection. Phase 6 mock screenshots: `SCREENSHOTS=1 npx playwright test ai-screenshots` →
-`docs/screenshots/phase-6/mock/`.
+`docs/screenshots/phase-6/mock/`. Phase 8b mock (`src/mocks/phase8b-fixtures.ts`,
+`frontend/README.md`): Ivan (no role anywhere) researches TOOL-7 as its guest, Kofi TOOL-10,
+Alice's GREEN-3 is overdue, GREEN-1 has nobody assigned but a due date;
+`soundings-mock-projects=private` makes every project private, so Ivan has no projects.
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -290,6 +307,14 @@ with the step show "n/m" research badges; outlines list "Research and consultati
 the sections when the appendix shows. `screenshots:phase8` writes
 `docs/screenshots/phase-8/` (8 screens × 1440 light/dark and 390 light) and `pdf/`
 (TOOLS-3 and GREEN-4).
+**The researcher (Phase 8b):** specs use `tests/support/research.ts` `assignResearcher(api,
+key, user | null, dueAt)` (a session: keys can't assign), `removeResearcher` (also Hand back),
+`researchToDo`, `PRIVATE_PROJECT_LINE`, `GUEST_EMAIL_LINE`; RA-01…RA-11
+(`research-assignment.spec.ts`), A11Y8B/MO8B/K8B (`a11y-phase8b.spec.ts`). Specs that assign
+use their own private project and `newPeople`; every run makes another "Nora Quinn", so
+pick a new person's picker row by their unique email. RA-03/06/07 read the seeded story
+(bob, TOOLS-12; alice's GREEN-5 overdue) without changing it. `screenshots:phase8b` writes
+`docs/screenshots/phase-8b/` (5 screens × 1440 light/dark and 390 light) and `emails/`.
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
 `docs/test-plans/phase-1.md` … `phase-8.md` (Phase 7: `performance.md`).
 
@@ -310,6 +335,10 @@ lands on a single sample (a 400 ms "board -score" outlier in a full `-m slow` ru
 Phase 8 added "board (research step)" (Internal Tools) and "similar ideas (12k ideas)"
 timings and the statement budgets `list`/`board (research step)` 8, `idea.research` 6,
 `idea.similar` 6 (`STATEMENT_BUDGET`); `seed_large` gives Internal Tools research data.
+Phase 8b: a read over its p95 budget is measured again, up to three rounds, and judged by
+its best (`best_p95`); every budget is 150 ms again (owned groups send 10 ideas);
+`me.work` 11 and `me.work.counts` 4 statements. Timings taken while another agent drives
+browsers or builds images measure the machine, not the code: rerun on a quiet machine.
 Before/after comparisons: run the old commit's `backend/app` (`git archive`) with the
 backend venv on another port against the same database (section 8 of the test plan).
 
@@ -383,8 +412,12 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   cached aggregates.
 - **Input limits:** bodies over 1 MiB get 413 before auth; request models extend
   `RequestModel` (rejects NUL, Unicode tag characters U+E0000–E007F and unknown fields;
-  `SingleLine` refuses tag characters too); cursors are validated on decode
-  (`app/pagination.py`). Malformed input is a 4xx, never a 500.
+  `SingleLine` refuses tag characters too); text that must show something uses
+  `VisibleText` (free text: research answers) or `VisibleLine` (one-line titles, with
+  `SingleLine`) from `app/schemas/base.py`; a list of titles under a unique `lower(...)`
+  index is checked with `app/services/sql.py` `require_unique_lower` (422 when two collide
+  under Postgres `lower()`, which isn't Python's `casefold`); cursors are validated on
+  decode (`app/pagination.py`). Malformed input is a 4xx, never a 500.
 - **Demo data:** `soundings seed --reset` needs `--force` once anyone who is not a demo
   person has an account; it refuses production without `--force`.
 - **Email and notifications** (contract-phase3 §3, ADR 0003 amended): services call
@@ -604,6 +637,33 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   state in `api/research.ts`); text typed into a section removed meanwhile is kept per
   user (`proposal-removed:<KEY>:<section>` draft) and the editor re-reads the proposal
   after the save's 404.
+- **The researcher and guest researchers** (contract-phase8b, role matrix column R and table
+  L, ADR 0016, `app/services/research_assignment.py`): one optional researcher per idea
+  (`ideas.researcher_id`, `research_due_at`; nobody = the owner does it), set in a session
+  only by `idea.assign_researcher` (owner, project and platform admins; c25: in a private
+  project only admins name someone without a role there), handed back with
+  `idea.release_researcher` (a `write` key may); never a service account, break-glass or
+  inactive account (422 `researcher_not_eligible`). Closing the idea, turning the step off,
+  deactivation and losing one's role in a private project (`left_project`: every path that
+  removes project roles calls `research_assignment.roles_before` / `end_after_role_loss`)
+  clear it, audited, answers and the due date kept; archiving only suspends it. A
+  researcher with no role in a private project is **column R**: that one idea through
+  `RESEARCH_GUEST_ACCESS` (`app/authz/guest.py`; deny by default: a new idea route or MCP
+  tool needs a row, a meta-test fails otherwise), never score data, the evaluation area,
+  the proposal, the AI panel or the project (404); the feed is the allow-list
+  `RESEARCH_GUEST_ACTIVITY_TYPES` (a new feed type goes there or in the evaluation set; a
+  schema test fails otherwise) and the inbox `RESEARCH_GUEST_NOTIFICATION_TYPES`. Lists
+  stay project-scoped (`listed_ideas`); only search, MCP `search_ideas`, the inbox, "Research
+  to do" and Similar ideas add `researched_ideas()`. In internal projects an outside
+  researcher keeps the non-member view and gains answering, commenting and Hand back. In
+  nested `EXISTS` subqueries use `correlate_except` (an uncorrelated `ideas` once counted
+  any idea's answer). Notifications `researcher_assigned` ("Asked to research", once per
+  idea, person and local day) and `research_reminder` (2 days before and on the day at the
+  digest hour while research is to do). SPA: `features/research/research-assignment.tsx`
+  (the line, the picker dialog, "Start research", Hand back), `features/work/research-to-
+  do.tsx`; `IdeaPermissions.can_view_project` false = the guest's page (Overview only,
+  breadcrumb text); any write refused with 404 re-checks the idea on screen
+  (`api/query.ts`), so a guest unassigned meanwhile sees "doesn't exist".
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.

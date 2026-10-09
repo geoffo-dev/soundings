@@ -159,7 +159,8 @@ async def test_admins_open_an_idea_held_for_moderation_read_only(
 
     assert body["title"] == f"{HELD} for review"
     assert body["submitted_by"] is None
-    assert {k for k, v in body["permissions"].items() if v} == {"can_delete"}
+    # can_view_project says what you may read (Phase 8b), not what you may do.
+    assert {k for k, v in body["permissions"].items() if v} == {"can_delete", "can_view_project"}
     assert ok(await client.get(f"/ideas/{held.id}/activity"))
 
 

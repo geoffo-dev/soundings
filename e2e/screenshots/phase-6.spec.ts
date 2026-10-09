@@ -222,7 +222,7 @@ const SHOTS: Shot[] = [
       await alice.dispose()
       await openIdea(page, IDEA)
       await page.getByRole('button', { name: 'AI actions' }).first().click()
-      await expect(page.getByRole('menuitem', { name: /Research this/ })).toBeVisible()
+      await expect(page.getByRole('menuitem', { name: /Ask AI to research/ })).toBeVisible()
       if (phone) await page.waitForTimeout(200)
     },
   },

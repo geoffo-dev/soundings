@@ -1,6 +1,7 @@
 import { CancelledError, MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 
 import { describeError, isApiError, type ApiError } from '@/api/errors'
+import { queryKeys } from '@/api/keys'
 import { toast } from '@/components/ui/toaster'
 
 const MAX_RETRIES = 2
@@ -56,7 +57,7 @@ export async function retryIfCancelled<T>(load: () => Promise<T>): Promise<T> {
 }
 
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const queryClient: QueryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
         if (isUnauthorized(error) && !query.meta?.allowUnauthorized) unauthorizedHandler?.(error)
@@ -67,6 +68,12 @@ export function createQueryClient(): QueryClient {
         if (isUnauthorized(error)) {
           unauthorizedHandler?.(error)
           return
+        }
+        // A write refused with 404: what it was about may be gone for this viewer (the
+        // idea deleted, a guest researcher unassigned). Re-check the idea on screen, so
+        // its page shows "doesn't exist" instead of the stale idea (contract-phase8b §4.6).
+        if (isApiError(error) && error.status === 404) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.details() })
         }
         if (mutation.meta?.silent) return
         // Phase 8: the guarded request's own hook opens the research gate's dialog instead.
@@ -94,4 +101,5 @@ export function createQueryClient(): QueryClient {
       },
     },
   })
+  return queryClient
 }

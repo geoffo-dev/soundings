@@ -712,8 +712,7 @@ export const researchHandlers = [
     const changes = targetId !== (idea.researcher_id ?? null)
     if (changes && targetId !== null) {
       const person = findUser(db, targetId)
-      const outside =
-        project.visibility === 'private' && !hasRole(db, project.id, targetId)
+      const outside = project.visibility === 'private' && !hasRole(db, project.id, targetId)
       // c25 (product owner S1 a) comes before c23: 403s first.
       if (outside && !mayNameOutsider(db, idea, ctx.user)) {
         forbidden(

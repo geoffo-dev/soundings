@@ -188,10 +188,17 @@ function AdminNav({
 
 function MyWorkNav({ onNavigate }: { onNavigate?: () => void }) {
   const counts = useWorkCounts().data
+  // Someone in no project (a guest researcher) has no evaluations or ideas to own:
+  // those links would lead to nothing, so they go (unless something is still there).
+  const noProjects = useProjects().data?.length === 0
   const due = counts?.evaluations_due ?? 0
   const overdue = counts?.evaluations_overdue ?? 0
   const owned = counts?.owned_open ?? 0
   const dueLabel = `${due} due${overdue > 0 ? `, ${overdue} overdue` : ''}`
+  // Phase 8b: research you do, shown only while there is some (most people never have any).
+  const research = counts?.research_to_do ?? 0
+  const researchOverdue = counts?.research_overdue ?? 0
+  const researchLabel = `${research} to do${researchOverdue > 0 ? `, ${researchOverdue} overdue` : ''}`
   return (
     <ul className="flex flex-col gap-px">
       <li>
@@ -200,37 +207,60 @@ function MyWorkNav({ onNavigate }: { onNavigate?: () => void }) {
           My work
         </Link>
       </li>
-      <li>
-        <Link
-          to="/"
-          hash="evaluations"
-          onClick={onNavigate}
-          className={subItem}
-          aria-label={`Evaluations, ${dueLabel}`}
-        >
-          <span className="flex-1 truncate">Evaluations</span>
-          {overdue > 0 && <span aria-hidden="true" className="size-1.5 rounded-full bg-danger" />}
-          {due > 0 && <CountBadge aria-hidden="true">{due}</CountBadge>}
-        </Link>
-      </li>
-      <li>
-        <Link
-          to="/"
-          hash="owned"
-          onClick={onNavigate}
-          className={subItem}
-          aria-label={`Ideas I own, ${owned} open`}
-        >
-          <span className="flex-1 truncate">Ideas I own</span>
-          {owned > 0 && <CountBadge aria-hidden="true">{owned}</CountBadge>}
-        </Link>
-      </li>
+      {(!noProjects || due > 0) && (
+        <li>
+          <Link
+            to="/"
+            hash="evaluations"
+            onClick={onNavigate}
+            className={subItem}
+            aria-label={`Evaluations, ${dueLabel}`}
+          >
+            <span className="flex-1 truncate">Evaluations</span>
+            {overdue > 0 && <span aria-hidden="true" className="size-1.5 rounded-full bg-danger" />}
+            {due > 0 && <CountBadge aria-hidden="true">{due}</CountBadge>}
+          </Link>
+        </li>
+      )}
+      {research > 0 && (
+        <li>
+          <Link
+            to="/"
+            hash="research"
+            onClick={onNavigate}
+            className={subItem}
+            aria-label={`Research, ${researchLabel}`}
+          >
+            <span className="flex-1 truncate">Research</span>
+            {researchOverdue > 0 && (
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-danger" />
+            )}
+            <CountBadge aria-hidden="true">{research}</CountBadge>
+          </Link>
+        </li>
+      )}
+      {(!noProjects || owned > 0) && (
+        <li>
+          <Link
+            to="/"
+            hash="owned"
+            onClick={onNavigate}
+            className={subItem}
+            aria-label={`Ideas I own, ${owned} open`}
+          >
+            <span className="flex-1 truncate">Ideas I own</span>
+            {owned > 0 && <CountBadge aria-hidden="true">{owned}</CountBadge>}
+          </Link>
+        </li>
+      )}
     </ul>
   )
 }
 
 function ProjectsNav({ onNavigate, canCreate }: { onNavigate?: () => void; canCreate: boolean }) {
   const projects = useProjects()
+  // Phase 8b: a guest researcher works on ideas without being in their projects.
+  const researching = (useWorkCounts().data?.research_to_do ?? 0) > 0
   const reviews = new Map(
     useReviewCounts(projects.data).map(({ project, count }) => [project.id, count]),
   )
@@ -264,7 +294,11 @@ function ProjectsNav({ onNavigate, canCreate }: { onNavigate?: () => void; canCr
         </li>
       ) : projects.data.length === 0 ? (
         <li className="px-2 py-1 text-sm text-muted">
-          {canCreate ? 'No projects yet' : 'No projects yet — ask an admin to add you'}
+          {canCreate
+            ? 'No projects yet'
+            : researching
+              ? 'No projects'
+              : 'No projects yet — ask an admin to add you'}
         </li>
       ) : (
         projects.data.map((project) => {

@@ -325,7 +325,9 @@ function TemplateForm({
                     aria-label={`Restore ${section.title}`}
                     onClick={() => {
                       const restored = restoredSection(section)
-                      const at = removedAt.current.get(section.key)
+                      // Back where it was: this visit's spot, else where it was when
+                      // removed (Phase 8b `position`; at the end when the list is shorter).
+                      const at = removedAt.current.get(section.key) ?? section.position
                       setDrafts((current) => insertAt(current, restored, at))
                       setNotice(null)
                       focusTitle(restored.id)

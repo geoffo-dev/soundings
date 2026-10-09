@@ -38,6 +38,11 @@ export interface PeopleListProps {
   label: string
   /** Extra rows above the people, hidden while searching. */
   before?: ReactNode
+  /**
+   * The `value` of a `before` row that is the current choice (the researcher picker's
+   * owner row): not searching, the highlight starts there, like on a chosen person.
+   */
+  beforeChosen?: string
   /** Extra rows below the people (e.g. "Remove owner"), hidden while searching. */
   after?: ReactNode
   /**
@@ -52,6 +57,8 @@ export interface PeopleListProps {
   ineligible?: (person: UserSearchResult) => string | undefined
   /** People left out of the list (e.g. the owner, offered as its own row). */
   exclude?: readonly string[]
+  /** Classes for the scrolling list (e.g. a lower maximum height inside a form). */
+  listClassName?: string
 }
 
 /**
@@ -67,10 +74,12 @@ export function PeopleList({
   placeholder = 'Search people…',
   label,
   before,
+  beforeChosen,
   after,
   includeNonMembers = false,
   ineligible,
   exclude,
+  listClassName,
 }: PeopleListProps) {
   const [search, setSearch] = useState('')
   const q = useDebouncedValue(search, 150)
@@ -87,7 +96,8 @@ export function PeopleList({
   // Type a name, press Enter: the top person. Not searching, the highlight starts on the
   // current choice (the owner), so an Enter straight away changes nothing.
   const pickable = items.filter((person) => !reasonFor(person)).map((person) => person.id)
-  const current = items.find((person) => selected.includes(person.id))?.id
+  const current =
+    items.find((person) => selected.includes(person.id))?.id ?? (before ? beforeChosen : undefined)
   const highlight = useTopResult(searching || !current ? pickable : [current, ...pickable])
 
   return (
@@ -120,6 +130,7 @@ export function PeopleList({
       )}
       <CommandList
         aria-label={label}
+        className={listClassName}
         empty={
           people.isSuccess
             ? q

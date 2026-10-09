@@ -57,7 +57,8 @@ const TARGETS: Target[] = [
   {
     name: 'email preferences',
     path: '/settings/notifications',
-    ready: (page) => expect(page.getByRole('radiogroup')).toHaveCount(7),
+    // Phase 3's seven types and Phase 8b's two research types.
+    ready: (page) => expect(page.getByRole('radiogroup')).toHaveCount(9),
   },
   {
     name: 'email preferences without SMTP',

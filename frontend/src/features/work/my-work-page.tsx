@@ -18,10 +18,11 @@ import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 import { EvaluationsDueSection } from './evaluations-due'
 import { OwnedIdeasSection } from './owned-ideas'
 import { RecentIdeasSection } from './recent-ideas'
+import { ResearchToDoSection } from './research-to-do'
 
 /**
- * My work (SPEC §5 screen 1, wireframe 01): evaluations due, ideas I own by
- * status, and what changed recently. j/k or ↑/↓ move between rows, Enter
+ * My work (SPEC §5 screen 1, wireframe 01): evaluations due, research to do (Phase
+ * 8b), ideas I own by status, and what changed recently. j/k or ↑/↓ move between rows, Enter
  * opens, E evaluates the focused (or most urgent) due idea.
  */
 export function MyWorkPage() {
@@ -30,15 +31,20 @@ export function MyWorkPage() {
   const user = useCurrentUser()
   const navigate = useNavigate()
   const { newIdea, canCreateIdeas } = useAppCommands()
+  const noProjects = projects.data?.length === 0
+  // Phase 8b: someone outside every project may still research an idea (a guest
+  // researcher): My work is then just their "Research to do".
+  const researching = (work.data?.research_to_do.length ?? 0) > 0
+  const guestOnly = noProjects && researching
   // A fresh install, or someone no project has added yet: say how to start instead of
   // three empty sections.
-  const firstRun = projects.data?.length === 0
+  const firstRun = noProjects && !researching && !work.isPending
   const { listRef } = useListNavigation()
   const hash = useLocation({ select: (location) => location.hash })
   const due = work.data?.evaluations_due
   const hasDue = (due?.length ?? 0) > 0
 
-  // Sidebar links (/#evaluations, /#owned) scroll once the sections exist.
+  // Sidebar links (/#evaluations, /#research, /#owned) scroll once the sections exist.
   useEffect(() => {
     if (hash && work.data) document.getElementById(hash)?.scrollIntoView({ block: 'start' })
   }, [hash, work.data])
@@ -63,11 +69,16 @@ export function MyWorkPage() {
     <Page>
       <PageHeader
         title="My work"
-        description="Evaluations waiting for you, ideas you own and what changed recently."
+        description={
+          guestOnly
+            ? 'Research you’ve been asked to do.'
+            : 'Evaluations waiting for you, ideas you own and what changed recently.'
+        }
         actions={
           // The most urgent "Evaluate" is the primary action while evaluations are due.
           canCreateIdeas &&
-          !firstRun && (
+          !firstRun &&
+          !guestOnly && (
             <Button
               variant={hasDue ? 'outline' : 'primary'}
               onClick={newIdea}
@@ -127,12 +138,29 @@ export function MyWorkPage() {
             }
           />
         </div>
+      ) : guestOnly ? (
+        <div ref={listRef} className="flex flex-col gap-10">
+          <ResearchToDoSection
+            items={work.data?.research_to_do}
+            total={work.data?.counts.research_to_do}
+            nextCursor={work.data?.research_to_do_next_cursor}
+          />
+          <p className="px-1 text-sm text-muted">
+            You’re not in any project. You see only the ideas you’re asked to research, never their
+            scores or proposals.
+          </p>
+        </div>
       ) : (
         <div ref={listRef} className="flex flex-col gap-10">
           <EvaluationsDueSection
             items={due}
             total={work.data?.counts.evaluations_due}
             nextCursor={work.data?.evaluations_due_next_cursor}
+          />
+          <ResearchToDoSection
+            items={work.data?.research_to_do}
+            total={work.data?.counts.research_to_do}
+            nextCursor={work.data?.research_to_do_next_cursor}
           />
           <OwnedIdeasSection groups={work.data?.owned} openCount={work.data?.counts.owned_open} />
           <RecentIdeasSection recent={work.data?.recent} />

@@ -83,9 +83,7 @@ async def list_my_evaluations_due(
 async def list_my_research_to_do(
     principal: PrincipalDep, session: SessionDep, page: PageParamsDep
 ) -> WorkResearchPage:
-    return await work.list_research_to_do(
-        session, principal, cursor=page.cursor, limit=page.limit
-    )
+    return await work.list_research_to_do(session, principal, cursor=page.cursor, limit=page.limit)
 
 
 @router.get(

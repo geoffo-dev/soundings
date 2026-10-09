@@ -129,7 +129,7 @@ name, members, { form, branding })` (a fresh project, form on and moderated unle
   revoked when the spec ends (25 keys per user). Specs that end someone's sessions or
   deactivate them create that person (`admin-api-keys.spec.ts` `newPerson`). Tests for
   contract rules that aren't built yet are `test.fail(true, …)`: they pass while the defect
-  stands and fail once it is fixed (then drop the mark; none are left).
+  stands and fail once it is fixed (then drop the mark).
 - **AI assistance** (Phase 6) uses `tests/support/ai.ts`: `aiTeam(alice)` (a project of the
   spec's own: Alice owns the ideas, Bob and Carol score, Farah is pending; `idea({status:
 'shortlisted'})` starts a proposal), `registerAgent(admin, {projectIds, purposes, name})`
@@ -140,5 +140,17 @@ name, members, { form, branding })` (a fresh project, form on and moderated unle
   `e2e/scripts/fake-agent.ts` reads what the fake saw of a run (`observations`, `waitFor`).
   AI specs are tagged `@ai` and skip (`skipWithoutAi`) unless AI is on and the fake
   answers. The stack's own "Idea evaluator" is left to the screenshots and `make ai-smoke`.
+- **Research assigned to a person** (Phase 8b) uses `tests/support/research.ts`:
+  `assignResearcher(api, key, user | null, dueAt)` (the owner or an admin, in a session:
+  keys can't assign), `removeResearcher` (204; also "Hand back"), `researchToDo` (My
+  work's list), `PRIVATE_PROJECT_LINE` (the picker's line for an outsider) and
+  `GUEST_EMAIL_LINE` (the email's). Specs that assign use a private project of their own
+  (`researchTeam`) and new people (`newPeople`), so a guest's inbox and mailbox are theirs
+  alone; `research-assignment.spec.ts` RA-03, RA-06, RA-07 and `a11y-phase8b.spec.ts`
+  read the seeded story (bob researches TOOLS-12 as its guest; alice's GREEN-5 is
+  overdue) without changing it. Pickers search the server and every run makes another
+  "Nora Quinn": pick a new person's row by their unique email. RA-10 checks that a
+  guest's write refused with 404 (reassigned meanwhile) leaves the idea page for "doesn't
+  exist" (P8B-QA-F1, fixed in the integration).
 - `@playwright/test` is pinned to 1.56.1 (the CI image); never run `playwright install`
   here, Chromium comes from `PLAYWRIGHT_BROWSERS_PATH`.

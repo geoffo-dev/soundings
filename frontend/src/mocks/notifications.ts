@@ -45,11 +45,7 @@ import {
   userRefById,
 } from './domain'
 import { queueSubmitterStatusEmail } from './public'
-import {
-  isLiveResearcher,
-  isResearchGuest,
-  RESEARCH_GUEST_NOTIFICATION_TYPES,
-} from './researchers'
+import { isLiveResearcher, isResearchGuest, RESEARCH_GUEST_NOTIFICATION_TYPES } from './researchers'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE

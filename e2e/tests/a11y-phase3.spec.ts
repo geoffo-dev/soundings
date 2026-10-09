@@ -77,7 +77,7 @@ const SCREENS: Screen[] = [
     open: async (page) => {
       await page.goto('/settings/notifications')
       await expect(h2(page, 'Notifications')).toBeVisible()
-      await expect(page.getByRole('radiogroup')).toHaveCount(7)
+      await expect(page.getByRole('radiogroup')).toHaveCount(9)
     },
   },
   {

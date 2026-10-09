@@ -1,4 +1,4 @@
-"""Research notes (contract-phase6 section 3.8): what a "Research this" run produces.
+"""Research notes (contract-phase6 section 3.8): what a "Ask AI to research" run produces.
 
 A note is an ``activity_events`` row of type ``ai_research_note`` (actor: the agent's
 service account) whose payload holds ``{run_id, agent_id, body_md, sources: [{title,

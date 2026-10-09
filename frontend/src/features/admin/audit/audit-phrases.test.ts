@@ -731,11 +731,16 @@ describe('audit sentences', () => {
     const change = (details: Record<string, unknown>) =>
       say(entry('idea.researcher_change', { ...base, details }), people)
     expect(
-      change({ from_user_id: null, to_user_id: 'u-bob', reason: 'assigned', outside_project: true }),
+      change({
+        from_user_id: null,
+        to_user_id: 'u-bob',
+        reason: 'assigned',
+        outside_project: true,
+      }),
     ).toBe('Alice Anders asked Bob Brown to research TOOL-12, outside the project')
-    expect(
-      change({ from_user_id: 'u-ann', to_user_id: 'u-bob', reason: 'assigned' }),
-    ).toBe('Alice Anders asked Bob Brown to research TOOL-12')
+    expect(change({ from_user_id: 'u-ann', to_user_id: 'u-bob', reason: 'assigned' })).toBe(
+      'Alice Anders asked Bob Brown to research TOOL-12',
+    )
     expect(change({ from_user_id: null, to_user_id: 'u-alice', reason: 'assigned' })).toBe(
       'Alice Anders took on the research of TOOL-12',
     )

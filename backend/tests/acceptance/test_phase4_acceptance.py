@@ -502,7 +502,11 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
         True,
         None,
     )
-    assert {flag for flag, value in held["permissions"].items() if value} == {"can_delete"}
+    # can_view_project (Phase 8b) says what may be read, not done.
+    assert {flag for flag, value in held["permissions"].items() if value} == {
+        "can_delete",
+        "can_view_project",
+    }
     member_queue = await olive.http.get(f"{API}/projects/{slug}/moderation")
     assert member_queue.status_code == 403
     blocked = await alice.http.post(f"{API}/ideas/{key}/status", json={"status": "evaluating"})

@@ -78,7 +78,9 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
       const from = item.from_researcher
       if (!to) return from ? `removed ${from.display_name} as researcher` : 'removed the researcher'
       if (to.id === item.actor?.id) {
-        return from ? `took on the research instead of ${from.display_name}` : 'took on the research'
+        return from
+          ? `took on the research instead of ${from.display_name}`
+          : 'took on the research'
       }
       return from
         ? `asked ${to.display_name} instead of ${from.display_name} to research`

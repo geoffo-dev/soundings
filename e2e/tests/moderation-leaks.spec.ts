@@ -155,10 +155,13 @@ test('ML-02: admins see it only in the queue and on its own read-only page; writ
   const detail = await alice.idea(held.key)
   expect(detail.held_for).toBe('moderation')
   expect(detail.via_public_form).toBe(true)
+  // Phase 8b: `can_view_project` says whether the project may be linked (false only for a
+  // guest researcher); it is no action, so it stays true here.
   const allowed = Object.entries(detail.permissions)
-    .filter(([, value]) => value === true)
+    .filter(([name, value]) => value === true && name !== 'can_view_project')
     .map(([name]) => name)
   expect(allowed).toEqual(['can_delete'])
+  expect(detail.permissions.can_view_project).toBe(true)
   await alice.addMember(held.project.slug, 'dave')
   const dave = await api('dave')
   for (const [method, path, body] of [

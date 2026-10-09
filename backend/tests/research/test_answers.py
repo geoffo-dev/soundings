@@ -57,7 +57,14 @@ async def test_the_research_panel(api: AsUser, team: Team, db_session: AsyncSess
     assert panel["items"][1]["answer"] is None
     assert panel["progress"] == {"answered": 1, "total": 3, "required_open": 1}
     assert panel["blocking"] is True
-    assert panel["permissions"] == {"can_answer": True, "can_override": False}
+    assert panel["permissions"] == {
+        "can_answer": True,
+        "can_override": False,
+        # Phase 8b: the owner assigns (people with a role: the project is private).
+        "can_assign": True,
+        "can_assign_outside_researcher": False,
+        "can_hand_back": False,
+    }
 
 
 @pytest.mark.parametrize(
@@ -112,7 +119,22 @@ async def test_while_the_step_is_off_the_panel_is_empty(
         "items": [],
         "progress": {"answered": 0, "total": 0, "required_open": 0},
         "blocking": False,
-        "permissions": {"can_answer": False, "can_override": False},
+        "permissions": {
+            "can_answer": False,
+            "can_override": False,
+            "can_assign": False,
+            "can_assign_outside_researcher": False,
+            "can_hand_back": False,
+        },
+        # Phase 8b: nothing assigned while the step is off.
+        "gate_status_label": None,
+        "assignment": {
+            "researcher": None,
+            "researcher_in_project": False,
+            "assigned_at": None,
+            "due_at": None,
+            "overdue": False,
+        },
     }
 
 

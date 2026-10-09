@@ -120,3 +120,41 @@ export async function researchTeam(
   if (step !== 'off') await setResearchStep(alice, project.slug, step)
   return alice.project(project.slug)
 }
+
+// --- Phase 8b: the research assignment (contract-phase8b) ---------------------------------
+export type ResearchAssignment = Schemas['ResearchAssignment']
+export type WorkResearch = Schemas['WorkResearch']
+
+/** The researcher line's guest sentence in the picker (a private project, review S2). */
+export const PRIVATE_PROJECT_LINE =
+  'They’ll see this idea, its comments and activity and its research checklist, not scores, evaluations or the proposal.'
+/** The email's line for a guest researcher (contract-phase8b §6.2). */
+export const GUEST_EMAIL_LINE =
+  "You'll see this idea, its comments and activity and its research checklist, not its scores, evaluations or proposal."
+
+/**
+ * Asks `researcher` (null: nobody, the owner does it) to research `key`, due at `dueAt`
+ * (ISO, or null): the owner or an admin, in a session (keys can't assign).
+ */
+export function assignResearcher(
+  api: Api,
+  key: string,
+  researcher: { id: string } | null,
+  dueAt: string | null = null,
+): Promise<IdeaResearch> {
+  return api.send('PUT', `/ideas/${key}/research/assignment`, {
+    researcher_id: researcher?.id ?? null,
+    due_at: dueAt,
+  })
+}
+
+/** "Remove" (the owner, admins) or "Hand back" (the researcher): 204. */
+export function removeResearcher(api: Api, key: string): Promise<null> {
+  return api.send('DELETE', `/ideas/${key}/research/assignment`, undefined, 204)
+}
+
+/** My work's "Research to do" (the first 50). */
+export async function researchToDo(api: Api): Promise<WorkResearch[]> {
+  const work = await api.get<Schemas['Work']>('/me/work')
+  return work.research_to_do
+}

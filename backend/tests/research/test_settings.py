@@ -243,6 +243,7 @@ async def test_removing_an_answered_item_archives_it_and_restoring_brings_answer
     assert [(item["id"], item["answer_count"]) for item in removed["removed_items"]] == [
         (str(items[0].id), 1)
     ]
+    assert removed["removed_items"][0]["position"] == 0  # Phase 8b (D): it was first
     # The unanswered optional item was deleted, not archived.
     assert (
         await db_session.scalar(

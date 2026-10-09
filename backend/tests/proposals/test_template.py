@@ -246,6 +246,8 @@ async def test_removing_a_section_with_text_archives_it_and_restoring_brings_it_
     shown = ok(await olive.get(proposal_url(key)))
 
     assert [(s["key"], s["proposal_count"]) for s in removed["removed_sections"]] == [("market", 1)]
+    # Phase 8b (D): where it was, so Restore can put it back there.
+    assert removed["removed_sections"][0]["position"] == SECTION_KEYS.index("market")
     assert "market" not in [s["key"] for s in hidden["proposal"]["sections"]]
     assert [s["key"] for s in shown["proposal"]["sections"]] == SECTION_KEYS
     market = next(s for s in shown["proposal"]["sections"] if s["key"] == "market")

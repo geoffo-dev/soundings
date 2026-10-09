@@ -9,7 +9,7 @@ proposals, comment and submit evaluations **as you**, through a personal API key
 This page is for people connecting a client. Operators: [operator-guide.md](operator-guide.md#api-keys-and-mcp-phase-5).
 The precise contract is [contract-phase5.md §3.5 and §4](api/contract-phase5.md#35-the-mcp-endpoint-transport)
 (Phase 6's additions: [contract-phase6.md §4](api/contract-phase6.md#4-mcp-additions)).
-Soundings' own AI agents, which kagent runs for "Ask AI to evaluate", "Research this" and
+Soundings' own AI agents, which kagent runs for "Ask AI to evaluate", "Ask AI to research" and
 "Draft with AI", use this server too, with keys of their own: [section 5](#5-soundings-ai-agents-kagent).
 
 ## 1. Create a key
@@ -139,14 +139,14 @@ Soundings' AI agents only (section 5); people leave it out, and it is ignored fo
 |---|---|---|
 | `list_projects` | `read` | The projects you can see (inside the key's projects), with your role, the idea count and whether you can create ideas there. Archived ones with `include_archived`. |
 | `search_ideas` | `read` | Ideas by `query` (title or summary text, or a key), `project`, `status`, `owner` (`me`, `none`), `awaiting_my_evaluation`, `sort`; 20 a page (`limit` up to 50, `cursor`). Scores follow blind evaluation. |
-| `get_idea` | `read` | One idea: description, status, owner, evaluators (invited or submitted), the aggregate and others' evaluations when you may see them, your own evaluation, and the latest comments (`comment_limit`, 10 by default, 20 at most; long comments are cut, `truncated`). Phase 8: `research`, the project's research checklist with this idea's answers (`step`, `items` with `title`, `hint`, `required`, `answer`, who answered and when, `required_open`), or null while the project's research step is off. |
+| `get_idea` | `read` | One idea: description, status, owner, evaluators (invited or submitted), the aggregate and others' evaluations when you may see them, your own evaluation, and the latest comments (`comment_limit`, 10 by default, 20 at most; long comments are cut, `truncated`). Phase 8: `research`, the project's research checklist with this idea's answers (`step`, `items` with `title`, `hint`, `required`, `answer`, who answered and when, `required_open`), or null while the project's research step is off. Phase 8b: `research.researcher`, the person asked to do the research (null: the owner does it; `display_name` is untrusted), and `research.due_at`; `research_guest: true` when you see the idea only as its researcher (below). |
 | `get_rubric` | `read` | A project's criteria (by `project` or `idea`) with guidance, weights and which are inverted (a high Effort or Risk score is bad: score what you see). |
 | `get_proposal` | `read` | The idea's proposal, section by section in the order of **its project's template** (each with its `key`, `title`, `prompt` (the hint), `body_md` and `version`), or null if none has been started, and whether you may suggest text. |
 | `create_idea` | `write` | A new idea in a project, as you (status New; you watch it). |
 | `add_comment` | `write` | A comment on an idea, with @mentions as in the app; people are notified as usual. |
 | `submit_evaluation` | `evaluate` | Saves your evaluation: a 1-5 score for every criterion, a recommendation (`go`, `maybe`, `no`) and a comment. Submits by default (`submit: false` saves a draft); the arguments replace what was saved. Only if you were asked to evaluate the idea and evaluation is open. |
 | `propose_proposal_section` | `write` | Suggests the whole new text of one proposal section, named by its `section_key` from `get_proposal` (a section removed from the template, or a key the project never had, is the tool error `unknown_section`). It is only a suggestion: the idea's owner sees it in the proposal editor and accepts or discards it. A newer suggestion of yours for the same section replaces the older one. |
-| `add_research_note` | `write` | Phase 6, **for Soundings' AI agents only**: saves the research note of a "Research this" run (Markdown and up to 20 cited sources) into the idea's activity feed. Anyone else's key gets `forbidden`. |
+| `add_research_note` | `write` | Phase 6, **for Soundings' AI agents only**: saves the research note of a "Ask AI to research" run (Markdown and up to 20 cited sources) into the idea's activity feed. Anyone else's key gets `forbidden`. |
 
 **Proposal sections and statuses (Phase 8).** Each project has its own proposal template
 (1 to 12 sections, edited by its admins). A section's `key` never changes: the eight
@@ -159,6 +159,21 @@ a research step: its ideas can then be in status `research` (`search_ideas` take
 needs the required checklist items answered; MCP has no tool that moves an idea or answers
 the checklist (people do that in the app, or with a `write` key through the REST API:
 `PUT /api/v1/ideas/{key}/research/items/{item_id}`).
+
+**The researcher (Phase 8b).** An idea's owner or a project admin may ask one person to
+do its research, also someone outside a private project (a "guest researcher"). A
+guest's key reaches that one idea and nothing else of the project, exactly as in the
+app: `search_ideas` finds it (never the project's other ideas), `get_idea` returns it with
+`research_guest: true` and empty evaluation fields (no evaluators, aggregate or
+evaluations, `score_hidden`, `has_proposal: false`), `add_comment` works, and
+`get_rubric`, `get_proposal`, `submit_evaluation`, `propose_proposal_section` and
+`create_idea` there are `not_found`, as is `search_ideas` with `project`. The project
+isn't in `list_projects`. The moment the guest is unassigned (or the idea is closed, or
+the step turned off) the next call is `not_found`. A key restricted to projects can't
+name a private project its owner isn't in. Assigning the researcher is session only (no
+key, no tool); handing the research back takes a `write` key on the REST API
+(`DELETE /api/v1/ideas/{key}/research/assignment`). Soundings' AI agents are never
+assigned and never assign.
 
 Results are structured JSON (`structuredContent`, snake_case, with an `outputSchema` per
 tool) plus the same JSON as text. Errors are results with `isError: true`, text

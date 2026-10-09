@@ -18,7 +18,7 @@ idea-scoped decision for column R while a request is being served
   its stream, the submission panel, project-only tools).
 
 **Deny by default:** an operation without a row is ``hidden`` for R.
-``tests/authz/test_guest_routes.py`` fails for an idea route (a path with ``{idea}``) or
+``tests/authz/test_researcher_access.py`` fails for an idea route (a path with ``{idea}``) or
 an MCP tool without a row. Outside a request (``operation`` is ``None``: jobs, the
 fan-out, the CLI) there is no route, and the rules alone decide (a guest passes
 ``idea.view`` for their notifications, never ``evaluation.view_own``).

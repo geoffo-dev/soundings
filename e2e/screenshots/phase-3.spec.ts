@@ -32,8 +32,8 @@ import { expect, heading, settled, signIn, test } from '../tests/support/fixture
  *   email), the mention picker. A second run with E2E_SMTP=0 (`@no-smtp`) adds the
  *   "email isn't set up" banner and the Email page's setup steps.
  * - emails/<template>-<desktop-light|desktop-dark|390-light|390-dark>.png: every
- *   template as `soundings email-preview` renders it (sample data, all eleven types,
- *   Phase 4's included), and emails/mailpit-<subject>-…png: real emails this run sent,
+ *   template as `soundings email-preview` renders it (sample data, all thirteen types,
+ *   Phases 4 and 8b included), and emails/mailpit-<subject>-…png: real emails this run sent,
  *   as Mailpit received them.
  *
  * The failed send needs a Mailpit container to stop (the local stack's). Needs freshly
@@ -163,7 +163,7 @@ const SHOTS: Shot[] = [
       await expect(
         page.getByRole('heading', { level: 2, name: 'Email notifications' }),
       ).toBeVisible()
-      await expect(page.getByRole('radiogroup')).toHaveCount(7)
+      await expect(page.getByRole('radiogroup')).toHaveCount(9)
     },
   },
   {

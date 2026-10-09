@@ -105,9 +105,9 @@ export function OwnedIdeasSection({
 }
 
 /**
- * A group shows its first 10 ideas, then "Show N more" adds 50 at a time: first the
- * rest of what My work already sent (up to 50 per group), then pages from
- * `next_cursor`. An owner of hundreds of ideas gets a page that renders at once.
+ * A group shows the first 10 ideas My work sent (Phase 8b: it sends 10 per group),
+ * then "Show N more" adds 50 at a time from `next_cursor`. An owner of hundreds of
+ * ideas gets a page that renders at once.
  */
 const OWNED_PREVIEW = 10
 const OWNED_STEP = 50

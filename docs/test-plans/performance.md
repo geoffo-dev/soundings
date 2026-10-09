@@ -461,3 +461,50 @@ lowered from 12 to the 9 it now takes.
 shows 10 per group and asks for more 50 at a time, §9.1): returning 10 instead of 50 would
 cut its cards from about 260 to about 110. That changes `WorkOwnedGroup.ideas` ("the first
 50"), so it is the lead's decision, not done here.
+
+## 11. Phase 8b: 10 cards per owned group, the budgets back at 150 ms (2026-10-09)
+
+Lead's decision D: `WorkOwnedGroup.ideas` holds the first 10 ideas (was 50); then
+re-measure, and if an owner's My work and the score-sorted board meet 150 ms by the
+best-of-3 rule, put their budgets back to 150 (else keep 200 and record the baseline).
+
+**`make -C backend test-slow` with both at 150 ms** (Phase 8b tree, `tests/ideas/
+test_performance.py` and `tests/perf`):
+
+| Run | Load (4 vCPUs) | my work (owner) | board -score | me.work (owner) | board -score (perf) | Result |
+|---|---|---|---|---|---|---|
+| 1 (11:49) | 15-18: another agent's Playwright run | 166.3 (best of 3) | 232.0 | over | over | every budget missed, 150 and 250 alike: not a measurement |
+| A/B 1 (11:58) | 5-11 | 99.9 | 144.9 (best of 3) | 117.7 | 136.1 | passed |
+| A/B 2 (12:04) | 6-10 | 134.4 | 168.1 (best of 3) | 208.3 (best of 3) | 112.7 | failed (load rose mid-run) |
+| 2 (12:18) | 4-6 | **80.2** | **102.3** | **84.0** | **107.3** | **passed, every read in its first round** |
+
+`f6700f7` (Phase 8, 50 cards; `git archive`, same venv) in the A/B rounds' windows: my work
+(owner) 137.0 then 80.2, board -score 140.5 then 86.4; me.work (owner) 159.3 then 109.3
+(best of 2), board -score 109.0 then 85.6.
+
+**Interleaved A/B on one database** (the large data set, the Phase 8b API on :8871 and
+`f6700f7`'s on :8872 against the same Postgres, requests alternating new/old, 80 each
+after a warm-up, load 4-5; `p50 / p95` ms):
+
+| Read | Phase 8b | f6700f7 |
+|---|---|---|
+| me.work, owner alice (10 vs 50 cards per group) | 74.7 / 104.1 | 76.7 / 110.8 |
+| board -score (alice) | 88.5 / 115.7 | 85.0 / 112.0 |
+| me.work, Pat (1,000 due, owns nothing) | 61.9 / 85.1 | 49.3 / 72.7 |
+| me.work.counts, Pat | 25.8 / 45.2 | 18.5 / 32.1 |
+| list -score, Pat | 66.1 / 96.4 | 59.9 / 91.8 |
+
+What Phase 8b costs: "Research to do" is one statement on `GET /me/work` (plus its
+progress when the page isn't empty) and one on `/me/work/counts` (`STATEMENT_BUDGET`
+11 and 4; measured 10 and 4 for Pat). The statement runs in under 1 ms but Postgres
+re-plans it on every execution (custom plans: the generic plan's row estimates for
+`owner_id = $1` are worse), so its cost is planning: the first version's OR over the
+steps took ~3.5 ms to plan; written as conjunctions (`work._awaits_research`) and without
+`listed_ideas()` in the owner's branch (the role condition already implies it), 2.4 ms;
+about 5 ms in all in-process (it was 8-9). The review-M1 score masks (the project must be
+viewable, `evaluation_visible`) add about 5 ms to the score-sorted list. Against that the
+owner's My work sends a fifth of the owned cards. Every read stays well inside 150 ms when
+the machine is quiet; **both heavy budgets are back at 150 ms** (`HEAVY_READ_BUDGET_MS`,
+`HEAVY_BUDGET_MS`), the best-of-3 rule stays. On this shared VM a run while another agent
+drives browsers (load 15+) misses every budget, the 0.1.0 and Phase 8 code alike: rerun
+`test-slow` on a quiet machine before calling a miss a regression.

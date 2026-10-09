@@ -49,13 +49,12 @@ API = "/api/v1"
 RUNS = 20
 READ_BUDGET_MS = 150.0
 HEAVY_READ_BUDGET_MS: dict[str, float] = {
-    # Phase 8 review (lead's rule: raised only because 0.1.0's code misses too on this VM
-    # when idle; docs/test-plans/performance.md section 10). An owner's My work is the
-    # heaviest read (50 evaluations due, up to 50 cards per owned group and 20 recent
-    # ones: ~260 cards, 225 KB of JSON), and the board sorted by score masks and sorts 10k
-    # ideas per column.
-    "me.work (owner)": 200.0,
-    "board -score": 200.0,
+    # Phase 8 review raised these two to 200 ms (0.1.0's code missed 150 on this VM too);
+    # Phase 8b (lead's rule, docs/test-plans/performance.md section 11): owned groups hold
+    # 10 cards (was 50), and both meet 150 ms by the best-of-3 rule again, so they are back
+    # at the common budget. Kept as a table for the next heavy read.
+    "me.work (owner)": 150.0,
+    "board -score": 150.0,
 }
 WRITE_BUDGET_MS = 250.0
 
@@ -83,8 +82,10 @@ STATEMENT_BUDGET: dict[str, int] = {
     "evaluation.me": 6,
     # Pat (1,000 due, owns nothing); owned groups come in one statement (P7); Phase 8
     # review: the page's people and the projects with roles in one statement each (12 -> 9).
-    "me.work": 9,
-    "me.work.counts": 3,  # Phase 7 C1: the sidebar's badges, two aggregates
+    # Phase 8b: "Research to do" is one more statement (its first 50 with both counts) and
+    # its checklist progress one more when the page isn't empty (contract-phase8b §7).
+    "me.work": 11,
+    "me.work.counts": 4,  # Phase 7 C1: the sidebar's badges; Phase 8b: + research to do
     "me.evaluations_due": 3,  # Phase 7 C1: a page of 50 and its owners
     "me.owned_ideas": 7,
     "notifications.list": 3,

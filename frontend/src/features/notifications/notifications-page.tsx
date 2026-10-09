@@ -50,7 +50,7 @@ export function NotificationsPage({
     <Page>
       <PageHeader
         title="Notifications"
-        description="Updates about ideas you own, evaluate, watch or are mentioned in."
+        description="Updates about ideas you own, evaluate, research, watch or are mentioned in."
         actions={
           <>
             <Button variant="ghost" size="md" asChild>

@@ -60,7 +60,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `timezone` | `UTC` | IANA time zone of the organisation: digests and reminders follow it, emails show dates in it. |
 | `notifications.digestHour` / `.reminderDays` | `8` / `[2, 0]` | Hour (0-23, in `timezone`) of daily digests and reminders; evaluation reminders N days before the due date (0 = on the day, at most 5 values, `[]` = none). |
 | `breakGlass.enabled` / `.existingSecret` | `true` / `""` | Local platform admin for the first sign-in and SSO outages, available only while `oidc.issuer` is empty (keys `username`, `password`, 16+ characters). Empty secret: user `admin`, random 24-character password. |
-| `features.publicSubmission` / `.ai` | `true` / `false` | Allow projects to turn on their public form (`<baseUrl>/<project>/submit`); `false`: every public form, tracking and confirmation link answers 404. See [Public submission](#public-submission). `ai`: AI assistance through kagent ("Ask AI to evaluate", "Research this", "Draft section"); see [AI assistance](#ai-assistance-kagent). |
+| `features.publicSubmission` / `.ai` | `true` / `false` | Allow projects to turn on their public form (`<baseUrl>/<project>/submit`); `false`: every public form, tracking and confirmation link answers 404. See [Public submission](#public-submission). `ai`: AI assistance through kagent ("Ask AI to evaluate", "Ask AI to research", "Draft section"); see [AI assistance](#ai-assistance-kagent). |
 | `publicSubmission.perIpPerHour` / `.perProjectPerHour` | `10` / `100` | Public submissions per client address (IPv6: /64) per hour, counted **per API pod**; per project per hour from everyone (in the database). |
 | `publicSubmission.altcha.cost` / `.expiry` | `5000` / `PT30M` | ALTCHA proof of work: PBKDF2 iterations per attempt (1000-1000000); how long a challenge stays valid (1 minute to 1 day). |
 | `branding.maxUploadBytes` | `524288` | Largest logo or favicon upload (16 KiB-900 KiB, under the 1 MiB request limit). |
@@ -515,7 +515,7 @@ and every tool call is audited (`mcp.call`). Connecting a client:
 
 ## AI assistance (kagent)
 
-With `features.ai`, "Ask AI to evaluate", "Research this" and "Draft section" start runs
+With `features.ai`, "Ask AI to evaluate", "Ask AI to research" and "Draft section" start runs
 that the **worker** sends to a registered kagent agent over A2A; the agent works through
 `/mcp` with its own service account's key and its result is attached to the run (an
 evaluation with an AI badge, left out of the aggregate until the idea's owner includes

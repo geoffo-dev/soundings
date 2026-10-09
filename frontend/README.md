@@ -195,7 +195,18 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   title, read-only for everyone else, "Similar ideas" with a summary line, "Ask AI to research"
   and the latest note's "Read it"); cards, list rows and My work rows show
   `ResearchProgressBadge` ("2 open" / "Ready") in Research, and in the status before it once
-  something is answered (`showsResearchBadge`). The **research gate**:
+  something is answered (`showsResearchBadge`). **Phase 8b** (contract-phase8b §10,
+  `features/research/research-assignment.tsx`): "Research: <name> · due <date>" in the panel
+  (`ResearcherLine`: Change / Remove (Undo) / Hand back) and the details (`ResearcherField`, a
+  menu), the assignment dialog (`ResearchAssignmentDialog`: `PeopleList includeNonMembers` only
+  with `can_assign_outside_researcher`, people outside the project marked, one line on what they'll
+  see, a due date with quick picks; mode `start` is the "Start research" primary action, which
+  assigns then moves), `HandBackDialog` (a guest goes to My work, then `forgetIdea`). A guest
+  researcher (`permissions.can_view_project` false: `IdeaPageContext.guest`) gets the Overview only
+  (no tabs, evaluation area, score, AI, submission panel; the project crumb as text); a 404 on the
+  idea, even after data, shows not-found. Research cards show `ResearcherAvatar` ("Researched by
+  …", in the card's description); My work's `research-to-do.tsx` and the sidebar's "Research"
+  badge (only while there is some); with no projects My work is just "Research to do". The **research gate**:
   a 409 `research_incomplete` from a status change, the first invite, "Ask AI to evaluate" or
   "Start proposal" opens `ResearchGateDialog` (mounted in `_app.tsx`; the hooks call
   `openResearchGate`, the query client shows no toast for that code) with the open items, **Open
@@ -490,6 +501,15 @@ backend and its tests are.
   answered; no GREEN idea is in Research. Customer Innovation keeps the defaults, step off.
   "Similar ideas" uses pg_trgm's similarity (≥ 0.3, top 5): TOOL-7 finds TOOL-8 and GREEN-5.
   Checklist item ids: `RESEARCH_ITEMS` in `phase8-fixtures.ts`.
+- **Phase 8b fixtures** (`phase8b-fixtures.ts`; rules in `researchers.ts`: `assignmentLive` (c24),
+  `isResearchGuest` (column R), `canAssignResearcher` / `canAssignOutsideResearcher` (S1 a), the
+  guest route table `guestAccess` (deny by default), `researchToDo`, the automatic clears; handlers
+  `handlers/research.ts`, `work.ts`): **Ivan** (no role anywhere) researches **TOOL-7** as its
+  guest, asked by Alice (a TOOL admin), due in 3 days; **Kofi** (a member through a group)
+  researches **TOOL-10**; **Alice** researches **GREEN-3**, due 2 days ago (the overdue row of her
+  "Research to do"); **GREEN-1** has nobody assigned and a research due date (Carol, its owner,
+  does it "as owner"). Knob `soundings-mock-projects` = `private` makes every project private, so
+  Ivan has no projects at all (the guest's app shell).
 - **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
   Customer Innovation (also in the user menu → Switch user → Mock data);
   `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);

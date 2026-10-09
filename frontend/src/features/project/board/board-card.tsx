@@ -13,7 +13,9 @@ import {
   EvaluatorProgress,
   IdeaScore,
   OwnerAvatar,
+  ResearcherAvatar,
   ResearchProgressBadge,
+  showsResearcher,
 } from '@/features/project/idea-meta'
 import { badgeLabel, showsResearchBadge } from '@/features/research/research-copy'
 import { useBoardFocus } from './board-focus'
@@ -90,6 +92,8 @@ export function cardDescription(idea: IdeaSummary): string {
     idea.high_disagreement ? 'High disagreement' : null,
     idea.owner ? `Owner ${idea.owner.display_name}` : 'No owner',
     idea.research && showsResearchBadge(idea) ? badgeLabel(idea.research) : null,
+    // Phase 8b. In the description, not the name: cards stay named "Title (KEY)".
+    showsResearcher(idea) ? `Researched by ${idea.researcher.display_name}` : null,
     total > 0 ? `${submitted} of ${total} evaluations submitted` : null,
     idea.tags.length > 0 ? `Tags: ${idea.tags.join(', ')}` : null,
   ]
@@ -127,7 +131,15 @@ export function CardBody({ idea, lifted = false }: { idea: IdeaSummary; lifted?:
       {/* Wraps in narrow columns (six with the research step): the counts move under. */}
       <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5">
         <OwnerAvatar owner={idea.owner} size="xs" />
-        <ResearchProgressBadge idea={idea} />
+        {showsResearcher(idea) ? (
+          // The checklist and who answers it, together.
+          <span className="inline-flex items-center gap-1.5">
+            <ResearchProgressBadge idea={idea} />
+            <ResearcherAvatar researcher={idea.researcher} />
+          </span>
+        ) : (
+          <ResearchProgressBadge idea={idea} />
+        )}
         {idea.evaluator_progress.total > 0 && (
           <EvaluatorProgress
             progress={idea.evaluator_progress}

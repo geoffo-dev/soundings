@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isApiError } from '@/api/errors'
+import { queryKeys } from '@/api/keys'
 import {
   useCachedIdeaSummary,
   useChangeIdeaStatus,
@@ -75,18 +76,21 @@ export function IdeaPage({ ideaKey, search }: { ideaKey: string; search: IdeaSea
     idea.isError &&
     isApiError(idea.error) &&
     (idea.error.status === 404 || idea.error.status === 422)
-  // Access ended (a guest researcher unassigned, the idea deleted): nothing of it stays cached.
+  // Access ended (a guest researcher unassigned, the idea deleted): nothing of it stays
+  // cached, and My work and the sidebar's counts drop it too.
   useEffect(() => {
-    if (gone) forgetIdea(queryClient, ideaKey)
+    if (!gone) return
+    forgetIdea(queryClient, ideaKey)
+    void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
   }, [gone, queryClient, ideaKey])
 
+  // Before the data: a refetch that 404s keeps the old data, and a guest researcher
+  // whose access ended (or anyone after a delete) must not keep reading it.
+  if (gone) return <IdeaNotFound />
   if (idea.data) {
     return <LoadedIdeaPage key={idea.data.id} idea={idea.data} ideaKey={ideaKey} search={search} />
   }
-  if (idea.isError) {
-    if (gone) return <IdeaNotFound />
-    return <IdeaLoadError onRetry={() => void idea.refetch()} />
-  }
+  if (idea.isError) return <IdeaLoadError onRetry={() => void idea.refetch()} />
   return <IdeaPageLoading summary={cached} />
 }
 

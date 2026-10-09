@@ -28,7 +28,7 @@ const row = (page: Page, label: string) =>
 async function openPreferences(page: Page) {
   await page.goto('/settings/notifications')
   await expect(page.getByRole('heading', { level: 2, name: 'Email notifications' })).toBeVisible()
-  await expect(page.getByRole('radiogroup')).toHaveCount(7)
+  await expect(page.getByRole('radiogroup')).toHaveCount(9)
 }
 
 async function choose(page: Page, label: string, mode: 'Immediate' | 'Daily digest' | 'Off') {
@@ -58,6 +58,9 @@ test('PR-01: defaults per type; a change saves at once and “Reset” goes back
       'Evaluation reminders',
       'All evaluations are in',
       'Mentions',
+      // Phase 8b: the two research types, after the Phase 3 ones.
+      'Asked to research',
+      'Research reminders',
     ]) {
       await expect(row(page, label).getByRole('radio', { name: 'Immediate' })).toBeChecked()
     }

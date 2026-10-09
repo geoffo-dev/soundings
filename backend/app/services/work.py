@@ -24,13 +24,12 @@ from datetime import datetime
 from typing import Any, Final
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, and_, exists, false, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, and_, exists, false, func, not_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from app.authz import (
     ASSIGNABLE_ROLES,
-    listed_ideas,
     researched_ideas,
     viewable_ideas,
     visible_projects,
@@ -247,43 +246,56 @@ async def _due_counts(db: AsyncSession, principal: Principal) -> tuple[int, int]
 _STEPS_ON: Final = (ResearchStep.BEFORE_EVALUATION, ResearchStep.BEFORE_PROPOSAL)
 
 
-def _awaits_research() -> ColumnElement[bool]:
-    """``awaits_research`` in SQL: the step on, open and not past Research."""
-    return or_(
-        *(
-            and_(
-                Project.research_step == step,
-                Idea.status != IdeaStatus.CLOSED,
-                Idea.status.not_in(sorted(gated_statuses(step))),
-            )
-            for step in _STEPS_ON
-        )
+def _awaits_research() -> list[ColumnElement[bool]]:
+    """``awaits_research`` in SQL: the step on, open and not past Research. Conjunctions
+    only (no OR over the steps): the OR form took the planner ~3 ms to plan on every
+    execution (custom plans), ten times the query itself."""
+    # Closed, and past Research whatever the step (Proposal); then each step's own rest.
+    common = {IdeaStatus.CLOSED} | set.intersection(
+        *(set(gated_statuses(step)) for step in _STEPS_ON)
     )
+    clauses: list[ColumnElement[bool]] = [
+        Project.research_step != ResearchStep.OFF,
+        Idea.status.not_in(sorted(common)),
+    ]
+    for step in _STEPS_ON:
+        extra = sorted(gated_statuses(step) - common)
+        if extra:
+            clauses.append(not_(and_(Project.research_step == step, Idea.status.in_(extra))))
+    return clauses
 
 
 def _shows_progress() -> ColumnElement[bool]:
     """``shows_research_progress`` in SQL: in Research or the status right before it."""
     return or_(
+        Idea.status == IdeaStatus.RESEARCH,
         *(
-            and_(
-                Project.research_step == step,
-                Idea.status.in_([IdeaStatus.RESEARCH, status_before_research(step)]),
-            )
+            and_(Project.research_step == step, Idea.status == status_before_research(step))
             for step in _STEPS_ON
-        )
+        ),
     )
 
 
 def _required_open() -> ColumnElement[bool]:
     """A required, active checklist item of the idea's project without its answer."""
-    answered = exists().where(
-        ResearchAnswer.idea_id == Idea.id, ResearchAnswer.item_id == ResearchChecklistItem.id
+    # Correlated explicitly: auto-correlation stops at the nearest enclosing SELECT, so
+    # the inner EXISTS would otherwise get its own ``ideas`` (any idea's answer counted).
+    answered = (
+        exists()
+        .where(
+            ResearchAnswer.idea_id == Idea.id, ResearchAnswer.item_id == ResearchChecklistItem.id
+        )
+        .correlate_except(ResearchAnswer)
     )
-    return exists().where(
-        ResearchChecklistItem.project_id == Idea.project_id,
-        ResearchChecklistItem.archived_at.is_(None),
-        ResearchChecklistItem.required,
-        ~answered,
+    return (
+        exists()
+        .where(
+            ResearchChecklistItem.project_id == Idea.project_id,
+            ResearchChecklistItem.archived_at.is_(None),
+            ResearchChecklistItem.required,
+            ~answered,
+        )
+        .correlate_except(ResearchChecklistItem)
     )
 
 
@@ -302,19 +314,26 @@ def _research_where(principal: Principal) -> list[ColumnElement[bool]]:
             )
         )
     )
+    # The role condition already means project.view (member or admin), so the owner's
+    # branch needs no listed_ideas() (its visibility subplan doubled the planning time):
+    # only "not held" and an API key's projects.
+    in_key = (
+        Idea.project_id.in_(principal.project_ids) if principal.project_ids is not None else true()
+    )
     as_owner = and_(
         Idea.researcher_id.is_(None),
         Idea.owner_id == principal.user_id,
-        listed_ideas(principal),
+        Idea.held_for.is_(None),
+        in_key,
         can_answer_as_owner,
         or_(Idea.research_due_at.is_not(None), _shows_progress()),
     )
-    if principal.user.is_service_account:
-        as_owner = false()  # agents never own ideas (c4); belt and braces
+    if principal.user.is_service_account or not principal.has_scope("read"):
+        as_owner = false()  # agents never own ideas (c4); a key needs read
     return [
         or_(researched_ideas(principal), as_owner),
         Project.archived_at.is_(None),
-        _awaits_research(),
+        *_awaits_research(),
         _required_open(),
     ]
 

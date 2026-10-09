@@ -173,3 +173,33 @@ export function ResearchProgressBadge({
     </HoverTooltip>
   )
 }
+
+/**
+ * Phase 8b: Research cards show who does the research when someone other than the
+ * owner was asked (the owner's avatar is already on the card).
+ */
+export function showsResearcher(
+  idea: Pick<IdeaSummary, 'status' | 'researcher' | 'owner'>,
+): idea is Pick<IdeaSummary, 'status' | 'owner'> & { researcher: UserRef } {
+  return (
+    idea.status === 'research' && idea.researcher !== null && idea.researcher.id !== idea.owner?.id
+  )
+}
+
+/** "Researched by Ivan Petrov": the researcher's avatar beside the checklist badge. */
+export function ResearcherAvatar({
+  researcher,
+  className,
+}: {
+  researcher: UserRef
+  className?: string
+}) {
+  const label = `Researched by ${researcher.display_name}`
+  return (
+    <HoverTooltip content={label}>
+      <span role="img" aria-label={label} className={cn('inline-flex', className)}>
+        <Avatar name={researcher.display_name} src={researcher.avatar_url} size="xs" decorative />
+      </span>
+    </HoverTooltip>
+  )
+}

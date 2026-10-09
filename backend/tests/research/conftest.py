@@ -8,6 +8,9 @@ owner-to-be, a member, three evaluators, a viewer, an outsider and a platform ad
   the third optional, like the default checklist).
 * ``answer(db, idea, item, user, text)`` answers an item in the database.
 * ``api(user)`` signs a user in (``Api``).
+* Phase 8b: ``assign(api, key, researcher, due_at)`` calls ``set_research_assignment``;
+  ``researcher_audit(db, idea)`` reads its ``idea.researcher_change`` entries;
+  ``feed_types(db, idea)`` the idea's activity event types, oldest first.
 """
 
 from __future__ import annotations
@@ -16,9 +19,11 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.activity import ActivityEvent, AuditLog
 from app.models.base import utcnow
 from app.models.enums import ResearchStep
 from app.models.idea import Idea
@@ -36,6 +41,7 @@ from tests.ideas.conftest import (  # noqa: F401 - fixtures
     ok,
     team,
 )
+from tests.mcp.conftest import as_agent, connect, make_key  # noqa: F401 - fixtures (Phase 8b)
 
 __all__ = [
     "API",
@@ -45,8 +51,11 @@ __all__ = [
     "Team",
     "answer",
     "assert_problem",
+    "assign",
+    "feed_types",
     "key_of",
     "ok",
+    "researcher_audit",
     "set_step",
 ]
 
@@ -127,3 +136,33 @@ async def answer_required(
 
 def open_titles(body: dict[str, Any]) -> list[str]:
     return [item["title"] for item in body["open_items"]]
+
+
+# --- Phase 8b ------------------------------------------------------------------------------
+async def assign(
+    client: Api, key: str, researcher: User | None, due_at: str | None = None
+) -> httpx.Response:
+    """``PUT /ideas/{key}/research/assignment`` with the complete new state."""
+    return await client.put(
+        f"/ideas/{key}/research/assignment",
+        {"researcher_id": str(researcher.id) if researcher else None, "due_at": due_at},
+    )
+
+
+async def researcher_audit(db: AsyncSession, idea: Idea) -> list[AuditLog]:
+    rows = await db.scalars(
+        select(AuditLog)
+        .where(AuditLog.action == "idea.researcher_change", AuditLog.target_id == idea.id)
+        .order_by(AuditLog.created_at, AuditLog.id)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows)
+
+
+async def feed_types(db: AsyncSession, idea: Idea) -> list[str]:
+    rows = await db.scalars(
+        select(ActivityEvent.type)
+        .where(ActivityEvent.idea_id == idea.id)
+        .order_by(ActivityEvent.created_at, ActivityEvent.id)
+    )
+    return list(rows)

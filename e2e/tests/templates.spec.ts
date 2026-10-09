@@ -181,12 +181,14 @@ test('TPL-01: an admin edits the template; the editor and both exports follow; R
   expect(text).not.toContain('Cost & effort')
   expect(text.indexOf('Customers')).toBeLessThan(text.indexOf('Pilot plan'))
 
-  // Restore: the section and its text come back.
+  // Restore: the section and its text come back, where it was (Phase 8b, D: removed
+  // sections keep their position; it was fifth when removed).
   await signIn(page, 'alice')
   await openTemplate(page, project.slug, 8)
   await page.getByRole('button', { name: 'Restore Cost & effort' }).click()
   await expect(rows(page)).toHaveCount(9)
-  await expect(titleField(page, 8)).toBeFocused()
+  await expect(titleField(page, 4)).toBeFocused()
+  await expect(titleField(page, 4)).toHaveValue('Cost & effort')
   await page.getByRole('button', { name: 'Save template' }).click()
   await expect(toast(page, 'Proposal template saved')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Removed sections' })).toHaveCount(0)

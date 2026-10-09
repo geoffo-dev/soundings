@@ -56,6 +56,14 @@ ROUTES: dict[str, tuple[str, str, Any]] = {
     ),
     "clear_research_item": ("DELETE", "/ideas/{idea}/research/items/{item}", None),
     "list_similar_ideas": ("GET", "/ideas/{idea}/similar-ideas", None),
+    # Phase 8b: who does the research, and My work's "Research to do"
+    "set_research_assignment": (
+        "PUT",
+        "/ideas/{idea}/research/assignment",
+        {"researcher_id": None, "due_at": None},
+    ),
+    "remove_researcher": ("DELETE", "/ideas/{idea}/research/assignment", None),
+    "list_my_research_to_do": ("GET", "/me/research-to-do", None),
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 

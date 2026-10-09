@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
   CalendarClock,
+  Check,
   ChevronDown,
   TriangleAlert,
   Undo2,
@@ -11,7 +13,12 @@ import { useState, type ReactNode } from 'react'
 
 import { describeError } from '@/api/errors'
 import { useChangeIdeaStatus } from '@/api/ideas'
-import { useIdeaResearch, useRemoveResearcher, useSetResearchAssignment } from '@/api/research'
+import {
+  forgetIdea,
+  useIdeaResearch,
+  useRemoveResearcher,
+  useSetResearchAssignment,
+} from '@/api/research'
 import type { ResearchAssignment, UserRef, UserSearchResult } from '@/api/types'
 import { offerUndo } from '@/api/undo'
 import { Avatar } from '@/components/ui/avatar'
@@ -121,7 +128,8 @@ export function ResearchDue({
   if (!assignment.due_at) return null
   if (assignment.overdue) {
     return (
-      <span className={cn('inline-flex items-center gap-1 text-warning', className)}>
+      // The warning tone wins over a muted line's colour: overdue is never grey.
+      <span className={cn('inline-flex items-center gap-1', className, 'text-warning')}>
         <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
         overdue, was due {formatDate(assignment.due_at)}
       </span>
@@ -187,7 +195,7 @@ export function ResearcherField() {
   const person = <ResearcherPerson assignment={assignment} />
   const name = assignmentText(assignment, idea.owner, me.id)
   return (
-    <span className="flex min-w-0 flex-col items-start">
+    <span className="flex w-full min-w-0 flex-col items-start">
       {canAssign || canHandBack ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -368,7 +376,7 @@ export function ResearchAssignmentDialog({
 
 function initialChoice(assignment: ResearchAssignment, owner: UserRef | null): Choice {
   const researcher = assignment.researcher
-  if (!researcher || (owner && researcher.id === owner.id)) return { kind: 'owner' }
+  if (!researcher || owner?.id === researcher.id) return { kind: 'owner' }
   return { kind: 'person', person: researcher, inProject: assignment.researcher_in_project }
 }
 
@@ -387,8 +395,7 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
   // The owner explicitly assigned (the seed's GREEN-6) stays explicit when kept.
   const explicitOwner =
     assignment.researcher !== null && owner !== null && assignment.researcher.id === owner.id
-  const researcherId =
-    choice.kind === 'person' ? choice.person.id : explicitOwner ? (owner?.id ?? null) : null
+  const researcherId = choice.kind === 'person' ? choice.person.id : explicitOwner ? owner.id : null
   const currentId = assignment.researcher?.id ?? null
   const dueAt = due ? fromDateInput(due) : null
   const changed = researcherId !== currentId || due !== currentDue
@@ -414,15 +421,12 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
             ? `${owner.display_name} (owner)`
             : 'The owner'
     const when = dueAt ? `Due ${formatDate(dueAt)}` : undefined
+    // The status change's own toast says where it went, with Undo.
     const move = () =>
       changeStatus.mutate(
         { status: 'research' },
         {
-          onSuccess: () =>
-            finish(
-              `${idea.key} moved to ${statusLabel('research')}`,
-              `${who} will do the research`,
-            ),
+          onSuccess: onDone,
           onError: (failure) => setError(describeError(failure)),
         },
       )
@@ -476,6 +480,10 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
             {owner ? 'The idea’s owner does the research' : 'Whoever owns the idea does it'}
           </span>
         </span>
+        <Check
+          aria-hidden="true"
+          className={cn('text-accent!', choice.kind === 'owner' ? 'opacity-100' : 'opacity-0')}
+        />
       </CommandItem>
     </CommandGroup>
   )
@@ -537,6 +545,8 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
               ineligible={() => undefined}
               exclude={owner ? [owner.id] : []}
               before={ownerRow}
+              beforeChosen={choice.kind === 'owner' ? 'research-owner' : undefined}
+              listClassName="max-h-64"
               onSelect={(person: UserSearchResult) =>
                 setChoice({
                   kind: 'person',
@@ -572,12 +582,20 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
               : 'Optional. No due date: no reminders, and it isn’t shown as overdue.'
           }
         >
-          <DatePicker
-            value={due}
-            onValueChange={setDue}
-            min={todayInput()}
-            max={latestDueInput()}
-          />
+          {/* "No due date" sits by the field: on a phone it never wraps onto a row alone. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <DatePicker
+              value={due}
+              onValueChange={setDue}
+              min={todayInput()}
+              max={latestDueInput()}
+            />
+            {due && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setDue('')}>
+                No due date
+              </Button>
+            )}
+          </div>
         </Field>
         <div className="-mt-2 flex flex-wrap gap-1.5">
           {QUICK_PICKS.map((pick) => (
@@ -591,11 +609,6 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
               {pick.label}
             </Button>
           ))}
-          {due && (
-            <Button type="button" size="sm" variant="ghost" onClick={() => setDue('')}>
-              No due date
-            </Button>
-          )}
         </div>
       </DialogBody>
       <DialogFooter>
@@ -635,6 +648,7 @@ export function HandBackDialog({
   const { idea, ideaKey, guest } = useIdeaPage()
   const remove = useRemoveResearcher(ideaKey)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const owner = idea.owner
 
   const confirm = () => {
@@ -648,7 +662,9 @@ export function HandBackDialog({
               ? `${owner.display_name} (the owner) does it again; your answers stay.`
               : 'Your answers stay.',
           })
-          if (guest) void navigate({ to: '/' })
+          // A guest can't open the idea any more: off to My work, then nothing of it
+          // stays cached (contract-phase8b §4.6).
+          if (guest) void navigate({ to: '/' }).then(() => forgetIdea(queryClient, ideaKey))
         },
       },
     )

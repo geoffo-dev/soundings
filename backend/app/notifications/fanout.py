@@ -509,9 +509,7 @@ async def _notify_event(
             researcher = access.parse_uuid(payload.get("to_researcher_id"))
             if researcher is None or researcher == actor_id:
                 return
-            data = {
-                "due_at": idea.research_due_at.isoformat() if idea.research_due_at else None
-            }
+            data = {"due_at": idea.research_due_at.isoformat() if idea.research_due_at else None}
             recipients = await _candidates(
                 writer,
                 NotificationType.RESEARCHER_ASSIGNED,

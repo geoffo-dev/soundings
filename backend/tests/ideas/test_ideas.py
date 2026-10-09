@@ -83,6 +83,11 @@ async def test_member_submits_an_idea(api: AsUser, team: Team, db_session: Async
         "can_delete": False,
         "can_answer_research": False,  # Phase 8: the project's research step is off
         "invite_blocked_by_research": False,
+        # Phase 8b: the step is off, so nobody assigns; the member sees the project.
+        "can_assign_researcher": False,
+        "can_assign_outside_researcher": False,
+        "can_hand_back_research": False,
+        "can_view_project": True,
     }
     assert await events(db_session, idea["id"]) == [("idea_created", {})]
 
@@ -107,6 +112,11 @@ async def test_admin_permissions_on_a_new_idea(api: AsUser, team: Team) -> None:
         "can_delete": True,
         "can_answer_research": False,  # Phase 8: the project's research step is off
         "invite_blocked_by_research": False,
+        # Phase 8b: the research step is off.
+        "can_assign_researcher": False,
+        "can_assign_outside_researcher": False,
+        "can_hand_back_research": False,
+        "can_view_project": True,
     }
 
 
@@ -322,7 +332,9 @@ async def test_archived_projects_are_read_only(
     ada = await api(team.admin)
 
     detail = ok(await ada.get(f"/ideas/{idea.id}"))
-    assert not any(detail["permissions"].values())
+    # Everything off but can_view_project (what you may read, not do: Phase 8b).
+    assert not any(v for k, v in detail["permissions"].items() if k != "can_view_project")
+    assert detail["permissions"]["can_view_project"] is True
     for method, path, body in [
         ("patch", "", {"title": "x"}),
         ("delete", "", None),

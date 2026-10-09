@@ -52,11 +52,17 @@ development installs a **development login** that lists everyone ("who are you?"
   - **Evaluations due**: ideas waiting for your scores, overdue first. The most urgent
     one has the page's only blue button; "Continue" means you have a saved draft. The
     first 50 are listed; **Show more** loads the rest, a hundred at a time.
+  - **Research to do** [Phase 8b] (only when you have some): ideas whose research
+    checklist you answer, as their researcher or as their owner when nobody else was
+    asked, with a required item still open. Overdue first, then the soonest due, then
+    those without a due date; each row says how many required items are open ("2
+    open") and **Answer** opens the checklist. "As owner" marks the ones you do as owner.
   - **Ideas I own**, grouped by status (Closed is folded away). Each group shows its
     first 10 ideas; **Show more** adds 50 at a time. Viewers, who can't own ideas, don't
     see this section.
   - **Recently updated in my projects**: the ten ideas with the latest activity.
-  The sidebar repeats the counts and shows a red dot when an evaluation is overdue.
+  The sidebar repeats the counts and shows a red dot when an evaluation (or research)
+  is overdue; **Research** appears under My work only while you have research to do.
   Project admins see how many public-form ideas wait for review in the sidebar, next to
   the project, and in a notice above its board. On a brand-new install, or before anyone
   has added you to a project, My work says how to start instead: platform admins get
@@ -217,8 +223,8 @@ consulted. A project admin turns this on per project (Project settings → Resea
 
 On the idea's Overview tab, the **Research** panel lists the project's checklist, for
 example "Not already being done elsewhere", "Departments or teams consulted" and "Data
-protection considered". The idea's owner and project admins answer each item in a few
-lines of plain text, such as "Legal (contracts team), 3 Oct: fine if we keep the
+protection considered". The idea's owner, its researcher (see below) and project admins
+answer each item in a few lines of plain text, such as "Legal (contracts team), 3 Oct: fine if we keep the
 standard terms"; the hint under each item's title says what to write. **Save answer** (or
 `⌘↵`) saves it and records who answered and when; edit it later the same way, or
 **Clear** it ("Undo" in the toast brings it back). An answer you typed but didn't save is
@@ -243,6 +249,59 @@ Everyone who can open the idea reads the checklist and the answers, evaluators i
 On the board, in the list and in My work, ideas in Research show the checklist at a
 glance: **2 open** (required items left) or **Ready** (nothing holds the move). Ideas in
 the status just before Research show it too once something is answered.
+
+### Who does the research [Phase 8b]
+
+By default the idea's owner does the research. The owner, project admins and platform
+admins can ask **one person** to do it instead, the idea's **researcher**, with an
+optional **research due date**. The Research panel and the idea's details say who it is:
+"Research: Bob Chen · due Fri 9 Oct", or "Research: Sven Lindqvist (owner)" when nobody
+else was asked. An overdue date says "overdue" in words, in the warning colour.
+
+- **Start research**: in the status just before Research, the owner's blue button asks
+  who does the research (you, the owner, unless you pick someone) and an optional due
+  date, then moves the idea into Research.
+- **Change** (in the Research panel, the details' **Research** menu or ⌘K "Change
+  researcher…") picks a person and a due date; **Remove** gives the research back to the
+  owner, with **Undo**. The due date stays when the researcher changes or is removed.
+- The researcher can **Hand back** the research (after confirming); their answers stay
+  and the owner does it again.
+- Anyone with an active Soundings account can be the researcher, inside the project or
+  not (never an AI agent or the break-glass account). The picker marks people outside
+  the project **Not in this project**, and choosing one says what they will see (below).
+  In a **private** project only project and platform admins can ask someone outside it;
+  owners pick from the project's people. Everyone who sees the idea sees "not in this
+  project" next to an outside researcher, and the activity feed records each change.
+- The researcher answers the checklist, comments (and can be @mentioned) and is told
+  about status changes. They can't move the idea or use **Move anyway**: when the
+  checklist is complete, the owner moves it on.
+- Asking someone sends them **Asked to research** (with the due date and a link to the
+  checklist) and puts the idea in their My work, under **Research to do**. With a due
+  date, a **Research reminder** goes out 2 days before and on the day, at the usual
+  reminder hour, while a required item is still open: to the researcher, or to the owner
+  when nobody else was asked. Reminders stop as soon as the required items are answered
+  or the idea moves on.
+- Closing the idea, or turning the project's research step off, ends the assignment
+  (reopening doesn't bring it back); in an archived project it is paused. If a
+  researcher leaves a private project, or their account is deactivated, it ends too.
+  Answers already written always stay.
+
+On the board, cards in the Research column show the researcher's avatar next to the
+checklist badge ("Researched by Bob Chen").
+
+### Researching an idea outside your projects [Phase 8b]
+
+If you're asked to research an idea in a **private** project you aren't in, you see
+**that one idea** and nothing else of the project: its title, summary, description,
+tags, status and owner, the activity feed and comments, the research checklist (which
+you answer) and Similar ideas you could see anyway. You never see its scores,
+evaluations, evaluators, proposal or AI actions, and the project shows by name only (no
+link). The idea page says "You can see this idea because you're researching it." The
+idea is in your My work, inbox and search; if you're in no project at all, My work is
+just your **Research to do**. When you hand it back, someone else is asked, the idea is
+closed or the project's research step is turned off, the idea disappears for you at once.
+In an **internal** project, which everyone can already read, being its researcher only
+adds answering, commenting and **Hand back**.
 
 ### Moving past Research
 
@@ -478,6 +537,8 @@ what on which idea, in one sentence:
 | an idea you own, evaluate or watch **changes status** | the idea |
 | someone **comments** on an idea you watch | the comment |
 | someone **@mentions** you | the comment |
+| someone **asks you to research** an idea (with the due date) [Phase 8b] | the idea's research checklist |
+| your **research is due**: 2 days before the research due date and on the day, while a required item is open [Phase 8b] | the research checklist |
 
 Opening a notification marks it read, and so does opening the idea it's about. You're
 never told about your own actions, and you only see notifications about ideas you can
@@ -494,7 +555,8 @@ Everything always shows up in your inbox. **Settings → Notifications** chooses
 kind of notification, whether it is also **emailed**:
 
 - **Immediate**: one email as it happens. The default for things you need to act on:
-  being made owner, being asked to evaluate, reminders, all evaluations in, mentions.
+  being made owner, being asked to evaluate or to research, reminders, all evaluations
+  in, mentions.
 - **Daily digest**: one email a day with everything set to "Daily digest" that you
   haven't already read in the app. The default for things you follow: status changes
   and new comments. The page says when it arrives (for example "08:00
@@ -711,7 +773,7 @@ as you like; nothing is saved until **Save research step**). The checklist is ed
 the rubric: 1 to 10 items, each with a title, a one-line hint (what to write) and a
 **Required** switch; reorder by dragging, Alt+↑/↓ or **Move**. Removing an item that
 ideas answered keeps their answers, hidden, under **Removed items**, and **Restore**
-brings them back (to their old place, if you removed the item during this visit). Saving
+brings them back to where they were (at the end if the checklist is shorter now). Saving
 only the checklist says "Checklist saved".
 
 The step can't be moved or turned off while ideas are in Research: a line under the
@@ -731,8 +793,8 @@ least one stays). Renaming or reordering keeps each section's text; a new sectio
 empty in every proposal. Removing a section loses nothing (so it doesn't ask): until you
 save, **Discard** brings it back; once saved, its text is kept, hidden from the editor and
 the exports, under **Removed sections** ("Text in 3 proposals"), and **Restore** brings
-it back with its text, comments and suggestions (to its old place, if you removed it
-during this visit). Saving changes every proposal in the project at once.
+it back with its text, comments and suggestions, to where it was (at the end if the
+template is shorter now). Saving changes every proposal in the project at once.
 
 ### Renaming status labels
 

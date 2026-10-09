@@ -19,7 +19,7 @@
 #   4. The run succeeded with its evaluation: AI, left out of the aggregate (n still 1),
 #      a rationale and two sources per criterion; carol still sees no scores; including
 #      it makes n 2, leaving it out again makes it 1.
-#   5. "Research this": a research note with sources. Shortlisted with a proposal, "Draft
+#   5. "Ask AI to research": a research note with sources. Shortlisted with a proposal, "Draft
 #      section" on Risks: an AI suggestion. With AI_SMOKE_CANCEL (default 1) a second,
 #      "-slow" agent's run is cancelled and ends cancelled.
 #   6. With no run open, the agent's key gets 403 insufficient_scope on REST and lists
@@ -345,8 +345,8 @@ wait_run "$research_id"
 note_id="$(body_r .result.note_id)"
 [ "$(body_r .status)" = "succeeded" ] && [ "$(as alice GET "/ideas/$idea_id/research-notes/$note_id")" = "200" ] &&
   [ "$(body '.sources | length')" = "3" ] &&
-  ok "Research this: succeeded, note $(body '{agent: .agent.display_name, chars: (.body_md | length), sources: (.sources | length)}')" ||
-  fail "Research this: $(body '{status, error, result}')"
+  ok "Ask AI to research: succeeded, note $(body '{agent: .agent.display_name, chars: (.body_md | length), sources: (.sources | length)}')" ||
+  fail "Ask AI to research: $(body '{status, error, result}')"
 status="$(as alice POST "/ideas/$idea_id/status" '{"status": "shortlisted"}')"
 [ "$status" = "200" ] || fail "shortlist: $status $(body)"
 status="$(as alice POST "/ideas/$idea_id/proposal")"

@@ -6,10 +6,10 @@ Two full seeds (about ten seconds each); the other checks reuse them.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 import pytest
 from sqlalchemy import DateTime, func, select, text
@@ -300,7 +300,10 @@ async def test_seed_tells_the_demo_story(
     # (evaluation due dates and the account that existed before excepted).
     for table in Base.metadata.sorted_tables:
         for column in table.columns:
-            if not isinstance(column.type, DateTime) or column.name == "evaluation_due_at":
+            if not isinstance(column.type, DateTime) or column.name in (
+                "evaluation_due_at",
+                "research_due_at",  # Phase 8b: TOOLS-12's is in 3 days
+            ):
                 continue
             latest = select(func.max(column))
             if table is User.__table__:
@@ -396,6 +399,7 @@ async def test_seed_tells_the_demo_story(
     assert listed[0]["email"] == "alice@example.com"
 
     await _phase8_story(api, db_session)
+    await _phase8b_story(login, users, db_session)
 
 
 async def _phase8_story(api: Any, db: AsyncSession) -> None:
@@ -478,6 +482,72 @@ async def _phase8_story(api: Any, db: AsyncSession) -> None:
         "required_open": 1,
     }
     await db.rollback()
+
+
+async def _key(db: AsyncSession, title: str) -> str:
+    row = (
+        await db.execute(
+            select(Project.key, Idea.number)
+            .join(Project, Project.id == Idea.project_id)
+            .where(Idea.title == title)
+        )
+    ).one()
+    return f"{row[0]}-{row[1]}"
+
+
+async def _phase8b_story(login: Login, users: dict[str, User], db: AsyncSession) -> None:
+    """Phase 8b (contract-phase8b section 11): bob, not a member of the private Internal
+    Tools, researches TOOLS-12 as its guest (due in 3 days, asked by dave); amara
+    researches GREEN-6, which she owns (asked by alice); alice's GREEN-5 is overdue."""
+    ids: dict[str, UUID] = dict((await db.execute(select(User.email, User.id))).all())
+    tools12 = await _key(db, "Chat command to request system access")
+    green6 = await _key(db, "Heat pumps for the Bristol office")
+    green5 = await _key(db, "Move cloud workloads to a low-carbon region")
+    assigned = set(await db.scalars(select(Idea.title).where(Idea.researcher_id.is_not(None))))
+    await db.rollback()
+    assert (tools12, green6, green5) == ("TOOLS-12", "GREEN-6", "GREEN-5")
+    # Nothing else changes: TOOLS-11 keeps its owner doing the research.
+    assert assigned == {
+        "Chat command to request system access",
+        "Heat pumps for the Bristol office",
+        "Move cloud workloads to a low-carbon region",
+    }
+
+    def person(email: str) -> User:
+        return User(id=ids[email])
+
+    bob = await login(person("bob@example.com"))
+    guest = (await bob.get(f"{API}/ideas/{tools12}")).json()
+    assert guest["permissions"]["can_view_project"] is False
+    assert guest["permissions"]["can_answer_research"] is True
+    assert guest["researcher"]["id"] == str(ids["bob@example.com"])
+    assert guest["score"] is None
+    assert guest["evaluators"] == []
+    due = datetime.fromisoformat(guest["research_due_at"])
+    assert timedelta(days=2) < due - utcnow() < timedelta(days=4)
+    assert (await bob.get(f"{API}/projects/internal-tools")).status_code == 404
+    assert (await bob.get(f"{API}/ideas/{tools12}/proposal")).status_code == 404
+    work = (await bob.get(f"{API}/me/work")).json()
+    [item] = [i for i in work["research_to_do"] if i["idea"]["key"] == tools12]
+    assert item["can_view_project"] is False
+    assert item["progress"]["required_open"] == 1
+    inbox = (await bob.get(f"{API}/me/notifications")).json()["items"]
+    asked = [n for n in inbox if n["type"] == "researcher_assigned"]
+    assert [n["idea"]["key"] for n in asked] == [tools12]
+    assert asked[0]["actor"]["id"] == str(ids["dave@example.com"])
+
+    amara = await login(person("amara@example.com"))
+    panel = (await amara.get(f"{API}/ideas/{green6}/research")).json()
+    assert panel["assignment"]["researcher"]["id"] == str(ids["amara@example.com"])
+    inbox = (await amara.get(f"{API}/me/notifications")).json()["items"]
+    assert [n["idea"]["key"] for n in inbox if n["type"] == "researcher_assigned"] == [green6]
+
+    alice = await login(person("alice@example.com"))
+    work = (await alice.get(f"{API}/me/work")).json()
+    [late] = [i for i in work["research_to_do"] if i["idea"]["key"] == green5]
+    assert late["overdue"] is True
+    assert work["research_to_do"][0]["idea"]["key"] == green5  # overdue first
+    assert work["counts"]["research_overdue"] >= 1
 
 
 async def test_reset_replaces_existing_data(settings: Settings, db_session: AsyncSession) -> None:

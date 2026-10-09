@@ -645,6 +645,10 @@ Everything time-based follows **one time zone for the whole installation**, `tim
   haven't submitted, only on that local day: never for overdue evaluations, never
   twice, and a changed due date reschedules them. `[]` turns reminders off; people can
   also turn them off for themselves.
+- **Research reminders** (Phase 8b): the same days and hour for a research due date, to
+  the idea's researcher (or its owner while nobody is assigned), while a required
+  checklist item is still open and the idea hasn't moved past Research. Same setting,
+  their own preference ("Research reminders").
 - The schedule runs in the worker every hour and handles daylight-saving changes; the
   cleanup (old notifications and outbox rows) runs at the end of every hourly run.
 
@@ -947,7 +951,7 @@ a Secret, as kagent will (`scripts/k3s-mcp-client.sh`).
 AI assistance (SPEC section 9) uses [kagent](https://kagent.dev) agents for two jobs: the
 **AI evaluator** ("Ask AI to evaluate": a cited evaluation with an AI badge, left out of
 the aggregate unless the idea's owner or an admin includes it) and the **research and
-drafting assistant** ("Research this": a cited research note; "Draft section": a proposal
+drafting assistant** ("Ask AI to research": a cited research note; "Draft section": a proposal
 suggestion the owner accepts or discards). It is **off by default** and optional: without
 it nothing in Soundings needs kagent.
 
@@ -1270,7 +1274,10 @@ tokens or text.
 | `audit_log` | the actor's and target's ids, the action, ids and field names (never names, emails, tokens or claims) | for good, except `mcp.call` entries (90 days) |
 
 **When someone leaves:** deactivate them in Admin → Users (signs them out,
-revokes their keys, stops their notifications; their work keeps their name). To erase
+revokes their keys, stops their notifications, ends the research assignments they hold
+(audited); their work keeps their name). Removing someone from a private project, or
+from a group that gave them their role there, also ends their research assignments in
+that project (Phase 8b). To erase
 their personal data (an erasure request, or your retention policy), run, once
 deactivated:
 

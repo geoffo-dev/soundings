@@ -94,17 +94,17 @@ have the external IDs `employee_no` E1001–E1003):
 
 | User | Name | Roles |
 |---|---|---|
-| `alice` | Alice Anders | **platform admin**; admin of CUST, member of TOOLS and GREEN. Five evaluations due (two overdue, one draft), owns ideas in five statuses |
-| `bob` | Bob Brown | member of CUST and GREEN |
+| `alice` | Alice Anders | **platform admin**; admin of CUST, member of TOOLS and GREEN. Five evaluations due (two overdue, one draft), owns ideas in five statuses; researches `GREEN-5`, **overdue** (asked by sven) |
+| `bob` | Bob Brown | member of CUST and GREEN; **researches `TOOLS-12` as its guest** (not a member of the private Internal Tools: he sees that one idea, its feed and checklist, never its scores or proposal), due in 3 days, asked by dave |
 | `carol` | Carol Chen | member of CUST and TOOLS, viewer of GREEN; owns `TOOLS-11`, in Research with its checklist complete |
 | `dave` | Dave Davies | admin of TOOLS (edits its research checklist and proposal template; may "Move anyway") |
 | `erin` | Erin Evans | viewer of CUST and GREEN (can look, not submit) |
 | `farah` | Farah Haddad | member of CUST and GREEN |
 | `kenji` | Kenji Watanabe | member of all three; owns `TOOLS-3`, whose proposal uses the TOOLS template and ends with the research appendix |
-| `amara` | Amara Okafor | admin of GREEN, member of CUST; owns `GREEN-6`, Shortlisted with its checklist started |
+| `amara` | Amara Okafor | admin of GREEN, member of CUST; owns `GREEN-6`, Shortlisted with its checklist started, and researches it (asked by alice) |
 | `mateo` | Mateo Rodríguez | member of CUST and TOOLS |
 | `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN |
-| `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST; owns `TOOLS-12`, in Research with "Departments or teams consulted" still open (the gate refuses Evaluating) |
+| `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST; owns `TOOLS-12`, in Research with "Departments or teams consulted" still open (the gate refuses Evaluating; bob researches it) |
 | `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS; owns `GREEN-4`, whose proposal has Carbon impact written |
 
 Groups (Admin → Groups), mapped to the Keycloak realm's groups. Manual members
@@ -128,8 +128,13 @@ or more evaluators (`CUST-15`, `GREEN-10`). Phase 8: the TOOLS board's Research 
 item open: drag it to Evaluating as sven to see the gate, as dave to "Move anyway"); every TOOLS idea past Research was
 researched by its owner first, and GREEN ideas pass through Research between the
 shortlist and the proposal; the exports of `TOOLS-3` and `GREEN-4` end with "Research
-and consultation". The content lives in `backend/app/seed/content.py` (Phase 8:
-`backend/app/seed/research.py`).
+and consultation". Phase 8b: sign in as bob for a guest researcher (My work's "Research
+to do" with `TOOLS-12`, "Asked to research" in his inbox, the idea without its project's
+board, scores or proposal; Internal Tools is 404 for him), as alice for an overdue research
+assignment (`GREEN-5`), as sven or dave to see "Research: Bob Brown · not in this project"
+on `TOOLS-12`. `TOOLS-11` keeps its owner doing the research (nobody assigned). The content
+lives in `backend/app/seed/content.py` (Phase 8: `backend/app/seed/research.py`, Phase 8b:
+its `ASSIGNMENTS`).
 
 ## The whole app from the image
 

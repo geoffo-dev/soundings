@@ -210,3 +210,44 @@ describe('primaryAction with a research step (Phase 8)', () => {
     expect(primaryAction(reader, ME, proposal, 'before_proposal')).toBeNull()
   })
 })
+
+describe('primaryAction for a researcher (Phase 8b)', () => {
+  const open = { answered: 1, total: 3, required_open: 1 }
+  const researcher = person(ME)
+  const answers = { ...NONE, can_answer_research: true, can_hand_back_research: true }
+
+  it('a researcher who can’t move the idea answers the checklist, in Research and before it', () => {
+    const inResearch = idea({
+      status: 'research',
+      owner: person('owner'),
+      researcher,
+      research: open,
+      permissions: { ...answers, can_view_project: false },
+    })
+    expect(primaryAction(inResearch, ME, undefined, 'before_evaluation')).toEqual({
+      kind: 'finish-research',
+      label: 'Answer the checklist',
+    })
+    const waiting = idea({
+      status: 'new',
+      owner: person('owner'),
+      researcher,
+      research: open,
+      permissions: answers,
+    })
+    expect(primaryAction(waiting, ME, undefined, 'before_evaluation')).toEqual({
+      kind: 'finish-research',
+      label: 'Answer the checklist',
+    })
+  })
+
+  it('the owner still starts research from the status before it', () => {
+    const fresh = idea({
+      status: 'new',
+      researcher: person('bob'),
+      research: open,
+      permissions: { ...OWNER_PERMISSIONS, can_answer_research: true },
+    })
+    expect(primaryAction(fresh, ME, undefined, 'before_evaluation')?.kind).toBe('start-research')
+  })
+})

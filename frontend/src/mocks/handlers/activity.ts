@@ -73,9 +73,7 @@ export const activityHandlers = [
     const guest = isResearchGuest(ctx.db, idea, ctx.user)
     const events = [...rowsForIdea(ctx.db.events, idea.id)]
       .filter((event) => !guest || RESEARCH_GUEST_ACTIVITY_TYPES.includes(event.type))
-      .sort(
-      (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
-    )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
     const { page, next_cursor } = paginate(
       events,
       ctx.url.searchParams.get('cursor'),

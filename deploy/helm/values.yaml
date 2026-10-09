@@ -186,7 +186,7 @@ features:
   # <baseUrl>/<project>/submit (Settings > Public form). false: every public form,
   # tracking link and confirmation link answers 404, and no project can turn one on.
   publicSubmission: true
-  # -- AI assistance through kagent (Phase 6): "Ask AI to evaluate", "Research this" and
+  # -- AI assistance through kagent (Phase 6): "Ask AI to evaluate", "Ask AI to research" and
   # "Draft section" start runs that the worker sends to a registered kagent agent over
   # A2A (kagent.controllerUrl); the agent works through /mcp with its own key. false: no
   # run starts and the idea page hides the AI actions (agents can still be registered in
@@ -283,7 +283,7 @@ kagent:
       keySecretKey: authorization
     researcher:
       # -- "<fullname>-researcher": get_idea and get_proposal, then add_research_note
-      # ("Research this") or propose_proposal_section ("Draft section"). Without a web
+      # ("Ask AI to research") or propose_proposal_section ("Draft section"). Without a web
       # tool its sources come from the model's memory (shown "Cited by AI, not checked").
       enabled: true
       keySecret: ""

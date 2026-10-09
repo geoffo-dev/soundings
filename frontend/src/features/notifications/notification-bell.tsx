@@ -138,7 +138,7 @@ function InboxPanel({
         </div>
         {variant === 'sheet' && (
           <SheetDescription className="sr-only">
-            Updates about ideas you own, evaluate, watch or are mentioned in.
+            Updates about ideas you own, evaluate, research, watch or are mentioned in.
           </SheetDescription>
         )}
         <div className="flex items-center gap-2">

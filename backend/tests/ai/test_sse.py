@@ -335,6 +335,48 @@ async def test_the_recheck_follows_the_session_and_idea_view(
     await viewer.aclose()
 
 
+async def test_the_recheck_ends_a_stream_once_its_watcher_is_only_a_guest(
+    live: str, app: FastAPI, crew: Crew, db_session: AsyncSession
+) -> None:
+    """Phase 8b: a viewer researching the idea who loses their role (stored straight in
+    the database, without the service's S1 b clear) is the idea's guest researcher
+    (column R), who may never watch an AI run: the re-check uses the stream's operation."""
+    from fastapi import Request
+
+    from app.ai.sse import still_allowed
+    from app.domain.principal import Principal
+    from app.models.enums import ResearchStep
+    from app.models.project import ProjectMember
+    from tests.factories import set_researcher
+    from tests.research.conftest import set_step
+
+    await set_step(db_session, crew.team.project, ResearchStep.BEFORE_PROPOSAL)
+    await set_researcher(db_session, crew.idea, crew.team.viewer)
+    run = await open_run(db_session, crew.agent, crew.idea, AiRunKind.RESEARCH)
+    viewer = await _person(live, crew.team.viewer)
+    cookie = viewer.cookies["soundings_session"]
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/",
+        "query_string": b"",
+        "server": ("127.0.0.1", 80),
+        "headers": [(b"cookie", f"soundings_session={cookie}".encode())],
+        "app": app,
+    }
+    request = Request(scope)
+    principal = Principal(user=crew.team.viewer, operation="stream_ai_run_events")
+
+    assert await still_allowed(app, request, principal, crew.idea.id, run.id) is True
+    member = await db_session.get(ProjectMember, (crew.team.project.id, crew.team.viewer.id))
+    assert member is not None
+    await db_session.delete(member)
+    await db_session.commit()
+    assert await still_allowed(app, request, principal, crew.idea.id, run.id) is False
+    await viewer.aclose()
+
+
 # --- Blind safety ---------------------------------------------------------------------------------
 async def test_a_pending_evaluator_watching_an_ai_evaluation_learns_no_score_data(
     live: str, api: Any, crew: Crew, db_session: AsyncSession, ai_runtime: AiRuntime

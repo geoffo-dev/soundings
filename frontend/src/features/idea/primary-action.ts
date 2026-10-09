@@ -71,9 +71,12 @@ export function primaryAction(
   const researchOpen = (research?.required_open ?? 0) > 0
   if (idea.status === 'research') {
     if (researchOpen) {
-      return permissions.can_answer_research
-        ? { kind: 'finish-research', label: 'Finish research' }
-        : null
+      if (!permissions.can_answer_research) return null
+      // Phase 8b: a researcher who can't move the idea answers; the owner finishes it.
+      return {
+        kind: 'finish-research',
+        label: permissions.can_change_status ? 'Finish research' : 'Answer the checklist',
+      }
     }
     if (!permissions.can_change_status) return null
     if (researchStep === 'before_evaluation') {

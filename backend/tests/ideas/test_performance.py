@@ -48,11 +48,11 @@ RUNS = 40
 ROUNDS = 3
 BUDGET_MS = 150.0
 HEAVY_BUDGET_MS: dict[str, float] = {
-    # Phase 8 review (lead's rule: raised only because 0.1.0's code misses too on this VM
-    # when idle; docs/test-plans/performance.md section 10): the owner's My work holds
-    # 50 cards per group (~270 cards here), the score-sorted board masks every column.
-    "my work (owner)": 200.0,
-    "board -score": 200.0,
+    # Phase 8 review raised these two to 200 ms; Phase 8b (docs/test-plans/performance.md
+    # section 11): owned groups hold 10 cards (was 50) and both meet 150 ms by the
+    # best-of-3 rule again, so they are back at the common budget.
+    "my work (owner)": 150.0,
+    "board -score": 150.0,
 }
 
 SEED = """

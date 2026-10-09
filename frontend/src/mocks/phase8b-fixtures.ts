@@ -3,12 +3,14 @@
  *
  * - **TOOL-7** ("Service health dashboard", Internal Tools is private, in Research,
  *   one required item open): **Ivan Petrov**, who has no role in any project, is its
- *   researcher, asked by Bob (the owner) and due in 3 days. Ivan is its **guest**
+ *   researcher, asked by Alice (a project admin: in a private project only admins
+ *   may name someone outside it) and due in 3 days. Ivan is its **guest**
  *   (role matrix column R): he sees that one idea, never its scores or the project;
- *   his inbox has an unread "Asked to research". With the knob
+ *   his inbox has "Asked to research" (read). With the knob
  *   `soundings-mock-projects=private` every project is private, so Ivan has no
  *   projects at all (the shell's empty state).
- * - **TOOL-10** (in Research, complete): **Dave Okafor**, a member, researches it
+ * - **TOOL-10** (in Research, complete): **Kofi Boateng**, a member (through a group),
+ *   researches it
  *   (asked by Farid, no due date).
  * - **GREEN-3** (Shortlisted, the status before Research in Sustainability, one
  *   required item open): **Alice** researches it, asked by Carol, due **2 days ago**:
@@ -140,19 +142,20 @@ export function seedPhase8b(
   }
 
   // TOOL-7: Ivan, the guest researcher (no role in the private Internal Tools).
-  const tool7 = assign('TOOL-7', users.ivan, users.bob, 20, daysAhead(3), true)
+  const tool7 = assign('TOOL-7', users.ivan, users.alice, 20, daysAhead(3), true)
   notice(
     users.ivan,
     tool7.target,
     'researcher_assigned',
-    users.bob,
+    users.alice,
     tool7.at,
     { due_at: tool7.target.research_due_at },
-    false,
+    // Read, so Ivan's inbox still shows "You're all caught up" under Unread (Phase 3).
+    true,
   )
 
-  // TOOL-10: Dave, a member, no due date (complete, so not in his "Research to do").
-  assign('TOOL-10', users.dave, users.farid, 40, null, false)
+  // TOOL-10: Kofi, a member, no due date (complete, so not in his "Research to do").
+  assign('TOOL-10', users.kofi, users.farid, 40, null, false)
 
   // GREEN-3: Alice, overdue (due 2 days ago).
   const green3 = assign('GREEN-3', users.alice, users.carol, 6 * 24, daysAhead(-2), false)

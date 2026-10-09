@@ -350,8 +350,9 @@ async def test_summary_fields(
         "id", "key", "number", "project", "title", "status", "resolution", "status_label",
         "summary", "owner", "tags", "evaluator_progress", "score", "score_hidden",
         "high_disagreement", "vote_count", "has_voted", "comment_count", "created_at",
-        "last_activity_at", "permissions", "research",
+        "last_activity_at", "permissions", "research", "researcher",
     }  # fmt: skip
+    assert item["researcher"] is None  # Phase 8b: nobody assigned (and the step is off)
     assert item["research"] is None  # Phase 8: the project has no research step
     assert item["key"] == "CUST-4"
     assert item["tags"] == ["Billing", "UX"]

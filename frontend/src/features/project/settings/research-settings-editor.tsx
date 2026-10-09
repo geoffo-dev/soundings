@@ -464,7 +464,9 @@ function ResearchForm({
                         aria-label={`Restore ${item.title}`}
                         onClick={() => {
                           const restored = restoredItem(item)
-                          const at = removedAt.current.get(item.id)
+                          // Back where it was (this visit's spot, else the Phase 8b
+                          // `position` it had when removed; at the end when shorter now).
+                          const at = removedAt.current.get(item.id) ?? item.position
                           setDrafts((current) => insertAt(current, restored, at))
                           setNotice(null)
                           focusTitle(restored.key)

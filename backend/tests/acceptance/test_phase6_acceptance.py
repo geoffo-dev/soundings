@@ -681,7 +681,7 @@ async def test_ac6_api_1_ask_ai_to_evaluate_gives_a_badged_cited_evaluation_left
     assert (person.status_code, person.json()["code"]) == (409, "not_ai_evaluation")
     assert (await alice.get("/ideas/CUST-12"))["aggregate"] == aggregate_before
 
-    # 7. "Research this": a research note with sources in the feed.
+    # 7. "Ask AI to research": a research note with sources in the feed.
     research = ok(await run_request(alice, "CUST-12", "research", agent_id), 201)
     researched = await wait_run(alice, "CUST-12", research["id"])
     assert researched["status"] == "succeeded", researched

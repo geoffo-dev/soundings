@@ -768,7 +768,13 @@ async def test_ac8_api_2_the_research_step_gates_every_path_past_research(
     # Members who aren't the owner, and viewers, read the checklist but can't answer.
     for reader in (carol, erin):
         read = await reader.get(f"/ideas/{key}/research")
-        assert read["permissions"] == {"can_answer": False, "can_override": False}
+        assert read["permissions"] == {
+            "can_answer": False,
+            "can_override": False,
+            "can_assign": False,  # Phase 8b: the owner and admins assign
+            "can_assign_outside_researcher": False,
+            "can_hand_back": False,
+        }
         await refused(
             reader,
             "PUT",

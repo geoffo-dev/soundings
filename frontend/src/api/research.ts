@@ -224,7 +224,8 @@ export function useRemoveResearcher(idea: string) {
       ),
     onSuccess: (_data, options) => {
       if (options.guest) {
-        forgetIdea(queryClient, idea)
+        // The caller leaves the page, then drops the idea's queries (`forgetIdea`):
+        // dropping them under a mounted page would only fetch them again (a 404).
         void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
         void queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all })
         return
