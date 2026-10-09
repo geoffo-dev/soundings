@@ -311,7 +311,17 @@ preflight() {
   # as long as one deploy can take (upgrade hooks, wait and --atomic's rollback), counted from
   # when it started; older than that, it was killed half way and needs a forced rollback.
   local pending seen="" started=0 now created limit=$((3 * HELM_TIMEOUT_SECONDS)) waited=0
-  while pending="$(pending_revision)" && [ -n "$pending" ]; do
+  while :; do
+    pending="$(pending_revision)"
+    if [ -z "$pending" ]; then
+      [ "$waited" = 1 ] || break
+      # It is done: give it a moment to label the revision it left (Helm rewrites a
+      # revision's labels from what it read when the next upgrade supersedes it).
+      log "the other deploy finished"
+      sleep 15
+      waited=0
+      continue
+    fi
     local msg="release $HELM_RELEASE in $KUBE_NAMESPACE is ${pending#* } (revision ${pending%% *})"
     if [ "$ACTION" = rollback ] && [ "$DEPLOY_FORCE" = 1 ]; then
       warn "$msg; DEPLOY_FORCE=1: rolling back anyway"
@@ -332,7 +342,6 @@ preflight() {
     waited=1
     sleep 10
   done
-  [ "$waited" = 0 ] || log "the other deploy finished"
 }
 
 # The other CI made the running release: each environment is deployed by one CI only.
@@ -572,11 +581,11 @@ case "$ACTION" in
       log "dry run: the API server accepted it; nothing changed"
       exit 0
     fi
-    labels="$LABEL_HEAD=$head,$LABEL_BY=$DEPLOYED_BY${DEPLOY_ORDER:+,$LABEL_ORDER=$DEPLOY_ORDER}"
+    helm_labels="$LABEL_HEAD=$head,$LABEL_BY=$DEPLOYED_BY${DEPLOY_ORDER:+,$LABEL_ORDER=$DEPLOY_ORDER}"
     helm_err="$work/helm-upgrade.err"
     if ! hl upgrade --install "$HELM_RELEASE" "$CHART" "${values_args[@]}" "${img[@]}" \
       --atomic --cleanup-on-fail --wait --timeout "$HELM_TIMEOUT" --hide-notes \
-      --description "$description" --labels "$labels" "$@" 2> >(tee "$helm_err" >&2); then
+      --description "$description" --labels "$helm_labels" "$@" 2> >(tee "$helm_err" >&2); then
       sleep 1 # tee's last lines
       if grep -q 'another operation (install/upgrade/rollback) is in progress' "$helm_err"; then
         die "another deploy of $ENVIRONMENT started at the same moment: this one changed nothing (run it again once that one is done)"

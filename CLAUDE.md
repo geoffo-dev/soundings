@@ -59,12 +59,22 @@ frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 
   src/api/generated/  openapi.json + schema.d.ts (lead, generated)
   src/components/ui/  design system; /design shows it (dev only)
 deploy/helm/      Helm chart          deploy/kagent/  example kagent 0.10 manifests (agents, BYO fake)
+deploy/environments/  CD values per environment (staging, production; no secrets), cluster-setup.yaml
+                  (namespaces, the soundings-deployer ClusterRole), k3s.values.yaml (rehearsal overlay)
+deploy/ci/        GitHub ARC: runner values, arc-rbac.yaml (no runner rights; soundings-ci-deployer
+                  per environment), deploy-runner.Dockerfile (ARC runner and `tools` deploy images)
+deploy/gitlab-agent/  the GitLab agents' RBAC and chart values; .gitlab/agents/soundings-<env>/ their
+                  ci_access (this project, the environment, protected refs)
 dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit, the fake agent
                   (profile `ai`); k3s/ (Mailpit, Keycloak, fake-agent manifests), k3s-*-values.yaml
   fake-agent/       Soundings' deterministic fake kagent agent (a2a-sdk 1.2.1 server; calls /mcp
                       back with the agent's key; own uv project, Makefile, Dockerfile; dev/CI/k3s only)
 e2e/              Playwright e2e against the real stack + review screenshots (qa)
-scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers, *-smoke.sh
+scripts/          check-task.sh (TaskCompleted gate), k3s-*.sh helpers, *-smoke.sh, deploy.sh and
+                  deploy-smoke.sh (CD, both CIs), lib/ (k3s-deploy.sh, ci-kubeconfig.sh,
+                  check-gitlab-ci.sh, check-migrations.py)
+  ci-local/         a throwaway self-managed GitLab CE (registry, KAS) + runner + k3s + agents that
+                      runs .gitlab-ci.yml for real (README.md); values/ for its environments
 docs/             ADRs, role matrix, ownership, wireframes, guides (user, operator, mcp), research,
                   test-plans/phase-N.md (qa), screenshots/phase-N/ (real-stack review
                   screenshots, light/dark/390 px; the frontend's mock ones in mock/;
@@ -110,6 +120,7 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make e2e` | Playwright e2e in `e2e/` against `E2E_BASE_URL` (default http://localhost:8000, i.e. `make demo`); CI runs it against the built image with the demo data |
 | `make deploy` · `deploy-rollback` · `deploy-smoke` · `deploy-status` (`ENV=staging\|production`) | `scripts/deploy.sh <action> $(ENV)` against the current kubeconfig context (needs helm 3.16+, kubectl, curl): deploy = `IMAGE_REPOSITORY` + `IMAGE_DIGEST` + `IMAGE_TAG`, values `deploy/environments/<env>.values.yaml`, `--atomic --wait`, `helm test`, the cluster checks and `scripts/deploy-smoke.sh <url>` (read-only, anonymous; also by hand), rollback on failure; rollback = `ROLLBACK_REVISION` (default the one before), refused across a migration head unless `DEPLOY_FORCE=1`; `DRY_RUN=1`; `scripts/deploy.sh check-release vX.Y.Z` (the tag = pyproject/uv.lock/Chart.yaml versions). Operator guide "Continuous delivery", ADR 0017 |
 | `make deploy-tools-image` · `make deploy-runner-image` | `deploy/ci/deploy-runner.Dockerfile`: `--target tools` (alpine/helm + kubectl: `DEPLOY_TOOLS_IMAGE`, default `soundings-deploy-tools:dev`) or the ARC runner (`ghcr.io/actions/actions-runner` + helm + kubectl: `DEPLOY_RUNNER_IMAGE`; its ghcr base can't be pulled here, `--build-context` it to test) |
+| `scripts/ci-local/ci-local.sh up` · `push [branch]` · `bump X.Y.Z` · `tag vX.Y.Z` · `wait <pipeline>` · `play <pipeline> <job> [K=V]` · `probe` · `github <env> deploy\|rollback [K=V]` · `guard` · `down [--images]` | The GitLab pipeline for real (`scripts/ci-local/README.md`): GitLab CE 19.4.1 on https with its registry and KAS (~4.5 GB RAM, the image 5.4 GB of disk), a Docker-executor runner (`runner-mode rootless\|privileged`; also tagged `soundings-deploy`), k3s with both agents from `deploy/gitlab-agent/`; `push` snapshots the working tree (`CI_LOCAL_PATHS` = HEAD + only those paths; `CD_ONLY=1` skips the long checks, and production then refuses), `probe` shows what CI jobs reach through each agent, `github` runs `deploy-env.yml`'s step in a rights-free pod with `KUBECONFIG_DATA`. `CI_LOCAL_PREFIX`/`CI_LOCAL_PORT` (five ports), `CI_LOCAL_MIRROR`, `CI_LOCAL_BUILDKIT_DIR` (not a tmpfs), `CI_LOCAL_DEPLOY_TOOLS=1`; `guard` stops the runner when disk or memory run low |
 | `make k3s-deploy` (`ACTION=deploy\|rollback\|smoke\|status ENV=staging IMAGE=soundings:dev`) | CD rehearsal on the local k3s (`scripts/lib/k3s-deploy.sh`): applies `deploy/environments/cluster-setup.yaml`, binds SA `ci-deployers/soundings-<env>` in `soundings-<env>` only, creates the Secrets, imports `IMAGE` (also named by digest, so the kubelet finds it), reads its migration head, and runs `scripts/deploy.sh` as that SA in `DEPLOY_TOOLS_IMAGE` with `<env>.values.yaml` + `k3s.values.yaml`, smoke on localhost:`K3S_HTTP_PORT`. `IMAGE_DIGEST=` rehearses an unpullable image; pass the old image again before a rollback (the kubelet deletes unused images when the disk is >85 % full) |
 
 Backend (`make -C backend <target>`): `install` (uv sync --locked), `check`, `lint`,
@@ -732,6 +743,12 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   --set image.tag=… --set postgresql.persistence.size=8Gi` (the make target sets the
   image from `IMAGE` for you; the script alone keeps `soundings:dev` with `pullPolicy:
   Never`, so pods stick in `ErrImageNeverPull` until `--wait` times out).
+- **CD rehearsals:** `GIT_SSL_CAINFO` overrides git's `http.sslCAInfo` (set it, not the
+  config, for an internal CA). `kubectl auth can-i create pods/exec` asks about a pod
+  named "exec": use `--subresource=exec`. The kubelet deletes imported (unused) images
+  when the disk is over 85 % full: import the image again before a rollback to it. A
+  bind-mounted script edited while a container runs it breaks that run (bash reads it as
+  it goes): edit between runs.
 - **k3s NetworkPolicy** is enforced (kube-router) and on by default in the chart; a new
   pod's address is admitted a moment after it starts, so in-cluster clients started
   fresh (the `helm test` pod) retry. Through Traefik an oversized *chunked* POST may get

@@ -1,8 +1,9 @@
 # zizmor (make check-workflows): security lint of the workflows.
 rules:
   # The npm caches serve the check jobs only. What gets published (the image, the release)
-  # is built by docker buildx in the image job and packaged in the release job, which
-  # restore no cache.
+  # is built by docker buildx in the image job, from scratch (no registry layer cache:
+  # zizmor can't see one, so the job says so), and packaged in the release job, which
+  # restores no cache either.
   cache-poisoning:
     ignore:
       - ci.yml

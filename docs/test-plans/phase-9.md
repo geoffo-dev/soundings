@@ -35,6 +35,15 @@ same `scripts/deploy.sh` against the same k3s (CD-15).
 | CD-14 | `CD_ONLY` keeps every check by default | without it, every lint/test/e2e/k3s job is in the pipeline; with it, only release check, chart lint, build, scan and delivery |
 | CD-15 | GitHub Actions | workflows lint clean; `deploy-env.yml`'s step (`scripts/deploy.sh`) deploys staging as the ARC ServiceAccount and production with `KUBECONFIG_DATA`; the one-CI-per-environment guard |
 | CD-16 | Teardown | every container, volume, image and the cluster removed; disk back |
+| CD-17 | Run order (review L2) | a deploy from an older CI run than the running revision's is refused; a newer one deploys; a release (`X.Y.Z`) older than the running release is refused |
+| CD-18 | Migration labels after a failed deploy (review M3) | the restored revision carries the database's (newer) migration head; then an image with older migrations and a rollback across the head are refused; a forced rollback keeps the database's head |
+| CD-19 | A restored release that fails its smoke (review M4) | the job fails with its own message ("may be down"), not "the previous release is running" |
+| CD-20 | Waiting for a deploy in progress (review L3) | a second deploy waits for the pending revision, then deploys; the first one's labels survive |
+| CD-21 | Release version check (review L10) | a release whose app version can't be read (logLevel WARNING) fails and rolls back; at INFO it reports `X.Y.Z` |
+| CD-22 | Migration Job deadline (review M4) | a migration Job deadline at or above `HELM_TIMEOUT` is refused before anything changes |
+| CD-23 | GitHub identities (review H2) | ARC runner pods can do nothing; `KUBECONFIG_DATA` from `scripts/lib/ci-kubeconfig.sh` deploys its own namespace only |
+| CD-24 | The scan gate fails (review L9, M2) | Trivy's gate exits 1 on fixable HIGH/CRITICAL findings, 0 on a clean image; a `SCAN_SEVERITY` without CRITICAL is refused |
+| CD-25 | Migration lint (review M4) | `scripts/lib/check-migrations.py` flags drops, renames and NOT NULL in `upgrade()`, accepts `# contract-ok:`, passes the current tree |
 
 ## Run log: 2026-10-09, GitLab CE 19.4.1 in Docker
 
@@ -112,3 +121,36 @@ impersonation; the Kubernetes executor (the Docker executor ran both build paths
 default `DEPLOY_IMAGE` (alpine/k8s) in a live job; cosign (CD-13); the lint/test/e2e/k3s jobs
 (skipped by `CD_ONLY`, unchanged by Phase 9). The agentk binary reports version v0.0.0, so
 KAS warns about it on every request.
+
+## Run log: 2026-10-09, review fixes (k3s and linters)
+
+The review (`p9-review-pipelines`) fixes were rehearsed on a k3s of their own (`p9-fix-k3s`,
+API 8940, ingress 8941) with `make k3s-deploy` (`scripts/lib/k3s-deploy.sh`, a deployer
+bound in `soundings-staging` only, the tools image, `deploy/environments/staging.values.yaml`
++ `k3s.values.yaml`, `HELM_TIMEOUT` 5m or 1m) and two images built from the committed tree
+(two digests). CI runs were simulated with `GITLAB_CI=true CI_PIPELINE_ID=<n>` and
+`GITHUB_ACTIONS=true GITHUB_RUN_ID=<n>`. The GitLab harness (`scripts/ci-local/`) was not
+re-run: 5.2 GB of disk were free and GitLab CE's image alone takes 5.4 GB. The
+GitLab-specific changes (cache flags by protected ref, `tags: [$DEPLOY_RUNNER_TAG]`,
+`timeout: 90m`, production's `CD_ONLY` refusal and `needs: release:publish`, the new
+`migrations:lint`, the k3s job's mirrors) are covered by gitlab-ci-local's schema and rule
+checks and by reading; a run on the harness is still to do.
+
+| Case | What ran | Result |
+|---|---|---|
+| CD-17 | pipeline 100 installs image a (rev 1; the smoke now includes `GET /api/v1/branding`); pipeline 99 deploying b: refused ("revision 1 came from a newer run (100)"); pipeline 101: rev 2; later a GitHub run deploying `0.0.9` over `0.1.0`: refused ("release 0.0.9 is older") | pass |
+| CD-18 | pipeline 102, `MIGRATION_HEAD=0016`, a host the smoke can't reach: rolled back, rev 3 `verify=failed`, rev 4 (Rollback to 2) labelled `0016` (before the fix: 2's `0015`); pipeline 103 deploying 0015: refused; rollback to rev 1 (0015): refused; `DEPLOY_FORCE=1`: rev 5 labelled `0016` | pass |
+| CD-19 | pipeline 105: a digest the node can't pull and a smoke URL with nothing on it: `--atomic` rolled back after 1 m, then "THE RESTORED RELEASE FAILS ITS SMOKE TEST TOO: staging may be down" (job failed) | pass |
+| CD-20 | a failing deploy (pipeline 106) and, 12 s later, another (107): the second logged "pending-upgrade (revision 8): waiting", then deployed rev 10. The restored rev 9 kept the copied labels (F9 below); after the fix (runs 110/111) rev 15 carries 110's labels and rev 16 is 111's | pass after F9 |
+| CD-21 | GitHub run 5001 deploying tag `0.1.0` with `logLevel=WARNING`: "release 0.1.0 not confirmed", rolled back; run 5002 at INFO: "the app reports version 0.1.0" | pass |
+| CD-22 | `scripts/deploy.sh deploy staging` with the staging values (external database, deadline 480 s): refused at `HELM_TIMEOUT=5m`, passes at 10m (to the cluster check); `HELM_TIMEOUT=10x` refused | pass |
+| CD-23 | `kubectl auth can-i` as ARC's default ServiceAccount in `arc-soundings-staging`: no deployments, Secrets or exec in either namespace; `soundings-ci-deployer` (staging): yes in staging, nothing in production, no exec. `KUBECONFIG_DATA` from `ci-kubeconfig.sh staging`: GitHub run 5000 refused to take over GitLab's release, then with `DEPLOY_FORCE=1` deployed rev 17 | pass |
+| CD-24 | the GitLab gate's commands in Trivy 0.75.0 (by digest, database from `mirror.gcr.io/aquasec/trivy-db:2`, version check and telemetry off): `alpine:3.10.0` 12 findings (9 HIGH, 3 CRITICAL), exit 1; `alpine:3.22` exit 0; `SCAN_SEVERITY=HIGH` refused before scanning | pass |
+| CD-25 | the current tree: 0 migrations after 0015, pass; with `--after 0000` it flags 0003's `DROP VIEW` and 0004's `drop_table` (real contract steps); a crafted 0016 with `drop_column`, `nullable=False`, a `RENAME COLUMN` and a batch `drop_column`: four findings, exit 1; a 0017 with `# contract-ok:` accepted | pass |
+| linters | actionlint 1.7.12 and zizmor 1.30.1: no findings; gitlab-ci-local 4.75.1: the ten scenarios; `make check-helm` (now with both environments, alone and with the k3s overlay), `make check-scripts` (now with `scripts/ci-local/` and the Python helpers), `make check-migrations` | pass |
+
+### Defects the review-fix rehearsal found (fixed)
+
+| ID | Where | Defect | Fix |
+|---|---|---|---|
+| F9 | `scripts/deploy.sh` | a deploy that waited for another started as soon as the pending revision cleared; Helm then rewrote the revision the other had just relabelled with the labels it had read, so the restored revision lost its migration head and run | after the other deploy finishes, wait 15 s before going on |

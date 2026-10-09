@@ -1,6 +1,8 @@
 # GitLab agent for Kubernetes "soundings-production": which CI jobs may use it
 # (docs/operator-guide.md "Continuous delivery"; deploy/gitlab-agent/ installs it).
-# GitLab reads this file from the default branch of the project that registers the agent.
+# GitLab reads this file from the default branch of the project that registers the agent:
+# whoever may merge there may widen ci_access. Prefer registering the agents in a project
+# only the platform team writes to (copy this file there, set KUBE_AGENT_PROJECT to it).
 #
 # Replace platform/soundings with this project's full path before registering the agent
 # (see soundings-staging/config.yaml: the explicit entry is what restricts the agent).
@@ -11,6 +13,9 @@ ci_access:
       # Only jobs with `environment: production` (deploy:production, rollback:production)...
       environments:
         - production
-      # ...in pipelines of protected branches and tags (the protected v* tags): an
-      # unprotected ref never gets the production context, whatever its YAML says.
+      # ...in pipelines of protected branches and tags: an unprotected ref never gets the
+      # production context, whatever its YAML says. main is protected too, so the agent
+      # can't keep a job on main out: whoever may merge into a protected branch can deploy
+      # production. Free: let only the release managers merge (and create v* tags);
+      # Premium: protect the environment "production" (operator guide, "Who can deploy").
       protected_branches_only: true

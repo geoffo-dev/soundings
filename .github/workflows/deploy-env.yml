@@ -41,9 +41,12 @@ on:
         type: boolean
         default: false
     secrets:
-      # A repository secret, passed by the callers (environment secrets need no passing,
-      # and an environment's CI_BUILD_CA wins over this one).
+      # A repository secret, passed by the callers (an environment's CI_BUILD_CA wins).
       CI_BUILD_CA:
+        required: false
+      # The environment's secret (see above): GitHub uses the environment's, never one a
+      # caller passes; declared so linters know it.
+      KUBECONFIG_DATA:
         required: false
     outputs:
       image_repository:

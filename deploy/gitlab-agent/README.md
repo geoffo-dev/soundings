@@ -12,7 +12,7 @@ settings, is in [docs/operator-guide.md, "Continuous delivery"](../../docs/opera
 | [`../environments/cluster-setup.yaml`](../environments/cluster-setup.yaml) | The namespaces and the `soundings-deployer` ClusterRole (namespaced rules) |
 | [`rbac.yaml`](rbac.yaml) | The agents' namespaces, agentk's Lease/Events Role, and `soundings-deployer` bound in `soundings-<env>` to each agent's ServiceAccount |
 | [`values.yaml`](values.yaml) | Values for GitLab's `gitlab-agent` chart from your mirror: `rbac.create=false`, no container scanning, the token from a Secret |
-| [`../../.gitlab/agents/soundings-*/config.yaml`](../../.gitlab/agents/) | Each agent's `ci_access`: this project only, its environment only, production on protected refs only |
+| [`../../.gitlab/agents/soundings-*/config.yaml`](../../.gitlab/agents/) | Each agent's `ci_access`: this project only, its environment only, protected refs only (main counts: see the operator guide's "Who can deploy") |
 
 Install order (an operator with cluster-admin, once per cluster):
 
@@ -20,7 +20,9 @@ Install order (an operator with cluster-admin, once per cluster):
    kubectl and Helm send the job's credentials only over TLS.
 2. `kubectl apply -f deploy/environments/cluster-setup.yaml -f deploy/gitlab-agent/rbac.yaml`
 3. Edit both `.gitlab/agents/soundings-*/config.yaml` to name this project's full path
-   and merge to the default branch.
+   and merge them to the default branch of the project that registers the agents:
+   preferably one only the platform team writes to (then set `KUBE_AGENT_PROJECT` to
+   it), since whoever may merge there may widen `ci_access`.
 4. Register the agents (Operate > Kubernetes clusters > Connect a cluster, names
    `soundings-staging` and `soundings-production`) and keep each token:
    `kubectl -n gitlab-agent-staging create secret generic soundings-staging-agent-token --from-literal=token=<token>`

@@ -56,7 +56,7 @@ expect "vX.Y.Z tag, production without staging: no production deploy" "release:p
   --variable "SOUNDINGS_DEPLOY=production" --variable CI_COMMIT_TAG=v1.2.3 --variable CI_COMMIT_BRANCH=
 expect "IMAGE_BUILDER=dind" "image:build:dind" "image:build" --variable IMAGE_BUILDER=dind
 expect "COSIGN_PRIVATE_KEY set: signing" "image:sign" "" --variable COSIGN_PRIVATE_KEY=/dev/null
-checks="backend:lint backend:typecheck frontend:lint contract:openapi contract:types fake-agent:test backend:test frontend:test frontend:build e2e e2e:sso k3s:install-upgrade"
+checks="backend:lint backend:typecheck frontend:lint contract:openapi contract:types migrations:lint fake-agent:test backend:test frontend:test frontend:build e2e e2e:sso k3s:install-upgrade"
 expect "main, every check by default" "$checks helm:lint" "" --variable "SOUNDINGS_DEPLOY=staging"
 expect "CD_ONLY=1: build, scan gate and staging without the long checks" \
   "helm:lint image:build image:trivy deploy:staging rollback:staging" "$checks" \
