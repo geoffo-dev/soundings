@@ -540,12 +540,13 @@ test('RA-09 Restore puts a removed checklist item and template section back wher
   await expect(sections.nth(2).getByRole('textbox', { name: 'Title' })).toHaveValue('Solution')
 })
 
-test('RA-10 reassigned while the page is open: the guest’s next action shows “doesn’t exist”, nothing stale', async ({
+test('RA-10 reassigned while the page is open: the guest’s next action says their research ended, nothing stale', async ({
   page,
   api,
 }) => {
   // P8B-QA-F1 (fixed): a write refused with 404 re-checks the idea, and the page drops it
-  // and shows "doesn't exist" (contract-phase8b §4.6, §10).
+  // (contract-phase8b §4.6, §10). UX review m5/M3: having had the page, the guest is told
+  // their research ended (nothing they hadn't seen), and focus goes to that heading.
   const alice = await api('alice')
   const people = await newPeople(alice, ['nora', 'theo'])
   const { nora, theo } = people
@@ -568,9 +569,13 @@ test('RA-10 reassigned while the page is open: the guest’s next action shows �
     await answer.fill('Nobody else is doing this.')
     await page.keyboard.press('ControlOrMeta+Enter')
     // The server refuses it (404) and the page leaves the idea: nothing of it stays.
-    await expect(
-      page.getByRole('heading', { name: 'This idea doesn’t exist or you don’t have access' }),
-    ).toBeVisible()
+    const ended = page.getByRole('heading', {
+      level: 1,
+      name: `You’re no longer researching ${idea.key}`,
+    })
+    await expect(ended).toBeVisible()
+    await expect(ended).toBeFocused()
+    await expect(page.getByText('What you typed is kept on this device.')).toBeVisible()
     await expect(page.locator('main')).not.toContainText(idea.title)
     // Nothing was saved under her name.
     const research = await ideaResearch(alice, idea.key)
@@ -581,25 +586,36 @@ test('RA-10 reassigned while the page is open: the guest’s next action shows �
   }
 })
 
-test('RA-11 the team can @mention the outside researcher; the guest’s own picker is the directory', async ({
+test('RA-11 the team can @mention the outside researcher; the guest’s own picker offers only the people on the idea', async ({
   page,
 }) => {
   const composer = page.getByRole('textbox', { name: 'Write a comment' })
   const picker = page.getByRole('listbox', { name: 'People to mention' })
-  // Sven (TOOLS-12's owner): the members' picker plus the idea's researcher.
+  // Sven (TOOLS-12's owner): the members' picker plus the idea's researcher, labelled so,
+  // and a line that the guest reads the comments (guest review L3).
   await signIn(page, 'sven')
   await page.goto('/ideas/TOOLS-12')
+  await expect(
+    page.getByText('Bob Brown (researching, not in this project) can read comments.'),
+  ).toBeVisible()
   await composer.click()
   await page.keyboard.type('@Bo')
-  await expect(picker.getByRole('option', { name: /Bob Brown/ })).toBeVisible()
+  await expect(picker.getByRole('option', { name: /Bob Brown/ })).toContainText('researcher')
   await page.keyboard.press('Escape')
   await composer.fill('')
-  // Bob, its guest: he may mention people too (nothing is posted here).
+  // Bob, its guest: the owner and whoever acted in the feed, never the directory (UX
+  // review M2: someone who can't see the idea would be notified of nothing). Nothing is
+  // posted here.
   await signIn(page, 'bob')
   await page.goto('/ideas/TOOLS-12')
   await composer.click()
   await page.keyboard.type('@Sv')
+  await expect(page.getByText('Mention someone on this idea')).toBeVisible()
   await expect(picker.getByRole('option', { name: /Sven Lindqvist/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await composer.fill('')
+  await page.keyboard.type('@Farah')
+  await expect(picker).toContainText('No one on this idea matches “Farah”')
   await page.keyboard.press('Escape')
   await composer.fill('')
 })
