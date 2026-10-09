@@ -1,0 +1,12 @@
+# zizmor (make check-workflows): security lint of the workflows.
+rules:
+  # The npm caches serve the check jobs only. What gets published (the image, the release)
+  # is built by docker buildx in the image job and packaged in the release job, which
+  # restore no cache.
+  cache-poisoning:
+    ignore:
+      - ci.yml
+  # "$/" for local reusable workflows is newer than actionlint 1.7.12 and GitHub
+  # Enterprise Server; "./" works everywhere.
+  self-repository:
+    disable: true

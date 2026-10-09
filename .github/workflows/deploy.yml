@@ -1,0 +1,92 @@
+# Deploys by hand (Actions > deploy > Run workflow):
+#   - production: choose the vX.Y.Z tag under "Use workflow from". It deploys the image of
+#     that tag's GitHub release (published only after the tag's image passed the scan and
+#     staging), the gate for private repositories without required reviewers
+#     (SOUNDINGS_PRODUCTION_GATE=manual; only people with write access can run it; protect
+#     v* tags with a ruleset);
+#   - rollback of staging or production (production: run it from a vX.Y.Z tag too, which
+#     the production environment's tag rule requires): the revision before the current
+#     one, or the one given; refused across a migration boundary unless "force".
+# Both run on the environment's self-hosted runner, under its protection rules and in its
+# deploy queue (deploy-env.yml).
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: What to do
+        type: choice
+        options: [production, rollback]
+        default: production
+      environment:
+        description: Rollback only - which environment
+        type: choice
+        options: [staging, production]
+        default: staging
+      revision:
+        description: Rollback only - Helm revision to roll back to (empty = the one before the current)
+        type: string
+        default: ""
+      force:
+        description: Rollback only - roll back across a migration boundary (DEPLOY_FORCE)
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  # The image of this tag's release (image.env, attached by ci.yml's release job).
+  resolve:
+    if: inputs.operation == 'production'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      repository: ${{ steps.release.outputs.repository }}
+      digest: ${{ steps.release.outputs.digest }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - id: release
+        name: The release's image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" != tag ] || ! [[ "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Run this workflow from a vX.Y.Z tag (Use workflow from > Tags) to deploy production."
+            exit 1
+          fi
+          gh release download "$REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern image.env --dir "$RUNNER_TEMP"
+          repository="$(sed -n 's/^IMAGE_REPOSITORY=//p' "$RUNNER_TEMP/image.env")"
+          digest="$(sed -n 's/^IMAGE_DIGEST=//p' "$RUNNER_TEMP/image.env")"
+          tag="$(sed -n 's/^IMAGE_TAG=//p' "$RUNNER_TEMP/image.env")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::release $REF_NAME has no usable image.env"; exit 1; }
+          {
+            echo "repository=$repository"
+            echo "digest=$digest"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+  production:
+    needs: [resolve]
+    uses: ./.github/workflows/deploy-env.yml
+    permissions:
+      contents: read
+    with:
+      environment: production
+      image_repository: ${{ needs.resolve.outputs.repository }}
+      image_digest: ${{ needs.resolve.outputs.digest }}
+      image_tag: ${{ needs.resolve.outputs.tag }}
+
+  rollback:
+    if: inputs.operation == 'rollback'
+    uses: ./.github/workflows/deploy-env.yml
+    permissions:
+      contents: read
+    with:
+      environment: ${{ inputs.environment }}
+      operation: rollback
+      revision: ${{ inputs.revision }}
+      force: ${{ inputs.force }}

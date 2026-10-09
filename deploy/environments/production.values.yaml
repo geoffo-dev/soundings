@@ -1,0 +1,112 @@
+# Production: what scripts/deploy.sh deploys from a vX.Y.Z tag after the gate (a protected
+# manual job or a deployment approval), with the digest the tag's staging deploy ran.
+# Example values: replace the placeholders with your site's.
+#
+# No secrets here. The Secrets named below are created by operators in soundings-production
+# (docs/operator-guide.md "Continuous delivery"); the chart only references them. The image
+# is set by the deploy: don't set image.repository or global.imageRegistry here.
+
+image:
+  pullSecrets:
+    - soundings-registry
+
+baseUrls:
+  - https://soundings.example.internal
+
+logLevel: INFO
+
+secretKey:
+  existingSecret: soundings-app
+  existingSecretKey: secret-key
+
+oidc:
+  issuer: https://login.example.internal/realms/example
+  clientId: soundings
+  existingSecret: soundings-oidc
+  groupsClaim: groups
+
+breakGlass:
+  enabled: true
+  existingSecret: soundings-break-glass
+
+smtp:
+  host: smtp.example.internal
+  port: 587
+  security: starttls
+  existingSecret: soundings-smtp
+  from: ideas@example.internal
+  fromName: Soundings
+
+timezone: Europe/London
+
+postgresql:
+  enabled: false
+externalDatabase:
+  host: soundings-db-rw.databases.svc
+  port: 5432
+  database: soundings
+  user: soundings
+  existingSecret: soundings-db-app
+  existingSecretPasswordKey: password
+  sslmode: verify-full
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: soundings-db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/soundings/db-ca
+    readOnly: true
+extraEnv:
+  - name: PGSSLROOTCERT
+    value: /etc/soundings/db-ca/ca.crt
+
+api:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      memory: 1Gi
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: soundings
+          app.kubernetes.io/component: api
+
+worker:
+  replicas: 2
+
+# Two API pods at least, so an upgrade replaces them one at a time.
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+  publicApi:
+    annotations:
+      nginx.ingress.kubernetes.io/limit-rpm: "30"
+  tls:
+    - secretName: soundings-tls
+      hosts:
+        - soundings.example.internal
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring

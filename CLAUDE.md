@@ -1042,7 +1042,8 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   beside the field), N3, and from the real-stack walkthrough the owner's picker keeping an
   admin-named outsider as its own row. Checks: backend (8,109 tests + `test-slow` at 150
   ms), frontend check (656 vitest) + test:pw (430), e2e in all three modes (default 312,
-  `E2E_SSO=1` 333, `E2E_AI=1` see below), e2e check, fake agent, Helm, scripts, `make
-  gen-api` (no diff), `make image` (525 MB). Test plan `docs/test-plans/phase-8b.md`;
-  screenshots `docs/screenshots/phase-8b/` (+ `emails/`), phase-1, phase-3 (+ the two
-  research emails), phase-8 and the tour re-captured. Stop for the human's review.
+  `E2E_SSO=1` 333, `E2E_AI=1` 352 passed, none failed), e2e check, fake agent, Helm,
+  scripts, `make gen-api` (no diff), `make image` (525 MB). Test plan
+  `docs/test-plans/phase-8b.md`; screenshots `docs/screenshots/phase-8b/` (+ `emails/`),
+  phase-1, phase-3 (+ the two research emails), phase-8 and the tour re-captured. Stop for
+  the human's review.

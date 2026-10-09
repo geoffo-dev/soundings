@@ -1,21 +1,35 @@
-# Optional GitHub Actions mirror of the GitLab pipeline's checks (.gitlab-ci.yml is the
-# primary pipeline: it also deploys the image to k3s). The audit job scans dependencies
-# and the image here too.
+# GitHub Actions: the checks (the same as the GitLab pipeline's), then delivery with the
+# same flow and the same deploy script (docs/operator-guide.md "Continuous delivery",
+# ADR 0017): a push to main or a vX.Y.Z tag builds the image and pushes it (ghcr.io by
+# default), scans it, deploys it to staging, and a tag then goes to production behind the
+# "production" environment's protection rules (or, with SOUNDINGS_PRODUCTION_GATE=manual,
+# the "deploy" workflow run by hand on the tag). Deploy jobs run on self-hosted runners
+# inside the network (ARC scale sets): the cluster is never reachable from GitHub's
+# runners and needs no inbound connection. Delivery is off until the repository variable
+# SOUNDINGS_DEPLOY names environments ("staging" or "staging production"); deploy each
+# environment from one CI only.
 name: ci
 
 on:
   push:
     branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
 
 permissions:
   contents: read
 
+# Cancel superseded runs of a pull request only: a cancelled push run could kill a running
+# helm upgrade (the deploy jobs also have their own groups that never cancel).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # helm for packaging the chart (the release job), the same pin as the deploy images.
+  HELM_IMAGE: alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec
+  # Trivy by digest (the March 2026 compromise re-pointed tags; docs/research/github-cd.md).
+  TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
   # Mailpit catches the email of the backend's SMTP integration tests and the e2e runs.
   MAILPIT_IMAGE: axllent/mailpit:v1.31.3
   # What WeasyPrint loads for the PDF export tests (the image installs the same, ADR 0011).
@@ -28,11 +42,15 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PDF_APT_PACKAGES
+      - run: |
+          # shellcheck disable=SC2086 # the package list splits on purpose
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PDF_APT_PACKAGES
       - run: pip install "uv==0.8.17"
       - run: uv sync --locked
       - run: uv run ruff check . && uv run ruff format --check .
@@ -61,8 +79,10 @@ jobs:
   frontend:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -73,7 +93,9 @@ jobs:
   helm:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: scripts/check-task.sh helm scripts
 
   # The fake kagent agent (dev/fake-agent): ruff, mypy --strict, pytest, including a2a-sdk
@@ -81,8 +103,10 @@ jobs:
   fake-agent:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: pip install "uv==0.8.17"
@@ -96,11 +120,13 @@ jobs:
   audit:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -122,18 +148,20 @@ jobs:
       - name: Trivy (the image)
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            -e TRIVY_NO_PROGRESS=true aquasec/trivy:0.67.2 \
+            -e TRIVY_NO_PROGRESS=true "$TRIVY_IMAGE" \
             image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL soundings:audit
 
   # The generated API contract must match the backend: `make gen-api` leaves no diff.
   contract:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -153,7 +181,9 @@ jobs:
   e2e:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: e2e
         run: |
           if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
@@ -173,7 +203,7 @@ jobs:
           # The browser's zone (playwright.config.ts), as in the local e2e stack.
           DEMO_TIMEZONE: Europe/London
       - if: steps.e2e.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -209,7 +239,7 @@ jobs:
           docker logs soundings-demo-worker
           docker logs soundings-demo-fake-agent || true
       - if: always() && steps.e2e.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: |
@@ -226,21 +256,25 @@ jobs:
   e2e-sso:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: e2e
         run: |
           if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
           else echo "No e2e/ yet: nothing to run."; fi
       - if: steps.e2e.outputs.present == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - if: steps.e2e.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          package-manager-cache: false
       - if: steps.e2e.outputs.present == 'true'
         run: |
+          # shellcheck disable=SC2086 # the package list splits on purpose
           sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PDF_APT_PACKAGES
           pip install "uv==0.8.17"
           uv sync --locked --project backend
@@ -257,7 +291,7 @@ jobs:
           tail -n 100 e2e/.stack/api.log
           tail -n 100 e2e/.stack/worker.log
       - if: always() && steps.e2e.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-sso
           path: |
@@ -273,21 +307,25 @@ jobs:
   e2e-ai:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: e2e
         run: |
           if [ -f e2e/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"
           else echo "No e2e/ yet: nothing to run."; fi
       - if: steps.e2e.outputs.present == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - if: steps.e2e.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          package-manager-cache: false
       - if: steps.e2e.outputs.present == 'true'
         run: |
+          # shellcheck disable=SC2086 # the package list splits on purpose
           sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PDF_APT_PACKAGES
           pip install "uv==0.8.17"
           uv sync --locked --project backend
@@ -314,10 +352,228 @@ jobs:
       - if: always() && steps.e2e.outputs.present == 'true'
         run: E2E_AI=1 E2E_PREFIX=ci- e2e/scripts/stop-stack.sh
       - if: always() && steps.e2e.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-ai
           path: |
             e2e/playwright-report
             e2e/test-results
           if-no-files-found: ignore
+
+  # --- delivery (docs/operator-guide.md "Continuous delivery") --------------------------
+
+  # A vX.Y.Z tag must match the versions in the repository: the app reports
+  # backend/pyproject.toml's version, the chart carries deploy/helm/Chart.yaml's.
+  release-check:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/deploy.sh check-release "$GITHUB_REF_NAME"
+
+  # Build and push (ghcr.io/<owner>/soundings unless IMAGE_REPOSITORY says otherwise): main
+  # pushes sha-<8 hex>, a vX.Y.Z tag X.Y.Z and X.Y; what deploys is the digest. Plain
+  # docker buildx (no third-party action); SOUNDINGS_BUILD_RUNNER is a self-hosted runner
+  # when the registry or the mirrors are internal.
+  image:
+    needs: [release-check]
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
+    runs-on: ${{ vars.SOUNDINGS_BUILD_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      repository: ${{ steps.names.outputs.repository }}
+      tag: ${{ steps.names.outputs.tag }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: names
+        name: Image names
+        env:
+          IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
+          OWNER: ${{ github.repository_owner }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          repository="${IMAGE_REPOSITORY:-ghcr.io/${OWNER,,}/soundings}"
+          tag="sha-${GITHUB_SHA::8}"
+          version="${GITHUB_SHA::8}"
+          tags="$repository:$tag"
+          if [ "$REF_TYPE" = tag ]; then
+            version="${REF_NAME#v}"
+            tag="$version"
+            tags="$repository:$version,$repository:${version%.*}"
+          fi
+          {
+            echo "repository=$repository"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "tags=$tags"
+          } >> "$GITHUB_OUTPUT"
+      - name: Log in to the registry
+        env:
+          REPOSITORY: ${{ steps.names.outputs.repository }}
+          REGISTRY_USER: ${{ vars.IMAGE_REGISTRY_USER || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.IMAGE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USER" --password-stdin "${REPOSITORY%%/*}"
+      - id: build
+        name: Build and push
+        env:
+          REPOSITORY: ${{ steps.names.outputs.repository }}
+          TAGS: ${{ steps.names.outputs.tags }}
+          VERSION: ${{ steps.names.outputs.version }}
+          CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
+          BUILDKIT_IMAGE: ${{ vars.BUILDKIT_IMAGE }}
+          UBUNTU_IMAGE: ${{ vars.UBUNTU_IMAGE }}
+          NODE_IMAGE: ${{ vars.NODE_IMAGE }}
+          UBUNTU_MIRROR: ${{ vars.UBUNTU_MIRROR }}
+          PIP_INDEX_URL: ${{ vars.PIP_INDEX_URL }}
+          UV_DEFAULT_INDEX: ${{ vars.UV_DEFAULT_INDEX }}
+          NPM_CONFIG_REGISTRY: ${{ vars.NPM_CONFIG_REGISTRY }}
+        run: |
+          args=(--build-arg "VERSION=$VERSION" --build-arg "VCS_REF=${GITHUB_SHA::8}"
+                --build-arg "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                --build-arg "SOURCE_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY")
+          for arg in UBUNTU_IMAGE NODE_IMAGE UBUNTU_MIRROR PIP_INDEX_URL UV_DEFAULT_INDEX NPM_CONFIG_REGISTRY; do
+            [ -z "${!arg}" ] || args+=(--build-arg "$arg=${!arg}")
+          done
+          builder=(--name soundings --driver docker-container --use)
+          [ -z "$BUILDKIT_IMAGE" ] || builder+=(--driver-opt "image=$BUILDKIT_IMAGE")
+          if [ -n "$CI_BUILD_CA" ]; then
+            # The Dockerfile's build_ca secret, and BuildKit's trust for the registry.
+            printf '%s\n' "$CI_BUILD_CA" > "$RUNNER_TEMP/ca.pem"
+            args+=(--secret "id=build_ca,src=$RUNNER_TEMP/ca.pem")
+            printf '[registry."%s"]\n  ca = ["%s"]\n' "${REPOSITORY%%/*}" "$RUNNER_TEMP/ca.pem" > "$RUNNER_TEMP/buildkitd.toml"
+            builder+=(--config "$RUNNER_TEMP/buildkitd.toml")
+          fi
+          for name in ${TAGS//,/ }; do args+=(--tag "$name"); done
+          docker buildx create "${builder[@]}"
+          docker buildx build --push --provenance=false "${args[@]}" \
+            --cache-from "type=registry,ref=$REPOSITORY/cache:buildkit" \
+            --cache-to "type=registry,ref=$REPOSITORY/cache:buildkit,mode=max" \
+            --metadata-file "$RUNNER_TEMP/build-meta.json" .
+          digest="$(sed -n 's/.*"containerimage\.digest": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$RUNNER_TEMP/build-meta.json" | head -n 1)"
+          [ -n "$digest" ] || { cat "$RUNNER_TEMP/build-meta.json"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed $TAGS as $REPOSITORY@$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  # The gate before any deploy, on the pushed digest: SCAN_SEVERITY (default HIGH,CRITICAL
+  # with a fix) fails the run. Trivy and cosign run from digest-pinned images, not actions
+  # (no download from GitHub releases at run time). Also the CycloneDX SBOM for the release.
+  scan:
+    needs: [image]
+    runs-on: ${{ vars.SOUNDINGS_BUILD_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_REF: ${{ needs.image.outputs.repository }}@${{ needs.image.outputs.digest }}
+      IMAGE_TAG: ${{ needs.image.outputs.tag }}
+      REGISTRY_USER: ${{ vars.IMAGE_REGISTRY_USER || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.IMAGE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+    steps:
+      - name: Trivy gate and SBOM
+        env:
+          SCAN_SEVERITY: ${{ vars.SCAN_SEVERITY || 'HIGH,CRITICAL' }}
+          SCAN_IGNORE_UNFIXED: ${{ vars.SCAN_IGNORE_UNFIXED || 'true' }}
+          TRIVY_DB_REPOSITORY: ${{ vars.TRIVY_DB_REPOSITORY }}
+        run: |
+          trivy() {
+            docker run --rm -e TRIVY_USERNAME="$REGISTRY_USER" -e TRIVY_PASSWORD="$REGISTRY_PASSWORD" \
+              -e TRIVY_NO_PROGRESS=true ${TRIVY_DB_REPOSITORY:+-e TRIVY_DB_REPOSITORY} \
+              -v "$PWD:/out" -v soundings-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"
+          }
+          trivy image --format cyclonedx --output "/out/soundings-$IMAGE_TAG.cdx.json" "$IMAGE_REF"
+          unfixed=()
+          [ "$SCAN_IGNORE_UNFIXED" != true ] || unfixed=(--ignore-unfixed)
+          trivy image --exit-code 1 "${unfixed[@]}" --severity "$SCAN_SEVERITY" "$IMAGE_REF"
+      # Optional: sign the digest with a key (COSIGN_PRIVATE_KEY, COSIGN_PASSWORD secrets);
+      # no transparency log, so nothing leaves the network. Verify with
+      # cosign verify --key cosign.pub --insecure-ignore-tlog=true <repository>@<digest>.
+      - name: Sign (cosign, with a key)
+        if: env.COSIGN_PRIVATE_KEY != ''
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          COSIGN_IMAGE: ${{ vars.COSIGN_IMAGE || 'ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:3b1a2e2742351ab440255626f079a337e6c263249644800a52f5eaa389a5b730' }}
+        run: |
+          printf '%s' "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USER" --password-stdin "${IMAGE_REF%%/*}"
+          docker run --rm -e COSIGN_PRIVATE_KEY -e COSIGN_PASSWORD -e DOCKER_CONFIG=/docker \
+            -v "$HOME/.docker:/docker:ro" --entrypoint cosign "$COSIGN_IMAGE" \
+            sign --yes --key env://COSIGN_PRIVATE_KEY --use-signing-config=false --tlog-upload=false "$IMAGE_REF"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: soundings-*.cdx.json
+
+  # Staging, after this commit's checks, on a self-hosted runner in the network (an ARC
+  # scale set whose pod ServiceAccount may deploy only into soundings-staging).
+  deploy-staging:
+    needs: [backend, frontend, helm, fake-agent, audit, contract, e2e, e2e-sso, e2e-ai, image, scan]
+    if: github.event_name == 'push' && contains(format(' {0} ', vars.SOUNDINGS_DEPLOY), ' staging ')
+    uses: ./.github/workflows/deploy-env.yml
+    permissions:
+      contents: read
+    with:
+      environment: staging
+      image_repository: ${{ needs.image.outputs.repository }}
+      image_digest: ${{ needs.image.outputs.digest }}
+      image_tag: ${{ needs.image.outputs.tag }}
+
+  # Production for a vX.Y.Z tag, with the digest staging just ran, behind the "production"
+  # environment's required reviewers (public repositories, Enterprise). Without reviewers
+  # (private repositories on Pro or Team) set SOUNDINGS_PRODUCTION_GATE=manual: the tag stops
+  # after staging and the release, and someone runs the "deploy" workflow on the tag.
+  deploy-production:
+    needs: [deploy-staging]
+    if: >-
+      github.ref_type == 'tag' && vars.SOUNDINGS_PRODUCTION_GATE != 'manual' &&
+      contains(format(' {0} ', vars.SOUNDINGS_DEPLOY), ' production ')
+    uses: ./.github/workflows/deploy-env.yml
+    permissions:
+      contents: read
+    with:
+      environment: production
+      image_repository: ${{ needs.deploy-staging.outputs.image_repository }}
+      image_digest: ${{ needs.deploy-staging.outputs.image_digest }}
+      image_tag: ${{ needs.deploy-staging.outputs.image_tag }}
+
+  # The GitHub release for a vX.Y.Z tag once its image passed the scan and (when this CI
+  # deploys it) staging: the SBOM, the packaged chart and image.env (the digest the
+  # "deploy" workflow's manual production deploy uses).
+  release:
+    needs: [image, scan, deploy-staging]
+    if: >-
+      !cancelled() && github.ref_type == 'tag' && needs.scan.result == 'success' &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          IMAGE_REPOSITORY: ${{ needs.image.outputs.repository }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+          IMAGE_TAG: ${{ needs.image.outputs.tag }}
+        run: |
+          version="${TAG#v}"
+          docker run --rm -v "$PWD:/repo" -w /repo --entrypoint helm "$HELM_IMAGE" \
+            package deploy/helm --version "$version" --app-version "$version" --destination .
+          printf 'IMAGE_REPOSITORY=%s\nIMAGE_DIGEST=%s\nIMAGE_TAG=%s\n' \
+            "$IMAGE_REPOSITORY" "$IMAGE_DIGEST" "$IMAGE_TAG" > image.env
+          gh release create "$TAG" --verify-tag --title "Soundings $version" \
+            --notes "Image: \`$IMAGE_REPOSITORY:$IMAGE_TAG\` (\`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`). SBOM: CycloneDX. Chart: soundings-$version.tgz." \
+            "soundings-$version.cdx.json" "soundings-$version.tgz" image.env

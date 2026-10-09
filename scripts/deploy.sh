@@ -1,0 +1,512 @@
+#!/usr/bin/env bash
+# Deploy Soundings to one environment with Helm: the one script GitLab CI, GitHub Actions
+# and people use (docs/operator-guide.md "Continuous delivery", ADR 0017).
+#
+#   scripts/deploy.sh deploy   <env> [helm args]  helm upgrade --install --atomic --wait with
+#                                                 the image pinned by digest, helm test, then
+#                                                 the cluster and HTTP smoke; any failure
+#                                                 leaves the previous release running
+#   scripts/deploy.sh rollback <env>              helm rollback to ROLLBACK_REVISION (default:
+#                                                 the revision that ran before the current
+#                                                 one), refused across a migration boundary
+#                                                 unless DEPLOY_FORCE=1; then test and smoke
+#   scripts/deploy.sh smoke    <env>              the checks alone, against the running release
+#   scripts/deploy.sh status   <env>              helm history, the deploy labels and the pods
+#   scripts/deploy.sh template <env> [helm args]  helm template with the environment's values
+#                                                 (no cluster; a check of the values files)
+#   scripts/deploy.sh check-release <vX.Y.Z>      the tag matches the versions in the repo
+#
+# <env> is staging or production (any name with a deploy/environments/<env>.values.yaml).
+# Needs bash, helm 3.16+, kubectl, curl, grep, sed, awk (no jq). Inputs, all environment
+# variables (CI variables in both CIs, the same names):
+#
+#   IMAGE_REPOSITORY  registry/path of the image, no tag (deploy)
+#   IMAGE_DIGEST      sha256:<64 hex> (deploy): what runs; tags are only names
+#   IMAGE_TAG         the tag it was pushed as (sha-1a2b3c4d, 1.2.3): the pods' version
+#                     label; for X.Y.Z the smoke also checks the app reports that version
+#   KUBE_NAMESPACE    default soundings-<env>; created by operators, never by this script
+#   HELM_RELEASE      default soundings
+#   KUBE_CONTEXT      kubeconfig context (GitLab agent: <agent project>:soundings-<env>);
+#                     default: the current context, or in-cluster credentials (ARC runner)
+#   KUBECONFIG_DATA   a whole kubeconfig as text (GitHub production environment secret);
+#                     written to a private temporary file for this run only
+#   DEPLOY_VALUES     values files, space-separated (default deploy/environments/<env>.values.yaml)
+#   DEPLOY_URL        the smoke's base URL (default: the release's first baseUrls entry)
+#   HELM_TIMEOUT      default 10m (each of upgrade, test and rollback)
+#   ROLLBACK_REVISION rollback target revision (default: the one before the current one)
+#   MIGRATION_HEAD    the image's newest Alembic revision (default: read from this
+#                     checkout's backend/app/migrations; set it when deploying an image
+#                     built from another commit)
+#   DRY_RUN=1         deploy: helm upgrade --dry-run=server (the API server validates it,
+#                     nothing changes); rollback: say what would happen
+#   DEPLOY_FORCE=1    allow a rollback across a migration boundary, a deploy of an image
+#                     with older migrations, and taking over a release the other CI made
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CHART="$REPO_ROOT/deploy/helm"
+MIGRATIONS_DIR="$REPO_ROOT/backend/app/migrations/versions"
+LABEL_HEAD="soundings.io/migration-head"
+LABEL_BY="soundings.io/deployed-by"
+
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
+warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}" >&2
+  exit 2
+}
+
+ACTION="${1:-}"
+[ -n "$ACTION" ] || usage
+shift
+case "$ACTION" in
+  deploy | rollback | smoke | status | template | check-release) ;;
+  -h | --help | help) usage ;;
+  *) die "unknown action '$ACTION' (deploy, rollback, smoke, status, template, check-release)" ;;
+esac
+
+# --- check-release: the tag, the app's version and the chart's version agree -------------
+# The app reports the version in backend/pyproject.toml (its package metadata), so a
+# release commit bumps it, backend/uv.lock (`uv lock`) and deploy/helm/Chart.yaml's
+# version and appVersion to X.Y.Z before the vX.Y.Z tag is pushed.
+if [ "$ACTION" = check-release ]; then
+  tag="${1:-}"
+  [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || die "check-release needs a vX.Y.Z tag, got '${tag}'"
+  want="${BASH_REMATCH[1]}"
+  pyproject="$(sed -n '/^version = "/{s/^version = "\(.*\)"$/\1/p;q;}' "$REPO_ROOT/backend/pyproject.toml")"
+  lock="$(awk '/^name = "soundings"$/ { found = 1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' "$REPO_ROOT/backend/uv.lock")"
+  chart="$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$CHART/Chart.yaml")"
+  app="$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$CHART/Chart.yaml")"
+  bad=0
+  for pair in "backend/pyproject.toml version (what the app reports)=$pyproject" \
+    "backend/uv.lock soundings version=$lock" "deploy/helm/Chart.yaml version=$chart" \
+    "deploy/helm/Chart.yaml appVersion=$app"; do
+    if [ "${pair##*=}" = "$want" ]; then
+      printf '  ok  %s: %s\n' "${pair%=*}" "$want"
+    else
+      printf '  FAIL %s is "%s", the tag says %s\n' "${pair%=*}" "${pair##*=}" "$want" >&2
+      bad=1
+    fi
+  done
+  [ "$bad" = 0 ] || die "tag $tag doesn't match the repository: bump those to $want in a release commit (then 'uv lock' in backend/) and tag that commit"
+  log "tag $tag matches the app's and the chart's version"
+  exit 0
+fi
+
+ENVIRONMENT="${1:-}"
+[ -n "$ENVIRONMENT" ] || usage
+shift
+[[ "$ENVIRONMENT" =~ ^[a-z][a-z0-9-]{0,30}$ ]] || die "environment '$ENVIRONMENT': use a lowercase name such as staging or production"
+
+KUBE_NAMESPACE="${KUBE_NAMESPACE:-soundings-$ENVIRONMENT}"
+HELM_RELEASE="${HELM_RELEASE:-soundings}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-}"
+DEPLOY_VALUES="${DEPLOY_VALUES:-deploy/environments/$ENVIRONMENT.values.yaml}"
+DEPLOY_URL="${DEPLOY_URL:-}"
+HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
+ROLLBACK_REVISION="${ROLLBACK_REVISION:-}"
+DRY_RUN="${DRY_RUN:-0}"
+DEPLOY_FORCE="${DEPLOY_FORCE:-0}"
+IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-}"
+IMAGE_DIGEST="${IMAGE_DIGEST:-}"
+IMAGE_TAG="${IMAGE_TAG:-}"
+
+# Who is deploying: each environment is deployed by one CI (operator guide).
+if [ "${GITLAB_CI:-}" = "true" ]; then
+  DEPLOYED_BY=gitlab
+  DEPLOY_ORIGIN="GitLab pipeline ${CI_PIPELINE_ID:-?} job ${CI_JOB_ID:-?}"
+elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  DEPLOYED_BY=github
+  DEPLOY_ORIGIN="GitHub run ${GITHUB_RUN_ID:-?}"
+else
+  DEPLOYED_BY=manual
+  DEPLOY_ORIGIN="by hand ($(id -un 2>/dev/null || echo someone))"
+fi
+
+values_args=()
+for file in $DEPLOY_VALUES; do
+  case "$file" in /*) path="$file" ;; *) path="$REPO_ROOT/$file" ;; esac
+  [ -f "$path" ] || die "values file '$file' not found (DEPLOY_VALUES)"
+  values_args+=(--values "$path")
+done
+
+# --- template: no cluster needed --------------------------------------------------------
+image_args() {
+  # registry/path split for the chart's image.registry + image.repository.
+  local first="${IMAGE_REPOSITORY%%/*}" registry="" path="$IMAGE_REPOSITORY"
+  if [[ "$IMAGE_REPOSITORY" == */* ]] && [[ "$first" == *.* || "$first" == *:* || "$first" == localhost ]]; then
+    registry="$first"
+    path="${IMAGE_REPOSITORY#*/}"
+  fi
+  printf '%s\n' --set-string "image.registry=$registry" --set-string "image.repository=$path" \
+    --set-string "image.tag=$IMAGE_TAG" --set-string "image.digest=$IMAGE_DIGEST"
+}
+
+check_image_inputs() {
+  [ -n "$IMAGE_REPOSITORY" ] || die "IMAGE_REPOSITORY is not set (registry/path of the image, without a tag)"
+  [[ "$IMAGE_REPOSITORY" != *@* && "${IMAGE_REPOSITORY##*/}" != *:* ]] ||
+    die "IMAGE_REPOSITORY '$IMAGE_REPOSITORY' carries a tag or digest: pass those in IMAGE_TAG and IMAGE_DIGEST"
+  [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "IMAGE_DIGEST must be sha256:<64 hex> (got '${IMAGE_DIGEST}'): deploys pin the image by digest"
+  [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$ ]] ||
+    die "IMAGE_TAG must be the tag the image was pushed as, e.g. sha-1a2b3c4d or 1.2.3 (got '${IMAGE_TAG}')"
+}
+
+if [ "$ACTION" = template ]; then
+  # Placeholders unless given, so the values files can be checked anywhere.
+  IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-registry.example.internal/platform/soundings}"
+  IMAGE_DIGEST="${IMAGE_DIGEST:-sha256:$(printf '0%.0s' $(seq 64))}"
+  IMAGE_TAG="${IMAGE_TAG:-template}"
+  check_image_inputs
+  mapfile -t img < <(image_args)
+  exec helm template "$HELM_RELEASE" "$CHART" --namespace "$KUBE_NAMESPACE" \
+    "${values_args[@]}" "${img[@]}" "$@"
+fi
+
+# --- cluster access ---------------------------------------------------------------------
+command -v helm >/dev/null || die "helm is not installed (the CI deploy images have it)"
+command -v kubectl >/dev/null || die "kubectl is not installed (the CI deploy images have it)"
+command -v curl >/dev/null || die "curl is not installed"
+
+if [ -n "${KUBECONFIG_DATA:-}" ]; then
+  kubeconfig_file="$(mktemp)"
+  trap 'rm -f "$kubeconfig_file"' EXIT
+  chmod 600 "$kubeconfig_file"
+  printf '%s\n' "$KUBECONFIG_DATA" > "$kubeconfig_file"
+  export KUBECONFIG="$kubeconfig_file"
+fi
+helm_ctx=(--namespace "$KUBE_NAMESPACE")
+kube_ctx=(--namespace "$KUBE_NAMESPACE")
+if [ -n "$KUBE_CONTEXT" ]; then
+  helm_ctx+=(--kube-context "$KUBE_CONTEXT")
+  kube_ctx+=(--context "$KUBE_CONTEXT")
+fi
+hl() { helm "${helm_ctx[@]}" "$@"; }
+kc() { kubectl "${kube_ctx[@]}" "$@"; }
+
+# Helm keeps each revision as a Secret (HELM_DRIVER=configmap: a ConfigMap) labelled
+# owner=helm, name, version (the revision) and status; deploys add the two labels above.
+store_kind="secret"
+[ "${HELM_DRIVER:-secret}" != configmap ] || store_kind="configmap"
+case "${HELM_DRIVER:-secret}" in secret | secrets | configmap) ;; *) die "HELM_DRIVER '${HELM_DRIVER}' is not supported here (secret or configmap)" ;; esac
+
+# "<revision> <status>" lines, oldest first.
+revisions() {
+  kc get "$store_kind" -l "owner=helm,name=$HELM_RELEASE" \
+    -o jsonpath='{range .items[*]}{.metadata.labels.version}{" "}{.metadata.labels.status}{"\n"}{end}' |
+    sort -n
+}
+revision_label() { # revision label
+  local key="${2//./\\.}"
+  kc get "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v$1" -o "jsonpath={.metadata.labels.$key}" 2>/dev/null || true
+}
+deployed_revision() { revisions | awk '$2 == "deployed" { r = $1 } END { print r }'; }
+pending_revision() { revisions | awk '$2 ~ /^pending/ { r = $1 " " $2 } END { print r }'; }
+# The revision that ran before <revision>: the newest older one that deployed successfully.
+previous_revision() { revisions | awk -v cur="$1" '$1 < cur && $2 == "superseded" { r = $1 } END { print r }'; }
+
+preflight() {
+  local out
+  local contexts
+  contexts="$(kubectl config get-contexts -o name 2>/dev/null || true)"
+  if [ -n "$KUBE_CONTEXT" ] && ! grep -qxF "$KUBE_CONTEXT" <<<"$contexts"; then
+    die "no kubeconfig context '$KUBE_CONTEXT' (have: $(tr '\n' ' ' <<<"$contexts"))
+  GitLab: the agent soundings-$ENVIRONMENT must be connected, and its ci_access must name this
+  project and the environment '$ENVIRONMENT' (production: on a protected branch or tag)."
+  fi
+  # Reading the namespace's default ServiceAccount proves both that the namespace exists
+  # and that this identity may read in it (namespace-scoped RBAC can't read Namespaces).
+  if ! out="$(kc get serviceaccount default -o name 2>&1)"; then
+    die "can't use namespace '$KUBE_NAMESPACE'${KUBE_CONTEXT:+ (context $KUBE_CONTEXT)}: $out
+  Operators create the namespace and the deployer's RBAC (deploy/environments/cluster-setup.yaml)."
+  fi
+  local pending
+  pending="$(pending_revision)"
+  if [ -n "$pending" ] && [ "$ACTION" != status ] && [ "$ACTION" != smoke ]; then
+    local msg="release $HELM_RELEASE in $KUBE_NAMESPACE is ${pending#* } (revision ${pending%% *}): another deploy is running, or one was killed half way"
+    if [ "$ACTION" = rollback ] && [ "$DEPLOY_FORCE" = 1 ]; then
+      warn "$msg; DEPLOY_FORCE=1: rolling back anyway"
+    else
+      die "$msg. Wait for it; if none is running, recover with: DEPLOY_FORCE=1 scripts/deploy.sh rollback $ENVIRONMENT"
+    fi
+  fi
+}
+
+# The other CI made the running release: each environment is deployed by one CI only.
+guard_other_ci() {
+  local current="$1" by
+  [ -n "$current" ] || return 0
+  by="$(revision_label "$current" "$LABEL_BY")"
+  if [ "$DEPLOYED_BY" != manual ] && [ -n "$by" ] && [ "$by" != manual ] && [ "$by" != "$DEPLOYED_BY" ]; then
+    if [ "$DEPLOY_FORCE" = 1 ]; then
+      warn "revision $current of $ENVIRONMENT was deployed by $by; DEPLOY_FORCE=1: $DEPLOYED_BY takes over"
+    else
+      die "revision $current of $ENVIRONMENT was deployed by $by, and this is $DEPLOYED_BY: deploy each environment from one CI only (SOUNDINGS_DEPLOY). DEPLOY_FORCE=1 takes it over."
+    fi
+  fi
+}
+
+# The newest Alembic revision in this checkout: revision ids are zero-padded sequence
+# numbers (0001, 0002, ...), each file naming its down_revision.
+checkout_migration_head() {
+  [ -d "$MIGRATIONS_DIR" ] || return 0
+  local revs downs
+  revs="$(sed -n 's/^revision[^=]*= *["'\'']\([^"'\'']*\)["'\''].*/\1/p' "$MIGRATIONS_DIR"/*.py 2>/dev/null | sort -u)"
+  downs="$(sed -n 's/^down_revision[^=]*= *["'\'']\([^"'\'']*\)["'\''].*/\1/p' "$MIGRATIONS_DIR"/*.py 2>/dev/null | sort -u)"
+  comm -23 <(printf '%s\n' "$revs") <(printf '%s\n' "$downs") | tail -n 1
+}
+
+# What the release runs: "<image> <version label>" from the api Deployment.
+release_image() {
+  kc get deploy -l "app.kubernetes.io/instance=$HELM_RELEASE,app.kubernetes.io/component=api" \
+    -o jsonpath='{.items[0].spec.template.spec.containers[0].image}{" "}{.items[0].metadata.labels.app\.kubernetes\.io/version}' 2>/dev/null || true
+}
+
+# Base URL for the HTTP smoke: DEPLOY_URL, else the release's first baseUrls entry.
+release_url() {
+  if [ -n "$DEPLOY_URL" ]; then
+    printf '%s\n' "${DEPLOY_URL%/}"
+    return
+  fi
+  local urls
+  urls="$(kc get configmap -l "app.kubernetes.io/instance=$HELM_RELEASE" \
+    -o jsonpath='{.items[*].data.SOUNDINGS_BASE_URLS}' 2>/dev/null || true)"
+  printf '%s\n' "${urls%%,*}"
+}
+
+# --- smoke: the cluster side, then scripts/deploy-smoke.sh over HTTP ---------------------
+smoke() {
+  local want_digest="${1:-}" failed=0 image tag digest url version line
+  log "smoke: $ENVIRONMENT ($HELM_RELEASE in $KUBE_NAMESPACE)"
+  read -r image tag < <(release_image) || true
+  [ -n "${image:-}" ] || { printf '  FAIL no api Deployment for release %s\n' "$HELM_RELEASE" >&2; return 1; }
+  digest="${image##*@}"
+  [[ "$digest" == sha256:* ]] || digest=""
+  if [ -z "$digest" ]; then
+    printf '  FAIL the release runs %s, not pinned by digest\n' "$image" >&2
+    failed=1
+  elif [ -n "$want_digest" ] && [ "$digest" != "$want_digest" ]; then
+    printf '  FAIL the release runs %s, not %s\n' "$digest" "$want_digest" >&2
+    failed=1
+  else
+    printf '  ok  release image %s\n' "$image"
+  fi
+
+  local deployment
+  for deployment in $(kc get deploy -l "app.kubernetes.io/instance=$HELM_RELEASE" -o name); do
+    if kc rollout status "$deployment" --timeout=180s >/dev/null 2>&1; then
+      printf '  ok  %s rolled out\n' "$deployment"
+    else
+      printf '  FAIL %s is not rolled out\n' "$deployment" >&2
+      failed=1
+    fi
+  done
+
+  # Every running api and worker container runs that digest (terminating pods skipped).
+  local pods name component phase deleting images running=0 api_pod=""
+  pods="$(kc get pods -l "app.kubernetes.io/instance=$HELM_RELEASE,app.kubernetes.io/component in (api,worker)" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.labels.app\.kubernetes\.io/component}{" "}{.status.phase}{" "}{.metadata.deletionTimestamp}{"|"}{range .spec.containers[*]}{.image}{" "}{end}{"\n"}{end}')"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    read -r name component phase deleting <<<"${line%%|*}"
+    images="${line#*|}"
+    [ "$phase" = Running ] && [ -z "${deleting:-}" ] || continue
+    running=$((running + 1))
+    [ "$component" != api ] || [ -n "$api_pod" ] || api_pod="$name"
+    for image in $images; do
+      if [ -z "$digest" ] || [[ "$image" != *"@$digest" ]]; then
+        printf '  FAIL pod %s runs %s\n' "$name" "$image" >&2
+        failed=1
+      fi
+    done
+  done <<<"$pods"
+  if [ "$running" -gt 0 ]; then
+    printf '  ok  %s running api/worker pods on that digest\n' "$running"
+  else
+    printf '  FAIL no running api/worker pods\n' >&2
+    failed=1
+  fi
+
+  # The version the app reports (its startup log line, at logLevel INFO or DEBUG) must be
+  # the release's for X.Y.Z tags; for sha- tags it is printed only.
+  line=""
+  local logs=""
+  [ -z "$api_pod" ] || logs="$(kc logs "$api_pod" -c api 2>/dev/null || true)"
+  line="$(grep -m 1 '"message": *"api starting"' <<<"$logs" || true)"
+  version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' <<<"$line")"
+  local want_version="${EXPECTED_VERSION:-}"
+  if [ -z "$want_version" ] && [[ "${tag:-}" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    want_version="${BASH_REMATCH[1]}"
+  fi
+  if [ -z "$version" ]; then
+    warn "no startup line with the app's version in pod ${api_pod:-?}'s log (logLevel above INFO?): version not checked"
+  elif [ -n "$want_version" ] && [ "$version" != "$want_version" ]; then
+    printf '  FAIL the app reports version %s, the image tag is %s\n' "$version" "$tag" >&2
+    failed=1
+  else
+    printf '  ok  the app reports version %s (image tag %s)\n' "$version" "${tag:-?}"
+  fi
+
+  url="$(release_url)"
+  if [ -z "$url" ]; then
+    printf '  FAIL no URL to test (set DEPLOY_URL)\n' >&2
+    failed=1
+  elif ! "$REPO_ROOT/scripts/deploy-smoke.sh" "$url"; then
+    failed=1
+  fi
+  return "$failed"
+}
+
+# helm test, then smoke; "<what failed>" on stdout when something did.
+verify() {
+  local want_digest="$1"
+  log "helm test $HELM_RELEASE"
+  if ! hl test "$HELM_RELEASE" --timeout "$HELM_TIMEOUT" --logs --hide-notes >&2; then
+    echo "helm test"
+    return
+  fi
+  smoke "$want_digest" >&2 || echo "the smoke test"
+}
+
+summary() { # title, lines...
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  { printf '### %s\n\n' "$1"; shift; printf '%s\n' "$@"; } >>"$GITHUB_STEP_SUMMARY" || true
+}
+
+case "$ACTION" in
+  smoke)
+    preflight
+    smoke "${IMAGE_DIGEST:-}"
+    ;;
+
+  status)
+    preflight
+    hl history "$HELM_RELEASE" --max 10 || true
+    printf '\nREVISION STATUS MIGRATION-HEAD DEPLOYED-BY\n'
+    while read -r rev status; do
+      printf '%s %s %s %s\n' "$rev" "$status" "$(revision_label "$rev" "$LABEL_HEAD")" "$(revision_label "$rev" "$LABEL_BY")"
+    done < <(revisions | tail -n 10)
+    printf '\n'
+    kc get pods -l "app.kubernetes.io/instance=$HELM_RELEASE" -o wide
+    ;;
+
+  deploy)
+    check_image_inputs
+    head="${MIGRATION_HEAD:-$(checkout_migration_head)}"
+    [ -n "$head" ] || die "no migration head: set MIGRATION_HEAD (the image's newest Alembic revision)"
+    [[ "$head" =~ ^[A-Za-z0-9_.-]{1,63}$ ]] || die "MIGRATION_HEAD '$head' is not a label value"
+    want_ref="$IMAGE_REPOSITORY:$IMAGE_TAG@$IMAGE_DIGEST"
+    mapfile -t img < <(image_args)
+
+    # Render first (no cluster): the values must pass the chart's schema and must not
+    # replace the image's registry (global.imageRegistry would).
+    rendered="$(helm template "$HELM_RELEASE" "$CHART" --namespace "$KUBE_NAMESPACE" \
+      "${values_args[@]}" "${img[@]}" "$@" --show-only templates/deployment-api.yaml)" ||
+      die "the chart doesn't render with $DEPLOY_VALUES"
+    grep -Eq "image: \"?(docker\.io/(library/)?)?$(sed 's/[.[\*^$/]/\\&/g' <<<"${want_ref#docker.io/}")\"?\$" <<<"$rendered" ||
+      die "the chart would run '$(grep -m 1 'image:' <<<"$rendered" | sed 's/^ *image: *//')', not $want_ref: don't set global.imageRegistry in $DEPLOY_VALUES (set postgresql.image.registry for the bundled Postgres instead)"
+
+    preflight
+    current="$(deployed_revision)"
+    guard_other_ci "$current"
+    if [ -n "$current" ]; then
+      current_head="$(revision_label "$current" "$LABEL_HEAD")"
+      if [ -n "$current_head" ] && [[ "$head" < "$current_head" ]]; then
+        if [ "$DEPLOY_FORCE" = 1 ]; then
+          warn "the image's migrations end at $head, the database is at $current_head; DEPLOY_FORCE=1: deploying anyway"
+        else
+          die "the image's migrations end at $head but revision $current already migrated the database to $current_head: older code may not run on a newer schema (Helm and this script never migrate down). Deploy a newer image, or set DEPLOY_FORCE=1 if you know this one runs on it."
+        fi
+      fi
+    fi
+
+    description="$IMAGE_TAG ${IMAGE_DIGEST:0:19} migrations $head, $DEPLOY_ORIGIN"
+    log "deploy $want_ref to $ENVIRONMENT ($HELM_RELEASE in $KUBE_NAMESPACE${KUBE_CONTEXT:+, context $KUBE_CONTEXT}; migrations $head; previous revision ${current:-none})"
+    if [ "$DRY_RUN" = 1 ]; then
+      if ! out="$(hl upgrade --install "$HELM_RELEASE" "$CHART" "${values_args[@]}" "${img[@]}" \
+        --dry-run=server --hide-notes --description "$description" "$@" 2>&1)"; then
+        printf '%s\n' "$out" >&2
+        die "the dry run failed: the API server refused the release"
+      fi
+      # What would be applied: kind and name of each object.
+      awk '/^kind:/ { kind = $2 } /^  name:/ && kind { print "  " kind "/" $2; kind = "" }' <<<"$out"
+      log "dry run: the API server accepted it; nothing changed"
+      exit 0
+    fi
+    if ! hl upgrade --install "$HELM_RELEASE" "$CHART" "${values_args[@]}" "${img[@]}" \
+      --atomic --cleanup-on-fail --wait --timeout "$HELM_TIMEOUT" --hide-notes \
+      --description "$description" \
+      --labels "$LABEL_HEAD=$head,$LABEL_BY=$DEPLOYED_BY" "$@"; then
+      hl history "$HELM_RELEASE" --max 5 >&2 || true
+      if [ -n "$current" ]; then
+        log "checking that the previous release still serves"
+        smoke "" >&2 || true
+        summary "Deploy to $ENVIRONMENT failed" "The upgrade to \`$want_ref\` failed and Helm rolled back: the previous release keeps running (helm history above)."
+        die "the upgrade to $IMAGE_TAG failed and was rolled back: $ENVIRONMENT still runs the previous release (revision $current's content)"
+      fi
+      die "the first install of $ENVIRONMENT failed (nothing ran there before; see the events: kubectl -n $KUBE_NAMESPACE get events). With the bundled Postgres, delete its volume claim (data-$HELM_RELEASE-postgresql-0) before trying again: Helm keeps it, and a new install generates a new password."
+    fi
+    new_revision="$(deployed_revision)"
+    problem="$(verify "$IMAGE_DIGEST")"
+    if [ -n "$problem" ]; then
+      if [ -n "$current" ]; then
+        log "$problem failed: rolling back to revision $current"
+        hl rollback "$HELM_RELEASE" "$current" --wait --cleanup-on-fail --timeout "$HELM_TIMEOUT" ||
+          die "$problem failed on revision $new_revision and the rollback to $current failed too: see helm history"
+        smoke "" >&2 || warn "the restored release fails its smoke test too"
+        summary "Deploy to $ENVIRONMENT failed" "\`$want_ref\` failed $problem; rolled back to revision $current."
+        die "$problem failed for $IMAGE_TAG on $ENVIRONMENT: rolled back, the previous release (revision $current) is running again"
+      fi
+      die "$problem failed for $IMAGE_TAG on $ENVIRONMENT's first install (revision $new_revision left in place to debug)"
+    fi
+    summary "Deployed to $ENVIRONMENT" "\`$want_ref\` is revision $new_revision of $HELM_RELEASE in $KUBE_NAMESPACE (migrations $head) at $(release_url)."
+    log "deployed $IMAGE_TAG to $ENVIRONMENT: revision $new_revision, $(release_url)"
+    ;;
+
+  rollback)
+    preflight
+    current="$(deployed_revision)"
+    if [ -z "$current" ]; then
+      pending="$(pending_revision)"
+      current="${pending%% *}"
+    fi
+    [ -n "$current" ] || die "release $HELM_RELEASE has no revision in $KUBE_NAMESPACE"
+    target="${ROLLBACK_REVISION:-$(previous_revision "$current")}"
+    [ -n "$target" ] || die "revision $current has no earlier successful revision to roll back to"
+    [[ "$target" =~ ^[0-9]+$ ]] || die "ROLLBACK_REVISION must be a revision number (helm history)"
+    [ "$target" != "$current" ] || die "revision $target is the one running"
+    target_status="$(revisions | awk -v t="$target" '$1 == t { print $2 }')"
+    [ "$target_status" = superseded ] ||
+      die "revision $target is '${target_status:-missing}': roll back only to a revision that ran successfully (helm history)"
+    guard_other_ci "$current"
+
+    # Helm's rollback restores Kubernetes objects, not the database: refuse to put back
+    # code that ran on another schema unless asked (the migration rule in the operator guide).
+    current_head="$(revision_label "$current" "$LABEL_HEAD")"
+    target_head="$(revision_label "$target" "$LABEL_HEAD")"
+    if [ -z "$current_head" ] || [ -z "$target_head" ] || [ "$current_head" != "$target_head" ]; then
+      reason="revision $target ran migrations ${target_head:-(unknown)} and revision $current runs ${current_head:-(unknown)}"
+      if [ "$DEPLOY_FORCE" = 1 ]; then
+        warn "$reason; DEPLOY_FORCE=1: rolling back across the migration boundary (the database stays as it is)"
+      else
+        die "refusing to roll back $ENVIRONMENT from revision $current to $target: $reason. A rollback restores the pods, not the database, and migrations only go forward. Roll forward with a fix, or set DEPLOY_FORCE=1 if revision $target's code runs on the current schema (a release's previous version does, by the expand/contract rule)."
+      fi
+    fi
+    log "rollback $ENVIRONMENT from revision $current to $target (migrations ${target_head:-unknown})"
+    if [ "$DRY_RUN" = 1 ]; then
+      hl history "$HELM_RELEASE" --max 10
+      log "dry run: nothing changed"
+      exit 0
+    fi
+    hl rollback "$HELM_RELEASE" "$target" --wait --cleanup-on-fail --timeout "$HELM_TIMEOUT" ||
+      die "helm rollback to revision $target failed: see helm history"
+    manifest="$(hl get manifest "$HELM_RELEASE" --revision "$target")"
+    target_digest="$(sed -n '/image: .*@sha256:/{s/.*@\(sha256:[0-9a-f]\{64\}\).*/\1/p;q;}' <<<"$manifest")"
+    problem="$(verify "$target_digest")"
+    [ -z "$problem" ] || die "rolled back to revision $target, but $problem failed: see helm history and the pods"
+    summary "Rolled back $ENVIRONMENT" "Revision $target's content is running again as revision $(deployed_revision)."
+    log "rolled back $ENVIRONMENT to revision $target's content: now revision $(deployed_revision)"
+    ;;
+esac

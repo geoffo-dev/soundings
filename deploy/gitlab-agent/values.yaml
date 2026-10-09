@@ -1,0 +1,37 @@
+# Values for GitLab's `gitlab-agent` Helm chart (2.32.x, agentk 19.4), from an internal
+# mirror, installed once per environment (deploy/gitlab-agent/README.md):
+#
+#   helm upgrade --install soundings-staging-agent <mirror>/gitlab-agent --version 2.32.0 \
+#     -n gitlab-agent-staging -f deploy/gitlab-agent/values.yaml \
+#     --set serviceAccount.name=soundings-staging-agent \
+#     --set config.secretName=soundings-staging-agent-token \
+#     --set-file config.kasCaCert=internal-ca.pem
+#
+# (production: the same with "production"). The token Secret (key `token`) is created by
+# the operator from the agent's registration; nothing secret is in this file.
+image:
+  # agentk is published on registry.gitlab.com only: mirror it. Match GitLab's minor
+  # version (GitLab 19.4: agentk 19.3-19.5).
+  repository: registry.internal.example/gitlab-org/cluster-integration/gitlab-agent/agentk
+  tag: v19.4.1
+
+# No ClusterRoleBinding to cluster-admin (the chart's default): the agent's ServiceAccount
+# gets exactly deploy/gitlab-agent/rbac.yaml.
+rbac:
+  create: false
+serviceAccount:
+  create: true
+  # set per environment: soundings-staging-agent / soundings-production-agent
+  name: soundings-staging-agent
+
+config:
+  # GitLab's agent server (KAS). Linux package: wss://<gitlab>/-/kubernetes-agent/;
+  # GitLab's Helm chart: wss:// or grpcs://kas.<domain>.
+  kasAddress: wss://gitlab.example.internal/-/kubernetes-agent/
+  # set per environment: soundings-staging-agent-token / soundings-production-agent-token
+  secretName: soundings-staging-agent-token
+  # Operational container scanning is an Ultimate feature that needs cluster-wide reads.
+  operational_container_scanning:
+    enabled: false
+
+replicas: 2

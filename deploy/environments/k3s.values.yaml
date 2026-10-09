@@ -1,0 +1,47 @@
+# The local rehearsal (make k3s-deploy, scripts/lib/k3s-deploy.sh): layered on top of
+# <env>.values.yaml, it swaps what a laptop's k3s doesn't have (the IdP, SMTP, an external
+# database, nginx and TLS) for the cluster's own (bundled Postgres, Traefik, plain http on
+# localhost). Everything else, production mode included, is the environment's.
+image:
+  pullSecrets: []
+  # The rehearsal's images are imported into the node, never pulled.
+  pullPolicy: IfNotPresent
+
+# make k3s-deploy sets the port (K3S_HTTP_PORT).
+baseUrls:
+  - http://localhost:18081
+
+oidc:
+  issuer: ""
+  existingSecret: ""
+
+smtp:
+  host: ""
+  existingSecret: ""
+
+postgresql:
+  enabled: true
+  persistence:
+    size: 1Gi
+externalDatabase:
+  host: ""
+  existingSecret: ""
+  sslmode: disable
+extraVolumes: []
+extraVolumeMounts: []
+extraEnv: []
+
+autoscaling:
+  enabled: false
+
+# The environment's nginx annotations stay (Traefik ignores them).
+ingress:
+  className: traefik
+  tls: []
+
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+  metricsFrom: []

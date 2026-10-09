@@ -1,0 +1,75 @@
+# Once per cluster, by an operator (cluster-admin), before the first deploy:
+#
+#   kubectl apply -f deploy/environments/cluster-setup.yaml
+#
+# The two Soundings namespaces (Restricted Pod Security Standard, as the chart's pods meet
+# it) and the deployer's permissions as a ClusterRole of namespaced rules only. A
+# ClusterRole grants nothing by itself: each CI identity gets it in one namespace through
+# a RoleBinding (deploy/gitlab-agent/rbac.yaml for the GitLab agent,
+# deploy/ci/arc-rbac.yaml for GitHub's runners), so a staging deploy can't touch
+# production and no deploy can touch anything else. scripts/deploy.sh never creates a
+# namespace. Then create the Secrets the environment's values file names
+# (deploy/environments/<env>.values.yaml) in each namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: soundings-staging
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: soundings-production
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# What `helm upgrade --install --atomic --wait`, `helm test`, `helm rollback` and the
+# smoke need for the chart in deploy/helm: the kinds it renders, Helm's own release
+# Secrets, pods for `helm test` and the logs the smoke reads. No RBAC objects (the chart
+# creates none, so no bind or escalate), no pods/exec, nothing cluster-scoped. Helm stores
+# releases as Secrets, so the deployer can read the namespace's Secrets: create no Secret
+# there that the deploy must not see.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: soundings-deployer
+  labels:
+    app.kubernetes.io/part-of: soundings
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, secrets, services, serviceaccounts, persistentvolumeclaims, pods]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods/log, events, endpoints]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [replicasets, controllerrevisions]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Only used when the values turn them on (httpRoute, serviceMonitor, kagent.examples).
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [kagent.dev]
+    resources: [agents, remotemcpservers]
+    verbs: [get, list, watch, create, update, patch, delete]

@@ -514,9 +514,7 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
               {keptOutsider.display_name}
               {keptChosen && <span className="sr-only">, chosen</span>}
             </span>
-            <span className="truncate text-xs text-muted">
-              Not in this project
-            </span>
+            <span className="truncate text-xs text-muted">Not in this project</span>
           </span>
           <Check
             aria-hidden="true"

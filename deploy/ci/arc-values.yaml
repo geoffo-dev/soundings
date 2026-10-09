@@ -1,0 +1,43 @@
+# Values for GitHub's Actions Runner Controller scale set chart (gha-runner-scale-set
+# 0.15.x, from your OCI mirror), one release per environment, each in its own namespace:
+#
+#   helm upgrade --install soundings-staging <mirror>/gha-runner-scale-set --version 0.15.0 \
+#     -n arc-soundings-staging -f deploy/ci/arc-values.yaml \
+#     --set template.spec.serviceAccountName=soundings-deployer
+#   helm upgrade --install soundings-production <mirror>/gha-runner-scale-set --version 0.15.0 \
+#     -n arc-soundings-production -f deploy/ci/arc-values.yaml
+#
+# The release name is the runner label the deploy jobs use (runs-on: soundings-staging /
+# soundings-production; SOUNDINGS_STAGING_RUNNER / SOUNDINGS_PRODUCTION_RUNNER otherwise).
+# Runners connect out to GitHub on 443; nothing connects in.
+githubConfigUrl: https://github.com/example-org/soundings
+# A Secret with the GitHub App's id, installation id and private key (create it first).
+githubConfigSecret: arc-github-app
+# A runner group restricted to this repository (Enterprise: also to the workflows
+# .github/workflows/deploy-env.yml).
+runnerGroup: soundings-deploy
+# One runner at a time per environment; none while idle.
+minRunners: 0
+maxRunners: 1
+controllerServiceAccount:
+  namespace: arc-systems
+  name: arc-gha-rs-controller
+template:
+  spec:
+    # Staging only (--set above): the ServiceAccount deploy/ci/arc-rbac.yaml binds in
+    # soundings-staging. Production keeps ARC's no-permission default and deploys with
+    # the environment's KUBECONFIG_DATA.
+    # serviceAccountName: soundings-deployer
+    containers:
+      - name: runner
+        # make deploy-runner-image (deploy/ci/deploy-runner.Dockerfile), pushed to your registry
+        image: registry.internal.example/soundings/soundings-deploy-runner:2.338.0-1
+        command: ["/home/runner/run.sh"]
+# A TLS-intercepting proxy or an internal CA for github.com / your GHES:
+# githubServerTLS:
+#   certificateFrom:
+#     configMapKeyRef: {name: internal-ca, key: ca.crt}
+#   runnerMountPath: /usr/local/share/ca-certificates/
+# proxy:
+#   https: {url: http://proxy.internal:3128}
+#   noProxy: [kubernetes.default.svc, .svc, .cluster.local]

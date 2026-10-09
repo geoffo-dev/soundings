@@ -1,20 +1,39 @@
-# Soundings CI for self-hosted GitLab.
+# Soundings CI and continuous delivery for self-managed GitLab.
 #
-# Stages: lint -> test -> build -> scan -> deploy-test (k3s install/upgrade, e2e).
+# Stages: lint -> test -> build -> scan -> deploy-test (k3s install/upgrade, e2e), then
+# delivery (docs/operator-guide.md "Continuous delivery", ADR 0017): staging -> release ->
+# production. Every pipeline builds and scans the image; with SOUNDINGS_DEPLOY set, main
+# deploys staging, and a vX.Y.Z tag deploys staging, publishes the release and waits at the
+# production gate. Deploys go through the GitLab agent for Kubernetes (no cluster
+# credential in GitLab) with scripts/deploy.sh, the script GitHub Actions and people use.
 #
 # Air-gapped runners: every image is a variable. Point REGISTRY_MIRROR at your Docker Hub
 # proxy (e.g. harbor.internal/dockerhub) and set, as CI/CD variables when needed:
 #   PIP_INDEX_URL / UV_DEFAULT_INDEX   PyPI mirror        NPM_CONFIG_REGISTRY  npm mirror
 #   UBUNTU_MIRROR                       Ubuntu archive mirror (http://mirror.internal/ubuntu)
 #                                       for the image's packages and the backend test job
-#   CI_BUILD_CA (type File)             extra CA bundle for TLS-intercepting proxies
+#   CI_BUILD_CA (type File)             extra CA bundle for TLS-intercepting proxies and
+#                                       internal CAs (image build, registry, GitLab's agent proxy)
 #   TRIVY_DB_REPOSITORY / TRIVY_JAVA_DB_REPOSITORY   mirrors of the Trivy databases
+# COSIGN_IMAGE comes from ghcr.io: mirror it too if you sign. The runner's helper image
+# defaults to registry.gitlab.com: set helper_image in the runner's config.toml.
 # docker:dind (backend tests, deploy-test) pulls postgres/k3s/busybox images itself: give
 # the runner's dind a registry mirror (--registry-mirror) or keep them in REGISTRY_MIRROR.
 # Keycloak (KEYCLOAK_IMAGE) runs as a service for the backend identity tests and the
 # e2e:sso job, Mailpit (MAILPIT_IMAGE) for the backend email tests and both e2e jobs; the
 # k3s job's node pulls them through K3S_REGISTRY_MIRROR.
-# kaniko is archived upstream (Google, 2025); KANIKO_IMAGE can point at a maintained fork.
+#
+# Delivery variables (one table in the operator guide):
+#   SOUNDINGS_DEPLOY      environments this CI deploys: "" (checks only), "staging" or
+#                         "staging production". One CI per environment, never both.
+#   KUBE_AGENT_PROJECT    project holding the agents' config (.gitlab/agents/soundings-<env>/);
+#                         jobs use context <KUBE_AGENT_PROJECT>:soundings-<env>
+#   STAGING_URL / PRODUCTION_URL   the environments' URLs (the smoke test's target)
+#   IMAGE_BUILDER         buildkit (rootless, any Kubernetes runner) or dind (privileged)
+#   SCAN_SEVERITY         Trivy gate before any deploy (default HIGH,CRITICAL with a fix)
+#   COSIGN_PRIVATE_KEY (File) / COSIGN_PASSWORD   sign the image when set
+#   IMAGE_REGISTRY_USER / IMAGE_REGISTRY_PASSWORD credentials when IMAGE_REPOSITORY is
+#                         another registry (default: the job token for GitLab's)
 
 stages:
   - lint
@@ -22,6 +41,9 @@ stages:
   - build
   - scan
   - deploy-test
+  - staging
+  - release
+  - production
 
 workflow:
   rules:
@@ -43,15 +65,37 @@ variables:
   DOCKER_IMAGE: ${REGISTRY_MIRROR}/library/docker:28-cli
   DIND_IMAGE: ${REGISTRY_MIRROR}/library/docker:28-dind
   HELM_IMAGE: ${REGISTRY_MIRROR}/alpine/helm:3.16.2
-  TRIVY_IMAGE: ${REGISTRY_MIRROR}/aquasec/trivy:0.67.2
-  KANIKO_IMAGE: gcr.io/kaniko-project/executor:v1.23.2-debug
+  # Trivy by digest: the March 2026 compromise re-pointed tags (docs/research/github-cd.md).
+  TRIVY_IMAGE: ${REGISTRY_MIRROR}/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+  # Image builds (kaniko is archived): rootless BuildKit by default, buildx on dind with
+  # IMAGE_BUILDER=dind.
+  IMAGE_BUILDER: buildkit
+  BUILDKIT_IMAGE: ${REGISTRY_MIRROR}/moby/buildkit:v0.33.1-rootless@sha256:f8a833b2de9d68e27f0815e4a737abdfaf8a2e4c615650557df11025101557b4
+  BUILDKIT_DIND_IMAGE: ${REGISTRY_MIRROR}/moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+  # Deploy jobs: bash, helm 3, kubectl, curl (alpine/k8s 1.31.13: helm 3.19.0, kubectl
+  # 1.31.13). Or your own build of deploy/ci/deploy-runner.Dockerfile --target tools.
+  DEPLOY_IMAGE: ${REGISTRY_MIRROR}/alpine/k8s:1.31.13@sha256:7a319b15cfc99c9aaa27ec9891d6b4ca24632b795908591c7b0ba89b03549e0a
+  GLAB_IMAGE: ${REGISTRY_MIRROR}/gitlab/glab:v1.122.0@sha256:ca113f949a17d119984884b8937ae7aeff7b471ecaafc6ade015cc9c23707fc9
+  COSIGN_IMAGE: ghcr.io/sigstore/cosign/cosign:v3.1.3-dev@sha256:3b1a2e2742351ab440255626f079a337e6c263249644800a52f5eaa389a5b730
   K3S_IMAGE: ${REGISTRY_MIRROR}/rancher/k3s:v1.31.4-k3s1
   KEYCLOAK_IMAGE: ${REGISTRY_MIRROR}/keycloak/keycloak:26.0
   MAILPIT_IMAGE: ${REGISTRY_MIRROR}/axllent/mailpit:v1.31.3
   UV_VERSION: "0.8.17"
-  # Where the built image is pushed (defaults to this project's container registry).
+  # Where the built image is pushed (defaults to this project's container registry), and
+  # the credentials (another registry: protected, masked CI/CD variables).
   IMAGE_REPOSITORY: ${CI_REGISTRY_IMAGE}
-  IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+  IMAGE_REGISTRY_USER: ${CI_REGISTRY_USER}
+  IMAGE_REGISTRY_PASSWORD: ${CI_REGISTRY_PASSWORD}
+  # The tag this pipeline's tests run: one per pipeline, never reused. main also pushes
+  # sha-<8 hex>, a vX.Y.Z tag X.Y.Z and X.Y (image:build); deploys pin the digest.
+  IMAGE_TAG: ci-${CI_PIPELINE_ID}
+  # Delivery (see the header): off until SOUNDINGS_DEPLOY names environments.
+  SOUNDINGS_DEPLOY: ""
+  KUBE_AGENT_PROJECT: ${CI_PROJECT_PATH}
+  STAGING_URL: ""
+  PRODUCTION_URL: ""
+  SCAN_SEVERITY: HIGH,CRITICAL
+  SCAN_IGNORE_UNFIXED: "true"
   # Caches live in the project dir so GitLab can cache them.
   UV_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/uv
   UV_LINK_MODE: copy
@@ -294,19 +338,104 @@ frontend:build:
 
 # --- build ------------------------------------------------------------------------------
 
-image:build:
+# Every pipeline pushes $IMAGE_TAG (ci-<pipeline id>) for its tests; main also pushes
+# sha-<8 hex> and a vX.Y.Z tag X.Y.Z and X.Y, all in one push of one digest. image.env (a
+# dotenv report kept forever, so a re-run deploy job still finds it) carries IMAGE_DIGEST,
+# IMAGE_REF (repository@digest), DEPLOY_TAG and RELEASE_VERSION to later jobs.
+.image-names: &image-names
+  - |
+    registry="${IMAGE_REPOSITORY%%/*}"
+    mkdir -p "$HOME/.docker"
+    printf '{"auths":{"%s":{"auth":"%s"}}}' "$registry" \
+      "$(printf '%s:%s' "$IMAGE_REGISTRY_USER" "$IMAGE_REGISTRY_PASSWORD" | base64 | tr -d '\n')" \
+      > "$HOME/.docker/config.json"
+    names="$IMAGE_REPOSITORY:$IMAGE_TAG"
+    deploy_tag="$IMAGE_TAG"
+    version="$CI_COMMIT_SHORT_SHA"
+    release_version=""
+    if [ "${CI_COMMIT_BRANCH:-}" = "$CI_DEFAULT_BRANCH" ]; then
+      deploy_tag="sha-$CI_COMMIT_SHORT_SHA"
+      names="$names,$IMAGE_REPOSITORY:$deploy_tag"
+    fi
+    if printf '%s' "${CI_COMMIT_TAG:-}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+      release_version="${CI_COMMIT_TAG#v}"
+      deploy_tag="$release_version"
+      version="$release_version"
+      names="$names,$IMAGE_REPOSITORY:$release_version,$IMAGE_REPOSITORY:${release_version%.*}"
+    fi
+    echo "pushing $names (version $version)"
+
+.image-env: &image-env
+  - |
+    digest="$(sed -n 's/.*"containerimage\.digest": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' build-meta.json | head -n 1)"
+    [ -n "$digest" ] || { echo "no image digest in build-meta.json"; cat build-meta.json; exit 1; }
+    printf 'IMAGE_DIGEST=%s\nIMAGE_REF=%s@%s\nDEPLOY_TAG=%s\nRELEASE_VERSION=%s\n' \
+      "$digest" "$IMAGE_REPOSITORY" "$digest" "$deploy_tag" "$release_version" | tee image.env
+
+.image-build:
   stage: build
+  artifacts:
+    expire_in: never
+    reports:
+      dotenv: image.env
+
+# Rootless BuildKit (no privileged container): the runner must let the build container
+# unshare (Kubernetes executor: seccomp and AppArmor "Unconfined" for the build container;
+# Ubuntu 24.04 nodes: kernel.apparmor_restrict_unprivileged_userns=0). Operator guide,
+# "Image builds on your runners".
+image:build:
+  extends: .image-build
   image:
-    name: ${KANIKO_IMAGE}
+    name: ${BUILDKIT_IMAGE}
     entrypoint: [""]
+  rules:
+    - if: $IMAGE_BUILDER == "dind"
+      when: never
+    - when: on_success
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
   script:
-    - mkdir -p /kaniko/.docker
-    - >-
-      printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY"
-      "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')"
-      > /kaniko/.docker/config.json
+    - *image-names
     - |
-      set -- --build-arg "VCS_REF=$CI_COMMIT_SHORT_SHA" \
+      set -- --opt "build-arg:VERSION=$version" \
+             --opt "build-arg:VCS_REF=$CI_COMMIT_SHORT_SHA" \
+             --opt "build-arg:BUILD_DATE=$CI_JOB_STARTED_AT" \
+             --opt "build-arg:SOURCE_URL=$CI_PROJECT_URL" \
+             --opt "build-arg:UBUNTU_IMAGE=$UBUNTU_IMAGE" \
+             --opt "build-arg:NODE_IMAGE=$NODE_IMAGE"
+      for arg in NPM_CONFIG_REGISTRY PIP_INDEX_URL UV_DEFAULT_INDEX UBUNTU_MIRROR; do
+        eval "value=\${$arg:-}"
+        [ -z "$value" ] || set -- "$@" --opt "build-arg:$arg=$value"
+      done
+      if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then
+        # The Dockerfile's build_ca secret, and BuildKit's own trust for the registry (the
+        # rootless image has no system CA store).
+        set -- "$@" --secret "id=build_ca,src=$CI_BUILD_CA"
+        mkdir -p "$HOME/.config/buildkit"
+        printf '[registry."%s"]\n  ca = ["%s"]\n' "$registry" "$CI_BUILD_CA" > "$HOME/.config/buildkit/buildkitd.toml"
+        export SSL_CERT_FILE="$CI_BUILD_CA"
+      fi
+      buildctl-daemonless.sh build \
+        --frontend dockerfile.v0 --local context=. --local dockerfile=. "$@" \
+        --import-cache "type=registry,ref=$IMAGE_REPOSITORY/cache:buildkit" \
+        --export-cache "type=registry,ref=$IMAGE_REPOSITORY/cache:buildkit,mode=max" \
+        --output "type=image,\"name=$names\",push=true" \
+        --metadata-file build-meta.json
+    - *image-env
+
+# The same with docker buildx on a privileged Docker runner's dind service
+# (IMAGE_BUILDER=dind). The builder container (BUILDKIT_DIND_IMAGE) exports the same cache.
+image:build:dind:
+  extends: [.image-build, .dind]
+  image: ${DOCKER_IMAGE}
+  rules:
+    - if: $IMAGE_BUILDER == "dind"
+  script:
+    - *image-names
+    - |
+      config=""
+      set -- --build-arg "VERSION=$version" \
+             --build-arg "VCS_REF=$CI_COMMIT_SHORT_SHA" \
              --build-arg "BUILD_DATE=$CI_JOB_STARTED_AT" \
              --build-arg "SOURCE_URL=$CI_PROJECT_URL" \
              --build-arg "UBUNTU_IMAGE=$UBUNTU_IMAGE" \
@@ -315,50 +444,104 @@ image:build:
         eval "value=\${$arg:-}"
         [ -z "$value" ] || set -- "$@" --build-arg "$arg=$value"
       done
-      # The Dockerfile reads the CA from the BuildKit secret path; kaniko has no
-      # secrets, so place it there and keep that path out of the image layers.
       if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then
-        cat "$CI_BUILD_CA" >> /kaniko/ssl/certs/ca-certificates.crt
-        mkdir -p /run/secrets && cp "$CI_BUILD_CA" /run/secrets/build_ca
-        set -- "$@" --ignore-path=/run/secrets
+        set -- "$@" --secret "id=build_ca,src=$CI_BUILD_CA"
+        printf '[registry."%s"]\n  ca = ["%s"]\n' "$registry" "$CI_BUILD_CA" > buildkitd.toml
+        config="--config buildkitd.toml"
       fi
-      destinations="--destination=$IMAGE_REPOSITORY:$IMAGE_TAG"
-      [ -z "${CI_COMMIT_TAG:-}" ] || destinations="$destinations --destination=$IMAGE_REPOSITORY:$CI_COMMIT_TAG"
+      for name in $(printf '%s' "$names" | tr ',' ' '); do set -- "$@" --tag "$name"; done
       # shellcheck disable=SC2086
-      /kaniko/executor \
-        --context "$CI_PROJECT_DIR" \
-        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
-        $destinations \
-        --cache=true --cache-repo="$IMAGE_REPOSITORY/cache" \
-        --build-arg "VERSION=${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}" \
-        "$@"
+      docker buildx create --name soundings --driver docker-container \
+        --driver-opt "image=$BUILDKIT_DIND_IMAGE" $config --use
+      docker buildx build --push --provenance=false "$@" \
+        --cache-from "type=registry,ref=$IMAGE_REPOSITORY/cache:buildkit" \
+        --cache-to "type=registry,ref=$IMAGE_REPOSITORY/cache:buildkit,mode=max" \
+        --metadata-file build-meta.json .
+    - *image-env
+
+# A vX.Y.Z tag must match the versions in the repository: the app reports
+# backend/pyproject.toml's version, the chart carries deploy/helm/Chart.yaml's.
+release:check:
+  stage: lint
+  image:
+    name: ${HELM_IMAGE}
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    - scripts/deploy.sh check-release "$CI_COMMIT_TAG"
 
 # --- scan -------------------------------------------------------------------------------
 
+# The gate before any deploy, on the pushed digest: SCAN_SEVERITY (default HIGH,CRITICAL)
+# fails the pipeline; SCAN_IGNORE_UNFIXED=true (default) skips findings without a fix.
+# Also the CycloneDX SBOM that the release carries.
 image:trivy:
   stage: scan
   image:
     name: ${TRIVY_IMAGE}
     entrypoint: [""]
-  needs: [image:build]
+  needs:
+    - job: image:build
+      optional: true
+    - job: image:build:dind
+      optional: true
   variables:
-    TRIVY_USERNAME: ${CI_REGISTRY_USER}
-    TRIVY_PASSWORD: ${CI_REGISTRY_PASSWORD}
+    TRIVY_USERNAME: ${IMAGE_REGISTRY_USER}
+    TRIVY_PASSWORD: ${IMAGE_REGISTRY_PASSWORD}
     TRIVY_NO_PROGRESS: "true"
     TRIVY_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/trivy
   cache:
     key: trivy
     paths: [.cache/trivy]
+  before_script:
+    - *ca-bundle
   script:
     # Full report for the merge request widget...
     - trivy image --exit-code 0 --format template --template "@/contrib/gitlab.tpl"
-        --output gl-container-scanning-report.json "$IMAGE_REPOSITORY:$IMAGE_TAG"
-    # ...and the gate: fail on HIGH/CRITICAL vulnerabilities that have a fix.
-    - trivy image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "$IMAGE_REPOSITORY:$IMAGE_TAG"
+        --output gl-container-scanning-report.json "$IMAGE_REF"
+    # ...the SBOM...
+    - trivy image --format cyclonedx --output "soundings-${RELEASE_VERSION:-$DEPLOY_TAG}.cdx.json" "$IMAGE_REF"
+    # ...and the gate.
+    - |
+      unfixed=""
+      [ "$SCAN_IGNORE_UNFIXED" != "true" ] || unfixed="--ignore-unfixed"
+      # shellcheck disable=SC2086
+      trivy image --exit-code 1 $unfixed --severity "$SCAN_SEVERITY" "$IMAGE_REF"
   artifacts:
     when: always
+    expire_in: 30 days
+    paths: [soundings-*.cdx.json]
     reports:
       container_scanning: gl-container-scanning-report.json
+
+# Optional: sign the digest with a key (keyless needs Sigstore on the internet). Runs when
+# COSIGN_PRIVATE_KEY (a protected File variable) is set; COSIGN_PASSWORD unlocks it. Verify
+# with: cosign verify --key cosign.pub --insecure-ignore-tlog=true <repository>@<digest>.
+image:sign:
+  stage: scan
+  image:
+    name: ${COSIGN_IMAGE}
+    entrypoint: [""]
+  needs:
+    - job: image:trivy
+      artifacts: false
+    - job: image:build
+      optional: true
+    - job: image:build:dind
+      optional: true
+  rules:
+    - if: $COSIGN_PRIVATE_KEY && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/)
+  before_script:
+    - *ca-bundle
+  script:
+    - |
+      registry="${IMAGE_REPOSITORY%%/*}"
+      mkdir -p "$HOME/.docker"
+      printf '{"auths":{"%s":{"auth":"%s"}}}' "$registry" \
+        "$(printf '%s:%s' "$IMAGE_REGISTRY_USER" "$IMAGE_REGISTRY_PASSWORD" | base64 | tr -d '\n')" \
+        > "$HOME/.docker/config.json"
+    - cosign sign --yes --key "$COSIGN_PRIVATE_KEY" --use-signing-config=false --tlog-upload=false "$IMAGE_REF"
 
 # --- deploy-test ------------------------------------------------------------------------
 
@@ -371,7 +554,11 @@ image:trivy:
 e2e:
   stage: deploy-test
   image: ${PLAYWRIGHT_IMAGE}
-  needs: [image:build]
+  needs:
+    - job: image:build
+      optional: true
+    - job: image:build:dind
+      optional: true
   rules:
     - exists: [e2e/package.json]
   services:
@@ -449,7 +636,11 @@ e2e:
 e2e:sso:
   stage: deploy-test
   image: ${PLAYWRIGHT_IMAGE}
-  needs: [image:build]
+  needs:
+    - job: image:build
+      optional: true
+    - job: image:build:dind
+      optional: true
   rules:
     - exists: [e2e/package.json]
   services:
@@ -531,7 +722,12 @@ k3s:install-upgrade:
   extends: .dind
   stage: deploy-test
   image: ${DOCKER_IMAGE}
-  needs: [image:build, helm:lint]
+  needs:
+    - job: image:build
+      optional: true
+    - job: image:build:dind
+      optional: true
+    - helm:lint
   variables:
     K3S_NAME: soundings-ci
     K3S_BIND_ADDRESS: 0.0.0.0
@@ -544,7 +740,7 @@ k3s:install-upgrade:
     # docker:cli is Alpine without bash/curl; use an image that has them when offline.
     - command -v bash >/dev/null && command -v curl >/dev/null && command -v jq >/dev/null ||
       apk add --no-cache bash curl tar jq git make
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - echo "$IMAGE_REGISTRY_PASSWORD" | docker login -u "$IMAGE_REGISTRY_USER" --password-stdin "${IMAGE_REPOSITORY%%/*}"
     - docker pull "$IMAGE_REPOSITORY:$IMAGE_TAG"
     - docker tag "$IMAGE_REPOSITORY:$IMAGE_TAG" soundings:ci
     # The fake kagent agent's image (dev/fake-agent), built here: tests only, never pushed.
@@ -582,3 +778,189 @@ k3s:install-upgrade:
     - IMAGE_TAG=ci scripts/k3s-test-external-db.sh
   after_script:
     - scripts/k3s-down.sh || true
+
+# --- delivery: staging -> release -> production -----------------------------------------
+#
+# Deploy jobs exist only for the environments SOUNDINGS_DEPLOY names (one CI per
+# environment). They reach the cluster through the GitLab agent for Kubernetes: GitLab
+# injects a kubeconfig whose context <KUBE_AGENT_PROJECT>:soundings-<env> works only for
+# this job, through the agent's own connection out of the cluster; the agents' ci_access
+# (.gitlab/agents/) lets only jobs of that environment (production: on protected refs)
+# use it, and the agent's ServiceAccount may act only in soundings-<env>
+# (deploy/gitlab-agent/rbac.yaml). Any runner that reaches GitLab can deploy; GitLab must
+# serve https (the agent proxy's credentials only travel over TLS: CI_BUILD_CA for an
+# internal CA). resource_group runs one deploy per environment at a time; also turn on
+# "Prevent outdated deployment jobs" (Settings > CI/CD > General pipelines).
+.deploy:
+  image:
+    name: ${DEPLOY_IMAGE}
+    entrypoint: [""]
+  before_script:
+    - *ca-bundle
+    - |
+      # With the agents configured in this project, its ci_access must name the project
+      # itself: otherwise implicit access lets every job here use the agent, on any branch.
+      config=".gitlab/agents/soundings-$CI_ENVIRONMENT_NAME/config.yaml"
+      if [ "$KUBE_AGENT_PROJECT" = "$CI_PROJECT_PATH" ] &&
+        ! grep -Eq "^[[:space:]]*-[[:space:]]+id:[[:space:]]+\"?$CI_PROJECT_PATH\"?[[:space:]]*$" "$config"; then
+        echo "$config must list this project ($CI_PROJECT_PATH) under ci_access.projects (docs/operator-guide.md, Continuous delivery)"
+        exit 1
+      fi
+
+# The checks this deploy waits for are its needs (a new check job belongs here too).
+.deploy-needs: &deploy-needs
+  - job: image:build
+    optional: true
+  - job: image:build:dind
+    optional: true
+  - job: image:trivy
+    artifacts: false
+  - job: e2e
+    optional: true
+    artifacts: false
+  - job: e2e:sso
+    optional: true
+    artifacts: false
+  - job: k3s:install-upgrade
+    artifacts: false
+
+# main: every push; a vX.Y.Z tag: the release image first goes to staging.
+deploy:staging:
+  extends: .deploy
+  stage: staging
+  needs: *deploy-needs
+  rules:
+    - if: $SOUNDINGS_DEPLOY =~ /\bstaging\b/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $SOUNDINGS_DEPLOY =~ /\bstaging\b/ && $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  environment:
+    name: staging
+    url: $STAGING_URL
+    deployment_tier: staging
+  resource_group: staging
+  variables:
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-staging
+    DEPLOY_URL: ${STAGING_URL}
+  script:
+    - IMAGE_TAG="$DEPLOY_TAG" scripts/deploy.sh deploy staging
+    # What production deploys after the gate: exactly this digest.
+    - printf 'STAGED_IMAGE_DIGEST=%s\nSTAGED_IMAGE_TAG=%s\n' "$IMAGE_DIGEST" "$DEPLOY_TAG" > staged.env
+  artifacts:
+    expire_in: never
+    reports:
+      dotenv: staged.env
+
+# A manual rollback of staging to the revision before the current one (or
+# ROLLBACK_REVISION, set when running the job). Refused across a migration boundary unless
+# DEPLOY_FORCE=1 (operator guide, "Rollback"). Available in every main pipeline at once.
+rollback:staging:
+  extends: .deploy
+  stage: staging
+  needs: []
+  rules:
+    - if: $SOUNDINGS_DEPLOY =~ /\bstaging\b/ && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/)
+      when: manual
+      allow_failure: true
+  environment:
+    name: staging
+    action: access
+  resource_group: staging
+  variables:
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-staging
+    DEPLOY_URL: ${STAGING_URL}
+  script:
+    - scripts/deploy.sh rollback staging
+
+# The chart, packaged with the release's version (it already matches: release:check).
+chart:package:
+  stage: release
+  image:
+    name: ${HELM_IMAGE}
+    entrypoint: [""]
+  needs:
+    - job: release:check
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    - version="${CI_COMMIT_TAG#v}"
+    - helm package deploy/helm --version "$version" --app-version "$version" --destination .
+  artifacts:
+    expire_in: 30 days
+    paths: [soundings-*.tgz]
+
+# The GitLab release for a vX.Y.Z tag, once its image passed the scan and (when this CI
+# deploys it) staging: the SBOM and the chart as assets in the generic package registry,
+# the image's digest in the notes.
+release:publish:
+  stage: release
+  image:
+    name: ${GLAB_IMAGE}
+    entrypoint: [""]
+  needs:
+    - job: image:build
+      optional: true
+    - job: image:build:dind
+      optional: true
+    - job: image:trivy
+    - job: chart:package
+    - job: deploy:staging
+      optional: true
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  variables:
+    GITLAB_HOST: ${CI_SERVER_URL}
+    GLAB_ENABLE_CI_AUTOLOGIN: "true"
+  before_script:
+    - *ca-bundle
+  script:
+    - |
+      glab release create "$CI_COMMIT_TAG" \
+        "soundings-$RELEASE_VERSION.cdx.json" "soundings-$RELEASE_VERSION.tgz" \
+        --name "Soundings $RELEASE_VERSION" --use-package-registry \
+        --notes "Image: \`$IMAGE_REPOSITORY:$RELEASE_VERSION\` (\`$IMAGE_REF\`). SBOM: soundings-$RELEASE_VERSION.cdx.json (CycloneDX). Chart: soundings-$RELEASE_VERSION.tgz."
+
+# The production gate: a manual job on the protected vX.Y.Z tag that deploys the digest
+# staging ran. GitLab Free: only people allowed to create the protected v* tag can run it.
+# Premium: also protect the environment "production" with approval rules (the job then
+# waits for approval first). Same YAML on both tiers.
+deploy:production:
+  extends: .deploy
+  stage: production
+  needs:
+    - job: deploy:staging
+  rules:
+    - if: $SOUNDINGS_DEPLOY =~ /\bproduction\b/ && $SOUNDINGS_DEPLOY =~ /\bstaging\b/ && $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: manual
+      allow_failure: false
+  manual_confirmation: Deploy this release to production? Staging runs the same image.
+  environment:
+    name: production
+    url: $PRODUCTION_URL
+    deployment_tier: production
+  resource_group: production
+  variables:
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-production
+    DEPLOY_URL: ${PRODUCTION_URL}
+  script:
+    - IMAGE_DIGEST="$STAGED_IMAGE_DIGEST" IMAGE_TAG="$STAGED_IMAGE_TAG" scripts/deploy.sh deploy production
+
+# A manual rollback of production (same gate as the deploy: a protected tag's pipeline,
+# and on Premium the protected environment).
+rollback:production:
+  extends: .deploy
+  stage: production
+  needs: []
+  rules:
+    - if: $SOUNDINGS_DEPLOY =~ /\bproduction\b/ && $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: manual
+      allow_failure: true
+  environment:
+    name: production
+    action: access
+  resource_group: production
+  variables:
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-production
+    DEPLOY_URL: ${PRODUCTION_URL}
+  script:
+    - scripts/deploy.sh rollback production

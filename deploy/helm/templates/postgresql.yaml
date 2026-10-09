@@ -82,8 +82,14 @@ spec:
       {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 6 }}
   template:
     metadata:
+      # Not the version and chart labels: the database must not restart whenever the app's
+      # image changes (every deploy).
       labels:
-        {{- include "soundings.podLabels" (dict "ctx" . "component" "postgresql") | nindent 8 }}
+        {{- include "soundings.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 8 }}
+        app.kubernetes.io/part-of: soundings
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       automountServiceAccountToken: false
       # Service links would inject SOUNDINGS_PORT=tcp://... for a Service named "soundings".

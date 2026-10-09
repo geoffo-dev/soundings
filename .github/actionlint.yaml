@@ -1,0 +1,6 @@
+# actionlint (make check-workflows): the self-hosted runner labels deploy jobs may use
+# (ARC scale set names, overridable with SOUNDINGS_STAGING_RUNNER / SOUNDINGS_PRODUCTION_RUNNER).
+self-hosted-runner:
+  labels:
+    - soundings-staging
+    - soundings-production

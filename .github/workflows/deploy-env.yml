@@ -1,0 +1,95 @@
+# One deploy job (reusable): scripts/deploy.sh on a self-hosted runner inside the network,
+# for ci.yml (staging after the checks, production after staging) and deploy.yml (by hand).
+# docs/operator-guide.md "Continuous delivery" has the runners, environments and variables.
+#
+# Cluster access, in order of preference (the script is the same in all three):
+#   - ARC: the runner pod's ServiceAccount, bound to the soundings-deployer ClusterRole in
+#     soundings-<env> only (staging's default; deploy/ci/arc-rbac.yaml);
+#   - KUBECONFIG_DATA, an environment secret with a namespaced token: GitHub releases it only
+#     to jobs that passed the environment's rules (production's default: a runner label is
+#     not access control below Enterprise);
+#   - KUBE_CONTEXT, a context of a kubeconfig the runner already has.
+name: deploy-env
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: staging or production
+        type: string
+        required: true
+      operation:
+        description: deploy or rollback
+        type: string
+        default: deploy
+      image_repository:
+        type: string
+        default: ""
+      image_digest:
+        type: string
+        default: ""
+      image_tag:
+        type: string
+        default: ""
+      revision:
+        description: rollback target (empty = the revision before the current one)
+        type: string
+        default: ""
+      force:
+        description: DEPLOY_FORCE (roll back across a migration boundary)
+        type: boolean
+        default: false
+    outputs:
+      image_repository:
+        value: ${{ jobs.deploy.outputs.image_repository }}
+      image_digest:
+        value: ${{ jobs.deploy.outputs.image_digest }}
+      image_tag:
+        value: ${{ jobs.deploy.outputs.image_tag }}
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: ${{ inputs.operation }} ${{ inputs.environment }}
+    runs-on: ${{ inputs.environment == 'production' && (vars.SOUNDINGS_PRODUCTION_RUNNER || 'soundings-production') || (vars.SOUNDINGS_STAGING_RUNNER || 'soundings-staging') }}
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.DEPLOY_URL }}
+    # One deploy per environment at a time; never cancel a running helm upgrade.
+    concurrency:
+      group: soundings-deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    outputs:
+      image_repository: ${{ inputs.image_repository }}
+      image_digest: ${{ inputs.image_digest }}
+      image_tag: ${{ inputs.image_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: scripts/deploy.sh ${{ inputs.operation }} ${{ inputs.environment }}
+        env:
+          OPERATION: ${{ inputs.operation }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_REPOSITORY: ${{ inputs.image_repository }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          ROLLBACK_REVISION: ${{ inputs.revision }}
+          DEPLOY_FORCE: ${{ inputs.force && '1' || '0' }}
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+          KUBE_NAMESPACE: ${{ vars.KUBE_NAMESPACE }}
+          KUBE_CONTEXT: ${{ vars.KUBE_CONTEXT }}
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+          CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
+        run: |
+          case "$OPERATION" in deploy | rollback) ;; *) echo "::error::operation must be deploy or rollback"; exit 1 ;; esac
+          if [ -n "$CI_BUILD_CA" ]; then
+            # An internal CA for the environment's URL (the smoke test): a full bundle.
+            printf '%s\n' "$CI_BUILD_CA" > "$RUNNER_TEMP/ca.pem"
+            export CURL_CA_BUNDLE="$RUNNER_TEMP/ca.pem"
+          fi
+          scripts/deploy.sh "$OPERATION" "$ENVIRONMENT"

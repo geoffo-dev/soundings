@@ -48,13 +48,28 @@ AI_FAKE_KEYS_DIR ?= $(CURDIR)/dev/.fake-agent-keys
 AI_FAKE_URL ?= http://localhost:$(SOUNDINGS_DEV_FAKE_AGENT_PORT)
 SOUNDINGS_DEV_FAKE_AGENT_PORT ?= 8083
 
+# Continuous delivery (docs/operator-guide.md "Continuous delivery"): `make deploy ENV=staging`
+# runs scripts/deploy.sh against the current kubeconfig context (helm 3.16+, kubectl, curl;
+# IMAGE_REPOSITORY, IMAGE_DIGEST, IMAGE_TAG); `make k3s-deploy` rehearses it on the local k3s.
+ENV ?= staging
+ACTION ?= deploy
+DEPLOY_TOOLS_IMAGE ?= soundings-deploy-tools:dev
+DEPLOY_RUNNER_IMAGE ?= soundings-deploy-runner:dev
+# Workflow linters (make check-workflows): pinned, from the Docker Hub mirror and PyPI/npm.
+HELM_IMAGE ?= alpine/helm:3.16.2
+ACTIONLINT_IMAGE ?= rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+ZIZMOR_VERSION ?= 1.30.1
+GITLAB_CI_LOCAL_VERSION ?= 4.75.1
+
 comma := ,
 build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(BUILD_CA))
 
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
         check-scripts check-fake-agent e2e image fake-agent-image demo demo-down k3s-up k3s-load \
         k3s-keycloak k3s-mailpit k3s-fake-agent k3s-kagent-crds k3s-install k3s-smoke k3s-down \
-        openapi gen-api seed sso-smoke email-smoke public-smoke mcp-smoke ai-smoke
+        openapi gen-api seed sso-smoke email-smoke public-smoke mcp-smoke ai-smoke \
+        check-workflows deploy deploy-rollback deploy-smoke deploy-status deploy-tools-image \
+        deploy-runner-image k3s-deploy
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
@@ -85,7 +100,7 @@ dev: ## How to run the backend and frontend dev servers (with Keycloak SSO)
 	@echo "   make email-smoke                              # invite -> email with the evaluate link; SMTP outage -> delivered later"
 
 # --- Checks ------------------------------------------------------------------------------
-check: check-backend check-frontend check-helm check-scripts check-fake-agent ## Run every check
+check: check-backend check-frontend check-helm check-scripts check-fake-agent check-workflows ## Run every check
 
 check-backend: ## Backend lint + mypy + tests (needs Docker for testcontainers)
 	$(MAKE) -C backend check
@@ -93,14 +108,23 @@ check-backend: ## Backend lint + mypy + tests (needs Docker for testcontainers)
 check-frontend: ## Frontend typecheck + lint + tests + build
 	npm --prefix frontend run check
 
-check-helm: ## helm lint + template for defaults and deploy/helm/ci/*-values.yaml
+check-helm: ## helm lint + template for defaults and deploy/helm/ci/*-values.yaml, and each deploy/environments/<env>.values.yaml
 	scripts/check-task.sh helm
+	@for env in staging production; do \
+	  docker run --rm -v "$(CURDIR):/repo:ro" -w /repo --entrypoint bash $(HELM_IMAGE) \
+	    scripts/deploy.sh template $$env >/dev/null && echo "deploy/environments/$$env.values.yaml renders"; \
+	done
 
 check-scripts: ## bash -n (+ shellcheck when available) for scripts/
 	scripts/check-task.sh scripts
 
 check-fake-agent: ## The fake kagent agent (dev/fake-agent): ruff, mypy --strict, pytest
 	$(MAKE) -C dev/fake-agent check
+
+check-workflows: ## actionlint + zizmor on .github/workflows, and the GitLab pipeline through gitlab-ci-local (schema, rules, needs)
+	docker run --rm -v "$(CURDIR):/repo:ro" -w /repo $(ACTIONLINT_IMAGE)
+	uvx --quiet zizmor@$(ZIZMOR_VERSION) --offline .github/workflows/
+	scripts/lib/check-gitlab-ci.sh $(GITLAB_CI_LOCAL_VERSION)
 
 e2e: ## Playwright end-to-end tests (e2e/) against E2E_BASE_URL (default: make demo)
 	@if [ ! -f e2e/package.json ]; then echo "e2e/ does not exist yet (Phase 1, owned by qa)"; \
@@ -149,6 +173,28 @@ k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PD
 
 k3s-down: ## Delete the local k3s cluster
 	scripts/k3s-down.sh
+
+# --- Continuous delivery -----------------------------------------------------------------
+deploy: ## scripts/deploy.sh deploy ENV (staging): IMAGE_REPOSITORY, IMAGE_DIGEST, IMAGE_TAG to the current kubeconfig context
+	scripts/deploy.sh deploy $(ENV)
+
+deploy-rollback: ## scripts/deploy.sh rollback ENV: to ROLLBACK_REVISION (default the one before), DEPLOY_FORCE=1 across migrations
+	scripts/deploy.sh rollback $(ENV)
+
+deploy-smoke: ## scripts/deploy.sh smoke ENV: the release's digest and version, then the production-safe HTTP smoke
+	scripts/deploy.sh smoke $(ENV)
+
+deploy-status: ## scripts/deploy.sh status ENV: helm history with migration heads, and the pods
+	scripts/deploy.sh status $(ENV)
+
+deploy-tools-image: ## Build DEPLOY_TOOLS_IMAGE (deploy/ci/deploy-runner.Dockerfile, target tools: helm, kubectl, bash, curl)
+	docker build -f deploy/ci/deploy-runner.Dockerfile --target tools -t $(DEPLOY_TOOLS_IMAGE) deploy/ci
+
+deploy-runner-image: ## Build DEPLOY_RUNNER_IMAGE (the GitHub Actions runner for ARC, plus helm and kubectl)
+	docker build -f deploy/ci/deploy-runner.Dockerfile -t $(DEPLOY_RUNNER_IMAGE) deploy/ci
+
+k3s-deploy: ## Rehearse CD on the local k3s as a namespace-only deployer: ACTION=deploy|rollback|smoke|status ENV=staging IMAGE (deploy, default soundings:dev)
+	DEPLOY_TOOLS_IMAGE=$(DEPLOY_TOOLS_IMAGE) scripts/lib/k3s-deploy.sh $(ACTION) $(ENV) $(if $(filter deploy,$(ACTION)),$(IMAGE))
 
 sso-smoke: ## Scripted SSO sign-in + groups -> access against SSO_BASE_URL (default the make dev API)
 	scripts/sso-smoke.sh $(SSO_BASE_URL)

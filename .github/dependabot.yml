@@ -1,0 +1,22 @@
+# Keeps the pinned versions current: the actions (pinned by commit SHA, the version in the
+# trailing comment) and the deploy images' FROM lines (pinned by digest). Updates wait a
+# week after a release (cooldown), time for a hijacked release to be noticed. Image
+# references in CI variables (TRIVY_IMAGE, BUILDKIT_IMAGE, DEPLOY_IMAGE, ...) and the
+# Dockerfile's ARG-based bases are bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directories: ["/", "/deploy/ci"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

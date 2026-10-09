@@ -1,0 +1,104 @@
+# The GitLab agents' permissions: one agent per environment, each in its own namespace,
+# allowed to deploy into its Soundings namespace only (no ClusterRoleBinding, no
+# impersonation; works on GitLab Free). Apply after deploy/environments/cluster-setup.yaml
+# and before installing the agents' chart with rbac.create=false (values.yaml):
+#
+#   kubectl apply -f deploy/gitlab-agent/rbac.yaml
+#
+# A job using an agent acts as the agent's ServiceAccount, so a staging job can't touch
+# production (another agent, bound elsewhere) and no job can touch anything outside the
+# two namespaces, even if agentk were compromised.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab-agent-staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab-agent-production
+---
+# agentk's own needs in its namespace: leader election (a Lease) and events.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentk
+  namespace: gitlab-agent-staging
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentk
+  namespace: gitlab-agent-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentk
+subjects:
+  - kind: ServiceAccount
+    name: soundings-staging-agent
+    namespace: gitlab-agent-staging
+---
+# The deploy itself: soundings-deployer (deploy/environments/cluster-setup.yaml) in
+# soundings-staging only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: soundings-deployer-gitlab-agent
+  namespace: soundings-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: soundings-deployer
+subjects:
+  - kind: ServiceAccount
+    name: soundings-staging-agent
+    namespace: gitlab-agent-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentk
+  namespace: gitlab-agent-production
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentk
+  namespace: gitlab-agent-production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentk
+subjects:
+  - kind: ServiceAccount
+    name: soundings-production-agent
+    namespace: gitlab-agent-production
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: soundings-deployer-gitlab-agent
+  namespace: soundings-production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: soundings-deployer
+subjects:
+  - kind: ServiceAccount
+    name: soundings-production-agent
+    namespace: gitlab-agent-production

@@ -1,0 +1,82 @@
+# Staging: what scripts/deploy.sh deploys on every push to main (and on a vX.Y.Z tag before
+# production). Production mode, like production, with smaller resources. Example values:
+# replace the placeholders (hostnames, the IdP, the database) with your site's.
+#
+# No secrets here. The Secrets named below are created by operators in soundings-staging
+# (docs/operator-guide.md "Continuous delivery"); the chart only references them. The image
+# (registry, repository, tag, digest) is set by the deploy: don't set image.repository or
+# global.imageRegistry here (scripts/deploy.sh refuses a values file that would change the
+# image it was asked to deploy).
+
+image:
+  # docker-registry Secret to pull the image (GitLab: a deploy token with read_registry;
+  # ghcr.io: a classic PAT with read:packages). Remove when nodes pull from a mirror that
+  # needs no credentials.
+  pullSecrets:
+    - soundings-registry
+
+baseUrls:
+  - https://soundings.staging.example.internal
+
+logLevel: INFO
+
+secretKey:
+  existingSecret: soundings-app
+  existingSecretKey: secret-key
+
+# Sign-in: SSO against the staging realm of your IdP (break-glass while issuer is empty).
+oidc:
+  issuer: https://login.example.internal/realms/staging
+  clientId: soundings-staging
+  existingSecret: soundings-oidc
+  groupsClaim: groups
+
+breakGlass:
+  enabled: true
+  existingSecret: soundings-break-glass
+
+smtp:
+  host: smtp.example.internal
+  port: 587
+  security: starttls
+  existingSecret: soundings-smtp
+  from: soundings-staging@example.internal
+  fromName: Soundings (staging)
+
+timezone: Europe/London
+
+# An external database (CloudNativePG or a managed PostgreSQL): migrations then run in the
+# pre-upgrade hook Job, as in production. For a throwaway staging, postgresql.enabled: true
+# uses the bundled StatefulSet instead.
+postgresql:
+  enabled: false
+externalDatabase:
+  host: soundings-staging-db-rw.databases.svc
+  port: 5432
+  database: soundings
+  user: soundings
+  existingSecret: soundings-staging-db-app
+  existingSecretPasswordKey: password
+  sslmode: require
+
+api:
+  replicas: 1
+worker:
+  replicas: 1
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+  tls:
+    - secretName: soundings-tls
+      hosts:
+        - soundings.staging.example.internal
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx

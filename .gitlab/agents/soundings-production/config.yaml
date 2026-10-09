@@ -1,0 +1,16 @@
+# GitLab agent for Kubernetes "soundings-production": which CI jobs may use it
+# (docs/operator-guide.md "Continuous delivery"; deploy/gitlab-agent/ installs it).
+# GitLab reads this file from the default branch of the project that registers the agent.
+#
+# Replace platform/soundings with this project's full path before registering the agent
+# (see soundings-staging/config.yaml: the explicit entry is what restricts the agent).
+ci_access:
+  projects:
+    - id: platform/soundings
+      default_namespace: soundings-production
+      # Only jobs with `environment: production` (deploy:production, rollback:production)...
+      environments:
+        - production
+      # ...in pipelines of protected branches and tags (the protected v* tags): an
+      # unprotected ref never gets the production context, whatever its YAML says.
+      protected_branches_only: true
