@@ -113,7 +113,13 @@ async def test_the_owner_asks_a_member(api: AsUser, team: Team, db_session: Asyn
     assert watching is not None
     (note,) = await _notes(db_session, team.member)
     assert note.actor_id == team.owner.id
-    assert note.payload == {"due_at": "2026-12-11T17:00:00+00:00"}
+    row = await _fresh(db_session, idea)
+    assert row.research_assigned_at is not None
+    # Review L2: the payload names the assignment it asks about.
+    assert note.payload == {
+        "due_at": "2026-12-11T17:00:00+00:00",
+        "assigned_at": row.research_assigned_at.isoformat(),
+    }
     # The idea shows it too.
     detail = ok(await owner.get(f"/ideas/{key}"))
     assert detail["researcher"]["id"] == str(team.member.id)

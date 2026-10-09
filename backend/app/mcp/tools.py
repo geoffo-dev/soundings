@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Final
 from urllib.parse import quote
 from uuid import UUID
@@ -47,6 +48,7 @@ from app.authz import (
     Rule,
     authorize,
     can,
+    guest_activity_at,
     listed_ideas,
     load_project,
     not_found,
@@ -76,7 +78,7 @@ from app.models.user import User
 from app.proposals import service as proposal_service
 from app.proposals import suggestions
 from app.schemas.evaluations import MyEvaluation
-from app.schemas.ideas import IdeaRef
+from app.schemas.ideas import EvaluatorProgress, IdeaRef
 from app.schemas.mcp import (
     MCP_EVALUATIONS_MAX,
     MCP_TEXT_LIMIT,
@@ -177,11 +179,12 @@ async def _idea(ctx: ToolContext, ref: str, *, for_update: bool = False) -> Load
 
 
 async def _run_for_idea(
-    ctx: ToolContext, run_id: UUID | None, ref: str
+    ctx: ToolContext, run_id: UUID | None, ref: str, *, read: str | None = None
 ) -> ai_scope.NamedRun | None:
     """c22 first, for an agent: the open run the call names, whose idea ``ref`` must be
-    (``ai_run_not_active`` otherwise, before ``ref`` is looked up); ``None`` for people."""
-    run = await ai_scope.require_run(ctx.db, ctx.principal, run_id, idea=ref)
+    and whose kind may call the read tool ``read`` (``ai_run_not_active`` otherwise,
+    before ``ref`` is looked up); ``None`` for people."""
+    run = await ai_scope.require_run(ctx.db, ctx.principal, run_id, idea=ref, read=read)
     if run is not None:
         ctx.event_run = run.id
     return run
@@ -368,6 +371,7 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
     # Phase 8b: a person's researched ideas too (a guest's one idea, no score data: the
     # summary builder masks it; contract-phase8b section 4.5).
     where: list[ColumnElement[bool]] = [or_(listed_ideas(principal), researched_ideas(principal))]
+    run = None
     if ai_scope.is_agent(principal):  # c22: only the named run's idea, nothing looked up
         run = await ai_scope.named_run(ctx.db, principal, args.run_id)
         if run is None or (args.project is not None and not run.names_project(args.project)):
@@ -388,14 +392,23 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
     if args.query is not None:
         where.append(_text_matches(args.query))
     rows, next_cursor = await fetch_page(
-        ctx.db, principal, where, Sort(args.sort), cursor=args.cursor, limit=args.limit
+        ctx.db,
+        principal,
+        where,
+        Sort(args.sort, guests=True),  # a guest's idea sorts on what it shows (review L1)
+        cursor=args.cursor,
+        limit=args.limit,
     )
     context = await load_context(ctx.db, principal, rows)
     public = await _public_ideas(ctx.db, (row.idea.id for row in rows))
     users = await _users(ctx.db, (row.idea.owner_id for row in rows))
+    as_guest = ai_scope.reads_as_guest(run)  # guest review M1: the run's one idea
     items = []
     for row in rows:
         fields = summary_fields(principal, row, context)
+        if as_guest:
+            fields["evaluator_progress"] = _NO_PROGRESS
+            fields["last_activity_at"] = await _guest_activity_at(ctx.db, row.idea.id)
         items.append(
             McpIdeaSummary(
                 id=fields["id"],
@@ -411,7 +424,7 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
                 owner=users.get(row.idea.owner_id) if row.idea.owner_id else None,
                 tags=fields["tags"],
                 evaluator_progress=fields["evaluator_progress"],
-                my_evaluation_state=row.my_state,
+                my_evaluation_state=None if as_guest else row.my_state,
                 score=(
                     McpScore(overall=fields["score"].overall, count=fields["score"].count)
                     if fields["score"] is not None
@@ -429,6 +442,17 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
 
 
 # --- get_idea -----------------------------------------------------------------------------
+_NO_PROGRESS: Final = EvaluatorProgress(submitted=0, total=0)
+"""The evaluator progress of an idea seen without its evaluation area."""
+
+
+async def _guest_activity_at(db: AsyncSession, idea_id: UUID) -> datetime:
+    """Guest review L1 for a research run: the idea's guest feed's newest event."""
+    found: datetime | None = await db.scalar(select(guest_activity_at()).where(Idea.id == idea_id))
+    assert found is not None  # noqa: S101 - the idea exists (loaded or listed)
+    return found
+
+
 async def _evaluations_out(
     ctx: ToolContext, loaded: LoadedIdea, names: dict[UUID, str]
 ) -> tuple[list[McpEvaluation], int]:
@@ -508,20 +532,24 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
     """REST ``get_idea`` + ``list_evaluations`` + ``get_my_evaluation`` + the latest
     comments, bounded; no public submitter's name."""
     db, principal = ctx.db, ctx.principal
-    run = await _run_for_idea(ctx, args.run_id, args.idea)
+    run = await _run_for_idea(ctx, args.run_id, args.idea, read="get_idea")
     loaded = await _idea(ctx, args.idea)
     require(principal, Rule.IDEA_VIEW, loaded.resource)  # the key's read scope
     detail = await ideas.idea_detail(db, principal, loaded)
     names = {c.id: c.name for c in await _criteria(db, loaded.project.id)}
     # Phase 8b: a guest researcher has no evaluation area (evaluation.view_own) and no
-    # proposal (proposal.view): nothing of either, not even whether one exists.
-    evaluation_area = can(principal, Rule.EVALUATION_VIEW_OWN, loaded.resource)
-    proposal_area = can(principal, Rule.PROPOSAL_VIEW, loaded.resource)
+    # proposal (proposal.view): nothing of either, not even whether one exists. Guest
+    # review M1: nor has an agent in a research run (its note reaches that guest; c22).
+    as_guest = ai_scope.reads_as_guest(run)
+    evaluation_area = not as_guest and can(principal, Rule.EVALUATION_VIEW_OWN, loaded.resource)
+    proposal_area = not as_guest and can(principal, Rule.PROPOSAL_VIEW, loaded.resource)
     mine = await evaluations.my_evaluation(db, principal, loaded) if evaluation_area else None
     # M1 (rule 9): an agent sees its own scores only in its evaluate run; a research note
     # or a draft could otherwise pass them on to people who are still blind.
     show_mine = run is None or run.kind is AiRunKind.EVALUATE
-    others, evaluation_count = await _evaluations_out(ctx, loaded, names)
+    others, evaluation_count = (
+        await _evaluations_out(ctx, loaded, names) if evaluation_area else ([], 0)
+    )
     has_proposal = (
         proposal_area and await proposal_service.find_proposal(db, loaded.idea.id) is not None
     )
@@ -542,6 +570,9 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
         ],
     )
     summary = detail.score
+    last_activity_at = detail.last_activity_at
+    if as_guest:  # the guest feed's newest event (review L1)
+        last_activity_at = await _guest_activity_at(db, loaded.idea.id)
     return GetIdeaOutput(
         idea=McpIdeaDetail(
             id=detail.id,
@@ -556,7 +587,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
             via_public_form=detail.via_public_form,
             owner=users.get(detail.owner.id) if detail.owner else None,
             tags=detail.tags,
-            evaluator_progress=detail.evaluator_progress,
+            evaluator_progress=(detail.evaluator_progress if evaluation_area else _NO_PROGRESS),
             my_evaluation_state=mine.state if mine else None,
             score=McpScore(overall=summary.overall, count=summary.count) if summary else None,
             score_hidden=detail.score_hidden,
@@ -564,12 +595,12 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
             vote_count=detail.vote_count,
             comment_count=detail.comment_count,
             created_at=detail.created_at,
-            last_activity_at=detail.last_activity_at,
+            last_activity_at=last_activity_at,
             description_md=detail.description_md,
             submitted_by=users.get(detail.submitted_by.id) if detail.submitted_by else None,
-            evaluation_open=detail.evaluation_open,
-            evaluation_due_at=detail.evaluation_due_at,
-            evaluation_closed_at=detail.evaluation_closed_at,
+            evaluation_open=evaluation_area and detail.evaluation_open,
+            evaluation_due_at=detail.evaluation_due_at if evaluation_area else None,
+            evaluation_closed_at=detail.evaluation_closed_at if evaluation_area else None,
             evaluators=[
                 McpEvaluator(
                     user=McpUser(
@@ -580,7 +611,7 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
                     state=evaluator.state,
                     submitted_at=evaluator.submitted_at,
                 )
-                for evaluator in detail.evaluators
+                for evaluator in (detail.evaluators if evaluation_area else [])
             ],
             my_evaluation=(
                 _my_out(mine, names, await _own_sources(db, principal, loaded.idea.id))
@@ -593,10 +624,10 @@ async def get_idea(ctx: ToolContext, args: GetIdeaInput) -> GetIdeaOutput:
             comments=await _comments_out(db, loaded.idea, args.comment_limit),
             has_proposal=has_proposal,
             research=_research_out(checklist, users),
-            research_guest=not detail.permissions.can_view_project,
+            research_guest=as_guest or not detail.permissions.can_view_project,
             permissions=McpIdeaPermissions(
                 can_comment=detail.permissions.can_comment,
-                can_evaluate=detail.permissions.can_evaluate,
+                can_evaluate=evaluation_area and detail.permissions.can_evaluate,
                 can_suggest_proposal_section=has_proposal
                 and can(principal, Rule.PROPOSAL_SUGGEST_SECTION, loaded.resource),
             ),
@@ -642,12 +673,14 @@ async def get_rubric(ctx: ToolContext, args: GetRubricInput) -> GetRubricOutput:
     """``project.view``: the active criteria of a project, or of an idea's project."""
     if args.project is not None:
         # c22 first: an agent reads only the rubric of its named run's project.
-        await ai_scope.require_run(ctx.db, ctx.principal, args.run_id, project=args.project)
+        await ai_scope.require_run(
+            ctx.db, ctx.principal, args.run_id, project=args.project, read="get_rubric"
+        )
         project, _ = await load_project(ctx.db, ctx.principal, args.project)
         ctx.target.project(project.id)
     else:
         assert args.idea is not None  # noqa: S101 - the input model needs one of the two
-        await _run_for_idea(ctx, args.run_id, args.idea)
+        await _run_for_idea(ctx, args.run_id, args.idea, read="get_rubric")
         loaded = await _idea(ctx, args.idea)
         require(ctx.principal, Rule.PROJECT_VIEW, loaded.resource)
         project = loaded.project
@@ -663,7 +696,7 @@ async def get_rubric(ctx: ToolContext, args: GetRubricInput) -> GetRubricOutput:
 async def get_proposal(ctx: ToolContext, args: GetProposalInput) -> GetProposalOutput:
     """``proposal.view``: the proposal (null until started; no margin comments, no
     score line) and whether suggesting works now."""
-    await _run_for_idea(ctx, args.run_id, args.idea)
+    await _run_for_idea(ctx, args.run_id, args.idea, read="get_proposal")
     loaded = await _idea(ctx, args.idea)
     view = await proposal_service.proposal_view(ctx.db, ctx.principal, loaded)
     proposal = view.proposal

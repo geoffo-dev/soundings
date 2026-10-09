@@ -10,7 +10,7 @@ Please research this idea
 Due {{ due }}
 {% endif %}
 
-Answer the research checklist on the idea's Research panel. When the required items are answered, the owner moves the idea on.
+Answer the research checklist on the idea's Research panel. When the required items are answered, {% if has_owner %}the owner{% else %}a project admin{% endif %} moves the idea on.
 {% if guest %}
 
 You'll see this idea, its comments and activity and its research checklist, not its scores, evaluations or proposal.

@@ -9,18 +9,27 @@ import { useSyncExternalStore } from 'react'
 interface Request {
   ideaKey: string
   n: number
+  at: number
 }
+
+/**
+ * A request nobody took within this long is dropped: a panel that mounts or refreshes
+ * much later (an assignment changed, an Undo) must not pull focus to the checklist out
+ * of the blue (UX review M3).
+ */
+const REQUEST_TTL_MS = 15_000
 
 let request: Request | null = null
 const listeners = new Set<() => void>()
 
 export function requestResearchFocus(ideaKey: string): void {
-  request = { ideaKey: ideaKey.toUpperCase(), n: (request?.n ?? 0) + 1 }
+  request = { ideaKey: ideaKey.toUpperCase(), n: (request?.n ?? 0) + 1, at: Date.now() }
   listeners.forEach((listener) => listener())
 }
 
 /** True once per request for this idea: the panel moves focus, then the request is spent. */
 export function takeResearchFocus(ideaKey: string): boolean {
+  if (request && Date.now() - request.at > REQUEST_TTL_MS) request = null
   if (request?.ideaKey !== ideaKey.toUpperCase()) return false
   request = null
   return true

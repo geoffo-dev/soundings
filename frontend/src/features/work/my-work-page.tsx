@@ -72,7 +72,7 @@ export function MyWorkPage() {
         description={
           guestOnly
             ? 'Research you’ve been asked to do.'
-            : 'Evaluations waiting for you, ideas you own and what changed recently.'
+            : 'Evaluations and research waiting for you, ideas you own and what changed recently.'
         }
         actions={
           // The most urgent "Evaluate" is the primary action while evaluations are due.
@@ -152,11 +152,15 @@ export function MyWorkPage() {
         </div>
       ) : (
         <div ref={listRef} className="flex flex-col gap-10">
-          <EvaluationsDueSection
-            items={due}
-            total={work.data?.counts.evaluations_due}
-            nextCursor={work.data?.evaluations_due_next_cursor}
-          />
+          {/* Research to do, and nothing to evaluate: the research comes first, without an
+              empty "Nothing to evaluate" box above it (UX review m7). */}
+          {!(researching && due?.length === 0) && (
+            <EvaluationsDueSection
+              items={due}
+              total={work.data?.counts.evaluations_due}
+              nextCursor={work.data?.evaluations_due_next_cursor}
+            />
+          )}
           <ResearchToDoSection
             items={work.data?.research_to_do}
             total={work.data?.counts.research_to_do}

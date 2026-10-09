@@ -26,6 +26,7 @@ import {
   IdeaScore,
   OwnerAvatar,
   ResearchProgressBadge,
+  showsResearcher,
 } from '@/features/project/idea-meta'
 import { nextSort, sortDirectionFor, type SortColumn } from '@/features/project/project-search'
 
@@ -289,7 +290,11 @@ const IdeaTableRow = memo(function IdeaTableRow({
             label={idea.status_label}
             className="max-w-full min-w-0 truncate"
           />
-          <ResearchProgressBadge idea={idea} className="relative z-10" />
+          <ResearchProgressBadge
+            idea={idea}
+            researcher={showsResearcher(idea) ? idea.researcher : null}
+            className="relative z-10"
+          />
         </span>
       </TableCell>
       <TableCell

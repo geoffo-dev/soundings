@@ -142,13 +142,19 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             button=Button("Reply", links.idea(idea.key, comment_id=_COMMENT)),
             **footer(NotificationType.MENTION, "You were mentioned in a comment on CUST-12."),
         ),
-        # Phase 8b: a guest researcher's (no role in the private project): with the line
-        # saying what they will and won't see.
+        # Phase 8b: a guest researcher's (no role in the private project), asked by its
+        # project admin (c25): with the line saying what they will and won't see.
         "researcher_assigned": EmailContent(
             template="researcher_assigned",
             subject=f'[TOOLS-12] Please research "{research.title}" by {day}',
-            preheader=f"Sven Lindqvist asked you to research TOOLS-12 by {day}.",
-            context={"actor": "Sven Lindqvist", "idea": research, "due": moment, "guest": True},
+            preheader=f"Dave Davies asked you to research TOOLS-12 by {day}.",
+            context={
+                "actor": "Dave Davies",
+                "idea": research,
+                "due": moment,
+                "guest": True,
+                "has_owner": True,
+            },
             button=Button("Open the research checklist", links.idea("TOOLS-12", research=True)),
             **footer(NotificationType.RESEARCHER_ASSIGNED, "You're researching TOOLS-12."),
         ),

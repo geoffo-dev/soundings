@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import delete, update
+from sqlalchemy import delete, event, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -327,3 +327,36 @@ async def test_the_reminder_email(
     assert "You own" in content
     assert "2 required items" in content
     assert "?research=1" in content
+
+
+async def test_the_hourly_scan_skips_in_sql_what_it_wouldnt_remind(
+    scene: Scene, outbox: Outbox, team: Team, db_session: AsyncSession
+) -> None:
+    """8b code review N4: ideas in the due window that are past Research, have nothing
+    required open, aren't due on a reminder day or were reminded since today's hour cost
+    the scan nothing beyond its one query."""
+    past = await scene.idea(due=at(9, 17), researcher=team.member, asked=at(5, 9))
+    await scene.set(past, status=IdeaStatus.EVALUATING)
+    done = await scene.idea(due=at(9, 17), researcher=team.member, asked=at(5, 9))
+    await scene.answer_all(done)
+    await scene.idea(due=at(8, 17), researcher=team.member, asked=at(5, 9))  # Thu: no day
+    due = await scene.idea(due=at(9, 17), researcher=team.member, asked=at(5, 9))
+    statements: list[str] = []
+
+    def count(*args: Any, **_: Any) -> None:
+        statements.append(str(args[2]))
+
+    engine = db_session.bind.sync_engine  # type: ignore[union-attr]
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        assert await scene.run(at(7, 8)) == 1  # Wednesday 08:00: only ``due``
+        first = len(statements)
+        statements.clear()
+        assert await scene.run(at(7, 9)) == 0  # an hour later: already reminded
+        again = list(statements)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+    assert [n.idea_id for n in await outbox.notifications(team.member.id, REMINDER)] == [due.id]
+    assert first >= 1
+    assert len(again) == 1, again  # the scan's own query, nothing per idea

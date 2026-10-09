@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -28,6 +29,7 @@ from app.email import delivery
 from app.email.delivery import Runtime
 from app.email.preview import sample_contents
 from app.email.render import render
+from app.models.base import utcnow
 from app.models.enums import (
     EmailStatus,
     EvaluatorState,
@@ -40,12 +42,14 @@ from app.models.enums import (
 from app.models.idea import Idea
 from app.models.notification import NotificationPreference
 from app.models.project import Project, ProjectMember
+from app.notifications.fanout import RESEARCHER_EMAIL_CAP, RESEARCHER_EMAIL_HOLD
 from app.notifications.schedule import build_digests
 from app.services.scoring import recompute_aggregates
 from tests.factories import add_evaluator, make_idea
 from tests.notifications.conftest import (
     API,
     AsUser,
+    Clock,
     Outbox,
     RecordingTransport,
     Team,
@@ -100,7 +104,7 @@ async def test_a_guest_researcher_is_asked_by_email(
     assert note.actor_id == team.admin.id
     assert note.idea_id == idea.id
     assert note.email_mode is NotificationMode.IMMEDIATE
-    assert note.dedupe_key.startswith(f"researcher_assigned:{idea.id}:")
+    assert note.dedupe_key.startswith("researcher_assigned:")
     await _send_all(outbox, runtime)
     subject, html, text = _bodies(only(transport.messages))
     assert subject == f'[{key}] Please research "Shared on-call calendar" by Fri 11 Dec'
@@ -147,21 +151,126 @@ async def test_no_guest_line_for_someone_who_sees_more(
     assert GUEST_LINE not in text
 
 
-async def test_once_per_idea_person_and_day_and_never_the_actor(
-    api: AsUser, team: Team, db_session: AsyncSession, outbox: Outbox
+async def test_reassigning_quickly_emails_only_the_first_and_the_last(
+    api: AsUser,
+    team: Team,
+    db_session: AsyncSession,
+    outbox: Outbox,
+    runtime: Runtime,
+    transport: RecordingTransport,
+    clock: Clock,
 ) -> None:
-    """Review S6: assigning and removing over and over sends one."""
+    """Review S6, 8b review M1: one idea passed round quickly can't email the directory.
+    The first "Asked to research" goes now; each one that follows within
+    ``RESEARCHER_EMAIL_HOLD`` waits that long, and at send time only the live assignment's
+    email is still due (the others: "Not sent: no longer applies")."""
     _, key = await _idea(db_session, team)
     owner = await api(team.owner)
+    people = [team.member, team.evaluators[0], team.evaluators[1], team.evaluators[2]]
+    ok(await assign(owner, key, people[0], DUE))
+    first = only(await outbox.emails(people[0].id))
+    assert first.next_attempt_at is not None
+    assert first.next_attempt_at <= utcnow()
+    await _send_all(outbox, runtime)  # the worker sends it at once
 
-    for _ in range(3):
-        ok(await assign(owner, key, team.member, DUE))
-        assert (await owner.delete(f"/ideas/{key}/research/assignment")).status_code == 204
+    for person in people[1:]:
+        ok(await assign(owner, key, person, DUE))
     ok(await assign(owner, key, team.owner))  # yourself: nobody is told
+    ok(await assign(owner, key, people[-1], DUE))
 
-    assert len(await outbox.notifications(team.member.id, ASSIGNED)) == 1
+    held = [only(await outbox.emails(person.id)) for person in people[1:-1]]
+    last_two = await outbox.emails(people[-1].id)
+    now = utcnow()
+    for email in [*held, *last_two]:
+        assert email.next_attempt_at is not None
+        assert email.next_attempt_at >= now + RESEARCHER_EMAIL_HOLD - timedelta(seconds=30)
     assert await outbox.notifications(team.owner.id, ASSIGNED) == []
-    assert len(await outbox.emails(team.member.id)) == 1
+    await _send_all(outbox, runtime)  # nothing else is due yet
+    assert [str(m["To"]) for m in transport.messages] == [team.member.email]
+    clock.now = utcnow() + RESEARCHER_EMAIL_HOLD + timedelta(seconds=1)
+    await _send_all(outbox, runtime)
+
+    assert [str(m["To"]) for m in transport.messages] == [team.member.email, people[-1].email]
+    statuses = {e.id: e.status for e in await outbox.emails()}
+    assert [statuses[e.id] for e in held] == [EmailStatus.CANCELLED] * 2
+    assert sorted(statuses[e.id] for e in last_two) == sorted(
+        [EmailStatus.CANCELLED, EmailStatus.SENT]
+    )
+
+
+async def test_a_real_reassignment_the_same_day_is_a_new_request(
+    api: AsUser, team: Team, db_session: AsyncSession, outbox: Outbox
+) -> None:
+    """8b review L2: removed, then asked again: a new inbox item with the new due date (and
+    its own email); the inbox lists only the live assignment's item."""
+    _, key = await _idea(db_session, team)
+    owner = await api(team.owner)
+    ok(await assign(owner, key, team.member, DUE))
+    assert (await owner.delete(f"/ideas/{key}/research/assignment")).status_code == 204
+    later = "2026-12-18T17:00:00+00:00"
+
+    ok(await assign(owner, key, team.member, later))
+
+    assert len(await outbox.notifications(team.member.id, ASSIGNED)) == 2
+    assert len(await outbox.emails(team.member.id)) == 2
+    items = ok(await (await api(team.member)).get("/me/notifications"))["items"]
+    (item,) = [item for item in items if item["type"] == "researcher_assigned"]
+    assert item["due_at"].startswith("2026-12-18T17:00:00")
+
+
+async def test_the_inbox_keeps_asked_to_research_only_while_you_research_it(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    """8b review M1: someone asked and then replaced no longer has the request in their
+    inbox (nor in its unread count)."""
+    _, key = await _idea(db_session, team)
+    owner = await api(team.owner)
+    member = await api(team.member)
+    ok(await assign(owner, key, team.member, DUE))
+    assert ok(await member.get("/me/notifications/summary"))["unread_count"] == 1
+
+    ok(await assign(owner, key, team.evaluators[0], DUE))
+
+    items = ok(await member.get("/me/notifications"))["items"]
+    assert [item["type"] for item in items if item["type"] == "researcher_assigned"] == []
+    assert ok(await member.get("/me/notifications/summary"))["unread_count"] == 0
+    asked = ok(await (await api(team.evaluators[0])).get("/me/notifications"))["items"]
+    assert [item["type"] for item in asked] == ["researcher_assigned"]
+
+
+async def test_one_person_emails_at_most_the_cap_an_hour(
+    api: AsUser, team: Team, db_session: AsyncSession, outbox: Outbox
+) -> None:
+    """8b review M1: past ``RESEARCHER_EMAIL_CAP`` "Asked to research" emails in a rolling
+    hour, one person's requests are in-app only (as with mentions)."""
+    await set_step(db_session, team.project, ResearchStep.BEFORE_EVALUATION)
+    keys = []
+    for number in range(RESEARCHER_EMAIL_CAP + 1):
+        idea = await make_idea(db_session, team.project, owner=team.owner, title=f"Idea {number}")
+        keys.append(key_of(team.project, idea))
+    owner = await api(team.owner)
+
+    for key in keys:
+        ok(await assign(owner, key, team.member, DUE))
+
+    notes = await outbox.notifications(team.member.id, ASSIGNED)
+    modes = [note.email_mode for note in notes]
+    assert modes == [NotificationMode.IMMEDIATE] * RESEARCHER_EMAIL_CAP + [NotificationMode.OFF]
+    assert len(await outbox.emails(team.member.id)) == RESEARCHER_EMAIL_CAP
+    # Someone else's requests have their own allowance.
+    other = await make_idea(db_session, team.project, owner=team.owner)
+    ok(await assign(await api(team.admin), key_of(team.project, other), team.member, DUE))
+    assert len(await outbox.emails(team.member.id)) == RESEARCHER_EMAIL_CAP + 1
+
+
+async def test_never_the_actor(
+    api: AsUser, team: Team, db_session: AsyncSession, outbox: Outbox
+) -> None:
+    _, key = await _idea(db_session, team)
+
+    ok(await assign(await api(team.owner), key, team.owner, DUE))
+
+    assert await outbox.notifications(team.owner.id, ASSIGNED) == []
 
 
 async def test_cancelled_at_send_time_once_the_assignment_ended(
@@ -221,8 +330,6 @@ async def test_preferences_digest_and_off(
 
     assert await outbox.emails() == []  # digest and off: nothing now
     assert only(await outbox.notifications(team.evaluators[0].id, ASSIGNED))  # still in-app
-    from app.models.base import utcnow
-
     assert await build_digests(app.state.sessionmaker, settings, utcnow()) == 1
     await _send_all(outbox, runtime)
     subject, _, text = _bodies(only(transport.messages))
@@ -255,7 +362,66 @@ async def test_the_unsubscribe_link_turns_off_only_its_type(
     assert modes["comment"] != "off"
 
 
+@pytest.mark.parametrize("owned", [True, False], ids=["owner", "no_owner"])
+async def test_the_email_says_who_moves_the_idea_on(
+    api: AsUser,
+    team: Team,
+    db_session: AsyncSession,
+    outbox: Outbox,
+    runtime: Runtime,
+    transport: RecordingTransport,
+    owned: bool,
+) -> None:
+    """8b UX review m10: an idea without an owner is moved on by a project admin."""
+    await set_step(db_session, team.project, ResearchStep.BEFORE_EVALUATION)
+    idea = await make_idea(db_session, team.project, owner=team.owner if owned else None)
+
+    ok(await assign(await api(team.admin), key_of(team.project, idea), team.member, DUE))
+    await _send_all(outbox, runtime)
+
+    _, html, text = _bodies(only(transport.messages))
+    who = "the owner" if owned else "a project admin"
+    for body in (html, text):
+        assert f"When the required items are answered, {who} moves the idea on." in body.replace(
+            "&#39;", "'"
+        )
+
+
 # --- What else a researcher gets -----------------------------------------------------------
+async def test_a_status_change_email_says_you_research_it(
+    api: AsUser,
+    team: Team,
+    db_session: AsyncSession,
+    outbox: Outbox,
+    runtime: Runtime,
+    transport: RecordingTransport,
+) -> None:
+    """8b guest review N3: the footer gives the researcher's reason, not "You watch"."""
+    await set_step(db_session, team.project, ResearchStep.BEFORE_PROPOSAL)
+    idea = await make_idea(db_session, team.project, owner=team.owner, status=IdeaStatus.NEW)
+    key = key_of(team.project, idea)
+    db_session.add(
+        NotificationPreference(
+            user_id=team.outsider.id,
+            type=NotificationType.STATUS_CHANGED,
+            mode=NotificationMode.IMMEDIATE,
+        )
+    )
+    await db_session.commit()
+    ok(await assign(await api(team.admin), key, team.outsider))
+    await _send_all(outbox, runtime)
+    transport.sent.clear()
+
+    ok(await (await api(team.owner)).post(f"/ideas/{key}/status", {"status": "evaluating"}))
+    await _send_all(outbox, runtime)
+
+    (message,) = [m for m in transport.messages if str(m["To"]) == team.outsider.email]
+    _, html, text = _bodies(message)
+    for body in (html, text):
+        assert f"You're researching {key}." in body.replace("&#39;", "'")
+        assert "You watch" not in body
+
+
 async def test_status_changes_reach_the_researcher_even_unwatched(
     api: AsUser, team: Team, db_session: AsyncSession, outbox: Outbox
 ) -> None:

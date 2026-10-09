@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { fromDateInput, latestDueInput, toDateInput, todayInput } from './due-date'
+import { fromDateInput, latestDueInput, pickerMin, toDateInput, todayInput } from './due-date'
 
 const noonUtc = Date.UTC(2026, 9, 1, 12)
 
@@ -20,5 +20,13 @@ describe('due dates', () => {
     // The API refuses due_at more than 5 × 366 days from now.
     const dueAt = Date.parse(fromDateInput(latest) ?? '')
     expect(dueAt - noonUtc).toBeLessThan(5 * 366 * 24 * 3600 * 1000)
+  })
+
+  it('keeps an overdue date valid until it changes (Phase 8b UX M1)', () => {
+    // Nothing set, or a date ahead: today is the earliest day offered.
+    expect(pickerMin('', noonUtc)).toBe('2026-10-01')
+    expect(pickerMin('2026-10-09', noonUtc)).toBe('2026-10-01')
+    // Already overdue: that day stays allowed, so a form that keeps it still submits.
+    expect(pickerMin('2026-09-27', noonUtc)).toBe('2026-09-27')
   })
 })

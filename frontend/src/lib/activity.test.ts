@@ -210,4 +210,42 @@ describe('describeActivity (Phase 8b)', () => {
     }
     expect(describeActivity(moved)).toBe('moved it from Triage to Research')
   })
+
+  it('one line when the researcher and the due date change together (UX m3)', () => {
+    const due = (to: string | null, at = base.created_at): ActivityItem => ({
+      ...base,
+      id: `d-${at}`,
+      created_at: at,
+      type: 'research_due_date_changed',
+      from_due_at: null,
+      to_due_at: to,
+    })
+    const day = '2026-10-12T22:59:00Z'
+    const asked = changed(null, bob)
+    // Either order, by one person, in one change.
+    for (const pair of [
+      [asked, due(day)],
+      [due(day), asked],
+    ]) {
+      const entries = groupActivity(pair)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.item.type).toBe('researcher_changed')
+      expect(entries.map((entry) => describeEntry(entry))).toEqual([
+        `asked Bob Brown to research, due ${formatDate(day)}`,
+      ])
+    }
+    const lines = (items: ActivityItem[]) =>
+      groupActivity(items).map((entry) => describeEntry(entry))
+    expect(lines([asked, due(null)])).toEqual([
+      'asked Bob Brown to research and removed the research due date',
+    ])
+    expect(lines([changed(bob, null), due(day)])).toEqual([
+      `removed Bob Brown as researcher and set the research due date to ${formatDate(day)}`,
+    ])
+    // Separate changes stay separate lines: minutes apart, or by someone else.
+    expect(groupActivity([asked, due(day, '2026-10-08T10:05:00Z')])).toHaveLength(2)
+    expect(groupActivity([changed(null, bob, false, bob), due(day)])).toHaveLength(2)
+    // A hand back never carries a due date (it keeps the date).
+    expect(groupActivity([changed(bob, null, true, alice), due(day)])).toHaveLength(2)
+  })
 })

@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,7 @@ from app.domain.rubric_defaults import default_rubric_criteria
 from app.domain.template_defaults import default_template_sections
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
-from app.models.enums import HoldReason, ProjectRole
+from app.models.enums import HoldReason, IdeaStatus, ProjectRole, ProjectVisibility
 from app.models.evaluation import EvaluationScore
 from app.models.idea import Idea, IdeaTag
 from app.models.project import (
@@ -295,6 +295,11 @@ async def update_project(
 
     if changed:
         await db.flush()
+        details: dict[str, object] = {"rule": Rule.PROJECT_EDIT_SETTINGS, "fields": changed}
+        if "visibility" in changed and project.visibility is ProjectVisibility.PRIVATE:
+            # Phase 8b code review L1: outside researchers keep their one idea (contract
+            # section 17); the audit says how many.
+            details["outside_researchers"] = await _outside_researchers(db, project)
         await audit.record(
             db,
             "project.update",
@@ -302,10 +307,30 @@ async def update_project(
             target_type="project",
             target_id=project.id,
             project_id=project.id,
-            details={"rule": Rule.PROJECT_EDIT_SETTINGS, "fields": changed},
+            details=details,
         )
     resource = resource.replace(project=ProjectFacts.of(project))
     return await project_detail(db, principal, project, resource)
+
+
+async def _outside_researchers(db: AsyncSession, project: Project) -> int:
+    """Open ideas of the project researched by someone without a role in it."""
+    roles = _roles
+    return int(
+        await db.scalar(
+            select(func.count())
+            .select_from(Idea)
+            .where(
+                Idea.project_id == project.id,
+                Idea.researcher_id.is_not(None),
+                Idea.status != IdeaStatus.CLOSED,
+                ~exists().where(
+                    roles.c.project_id == Idea.project_id, roles.c.user_id == Idea.researcher_id
+                ),
+            )
+        )
+        or 0
+    )
 
 
 # --- Members -----------------------------------------------------------------------------

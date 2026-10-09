@@ -70,6 +70,7 @@ from app.authz.policy import (
 from app.authz.queries import (
     effective_role,
     evaluation_visible,
+    guest_activity_at,
     listed_ideas,
     pending_evaluator,
     researched_ideas,
@@ -77,6 +78,7 @@ from app.authz.queries import (
     viewable_ideas,
     visible_aggregate_score,
     visible_high_disagreement,
+    visible_last_activity,
     visible_projects,
 )
 from app.authz.rules import RULE_SCOPES, SESSION_ONLY_RULES, Rule
@@ -110,6 +112,7 @@ __all__ = [
     "evaluation_visible",
     "evaluator_state",
     "guest_access",
+    "guest_activity_at",
     "idea_permissions",
     "idea_resource",
     "idea_summary_permissions",
@@ -137,6 +140,7 @@ __all__ = [
     "viewable_ideas",
     "visible_aggregate_score",
     "visible_high_disagreement",
+    "visible_last_activity",
     "visible_projects",
     "writes_as_ai",
 ]

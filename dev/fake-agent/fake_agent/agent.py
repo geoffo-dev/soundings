@@ -385,6 +385,11 @@ class FakeAgentExecutor(AgentExecutor):
         for kind, tool in WRITE_TOOLS.items():
             if kind != run.kind and tool != "propose_proposal_section":
                 attempts.append((tool, tool, stray_write_arguments(tool, run.idea)))
+        if run.kind == "research":
+            # Soundings' 8b guest review M1: a research run's note reaches the idea's guest
+            # researcher, so it may read neither the proposal nor the rubric.
+            attempts.append(("get_proposal", "get_proposal", {"idea": run.idea}))
+            attempts.append(("get_rubric", "get_rubric", {"idea": run.idea}))
         for attempt, tool, arguments in attempts:
             result = await self._call(mcp, run, tool, arguments, phase="stray")
             self.observations.stray(run.run_id, attempt, result.error_code)

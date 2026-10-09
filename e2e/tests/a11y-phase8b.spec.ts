@@ -41,7 +41,7 @@ const SCREENS: Screen[] = [
       await expect(
         page.getByText('You can see this idea because you’re researching it.'),
       ).toBeVisible()
-      await expect(researcherLine(page)).toContainText('not in this project')
+      await expect(researcherLine(page)).toContainText(/Research:.*You/)
     },
   },
   {
@@ -178,7 +178,8 @@ test('K8B-01: the assign dialog with the keyboard only; Escape puts focus back o
   await expect(kenji).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Enter')
   await expect(dialog).toContainText('Chosen: Kenji Watanabe')
-  await expect(dialog.getByRole('status')).toHaveCount(0) // a member: no guest line
+  // A member: no guest line, only who would lose the idea (UX review S2).
+  await expect(dialog.getByRole('status')).toHaveText('Bob Brown will no longer see TOOLS-12.')
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(change).toBeFocused()

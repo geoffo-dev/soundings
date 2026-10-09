@@ -39,7 +39,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import viewable_ideas, visible_aggregate_score, visible_high_disagreement
+from app.authz import (
+    viewable_ideas,
+    visible_aggregate_score,
+    visible_high_disagreement,
+    visible_last_activity,
+)
 from app.domain.idea_keys import parse_idea_key
 from app.domain.labels import resolved_labels
 from app.domain.principal import Principal
@@ -164,6 +169,11 @@ class Sort:
     null (unscored or hidden) scores come last in both directions."""
 
     token: IdeaSort
+    guests: bool = False
+    """Phase 8b guest review L1: the list may show ideas the viewer sees as their guest
+    researcher (``researched_ideas``: MCP ``search_ideas``), so ``updated`` sorts on
+    :func:`app.authz.visible_last_activity`, the value those ideas show. Project-scoped
+    lists never show one and keep the column (and its indexes)."""
 
     @property
     def descending(self) -> bool:
@@ -174,7 +184,10 @@ class Sort:
         return _FIELDS[self.token.lstrip("-")]
 
     def value(self, principal: Principal) -> ColumnElement[Any]:
-        """The sort value as the viewer may see it (masked for ``score``)."""
+        """The sort value as the viewer may see it (masked for ``score``; for
+        ``updated`` where the list may show a guest's ideas)."""
+        if self.guests and self.token.lstrip("-") == "updated":
+            return visible_last_activity(principal)
         return self._field.column(principal)
 
     def order_by(

@@ -235,6 +235,18 @@ def test_strays_try_what_c22_refuses_then_work(agent: Agent) -> None:
     assert agent.mcp.tools()[-1] == "submit_evaluation"
 
 
+def test_a_research_run_strays_into_the_proposal_and_the_rubric(agent: Agent) -> None:
+    agent.mcp.open_kind = "research"
+    run_id, body = run_message("research")
+    events = stream(agent.http, agent.url("idea-evaluator-strays"), body)  # kind: the message
+    assert state_of(events[-1]) == "completed"
+    strays = agent.observations(run_id)["strays"]
+    assert strays["get_proposal"] == "ai_run_not_active"
+    assert strays["get_rubric"] == "ai_run_not_active"
+    assert strays["submit_evaluation"] == "ai_run_not_active"
+    assert agent.mcp.tools()[-1] == "add_research_note"
+
+
 def test_late_writes_after_its_run_ended(agent: Agent) -> None:
     url = agent.url("idea-evaluator-late")
     run_id, body = run_message("evaluate")

@@ -1,15 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import {
-  CalendarClock,
-  Check,
-  ChevronDown,
-  TriangleAlert,
-  Undo2,
-  UserMinus,
-  UserRoundPen,
-} from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { CalendarClock, Check, ChevronDown, TriangleAlert, Undo2, UserRoundPen } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
 
 import { describeError } from '@/api/errors'
 import { useChangeIdeaStatus } from '@/api/ideas'
@@ -20,7 +12,6 @@ import {
   useSetResearchAssignment,
 } from '@/api/research'
 import type { ResearchAssignment, UserRef, UserSearchResult } from '@/api/types'
-import { offerUndo } from '@/api/undo'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
@@ -48,13 +39,14 @@ import {
   dateInputInDays,
   fromDateInput,
   latestDueInput,
+  pickerMin,
   toDateInput,
-  todayInput,
 } from '@/features/idea/due-date'
 import { useIdeaPage } from '@/features/idea/idea-context'
 import { PeopleList } from '@/features/idea/people-list'
 import { dueOn } from '@/features/notifications/notification-text'
 import { formatDate } from '@/lib/dates'
+import { focusWhenRendered } from '@/lib/focus'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
@@ -63,7 +55,15 @@ import { cn } from '@/lib/utils'
  * "Research: Bob Chen · due Fri 9 Oct" in the sidebar and the Research panel;
  * owners and admins change it (a person picker over everyone active, people
  * outside the project marked, and a due date); the researcher hands it back.
+ * Removing the researcher is choosing the owner in Change (UX review S2: one path).
  */
+
+/** Where focus goes when the control that was used is gone (WCAG 2.4.3): Change, else the panel's heading. */
+export const RESEARCHER_CHANGE_ID = 'researcher-change'
+export const RESEARCH_HEADING_TOGGLE_ID = 'research-heading-toggle'
+const researchFocusFallback = () =>
+  document.getElementById(RESEARCHER_CHANGE_ID) ??
+  document.getElementById(RESEARCH_HEADING_TOGGLE_ID)
 
 const QUICK_PICKS = [
   { days: 3, label: 'In 3 days' },
@@ -93,14 +93,28 @@ export function useAssignment() {
     due_at: idea.research_due_at,
     overdue: false,
   }
+  // The owner named explicitly: handing it back would hand it to themselves (UX m1).
+  const ownerResearches =
+    assignment.researcher !== null && assignment.researcher.id === idea.owner?.id
   return {
     assignment,
     canAssign: data?.permissions.can_assign ?? idea.permissions.can_assign_researcher,
     canAssignOutside:
       data?.permissions.can_assign_outside_researcher ??
       idea.permissions.can_assign_outside_researcher,
-    canHandBack: data?.permissions.can_hand_back ?? idea.permissions.can_hand_back_research,
+    canHandBack:
+      (data?.permissions.can_hand_back ?? idea.permissions.can_hand_back_research) &&
+      !ownerResearches,
   }
+}
+
+/** Someone outside the project does it, and it isn't you (you know: UX p2). */
+function outsideResearcher(assignment: ResearchAssignment, meId: string): boolean {
+  return (
+    assignment.researcher !== null &&
+    !assignment.researcher_in_project &&
+    assignment.researcher.id !== meId
+  )
 }
 
 /** "Bob Chen", "You", "Sven Lindqvist (owner)": who does the research, in words. */
@@ -145,7 +159,7 @@ export function assignmentText(
   meId: string,
 ): string {
   const parts = [`Research: ${researcherName(assignment, owner, meId)}`]
-  if (assignment.researcher && !assignment.researcher_in_project) parts.push('not in this project')
+  if (outsideResearcher(assignment, meId)) parts.push('not in this project')
   if (assignment.due_at) {
     parts.push(
       assignment.overdue
@@ -156,15 +170,23 @@ export function assignmentText(
   return parts.join(' · ')
 }
 
-/** The person (avatar and name): "Bob Chen", "You (owner)". */
-function ResearcherPerson({ assignment }: { assignment: ResearchAssignment }) {
+/**
+ * The sidebar's value (UX m2): the person who was asked, wrapping rather than cut
+ * off; while the owner does it, a muted "Owner" (their name is in the row above), and
+ * "No one yet" without an owner. The full sentence is the control's name.
+ */
+function ResearcherValue({ assignment }: { assignment: ResearchAssignment }) {
   const { idea, me } = useIdeaPage()
-  const person = assignment.researcher ?? idea.owner
+  const owner = idea.owner
+  const person = assignment.researcher
+  if (!person || person.id === owner?.id) {
+    return <span className="text-muted">{owner ? 'Owner' : 'No one yet'}</span>
+  }
   return (
     <span className="flex min-w-0 items-center gap-2">
-      {person && <Avatar name={person.display_name} src={person.avatar_url} size="xs" decorative />}
-      <span className={cn('truncate', person ? 'text-primary' : 'text-muted')}>
-        {researcherName(assignment, idea.owner, me.id)}
+      <Avatar name={person.display_name} src={person.avatar_url} size="xs" decorative />
+      <span className="min-w-0 break-words text-primary">
+        {person.id === me.id ? 'You' : person.display_name}
       </span>
     </span>
   )
@@ -172,7 +194,8 @@ function ResearcherPerson({ assignment }: { assignment: ResearchAssignment }) {
 
 /** "Not in this project · due Fri 9 Oct" under the name (nothing when there's nothing). */
 function ResearcherFacts({ assignment }: { assignment: ResearchAssignment }) {
-  const outside = assignment.researcher !== null && !assignment.researcher_in_project
+  const { me } = useIdeaPage()
+  const outside = outsideResearcher(assignment, me.id)
   if (!outside && !assignment.due_at) return null
   return (
     <span className="flex flex-wrap items-center gap-x-1.5 pb-1 text-xs text-muted">
@@ -184,51 +207,48 @@ function ResearcherFacts({ assignment }: { assignment: ResearchAssignment }) {
 }
 
 /**
- * The sidebar's "Research" value: the person, and for owners and admins a menu
- * (Change… / Remove); for the researcher, "Hand back…". The facts (outside the
- * project, the due date) sit under it.
+ * The sidebar's "Research" value: the person, and for owners and admins Change (the
+ * dialog); for the researcher, "Hand back"; both in a menu when you may do both. The
+ * facts (outside the project, the due date) sit under it.
  */
 export function ResearcherField() {
   const { idea, me, openDialog } = useIdeaPage()
   const { assignment, canAssign, canHandBack } = useAssignment()
-  const remove = useRemoveAssignment()
-  const person = <ResearcherPerson assignment={assignment} />
   const name = assignmentText(assignment, idea.owner, me.id)
+  const value = <ResearcherValue assignment={assignment} />
+  const trigger = (action: string, onClick?: () => void) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      // Long names wrap (two lines at most in practice) instead of "Sven Lindqvist (o…".
+      className="-ml-2 h-auto min-h-7 max-w-full py-1 text-left font-normal whitespace-normal"
+      aria-label={`${name}. ${action}`}
+      onClick={onClick}
+    >
+      {value}
+      <ChevronDown aria-hidden="true" className="text-muted" />
+    </Button>
+  )
   return (
     <span className="flex w-full min-w-0 flex-col items-start">
-      {canAssign || canHandBack ? (
+      {canAssign && canHandBack ? (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 max-w-full font-normal"
-              aria-label={`${name}. ${canAssign ? 'Change' : 'Hand back'}`}
-            >
-              {person}
-              <ChevronDown aria-hidden="true" className="text-muted" />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild>{trigger('Change or hand back')}</DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            {canAssign && (
-              <DropdownMenuItem onSelect={() => openDialog('researcher')}>
-                <UserRoundPen /> Change researcher or due date…
-              </DropdownMenuItem>
-            )}
-            {canAssign && assignment.researcher && assignment.researcher.id !== me.id && (
-              <DropdownMenuItem onSelect={() => remove(assignment)}>
-                <UserMinus /> Remove researcher
-              </DropdownMenuItem>
-            )}
-            {canHandBack && (
-              <DropdownMenuItem onSelect={() => openDialog('hand-back')}>
-                <Undo2 /> Hand back the research…
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem onSelect={() => openDialog('researcher')}>
+              <UserRoundPen /> Change researcher or due date…
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openDialog('hand-back')}>
+              <Undo2 /> Hand back the research…
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      ) : canAssign ? (
+        trigger('Change researcher or due date', () => openDialog('researcher'))
+      ) : canHandBack ? (
+        trigger('Hand back the research', () => openDialog('hand-back'))
       ) : (
-        <span className="flex min-h-8 items-center">{person}</span>
+        <span className="flex min-h-8 items-center">{value}</span>
       )}
       <ResearcherFacts assignment={assignment} />
     </span>
@@ -236,16 +256,15 @@ export function ResearcherField() {
 }
 
 /**
- * The Research panel's line: "Research: Bob Chen · due Fri 9 Oct" with Change /
- * Remove for owners and admins and Hand back for the researcher (phones reach it
- * here; the sidebar folds into Details).
+ * The Research panel's line: "Research: Bob Chen · due Fri 9 Oct" with Change for
+ * owners and admins and Hand back for the researcher (phones reach it here; the
+ * sidebar folds into Details).
  */
 export function ResearcherLine() {
   const { me, idea, openDialog } = useIdeaPage()
   const { assignment, canAssign, canHandBack } = useAssignment()
-  const remove = useRemoveAssignment()
   const person = assignment.researcher ?? idea.owner
-  const outside = assignment.researcher !== null && !assignment.researcher_in_project
+  const outside = outsideResearcher(assignment, me.id)
   return (
     <div
       className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm"
@@ -280,6 +299,7 @@ export function ResearcherLine() {
         <span className="flex items-center gap-1">
           {canAssign && (
             <Button
+              id={RESEARCHER_CHANGE_ID}
               size="sm"
               variant="ghost"
               className="text-secondary"
@@ -287,17 +307,6 @@ export function ResearcherLine() {
               onClick={() => openDialog('researcher')}
             >
               <CalendarClock /> Change
-            </Button>
-          )}
-          {canAssign && assignment.researcher && assignment.researcher.id !== me.id && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-secondary"
-              aria-label={`Remove ${assignment.researcher.display_name} as researcher`}
-              onClick={() => remove(assignment)}
-            >
-              Remove
             </Button>
           )}
           {canHandBack && (
@@ -314,34 +323,6 @@ export function ResearcherLine() {
       )}
     </div>
   )
-}
-
-/** "Remove researcher" (owners and admins): at once, with an Undo that asks them again. */
-function useRemoveAssignment() {
-  const { ideaKey, idea } = useIdeaPage()
-  const remove = useRemoveResearcher(ideaKey)
-  const assign = useSetResearchAssignment(ideaKey)
-  return (assignment: ResearchAssignment) => {
-    const previous = assignment.researcher
-    if (!previous) return
-    remove.mutate(
-      {},
-      {
-        onSuccess: () =>
-          offerUndo(`${previous.display_name} is no longer researching ${idea.key}`, () =>
-            assign.mutate(
-              { researcher_id: previous.id, due_at: assignment.due_at },
-              {
-                onError: (error) => {
-                  const { title, description } = describeError(error)
-                  toast.error(title, { description })
-                },
-              },
-            ),
-          ),
-      },
-    )
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -374,6 +355,20 @@ export function ResearchAssignmentDialog({
   )
 }
 
+/**
+ * Under the date field: the day in words (the native field's format follows the
+ * browser: UX p4), what a date does, and an overdue date said as such (UX M1).
+ */
+function dueDescription(due: string, currentDue: string, assignment: ResearchAssignment): string {
+  if (!due) return 'Optional. No due date: no reminders, and it isn’t shown as overdue.'
+  if (due === currentDue && assignment.overdue && assignment.due_at) {
+    return `Was due ${formatDate(assignment.due_at)} (overdue). Pick a new date, or keep it.`
+  }
+  const day = fromDateInput(due)
+  const reminders = 'They’re reminded 2 days before and on the day while a required item is open.'
+  return day ? `${formatDate(day)}. ${reminders}` : reminders
+}
+
 function initialChoice(assignment: ResearchAssignment, owner: UserRef | null): Choice {
   const researcher = assignment.researcher
   if (!researcher || owner?.id === researcher.id) return { kind: 'owner' }
@@ -397,10 +392,21 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
     assignment.researcher !== null && owner !== null && assignment.researcher.id === owner.id
   const researcherId = choice.kind === 'person' ? choice.person.id : explicitOwner ? owner.id : null
   const currentId = assignment.researcher?.id ?? null
-  const dueAt = due ? fromDateInput(due) : null
+  // The day kept as it was: send the stored moment back unchanged (an overdue one too).
+  const dueAt = due === currentDue ? assignment.due_at : due ? fromDateInput(due) : null
   const changed = researcherId !== currentId || due !== currentDue
   const outsider = choice.kind === 'person' && !choice.inProject
   const visibility = project?.visibility ?? 'private'
+  // A guest researcher chosen away loses the idea: say so before Save (S2: removing is
+  // choosing someone else here).
+  const losing =
+    assignment.researcher !== null &&
+    !assignment.researcher_in_project &&
+    visibility === 'private' &&
+    researcherId !== currentId &&
+    assignment.researcher.id !== me.id
+      ? assignment.researcher
+      : null
   // An outsider an admin asked, seen by someone whose picker lists only the project's
   // people (the owner of a private idea): a row of its own, so they can keep them (and
   // change only the due date) and the highlight can start on them.
@@ -433,10 +439,27 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
             ? `${owner.display_name} (owner)`
             : 'The owner'
     const when = dueAt ? `Due ${formatDate(dueAt)}` : undefined
-    // The status change's own toast says where it went, with Undo.
+    const doer = choice.kind === 'person' ? choice.person : owner
+    const doesIt = !doer
+      ? 'The owner does the research'
+      : doer.id === me.id
+        ? 'You do the research'
+        : `${doer.display_name} does the research`
+    // The status change's own toast says where it went, with Undo; its second line says
+    // who does the research and by when (UX m4).
     const move = () =>
       changeStatus.mutate(
-        { status: 'research' },
+        {
+          status: 'research',
+          toastDescription: [
+            doesIt,
+            dueAt
+              ? `${Date.parse(dueAt) < Date.now() ? 'overdue, was due' : 'due'} ${formatDate(dueAt)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        },
         {
           onSuccess: onDone,
           onError: (failure) => setError(describeError(failure)),
@@ -604,33 +627,37 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
               }
             />
           </div>
-          {outsider ? (
-            <p className="text-sm text-secondary" role="status">
-              {visibility === 'internal' ? OUTSIDER_LINES.internal : OUTSIDER_LINES.private}
+          {(outsider || losing) && (
+            // One quiet note (UX p3): what the person chosen will see, and who stops seeing it.
+            <Callout
+              tone="neutral"
+              role="status"
+              title={
+                outsider
+                  ? visibility === 'internal'
+                    ? OUTSIDER_LINES.internal
+                    : OUTSIDER_LINES.private
+                  : `${losing?.display_name ?? ''} will no longer see ${idea.key}.`
+              }
+            >
+              {outsider && losing ? `${losing.display_name} will no longer see ${idea.key}.` : null}
+            </Callout>
+          )}
+          {!outsider && !canAssignOutside && visibility === 'private' && (
+            <p className="text-xs text-muted">
+              Only a project admin can ask someone outside this project.
             </p>
-          ) : (
-            !canAssignOutside &&
-            visibility === 'private' && (
-              <p className="text-xs text-muted">
-                Only a project admin can ask someone outside this project.
-              </p>
-            )
           )}
         </div>
-        <Field
-          label="Research due date"
-          description={
-            due
-              ? 'They’re reminded 2 days before and on the day while a required item is open.'
-              : 'Optional. No due date: no reminders, and it isn’t shown as overdue.'
-          }
-        >
+        <Field label="Research due date" description={dueDescription(due, currentDue, assignment)}>
           {/* "No due date" sits by the field: on a phone it never wraps onto a row alone. */}
           <div className="flex flex-wrap items-center gap-1.5">
             <DatePicker
               value={due}
               onValueChange={setDue}
-              min={todayInput()}
+              // An overdue date stays valid until it is changed (UX M1): a dialog that
+              // keeps it still saves, and Start research still starts.
+              min={pickerMin(currentDue)}
               max={latestDueInput()}
             />
             {due && (
@@ -693,12 +720,14 @@ export function HandBackDialog({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const owner = idea.owner
+  const handedBack = useRef(false)
 
   const confirm = () => {
     remove.mutate(
       { guest },
       {
         onSuccess: () => {
+          handedBack.current = true
           onOpenChange(false)
           toast.success('You handed the research back', {
             description: owner
@@ -707,7 +736,10 @@ export function HandBackDialog({
           })
           // A guest can't open the idea any more: off to My work, then nothing of it
           // stays cached (contract-phase8b §4.6).
-          if (guest) void navigate({ to: '/' }).then(() => forgetIdea(queryClient, ideaKey))
+          // Replacing the entry: Back doesn't lead to a page they can no longer open (UX p6).
+          if (guest) {
+            void navigate({ to: '/', replace: true }).then(() => forgetIdea(queryClient, ideaKey))
+          }
         },
       },
     )
@@ -721,7 +753,18 @@ export function HandBackDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="sm" role="alertdialog">
+      <DialogContent
+        size="sm"
+        role="alertdialog"
+        onCloseAutoFocus={() => {
+          // "Hand back" went with the handing back: Change (an admin), else the Research
+          // heading, when focus would otherwise fall to the page (UX M3). A guest leaves
+          // for My work, whose heading takes it.
+          if (!handedBack.current || guest) return
+          handedBack.current = false
+          focusWhenRendered(researchFocusFallback)
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Hand back the research of {idea.key}?</DialogTitle>
           <DialogDescription>{body}</DialogDescription>

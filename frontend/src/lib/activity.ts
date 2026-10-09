@@ -116,6 +116,37 @@ export interface ActivityEntry {
   item: ActivityItem
   /** Everyone invited in a run of invitations by one person; undefined otherwise. */
   invited?: string[]
+  /**
+   * Phase 8b (UX m3): the research due date set in the same change as the researcher
+   * (one line, "asked Bob Brown to research, due Mon 12 Oct"); null when it was removed,
+   * undefined when nothing was folded in.
+   */
+  researchDue?: string | null
+}
+
+type ResearcherChanged = Extract<ActivityItem, { type: 'researcher_changed' }>
+type ResearchDueChanged = Extract<ActivityItem, { type: 'research_due_date_changed' }>
+
+/** The researcher and the due date changed by one request: its two events, a moment apart. */
+const SAME_CHANGE_MS = 5_000
+
+function sameChange(a: ActivityItem, b: ActivityItem): boolean {
+  return (
+    a.actor?.id === b.actor?.id &&
+    Math.abs(new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) <= SAME_CHANGE_MS
+  )
+}
+
+/** A researcher change and a due-date change from one request, as one entry. */
+function foldResearchDue(previous: ActivityEntry, item: ActivityItem): ActivityEntry | null {
+  if (previous.researchDue !== undefined || !sameChange(previous.item, item)) return null
+  const pair: [ActivityItem, ActivityItem] = [previous.item, item]
+  const researcher = pair.find((one): one is ResearcherChanged => one.type === 'researcher_changed')
+  const due = pair.find(
+    (one): one is ResearchDueChanged => one.type === 'research_due_date_changed',
+  )
+  if (!researcher || !due || researcher.handed_back) return null
+  return { item: researcher, researchDue: due.to_due_at }
 }
 
 /**
@@ -126,6 +157,11 @@ export function groupActivity(items: readonly ActivityItem[]): ActivityEntry[] {
   const entries: ActivityEntry[] = []
   for (const item of items) {
     const previous = entries.at(-1)
+    const folded = previous ? foldResearchDue(previous, item) : null
+    if (folded) {
+      entries[entries.length - 1] = folded
+      continue
+    }
     const name = item.type === 'evaluator_added' ? item.evaluator?.display_name : undefined
     if (
       name &&
@@ -145,7 +181,12 @@ export function groupActivity(items: readonly ActivityItem[]): ActivityEntry[] {
 
 /** describeActivity for a grouped entry. */
 export function describeEntry(entry: ActivityEntry, labels?: StatusLabelLookup): string {
-  return entry.invited && entry.invited.length > 1
-    ? `invited ${list(entry.invited)} to evaluate`
-    : describeActivity(entry.item, labels)
+  if (entry.invited && entry.invited.length > 1) return `invited ${list(entry.invited)} to evaluate`
+  const text = describeActivity(entry.item, labels)
+  if (entry.researchDue === undefined || entry.item.type !== 'researcher_changed') return text
+  if (entry.researchDue === null) return `${text} and removed the research due date`
+  const day = formatDate(entry.researchDue)
+  return entry.item.to_researcher
+    ? `${text}, due ${day}`
+    : `${text} and set the research due date to ${day}`
 }

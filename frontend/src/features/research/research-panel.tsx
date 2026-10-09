@@ -36,7 +36,7 @@ import { focusWhenRendered } from '@/lib/focus'
 import { gatedStatuses } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
-import { ResearcherLine } from './research-assignment'
+import { RESEARCH_HEADING_TOGGLE_ID, ResearcherLine } from './research-assignment'
 import { progressWords } from './research-copy'
 import { takeResearchFocus, useResearchFocusRequest } from './research-focus'
 import { SimilarIdeas } from './similar-ideas'
@@ -99,6 +99,7 @@ export function ResearchPanel() {
         <h2 id="research-heading" className="text-base font-semibold text-primary">
           <button
             ref={headingRef}
+            id={RESEARCH_HEADING_TOGGLE_ID}
             type="button"
             aria-expanded={open}
             aria-controls={bodyId}

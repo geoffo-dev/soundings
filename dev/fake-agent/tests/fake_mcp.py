@@ -69,6 +69,8 @@ class FakeMcp:
                 return error("ai_run_not_active")
             if name == "propose_proposal_section" and args.get("section_key") != self.open_section:
                 return error("ai_run_not_active")
+        if self.open_kind == "research" and name in ("get_proposal", "get_rubric"):
+            return error("ai_run_not_active")  # a research run reads what its guest may
         idea_ref = {"key": IDEA, "title": "Planted text", "project": PROJECT}
         if name == "get_rubric":
             return False, {"project": PROJECT, "criteria": CRITERIA}

@@ -38,6 +38,7 @@ from app.authz import (
     require,
     research_assignment_flags,
     researched_ideas,
+    visible_last_activity,
 )
 from app.domain.idea_keys import format_key
 from app.domain.labels import status_label
@@ -719,15 +720,18 @@ async def similar_ideas(db: AsyncSession, principal: Principal, idea: Idea) -> S
         func.similarity(Idea.summary, literal(idea.summary, String)),
     )
     shown = func.round(cast(score, Numeric), 2)  # ties as shown: then the latest activity
+    # Phase 8b guest review L1: another idea the caller researches as its guest shows (and
+    # sorts on) the time of its guest feed's newest event.
+    active = visible_last_activity(principal).label("active")
     rows = await db.execute(
-        select(Idea, Project, shown.label("score"))
+        select(Idea, Project, shown.label("score"), active)
         .join(Project, Project.id == Idea.project_id)
         .where(Idea.id.in_(select(candidates.c.id)), score >= SIMILARITY_THRESHOLD)
-        .order_by(shown.desc(), Idea.last_activity_at.desc(), Idea.id)
+        .order_by(shown.desc(), active.desc(), Idea.id)
         .limit(SIMILAR_IDEAS_LIMIT)
     )
-    found = [(row[0], row[1], float(row[2])) for row in rows]
-    users = await _users(db, [other.owner_id for other, _, _ in found])
+    found = [(row[0], row[1], float(row[2]), row[3]) for row in rows]
+    users = await _users(db, [other.owner_id for other, _, _, _ in found])
     return SimilarIdeas(
         items=[
             SimilarIdea(
@@ -741,9 +745,9 @@ async def similar_ideas(db: AsyncSession, principal: Principal, idea: Idea) -> S
                 status_label=status_label(project.status_labels, other.status, other.resolution),
                 summary=other.summary,
                 owner=users.get(other.owner_id) if other.owner_id else None,
-                last_activity_at=other.last_activity_at,
+                last_activity_at=active_at,
                 similarity=min(1.0, round(value, 2)),
             )
-            for other, project, value in found
+            for other, project, value, active_at in found
         ]
     )

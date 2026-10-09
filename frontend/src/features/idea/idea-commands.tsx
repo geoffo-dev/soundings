@@ -160,11 +160,13 @@ export function useIdeaCommands(page: IdeaPageContextValue) {
       id: 'assign-researcher',
       label: idea.researcher ? 'Change researcher…' : 'Assign the research…',
       icon: <UserSearch />,
-      keywords: ['research', 'researcher', 'assign', 'due date'],
+      // Removing the researcher is choosing the owner in the same dialog (UX review S2).
+      keywords: ['research', 'researcher', 'assign', 'due date', 'remove'],
       onSelect: () => openDialog('researcher'),
     })
   }
-  if (permissions.can_hand_back_research) {
+  // Not for an owner named explicitly: they would hand it back to themselves (UX m1).
+  if (permissions.can_hand_back_research && idea.researcher?.id !== idea.owner?.id) {
     actions.push({
       id: 'hand-back-research',
       label: 'Hand back the research…',

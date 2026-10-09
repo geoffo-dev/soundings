@@ -96,7 +96,7 @@ evaluator, a progress event or an error message.
 | `-asks` | `input-required` after reading the idea |
 | `-rejects` | `rejected` at once |
 | `-blind-probe` | records what `get_idea` and `search_ideas` show of others' scores before and after its work (`blind`), for every kind (rule 9) |
-| `-strays` | first tries `add_comment`, `create_idea`, `get_idea` on the next idea number, `propose_proposal_section` for another section and the other kinds' write tools, then `list_projects` and `search_ideas`, recording each code (`strays`; c22), then works |
+| `-strays` | first tries `add_comment`, `create_idea`, `get_idea` on the next idea number, `propose_proposal_section` for another section and the other kinds' write tools (on a `research` run also `get_proposal` and `get_rubric`, which a research run may not read), then `list_projects` and `search_ideas`, recording each code (`strays`; c22), then works |
 | `-late` | works like `-slow`; after its cancel it waits `FAKE_AGENT_LATE_DELAY` and calls its write tool anyway (`late`: Soundings must answer `ai_run_not_active`) |
 | `-no-cancel` | like `-slow`, but `tasks/cancel` is answered -32603, as kagent-adk 0.10.2's Python runtime does (`NotImplementedError`) |
 | `-unavailable` | HTTP 503 for every request (card included) |

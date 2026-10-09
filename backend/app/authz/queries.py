@@ -22,6 +22,10 @@ roles only through the ``project_effective_roles`` view.
 * :func:`evaluation_visible` (Phase 8b): ``evaluation.view_own`` in SQL, the evaluation
   area of a summary (evaluator progress, ``my_evaluation``): the idea's project is
   viewable (every column that views an idea holds it; the guest researcher doesn't).
+* :func:`visible_last_activity` (Phase 8b guest review L1): ``ideas.last_activity_at``
+  as the principal may see it: on an idea they see only as its guest researcher, the
+  newest event of their feed (:func:`guest_activity_at`), so the column never times the
+  events their feed leaves out. Lists that show a guest's ideas select and sort on it.
 * :func:`researched_ideas` (Phase 8b): the ideas a person researches while the
   assignment is live (column R and the +Rsr overlay, c24). **Only** search and ⌘K, MCP
   ``search_ideas``, the inbox, My work's "Research to do" and Similar ideas add it to
@@ -31,6 +35,7 @@ roles only through the ``project_effective_roles`` view.
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -43,6 +48,8 @@ from sqlalchemy import (
     case,
     exists,
     false,
+    func,
+    not_,
     null,
     or_,
     select,
@@ -50,6 +57,7 @@ from sqlalchemy import (
 )
 
 from app.domain.principal import Principal
+from app.models.activity import ActivityEvent
 from app.models.enums import (
     EvaluationStatus,
     IdeaStatus,
@@ -60,10 +68,12 @@ from app.models.enums import (
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project, project_effective_roles
+from app.schemas.activity import RESEARCH_GUEST_ACTIVITY_TYPES
 
 __all__ = [
     "effective_role",
     "evaluation_visible",
+    "guest_activity_at",
     "listed_ideas",
     "pending_evaluator",
     "pending_ideas",
@@ -72,6 +82,7 @@ __all__ = [
     "viewable_ideas",
     "visible_aggregate_score",
     "visible_high_disagreement",
+    "visible_last_activity",
     "visible_projects",
 ]
 
@@ -248,3 +259,37 @@ def visible_high_disagreement(principal: Principal | None) -> ColumnElement[bool
     """``ideas.high_disagreement`` where the score is visible, else false (the filter
     never matches a hidden idea)."""
     return and_(score_visible(principal), Idea.high_disagreement)
+
+
+def guest_activity_at(idea_id: ColumnElement[Any] | Any = Idea.id) -> ColumnElement[datetime]:
+    """Phase 8b guest review L1: when the idea was last active **as its guest researcher
+    sees it**: its newest event of :data:`RESEARCH_GUEST_ACTIVITY_TYPES` (one backward
+    range of ``ix_activity_events_idea_id_created_at``), else when it was created."""
+    newest = (
+        select(func.max(ActivityEvent.created_at))
+        .where(
+            ActivityEvent.idea_id == idea_id,
+            ActivityEvent.type.in_(sorted(RESEARCH_GUEST_ACTIVITY_TYPES)),
+        )
+        .scalar_subquery()
+    )
+    return func.coalesce(newest, Idea.created_at)
+
+
+def visible_last_activity(principal: Principal | None) -> ColumnElement[datetime]:
+    """``ideas.last_activity_at`` as the principal may see it (Phase 8b guest review L1).
+
+    On an idea the principal researches without seeing its project (a guest researcher,
+    column R: no ``evaluation.view_own``), :func:`guest_activity_at`, so polling the
+    value, or a list sorted on it, can't count or time the evaluation events their feed
+    leaves out. Everywhere else the column itself (the ``CASE`` tests the cheap
+    ``researcher_id`` first; its subplans run only for the principal's own researched
+    ideas). Select it and sort on it where a guest's ideas can appear (search, ⌘K, MCP
+    ``search_ideas``, Similar ideas); project-scoped lists never show one."""
+    if not _may_read(principal):
+        return Idea.last_activity_at.expression
+    assert principal is not None  # noqa: S101 - narrowed by _may_read
+    if principal.user.is_service_account or principal.user.is_break_glass:
+        return Idea.last_activity_at.expression  # never a researcher (c23)
+    guest = and_(Idea.researcher_id == principal.user_id, not_(evaluation_visible(principal)))
+    return case((guest, guest_activity_at()), else_=Idea.last_activity_at)

@@ -54,7 +54,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from procrastinate import App
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import sse
@@ -62,10 +62,12 @@ from app.config import Settings
 from app.db import session_scope
 from app.email import delivery
 from app.email.delivery import Runtime
-from app.models.enums import AiRunKind, EmailStatus
+from app.models.base import utcnow
+from app.models.enums import AiRunKind, EmailStatus, EmailType
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
 from app.models.project import Project
+from app.notifications.fanout import RESEARCHER_EMAIL_HOLD
 from app.notifications.schedule import send_research_reminders
 from app.schemas.activity import EVALUATION_ACTIVITY_TYPES, RESEARCH_GUEST_ACTIVITY_TYPES
 from app.schemas.notifications import RESEARCH_GUEST_NOTIFICATION_TYPES
@@ -1137,7 +1139,31 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
     answered = await items_by_title(dave, key)
     assert answered[REQUIRED[1]]["answer"]["answered_by"]["display_name"] == "Nora Quinn"
 
-    # Farah (no role in TOOLS) is asked by email too, as a guest.
+    # Farah (no role in TOOLS) is asked by email too, as a guest: Nora was asked minutes ago,
+    # so Farah's email waits RESEARCHER_EMAIL_HOLD (review M1); time passes, then it goes.
+    farah_row = await db_session.scalar(
+        select(OutboundEmail)
+        .where(
+            OutboundEmail.recipient_user_id == uuid.UUID(farah.id),
+            OutboundEmail.type == EmailType.RESEARCHER_ASSIGNED,
+        )
+        .execution_options(populate_existing=True)
+    )
+    assert farah_row is not None
+    assert farah_row.next_attempt_at is not None
+    assert farah_row.next_attempt_at > utcnow() + RESEARCHER_EMAIL_HOLD - timedelta(minutes=1)
+    await db_session.execute(
+        text("UPDATE outbound_email SET next_attempt_at = now() WHERE id = :id"),
+        {"id": farah_row.id},
+    )
+    await db_session.execute(
+        text(
+            "UPDATE procrastinate_jobs SET scheduled_at = now()"
+            " WHERE task_name = 'send_email' AND args->>'email_id' = :id"
+        ),
+        {"id": str(farah_row.id)},
+    )
+    await db_session.commit()
     await run_worker_once(jobs, runtime)
     farah_mail = [
         m for m in await inbox.wait_for(farah.email) if m["Subject"].startswith(f"[{key}]")
@@ -1147,7 +1173,7 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
     ]
     assert_guest_shape(await farah.get(f"/ideas/{key}"))
 
-    # --- Farah hands it back; asked again the same day, she isn't emailed twice (S6) -------
+    # --- Farah hands it back; asked again, her inbox holds the live request only (L2) ------
     await farah.send("DELETE", f"/ideas/{key}/research/assignment", status=204)
     assert await farah.status("GET", f"/ideas/{key}") == 404
     after = await dave.get(f"/ideas/{key}/research")

@@ -37,6 +37,7 @@ from app.authz import (
     evaluation_visible,
     idea_summary_permissions,
     score_visible,
+    visible_last_activity,
 )
 from app.domain.idea_keys import format_key
 from app.domain.labels import status_label
@@ -143,6 +144,9 @@ class IdeaRow:
     my_state: EvaluatorState | None = None
     comment_count: int = 0
     has_voted: bool = False
+    activity_at: datetime | None = None
+    """Phase 8b guest review L1: ``last_activity_at`` as the viewer may see it
+    (:func:`app.authz.visible_last_activity`); ``None``: the column itself."""
 
     @classmethod
     def of(
@@ -167,6 +171,7 @@ class IdeaRow:
             my_state=EvaluatorState(row.my_state) if row.my_state and evaluation else None,
             comment_count=row.comment_count,
             has_voted=bool(row.has_voted),
+            activity_at=row.activity_at,
         )
 
 
@@ -217,6 +222,7 @@ def summary_columns(
         my_state.label("my_state"),
         comments.label("comment_count"),
         voted.label("has_voted"),
+        visible_last_activity(principal).label("activity_at"),
     ]
 
 
@@ -417,7 +423,7 @@ def summary_fields(principal: Principal, row: IdeaRow, context: SummaryContext) 
         "has_voted": row.has_voted,
         "comment_count": row.comment_count,
         "created_at": idea.created_at,
-        "last_activity_at": idea.last_activity_at,
+        "last_activity_at": row.activity_at or idea.last_activity_at,
         "permissions": context.permissions(row),
         "research": context.research.get(idea.id),
         # Phase 8b: who does the research, while the project has the step.

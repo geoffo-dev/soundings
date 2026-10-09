@@ -146,7 +146,7 @@ _INSERT_EMAILS: Final = text(
          created_at, updated_at, idea_id)
     SELECT row.id, row.type, 'queued', row.recipient_user_id, row.to_address,
            row.requested_by_id, row.payload, row.message_id, row.idempotency_key, 0,
-           row.max_attempts, :now, :now, :now, row.idea_id
+           row.max_attempts, :send_at, :now, :now, row.idea_id
       FROM unnest(
                :ids, :types, :recipient_user_ids, :to_addresses, :requested_by_ids,
                :payloads, :message_ids, :idempotency_keys, :max_attempts, :idea_ids
@@ -167,14 +167,22 @@ _INSERT_EMAILS: Final = text(
     bindparam("max_attempts", type_=ARRAY(SmallInteger())),
     bindparam("idea_ids", type_=ARRAY(Uuid())),
     bindparam("now", type_=DateTime(timezone=True)),
+    bindparam("send_at", type_=DateTime(timezone=True)),
 )
 """Queued rows: one statement with an array per column, however many emails."""
 
 
 async def enqueue(
-    db: AsyncSession, settings: Settings, emails: Iterable[NewEmail], *, now: datetime | None = None
+    db: AsyncSession,
+    settings: Settings,
+    emails: Iterable[NewEmail],
+    *,
+    now: datetime | None = None,
+    send_at: datetime | None = None,
 ) -> list[UUID]:
-    """Insert queued rows and defer their jobs, in the caller's transaction.
+    """Insert queued rows and defer their jobs, in the caller's transaction; with
+    ``send_at`` (later than ``now``) the rows wait until then (``next_attempt_at`` and
+    the job's ``schedule_at``), and the send-time checks run then.
 
     Rows with an ``idempotency_key`` that already exists are skipped (``ON CONFLICT DO
     NOTHING``); returns the ids actually inserted, in order (all of them when no
@@ -199,9 +207,10 @@ async def enqueue(
             "max_attempts": [email.max_attempts for email in wanted],
             "idea_ids": [email.idea_id for email in wanted],
             "now": now,
+            "send_at": send_at or now,
         },
     )
     inserted: set[UUID] = set(result.scalars())
     queued = [email_id for email_id in ids if email_id in inserted]
-    await defer_send(db, queued)
+    await defer_send(db, queued, schedule_at=send_at)
     return queued

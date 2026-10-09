@@ -13,7 +13,6 @@ import {
   EvaluatorProgress,
   IdeaScore,
   OwnerAvatar,
-  ResearcherAvatar,
   ResearchProgressBadge,
   showsResearcher,
 } from '@/features/project/idea-meta'
@@ -131,15 +130,11 @@ export function CardBody({ idea, lifted = false }: { idea: IdeaSummary; lifted?:
       {/* Wraps in narrow columns (six with the research step): the counts move under. */}
       <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5">
         <OwnerAvatar owner={idea.owner} size="xs" />
-        {showsResearcher(idea) ? (
-          // The checklist and who answers it, together.
-          <span className="inline-flex items-center gap-1.5">
-            <ResearchProgressBadge idea={idea} />
-            <ResearcherAvatar researcher={idea.researcher} />
-          </span>
-        ) : (
-          <ResearchProgressBadge idea={idea} />
-        )}
+        {/* The checklist and who answers it, in one chip. */}
+        <ResearchProgressBadge
+          idea={idea}
+          researcher={showsResearcher(idea) ? idea.researcher : null}
+        />
         {idea.evaluator_progress.total > 0 && (
           <EvaluatorProgress
             progress={idea.evaluator_progress}

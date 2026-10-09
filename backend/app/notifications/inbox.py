@@ -4,7 +4,8 @@ Only notifications about ideas the caller can view **now** are listed or counted
 same SQL filter as every list: :func:`app.authz.viewable_ideas`); others are skipped,
 not shown as gaps. Items carry the idea's current title and status labels, never
 score data. Phase 8b (review S5): about an idea the caller sees only as its guest
-researcher (:func:`app.authz.researched_ideas`), only ``RESEARCH_GUEST_NOTIFICATION_TYPES``.
+researcher (:func:`app.authz.researched_ideas`), only ``RESEARCH_GUEST_NOTIFICATION_TYPES``;
+"Asked to research" only while it is the caller's live assignment (review M1).
 """
 
 from __future__ import annotations
@@ -86,9 +87,24 @@ _GUEST_TYPES: Final = sorted(type_.value for type_ in RESEARCH_GUEST_NOTIFICATIO
 
 
 def _mine(principal: Principal) -> Any:
-    return (Notification.user_id == principal.user_id) & or_(
-        viewable_ideas(principal),
-        and_(researched_ideas(principal), Notification.type.in_(_GUEST_TYPES)),
+    """The caller's notifications about ideas they can view now (joined with ``ideas``);
+    "Asked to research" only while it is the idea's live assignment of the caller (Phase
+    8b review M1: someone asked and then replaced, or asked again later, keeps no stale
+    request)."""
+    current_request = or_(
+        Notification.type != NotificationType.RESEARCHER_ASSIGNED,
+        and_(
+            Idea.researcher_id == Notification.user_id,
+            Notification.created_at >= Idea.research_assigned_at,
+        ),
+    )
+    return (
+        (Notification.user_id == principal.user_id)
+        & current_request
+        & or_(
+            viewable_ideas(principal),
+            and_(researched_ideas(principal), Notification.type.in_(_GUEST_TYPES)),
+        )
     )
 
 

@@ -93,12 +93,58 @@ export function PeopleList({
       : isEligible(person)
         ? undefined
         : 'Viewer · can’t be assigned')
+  // Phase 8b (UX m9): with everyone listed, the project's people come first and the
+  // rest under their own heading (still marked "Not in this project" row by row).
+  const members = includeNonMembers ? items.filter((person) => person.project_role !== null) : items
+  const outsiders = includeNonMembers ? items.filter((person) => person.project_role === null) : []
+  const ordered = [...members, ...outsiders]
   // Type a name, press Enter: the top person. Not searching, the highlight starts on the
   // current choice (the owner), so an Enter straight away changes nothing.
-  const pickable = items.filter((person) => !reasonFor(person)).map((person) => person.id)
+  const pickable = ordered.filter((person) => !reasonFor(person)).map((person) => person.id)
   const current =
     items.find((person) => selected.includes(person.id))?.id ?? (before ? beforeChosen : undefined)
   const highlight = useTopResult(searching || !current ? pickable : [current, ...pickable])
+
+  const row = (person: UserSearchResult) => {
+    const reason = reasonFor(person)
+    const isSelected = selected.includes(person.id)
+    return (
+      <CommandItem
+        key={person.id}
+        value={person.id}
+        disabled={Boolean(reason)}
+        onSelect={() => onSelect(person)}
+        className="h-auto min-h-11 py-1.5 sm:h-auto sm:min-h-10"
+      >
+        <Avatar name={person.display_name} src={person.avatar_url} size="sm" decorative />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">
+            {person.display_name}
+            {person.id === meId && <span className="text-muted"> (you)</span>}
+            {/* cmdk owns aria-selected (the highlight), so say "chosen" in words. */}
+            {isSelected && <span className="sr-only">, chosen</span>}
+          </span>
+          <span className="truncate text-xs text-muted">
+            {reason ??
+              [
+                person.project_role
+                  ? ROLE_NAMES[person.project_role]
+                  : includeNonMembers
+                    ? 'Not in this project'
+                    : null,
+                person.email,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+          </span>
+        </span>
+        <Check
+          aria-hidden="true"
+          className={cn('text-accent!', isSelected ? 'opacity-100' : 'opacity-0')}
+        />
+      </CommandItem>
+    )
+  }
 
   return (
     <Command shouldFilter={false} label={label} className="min-h-0" {...highlight}>
@@ -144,50 +190,15 @@ export function PeopleList({
         }
       >
         {!searching && before}
-        {people.isSuccess && (
-          <CommandGroup>
-            {items.map((person) => {
-              const reason = reasonFor(person)
-              const isSelected = selected.includes(person.id)
-              return (
-                <CommandItem
-                  key={person.id}
-                  value={person.id}
-                  disabled={Boolean(reason)}
-                  onSelect={() => onSelect(person)}
-                  className="h-auto min-h-11 py-1.5 sm:h-auto sm:min-h-10"
-                >
-                  <Avatar name={person.display_name} src={person.avatar_url} size="sm" decorative />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate">
-                      {person.display_name}
-                      {person.id === meId && <span className="text-muted"> (you)</span>}
-                      {/* cmdk owns aria-selected (the highlight), so say "chosen" in words. */}
-                      {isSelected && <span className="sr-only">, chosen</span>}
-                    </span>
-                    <span className="truncate text-xs text-muted">
-                      {reason ??
-                        [
-                          person.project_role
-                            ? ROLE_NAMES[person.project_role]
-                            : includeNonMembers
-                              ? 'Not in this project'
-                              : null,
-                          person.email,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                    </span>
-                  </span>
-                  <Check
-                    aria-hidden="true"
-                    className={cn('text-accent!', isSelected ? 'opacity-100' : 'opacity-0')}
-                  />
-                </CommandItem>
-              )
-            })}
-          </CommandGroup>
-        )}
+        {people.isSuccess &&
+          (members.length > 0 && outsiders.length > 0 ? (
+            <>
+              <CommandGroup heading="In this project">{members.map(row)}</CommandGroup>
+              <CommandGroup heading="Not in this project">{outsiders.map(row)}</CommandGroup>
+            </>
+          ) : (
+            <CommandGroup>{ordered.map(row)}</CommandGroup>
+          ))}
         {!searching && after}
       </CommandList>
     </Command>

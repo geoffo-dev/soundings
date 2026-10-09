@@ -17,7 +17,12 @@ from typing import Any, Final
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.authz import researched_ideas, viewable_ideas, visible_projects
+from app.authz import (
+    researched_ideas,
+    viewable_ideas,
+    visible_last_activity,
+    visible_projects,
+)
 from app.domain.principal import Principal
 from app.models.idea import Idea
 from app.models.project import Project
@@ -61,6 +66,8 @@ async def global_search(
             found.append((exact[0], exact[1]))
     if len(found) < limit:
         short = len(q) < SHORT_QUERY
+        # A guest researcher's idea is as recently active as its guest feed (review L1).
+        active = visible_last_activity(principal)
         in_title = Idea.title.ilike(pattern, escape="\\")
         matches = ideas.where(
             # One or two letters match the title only: summaries match nearly anything.
@@ -72,9 +79,9 @@ async def global_search(
             # One or two letters: pg_trgm can't narrow them (trigrams need three), so
             # most ideas match and ranking them all by similarity costs ~100 ms at 10k.
             # The most recently active matches instead, read along the activity index.
-            order: tuple[Any, ...] = (Idea.last_activity_at.desc(), Idea.id)
+            order: tuple[Any, ...] = (active.desc(), Idea.id)
         else:
-            order = (func.similarity(Idea.title, q).desc(), Idea.last_activity_at.desc(), Idea.id)
+            order = (func.similarity(Idea.title, q).desc(), active.desc(), Idea.id)
         rows = await db.execute(matches.order_by(*order).limit(limit - len(found)))
         found.extend((idea, project) for idea, project in rows)
 

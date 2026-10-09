@@ -239,9 +239,14 @@ def applies(
                 and recipient.id in mentioned_user_ids(comment.body_md)
             )
         case NotificationType.RESEARCHER_ASSIGNED:
-            # Phase 8b: still the idea's researcher, with the assignment live (c24).
-            return idea.researcher_id == recipient.id and researcher_live(
-                recipient.principal, recipient.resource
+            # Phase 8b: still the idea's researcher, with the assignment live (c24), and
+            # (review L2) still the assignment that asked them, when the payload says
+            # which (asked again later: that request's own notification applies).
+            assigned_at = parse_time(payload.get("assigned_at"))
+            return (
+                idea.researcher_id == recipient.id
+                and (assigned_at is None or idea.research_assigned_at == assigned_at)
+                and researcher_live(recipient.principal, recipient.resource)
             )
         case NotificationType.RESEARCH_REMINDER:
             due_at = parse_time(payload.get("due_at"))

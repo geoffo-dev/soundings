@@ -1,5 +1,5 @@
-import { useNavigate } from '@tanstack/react-router'
-import { Archive, ChevronRight, CloudOff, FileSearch } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { Archive, ChevronRight, CloudOff, FileSearch, SearchX } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -36,7 +36,9 @@ import { useCurrentUser } from '@/features/auth/current-user'
 import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
 import { HandBackDialog, ResearchAssignmentDialog } from '@/features/research/research-assignment'
 import { requestResearchFocus } from '@/features/research/research-focus'
-import { ResearchPanel } from '@/features/research/research-panel'
+import { answerDraftName, ResearchPanel } from '@/features/research/research-panel'
+import { pageHeading } from '@/components/layout/route-focus'
+import { readDrafts } from '@/lib/drafts'
 import { focusWhenRendered, useTyping } from '@/lib/focus'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
@@ -84,14 +86,64 @@ export function IdeaPage({ ideaKey, search }: { ideaKey: string; search: IdeaSea
     void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
   }, [gone, queryClient, ideaKey])
 
+  // What this page last showed of the idea: a 404 after it means access ended while it
+  // was open (a guest researcher unassigned, the idea deleted). Say so, and keep focus
+  // on the page (UX review M3, m5).
+  const [shown, setShown] = useState<{ key: string; guest: boolean } | null>(null)
+  const guestNow = idea.data ? !idea.data.permissions.can_view_project : null
+  if (guestNow !== null && (shown?.key !== ideaKey || shown.guest !== guestNow)) {
+    setShown({ key: ideaKey, guest: guestNow })
+  }
+
   // Before the data: a refetch that 404s keeps the old data, and a guest researcher
   // whose access ended (or anyone after a delete) must not keep reading it.
-  if (gone) return <IdeaNotFound />
+  if (gone) {
+    return shown?.key === ideaKey ? (
+      <IdeaAccessEnded ideaKey={ideaKey} guest={shown.guest} />
+    ) : (
+      <IdeaNotFound />
+    )
+  }
   if (idea.data) {
     return <LoadedIdeaPage key={idea.data.id} idea={idea.data} ideaKey={ideaKey} search={search} />
   }
   if (idea.isError) return <IdeaLoadError onRetry={() => void idea.refetch()} />
   return <IdeaPageLoading summary={cached} />
+}
+
+/**
+ * The idea went away while its page was open (the next request was a 404). Like
+ * "doesn't exist" (nothing more is said about why), except that a guest researcher
+ * is told their research of it ended, and whether what they typed is kept; focus
+ * moves to the heading, since the control in use went with the page.
+ */
+function IdeaAccessEnded({ ideaKey, guest }: { ideaKey: string; guest: boolean }) {
+  const me = useCurrentUser()
+  const [draftKept] = useState(() => readDrafts(me.id, answerDraftName(ideaKey, '')).length > 0)
+  useEffect(() => focusWhenRendered(pageHeading), [])
+  return (
+    <EmptyState
+      headingLevel={1}
+      icon={<SearchX />}
+      title={
+        guest
+          ? `You’re no longer researching ${ideaKey}`
+          : 'This idea doesn’t exist or you don’t have access'
+      }
+      description={
+        guest
+          ? `${draftKept ? 'What you typed is kept on this device. ' : ''}Your research to do is in My work.`
+          : 'It may have been deleted, or you no longer have access.'
+      }
+      action={
+        <Button asChild variant="primary">
+          <Link to="/" replace>
+            Go to My work
+          </Link>
+        </Button>
+      }
+    />
+  )
 }
 
 function LoadedIdeaPage({
@@ -306,7 +358,8 @@ function LoadedIdeaPage({
     idea,
     me.id,
     project?.permissions.can_manage,
-    proposalStage,
+    // Only once a proposal exists: asking before is a 404 (UX review p7).
+    proposalStage && Boolean(proposalView.data?.proposal),
   )
 
   return (
@@ -595,7 +648,7 @@ function usePendingSuggestionCount(
   idea: IdeaDetail,
   meId: string,
   managesProject: boolean | undefined,
-  /** Shortlisted, in Proposal, or (Phase 8) in Research before the proposal (c7). */
+  /** Shortlisted, in Proposal, or (Phase 8) in Research before the proposal (c7), with a proposal. */
   open: boolean,
 ): number {
   const mayDecide = open && (idea.owner?.id === meId || managesProject === true)

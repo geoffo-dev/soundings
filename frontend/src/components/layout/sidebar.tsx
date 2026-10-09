@@ -271,6 +271,9 @@ function ProjectsNav({ onNavigate, canCreate }: { onNavigate?: () => void; canCr
     params.slug ??
     (params.ideaKey ? findCachedIdea(queryClient, params.ideaKey)?.project.slug : undefined)
 
+  // A guest researcher in no project at all: no "Projects" heading over nothing (UX p5).
+  if (projects.data?.length === 0 && researching && !canCreate) return null
+
   return (
     <SidebarSection title="Projects">
       {projects.isPending ? (
@@ -294,11 +297,7 @@ function ProjectsNav({ onNavigate, canCreate }: { onNavigate?: () => void; canCr
         </li>
       ) : projects.data.length === 0 ? (
         <li className="px-2 py-1 text-sm text-muted">
-          {canCreate
-            ? 'No projects yet'
-            : researching
-              ? 'No projects'
-              : 'No projects yet — ask an admin to add you'}
+          {canCreate ? 'No projects yet' : 'No projects yet — ask an admin to add you'}
         </li>
       ) : (
         projects.data.map((project) => {

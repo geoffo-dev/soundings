@@ -72,6 +72,7 @@ __all__ = [
     "list_evaluations_due",
     "list_my_owned_ideas",
     "list_research_to_do",
+    "research_still_to_do",
 ]
 
 OWNED_GROUP_SIZE: Final = OWNED_GROUP_PREVIEW  # Phase 8b: 10 (was 50)
@@ -297,6 +298,13 @@ def _required_open() -> ColumnElement[bool]:
         )
         .correlate_except(ResearchChecklistItem)
     )
+
+
+def research_still_to_do() -> list[ColumnElement[bool]]:
+    """``WHERE`` clauses over ``ideas`` joined with ``projects``: the step on, the idea open
+    and not past Research, a required item open (My work's "Research to do" and the
+    research reminder scan, review N4)."""
+    return [*_awaits_research(), _required_open()]
 
 
 def _research_where(principal: Principal) -> list[ColumnElement[bool]]:

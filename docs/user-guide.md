@@ -57,6 +57,8 @@ development installs a **development login** that lists everyone ("who are you?"
     asked, with a required item still open. Overdue first, then the soonest due, then
     those without a due date; each row says how many required items are open ("2
     open") and **Answer** opens the checklist. "As owner" marks the ones you do as owner.
+    With nothing to evaluate, this section comes first and the empty **Evaluations due**
+    box isn't shown.
   - **Ideas I own**, grouped by status (Closed is folded away). Each group shows its
     first 10 ideas; **Show more** adds 50 at a time. Viewers, who can't own ideas, don't
     see this section.
@@ -254,27 +256,33 @@ the status just before Research show it too once something is answered.
 
 By default the idea's owner does the research. The owner, project admins and platform
 admins can ask **one person** to do it instead, the idea's **researcher**, with an
-optional **research due date**. The Research panel and the idea's details say who it is:
-"Research: Bob Chen · due Fri 9 Oct", or "Research: Sven Lindqvist (owner)" when nobody
-else was asked. An overdue date says "overdue" in words, in the warning colour.
+optional **research due date**. The Research panel says who it is: "Research: Bob Chen ·
+due Fri 9 Oct", or "Research: Sven Lindqvist (owner)" when nobody else was asked (the
+idea's details then just say **Owner**). An overdue date says "overdue" in words, in the
+warning colour.
 
 - **Start research**: in the status just before Research, the owner's blue button asks
   who does the research (you, the owner, unless you pick someone) and an optional due
-  date, then moves the idea into Research.
-- **Change** (in the Research panel, the details' **Research** menu or ⌘K "Change
-  researcher…") picks a person and a due date; **Remove** gives the research back to the
-  owner, with **Undo**. The due date stays when the researcher changes or is removed.
+  date, then moves the idea into Research. The confirmation says who does it and by when.
+- **Change** (in the Research panel, the details' **Research** value or ⌘K "Change
+  researcher…") picks a person and a due date. To take the research away from someone,
+  choose the owner there: the dialog says when that person will no longer see the idea.
+  The due date stays when the researcher changes. A date already past stays as it is
+  until you pick another ("Was due Wed 7 Oct (overdue)"), so the dialog still saves. The
+  activity feed records a change as one line ("asked Bob Chen to research, due Fri 9 Oct").
 - The researcher can **Hand back** the research (after confirming); their answers stay
-  and the owner does it again.
+  and the owner does it again. An owner asked by name has nothing to hand back.
 - Anyone with an active Soundings account can be the researcher, inside the project or
-  not (never an AI agent or the break-glass account). The picker marks people outside
-  the project **Not in this project**, and choosing one says what they will see (below).
-  In a **private** project only project and platform admins can ask someone outside it;
-  owners pick from the project's people. Everyone who sees the idea sees "not in this
-  project" next to an outside researcher, and the activity feed records each change.
-- The researcher answers the checklist, comments (and can be @mentioned) and is told
-  about status changes. They can't move the idea or use **Move anyway**: when the
-  checklist is complete, the owner moves it on.
+  not (never an AI agent or the break-glass account). The picker lists the project's
+  people first and everyone else under **Not in this project**, and choosing one says
+  what they will see (below). In a **private** project only project and platform admins
+  can ask someone outside it; owners pick from the project's people. Everyone who sees
+  the idea sees "not in this project" next to an outside researcher, and above the
+  comment box members read "Bob Chen (researching, not in this project) can read
+  comments."
+- The researcher answers the checklist, comments (and can be @mentioned: the mention list
+  calls them "researcher") and is told about status changes. They can't move the idea or
+  use **Move anyway**: when the checklist is complete, the owner moves it on.
 - Asking someone sends them **Asked to research** (with the due date and a link to the
   checklist) and puts the idea in their My work, under **Research to do**. With a due
   date, a **Research reminder** goes out 2 days before and on the day, at the usual
@@ -286,8 +294,9 @@ else was asked. An overdue date says "overdue" in words, in the warning colour.
   researcher leaves a private project, or their account is deactivated, it ends too.
   Answers already written always stay.
 
-On the board, cards in the Research column show the researcher's avatar next to the
-checklist badge ("Researched by Bob Chen").
+On the board and in the list (phones too), ideas in Research show the researcher's
+avatar inside the checklist badge ("Researched by Bob Chen") when someone other than the
+owner was asked.
 
 ### Researching an idea outside your projects [Phase 8b]
 
@@ -297,11 +306,14 @@ tags, status and owner, the activity feed and comments, the research checklist (
 you answer) and Similar ideas you could see anyway. You never see its scores,
 evaluations, evaluators, proposal or AI actions, and the project shows by name only (no
 link). The idea page says "You can see this idea because you're researching it." The
-idea is in your My work, inbox and search; if you're in no project at all, My work is
-just your **Research to do**. When you hand it back, someone else is asked, the idea is
-closed or the project's research step is turned off, the idea disappears for you at once.
-In an **internal** project, which everyone can already read, being its researcher only
-adds answering, commenting and **Hand back**.
+idea is in your My work (first, when you have nothing to evaluate), inbox and search; if
+you're in no project at all, My work is just your **Research to do**. In the comment box,
+**@** offers only the people on the idea (its owner and whoever wrote in its activity).
+When you hand it back, someone else is asked, the idea is closed or the project's
+research step is turned off, the idea disappears for you at once: a page you still have
+open says "You're no longer researching TOOLS-12" (and that what you typed is kept on
+this device, should it come back to you). In an **internal** project, which everyone can
+already read, being its researcher only adds answering, commenting and **Hand back**.
 
 ### Moving past Research
 
@@ -533,12 +545,12 @@ what on which idea, in one sentence:
 | someone makes you the **owner** of an idea | the idea |
 | someone **asks you to evaluate** (with the due date) | the evaluate sheet of that idea |
 | your **evaluation is due**: 2 days before the due date and on the day, while you haven't submitted | the evaluate sheet |
+| someone **asks you to research** an idea (with the due date) [Phase 8b] | the idea's research checklist |
+| your **research is due**: 2 days before the research due date and on the day, while a required item is open [Phase 8b] | the research checklist |
 | **all evaluations are in** on an idea you own | the idea |
 | an idea you own, evaluate or watch **changes status** | the idea |
 | someone **comments** on an idea you watch | the comment |
 | someone **@mentions** you | the comment |
-| someone **asks you to research** an idea (with the due date) [Phase 8b] | the idea's research checklist |
-| your **research is due**: 2 days before the research due date and on the day, while a required item is open [Phase 8b] | the research checklist |
 
 Opening a notification marks it read, and so does opening the idea it's about. You're
 never told about your own actions, and you only see notifications about ideas you can

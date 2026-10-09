@@ -161,7 +161,10 @@ test('RA-01 an admin asks someone outside the private project: marked, explained
   }
 })
 
-test('RA-02 an admin removes the researcher, with Undo', async ({ page, api }) => {
+test('RA-02 an admin removes the researcher by choosing the owner in Change: told who loses the idea', async ({
+  page,
+  api,
+}) => {
   const alice = await api('alice')
   const people = await newPeople(alice, ['nora'])
   const { nora } = people
@@ -178,17 +181,27 @@ test('RA-02 an admin removes the researcher, with Undo', async ({ page, api }) =
 
     await signIn(page, 'alice')
     await openIdea(page, idea.key)
-    await researcherLine(page)
-      .getByRole('button', { name: 'Remove Nora Quinn as researcher' })
-      .click()
-    const removed = toast(page, `Nora Quinn is no longer researching ${idea.key}`)
-    await expect(removed).toBeVisible()
+    // One path (UX review S2): no separate Remove, nor its Undo.
+    await expect(researcherLine(page).getByRole('button', { name: /Remove/ })).toHaveCount(0)
+    const change = researcherLine(page).getByRole('button', {
+      name: 'Change researcher or due date',
+    })
+    await change.click()
+    const dialog = page.getByRole('dialog', { name: 'Who does the research' })
+    await dialog.getByRole('option', { name: /Carol Chen \(owner\)/ }).click()
+    await expect(dialog.getByRole('status')).toHaveText(
+      `Nora Quinn will no longer see ${idea.key}.`,
+    )
+    await dialog.getByRole('button', { name: /^Save/ }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(toast(page, 'Carol Chen (owner) will do the research')).toBeVisible()
     await expect(researcherLine(page)).toContainText('Carol Chen (owner)')
-    await removed.getByRole('button', { name: 'Undo' }).click()
-    await expect(researcherLine(page)).toContainText('Nora Quinn')
+    await expect(change).toBeFocused()
     await expect
-      .poll(async () => (await ideaResearch(alice, idea.key)).assignment.researcher?.id)
-      .toBe(nora.user.id)
+      .poll(async () => (await ideaResearch(alice, idea.key)).assignment.researcher)
+      .toBeNull()
+    // The due date stays as it was.
+    expect((await ideaResearch(alice, idea.key)).assignment.due_at).not.toBeNull()
   } finally {
     await disposePeople(people)
   }
@@ -212,9 +225,10 @@ test('RA-03 the guest researcher (bob on TOOLS-12) sees that one idea: no scores
   await expect(page.getByRole('button', { name: 'AI actions' })).toHaveCount(0)
   await expect(aside.getByRole('button', { name: /^Status/ })).toHaveCount(0)
   await expect(page.locator('main')).not.toContainText(SCORE_TEXT)
-  // Who does it: you, outside the project, with the due date; "Hand back".
+  // Who does it: you, with the due date; "Hand back". Never "not in this project" about
+  // yourself: the line above says why you see it (UX review p2).
   await expect(researcherLine(page)).toContainText(/Research:.*You/)
-  await expect(researcherLine(page)).toContainText('not in this project')
+  await expect(researcherLine(page)).not.toContainText('not in this project')
   await expect(researcherLine(page)).toContainText('due')
   await expect(researcherLine(page).getByRole('button', { name: 'Hand back' })).toBeVisible()
   await expect(researcherLine(page).getByRole('button', { name: /Change/ })).toHaveCount(0)
@@ -305,7 +319,10 @@ test('RA-04 the guest answers the checklist, then hands it back: off to My work,
     await expect(toast(page, 'You handed the research back')).toBeVisible()
     await expect(heading(page, 'My work')).toBeVisible()
     await expect(page.locator('main')).not.toContainText(idea.key)
+    // The idea's history entry was replaced: Back never lands on it (UX review p6).
     await page.goBack()
+    await expect(page).not.toHaveURL(new RegExp(`/ideas/${idea.key}$`))
+    await page.goto(`/ideas/${idea.key}`)
     await expect(
       page.getByRole('heading', { name: 'This idea doesn’t exist or you don’t have access' }),
     ).toBeVisible()
@@ -354,6 +371,10 @@ test('RA-05 “Start research”: who does it and by when, then into Research; a
   await dialog.getByRole('button', { name: /^Start research/ }).click()
   await expect(dialog).toHaveCount(0)
   await expect(toast(page, `${idea.key} moved to Research`)).toHaveCount(1)
+  // The toast says who does it and by when (UX review m4).
+  await expect(toast(page, `${idea.key} moved to Research`)).toContainText(
+    /Kenji Watanabe does the research · due /,
+  )
   await expect(details(page).getByText('Research', { exact: true }).first()).toBeVisible()
   await expect(researcherLine(page)).toContainText('Kenji Watanabe')
   const detail = await alice.idea(idea.key)

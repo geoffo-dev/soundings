@@ -22,7 +22,7 @@ import { AdminPageHeader, SettingsFrame } from '@/features/admin/settings-frame'
 import { SM_UP, useMediaQuery } from '@/lib/media'
 
 import { describeMode, MODE_OPTIONS, modeLabel, previousModes } from './preferences'
-import { digestTime, TYPE_COPY } from './notification-text'
+import { byPreferenceOrder, digestTime, TYPE_COPY } from './notification-text'
 
 /**
  * Settings → Notifications (contract-phase3 §3.4, `self.manage_profile`): per
@@ -137,7 +137,7 @@ function PreferencesForm({ preferences }: { preferences: NotificationPreferences
           aria-label="Email for each kind of notification"
           className="flex flex-col divide-y divide-subtle rounded-lg border"
         >
-          {preferences.items.map((item) => (
+          {byPreferenceOrder(preferences.items).map((item) => (
             <PreferenceRow
               key={item.type}
               item={item}

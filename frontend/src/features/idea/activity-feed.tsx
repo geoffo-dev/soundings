@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CircleCheck,
   CloudOff,
+  Eye,
   Lock,
   LockOpen,
   MessageSquare,
@@ -17,7 +18,7 @@ import {
   UserSearch,
 } from 'lucide-react'
 import { useLocation } from '@tanstack/react-router'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 import {
   useCreateComment,
@@ -28,6 +29,7 @@ import {
 import { useIdeaAiRuns } from '@/api/ai'
 import { useIdeaSubmission } from '@/api/submissions'
 import { ResearchNoteItem } from '@/features/ai/research-note'
+import { useAssignment } from '@/features/research/research-assignment'
 import type { ActivityItem, CommentActivity, IdeaDetail } from '@/api/types'
 import { AiBadge } from '@/components/ui/ai-badge'
 import { Avatar } from '@/components/ui/avatar'
@@ -49,7 +51,7 @@ import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
 import { useIdeaPage } from './idea-context'
-import type { MentionOptions } from './mention-picker'
+import type { MentionOptions, MentionPerson } from './mention-picker'
 import { MarkdownEditor } from './markdown-editor'
 
 export const COMMENT_LIMIT = 10_000
@@ -189,16 +191,41 @@ function ActivitySkeleton() {
 
 /**
  * Who "@" offers (contract-phase8b §6.4): the project's people plus the idea's
- * researcher (who may have no role there); for a guest researcher, who can't read
- * the project's people, the people directory.
+ * researcher (who may have no role there), labelled "researcher". A guest researcher,
+ * who can't read the project's people, gets only the people on this page: the owner
+ * and whoever acted in the feed (who asked them, who commented). Mentioning anyone
+ * else would notify nobody (UX review M2).
  */
-function mentionOptions(idea: IdeaDetail, meId: string): MentionOptions {
-  if (!idea.permissions.can_view_project) return { excludeUserId: meId }
+export function mentionOptions(
+  idea: IdeaDetail,
+  meId: string,
+  items: readonly ActivityItem[] | undefined,
+): MentionOptions {
+  if (!idea.permissions.can_view_project) {
+    const people = new Map<string, MentionPerson>()
+    if (idea.owner) people.set(idea.owner.id, { ...idea.owner, note: 'owner' })
+    for (const item of items ?? []) {
+      // An AI research note's actor is an agent: never someone to mention.
+      if (!item.actor || item.type === 'ai_research_note' || people.has(item.actor.id)) continue
+      people.set(item.actor.id, item.actor)
+    }
+    return {
+      excludeUserId: meId,
+      only: [...people.values()].sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    }
+  }
   return {
     project: idea.project.slug,
     excludeUserId: meId,
-    extra: idea.researcher ? [idea.researcher] : [],
+    extra: idea.researcher ? [{ ...idea.researcher, note: 'researcher' }] : [],
   }
+}
+
+/** mentionOptions for this page (the feed's people come from its cached query). */
+function useMentionOptions(): MentionOptions {
+  const { ideaKey, idea, me } = useIdeaPage()
+  const items = useIdeaActivity(ideaKey).data?.items
+  return mentionOptions(idea, me.id, items)
 }
 
 const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> = {
@@ -314,7 +341,8 @@ function EventItem({ entry }: { entry: ActivityEntry }) {
 }
 
 function CommentItem({ item, highlighted }: { item: CommentActivity; highlighted: boolean }) {
-  const { ideaKey, idea, me } = useIdeaPage()
+  const { ideaKey, me } = useIdeaPage()
+  const mentions = useMentionOptions()
   const update = useUpdateComment(ideaKey)
   const remove = useDeleteComment(ideaKey)
   const [editing, setEditing] = useState(false)
@@ -406,7 +434,7 @@ function CommentItem({ item, highlighted }: { item: CommentActivity; highlighted
               maxLength={COMMENT_LIMIT}
               minRows={2}
               focusOnMount
-              mentions={mentionOptions(idea, me.id)}
+              mentions={mentions}
               mentionSelfId={me.id}
               actions={
                 <>
@@ -453,7 +481,10 @@ function writeDraft(key: string, value: string) {
 
 /** Markdown comment box at the end of the feed. `c` focuses it; ⌘/Ctrl+Enter posts. */
 function CommentComposer() {
-  const { ideaKey, idea, me, takeCommentFocus, commentFocusRequest } = useIdeaPage()
+  const { ideaKey, me, takeCommentFocus, commentFocusRequest } = useIdeaPage()
+  const mentions = useMentionOptions()
+  const guestReader = useGuestReader()
+  const guestNoteId = useId()
   const create = useCreateComment(ideaKey)
   // Per user, and cleared when the session ends (lib/drafts).
   const storageKey = draftKey(me.id, `comment:${ideaKey}`)
@@ -480,33 +511,56 @@ function CommentComposer() {
   }
 
   return (
-    <div className="flex items-start gap-2.5 pt-2">
-      <Avatar name={me.display_name} src={me.avatar_url} size="sm" decorative className="mt-2" />
-      <MarkdownEditor
-        id={COMMENT_INPUT_ID}
-        textareaRef={inputRef}
-        label="Write a comment"
-        placeholder="Write a comment…"
-        value={body}
-        onValueChange={change}
-        onSubmit={post}
-        onCancel={() => inputRef.current?.blur()}
-        maxLength={COMMENT_LIMIT}
-        minRows={2}
-        className="min-w-0 flex-1"
-        mentions={mentionOptions(idea, me.id)}
-        mentionSelfId={me.id}
-        hint={
-          <span className="inline-flex items-center gap-1">
-            Markdown · @ to mention · <KbdShortcut keys={SHORTCUTS.submitForm.keys} /> to post
-          </span>
-        }
-        actions={
-          <Button size="sm" onClick={post} disabled={!body.trim()}>
-            Comment
-          </Button>
-        }
-      />
+    <div className="flex flex-col gap-1.5 pt-2">
+      {guestReader && (
+        // Members are told who outside the project reads along (guest review L3, UX m8).
+        <p id={guestNoteId} className="flex items-center gap-1.5 pl-8.5 text-xs text-muted">
+          <Eye aria-hidden="true" className="size-3.5 shrink-0" />
+          {guestReader.display_name} (researching, not in this project) can read comments.
+        </p>
+      )}
+      <div className="flex items-start gap-2.5">
+        <Avatar name={me.display_name} src={me.avatar_url} size="sm" decorative className="mt-2" />
+        <MarkdownEditor
+          id={COMMENT_INPUT_ID}
+          describedBy={guestReader ? guestNoteId : undefined}
+          textareaRef={inputRef}
+          label="Write a comment"
+          placeholder="Write a comment…"
+          value={body}
+          onValueChange={change}
+          onSubmit={post}
+          onCancel={() => inputRef.current?.blur()}
+          maxLength={COMMENT_LIMIT}
+          minRows={2}
+          className="min-w-0 flex-1"
+          mentions={mentions}
+          mentionSelfId={me.id}
+          hint={
+            <span className="inline-flex items-center gap-1">
+              Markdown · @ to mention · <KbdShortcut keys={SHORTCUTS.submitForm.keys} /> to post
+            </span>
+          }
+          actions={
+            <Button size="sm" onClick={post} disabled={!body.trim()}>
+              Comment
+            </Button>
+          }
+        />
+      </div>
     </div>
   )
+}
+
+/**
+ * A researcher outside a private project (a guest: role matrix column R) reads this
+ * idea's comments; null otherwise, and for the guest themselves.
+ */
+function useGuestReader() {
+  const { guest, project, me } = useIdeaPage()
+  const { assignment } = useAssignment()
+  const researcher = assignment.researcher
+  if (guest || project?.visibility !== 'private' || !researcher) return null
+  if (assignment.researcher_in_project || researcher.id === me.id) return null
+  return researcher
 }

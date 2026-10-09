@@ -122,6 +122,11 @@ export const ideaQueryOptions = (idea: string) =>
     queryKey: queryKeys.ideas.detail(idea),
     queryFn: ({ signal }) =>
       unwrap(api.GET('/api/v1/ideas/{idea}', { params: { path: { idea } }, signal })),
+    // A guest researcher's view (Phase 8b) is checked again whenever the tab regains
+    // focus, however fresh: access that ended meanwhile shows at once instead of the
+    // page loaded before (guest review N4). Everyone else keeps the default.
+    refetchOnWindowFocus: (query) =>
+      query.state.data?.permissions.can_view_project === false ? 'always' : true,
   })
 
 /**
@@ -328,7 +333,15 @@ export function useChangeIdeaStatus(idea?: string, { undo = true }: UndoOption =
     return ref
   }
   const mutation = useMutation({
-    mutationFn: (vars: Undoable<StatusTarget & { idea?: string }>) =>
+    mutationFn: (
+      vars: Undoable<
+        StatusTarget & {
+          idea?: string
+          /** A line under the toast's "moved to" (Start research: who does it, by when). */
+          toastDescription?: string
+        }
+      >,
+    ) =>
       unwrap(
         api.POST('/api/v1/ideas/{idea}/status', {
           ...path(target(vars)),
@@ -379,17 +392,25 @@ export function useChangeIdeaStatus(idea?: string, { undo = true }: UndoOption =
         const title = `${data.key} moved to ${data.status_label}`
         if (undoBlockedByResearch(queryClient, ref, data, previous.status)) {
           toast.success(title, {
-            description: 'Finish its research checklist to move it on again.',
+            description: [
+              vars.toastDescription,
+              'Finish its research checklist to move it on again.',
+            ]
+              .filter(Boolean)
+              .join('. '),
           })
           return
         }
-        offerUndo(title, () =>
-          mutation.mutate({
-            idea: vars.idea,
-            status: previous.status,
-            resolution: previous.resolution,
-            isUndo: true,
-          }),
+        offerUndo(
+          title,
+          () =>
+            mutation.mutate({
+              idea: vars.idea,
+              status: previous.status,
+              resolution: previous.resolution,
+              isUndo: true,
+            }),
+          { description: vars.toastDescription },
         )
       }
     },

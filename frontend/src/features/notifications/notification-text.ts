@@ -272,8 +272,33 @@ export const TYPE_COPY: Record<
     phrase: 'research reminders',
     when: 'research you do is nearly due',
     description:
-      'Before research you do is due, and on the day, while a required checklist item is open.',
+      'Before research you’re doing is due, and on the day, while a required checklist item is open.',
   },
+}
+
+/**
+ * The order of Settings → Notifications (UX review p1): the research pair next to the
+ * evaluation pair, whatever order the API lists them in; types this list doesn't know
+ * go last.
+ */
+const PREFERENCE_ORDER: readonly NotificationType[] = [
+  'owner_assigned',
+  'evaluator_invited',
+  'evaluation_reminder',
+  'researcher_assigned',
+  'research_reminder',
+  'evaluations_complete',
+  'status_changed',
+  'comment',
+  'mention',
+]
+
+export function byPreferenceOrder<T extends { type: NotificationType }>(items: readonly T[]): T[] {
+  const rank = (item: T) => {
+    const index = PREFERENCE_ORDER.indexOf(item.type)
+    return index === -1 ? PREFERENCE_ORDER.length : index
+  }
+  return [...items].sort((a, b) => rank(a) - rank(b))
 }
 
 /** "evaluation requests", "new comments" (inside a sentence). */

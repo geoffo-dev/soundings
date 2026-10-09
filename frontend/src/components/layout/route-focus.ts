@@ -19,16 +19,25 @@ export function useRouteFocus() {
           requestAnimationFrame(() => {
             const active = document.activeElement
             if (active && active !== document.body && active.isConnected) return
-            const main = document.getElementById('main')
-            const heading = main?.querySelector<HTMLElement>('h1')
-            if (heading && !heading.hasAttribute('tabindex')) {
-              heading.setAttribute('tabindex', '-1')
-              heading.setAttribute('data-route-focus', '')
-            }
-            ;(heading ?? main)?.focus({ preventScroll: true })
+            pageHeading()?.focus({ preventScroll: true })
           }),
         )
       }),
     [router],
   )
+}
+
+/**
+ * The page's h1, made focusable without a ring of its own (`data-route-focus`), else
+ * `#main`: where focus goes when a page's content was replaced under it (a route
+ * change, or an idea whose access ended while it was open). For `focusWhenRendered`.
+ */
+export function pageHeading(): HTMLElement | null {
+  const main = document.getElementById('main')
+  const heading = main?.querySelector<HTMLElement>('h1')
+  if (heading && !heading.hasAttribute('tabindex')) {
+    heading.setAttribute('tabindex', '-1')
+    heading.setAttribute('data-route-focus', '')
+  }
+  return heading ?? main
 }

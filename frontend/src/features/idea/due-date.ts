@@ -37,6 +37,17 @@ export function todayInput(now: number = Date.now()): string {
 }
 
 /**
+ * The picker's `min`: today, or the date already set when that is earlier. An overdue
+ * date stays valid until it is changed, so a form that keeps it still submits (native
+ * validation would otherwise refuse it with the browser's own bubble: Phase 8b UX M1);
+ * a past day is offered only as far back as the one already set.
+ */
+export function pickerMin(current: string, now: number = Date.now()): string {
+  const today = todayInput(now)
+  return current && current < today ? current : today
+}
+
+/**
  * The latest day the picker offers (its `max`): five years ahead. The API refuses a
  * `due_at` more than 5 × 366 days away (422), so this stays inside that in any time zone.
  */

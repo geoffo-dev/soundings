@@ -9,7 +9,7 @@ import { Field } from '@/components/ui/field'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { dueDate, formatDate, formatDateTime } from '@/lib/dates'
 
-import { dateInputInDays, fromDateInput, latestDueInput, toDateInput, todayInput } from './due-date'
+import { dateInputInDays, fromDateInput, latestDueInput, pickerMin, toDateInput } from './due-date'
 import { useIdeaPage } from './idea-context'
 
 const QUICK_PICKS = [
@@ -94,7 +94,7 @@ function DueDateEditor({ onDone }: { onDone: () => void }) {
         <DatePicker
           value={value}
           onValueChange={setValue}
-          min={todayInput()}
+          min={pickerMin(current)}
           max={latestDueInput()}
           className="w-full"
         />

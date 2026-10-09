@@ -5,9 +5,11 @@ sections 3 and 17).
   owner, project admins and platform admins; c5, c23, c25) and :func:`remove_researcher`
   (also ``idea.release_researcher``: the researcher's "Hand back"). The caller holds the
   idea ``FOR UPDATE`` (``load_idea(for_update=True)``: the project ``FOR KEY SHARE``
-  first); a new researcher's user row is locked ``FOR SHARE`` before their eligibility
+  first); once the caller may assign at all (review N2: so a viewer never takes the
+  lock), a new researcher's user row is locked ``FOR SHARE`` before their eligibility
   (c23) and role (c25) are read, so a deactivation or a removal from the project that
-  commits meanwhile is seen.
+  commits meanwhile is seen. Due dates are stored and reported in UTC (review N1, as
+  evaluation due dates are).
 * **Automatic clears** (:func:`clear_idea`, :func:`clear_where`): closing the idea,
   turning the project's step off, deactivating the researcher and (product owner, review
   S1 b) losing one's role in a private project (:func:`roles_before`,
@@ -25,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Final, Literal
 from uuid import UUID
 
@@ -130,14 +132,20 @@ async def set_assignment(
     idempotent, last write wins. Checks: 403 (the rule; c25) -> 422 (c23) -> 409
     (archived, c19, c5) -> 409 ``research_step_off``."""
     changes_researcher = body.researcher_id != idea.researcher_id
+    # Review N2: the rule with nobody named first (the owner or an admin), so someone who
+    # may only view the idea never locks the named person's row; then c23 and c25.
+    require(principal, Rule.IDEA_ASSIGN_RESEARCHER, resource)
     named = None
     if changes_researcher and body.researcher_id is not None:
         named = await _named(db, project, body.researcher_id)
-    require(principal, Rule.IDEA_ASSIGN_RESEARCHER, resource.replace(researcher_named=named))
+        require(principal, Rule.IDEA_ASSIGN_RESEARCHER, resource.replace(researcher_named=named))
     if project.research_step is ResearchStep.OFF:
         raise _step_off()
     if changes_researcher:
         previous = idea.researcher_id
+        # Review N3: the researcher (an admin, say) clearing it themselves hands it back,
+        # whichever request says so.
+        handed_back = body.researcher_id is None and previous == principal.user_id
         idea.researcher_id = body.researcher_id
         idea.research_assigned_at = utcnow() if body.researcher_id is not None else None
         if body.researcher_id is not None:  # a new researcher watches the idea
@@ -154,28 +162,30 @@ async def set_assignment(
             payload={
                 "from_researcher_id": previous,
                 "to_researcher_id": body.researcher_id,
-                "handed_back": False,
+                "handed_back": handed_back,
             },
         )
+        reason = "assigned" if body.researcher_id is not None else "removed"
         await _audit(
             db,
             idea,
             actor=principal,
             from_user=previous,
             to_user=body.researcher_id,
-            reason="assigned" if body.researcher_id is not None else "removed",
+            reason="handed_back" if handed_back else reason,
             rule=Rule.IDEA_ASSIGN_RESEARCHER,
             outside_project=named is not None and named.role is None,
         )
-    if not _same_moment(body.due_at, idea.research_due_at):
+    due_at = body.due_at.astimezone(UTC) if body.due_at is not None else None  # review N1
+    if not _same_moment(due_at, idea.research_due_at):
         previous_due = idea.research_due_at
-        idea.research_due_at = body.due_at
+        idea.research_due_at = due_at
         await activity.emit(
             db,
             idea,
             "research_due_date_changed",
             actor=principal,
-            payload={"from_due_at": previous_due, "to_due_at": body.due_at},
+            payload={"from_due_at": previous_due, "to_due_at": due_at},
         )
     await db.flush()
 

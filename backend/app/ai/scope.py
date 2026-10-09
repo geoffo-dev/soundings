@@ -16,7 +16,13 @@ has no runs, so it can do nothing):
   named run's project and idea (nothing without an open run);
 * the only write is the named run's kind's tool (:data:`~app.schemas.ai.AGENT_RUN_WRITE_TOOLS`;
   ``propose_proposal_section`` only for the run's section); ``create_idea`` and
-  ``add_comment`` are always ``forbidden``.
+  ``add_comment`` are always ``forbidden``;
+* (Phase 8b guest review M1) the reads depend on the run's kind (:data:`RUN_READ_TOOLS`):
+  a research run's note lands in the idea's feed, which its guest researcher reads (role
+  matrix table L), so a research run reads what that guest may read and no more
+  (:func:`reads_as_guest`): no proposal, no rubric (``ai_run_not_active``, like another
+  kind's write tool), and ``get_idea`` / ``search_ideas`` in the guest's shape (no
+  evaluation area, no sign of a proposal, the guest feed's ``last_activity_at``).
 
 For people, ``run_id`` is ignored and c22 refuses only ``add_research_note``
 (``forbidden``). So two runs of one agent open at once can't reach each other, a run that
@@ -45,18 +51,28 @@ from app.schemas.ai import AGENT_READ_TOOLS, AGENT_RUN_WRITE_TOOLS
 
 __all__ = [
     "RESEARCH_NOTE_TOOL",
+    "RUN_READ_TOOLS",
     "NamedRun",
     "RunNotActiveProblem",
     "check_write",
     "is_agent",
     "lock_run",
     "named_run",
+    "reads_as_guest",
     "refuse_agent_write",
     "require_run",
 ]
 
 RESEARCH_NOTE_TOOL: Final = AGENT_RUN_WRITE_TOOLS[AiRunKind.RESEARCH]
 _KIND_OF_TOOL: Final = {tool: kind for kind, tool in AGENT_RUN_WRITE_TOOLS.items()}
+RUN_READ_TOOLS: Final[dict[AiRunKind, frozenset[str]]] = {
+    AiRunKind.EVALUATE: AGENT_READ_TOOLS,
+    AiRunKind.DRAFT_SECTION: AGENT_READ_TOOLS,
+    # Phase 8b guest review M1: what a guest researcher may read through MCP.
+    AiRunKind.RESEARCH: frozenset({"list_projects", "search_ideas", "get_idea"}),
+}
+"""c22: the read tools of :data:`~app.schemas.ai.AGENT_READ_TOOLS` each run kind may call
+on its idea; another one is ``ai_run_not_active`` (before anything is looked up)."""
 
 
 class RunNotActiveProblem(ProblemError):
@@ -155,10 +171,12 @@ async def require_run(
     *,
     idea: str | None = None,
     project: str | None = None,
+    read: str | None = None,
 ) -> NamedRun | None:
     """c22 for a call by an agent, before anything is looked up: the open run ``run_id``
-    names, whose idea ``idea`` (or project ``project``) must be; else
-    ``ai_run_not_active``. ``None`` for people (nothing to check)."""
+    names, whose idea ``idea`` (or project ``project``) must be, and whose kind may call
+    the read tool ``read`` (:data:`RUN_READ_TOOLS`); else ``ai_run_not_active``. ``None``
+    for people (nothing to check)."""
     if not is_agent(principal):
         return None
     run = await named_run(db, principal, run_id)
@@ -168,7 +186,15 @@ async def require_run(
         raise RunNotActiveProblem
     if project is not None and not run.names_project(project):
         raise RunNotActiveProblem
+    if read is not None and read not in RUN_READ_TOOLS[run.kind]:
+        raise RunNotActiveProblem
     return run
+
+
+def reads_as_guest(run: NamedRun | None) -> bool:
+    """Phase 8b guest review M1: the call is an agent's in a research run, so it reads
+    the idea in its guest researcher's shape (role matrix table L)."""
+    return run is not None and run.kind is AiRunKind.RESEARCH
 
 
 def check_write(

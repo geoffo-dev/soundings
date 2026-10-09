@@ -147,30 +147,46 @@ export function EngagementCounts({
  */
 export function ResearchProgressBadge({
   idea,
+  researcher = null,
   className,
 }: {
   idea: Pick<IdeaSummary, 'status' | 'research'>
+  /**
+   * Phase 8b (UX review m6): who answers the checklist, when someone other than the
+   * owner was asked (`showsResearcher`): their avatar inside the same chip, so it
+   * reads as the research's, not as a second owner.
+   */
+  researcher?: UserRef | null
   className?: string
 }) {
   const research = idea.research
-  if (!research || !showsResearchBadge(idea)) return null
+  if (!research || !showsResearchBadge(idea)) {
+    return researcher ? <ResearcherAvatar researcher={researcher} className={className} /> : null
+  }
   const complete = research.required_open === 0
   const label = badgeLabel(research)
-  return (
+  const tone = complete ? 'bg-success-subtle text-success' : 'bg-subtle text-secondary'
+  const badge = (
     <HoverTooltip content={label}>
       <span
         role="img"
         aria-label={label}
         className={cn(
           'inline-flex h-5 items-center gap-1 rounded-sm px-1.5 text-xs font-medium tabular-nums',
-          complete ? 'bg-success-subtle text-success' : 'bg-subtle text-secondary',
-          className,
+          !researcher && [tone, className],
         )}
       >
         <ListChecks aria-hidden="true" className="size-3.5" />
         <span aria-hidden="true">{badgeWords(research)}</span>
       </span>
     </HoverTooltip>
+  )
+  if (!researcher) return badge
+  return (
+    <span className={cn('inline-flex h-5 items-center rounded-sm pr-0.5', tone, className)}>
+      {badge}
+      <ResearcherAvatar researcher={researcher} size="2xs" />
+    </span>
   )
 }
 
@@ -186,19 +202,21 @@ export function showsResearcher(
   )
 }
 
-/** "Researched by Ivan Petrov": the researcher's avatar beside the checklist badge. */
+/** "Researched by Ivan Petrov": the researcher's avatar (in the checklist badge's chip). */
 export function ResearcherAvatar({
   researcher,
+  size = 'xs',
   className,
 }: {
   researcher: UserRef
+  size?: AvatarSize
   className?: string
 }) {
   const label = `Researched by ${researcher.display_name}`
   return (
     <HoverTooltip content={label}>
       <span role="img" aria-label={label} className={cn('inline-flex', className)}>
-        <Avatar name={researcher.display_name} src={researcher.avatar_url} size="xs" decorative />
+        <Avatar name={researcher.display_name} src={researcher.avatar_url} size={size} decorative />
       </span>
     </HoverTooltip>
   )

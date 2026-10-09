@@ -7,6 +7,7 @@ and research runs, and sees its own evaluation only in an evaluate run."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -272,9 +273,14 @@ async def test_an_agent_never_sees_others_scores(
     # Its own evaluation, with its rationale and sources, stays visible to it: in its
     # evaluate run only (M1: a research or draft run's output could quote it to people
     # who are still blind). The state alone ("submitted") isn't score data.
-    assert after["my_evaluation_state"] == "submitted"
     if kind is AiRunKind.RESEARCH:
+        # Phase 8b guest review M1: a research run reads the idea as its guest researcher
+        # would, without the evaluation area (not even its own state).
         assert after["my_evaluation"] is None
+        assert after["my_evaluation_state"] is None
+        assert after["evaluators"] == []
+    else:
+        assert after["my_evaluation_state"] == "submitted"
     mine = own["my_evaluation"]
     assert submitted["evaluation"]["state"] == mine["state"] == "submitted"
     assert mine["scores"][0]["comment"].startswith("RATIONALE")
@@ -311,7 +317,9 @@ async def test_an_agent_sees_its_own_scores_only_in_its_evaluate_run(
     seen = (await agent.ok("get_idea", idea=crew.ref))["idea"]
 
     assert seen["my_evaluation"] is None
-    assert seen["my_evaluation_state"] == "submitted"
+    # Phase 8b guest review M1: a research run has no evaluation area at all.
+    expected_state = None if kind is AiRunKind.RESEARCH else "submitted"
+    assert seen["my_evaluation_state"] == expected_state
     _blind(seen)
 
 
@@ -402,3 +410,104 @@ async def test_an_agent_cant_tell_which_other_ideas_exist(
             "forbidden"
         )
         assert await agent.fails("add_comment", idea="CUST-999999", body_md="x") == "forbidden"
+
+
+# --- Phase 8b guest review M1: a research run reads what a guest researcher reads ---------
+GUEST_SHAPE: dict[str, object] = {
+    "research_guest": True,
+    "evaluators": [],
+    "evaluator_progress": {"submitted": 0, "total": 0},
+    "my_evaluation_state": None,
+    "my_evaluation": None,
+    "evaluation_due_at": None,
+    "evaluation_closed_at": None,
+    "evaluation_open": False,
+    "evaluations": [],
+    "evaluation_count": 0,
+    "aggregate": None,
+    "score": None,
+    "score_hidden": True,
+    "has_proposal": False,
+}
+
+
+async def test_a_research_run_reads_the_idea_as_its_guest_researcher_would(
+    api: AsUser, crew: Crew, db_session: AsyncSession, mcp_as: McpAs
+) -> None:
+    """A research note lands in the idea's feed, which its guest researcher reads (role
+    matrix table L), so a research run reads no more than they may: no proposal, no rubric,
+    no evaluation area (who evaluates, progress, the window, whether a proposal exists),
+    and ``last_activity_at`` of the guest feed. Evaluate and draft runs are unchanged."""
+    from datetime import timedelta
+
+    from app.models.activity import ActivityEvent
+
+    idea = crew.idea
+    idea.status = IdeaStatus.SHORTLISTED
+    idea.evaluation_due_at = utcnow() + timedelta(days=3)
+    await db_session.commit()
+    ok(await (await api(crew.team.owner)).post(f"/ideas/{crew.ref}/proposal"), 201)
+    await add_evaluator(
+        db_session,
+        idea,
+        crew.team.evaluators[0],
+        state=EvaluatorState.SUBMITTED,
+        scores={c.name: 4 for c in crew.team.rubric},
+    )
+    await add_evaluator(db_session, idea, crew.agent.user)
+    seen = utcnow() + timedelta(minutes=1)  # after the factories' events
+    hidden = utcnow() + timedelta(minutes=2)
+    for type_, at in (("idea_created", seen), ("evaluation_submitted", hidden)):
+        db_session.add(
+            ActivityEvent(
+                id=uuid4(),
+                project_id=idea.project_id,
+                idea_id=idea.id,
+                actor_id=None,
+                type=type_,
+                payload={},
+                created_at=at,
+            )
+        )
+    idea.last_activity_at = hidden
+    await db_session.commit()
+    research = await open_run(db_session, crew.agent, idea, AiRunKind.RESEARCH)
+    evaluate = await open_run(db_session, crew.agent, idea, AiRunKind.EVALUATE)
+    assert crew.agent.key is not None
+    researching = mcp_as(crew.agent.key).for_run(research)
+    evaluating = mcp_as(crew.agent.key).for_run(evaluate)
+
+    detail = (await researching.ok("get_idea", idea=crew.ref))["idea"]
+    [listed] = (await researching.ok("search_ideas"))["items"]
+    refused = [
+        await researching.fails("get_proposal", idea=crew.ref),
+        await researching.fails("get_rubric", idea=crew.ref),
+        await researching.fails("get_rubric", project=crew.team.slug),
+    ]
+    evaluator_view = (await evaluating.ok("get_idea", idea=crew.ref))["idea"]
+    note = await researching.ok("add_research_note", idea=crew.ref, body_md="Two vendors.")
+
+    assert {field: detail[field] for field in GUEST_SHAPE} == GUEST_SHAPE
+    assert detail["permissions"] == {
+        "can_comment": detail["permissions"]["can_comment"],
+        "can_evaluate": False,
+        "can_suggest_proposal_section": False,
+    }
+    assert datetime.fromisoformat(detail["last_activity_at"]) == seen
+    assert listed["key"] == crew.ref
+    assert listed["evaluator_progress"] == {"submitted": 0, "total": 0}
+    assert listed["my_evaluation_state"] is None
+    assert datetime.fromisoformat(listed["last_activity_at"]) == seen
+    assert refused == ["ai_run_not_active"] * 3
+    assert note["idea"]["key"] == crew.ref
+    # The evaluate run still reads the rubric, the evaluation area and the proposal.
+    assert (await evaluating.ok("get_rubric", idea=crew.ref))["criteria"]
+    assert (await evaluating.ok("get_proposal", idea=crew.ref))["proposal"] is not None
+    assert evaluator_view["research_guest"] is False
+    assert evaluator_view["has_proposal"] is True
+    assert {e["user"]["id"] for e in evaluator_view["evaluators"]} == {
+        str(crew.team.evaluators[0].id),
+        str(crew.agent.user.id),
+    }
+    assert evaluator_view["evaluator_progress"] == {"submitted": 1, "total": 2}
+    assert datetime.fromisoformat(evaluator_view["last_activity_at"]) == hidden

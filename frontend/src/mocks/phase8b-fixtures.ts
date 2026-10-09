@@ -91,7 +91,7 @@ export function seedPhase8b(
     })
     if (due !== null) {
       target.research_due_at = iso(due)
-      event(target, 'research_due_date_changed', by, at + MINUTE, {
+      event(target, 'research_due_date_changed', by, at, {
         from_due_at: null,
         to_due_at: iso(due),
       })

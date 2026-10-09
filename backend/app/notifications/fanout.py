@@ -26,16 +26,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta
 from email.headerregistry import Address
 from typing import Any, Final
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String, Uuid, bindparam, func, select, text
+from sqlalchemy import DateTime, String, Uuid, bindparam, exists, func, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings, get_settings, is_mail_address
+from app.config import Settings, is_mail_address
 from app.db import SessionMaker, before_commit, session_scope, session_settings
 from app.email import outbox
 from app.models.activity import ActivityEvent, Comment
@@ -55,6 +55,8 @@ __all__ = [
     "FAN_OUT_INLINE_LIMIT",
     "MENTION_EMAIL_CAP",
     "MENTION_EMAIL_WINDOW",
+    "RESEARCHER_EMAIL_CAP",
+    "RESEARCHER_EMAIL_HOLD",
     "NotificationWriter",
     "fan_out",
     "notify_deferred_event",
@@ -73,6 +75,19 @@ _MENTION_LOCK_SALT: Final = 0x4D45_4E54
 """First key of the transaction-level advisory lock that serialises one author's mention
 fan-outs (the second is a hash of the author's id), so concurrent comments can't all
 read the count before any of them commits."""
+RESEARCHER_EMAIL_CAP: Final = 20
+"""Phase 8b review M1: "Asked to research" notifications one person's requests email per
+rolling hour (:data:`MENTION_EMAIL_WINDOW`); beyond: in-app only, as with mentions."""
+RESEARCHER_EMAIL_HOLD: Final = timedelta(minutes=5)
+"""Phase 8b review M1: an "Asked to research" email for an idea that asked someone (else)
+less than this ago waits this long, so passing an idea round quickly emails only the
+first person and the one finally asked (the send-time check cancels the others)."""
+_RESEARCHER_LOCK_SALT: Final = 0x5245_5345
+_EMAIL_CAPS: Final[dict[NotificationType, tuple[int, int]]] = {
+    NotificationType.MENTION: (MENTION_EMAIL_CAP, _MENTION_LOCK_SALT),
+    NotificationType.RESEARCHER_ASSIGNED: (RESEARCHER_EMAIL_CAP, _RESEARCHER_LOCK_SALT),
+}
+"""Types whose emails are capped per actor and rolling hour: (cap, advisory lock salt)."""
 
 _INSERT_NOTIFICATIONS: Final = text(
     """
@@ -113,11 +128,6 @@ class _Mentions:
     comment_id: UUID
     author_id: UUID | None
     user_ids: tuple[UUID, ...]
-
-
-def _zone(settings: Settings | None) -> tzinfo:
-    """The instance time zone (``SOUNDINGS_TIMEZONE``) for local-day dedupe keys."""
-    return (settings or get_settings()).tz
 
 
 def queue_event(db: AsyncSession, event: ActivityEvent) -> None:
@@ -165,30 +175,31 @@ class NotificationWriter:
         self.settings = settings
         self.email = settings is not None and settings.smtp_configured
         self.now = now or utcnow()
-        self._mention_budget: dict[UUID, int] = {}
+        self._budget: dict[tuple[NotificationType, UUID], int] = {}
 
-    async def _mention_allowance(self, author_id: UUID | None) -> int:
-        if author_id is None:
-            return MENTION_EMAIL_CAP
-        if author_id not in self._mention_budget:
-            # Held until commit: this author's other fan-outs wait, then count ours.
+    async def _allowance(self, type_: NotificationType, actor_id: UUID | None) -> int:
+        """How many more emails of ``type_`` (one of :data:`_EMAIL_CAPS`) the actor's
+        actions may send in the rolling hour."""
+        cap, salt = _EMAIL_CAPS[type_]
+        if actor_id is None:
+            return cap
+        if (type_, actor_id) not in self._budget:
+            # Held until commit: this actor's other fan-outs wait, then count ours.
             await self.db.execute(
-                select(
-                    func.pg_advisory_xact_lock(_MENTION_LOCK_SALT, func.hashtext(str(author_id)))
-                )
+                select(func.pg_advisory_xact_lock(salt, func.hashtext(str(actor_id))))
             )
             emailed = await self.db.scalar(
                 select(func.count())
                 .select_from(Notification)
                 .where(
-                    Notification.type == NotificationType.MENTION,
-                    Notification.actor_id == author_id,
+                    Notification.type == type_,
+                    Notification.actor_id == actor_id,
                     Notification.created_at > self.now - MENTION_EMAIL_WINDOW,
                     Notification.email_mode != NotificationMode.OFF,
                 )
             )
-            self._mention_budget[author_id] = max(0, MENTION_EMAIL_CAP - int(emailed or 0))
-        return self._mention_budget[author_id]
+            self._budget[(type_, actor_id)] = max(0, cap - int(emailed or 0))
+        return self._budget[(type_, actor_id)]
 
     async def _modes(
         self, type_: NotificationType, recipients: list[Recipient], actor_id: UUID | None
@@ -202,8 +213,8 @@ class NotificationWriter:
             if not usable_address(recipient.user.email):
                 mode = NotificationMode.OFF
             modes[recipient.id] = mode
-        if type_ is NotificationType.MENTION:
-            allowance = await self._mention_allowance(actor_id)
+        if type_ in _EMAIL_CAPS:
+            allowance = await self._allowance(type_, actor_id)
             for user_id, mode in modes.items():
                 if mode is NotificationMode.OFF:
                     continue
@@ -212,7 +223,7 @@ class NotificationWriter:
                 else:
                     allowance -= 1
             if actor_id is not None:
-                self._mention_budget[actor_id] = allowance
+                self._budget[(type_, actor_id)] = allowance
         return modes
 
     async def notify(
@@ -225,9 +236,11 @@ class NotificationWriter:
         dedupe_key: str,
         payload: Mapping[str, Any] | None = None,
         comment_id: UUID | None = None,
+        send_at: datetime | None = None,
     ) -> list[UUID]:
         """Insert one notification per recipient (skipping existing dedupe keys) and
-        queue the immediate emails; returns who was newly notified.
+        queue the immediate emails (sent from ``send_at`` when given); returns who was
+        newly notified.
 
         A constant number of statements however many people: the people already
         notified, the immediate emails (inserted first, so each notification is
@@ -261,6 +274,7 @@ class NotificationWriter:
                     for user_id in immediate
                 ],
                 now=self.now,
+                send_at=send_at,
             )
             email_ids = dict(zip(immediate, queued, strict=True))
         result = await self.db.execute(
@@ -342,6 +356,21 @@ async def _idea(db: AsyncSession, idea_id: UUID | None) -> tuple[Idea, Project] 
         )
     ).first()
     return None if row is None else (row[0], row[1])
+
+
+async def _hold_researcher_email(db: AsyncSession, idea_id: UUID, now: datetime) -> datetime | None:
+    """Review M1: when the idea asked someone to research it less than
+    :data:`RESEARCHER_EMAIL_HOLD` ago, the new request's email waits that long."""
+    recent = await db.scalar(
+        select(
+            exists().where(
+                Notification.idea_id == idea_id,
+                Notification.type == NotificationType.RESEARCHER_ASSIGNED,
+                Notification.created_at > now - RESEARCHER_EMAIL_HOLD,
+            )
+        )
+    )
+    return now + RESEARCHER_EMAIL_HOLD if recent else None
 
 
 async def _watchers(db: AsyncSession, idea_id: UUID) -> list[UUID]:
@@ -504,12 +533,20 @@ async def _notify_event(
                 await notify(NotificationType.COMMENT, watchers, {}, comment=comment)
         case "researcher_changed":
             # Phase 8b: "Asked to research" for the new researcher (not the actor, not on
-            # removal or hand back), at most once per idea, person and local day (review
-            # S6), with the research due date after the request's last write.
+            # removal or hand back), with the research due date after the request's last
+            # write; one per assignment (review L2: ``assigned_at`` ties it to this one, so
+            # the inbox, the digest and the send-time check drop it once it's over).
+            # Review M1 (instead of S6's one a day): passing the idea round quickly holds
+            # the email (RESEARCHER_EMAIL_HOLD), and one person's requests email at most
+            # RESEARCHER_EMAIL_CAP people an hour.
             researcher = access.parse_uuid(payload.get("to_researcher_id"))
-            if researcher is None or researcher == actor_id:
+            if researcher is None or researcher == actor_id or idea.researcher_id != researcher:
                 return
-            data = {"due_at": idea.research_due_at.isoformat() if idea.research_due_at else None}
+            assigned_at = idea.research_assigned_at
+            data = {
+                "due_at": idea.research_due_at.isoformat() if idea.research_due_at else None,
+                "assigned_at": assigned_at.isoformat() if assigned_at else None,
+            }
             recipients = await _candidates(
                 writer,
                 NotificationType.RESEARCHER_ASSIGNED,
@@ -519,14 +556,14 @@ async def _notify_event(
                 actor_id=actor_id,
                 payload=data,
             )
-            day = writer.now.astimezone(_zone(writer.settings)).date().isoformat()
             await writer.notify(
                 NotificationType.RESEARCHER_ASSIGNED,
                 idea,
                 recipients,
                 actor_id=actor_id,
-                dedupe_key=f"researcher_assigned:{idea.id}:{day}",
+                dedupe_key=f"researcher_assigned:{event.id}",
                 payload=data,
+                send_at=await _hold_researcher_email(db, idea.id, writer.now),
             )
         case _:
             # idea created or edited, due date changed (evaluation or research),

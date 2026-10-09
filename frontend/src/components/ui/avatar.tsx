@@ -11,6 +11,8 @@ const avatar = cva(
   {
     variants: {
       size: {
+        /** Inside a 20px chip (a research badge with who answers it). */
+        '2xs': 'size-4 text-[0.5rem]',
         xs: 'size-5 text-[0.5625rem]',
         sm: 'size-6 text-[0.625rem]',
         md: 'size-7 text-xs',
@@ -109,6 +111,7 @@ export interface AvatarGroupProps {
  * never covers two-letter initials such as "MW".
  */
 const GROUP_OVERLAP: Record<AvatarSize, string> = {
+  '2xs': 'space-x-0',
   xs: 'space-x-0',
   sm: '-space-x-px',
   md: '-space-x-0.5',

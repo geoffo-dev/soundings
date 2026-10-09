@@ -11,6 +11,7 @@ import { bestPracticeViolations, expect, seriousViolations, test, USERS } from '
  */
 
 const CAROL = '10000000-0000-4000-8000-000000000004'
+const KOFI = '10000000-0000-4000-8000-00000000000c'
 const PRIVATE_LINE =
   'They’ll see this idea, its comments and activity and its research checklist, not scores, evaluations or the proposal.'
 
@@ -46,17 +47,70 @@ test.describe('a guest researcher (no role in the private project)', () => {
     await expect(page.getByRole('button', { name: /^AI/ })).toHaveCount(0)
     await expect(details.getByRole('button', { name: /Research/ }).first()).toBeVisible()
     await expect(details.getByRole('button', { name: /Status/ })).toHaveCount(0)
-    // Who does it: you, outside the project, with the due date; "Hand back".
+    // Who does it: you, with the due date; "Hand back". Never "not in this project" about
+    // yourself: the callout above already says why you see it (UX review p2).
     await expect(researcherLine(page)).toContainText(/Research:.*You/)
-    await expect(researcherLine(page)).toContainText('not in this project')
+    await expect(researcherLine(page)).not.toContainText('not in this project')
+    await expect(details).not.toContainText('Not in this project')
     await expect(researcherLine(page)).toContainText('due')
     await expect(researcherLine(page).getByRole('button', { name: 'Hand back' })).toBeVisible()
     await expect(researcherLine(page).getByRole('button', { name: /Change/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Answer the checklist' })).toBeVisible()
-    // The feed says who asked.
-    await expect(page.getByText('asked Ivan Petrov to research')).toBeVisible()
+    // The feed says who asked, and by when, in one line (UX review m3).
+    await expect(page.getByText(/asked Ivan Petrov to research, due /)).toBeVisible()
+    await expect(page.getByText(/set the research due date/)).toHaveCount(0)
     expect(await seriousViolations(page)).toEqual([])
     expect(await bestPracticeViolations(page)).toEqual([])
+  })
+
+  test('mentions only people on the idea, never the directory (UX review M2)', async ({ page }) => {
+    const searches: string[] = []
+    page.on('request', (request: Request) => {
+      const url = new URL(request.url())
+      if (url.pathname === '/api/v1/users') searches.push(url.search)
+    })
+    await openIdea(page, 'TOOL-7', 'Service health dashboard')
+    const box = page.getByRole('textbox', { name: 'Write a comment' })
+    await box.click()
+    await box.pressSequentially('@')
+    const picker = page.getByRole('listbox', { name: 'People to mention' })
+    await expect(picker).toBeVisible()
+    await expect(page.getByText('Mention someone on this idea')).toBeVisible()
+    // The owner and whoever asked them (in the feed); nobody else, and no search.
+    await expect(picker.getByRole('option', { name: /Bob Chen/ })).toContainText('owner')
+    await expect(picker.getByRole('option', { name: /Alice Anders/ })).toBeVisible()
+    await expect(picker.getByRole('option', { name: /Carol Díaz/ })).toHaveCount(0)
+    await box.pressSequentially('car')
+    await expect(picker).toContainText('No one on this idea matches “car”')
+    expect(searches).toEqual([])
+  })
+
+  test('access ends while the page is open: said plainly, focus on the heading', async ({
+    page,
+  }) => {
+    await openIdea(page, 'TOOL-7', 'Service health dashboard')
+    const answer = page.getByRole('textbox', { name: 'Departments or teams consulted' })
+    await answer.fill('Half an answer')
+    // Someone takes the research away meanwhile (here: the API, as Ivan, behind the page's
+    // back); the tab regains focus and checks again (guest review N4).
+    await page.evaluate(async () => {
+      const csrf = /soundings_csrf=([^;]+)/.exec(document.cookie)?.[1] ?? ''
+      await fetch('/api/v1/ideas/TOOL-7/research/assignment', {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': decodeURIComponent(csrf) },
+      })
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    const heading = page.getByRole('heading', {
+      level: 1,
+      name: 'You’re no longer researching TOOL-7',
+    })
+    await expect(heading).toBeVisible()
+    await expect(page.getByText('What you typed is kept on this device.')).toBeVisible()
+    await expect(heading).toBeFocused()
+    await expect(page.getByText('Service health dashboard')).toHaveCount(0)
+    expect(await seriousViolations(page)).toEqual([])
   })
 
   test('answers the checklist', async ({ page }) => {
@@ -79,13 +133,9 @@ test.describe('a guest researcher (no role in the private project)', () => {
     await expect(toast(page, 'You handed the research back')).toBeVisible()
     await expect(page.getByRole('heading', { level: 1, name: 'My work' })).toBeVisible()
     await expect(page.getByRole('heading', { name: /Research to do/ })).toHaveCount(0)
-    // Back to the idea (client-side, the same mock data): not found, nothing cached shows.
+    // The idea's entry was replaced: Back never lands on a page they can't open (UX p6).
     await page.goBack()
-    await expect(page).toHaveURL(/\/ideas\/TOOL-7$/)
-    await expect(
-      page.getByRole('heading', { name: 'This idea doesn’t exist or you don’t have access' }),
-    ).toBeVisible()
-    await expect(page.getByText('Service health dashboard')).toHaveCount(0)
+    await expect(page).not.toHaveURL(/\/ideas\/TOOL-7$/)
   })
 
   test.describe('with no projects at all', () => {
@@ -105,7 +155,9 @@ test.describe('a guest researcher (no role in the private project)', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'My work' })).toBeVisible()
       await expect(page.getByText('Research you’ve been asked to do.')).toBeVisible()
       const nav = page.getByRole('navigation', { name: 'Main' })
-      await expect(nav.getByText('No projects', { exact: true })).toBeVisible()
+      // No "Projects" heading over nothing (UX review p5).
+      await expect(nav.getByText('Projects', { exact: true })).toHaveCount(0)
+      await expect(nav.getByText(/No projects/)).toHaveCount(0)
       await expect(nav.getByRole('link', { name: /^Evaluations/ })).toHaveCount(0)
       await expect(nav.getByRole('link', { name: /^Ideas I own/ })).toHaveCount(0)
       await expect(nav.getByRole('link', { name: 'Research, 1 to do' })).toBeVisible()
@@ -131,6 +183,24 @@ test.describe('a guest researcher (no role in the private project)', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
       expect(projectCalls).toEqual([])
     })
+  })
+})
+
+test.describe('a member researcher (Kofi on TOOL-10)', () => {
+  test.use({ signedInAs: KOFI })
+
+  test('hands it back: stays on the idea, focus on the Research heading (UX review M3)', async ({
+    page,
+  }) => {
+    await openIdea(page, 'TOOL-10', 'Code owners linting')
+    await researcherLine(page).getByRole('button', { name: 'Hand back' }).click()
+    const confirm = page.getByRole('alertdialog', { name: 'Hand back the research of TOOL-10?' })
+    await confirm.getByRole('button', { name: 'Hand back' }).click()
+    await expect(confirm).toHaveCount(0)
+    await expect(toast(page, 'You handed the research back')).toBeVisible()
+    await expect(researcherLine(page).getByRole('button', { name: 'Hand back' })).toHaveCount(0)
+    // The button went with the handing back: focus lands on the panel, not the page.
+    await expect(page.getByRole('button', { name: 'Research', exact: true })).toBeFocused()
   })
 })
 
@@ -174,16 +244,61 @@ test.describe('assigning (a project admin)', () => {
     ).toBeVisible()
   })
 
-  test('removes the researcher with an Undo', async ({ page }) => {
+  test('removes the researcher by choosing the owner, told who loses the idea (UX S2)', async ({
+    page,
+  }) => {
+    await openIdea(page, 'TOOL-7', 'Service health dashboard')
+    // One path: no separate Remove (nor its Undo, which lost focus: UX M3).
+    await expect(researcherLine(page).getByRole('button', { name: /Remove/ })).toHaveCount(0)
+    const change = researcherLine(page).getByRole('button', {
+      name: 'Change researcher or due date',
+    })
+    await change.click()
+    const dialog = page.getByRole('dialog', { name: 'Who does the research' })
+    await dialog.getByRole('option', { name: /Bob Chen \(owner\)/ }).click()
+    await expect(dialog.getByRole('status')).toHaveText('Ivan Petrov will no longer see TOOL-7.')
+    await dialog.getByRole('button', { name: /^Save/ }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(toast(page, 'Bob Chen (owner) will do the research')).toBeVisible()
+    await expect(researcherLine(page)).toContainText('Bob Chen (owner)')
+    await expect(change).toBeFocused()
+    await expect(page.getByText('removed Ivan Petrov as researcher')).toBeVisible()
+  })
+
+  test('members are told a guest reads the comments (guest review L3)', async ({ page }) => {
+    await openIdea(page, 'TOOL-7', 'Service health dashboard')
+    await expect(researcherLine(page)).toContainText('Ivan Petrov')
+    const note = page.getByText('Ivan Petrov (researching, not in this project) can read comments.')
+    await expect(note).toBeVisible()
+    await expect(
+      page.getByRole('textbox', { name: 'Write a comment' }),
+    ).toHaveAccessibleDescription(
+      /Ivan Petrov \(researching, not in this project\) can read comments/,
+    )
+    // In the members' picker the guest is labelled as the researcher.
+    const box = page.getByRole('textbox', { name: 'Write a comment' })
+    await box.click()
+    await box.pressSequentially('@iva')
+    await expect(
+      page.getByRole('listbox', { name: 'People to mention' }).getByRole('option', {
+        name: /Ivan Petrov/,
+      }),
+    ).toContainText('researcher')
+  })
+
+  test('the picker lists the project’s people first, then everyone else (UX m9)', async ({
+    page,
+  }) => {
     await openIdea(page, 'TOOL-7', 'Service health dashboard')
     await researcherLine(page)
-      .getByRole('button', { name: 'Remove Ivan Petrov as researcher' })
+      .getByRole('button', { name: 'Change researcher or due date' })
       .click()
-    const removed = toast(page, 'Ivan Petrov is no longer researching TOOL-7')
-    await expect(removed).toBeVisible()
-    await expect(researcherLine(page)).toContainText('Bob Chen (owner)')
-    await removed.getByRole('button', { name: 'Undo' }).click()
-    await expect(researcherLine(page)).toContainText('Ivan Petrov')
+    const dialog = page.getByRole('dialog', { name: 'Who does the research' })
+    const members = dialog.getByRole('group', { name: 'In this project', exact: true })
+    const others = dialog.getByRole('group', { name: 'Not in this project', exact: true })
+    await expect(members.getByRole('option').first()).toBeVisible()
+    await expect(others.getByRole('option', { name: /Carol Díaz/ })).toBeVisible()
+    await expect(members.getByRole('option', { name: /Not in this project/ })).toHaveCount(0)
   })
 
   test.describe('the owner, a member of a private project', () => {
@@ -205,6 +320,7 @@ test.describe('assigning (a project admin)', () => {
       await search.press('Enter')
       await expect(dialog).toContainText(/Chosen: Ivan [^·]+· Not in this project/)
       await dialog.getByRole('option', { name: /You \(owner\)/ }).click()
+      await expect(dialog.getByRole('status')).toHaveText('Ivan Petrov will no longer see TOOL-7.')
       await expect(dialog).toContainText(
         'Only a project admin can ask someone outside this project.',
       )
@@ -229,11 +345,43 @@ test.describe('Start research (the owner)', () => {
     await dialog.getByRole('button', { name: 'In 2 weeks' }).click()
     await dialog.getByRole('button', { name: /^Start research/ }).click()
     await expect(dialog).toHaveCount(0)
-    // One toast, the status change's own (with Undo).
+    // One toast, the status change's own (with Undo), saying who and by when (UX m4).
     await expect(toast(page, 'GREEN-3 moved to Research')).toHaveCount(1)
+    await expect(toast(page, 'GREEN-3 moved to Research')).toContainText(
+      /You do the research · due /,
+    )
     const details = page.getByRole('complementary', { name: 'Idea details' })
     await expect(details.getByText('Research', { exact: true }).first()).toBeVisible()
     await expect(researcherLine(page)).toContainText('You (owner)')
+  })
+})
+
+test.describe('an overdue research due date (UX review M1)', () => {
+  test.use({ signedInAs: CAROL })
+
+  test('stays valid until changed: Start research keeps it and starts', async ({ page }) => {
+    await openIdea(page, 'GREEN-3', 'Solar panels on the warehouse roof')
+    await page.getByRole('button', { name: 'Start research' }).first().click()
+    const dialog = page.getByRole('dialog', { name: 'Start research' })
+    // GREEN-3 was due 2 days ago: said in words, and the form still submits as it is.
+    await expect(dialog).toContainText(/Was due .+ \(overdue\)\. Pick a new date, or keep it\./)
+    await dialog.getByRole('button', { name: /^Start research/ }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(toast(page, 'GREEN-3 moved to Research')).toContainText(
+      /Alice Anders does the research · overdue, was due /,
+    )
+  })
+
+  test('a different researcher keeps the overdue date as it was', async ({ page }) => {
+    await openIdea(page, 'GREEN-3', 'Solar panels on the warehouse roof')
+    await researcherLine(page)
+      .getByRole('button', { name: 'Change researcher or due date' })
+      .click()
+    const dialog = page.getByRole('dialog', { name: 'Who does the research' })
+    await dialog.getByRole('option', { name: /You \(owner\)/ }).click()
+    await dialog.getByRole('button', { name: /^Save/ }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(researcherLine(page)).toContainText(/You \(owner\).*overdue, was due/)
   })
 })
 
@@ -244,8 +392,10 @@ test.describe('the owner does the research (nobody assigned)', () => {
     page,
   }) => {
     await page.goto('/ideas/GREEN-1')
-    await page.getByRole('button', { name: /^Research: You \(owner\).*Change$/ }).click()
-    await page.getByRole('menuitem', { name: /Change researcher or due date/ }).click()
+    // One thing to do here, so the sidebar's value opens it straight away.
+    await page
+      .getByRole('button', { name: /^Research: You \(owner\).*\. Change researcher or due date$/ })
+      .click()
     const dialog = page.getByRole('dialog', { name: 'Who does the research' })
     await expect(dialog).toContainText('Chosen: You (owner)')
     const search = dialog.getByRole('combobox', { name: 'Researcher' })

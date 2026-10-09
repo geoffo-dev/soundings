@@ -305,6 +305,8 @@ async def _notification(
             reason = f"You watch {key}."
             if idea.owner_id == user.id:
                 reason = f"You're the owner of {key}."
+            elif idea.researcher_id == user.id:  # Phase 8b guest review N3
+                reason = f"You're researching {key}."
             elif recipient.resource.idea is not None and recipient.resource.idea.my_evaluation:
                 reason = f"You're evaluating {key}."
             return EmailContent(
@@ -354,6 +356,8 @@ async def _notification(
                     "due": context.moment(due_at) if due_at else None,
                     # Review S2: the guest line only for column R (no view of the project).
                     "guest": not can(recipient.principal, Rule.PROJECT_VIEW, recipient.resource),
+                    # UX review m10: without an owner, a project admin moves it on.
+                    "has_owner": idea.owner_id is not None,
                 },
                 button=Button(
                     "Open the research checklist", context.links.idea(key, research=True)

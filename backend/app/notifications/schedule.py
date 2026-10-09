@@ -17,7 +17,20 @@ from datetime import date, datetime, time, timedelta
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, and_, delete, exists, select, update
+from sqlalchemy import (
+    ColumnElement,
+    String,
+    and_,
+    case,
+    cast,
+    delete,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -43,6 +56,7 @@ from app.notifications.fanout import NotificationWriter, usable_address
 from app.public import retention as public_retention
 from app.services import brand_assets, research, sessions
 from app.services.sql import any_of
+from app.services.work import research_still_to_do
 
 __all__ = [
     "DIGEST_WINDOW",
@@ -168,6 +182,26 @@ async def send_research_reminders(db: AsyncSession, settings: Settings, now: dat
         return 0
     offsets = {today + timedelta(days=n): n for n in settings.reminder_days}
     horizon = _local_hour_start(max(offsets) + timedelta(days=1), 0, settings)
+    # Review N4: in SQL, only what this scan would remind: due on a reminder day, still to
+    # do (not past Research, a required item open), someone to remind who was asked
+    # before the hour, and not reminded yet (its dedupe key, by the person's unique index).
+    due = Idea.research_due_at
+    days = [
+        (
+            and_(
+                due >= _local_hour_start(day, 0, settings),
+                due < _local_hour_start(day + timedelta(days=1), 0, settings),
+            ),
+            f":{day.isoformat()}:{n}",
+        )
+        for day, n in offsets.items()
+    ]
+    who = func.coalesce(Idea.researcher_id, Idea.owner_id)
+    dedupe_key = (
+        literal("research_reminder:", String)
+        + cast(Idea.id, String)
+        + case(*days, else_=literal("", String))
+    )
     rows = (
         await db.execute(
             select(Idea, Project)
@@ -177,9 +211,18 @@ async def send_research_reminders(db: AsyncSession, settings: Settings, now: dat
                 Idea.status != IdeaStatus.CLOSED,
                 Idea.research_due_at > now,
                 Idea.research_due_at < horizon,
+                or_(*(on_day for on_day, _ in days)),
                 Idea.held_for.is_(None),
                 Project.research_step != ResearchStep.OFF,
                 Project.archived_at.is_(None),
+                who.is_not(None),
+                or_(
+                    Idea.researcher_id.is_(None),
+                    Idea.research_assigned_at.is_(None),
+                    Idea.research_assigned_at < fire,
+                ),
+                *research_still_to_do(),
+                ~exists().where(Notification.user_id == who, Notification.dedupe_key == dedupe_key),
             )
             .order_by(Idea.research_due_at, Idea.id)
         )

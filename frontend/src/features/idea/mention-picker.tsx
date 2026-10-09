@@ -17,18 +17,35 @@ import { cn } from '@/lib/utils'
 /** How many people the picker offers at once. */
 const PICKER_LIMIT = 8
 
+/** Someone offered besides the search's results, with a word in place of their role. */
+export type MentionPerson = UserRef & { note?: string }
+
 export interface MentionOptions {
   /**
    * The idea's project slug: the picker offers people with a role in it (contract-phase3
-   * §3.8). Undefined (a guest researcher, who can't read the project's people): the people
-   * directory; mentioning someone who can't view the idea notifies nobody (Phase 8b §6.4).
+   * §3.8).
    */
   project?: string
   /** Left out of the list (you don't mention yourself). */
   excludeUserId?: string
   /** Phase 8b: also offered (the idea's researcher, who may have no role in the project). */
-  extra?: readonly UserRef[]
+  extra?: readonly MentionPerson[]
+  /**
+   * Phase 8b, a guest researcher (who can't read the project's people): only these,
+   * the people on the idea's page (its owner, who asked them, who commented), and no
+   * directory search. Someone who can't see the idea would be notified of nothing, so
+   * the picker never offers them (UX review M2).
+   */
+  only?: readonly MentionPerson[]
 }
+
+type Offered = UserSearchResult & { note?: string }
+
+const asOffered = (person: MentionPerson): Offered => ({
+  ...person,
+  email: '',
+  project_role: null,
+})
 
 /**
  * @mentions in a Markdown text field: typing "@" (at the start or after a
@@ -54,21 +71,25 @@ export function useMentionPicker({
   const [dismissedAt, setDismissedAt] = useState<number | null>(null)
   const [active, setActive] = useState(0)
   const enabled = Boolean(options) && query !== null && dismissedAt !== query.start
+  const only = options?.only
   const debounced = useDebouncedValue(query?.query.trim() ?? '', 120)
   const search = useUserSearch(
     { q: debounced, project: options?.project, limit: PICKER_LIMIT + 1 },
-    { enabled },
+    { enabled: enabled && !only },
   )
   const typed = query?.query.trim().toLowerCase() ?? ''
   const extra = options?.extra
   const people = useMemo(
-    () =>
-      [
-        ...(search.data?.items ?? []),
-        ...(extra ?? [])
-          .filter((person) => !search.data?.items.some((found) => found.id === person.id))
-          .map((person): UserSearchResult => ({ ...person, email: '', project_role: null })),
-      ]
+    (): Offered[] =>
+      (only
+        ? only.map(asOffered)
+        : [
+            ...(search.data?.items ?? []).map((person): Offered => person),
+            ...(extra ?? [])
+              .filter((person) => !search.data?.items.some((found) => found.id === person.id))
+              .map(asOffered),
+          ]
+      )
         .filter((person) => person.id !== options?.excludeUserId)
         // Narrow the last results to what is typed now, so Enter never picks a stale match
         // while the next search is still on its way (the server matches the same way).
@@ -78,9 +99,9 @@ export function useMentionPicker({
             person.email.toLowerCase().includes(typed),
         )
         .slice(0, PICKER_LIMIT),
-    [search.data, extra, options?.excludeUserId, typed],
+    [only, search.data, extra, options?.excludeUserId, typed],
   )
-  const loading = search.isFetching && people.length === 0
+  const loading = !only && search.isFetching && people.length === 0
   // A space after "@word" with nobody matching: probably not a mention after all.
   const open = enabled && (people.length > 0 || loading || !/\s/.test(query.query))
   const highlighted = open ? people[Math.min(active, people.length - 1)] : undefined
@@ -166,7 +187,7 @@ export function useMentionPicker({
         data-slot="mention-picker"
       >
         <p className="border-b border-subtle px-3 py-1.5 text-xs text-muted">
-          Mention someone in this project
+          {only ? 'Mention someone on this idea' : 'Mention someone in this project'}
         </p>
         <ul
           id={listId}
@@ -199,8 +220,10 @@ export function useMentionPicker({
                 <span className="min-w-0 flex-1 truncate font-medium text-primary">
                   {person.display_name}
                 </span>
-                {person.project_role && (
-                  <span className="shrink-0 text-xs text-muted">{person.project_role}</span>
+                {(person.project_role ?? person.note) && (
+                  <span className="shrink-0 text-xs text-muted">
+                    {person.project_role ?? person.note}
+                  </span>
                 )}
               </li>
             )
@@ -214,6 +237,8 @@ export function useMentionPicker({
                 <>
                   <Spinner className="size-3.5" /> Searching…
                 </>
+              ) : only ? (
+                `No one on this idea matches “${query.query}”`
               ) : (
                 `No one in this project matches “${query.query}”`
               )}

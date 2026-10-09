@@ -197,15 +197,24 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   `ResearchProgressBadge` ("2 open" / "Ready") in Research, and in the status before it once
   something is answered (`showsResearchBadge`). **Phase 8b** (contract-phase8b §10,
   `features/research/research-assignment.tsx`): "Research: <name> · due <date>" in the panel
-  (`ResearcherLine`: Change / Remove (Undo) / Hand back) and the details (`ResearcherField`, a
-  menu), the assignment dialog (`ResearchAssignmentDialog`: `PeopleList includeNonMembers` only
-  with `can_assign_outside_researcher`, people outside the project marked, one line on what they'll
-  see, a due date with quick picks; mode `start` is the "Start research" primary action, which
-  assigns then moves), `HandBackDialog` (a guest goes to My work, then `forgetIdea`). A guest
+  (`ResearcherLine`: Change / Hand back; removing is choosing the owner in Change, review S2) and
+  the details (`ResearcherField`: "Owner" while the owner does it; a menu only when you may both
+  change and hand back), the assignment dialog (`ResearchAssignmentDialog`: `PeopleList
+  includeNonMembers` only with `can_assign_outside_researcher`, the project's people first and the
+  rest under "Not in this project", one `Callout` on what they'll see or who loses the idea, a due
+  date with quick picks whose `min` is `pickerMin` so an overdue date still saves; mode `start` is
+  the "Start research" primary action, which assigns then moves, its toast naming who and by when),
+  `HandBackDialog` (a guest goes to My work with `replace`, then `forgetIdea`; anyone else's focus
+  goes to Change or the Research heading). A guest's "@" offers only the people on the page
+  (`mentionOptions` `only`); members see "X (researching, not in this project) can read comments"
+  above the comment box. The feed folds a researcher change and its due date into one line
+  (`groupActivity`). A guest
   researcher (`permissions.can_view_project` false: `IdeaPageContext.guest`) gets the Overview only
   (no tabs, evaluation area, score, AI, submission panel; the project crumb as text); a 404 on the
-  idea, even after data, shows not-found. Research cards show `ResearcherAvatar` ("Researched by
-  …", in the card's description); My work's `research-to-do.tsx` and the sidebar's "Research"
+  idea, even after data, shows not-found (after the page had loaded: "You're no longer researching
+  KEY", focus on the h1; a guest's idea is re-read whenever the tab regains focus). Research cards
+  and list rows show the researcher's avatar inside the checklist chip (`ResearchProgressBadge
+  researcher`, "Researched by …", also in the card's description); My work's `research-to-do.tsx` and the sidebar's "Research"
   badge (only while there is some); with no projects My work is just "Research to do". The **research gate**:
   a 409 `research_incomplete` from a status change, the first invite, "Ask AI to evaluate" or
   "Start proposal" opens `ResearchGateDialog` (mounted in `_app.tsx`; the hooks call

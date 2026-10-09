@@ -57,7 +57,10 @@ test.describe('a user without projects', () => {
 
   test('My work is friendly and accessible when empty', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText('Nothing to evaluate')).toBeVisible()
+    // Phase 8b: Ivan researches TOOL-7, so that comes first, without an empty "Nothing to
+    // evaluate" box above it (UX review m7).
+    await expect(page.getByRole('region', { name: /Research to do/ })).toBeVisible()
+    await expect(page.getByText('Nothing to evaluate')).toHaveCount(0)
     // Not a member anywhere: no "Ideas I own" to act on, no advice to volunteer or submit.
     await expect(page.getByRole('heading', { name: /Ideas I own/ })).toHaveCount(0)
     await expect(page.getByText('You’re not in any projects yet')).toBeVisible()
