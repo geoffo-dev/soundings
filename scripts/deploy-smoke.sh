@@ -7,9 +7,11 @@
 #   scripts/deploy-smoke.sh https://ideas.staging.example.internal
 #
 # Checks: /healthz and /readyz answer 200; the SPA loads (index.html and the script it
-# references); the API refuses an anonymous caller (401 problem+json); /mcp refuses a
-# request without an API key (401 with a Bearer challenge); /metrics is not served on
-# the public URL. The URL's host must be one of the release's baseUrls (the app answers
+# references); the public branding answers (GET /api/v1/branding: a read of the app's own
+# tables, so a schema the running code can't use fails here, where /readyz's SELECT 1
+# passes); the API refuses an anonymous caller (401 problem+json); /mcp refuses a request
+# without an API key (401 with a Bearer challenge); /metrics is not served on the public
+# URL. The URL's host must be one of the release's baseUrls (the app answers
 # no other host). A private CA: SSL_CERT_FILE or CURL_CA_BUNDLE (the CI's CI_BUILD_CA);
 # proxies: HTTPS_PROXY / NO_PROXY as curl reads them.
 #
@@ -78,6 +80,16 @@ if expect index GET / 200 text/html; then
   else
     expect script GET "$script" 200 "" || true
     grep -q 'javascript' "$workdir/script.meta" || fail "$script is not served as JavaScript"
+  fi
+fi
+
+# The app reads its own tables: the public branding (anonymous, read-only) comes from the
+# database (cached for 5 s per process at most).
+if expect branding GET /api/v1/branding 200 application/json; then
+  if grep -q '"app_name"' "$workdir/branding.body"; then
+    ok "the branding has an app name (read from the database)"
+  else
+    fail "GET /api/v1/branding has no app_name"
   fi
 fi
 

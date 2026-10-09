@@ -2,13 +2,14 @@
 # for ci.yml (staging after the checks, production after staging) and deploy.yml (by hand).
 # docs/operator-guide.md "Continuous delivery" has the runners, environments and variables.
 #
-# Cluster access, in order of preference (the script is the same in all three):
-#   - ARC: the runner pod's ServiceAccount, bound to the soundings-deployer ClusterRole in
-#     soundings-<env> only (staging's default; deploy/ci/arc-rbac.yaml);
-#   - KUBECONFIG_DATA, an environment secret with a namespaced token: GitHub releases it only
-#     to jobs that passed the environment's rules (production's default: a runner label is
-#     not access control below Enterprise);
-#   - KUBE_CONTEXT, a context of a kubeconfig the runner already has.
+# Cluster access: KUBECONFIG_DATA, an environment secret ("staging", "production") holding
+# a kubeconfig with a token of a ServiceAccount bound to soundings-deployer in
+# soundings-<env> only (deploy/ci/arc-rbac.yaml, scripts/lib/ci-kubeconfig.sh). GitHub
+# releases it only to jobs that passed the environment's rules (its branches and tags,
+# reviewers where the plan has them). The runner pods themselves get no cluster rights: any
+# workflow on any branch can ask for a runner label, so a label is not access control
+# (below Enterprise, whose runner groups can be limited to this workflow). KUBE_CONTEXT
+# names a context of a kubeconfig the runner already has instead (an environment variable).
 name: deploy-env
 
 on:
@@ -39,6 +40,11 @@ on:
         description: DEPLOY_FORCE (roll back across a migration boundary)
         type: boolean
         default: false
+    secrets:
+      # A repository secret, passed by the callers (environment secrets need no passing,
+      # and an environment's CI_BUILD_CA wins over this one).
+      CI_BUILD_CA:
+        required: false
     outputs:
       image_repository:
         value: ${{ jobs.deploy.outputs.image_repository }}
@@ -56,13 +62,18 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
       url: ${{ vars.DEPLOY_URL }}
-    # One deploy per environment at a time; never cancel a running helm upgrade.
+    # Never cancel a running helm upgrade. A group holds one running and one pending job and
+    # a newer pending one replaces the older, which is right for main's deploys only: a
+    # release's staging deploy and a rollback get groups of their own, and scripts/deploy.sh
+    # waits for another deploy of the environment that is still running (and refuses one
+    # from an older run than the release that is there).
     concurrency:
-      group: soundings-deploy-${{ inputs.environment }}
+      group: soundings-deploy-${{ inputs.environment }}${{ inputs.operation == 'rollback' && '-rollback' || (github.ref_type == 'tag' && '-release' || '') }}
       cancel-in-progress: false
     permissions:
       contents: read
-    timeout-minutes: 45
+    # About 7 x HELM_TIMEOUT (waiting for another deploy, upgrade, test, rollback) at most.
+    timeout-minutes: 90
     outputs:
       image_repository: ${{ inputs.image_repository }}
       image_digest: ${{ inputs.image_digest }}

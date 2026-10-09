@@ -45,6 +45,14 @@ smtp:
 
 timezone: Europe/London
 
+# The migration hook Job (external database) ends before Helm gives up on the upgrade
+# (HELM_TIMEOUT, 10m by default): scripts/deploy.sh refuses a deadline that doesn't, because
+# a Job still running after Helm's rollback could migrate the database under the restored
+# release. Raise both together for a long migration.
+migrations:
+  activeDeadlineSeconds: 480
+  waitForDatabaseSeconds: 120
+
 # An external database (CloudNativePG or a managed PostgreSQL): migrations then run in the
 # pre-upgrade hook Job, as in production. For a throwaway staging, postgresql.enabled: true
 # uses the bundled StatefulSet instead.

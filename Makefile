@@ -68,7 +68,7 @@ build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(B
         check-scripts check-fake-agent e2e image fake-agent-image demo demo-down k3s-up k3s-load \
         k3s-keycloak k3s-mailpit k3s-fake-agent k3s-kagent-crds k3s-install k3s-smoke k3s-down \
         openapi gen-api seed sso-smoke email-smoke public-smoke mcp-smoke ai-smoke \
-        check-workflows deploy deploy-rollback deploy-smoke deploy-status deploy-tools-image \
+        check-workflows check-migrations deploy deploy-rollback deploy-smoke deploy-status deploy-tools-image \
         deploy-runner-image k3s-deploy
 
 help: ## List targets
@@ -100,7 +100,7 @@ dev: ## How to run the backend and frontend dev servers (with Keycloak SSO)
 	@echo "   make email-smoke                              # invite -> email with the evaluate link; SMTP outage -> delivered later"
 
 # --- Checks ------------------------------------------------------------------------------
-check: check-backend check-frontend check-helm check-scripts check-fake-agent check-workflows ## Run every check
+check: check-backend check-frontend check-helm check-scripts check-fake-agent check-workflows check-migrations ## Run every check
 
 check-backend: ## Backend lint + mypy + tests (needs Docker for testcontainers)
 	$(MAKE) -C backend check
@@ -110,10 +110,9 @@ check-frontend: ## Frontend typecheck + lint + tests + build
 
 check-helm: ## helm lint + template for defaults and deploy/helm/ci/*-values.yaml, and each deploy/environments/<env>.values.yaml
 	scripts/check-task.sh helm
-	@for env in staging production; do \
-	  docker run --rm -v "$(CURDIR):/repo:ro" -w /repo --entrypoint bash $(HELM_IMAGE) \
-	    scripts/deploy.sh template $$env >/dev/null && echo "deploy/environments/$$env.values.yaml renders"; \
-	done
+
+check-migrations: ## Expand/contract check of new Alembic migrations (scripts/lib/check-migrations.py)
+	scripts/check-task.sh migrations
 
 check-scripts: ## bash -n (+ shellcheck when available) for scripts/
 	scripts/check-task.sh scripts

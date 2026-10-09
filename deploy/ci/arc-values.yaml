@@ -2,14 +2,16 @@
 # 0.15.x, from your OCI mirror), one release per environment, each in its own namespace:
 #
 #   helm upgrade --install soundings-staging <mirror>/gha-runner-scale-set --version 0.15.0 \
-#     -n arc-soundings-staging -f deploy/ci/arc-values.yaml \
-#     --set template.spec.serviceAccountName=soundings-deployer
+#     -n arc-soundings-staging -f deploy/ci/arc-values.yaml
 #   helm upgrade --install soundings-production <mirror>/gha-runner-scale-set --version 0.15.0 \
 #     -n arc-soundings-production -f deploy/ci/arc-values.yaml
 #
 # The release name is the runner label the deploy jobs use (runs-on: soundings-staging /
 # soundings-production; SOUNDINGS_STAGING_RUNNER / SOUNDINGS_PRODUCTION_RUNNER otherwise).
-# Runners connect out to GitHub on 443; nothing connects in.
+# Runners connect out to GitHub on 443; nothing connects in. Their pods have no cluster
+# rights (ARC's default ServiceAccount): the deploy uses the environment's KUBECONFIG_DATA
+# (deploy/ci/arc-rbac.yaml). A runner pod still runs any workflow's code inside the
+# network: private repositories only, no workflows from forks.
 githubConfigUrl: https://github.com/example-org/soundings
 # A Secret with the GitHub App's id, installation id and private key (create it first).
 githubConfigSecret: arc-github-app
@@ -24,13 +26,12 @@ controllerServiceAccount:
   name: arc-gha-rs-controller
 template:
   spec:
-    # Staging only (--set above): the ServiceAccount deploy/ci/arc-rbac.yaml binds in
-    # soundings-staging. Production keeps ARC's no-permission default and deploys with
-    # the environment's KUBECONFIG_DATA.
-    # serviceAccountName: soundings-deployer
     containers:
       - name: runner
-        # make deploy-runner-image (deploy/ci/deploy-runner.Dockerfile), pushed to your registry
+        # make deploy-runner-image (deploy/ci/deploy-runner.Dockerfile), pushed to your
+        # registry. ARC's runners don't update themselves: GitHub stops sending jobs to a
+        # runner version 30 days after a newer one is released, so bump the Dockerfile's
+        # runner (Dependabot proposes it a week after a release) within three weeks.
         image: registry.internal.example/soundings/soundings-deploy-runner:2.338.0-1
         command: ["/home/runner/run.sh"]
 # A TLS-intercepting proxy or an internal CA for github.com / your GHES:

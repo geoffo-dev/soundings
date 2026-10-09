@@ -8,10 +8,14 @@
 #   CHECK_TASK_ALL=1 scripts/check-task.sh # every area
 #
 # Areas: backend (make -C backend check), frontend (npm --prefix frontend run check),
-# helm (deploy/: helm lint + template, via the alpine/helm container),
+# helm (deploy/: helm lint + template, via the alpine/helm container, and each
+# deploy/environments/<env>.values.yaml rendered by scripts/deploy.sh template),
 # e2e (npm run check: tsc + prettier), scripts (bash -n, shellcheck when installed or its
-# image is pulled; scripts/ and e2e/scripts/), fake-agent (dev/fake-agent: make check,
-# ruff + mypy + pytest).
+# image is pulled; scripts/, scripts/lib/, scripts/ci-local/ and e2e/scripts/; the Python
+# helpers compile), fake-agent (dev/fake-agent: make check, ruff + mypy + pytest),
+# migrations (backend/app/migrations: the expand/contract check,
+# scripts/lib/check-migrations.py), workflows (.github/, .gitlab-ci.yml, .gitlab/: make
+# check-workflows, i.e. actionlint, zizmor and gitlab-ci-local).
 # Areas whose directory or toolchain is missing are skipped with a note.
 set -uo pipefail
 
@@ -27,7 +31,7 @@ if [ ! -t 0 ]; then
   while IFS= read -r -t 0.2 _; do :; done
 fi
 
-all_areas=(backend frontend helm e2e scripts fake-agent)
+all_areas=(backend frontend helm e2e scripts fake-agent migrations workflows)
 areas=()
 if [ $# -gt 0 ]; then
   areas=("$@")
@@ -37,16 +41,18 @@ else
   changed="$(git status --porcelain 2>/dev/null | cut -c4- | sed 's/.* -> //')"
   for area in "${all_areas[@]}"; do
     case "$area" in
-      helm) prefix="deploy/" ;;
-      fake-agent) prefix="dev/fake-agent/" ;;
-      *) prefix="$area/" ;;
+      helm) pattern="deploy/" ;;
+      fake-agent) pattern="dev/fake-agent/" ;;
+      migrations) pattern="backend/app/migrations/" ;;
+      workflows) pattern="(\.github/|\.gitlab-ci\.yml|\.gitlab/)" ;;
+      *) pattern="$area/" ;;
     esac
-    if grep -q "^\"\?$prefix" <<<"$changed"; then areas+=("$area"); fi
+    if grep -Eq "^\"?$pattern" <<<"$changed"; then areas+=("$area"); fi
   done
 fi
 
 if [ ${#areas[@]} -eq 0 ]; then
-  echo "check-task: no changes in backend/, frontend/, deploy/, e2e/, scripts/ or dev/fake-agent/; nothing to check"
+  echo "check-task: no changes in backend/, frontend/, deploy/, e2e/, scripts/, dev/fake-agent/ or the CI files; nothing to check"
   exit 0
 fi
 
@@ -97,6 +103,18 @@ helm_checks() {
     docker run --rm -v "$REPO_ROOT/deploy/helm:/chart:ro" -w /chart "$HELM_IMAGE" \
       template check . -f "ci/$(basename "$values")" >/dev/null || return 1
   done
+  # The delivery environments' values, as scripts/deploy.sh renders them (with the local
+  # k3s overlay too, as make k3s-deploy and scripts/ci-local use it).
+  local env overlay
+  for values in deploy/environments/*.values.yaml; do
+    env="$(basename "$values" .values.yaml)"
+    [ "$env" != k3s ] || continue
+    for overlay in "" deploy/environments/k3s.values.yaml; do
+      echo "--- $values${overlay:+ + $overlay}"
+      docker run --rm -v "$REPO_ROOT:/repo:ro" -w /repo -e "DEPLOY_VALUES=$values${overlay:+ $overlay}" \
+        --entrypoint bash "$HELM_IMAGE" scripts/deploy.sh template "$env" >/dev/null || return 1
+    done
+  done
 }
 
 check_helm() {
@@ -121,12 +139,16 @@ check_e2e() {
 # shellcheck disable=SC2329  # invoked through run()
 scripts_checks() {
   local f
-  local files=(scripts/*.sh scripts/lib/*.sh)
+  local files=(scripts/*.sh scripts/lib/*.sh scripts/ci-local/*.sh)
   # The e2e stack scripts (platform-owned, under e2e/) too, when present.
   for f in e2e/scripts/*.sh; do [ -e "$f" ] && files+=("$f"); done
   for f in "${files[@]}"; do
     [ -e "$f" ] || continue
     bash -n "$f" || return 1
+  done
+  for f in scripts/lib/*.py; do
+    [ -e "$f" ] || continue
+    python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])' "$f" || return 1
   done
   if have shellcheck; then
     shellcheck -x "${files[@]}"
@@ -139,6 +161,19 @@ scripts_checks() {
 
 check_scripts() {
   run scripts scripts_checks
+}
+
+check_migrations() {
+  [ -d backend/app/migrations/versions ] || { skip migrations "no backend/app/migrations/versions"; return; }
+  have python3 || { skip migrations "python3 not installed"; return; }
+  run migrations python3 scripts/lib/check-migrations.py
+}
+
+check_workflows() {
+  docker_ok || { skip workflows "docker not available (actionlint)"; return; }
+  have uvx || { skip workflows "uvx not installed (zizmor)"; return; }
+  have npx || { skip workflows "npx not installed (gitlab-ci-local)"; return; }
+  run workflows make --no-print-directory check-workflows
 }
 
 check_fake_agent() {
@@ -155,6 +190,8 @@ for area in "${areas[@]}"; do
     e2e) check_e2e ;;
     scripts) check_scripts ;;
     fake-agent) check_fake_agent ;;
+    migrations) check_migrations ;;
+    workflows) check_workflows ;;
     *) echo "check-task: unknown area '$area' (known: ${all_areas[*]})" >&2; exit 1 ;;
   esac
 done

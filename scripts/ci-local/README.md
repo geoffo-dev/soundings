@@ -30,6 +30,7 @@ scripts/ci-local/ci-local.sh play <pipeline> rollback:staging ROLLBACK_REVISION=
 scripts/ci-local/ci-local.sh probe               # what CI jobs reach through each agent
 scripts/ci-local/ci-local.sh github staging deploy IMAGE_REPOSITORY=… IMAGE_DIGEST=… IMAGE_TAG=…
                                                  # GitHub's deploy step in a pod, as an ARC runner
+                                                 # (no rights; the environment's KUBECONFIG_DATA)
 scripts/ci-local/ci-local.sh down --images       # everything, images included
 ```
 
@@ -71,8 +72,12 @@ the network and the state; `--images` also the images it pulled.
 ## Limits
 
 GitLab CE is the Free tier: the production gate is the protected manual job;
-deployment approvals and protected environments (Premium) can't be shown here. GitHub
+deployment approvals and protected environments (Premium) can't be shown here. A tag
+pushed with `CD_ONLY=1` stops at a `deploy:production` that refuses to run (production
+deploys only from a full pipeline): rehearse the gate with a tag pipeline without
+`CD_ONLY`, or play it to see the refusal. The runner is registered with the deploy jobs'
+tag `soundings-deploy` as well (a site gives them a protected runner of their own). GitHub
 Actions itself can't run here: `github` runs `deploy-env.yml`'s step script (read from the
-workflow) in a pod with the ARC staging ServiceAccount, or for production in a pod without
-rights and with `KUBECONFIG_DATA`, using the deploy tools image in the runner image's place.
-`docs/test-plans/phase-9.md` records a run.
+workflow) in a pod without any rights (ARC's default ServiceAccount) with
+`KUBECONFIG_DATA` from `scripts/lib/ci-kubeconfig.sh`, using the deploy tools image in the
+runner image's place. `docs/test-plans/phase-9.md` records a run.

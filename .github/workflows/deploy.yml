@@ -2,8 +2,13 @@
 #   - production: choose the vX.Y.Z tag under "Use workflow from". It deploys the image of
 #     that tag's GitHub release (published only after the tag's image passed the scan and
 #     staging), the gate for private repositories without required reviewers
-#     (SOUNDINGS_PRODUCTION_GATE=manual; only people with write access can run it; protect
-#     v* tags with a ruleset);
+#     (SOUNDINGS_PRODUCTION_GATE=manual). Anyone with write access can start a workflow,
+#     so production runs (deploy and rollback) go ahead only for the people listed in the
+#     repository variable SOUNDINGS_PRODUCTION_DEPLOYERS (only admins change variables),
+#     only from an immutable release, and only for the image repository this CI pushes to.
+#     The tag rule of the production environment makes this file the tag's own, reviewed
+#     copy. That person is the approval: there is no second pair of eyes below Enterprise
+#     (operator guide, "What the plan allows");
 #   - rollback of staging or production (production: run it from a vX.Y.Z tag too, which
 #     the production environment's tag rule requires): the revision before the current
 #     one, or the one given; refused across a migration boundary unless "force".
@@ -36,10 +41,11 @@ on:
 permissions: {}
 
 jobs:
-  # The image of this tag's release (image.env, attached by ci.yml's release job).
+  # Who may run production by hand, and the image of this tag's release (image.env, attached
+  # by ci.yml's release job).
   resolve:
-    if: inputs.operation == 'production'
-    runs-on: ubuntu-24.04
+    if: inputs.operation == 'production' || inputs.environment == 'production'
+    runs-on: ${{ vars.SOUNDINGS_BUILD_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
     outputs:
@@ -47,22 +53,45 @@ jobs:
       digest: ${{ steps.release.outputs.digest }}
       tag: ${{ steps.release.outputs.tag }}
     steps:
+      - name: A production deployer
+        env:
+          DEPLOYERS: ${{ vars.SOUNDINGS_PRODUCTION_DEPLOYERS }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          if [[ ",${DEPLOYERS// /}," != *",$ACTOR,"* ]]; then
+            echo "::error::$ACTOR is not in SOUNDINGS_PRODUCTION_DEPLOYERS (a repository variable: the GitHub logins, comma-separated, who may deploy or roll back production by hand)."
+            exit 1
+          fi
       - id: release
         name: The release's image
+        if: inputs.operation == 'production'
         env:
           GH_TOKEN: ${{ github.token }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           if [ "$REF_TYPE" != tag ] || ! [[ "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Run this workflow from a vX.Y.Z tag (Use workflow from > Tags) to deploy production."
             exit 1
           fi
+          # Write access can replace a mutable release's assets: only an immutable release
+          # (Settings > General > Releases, on before the tag) says what the scan passed.
+          immutable="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REF_NAME" --jq '.immutable')"
+          case "$immutable" in
+            true) ;;
+            false) echo "::error::Release $REF_NAME is not immutable: turn on immutable releases, then publish the release again (a new patch tag)."; exit 1 ;;
+            *) echo "::warning::This server doesn't say whether release $REF_NAME is immutable: make sure its assets can't be replaced." ;;
+          esac
           gh release download "$REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern image.env --dir "$RUNNER_TEMP"
           repository="$(sed -n 's/^IMAGE_REPOSITORY=//p' "$RUNNER_TEMP/image.env")"
           digest="$(sed -n 's/^IMAGE_DIGEST=//p' "$RUNNER_TEMP/image.env")"
           tag="$(sed -n 's/^IMAGE_TAG=//p' "$RUNNER_TEMP/image.env")"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::release $REF_NAME has no usable image.env"; exit 1; }
+          want="${IMAGE_REPOSITORY:-ghcr.io/${OWNER,,}/soundings}"
+          [ "$repository" = "$want" ] || { echo "::error::release $REF_NAME names image repository $repository, not $want (IMAGE_REPOSITORY)"; exit 1; }
+          [ "$tag" = "${REF_NAME#v}" ] || { echo "::error::release $REF_NAME names image tag $tag"; exit 1; }
           {
             echo "repository=$repository"
             echo "digest=$digest"
@@ -71,9 +100,12 @@ jobs:
 
   production:
     needs: [resolve]
+    if: inputs.operation == 'production'
     uses: ./.github/workflows/deploy-env.yml
     permissions:
       contents: read
+    secrets:
+      CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
     with:
       environment: production
       image_repository: ${{ needs.resolve.outputs.repository }}
@@ -81,10 +113,16 @@ jobs:
       image_tag: ${{ needs.resolve.outputs.tag }}
 
   rollback:
-    if: inputs.operation == 'rollback'
+    needs: [resolve]
+    # Staging's rollback skips the production deployer check.
+    if: >-
+      !cancelled() && inputs.operation == 'rollback' &&
+      (needs.resolve.result == 'success' || (needs.resolve.result == 'skipped' && inputs.environment != 'production'))
     uses: ./.github/workflows/deploy-env.yml
     permissions:
       contents: read
+    secrets:
+      CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
     with:
       environment: ${{ inputs.environment }}
       operation: rollback

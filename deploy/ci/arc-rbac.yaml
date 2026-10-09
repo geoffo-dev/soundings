@@ -3,24 +3,37 @@
 #
 #   kubectl apply -f deploy/ci/arc-rbac.yaml
 #
-# Staging: the runner pods of the ARC scale set "soundings-staging" run as this
-# ServiceAccount (arc-values.yaml: template.spec.serviceAccountName), which may deploy
-# into soundings-staging only. GitHub stores nothing.
+# The runner pods of the ARC scale sets "soundings-staging" and "soundings-production" get
+# no cluster rights at all (ARC's own no-permission ServiceAccount): any workflow on any
+# branch of the repository can ask for a runner label, so a label is not access control
+# (below GitHub Enterprise, whose runner groups can be limited to deploy-env.yml). The
+# deploy authenticates instead with a token of soundings-ci-deployer, bound to
+# soundings-deployer in its environment's namespace only, kept in that GitHub
+# environment's secret KUBECONFIG_DATA: GitHub releases it only to jobs that passed the
+# environment's rules (staging: main and v* tags; production: v* tags, reviewers where the
+# plan has them). Mint it, and again before it expires (30 days):
+#
+#   scripts/lib/ci-kubeconfig.sh staging      # and production; prints KUBECONFIG_DATA
 apiVersion: v1
 kind: Namespace
 metadata:
   name: arc-soundings-staging
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: arc-soundings-production
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: soundings-deployer
-  namespace: arc-soundings-staging
+  name: soundings-ci-deployer
+  namespace: soundings-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: soundings-deployer-github-runner
+  name: soundings-deployer-github
   namespace: soundings-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -28,20 +41,8 @@ roleRef:
   name: soundings-deployer
 subjects:
   - kind: ServiceAccount
-    name: soundings-deployer
-    namespace: arc-soundings-staging
----
-# Production: the runner pods of "soundings-production" get no rights at all (ARC's own
-# no-permission ServiceAccount), because below GitHub Enterprise any workflow of the
-# repository could target that runner. The deploy authenticates with a token of this
-# ServiceAccount instead, kept in the "production" environment's secret KUBECONFIG_DATA,
-# which GitHub releases only to jobs that passed the environment's rules (v* tags,
-# reviewers where the plan has them). Mint it (and again before it expires):
-#   kubectl -n soundings-production create token soundings-ci-deployer --duration=720h
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: arc-soundings-production
+    name: soundings-ci-deployer
+    namespace: soundings-staging
 ---
 apiVersion: v1
 kind: ServiceAccount

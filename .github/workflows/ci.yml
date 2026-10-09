@@ -30,6 +30,10 @@ env:
   HELM_IMAGE: alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec
   # Trivy by digest (the March 2026 compromise re-pointed tags; docs/research/github-cd.md).
   TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+  # The release image's bases, by digest (the same pins as .gitlab-ci.yml; repository
+  # variables UBUNTU_IMAGE and NODE_IMAGE name your mirror's copies).
+  UBUNTU_IMAGE_PIN: docker.io/library/ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+  NODE_IMAGE_PIN: docker.io/library/node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
   # Mailpit catches the email of the backend's SMTP integration tests and the e2e runs.
   MAILPIT_IMAGE: axllent/mailpit:v1.31.3
   # What WeasyPrint loads for the PDF export tests (the image installs the same, ADR 0011).
@@ -96,7 +100,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: scripts/check-task.sh helm scripts
+      - run: scripts/check-task.sh helm scripts migrations
 
   # The fake kagent agent (dev/fake-agent): ruff, mypy --strict, pytest, including a2a-sdk
   # 0.3.23's own client (kagent-adk 0.10.2's A2A library) against it, and its image.
@@ -375,8 +379,10 @@ jobs:
 
   # Build and push (ghcr.io/<owner>/soundings unless IMAGE_REPOSITORY says otherwise): main
   # pushes sha-<8 hex>, a vX.Y.Z tag X.Y.Z and X.Y; what deploys is the digest. Plain
-  # docker buildx (no third-party action); SOUNDINGS_BUILD_RUNNER is a self-hosted runner
-  # when the registry or the mirrors are internal.
+  # docker buildx (no third-party action), from scratch (no layer cache: anyone who may
+  # write the package could plant a layer in it); SOUNDINGS_BUILD_RUNNER is a self-hosted
+  # runner when the registry or the mirrors are internal. A persistent runner keeps
+  # nothing: the registry login lives in this job's RUNNER_TEMP, the builder is removed.
   image:
     needs: [release-check]
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
@@ -420,7 +426,11 @@ jobs:
           REPOSITORY: ${{ steps.names.outputs.repository }}
           REGISTRY_USER: ${{ vars.IMAGE_REGISTRY_USER || github.actor }}
           REGISTRY_PASSWORD: ${{ secrets.IMAGE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USER" --password-stdin "${REPOSITORY%%/*}"
+        run: |
+          # This job's own Docker config (RUNNER_TEMP is emptied after the job).
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+          export DOCKER_CONFIG="$RUNNER_TEMP/docker"
+          printf '%s' "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USER" --password-stdin "${REPOSITORY%%/*}"
       - id: build
         name: Build and push
         env:
@@ -429,8 +439,8 @@ jobs:
           VERSION: ${{ steps.names.outputs.version }}
           CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
           BUILDKIT_IMAGE: ${{ vars.BUILDKIT_IMAGE }}
-          UBUNTU_IMAGE: ${{ vars.UBUNTU_IMAGE }}
-          NODE_IMAGE: ${{ vars.NODE_IMAGE }}
+          UBUNTU_IMAGE: ${{ vars.UBUNTU_IMAGE || env.UBUNTU_IMAGE_PIN }}
+          NODE_IMAGE: ${{ vars.NODE_IMAGE || env.NODE_IMAGE_PIN }}
           UBUNTU_MIRROR: ${{ vars.UBUNTU_MIRROR }}
           PIP_INDEX_URL: ${{ vars.PIP_INDEX_URL }}
           UV_DEFAULT_INDEX: ${{ vars.UV_DEFAULT_INDEX }}
@@ -442,7 +452,10 @@ jobs:
           for arg in UBUNTU_IMAGE NODE_IMAGE UBUNTU_MIRROR PIP_INDEX_URL UV_DEFAULT_INDEX NPM_CONFIG_REGISTRY; do
             [ -z "${!arg}" ] || args+=(--build-arg "$arg=${!arg}")
           done
-          builder=(--name soundings --driver docker-container --use)
+          # One builder per run, removed at the end (a persistent runner keeps none).
+          name="soundings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          trap 'docker buildx rm --force "$name" >/dev/null 2>&1 || true' EXIT
+          builder=(--name "$name" --driver docker-container --use)
           [ -z "$BUILDKIT_IMAGE" ] || builder+=(--driver-opt "image=$BUILDKIT_IMAGE")
           if [ -n "$CI_BUILD_CA" ]; then
             # The Dockerfile's build_ca secret, and BuildKit's trust for the registry.
@@ -464,8 +477,6 @@ jobs:
           for name in ${TAGS//,/ }; do args+=(--tag "$name"); done
           docker buildx create "${builder[@]}"
           docker buildx build --push --provenance=false "${args[@]}" \
-            --cache-from "type=registry,ref=$REPOSITORY/cache:buildkit" \
-            --cache-to "type=registry,ref=$REPOSITORY/cache:buildkit,mode=max" \
             --metadata-file "$RUNNER_TEMP/build-meta.json" .
           digest="$(sed -n 's/.*"containerimage\.digest": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$RUNNER_TEMP/build-meta.json" | head -n 1)"
           [ -n "$digest" ] || { cat "$RUNNER_TEMP/build-meta.json"; exit 1; }
@@ -473,62 +484,94 @@ jobs:
           echo "Pushed $TAGS as $REPOSITORY@$digest" >> "$GITHUB_STEP_SUMMARY"
 
   # The gate before any deploy, on the pushed digest: SCAN_SEVERITY (default HIGH,CRITICAL
-  # with a fix) fails the run. Trivy and cosign run from digest-pinned images, not actions
-  # (no download from GitHub releases at run time). Also the CycloneDX SBOM for the release.
+  # with a fix; it must include CRITICAL) fails the run. Trivy runs from a digest-pinned
+  # image, not an action (no download from GitHub releases at run time), reads the image
+  # only (packages: read), and neither checks for updates nor sends telemetry. Also the
+  # CycloneDX SBOM for the release.
   scan:
     needs: [image]
     runs-on: ${{ vars.SOUNDINGS_BUILD_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
-      packages: write
+      packages: read
     env:
       IMAGE_REF: ${{ needs.image.outputs.repository }}@${{ needs.image.outputs.digest }}
       IMAGE_TAG: ${{ needs.image.outputs.tag }}
       REGISTRY_USER: ${{ vars.IMAGE_REGISTRY_USER || github.actor }}
       REGISTRY_PASSWORD: ${{ secrets.IMAGE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
-      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
     steps:
       - name: Trivy gate and SBOM
         env:
           SCAN_SEVERITY: ${{ vars.SCAN_SEVERITY || 'HIGH,CRITICAL' }}
           SCAN_IGNORE_UNFIXED: ${{ vars.SCAN_IGNORE_UNFIXED || 'true' }}
           TRIVY_DB_REPOSITORY: ${{ vars.TRIVY_DB_REPOSITORY }}
+          TRIVY_JAVA_DB_REPOSITORY: ${{ vars.TRIVY_JAVA_DB_REPOSITORY }}
+          CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
         run: |
+          case ",${SCAN_SEVERITY// /}," in
+            *,CRITICAL,*) ;;
+            *) echo "::error::SCAN_SEVERITY='$SCAN_SEVERITY' must include CRITICAL (the gate before any deploy)"; exit 1 ;;
+          esac
+          ca=()
+          if [ -n "$CI_BUILD_CA" ]; then
+            # An internal CA for the registry and the database mirrors.
+            printf '%s\n' "$CI_BUILD_CA" > "$RUNNER_TEMP/ca.pem"
+            ca=(-v "$RUNNER_TEMP/ca.pem:/ca.pem:ro" -e SSL_CERT_FILE=/ca.pem)
+          fi
           trivy() {
             docker run --rm -e TRIVY_USERNAME="$REGISTRY_USER" -e TRIVY_PASSWORD="$REGISTRY_PASSWORD" \
-              -e TRIVY_NO_PROGRESS=true ${TRIVY_DB_REPOSITORY:+-e TRIVY_DB_REPOSITORY} \
-              -v "$PWD:/out" -v soundings-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"
+              -e TRIVY_NO_PROGRESS=true -e TRIVY_SKIP_VERSION_CHECK=true -e TRIVY_DISABLE_TELEMETRY=true \
+              ${TRIVY_DB_REPOSITORY:+-e TRIVY_DB_REPOSITORY} ${TRIVY_JAVA_DB_REPOSITORY:+-e TRIVY_JAVA_DB_REPOSITORY} \
+              "${ca[@]}" -v "$PWD:/out" -v soundings-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"
           }
           trivy image --format cyclonedx --output "/out/soundings-$IMAGE_TAG.cdx.json" "$IMAGE_REF"
           unfixed=()
           [ "$SCAN_IGNORE_UNFIXED" != true ] || unfixed=(--ignore-unfixed)
           trivy image --exit-code 1 "${unfixed[@]}" --severity "$SCAN_SEVERITY" "$IMAGE_REF"
-      # Optional: sign the digest with a key (COSIGN_PRIVATE_KEY, COSIGN_PASSWORD secrets);
-      # no transparency log, so nothing leaves the network. Verify with
-      # cosign verify --key cosign.pub --insecure-ignore-tlog=true <repository>@<digest>.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: soundings-*.cdx.json
+
+  # Optional: sign the scanned digest with a key (COSIGN_PRIVATE_KEY, COSIGN_PASSWORD
+  # secrets; without them this job does nothing); no transparency log, so nothing leaves the
+  # network. Its own job: the only one, besides the build, that may write the package.
+  # Verify with cosign verify --key cosign.pub --insecure-ignore-tlog=true <repository>@<digest>,
+  # or in the cluster with an admission policy (operator guide, "Releases and versions").
+  sign:
+    needs: [image, scan]
+    runs-on: ${{ vars.SOUNDINGS_BUILD_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      packages: write
+    env:
+      IMAGE_REF: ${{ needs.image.outputs.repository }}@${{ needs.image.outputs.digest }}
+      REGISTRY_USER: ${{ vars.IMAGE_REGISTRY_USER || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.IMAGE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+    steps:
       - name: Sign (cosign, with a key)
         if: env.COSIGN_PRIVATE_KEY != ''
         env:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           COSIGN_IMAGE: ${{ vars.COSIGN_IMAGE || 'ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8' }}
         run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/docker"
           printf '%s' "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USER" --password-stdin "${IMAGE_REF%%/*}"
           docker run --rm -e COSIGN_PRIVATE_KEY -e COSIGN_PASSWORD -e DOCKER_CONFIG=/docker \
-            -v "$HOME/.docker:/docker:ro" --entrypoint cosign "$COSIGN_IMAGE" \
+            -v "$DOCKER_CONFIG:/docker:ro" --entrypoint cosign "$COSIGN_IMAGE" \
             sign --yes --key env://COSIGN_PRIVATE_KEY --use-signing-config=false --tlog-upload=false "$IMAGE_REF"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sbom
-          path: soundings-*.cdx.json
 
   # Staging, after this commit's checks, on a self-hosted runner in the network (an ARC
-  # scale set whose pod ServiceAccount may deploy only into soundings-staging).
+  # scale set without cluster rights; the "staging" environment's KUBECONFIG_DATA, released
+  # only to main and v* tags, may deploy only into soundings-staging).
   deploy-staging:
-    needs: [backend, frontend, helm, fake-agent, audit, contract, e2e, e2e-sso, e2e-ai, image, scan]
+    needs: [backend, frontend, helm, fake-agent, audit, contract, e2e, e2e-sso, e2e-ai, image, scan, sign]
     if: github.event_name == 'push' && contains(format(' {0} ', vars.SOUNDINGS_DEPLOY), ' staging ')
     uses: ./.github/workflows/deploy-env.yml
     permissions:
       contents: read
+    secrets:
+      CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
     with:
       environment: staging
       image_repository: ${{ needs.image.outputs.repository }}
@@ -540,13 +583,15 @@ jobs:
   # (private repositories on Pro or Team) set SOUNDINGS_PRODUCTION_GATE=manual: the tag stops
   # after staging and the release, and someone runs the "deploy" workflow on the tag.
   deploy-production:
-    needs: [deploy-staging]
+    needs: [deploy-staging, release]
     if: >-
       github.ref_type == 'tag' && vars.SOUNDINGS_PRODUCTION_GATE != 'manual' &&
       contains(format(' {0} ', vars.SOUNDINGS_DEPLOY), ' production ')
     uses: ./.github/workflows/deploy-env.yml
     permissions:
       contents: read
+    secrets:
+      CI_BUILD_CA: ${{ secrets.CI_BUILD_CA }}
     with:
       environment: production
       image_repository: ${{ needs.deploy-staging.outputs.image_repository }}
@@ -561,7 +606,7 @@ jobs:
     if: >-
       !cancelled() && github.ref_type == 'tag' && needs.scan.result == 'success' &&
       (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SOUNDINGS_BUILD_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
     steps:

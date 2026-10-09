@@ -489,8 +489,10 @@ TOML
 cmd_runner() {
   if [ ! -s "$DIR/runner.token" ]; then
     log "registering an instance runner (POST /user/runners)"
+    # Tagged soundings-deploy too (the deploy jobs' DEPLOY_RUNNER_TAG): one runner plays
+    # both parts here; a site gives the deploy jobs a protected runner of their own.
     (umask 077 && api POST /user/runners --data runner_type=instance_type --data run_untagged=true \
-      --data "description=${PREFIX}docker" | jq -r .token >"$DIR/runner.token")
+      --data tag_list=soundings-deploy --data "description=${PREFIX}docker" | jq -r .token >"$DIR/runner.token")
   fi
   write_runner_config "$(cat "$DIR/runner/mode" 2>/dev/null || echo "${CI_LOCAL_RUNNER_MODE:-rootless}")"
   if ! running "$RUNNER"; then
@@ -699,9 +701,9 @@ cmd_agents() {
 }
 
 # --- github: .github/workflows/deploy-env.yml's deploy step, as a runner in the cluster -----
-# staging: a pod with the ARC staging scale set's ServiceAccount (deploy/ci/arc-rbac.yaml;
-# in-cluster credentials, no kubeconfig); production: a pod without any rights and
-# KUBECONFIG_DATA built from a token of soundings-ci-deployer, as the operator guide says.
+# A pod without any rights (ARC's default ServiceAccount, in arc-soundings-<env>) and
+# KUBECONFIG_DATA from scripts/lib/ci-kubeconfig.sh (a token of soundings-ci-deployer in
+# soundings-<env>, deploy/ci/arc-rbac.yaml), as the operator guide says.
 # The step's script is read from the workflow file; its inputs (IMAGE_REPOSITORY,
 # IMAGE_DIGEST, IMAGE_TAG, ROLLBACK_REVISION, DEPLOY_FORCE ...) come as KEY=VALUE.
 # The pod runs the deploy tools image (<prefix>deploy-tools:local) in the runner image's
@@ -711,7 +713,6 @@ cmd_github() {
   shift 2
   local ns="arc-soundings-$env" pod="github-runner" sa=default host
   [ "$env" = production ] && host="$PRODUCTION_HOST" || host="$STAGING_HOST"
-  [ "$env" != staging ] || sa=soundings-deployer
   kc apply -f - <"$REPO_ROOT/deploy/ci/arc-rbac.yaml" >/dev/null
   if ! docker exec "$K3S" ctr -n k8s.io images ls -q | grep -q "${PREFIX}deploy-tools:local"; then
     docker save "${PREFIX}deploy-tools:local" | docker exec -i "$K3S" ctr -n k8s.io images import - >/dev/null
@@ -741,17 +742,7 @@ YAML
   local vars=(GITHUB_ACTIONS=true "GITHUB_RUN_ID=ci-local-$RANDOM" RUNNER_TEMP=/tmp GITHUB_STEP_SUMMARY=/tmp/summary.md
     "OPERATION=$op" "ENVIRONMENT=$env" "DEPLOY_URL=http://$host" CI_BUILD_CA= KUBE_CONTEXT= KUBE_NAMESPACE= KUBECONFIG_DATA=
     "DEPLOY_VALUES=deploy/environments/$env.values.yaml deploy/environments/k3s.values.yaml scripts/ci-local/values/$env.yaml")
-  if [ "$env" = production ]; then
-    local token ca
-    token="$(kc -n soundings-production create token soundings-ci-deployer --duration=1h)"
-    ca="$(kc config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
-    vars+=("KUBECONFIG_DATA=apiVersion: v1
-kind: Config
-clusters: [{name: in-cluster, cluster: {server: https://kubernetes.default.svc, certificate-authority-data: $ca}}]
-users: [{name: deployer, user: {token: $token}}]
-contexts: [{name: deployer, context: {cluster: in-cluster, user: deployer, namespace: soundings-production}}]
-current-context: deployer")
-  fi
+  vars+=("KUBECONFIG_DATA=$(KUBECTL="docker exec -i $K3S kubectl" "$REPO_ROOT/scripts/lib/ci-kubeconfig.sh" "$env" 1h 2>/dev/null)")
   vars+=("$@")
   log "deploy-env.yml's step: $op $env in pod $ns/$pod (ServiceAccount $sa)"
   kc -n "$ns" exec "$pod" -- env "${vars[@]}" bash -c "cd /work && { $script

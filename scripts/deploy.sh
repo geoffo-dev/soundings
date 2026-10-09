@@ -32,7 +32,9 @@
 #                     written to a private temporary file for this run only
 #   DEPLOY_VALUES     values files, space-separated (default deploy/environments/<env>.values.yaml)
 #   DEPLOY_URL        the smoke's base URL (default: the release's first baseUrls entry)
-#   HELM_TIMEOUT      default 10m (each of upgrade, test and rollback)
+#   HELM_TIMEOUT      default 10m (each of upgrade, test and rollback; a whole deploy can take
+#                     about 7 times it, so CI job timeouts are 90 minutes); the chart's migration
+#                     Job must have a shorter migrations.activeDeadlineSeconds (checked)
 #   ROLLBACK_REVISION rollback target revision (default: the newest earlier revision that
 #                     passed its checks and runs something else than the current one)
 #   MIGRATION_HEAD    the image's newest Alembic revision (default: read from this
@@ -41,7 +43,12 @@
 #   DRY_RUN=1         deploy: helm upgrade --dry-run=server (the API server validates it,
 #                     nothing changes); rollback: say what would happen
 #   DEPLOY_FORCE=1    allow a rollback across a migration boundary, a deploy of an image
-#                     with older migrations, and taking over a release the other CI made
+#                     with older migrations, a deploy from an older pipeline than the running
+#                     revision's (or of an older X.Y.Z), and taking over a release the other
+#                     CI made
+#
+# Another deploy in progress (a pending Helm revision): waited for, up to what one deploy
+# can take (3 x HELM_TIMEOUT from its start), then refused as stale.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,6 +59,10 @@ LABEL_BY="soundings.io/deployed-by"
 # Set on a revision that deployed but failed helm test or the smoke (the script rolled it
 # back): never a rollback target, although Helm lists it as superseded.
 LABEL_VERIFY="soundings.io/verify"
+# The CI run that made the revision (GitLab pipeline id, GitHub run id: both only grow), so
+# a deploy from an older pipeline can't replace a newer one's (GitLab's "Prevent outdated
+# deployment jobs" would also fail a tag's staging deploy whenever main deployed meanwhile).
+LABEL_ORDER="soundings.io/pipeline"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -117,17 +128,38 @@ IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-}"
 IMAGE_DIGEST="${IMAGE_DIGEST:-}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 
+# A Helm duration (10m, 1h30m, 600s) in seconds.
+seconds_of() {
+  local rest="$1" total=0
+  [[ "$rest" =~ ^([0-9]+[hms])+$ ]] || return 1
+  while [[ "$rest" =~ ^([0-9]+)([hms])(.*)$ ]]; do
+    case "${BASH_REMATCH[2]}" in
+      h) total=$((total + 10#${BASH_REMATCH[1]} * 3600)) ;;
+      m) total=$((total + 10#${BASH_REMATCH[1]} * 60)) ;;
+      s) total=$((total + 10#${BASH_REMATCH[1]})) ;;
+    esac
+    rest="${BASH_REMATCH[3]}"
+  done
+  printf '%s\n' "$total"
+}
+HELM_TIMEOUT_SECONDS="$(seconds_of "$HELM_TIMEOUT")" ||
+  die "HELM_TIMEOUT '$HELM_TIMEOUT': use a duration such as 10m, 1h30m or 900s"
+
 # Who is deploying: each environment is deployed by one CI (operator guide).
 if [ "${GITLAB_CI:-}" = "true" ]; then
   DEPLOYED_BY=gitlab
   DEPLOY_ORIGIN="GitLab pipeline ${CI_PIPELINE_ID:-?} job ${CI_JOB_ID:-?}"
+  DEPLOY_ORDER="${CI_PIPELINE_ID:-}"
 elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   DEPLOYED_BY=github
   DEPLOY_ORIGIN="GitHub run ${GITHUB_RUN_ID:-?}"
+  DEPLOY_ORDER="${GITHUB_RUN_ID:-}"
 else
   DEPLOYED_BY=manual
   DEPLOY_ORIGIN="by hand ($(id -un 2>/dev/null || echo someone))"
+  DEPLOY_ORDER=""
 fi
+[[ "$DEPLOY_ORDER" =~ ^[0-9]{1,30}$ ]] || DEPLOY_ORDER=""
 
 values_args=()
 for file in $DEPLOY_VALUES; do
@@ -174,11 +206,12 @@ command -v helm >/dev/null || die "helm is not installed (the CI deploy images h
 command -v kubectl >/dev/null || die "kubectl is not installed (the CI deploy images have it)"
 command -v curl >/dev/null || die "curl is not installed"
 
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+chmod 700 "$work"
 if [ -n "${KUBECONFIG_DATA:-}" ]; then
-  kubeconfig_file="$(mktemp)"
-  trap 'rm -f "$kubeconfig_file"' EXIT
-  chmod 600 "$kubeconfig_file"
-  printf '%s\n' "$KUBECONFIG_DATA" > "$kubeconfig_file"
+  kubeconfig_file="$work/kubeconfig"
+  (umask 077 && printf '%s\n' "$KUBECONFIG_DATA" > "$kubeconfig_file")
   export KUBECONFIG="$kubeconfig_file"
 fi
 helm_ctx=(--namespace "$KUBE_NAMESPACE")
@@ -209,10 +242,27 @@ revision_label() { # revision label
 deployed_revision() { revisions | awk '$2 == "deployed" { r = $1 } END { print r }'; }
 pending_revision() { revisions | awk '$2 ~ /^pending/ { r = $1 " " $2 } END { print r }'; }
 verify_failed() { [ "$(revision_label "$1" "$LABEL_VERIFY")" = failed ]; }
-# A rollback revision gets its target's labels from Helm: it is this CI's now, and checked.
-label_rollback() { # revision
-  kc label "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v$1" "$LABEL_BY=$DEPLOYED_BY" "$LABEL_VERIFY-" --overwrite >/dev/null 2>&1 ||
-    warn "could not label revision $1 ($LABEL_BY=$DEPLOYED_BY)"
+# The newer of two migration heads (zero-padded sequence numbers; empty = unknown).
+newer_head() { if [[ "$1" < "$2" ]]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
+# A revision that puts older content back (Helm's --atomic, the script's rollback, a manual
+# rollback) gets its target's labels from Helm. Relabel it: it is this CI's now, checked
+# again, made by this run, and its migration head is the database's, which a rollback never
+# lowers: the newer of the target's and the one that ran (else the next deploy of older
+# migrations, or a rollback further back, would no longer be refused).
+label_restored() { # revision database-head
+  local labels=("$LABEL_BY=$DEPLOYED_BY" "$LABEL_VERIFY-")
+  [ -z "${2:-}" ] || labels+=("$LABEL_HEAD=$2")
+  [ -z "$DEPLOY_ORDER" ] || labels+=("$LABEL_ORDER=$DEPLOY_ORDER")
+  kc label "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v$1" "${labels[@]}" --overwrite >/dev/null 2>&1 ||
+    warn "could not label revision $1 (${labels[*]})"
+}
+# Did a failed upgrade's migration Job leave the database alone? Only when it failed: Helm
+# deletes a Job that succeeded, and one still running could yet commit (the deadline check
+# below keeps it shorter than HELM_TIMEOUT). With the bundled Postgres the api pods migrate
+# in an init container: assume it ran.
+migration_failed() {
+  [ "$(kc get jobs -l "app.kubernetes.io/instance=$HELM_RELEASE,app.kubernetes.io/component=migrate" \
+    -o jsonpath='{.items[*].status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)" = True ]
 }
 mark_verify_failed() { # revision
   kc label "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v$1" "$LABEL_VERIFY=failed" --overwrite >/dev/null 2>&1 ||
@@ -256,16 +306,33 @@ preflight() {
     die "can't use namespace '$KUBE_NAMESPACE'${KUBE_CONTEXT:+ (context $KUBE_CONTEXT)}: $out
   Operators create the namespace and the deployer's RBAC (deploy/environments/cluster-setup.yaml)."
   fi
-  local pending
-  pending="$(pending_revision)"
-  if [ -n "$pending" ] && [ "$ACTION" != status ] && [ "$ACTION" != smoke ]; then
-    local msg="release $HELM_RELEASE in $KUBE_NAMESPACE is ${pending#* } (revision ${pending%% *}): another deploy is running, or one was killed half way"
+  [ "$ACTION" != status ] && [ "$ACTION" != smoke ] || return 0
+  # Another deploy in progress (a person, the other CI's queue, a rollback job): wait for it
+  # as long as one deploy can take (upgrade hooks, wait and --atomic's rollback), counted from
+  # when it started; older than that, it was killed half way and needs a forced rollback.
+  local pending seen="" started=0 now created limit=$((3 * HELM_TIMEOUT_SECONDS)) waited=0
+  while pending="$(pending_revision)" && [ -n "$pending" ]; do
+    local msg="release $HELM_RELEASE in $KUBE_NAMESPACE is ${pending#* } (revision ${pending%% *})"
     if [ "$ACTION" = rollback ] && [ "$DEPLOY_FORCE" = 1 ]; then
       warn "$msg; DEPLOY_FORCE=1: rolling back anyway"
-    else
-      die "$msg. Wait for it; if none is running, recover with: DEPLOY_FORCE=1 scripts/deploy.sh rollback $ENVIRONMENT"
+      return 0
     fi
-  fi
+    now="$(date -u +%s)"
+    if [ "$pending" != "$seen" ]; then
+      # When that revision was written (its Helm Secret); unknown: from now.
+      created="$(kc get "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v${pending%% *}" -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || true)"
+      started="$(date -u -d "$(sed 's/T/ /; s/Z$//' <<<"$created")" +%s 2>/dev/null || echo "$now")"
+      [ "$started" -le "$now" ] || started="$now"
+      seen="$pending"
+    fi
+    if [ $((now - started)) -ge "$limit" ]; then
+      die "$msg for $(((now - started) / 60)) minutes, longer than a deploy takes (3 x HELM_TIMEOUT): it was killed half way. Recover with: DEPLOY_FORCE=1 scripts/deploy.sh rollback $ENVIRONMENT"
+    fi
+    [ "$waited" = 1 ] || log "$msg: another deploy is running; waiting for it (at most $(((limit - now + started + 59) / 60)) minutes)"
+    waited=1
+    sleep 10
+  done
+  [ "$waited" = 0 ] || log "the other deploy finished"
 }
 
 # The other CI made the running release: each environment is deployed by one CI only.
@@ -374,8 +441,11 @@ smoke() {
   if [ -z "$want_version" ] && [[ "${tag:-}" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
     want_version="${BASH_REMATCH[1]}"
   fi
-  if [ -z "$version" ]; then
-    warn "no startup line with the app's version in pod ${api_pod:-?}'s log (logLevel above INFO?): version not checked"
+  if [ -z "$version" ] && [ -n "$want_version" ]; then
+    printf "  FAIL no startup line with the app's version in pod %s's log: release %s not confirmed (keep logLevel at INFO or DEBUG)\n" "${api_pod:-?}" "$want_version" >&2
+    failed=1
+  elif [ -z "$version" ]; then
+    warn "no startup line with the app's version in pod ${api_pod:-?}'s log (logLevel above INFO?): version not shown"
   elif [ -n "$want_version" ] && [ "$version" != "$want_version" ]; then
     printf '  FAIL the app reports version %s, the image tag is %s\n' "$version" "$tag" >&2
     failed=1
@@ -418,10 +488,10 @@ case "$ACTION" in
   status)
     preflight
     hl history "$HELM_RELEASE" --max 10 || true
-    printf '\nREVISION STATUS MIGRATION-HEAD DEPLOYED-BY CHECKS\n'
+    printf '\nREVISION STATUS MIGRATION-HEAD DEPLOYED-BY PIPELINE CHECKS\n'
     while read -r rev status; do
-      printf '%s %s %s %s %s\n' "$rev" "$status" "$(revision_label "$rev" "$LABEL_HEAD")" "$(revision_label "$rev" "$LABEL_BY")" \
-        "$(verify_failed "$rev" && echo failed || echo -)"
+      printf '%s %s %s %s %s %s\n' "$rev" "$status" "$(revision_label "$rev" "$LABEL_HEAD")" "$(revision_label "$rev" "$LABEL_BY")" \
+        "$(revision_label "$rev" "$LABEL_ORDER")" "$(verify_failed "$rev" && echo failed || echo -)"
     done < <(revisions | tail -n 10)
     printf '\n'
     kc get pods -l "app.kubernetes.io/instance=$HELM_RELEASE" -o wide
@@ -436,16 +506,27 @@ case "$ACTION" in
     mapfile -t img < <(image_args)
 
     # Render first (no cluster): the values must pass the chart's schema and must not
-    # replace the image's registry (global.imageRegistry would).
+    # replace the image's registry (global.imageRegistry would)...
     rendered="$(helm template "$HELM_RELEASE" "$CHART" --namespace "$KUBE_NAMESPACE" \
-      "${values_args[@]}" "${img[@]}" "$@" --show-only templates/deployment-api.yaml)" ||
+      "${values_args[@]}" "${img[@]}" "$@")" ||
       die "the chart doesn't render with $DEPLOY_VALUES"
-    grep -Eq "image: \"?(docker\.io/(library/)?)?$(sed 's/[.[\*^$/]/\\&/g' <<<"${want_ref#docker.io/}")\"?\$" <<<"$rendered" ||
-      die "the chart would run '$(grep -m 1 'image:' <<<"$rendered" | sed 's/^ *image: *//')', not $want_ref: don't set global.imageRegistry in $DEPLOY_VALUES (set postgresql.image.registry for the bundled Postgres instead)"
+    # (one document of the render, by its template's path)
+    rendered_doc() { awk -v src="soundings/templates/$1" '/^# Source: / { p = ($3 == src) } p' <<<"$rendered"; }
+    api_doc="$(rendered_doc deployment-api.yaml)"
+    grep -Eq "image: \"?(docker\.io/(library/)?)?$(sed 's/[.[\*^$/]/\\&/g' <<<"${want_ref#docker.io/}")\"?\$" <<<"$api_doc" ||
+      die "the chart would run '$(grep -m 1 'image:' <<<"$api_doc" | sed 's/^ *image: *//')', not $want_ref: don't set global.imageRegistry in $DEPLOY_VALUES (set postgresql.image.registry for the bundled Postgres instead)"
+    # ...and the migration Job (external database) must end before Helm gives up on it:
+    # after HELM_TIMEOUT Helm rolls the release back, and a Job still running could then
+    # migrate the database under the restored release.
+    job_deadline="$(rendered_doc job-migrate.yaml | sed -n 's/^  activeDeadlineSeconds: *\([0-9]*\)$/\1/p' | head -n 1)"
+    if [ -n "$job_deadline" ] && [ "$job_deadline" -ge "$HELM_TIMEOUT_SECONDS" ]; then
+      die "the migration Job may run ${job_deadline}s (migrations.activeDeadlineSeconds), HELM_TIMEOUT is ${HELM_TIMEOUT_SECONDS}s: after a timeout Helm rolls back while the Job could still migrate. Set migrations.activeDeadlineSeconds below HELM_TIMEOUT in the values (deploy/environments/*.values.yaml: 480), or raise HELM_TIMEOUT."
+    fi
 
     preflight
     current="$(deployed_revision)"
     guard_other_ci "$current"
+    current_head=""
     if [ -n "$current" ]; then
       current_head="$(revision_label "$current" "$LABEL_HEAD")"
       if [ -n "$current_head" ] && [[ "$head" < "$current_head" ]]; then
@@ -454,6 +535,27 @@ case "$ACTION" in
         else
           die "the image's migrations end at $head but revision $current already migrated the database to $current_head: older code may not run on a newer schema (Helm and this script never migrate down). Deploy a newer image, or set DEPLOY_FORCE=1 if you know this one runs on it."
         fi
+      fi
+      # Never replace a newer pipeline's release with an older one's (a retried or slow old
+      # job). A release (X.Y.Z) goes to staging whatever main built meanwhile, but never
+      # replaces a newer release.
+      read -r _ running_tag < <(release_image) || true
+      older=""
+      if [[ "$IMAGE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [[ "${running_tag:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "$running_tag" != "$IMAGE_TAG" ] &&
+          [ "$(printf '%s\n%s\n' "$IMAGE_TAG" "$running_tag" | sort -V | head -n 1)" = "$IMAGE_TAG" ]; then
+          older="release $IMAGE_TAG is older than the $running_tag that revision $current runs"
+        fi
+      else
+        current_order="$(revision_label "$current" "$LABEL_ORDER")"
+        if [ -n "$DEPLOY_ORDER" ] && [ -n "$current_order" ] && [ "$(revision_label "$current" "$LABEL_BY")" = "$DEPLOYED_BY" ] &&
+          [ "$DEPLOY_ORDER" -lt "$current_order" ]; then
+          older="revision $current came from a newer run ($current_order) than this one ($DEPLOY_ORDER)"
+        fi
+      fi
+      if [ -n "$older" ]; then
+        [ "$DEPLOY_FORCE" = 1 ] || die "$older: not replacing it with older code (DEPLOY_FORCE=1 does; to go back, use the rollback)"
+        warn "$older; DEPLOY_FORCE=1: deploying anyway"
       fi
     fi
 
@@ -470,16 +572,28 @@ case "$ACTION" in
       log "dry run: the API server accepted it; nothing changed"
       exit 0
     fi
+    labels="$LABEL_HEAD=$head,$LABEL_BY=$DEPLOYED_BY${DEPLOY_ORDER:+,$LABEL_ORDER=$DEPLOY_ORDER}"
+    helm_err="$work/helm-upgrade.err"
     if ! hl upgrade --install "$HELM_RELEASE" "$CHART" "${values_args[@]}" "${img[@]}" \
       --atomic --cleanup-on-fail --wait --timeout "$HELM_TIMEOUT" --hide-notes \
-      --description "$description" \
-      --labels "$LABEL_HEAD=$head,$LABEL_BY=$DEPLOYED_BY" "$@"; then
+      --description "$description" --labels "$labels" "$@" 2> >(tee "$helm_err" >&2); then
+      sleep 1 # tee's last lines
+      if grep -q 'another operation (install/upgrade/rollback) is in progress' "$helm_err"; then
+        die "another deploy of $ENVIRONMENT started at the same moment: this one changed nothing (run it again once that one is done)"
+      fi
       hl history "$HELM_RELEASE" --max 5 >&2 || true
       if [ -n "$current" ]; then
+        restored="$(deployed_revision)"
+        db_head="$(newer_head "$current_head" "$head")"
+        if migration_failed; then db_head="$current_head"; fi
+        [ -z "$restored" ] || label_restored "$restored" "$db_head"
         log "checking that the previous release still serves"
-        smoke "" >&2 || true
+        if ! smoke "" >&2; then
+          summary "Deploy to $ENVIRONMENT failed: environment DOWN?" "The upgrade to \`$want_ref\` failed and Helm rolled back, but the restored release fails its smoke test."
+          die "the upgrade to $IMAGE_TAG failed and Helm rolled back to revision $current's content, but THE RESTORED RELEASE FAILS ITS SMOKE TEST TOO: $ENVIRONMENT may be down (a schema the previous code can't use? migrations at ${db_head:-?}). See helm history, the pods and the events now."
+        fi
         summary "Deploy to $ENVIRONMENT failed" "The upgrade to \`$want_ref\` failed and Helm rolled back: the previous release keeps running (helm history above)."
-        die "the upgrade to $IMAGE_TAG failed and was rolled back: $ENVIRONMENT still runs the previous release (revision $current's content)"
+        die "the upgrade to $IMAGE_TAG failed and was rolled back: $ENVIRONMENT still runs the previous release (revision $current's content, migrations ${db_head:-?})"
       fi
       die "the first install of $ENVIRONMENT failed (nothing ran there before; see the events: kubectl -n $KUBE_NAMESPACE get events). With the bundled Postgres, delete its volume claim (data-$HELM_RELEASE-postgresql-0) before trying again: Helm keeps it, and a new install generates a new password."
     fi
@@ -491,8 +605,12 @@ case "$ACTION" in
         mark_verify_failed "$new_revision"
         hl rollback "$HELM_RELEASE" "$current" --wait --cleanup-on-fail --timeout "$HELM_TIMEOUT" ||
           die "$problem failed on revision $new_revision and the rollback to $current failed too: see helm history"
-        label_rollback "$(deployed_revision)"
-        smoke "" >&2 || warn "the restored release fails its smoke test too"
+        # The new revision's migrations ran: the database is at the newer head.
+        label_restored "$(deployed_revision)" "$(newer_head "$current_head" "$head")"
+        if ! smoke "" >&2; then
+          summary "Deploy to $ENVIRONMENT failed: environment DOWN?" "\`$want_ref\` failed $problem; rolled back to revision $current, which fails its smoke test too."
+          die "$problem failed for $IMAGE_TAG on $ENVIRONMENT; rolled back to revision $current, but THE RESTORED RELEASE FAILS ITS SMOKE TEST TOO: $ENVIRONMENT may be down (the database is at migrations $(newer_head "$current_head" "$head")). See helm history and the pods now."
+        fi
         summary "Deploy to $ENVIRONMENT failed" "\`$want_ref\` failed $problem; rolled back to revision $current."
         die "$problem failed for $IMAGE_TAG on $ENVIRONMENT: rolled back, the previous release (revision $current) is running again"
       fi
@@ -544,7 +662,8 @@ case "$ACTION" in
     fi
     hl rollback "$HELM_RELEASE" "$target" --wait --cleanup-on-fail --timeout "$HELM_TIMEOUT" ||
       die "helm rollback to revision $target failed: see helm history"
-    label_rollback "$(deployed_revision)"
+    # The database stays at the current head (a forced rollback doesn't migrate down).
+    label_restored "$(deployed_revision)" "$(newer_head "$target_head" "$current_head")"
     manifest="$(hl get manifest "$HELM_RELEASE" --revision "$target")"
     target_digest="$(sed -n '/image: .*@sha256:/{s/.*@\(sha256:[0-9a-f]\{64\}\).*/\1/p;q;}' <<<"$manifest")"
     problem="$(verify "$target_digest")"

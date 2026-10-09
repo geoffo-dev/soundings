@@ -22,8 +22,10 @@
 #   K3S_NAME, K3S_API_PORT, K3S_HTTP_PORT   as for scripts/k3s-up.sh
 #   DEPLOY_TOOLS_IMAGE                     default soundings-deploy-tools:dev (built if missing)
 #   Anything scripts/deploy.sh reads (HELM_TIMEOUT, ROLLBACK_REVISION, DEPLOY_FORCE, DRY_RUN,
-#   IMAGE_TAG) is passed through; IMAGE_DIGEST replaces the image's digest (rehearse a
-#   deploy of an image the node can't get); extra arguments go to helm.
+#   IMAGE_TAG, MIGRATION_HEAD, DEPLOY_URL) is passed through, and so is a CI's identity
+#   (GITLAB_CI + CI_PIPELINE_ID, or GITHUB_ACTIONS + GITHUB_RUN_ID: deploy as that CI's run);
+#   IMAGE_DIGEST replaces the image's digest (rehearse a deploy of an image the node can't
+#   get); extra arguments go to helm.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=k3s-env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/k3s-env.sh"
@@ -113,7 +115,8 @@ if [ -n "$IMAGE" ]; then
 fi
 
 pass=()
-for name in HELM_TIMEOUT ROLLBACK_REVISION DEPLOY_FORCE DRY_RUN EXPECTED_VERSION; do
+for name in HELM_TIMEOUT ROLLBACK_REVISION DEPLOY_FORCE DRY_RUN EXPECTED_VERSION \
+  GITLAB_CI CI_PIPELINE_ID CI_JOB_ID GITHUB_ACTIONS GITHUB_RUN_ID; do
   [ -z "${!name:-}" ] || pass+=(-e "$name=${!name}")
 done
 
@@ -123,7 +126,7 @@ exec docker run --rm --network host \
   -v "$kubeconfig:/tmp/kubeconfig:ro" -e KUBECONFIG=/tmp/kubeconfig -e HOME=/tmp \
   -e NO_PROXY=localhost,127.0.0.1 -e no_proxy=localhost,127.0.0.1 \
   -e "DEPLOY_VALUES=deploy/environments/$ENVIRONMENT.values.yaml deploy/environments/k3s.values.yaml" \
-  -e "DEPLOY_URL=http://localhost:$K3S_HTTP_PORT" \
+  -e "DEPLOY_URL=${DEPLOY_URL:-http://localhost:$K3S_HTTP_PORT}" \
   ${image_env[@]+"${image_env[@]}"} ${pass[@]+"${pass[@]}"} \
   "$DEPLOY_TOOLS_IMAGE" bash scripts/deploy.sh "$ACTION" "$ENVIRONMENT" \
   --set "baseUrls[0]=http://localhost:$K3S_HTTP_PORT" "$@"
