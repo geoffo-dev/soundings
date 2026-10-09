@@ -43,9 +43,10 @@ it immediately.
   see and fix it) but it grants nothing. The blind rule (✱) still applies to them.
 - **Except +Rsr** (Phase 8b): the researcher overlay counts **whatever the user's role,
   or without one** (Vwr, NMi, and R, the guest researcher of a private project), while
-  the assignment is live (c24). A researcher can always answer the checklist and discuss
-  the idea; it never lifts the blind rule and never grants score data, the proposal or
-  the AI panel.
+  the assignment is live (c24). A researcher can always discuss the idea and answer the
+  checklist while the idea still awaits research (c26: past Research only the owner and
+  admins change the answers); it never lifts the blind rule and never grants score data,
+  the proposal or the AI panel.
 - Being platform admin does **not** make someone eligible to be assigned as owner or
   evaluator; assignment needs a real project role (condition c4).
 
@@ -87,7 +88,9 @@ it immediately.
   disabling the agent revokes its key. **Its key works only inside the agent's runs
   (c22, run scope):** on `/mcp` only (REST: 403 `insufficient_scope`); every call names
   its run (`run_id`) and reaches only that run's idea while it is `running` and nobody
-  asked to cancel it, writing only through that run kind's tool. It **never sees others'
+  asked to cancel it, writing only through that run kind's tool and **reading what the
+  run's kind allows** (a research run reads the idea as its guest researcher would: no
+  proposal, no rubric, no evaluation area; c22). It **never sees others'
   score data**, and its own only inside its evaluate run (section 3 rule 9). Since it is never an owner or
   admin it can't start AI runs (table J).
 - **Break-glass admin:** the one local account whose credentials come from a K8s
@@ -483,11 +486,15 @@ Notes ([contract-phase8 §3](api/contract-phase8.md#3-the-research-step)):
   M1; contract-phase8 R1): `clear_research_item` on a required item of an idea in a status
   after Research is 409 `research_answer_required` (a domain rule, after the rule's 403
   and `research_step_off`); editing it stays allowed, optional items and ideas in Research
-  or before it clear as before. It applies to everyone who holds `idea.answer_research`,
-  the researcher included.
+  or before it clear as before. It applies to the owner and admins; a researcher who is
+  neither changes no answer past Research at all (c26, below).
 - **Phase 8b, the researcher:** the +Rsr overlay (table L) widens `idea.answer_research`
   to the idea's researcher while the assignment is live (c24: so never on a closed idea),
-  in any column, guest (R) included; the override stays
+  in any column, guest (R) included, **while the idea still awaits research** (c26, lead
+  decision D1: in Research or a status before it; past Research a researcher who isn't the
+  owner or an admin gets 409 `research_finished` on every answer, edit or clear, and
+  `can_answer_research` is false for them, because the answers then feed the proposal's
+  appendix, which a guest can't see, and answer edits aren't audited); the override stays
   admins' only, so a researcher can't "Move anyway". `idea.assign_researcher` (the owner,
   project and platform admins; c5; c23 for the person assigned) sets the researcher and
   the research due date; `idea.release_researcher` is the researcher's "Hand back"
@@ -549,7 +556,11 @@ Two parts, decided by the one policy module (ADR 0010, [ADR 0016](adr/0016-resea
   research assignments there (audited `reason: left_project`, answers kept, no feed event
   or notification), so a member removed from the project never keeps R. Everyone who sees
   the idea sees "not in this project" beside an outside researcher; the audit marks
-  `outside_project`.
+  `outside_project`. **Making an internal project private** (lead decision D2) ends, at
+  once, the assignments of researchers without a role there (audited `reason:
+  made_private`, answers kept, no feed event or notification), so only an admin's choice
+  (c25) ever makes someone R; project admins see the count beforehand
+  (`Project.outside_researcher_count`) and the settings page asks first.
 
 Rule names are written without backticks here so the tables' parser
 (`tests/authz/test_policy_matrix.py`) reads tables A–K only; the researcher tests parse
@@ -592,7 +603,7 @@ cell and +Rsr `·`.
 | ai.draft_section | 404 | · | |
 | ai.cancel_run | 404 | · | |
 | ai.delete_note | 403 | · | Notes are in the feed R reads; deleting is the owner's and admins'. |
-| idea.answer_research | 403 | + | The researcher answers (c24 already means not closed; `research_answer_required` applies as to everyone). |
+| idea.answer_research | 403 | + (c26) | The researcher answers, edits and clears while the idea still awaits research (c24 already means not closed; c26: in Research or a status before it, else 409 `research_finished`). The owner and admins keep Phase 8's rule past Research (`research_answer_required`). |
 | idea.research_override | 403 | · | Never the researcher. |
 | idea.assign_researcher | 403 | · | The owner and admins assign. |
 | idea.release_researcher | 403 | + | "Hand back". |
@@ -610,7 +621,7 @@ deny by default, and a meta-test fails for an idea route or tool without a row):
 | `get_idea_research`, `list_similar_ideas` | view | Similar ideas: only ideas R can view anyway (other ideas they research), never the project's others. |
 | `get_research_note` | view | Notes are in the feed. |
 | `create_comment`, `update_comment`, `delete_comment` | rule | +Rsr: comment and edit or delete their own (c2); others' → 403. |
-| `answer_research_item`, `clear_research_item` | rule | +Rsr; 409s as for the owner (`research_answer_required` included). |
+| `answer_research_item`, `clear_research_item` | rule | +Rsr until Research ends (c26: then 409 `research_finished`); the other 409s as for the owner. |
 | `remove_researcher` | rule | Hand back (`idea.release_researcher`); 204, then access ends. |
 | `update_idea`, `delete_idea`, `change_idea_status`, `set_idea_owner`, `volunteer_as_owner`, `vote_idea`, `unvote_idea`, `set_research_assignment`, `delete_research_note` | rule | 403 (R sees the idea; `set_research_assignment` through any key: 403 `insufficient_scope` first, section 5). |
 | `add_evaluators`, `remove_evaluator`, `set_evaluation_due_date`, `close_evaluation`, `reopen_evaluation`, `list_evaluations`, `get_my_evaluation`, `save_my_evaluation`, `set_evaluation_inclusion` | hidden | 404. |
@@ -733,10 +744,11 @@ evaluations and one AI evaluation present.
 | c19 | The idea is not held for moderation. Not written in the cells: like `project_archived`, it applies to every idea write (`idea_write` rows) except `idea.delete` and `idea.moderate`, and to `idea.watch`, after the 404/403 checks (contract-phase4 §3.6) | 409 `awaiting_moderation` |
 | c20 | The principal is not the break-glass account (a key would outlive the emergency and keep working after SSO is configured; contract-phase5 §3.1). Covers agents' keys too (Phase 6) | 403 `break_glass_account` |
 | c21 | The principal is a person, not a service account. Not written in the cells (a property of the principal, like c20); applies to `idea.volunteer_owner` (contract-phase5 §3.7) | 403 `forbidden` |
-| c22 | **Run scope** (a property of the principal, like c20/c21; not written in the cells). For a service-account principal: REST is refused; every MCP call **names its run** (`run_id`, required for agents) and must be an **open run** of its agent (`running`, no cancel request), checked **before any idea is looked up**; every tool must target that run's idea (`get_rubric` also by its project; `list_projects` / `search_ideas` list only that run's project / idea); the only write is the named run's kind's tool (evaluate → `submit_evaluation`, research → `add_research_note`, draft_section → `propose_proposal_section` for the run's section); `create_idea` and `add_comment` never. For people: `run_id` is ignored and `add_research_note` is refused (contract-phase6 §3.5) | REST → 403 `insufficient_scope`; no `run_id`, a run that isn't open, another idea (existing or not), another kind or section → `ai_run_not_active`; `create_idea`, `add_comment` by an agent, `add_research_note` by a person → `forbidden` |
+| c22 | **Run scope** (a property of the principal, like c20/c21; not written in the cells). For a service-account principal: REST is refused; every MCP call **names its run** (`run_id`, required for agents) and must be an **open run** of its agent (`running`, no cancel request), checked **before any idea is looked up**; every tool must target that run's idea (`get_rubric` also by its project; `list_projects` / `search_ideas` list only that run's project / idea); the only write is the named run's kind's tool (evaluate → `submit_evaluation`, research → `add_research_note`, draft_section → `propose_proposal_section` for the run's section); `create_idea` and `add_comment` never. **The reads depend on the run's kind** (Phase 8b guest review M1, `app.ai.scope.RUN_READ_TOOLS`): evaluate and draft_section runs read `list_projects`, `search_ideas`, `get_idea`, `get_rubric` and `get_proposal`; a **research run reads the idea as its guest researcher would** (its note lands in the feed a guest reads, table L): `list_projects`, `search_ideas` and `get_idea` only, `get_idea` / `search_ideas` in the guest shape (no evaluation area, `has_proposal: false`, the guest feed's `last_activity_at`), and `get_rubric` / `get_proposal` → `ai_run_not_active`; so among the research assistant's runs only drafting reads the proposal. For people: `run_id` is ignored and `add_research_note` is refused (contract-phase6 §3.5) | REST → 403 `insufficient_scope`; no `run_id`, a run that isn't open, another idea (existing or not), another kind or section, a read tool the run's kind doesn't read → `ai_run_not_active`; `create_idea`, `add_comment` by an agent, `add_research_note` by a person → `forbidden` |
 | c23 | Phase 8b: the user being made the idea's researcher is an **active person**: not a service account (an AI agent), not the break-glass account, not deactivated (an unknown id alike). Applies to `idea.assign_researcher` when it names someone (removing the researcher has nobody to check) | 422 `researcher_not_eligible` |
 | c24 | Phase 8b, **live research assignment** (a property of column R and the +Rsr overlay, like c20–c22 not written in the cells): the principal is the idea's assigned researcher, the project's research step is on, the idea isn't closed and the project isn't archived (closing and turning the step off also clear the assignment, so in practice only an archived project suspends one) | R: the column doesn't apply, so the principal is NMp (404); +Rsr: grants nothing (the column's own cell decides) |
 | c25 | Phase 8b, product owner's answer to review S1 (a): in a **private** project, the person the **owner** names as researcher holds a role in the project (an internal project's owner may name anyone). Only on the owner overlay of `idea.assign_researcher`: project and platform admins may name someone outside a private project. Checked on the person's role read after their user row is locked (contract-phase8b §17) | 403 `outside_researcher_needs_admin` |
+| c26 | Phase 8b, lead decision D1 (review leftovers): the idea **still awaits research**: the project's research step is on, the idea isn't closed and it is in Research or a status before it (`awaits_research`). Only on the +Rsr overlay of `idea.answer_research` (table L): past Research only the owner (with a member or admin role) and project and platform admins change the answers, under Phase 8's rule (`research_answer_required`) | 409 `research_finished` |
 
 ## 5. API keys
 
@@ -868,7 +880,9 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   no tool assigns a researcher.
 
 - **Phase 6:** for a service account every tool applies c22 (the run scope: targets,
-  filtered lists, the one write tool, all bound to the run named by `run_id`) and rule 9
+  filtered lists, the one write tool and, Phase 8b, the read tools of the run's kind, all
+  bound to the run named by `run_id`; a research run reads only `list_projects`,
+  `search_ideas` and `get_idea`, in its guest researcher's shape) and rule 9
   (no others' score data, ever; its own only in its evaluate run);
   `submit_evaluation` takes per-criterion `sources` from service accounts only (people:
   `validation_error`) and needs an AI evaluator's rationale (the comment) on every

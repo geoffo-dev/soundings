@@ -1092,14 +1092,18 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
     assert (work["counts"]["research_to_do"], work["counts"]["research_overdue"]) == (0, 0)
     await remind(app, settings, at_digest_hour(local_due, settings))
     assert len(await emails_to(db_session, nora.id, "research_reminder")) == 1
-    # M1: a required answer can't be cleared past Research, for the researcher too.
-    await refused(
-        nora,
-        "DELETE",
-        f"/ideas/{key}/research/items/{items[REQUIRED[0]]['item_id']}",
-        status=409,
-        code="research_answer_required",
-    )
+    # Lead decision D1: past Research the guest researcher changes no answer any more
+    # (the owner and admins still edit, never clear, a required one: Phase 8's M1).
+    for method, body in (("PUT", {"answer": "Rewritten after the move"}), ("DELETE", None)):
+        await refused(
+            nora,
+            method,
+            f"/ideas/{key}/research/items/{items[REQUIRED[0]]['item_id']}",
+            body,
+            status=409,
+            code="research_finished",
+        )
+    assert (await nora.get(f"/ideas/{key}/research"))["permissions"]["can_answer"] is False
     # She still sees it (assigned, open, the step on), and her inbox has the move.
     assert_guest_shape(await nora.get(f"/ideas/{key}"))
     mention = f"@[Nora Quinn](user:{nora.id})"

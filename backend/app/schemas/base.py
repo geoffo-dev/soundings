@@ -266,10 +266,11 @@ def _near_now(value: datetime) -> datetime:
     now = datetime.now(UTC)
     if not now - DUE_DATE_MAX_BACK <= utc <= now + DUE_DATE_MAX_AHEAD:
         raise ValueError("the due date must be at most a year ago and five years ahead")
-    return value
+    return utc
 
 
 DueAt = Annotated[AwareDatetime, AfterValidator(_near_now)]
 """A request's due date: with an offset, at most a year ago and five years ahead (the
-evaluation due date; Phase 8b the research due date). ``app.schemas.ideas`` re-exports
-it."""
+evaluation due date; Phase 8b the research due date), returned **in UTC** whatever offset
+it came with (Phase 8b review N1: stored, answered and put in the feed in UTC; the API
+shape is unchanged). ``app.schemas.ideas`` re-exports it."""

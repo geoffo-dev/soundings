@@ -5,9 +5,9 @@
   who may only view the idea never takes that lock.
 * N3: an admin who is the researcher and clears it with ``PUT`` hands it back (audit
   ``handed_back``, feed ``handed_back``), as ``DELETE`` says.
-* L1 (lead decision pending; contract section 17 keeps the assignments): making a project
-  private records in its ``project.update`` audit entry how many outside researchers
-  keep their idea.
+* L1 (lead decision D2: making a project private ends outside researchers' assignments,
+  tests/research/test_lead_decisions.py): its ``project.update`` audit entry records how
+  many assignments that ended.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ async def test_an_admin_researcher_clearing_it_with_put_hands_it_back(
     assert (await researcher_audit(db_session, idea))[-1].details["reason"] == "removed"
 
 
-async def test_making_a_project_private_counts_its_outside_researchers(
+async def test_making_a_project_private_counts_the_assignments_it_ends(
     api: AsUser, team: Team, db_session: AsyncSession
 ) -> None:
     await db_session.execute(
@@ -131,5 +131,9 @@ async def test_making_a_project_private_counts_its_outside_researchers(
     assert entry is not None
     assert entry.details["fields"] == ["visibility"]
     assert entry.details["outside_researchers"] == 1
-    # The outsider keeps the idea (contract section 17) until the lead decides otherwise.
-    assert ok(await (await api(team.outsider)).get(f"/ideas/{key}"))["key"] == key
+    # Lead decision D2: the outsider's assignment ended with the change, so the idea is
+    # gone for them; the member's stays.
+    assert_problem(await (await api(team.outsider)).get(f"/ideas/{key}"), 404, "not_found")
+    kept = await db_session.get(Idea, other.id, populate_existing=True)
+    assert kept is not None
+    assert kept.researcher_id == team.member.id

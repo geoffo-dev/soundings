@@ -89,7 +89,7 @@ TABLE: dict[str, tuple[str, str]] = {
     "ai.draft_section": ("404", "·"),
     "ai.cancel_run": ("404", "·"),
     "ai.delete_note": ("403", "·"),
-    "idea.answer_research": ("403", "+"),
+    "idea.answer_research": ("403", "+ (c26)"),
     "idea.research_override": ("403", "·"),
     "idea.assign_researcher": ("403", "·"),
     "idea.release_researcher": ("403", "+"),
@@ -500,3 +500,82 @@ def test_live_is_c24() -> None:
     for state in STATES:
         principal, resource = Case("Mem+Rsr", state).build(PROJECT)
         assert researcher_live(principal, resource) is (state == "live"), state
+
+
+# --- c26: past Research only the owner and admins change the answers (lead decision D1) -----
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("R", ("409", "research_finished")),
+        ("NMi+Rsr", ("409", "research_finished")),
+        ("Vwr+Rsr", ("409", "research_finished")),
+        ("Mem+Rsr", ("409", "research_finished")),
+        ("PAd+Rsr", ("allow", "ok")),  # the column's own grant
+        ("PA+Rsr", ("allow", "ok")),
+    ],
+)
+@pytest.mark.parametrize(
+    ("step", "status", "past"),
+    [
+        (ResearchStep.BEFORE_EVALUATION, IdeaStatus.NEW, False),
+        (ResearchStep.BEFORE_EVALUATION, IdeaStatus.RESEARCH, False),
+        (ResearchStep.BEFORE_EVALUATION, IdeaStatus.EVALUATING, True),
+        (ResearchStep.BEFORE_EVALUATION, IdeaStatus.PROPOSAL, True),
+        (ResearchStep.BEFORE_PROPOSAL, IdeaStatus.SHORTLISTED, False),
+        (ResearchStep.BEFORE_PROPOSAL, IdeaStatus.PROPOSAL, True),
+    ],
+)
+def test_c26_the_researcher_answers_only_until_research_ends(
+    kind: Kind,
+    expected: tuple[str, str],
+    step: ResearchStep,
+    status: IdeaStatus,
+    past: bool,
+) -> None:
+    principal, resource = Case(kind).build(PROJECT)
+    assert resource.idea is not None
+    assert resource.project is not None
+    resource = resource.replace(
+        idea=replace(resource.idea, status=status),
+        project=replace(resource.project, research_step=step),
+    )
+
+    decision = authorize(principal, Rule.IDEA_ANSWER_RESEARCH, resource)
+
+    assert (outcome(decision), decision.code) == (expected if past else ("allow", "ok"))
+    assert idea_permissions(principal, resource).can_answer_research is decision.allowed
+
+
+@pytest.mark.parametrize("role", [ProjectRole.MEMBER, ProjectRole.ADMIN])
+def test_c26_an_owner_researcher_keeps_the_owners_rule(role: ProjectRole) -> None:
+    principal, resource = Case("Mem+Rsr").build(PROJECT)
+    assert resource.idea is not None
+    resource = resource.replace(
+        role=role, idea=replace(resource.idea, status=IdeaStatus.PROPOSAL, owner_id=ME)
+    )
+
+    assert can(principal, Rule.IDEA_ANSWER_RESEARCH, resource)
+
+
+def test_c26_a_viewer_owner_researcher_follows_the_researchers_rule() -> None:
+    """The owner overlay needs a member or admin role; +Rsr then decides (c26)."""
+    principal, resource = Case("Vwr+Rsr").build(PROJECT)
+    assert resource.idea is not None
+    resource = resource.replace(
+        idea=replace(resource.idea, status=IdeaStatus.EVALUATING, owner_id=ME)
+    )
+
+    decision = authorize(principal, Rule.IDEA_ANSWER_RESEARCH, resource)
+
+    assert (decision.status, decision.code) == (409, "research_finished")
+
+
+def test_c26_a_write_key_hears_the_same_409() -> None:
+    case = Case("R", auth="api_key", scopes=frozenset({"read", "write"}))
+    principal, resource = case.build(PROJECT)
+    assert resource.idea is not None
+    resource = resource.replace(idea=replace(resource.idea, status=IdeaStatus.EVALUATING))
+
+    decision = authorize(principal, Rule.IDEA_ANSWER_RESEARCH, resource)
+
+    assert (decision.status, decision.code) == (409, "research_finished")

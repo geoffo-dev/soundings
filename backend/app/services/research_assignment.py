@@ -11,11 +11,13 @@ sections 3 and 17).
   commits meanwhile is seen. Due dates are stored and reported in UTC (review N1, as
   evaluation due dates are).
 * **Automatic clears** (:func:`clear_idea`, :func:`clear_where`): closing the idea,
-  turning the project's step off, deactivating the researcher and (product owner, review
+  turning the project's step off, deactivating the researcher, (product owner, review
   S1 b) losing one's role in a private project (:func:`roles_before`,
-  :func:`end_after_role_loss`). Nobody is assigned afterwards (the owner does the
-  research), the due date and answers are kept, one ``idea.researcher_change`` audit entry
-  per idea, no feed event or notification.
+  :func:`end_after_role_loss`) and (lead decision D2) an internal project made private,
+  for researchers without a role in it (``app.services.projects.update_project``).
+  Nobody is assigned afterwards (the owner does the research), the due date and answers
+  are kept, one ``idea.researcher_change`` audit entry per idea, no feed event or
+  notification.
 * :func:`assignment_out`: the Research panel's ``assignment``.
 
 Lock order everywhere: projects ``FOR KEY SHARE`` (by id), then ideas ``FOR UPDATE`` (by
@@ -58,8 +60,10 @@ __all__ = [
     "set_assignment",
 ]
 
-ClearReason = Literal["deactivated", "closed", "step_off", "left_project"]
-"""``details.reason`` of an automatic clear (contract-phase8b sections 3.5 and 17)."""
+ClearReason = Literal["deactivated", "closed", "step_off", "left_project", "made_private"]
+"""``details.reason`` of an automatic clear (contract-phase8b sections 3.5 and 17;
+``made_private``: lead decision D2, an internal project made private ends the assignments
+of researchers without a role in it)."""
 
 _roles = project_effective_roles
 

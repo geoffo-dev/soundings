@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import case, exists, func, select
+from sqlalchemy import ColumnElement, and_, case, exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,7 @@ from app.domain.rubric_defaults import default_rubric_criteria
 from app.domain.template_defaults import default_template_sections
 from app.errors import ConflictProblem, NotFoundProblem, ProblemError
 from app.models.base import utcnow
-from app.models.enums import HoldReason, IdeaStatus, ProjectRole, ProjectVisibility
+from app.models.enums import HoldReason, ProjectRole, ProjectVisibility
 from app.models.evaluation import EvaluationScore
 from app.models.idea import Idea, IdeaTag
 from app.models.project import (
@@ -210,6 +210,9 @@ async def project_detail(
         status_labels=StatusLabels(**resolved_labels(project.status_labels)),
         rubric=[_criterion_out(criterion) for criterion in await _active_criteria(db, project.id)],
         created_at=project.created_at,
+        outside_researcher_count=(
+            await _outside_researcher_count(db, project) if summary.permissions.can_manage else None
+        ),
     )
 
 
@@ -297,9 +300,13 @@ async def update_project(
         await db.flush()
         details: dict[str, object] = {"rule": Rule.PROJECT_EDIT_SETTINGS, "fields": changed}
         if "visibility" in changed and project.visibility is ProjectVisibility.PRIVATE:
-            # Phase 8b code review L1: outside researchers keep their one idea (contract
-            # section 17); the audit says how many.
-            details["outside_researchers"] = await _outside_researchers(db, project)
+            # Lead decision D2 (Phase 8b review leftovers; code review L1, guest review L4):
+            # researchers without a role here would become its guests, which only an admin
+            # may decide (c25), so their assignments end now, like leaving a private
+            # project; the audit entry says how many ended.
+            details["outside_researchers"] = await research_assignment.clear_where(
+                db, _researched_from_outside(project), actor=principal, reason="made_private"
+            )
         await audit.record(
             db,
             "project.update",
@@ -313,20 +320,25 @@ async def update_project(
     return await project_detail(db, principal, project, resource)
 
 
-async def _outside_researchers(db: AsyncSession, project: Project) -> int:
-    """Open ideas of the project researched by someone without a role in it."""
-    roles = _roles
+def _researched_from_outside(project: Project) -> ColumnElement[bool]:
+    """The project's ideas researched by someone without a role in it (closing an idea
+    clears its researcher, so these are open)."""
+    return and_(
+        Idea.project_id == project.id,
+        Idea.researcher_id.is_not(None),
+        ~exists().where(
+            _roles.c.project_id == Idea.project_id, _roles.c.user_id == Idea.researcher_id
+        ),
+    )
+
+
+async def _outside_researcher_count(db: AsyncSession, project: Project) -> int:
+    """``Project.outside_researcher_count``: the people behind :func:`_researched_from_outside`
+    (one statement over ``ix_ideas_researcher_id_status``'s rows of the project)."""
     return int(
         await db.scalar(
-            select(func.count())
-            .select_from(Idea)
-            .where(
-                Idea.project_id == project.id,
-                Idea.researcher_id.is_not(None),
-                Idea.status != IdeaStatus.CLOSED,
-                ~exists().where(
-                    roles.c.project_id == Idea.project_id, roles.c.user_id == Idea.researcher_id
-                ),
+            select(func.count(func.distinct(Idea.researcher_id))).where(
+                _researched_from_outside(project)
             )
         )
         or 0

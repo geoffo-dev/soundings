@@ -180,6 +180,17 @@ class Project(ProjectSummary):
     status_labels: StatusLabels
     rubric: list[RubricCriterion] = Field(description="Active criteria in display order.")
     created_at: datetime
+    outside_researcher_count: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Phase 8b (lead decision D2): how many people research an open idea of this "
+            "project without a role in it, for project and platform admins "
+            "(project.edit_settings); null for everyone else. Making an internal project "
+            "private ends their research assignments (audited idea.researcher_change, "
+            "reason made_private), so the settings page warns before it saves."
+        ),
+    )
 
 
 class ProjectCreate(RequestModel):

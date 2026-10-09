@@ -12,7 +12,7 @@ failed condition denies. Evaluation order (role matrix section 2), first failure
    principal conditions (c1 submitter, c2, c3, c15, c16, c17, c20, c21);
 4. **422**: request-body conditions (c4);
 5. **409**: state conditions (archived project, then c19 (an idea held for moderation),
-   then c1 status, c5, c6, c7, c10, c11, c13, c18).
+   then c1 status, c5, c6, c7, c10, c11, c13, c18, c26).
 
 When several grants apply (the column and the owner/evaluator overlays), the principal
 is allowed if any grant passes; otherwise the failure that got furthest wins, so the
@@ -23,7 +23,9 @@ live researcher (c24) without a role in its **private** project, for idea-scoped
 that one idea (its cells replace NMp's; :data:`GUEST_CELLS`), and while a request is
 served, :mod:`app.authz.guest` hides every operation R may not reach (404). The overlay
 **+Rsr** (:data:`RESEARCHER_OVERLAY`) adds commenting, answering and "Hand back" to the
-live researcher in **any** column, without a role (unlike +Own and +Evl).
+live researcher in **any** column, without a role (unlike +Own and +Evl); answering only
+while the idea still awaits research (c26, lead decision D1: past Research only the owner
+and admins change the answers).
 
 Blind evaluation (✱) is part of the policy: ``evaluation.view_others`` and
 ``score.view_aggregate`` are denied with ``hidden=True`` for a pending evaluator
@@ -59,6 +61,7 @@ from app.models.enums import (
 from app.models.idea import Idea
 from app.models.project import Project
 from app.schemas.projects import RESERVED_SLUGS
+from app.schemas.research import awaits_research
 
 __all__ = [
     "ASSIGNABLE_ROLES",
@@ -337,6 +340,15 @@ def _researcher_in_private_project(_p: Principal | None, resource: Resource, _: 
     return _project(resource).visibility is ProjectVisibility.INTERNAL
 
 
+def _research_not_finished(_p: Principal | None, resource: Resource, _rule: Rule) -> bool:
+    """c26 (lead, Phase 8b review leftovers D1): the idea still awaits research (the step
+    on, open, in Research or a status before it). Only on the +Rsr overlay of
+    ``idea.answer_research``: past Research the answers feed the proposal's appendix, which
+    a guest can't see, and answers aren't audited, so a researcher who isn't the owner or
+    an admin stops there."""
+    return awaits_research(_project(resource).research_step, _idea(resource).status)
+
+
 CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     "c1": (
         Check("c1", 403, "not_submitter", lambda p, r, _: _idea(r).submitted_by_id == _user_id(p)),
@@ -436,6 +448,7 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     # Phase 8b: who may be named the idea's researcher.
     "c23": (Check("c23", 422, "researcher_not_eligible", _researcher_eligible),),
     "c25": (Check("c25", 403, "outside_researcher_needs_admin", _researcher_in_private_project),),
+    "c26": (Check("c26", 409, "research_finished", _research_not_finished),),
 }
 
 _PHASE: Final = {404: 0, 401: 1, 403: 1, 422: 2, 409: 3}
@@ -740,7 +753,7 @@ TABLE_L: Final[Mapping[Rule, tuple[str, str]]] = {
     Rule.AI_DRAFT_SECTION:               ("404",     "·"),
     Rule.AI_CANCEL_RUN:                  ("404",     "·"),
     Rule.AI_DELETE_NOTE:                 ("403",     "·"),
-    Rule.IDEA_ANSWER_RESEARCH:           ("403",     "+"),
+    Rule.IDEA_ANSWER_RESEARCH:           ("403",     "+ (c26)"),
     Rule.IDEA_RESEARCH_OVERRIDE:         ("403",     "·"),
     Rule.IDEA_ASSIGN_RESEARCHER:         ("403",     "·"),
     Rule.IDEA_RELEASE_RESEARCHER:        ("403",     "+"),
@@ -816,6 +829,10 @@ _DETAILS: Final[Mapping[str, str]] = {
     "researcher_not_eligible": "Only an active person can do the research.",
     "outside_researcher_needs_admin": (
         "Only a project admin can ask someone outside this project to research it."
+    ),
+    "research_finished": (
+        "The research is finished: past Research only the idea's owner or an admin can "
+        "change its answers."
     ),
 }
 
