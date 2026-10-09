@@ -272,8 +272,8 @@ release_url() {
   fi
   local urls
   urls="$(kc get configmap -l "app.kubernetes.io/instance=$HELM_RELEASE" \
-    -o jsonpath='{.items[*].data.SOUNDINGS_BASE_URLS}' 2>/dev/null || true)"
-  printf '%s\n' "${urls%%,*}"
+    -o jsonpath='{range .items[*]}{.data.SOUNDINGS_BASE_URLS}{"\n"}{end}' 2>/dev/null || true)"
+  awk -F, 'NF && $1 != "" { print $1; exit }' <<<"$urls"
 }
 
 # --- smoke: the cluster side, then scripts/deploy-smoke.sh over HTTP ---------------------

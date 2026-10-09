@@ -1299,3 +1299,274 @@ backups keep the old rows until they expire.
 **Right of access:** Admin → Users shows the account, its identities, groups,
 projects and keys; Admin → Audit log, filtered by the person, shows what they
 did as an administrator.
+
+## Continuous delivery [Phase 9]
+
+Every push to `main` builds the image, scans it and deploys it to **staging**; a `vX.Y.Z`
+tag rebuilds it with that version, deploys it to staging, publishes the release (SBOM,
+chart) and waits at the **production** gate, which deploys the very digest staging ran.
+GitLab and GitHub run the same flow with the same script, `scripts/deploy.sh`, which
+people can also run by hand. Nothing in either CI can reach the cluster from outside:
+GitLab's jobs go through the GitLab agent's outbound tunnel, GitHub's deploy jobs run on
+self-hosted runners inside the network. Decisions: [ADR 0017](adr/0017-continuous-delivery.md);
+the facts behind them: [docs/research/gitlab-cd.md](research/gitlab-cd.md),
+[docs/research/github-cd.md](research/github-cd.md).
+
+```
+push to main:  checks ─ build (sha-<8>) ─ scan ─ e2e/k3s ─▶ staging (automatic)
+tag vX.Y.Z:    release check ─ checks ─ build (X.Y.Z, X.Y) ─ scan ─ e2e/k3s ─▶ staging
+               ─▶ release (SBOM, chart) ─▶ [gate] ─▶ production (staging's digest)
+```
+
+### One CI per environment
+
+Delivery is off until you say which environments a CI deploys: `SOUNDINGS_DEPLOY` =
+`staging` or `staging production` (a GitLab CI/CD variable, a GitHub repository
+variable). **Pick one CI per environment, never both**: their locks (GitLab's
+`resource_group`, GitHub's `concurrency`) can't see each other, and both would upgrade the
+same Helm release. `scripts/deploy.sh` refuses to take over a release the other CI
+deployed (`DEPLOY_FORCE=1` to switch on purpose). Production needs staging in the same
+CI: it deploys the digest that CI's staging deploy ran. The checks, the scans and the k3s
+e2e job run in both CIs either way.
+
+### Variables (one table)
+
+| Variable | Default | GitLab | GitHub | What it does |
+|---|---|---|---|---|
+| `SOUNDINGS_DEPLOY` | empty | CI/CD variable | repository variable | Environments this CI deploys (empty: checks only) |
+| `STAGING_URL`, `PRODUCTION_URL` / `DEPLOY_URL` | the release's first `baseUrls` | CI/CD variables | `DEPLOY_URL` per environment | The environment's URL in the CI and the smoke test's target |
+| `KUBE_AGENT_PROJECT` | this project | CI/CD variable | – | Project holding `.gitlab/agents/soundings-<env>/`; jobs use context `<it>:soundings-<env>` |
+| `SOUNDINGS_PRODUCTION_GATE` | `environment` | – | repository variable | `manual`: production only through the `deploy` workflow run on the tag |
+| `SOUNDINGS_STAGING_RUNNER`, `SOUNDINGS_PRODUCTION_RUNNER` | `soundings-staging`, `soundings-production` | – | repository variables | The ARC scale sets (runner labels) of the deploy jobs |
+| `SOUNDINGS_BUILD_RUNNER` | `ubuntu-24.04` | – | repository variable | A self-hosted build runner when the registry or the mirrors are internal |
+| `IMAGE_REPOSITORY` | `$CI_REGISTRY_IMAGE` / `ghcr.io/<owner>/soundings` | CI/CD variable | repository variable | Where images go |
+| `IMAGE_REGISTRY_USER`, `IMAGE_REGISTRY_PASSWORD` | job token / `GITHUB_TOKEN` | protected, masked | variable, secret | Credentials for another registry |
+| `IMAGE_BUILDER` | `buildkit` | CI/CD variable | – | `buildkit` (rootless, any Kubernetes runner) or `dind` (privileged Docker runner) |
+| `REGISTRY_MIRROR`, `BUILDKIT_IMAGE` | `docker.io`, pinned BuildKit | CI/CD variables | `BUILDKIT_IMAGE` | Tool images from your mirror |
+| `UBUNTU_MIRROR`, `PIP_INDEX_URL`, `UV_DEFAULT_INDEX`, `NPM_CONFIG_REGISTRY`, `UBUNTU_IMAGE`, `NODE_IMAGE` | unset | CI/CD variables | repository variables | Package mirrors for the image build (never with credentials in the URL) |
+| `CI_BUILD_CA` | unset | File variable | secret (PEM) | Internal CA bundle: the build, the registry, GitLab's agent proxy, the smoke test |
+| `SCAN_SEVERITY`, `SCAN_IGNORE_UNFIXED` | `HIGH,CRITICAL`, `true` | CI/CD variables | repository variables | The Trivy gate before any deploy (`CRITICAL` relaxes it) |
+| `TRIVY_DB_REPOSITORY` | Trivy's default | CI/CD variable | repository variable | Mirror of the vulnerability database |
+| `DEPLOY_IMAGE` | `alpine/k8s:1.31.13` (by digest) | CI/CD variable | – (the runner image) | bash, helm 3.16+, kubectl, curl |
+| `KUBECONFIG_DATA` | unset | – | production environment secret | A namespaced deployer's kubeconfig (see "GitHub") |
+| `COSIGN_PRIVATE_KEY`, `COSIGN_PASSWORD` | unset | protected File / variable | secrets | Sign the image when set |
+
+`scripts/deploy.sh` also reads `HELM_RELEASE` (`soundings`), `KUBE_NAMESPACE`
+(`soundings-<env>`), `KUBE_CONTEXT`, `DEPLOY_VALUES`, `HELM_TIMEOUT` (`10m`),
+`ROLLBACK_REVISION`, `MIGRATION_HEAD`, `DRY_RUN` and `DEPLOY_FORCE` (its header documents
+each).
+
+### The deploy script
+
+```bash
+IMAGE_REPOSITORY=registry.internal/platform/soundings IMAGE_TAG=1.2.3 \
+IMAGE_DIGEST=sha256:<64 hex> scripts/deploy.sh deploy staging      # make deploy ENV=staging
+scripts/deploy.sh rollback production                                # make deploy-rollback ENV=production
+scripts/deploy.sh smoke staging / status staging / template staging
+```
+
+A deploy renders the chart first (the values must pass the schema and must not change
+the image), refuses when another deploy is running, then runs `helm upgrade --install
+--atomic --wait` with the image pinned by digest and the values in
+`deploy/environments/<env>.values.yaml`, then `helm test`, then the smoke: every API and
+worker pod runs the digest, the app reports the release's version (for `X.Y.Z` tags),
+and `scripts/deploy-smoke.sh` checks over HTTP, without signing in or writing anything,
+`/healthz`, `/readyz`, the SPA and its script, 401 for an anonymous API call and for `/mcp`
+without a key, and no `/metrics` on the public URL. If the upgrade fails, Helm puts the
+previous revision back; if the test or the smoke fails, the script rolls back itself;
+either way the job fails saying the previous release is running. The values files hold
+no secrets: they name Secrets (`existingSecret`) that operators create in each
+namespace (`soundings-app`, `soundings-oidc`, `soundings-smtp`, `soundings-break-glass`,
+the database's, `soundings-tls`, the registry pull Secret `soundings-registry`). Edit
+their hostnames and IdP for your site; don't set `image.*` or `global.imageRegistry`
+there (the deploy sets the image). `make check-helm` renders both.
+
+### Cluster setup (once)
+
+1. `kubectl apply -f deploy/environments/cluster-setup.yaml`: the namespaces
+   `soundings-staging` and `soundings-production` (Restricted Pod Security) and the
+   `soundings-deployer` ClusterRole (namespaced rules only: what the chart creates,
+   Helm's release Secrets, `helm test` pods and logs; no RBAC objects, no exec, nothing
+   cluster-scoped). Bind it per namespace for your CI (below), never cluster-wide.
+2. Create each namespace's Secrets. The registry pull Secret: on GitLab a project deploy
+   token with `read_registry`; on ghcr.io a classic PAT with `read:packages` (ghcr.io
+   accepts no other token for pulls); or nothing when the nodes pull from a mirror.
+3. Check the binding: `kubectl auth can-i --list -n soundings-production
+   --as=system:serviceaccount:<ns>:<staging identity>` lists nothing of Soundings.
+
+### GitLab self-managed: the agent for Kubernetes
+
+The pipeline's `deploy:staging`, `deploy:production` and the two rollback jobs run in
+`DEPLOY_IMAGE` on any runner that reaches GitLab: GitLab injects a kubeconfig whose
+context `<KUBE_AGENT_PROJECT>:soundings-<env>` works only for that job, through agentk's
+connection out of the cluster. No kubeconfig or cluster credential is stored in GitLab.
+
+1. **GitLab on https**, the agent server (KAS) included (it is on by default in the Linux
+   package at `/-/kubernetes-agent/`): kubectl and Helm send the job's token only over
+   TLS. An internal CA goes into `CI_BUILD_CA` (jobs) and the agent's `config.kasCaCert`.
+2. **Agents**: one per environment, configured in this project
+   (`.gitlab/agents/soundings-staging/config.yaml`, `.../soundings-production/config.yaml`):
+   `ci_access` names this project only (replace `platform/soundings` with its path first:
+   until then GitLab's implicit access would let any job here use the agent, and the
+   deploy jobs refuse to run), the environment only, and production only on protected
+   refs. Install them as [deploy/gitlab-agent/README.md](../deploy/gitlab-agent/README.md)
+   says: `deploy/gitlab-agent/rbac.yaml` binds each agent's ServiceAccount to
+   `soundings-deployer` in its namespace only (the chart's `rbac.create=false`; no
+   cluster-admin, no impersonation, so this works on GitLab Free).
+3. **Protected refs**: protect `main` (merge requests only) and the tag pattern `v*`
+   (allowed to create: Maintainers or a release group).
+4. **Settings > CI/CD > General pipelines**: turn on *Prevent outdated deployment jobs*
+   (keep *Allow job retries for rollback deployments*). `resource_group` already runs
+   one deploy per environment at a time.
+5. **CI/CD variables** from the table; credentials protected and masked.
+6. **The production gate.** *Free*: `deploy:production` is a manual job with
+   `allow_failure: false` in the protected tag's pipeline; only people allowed to create
+   `v*` tags can run it (the tag's pusher too: there is no four-eyes rule on Free).
+   *Premium*: also protect the environment `production` (Settings > CI/CD > Protected
+   environments: who may deploy, approval rules with one approval, no self-approval):
+   the job then waits for approval first. Same YAML on both tiers.
+7. **Registry**: a cleanup policy for the per-pipeline `ci-*` tags (keep 7 days). Tags
+   can't be made immutable below Ultimate; deploys pin digests, so a moved tag never
+   moves an environment. Protected container tags (Free, with the metadata database)
+   restrict who may push `sha-*` and `[0-9]*` tags.
+
+### Image builds on your runners
+
+`image:build` (the default) uses **rootless BuildKit** in an unprivileged container. The
+runner must let the build container create user namespaces; on the Kubernetes executor
+(Runner 18.11 or later):
+
+```toml
+[runners.kubernetes.build_container_security_context.seccomp_profile]
+  type = "Unconfined"
+[runners.kubernetes.build_container_security_context.app_armor_profile]
+  type = "Unconfined"
+```
+
+(or `Localhost` profiles that allow `unshare` and `mount`), and Ubuntu 24.04 nodes need
+`sysctl kernel.apparmor_restrict_unprivileged_userns=0`. With a privileged Docker
+executor instead, set `IMAGE_BUILDER=dind` (`docker buildx` on the dind service; same
+tags, cache and `build_ca` secret). kaniko is no longer used (archived upstream). Both
+paths push one digest under several tags: `ci-<pipeline id>` (what the tests use),
+`sha-<first 8 of the commit>` on main, `X.Y.Z` and `X.Y` on a `vX.Y.Z` tag; the cache goes
+to `<IMAGE_REPOSITORY>/cache:buildkit`. In an air gap also set the runner's `helper_image`
+(it defaults to registry.gitlab.com) to your mirror of
+`gitlab/gitlab-runner-helper:x86_64-v<runner version>`.
+
+### GitHub: self-hosted runners in the network
+
+`ci.yml` builds on GitHub's runners (or `SOUNDINGS_BUILD_RUNNER`) and pushes to ghcr.io;
+the deploy jobs (`deploy-env.yml`, called by `ci.yml` and by the manual `deploy`
+workflow) run on runners inside your network: Actions Runner Controller (ARC) scale sets
+in the cluster, which connect out to GitHub on 443. The API server is never exposed.
+
+1. Mirror ARC's charts and images (0.15.x), build the runner image with helm and kubectl
+   (`make deploy-runner-image`, `deploy/ci/deploy-runner.Dockerfile`) and push it.
+2. Install the controller once, then one scale set per environment
+   (`deploy/ci/arc-values.yaml` has the commands), in a runner group restricted to this
+   repository (on Enterprise also to `.github/workflows/deploy-env.yml`).
+3. `kubectl apply -f deploy/ci/arc-rbac.yaml`: **staging** runner pods run as a
+   ServiceAccount bound to `soundings-deployer` in `soundings-staging` only; GitHub stores
+   nothing. **Production** runner pods get no rights: below Enterprise any workflow of the
+   repository could target that runner, so the deploy uses a token of the
+   `soundings-ci-deployer` ServiceAccount (bound in `soundings-production` only) kept in
+   the `production` environment's secret `KUBECONFIG_DATA`, which GitHub hands only to
+   jobs that passed the environment's rules:
+
+   ```bash
+   token=$(kubectl -n soundings-production create token soundings-ci-deployer --duration=720h)
+   ca=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+   cat <<YAML   # paste as KUBECONFIG_DATA; mint a new one before 30 days
+   apiVersion: v1
+   kind: Config
+   clusters: [{name: in-cluster, cluster: {server: https://kubernetes.default.svc, certificate-authority-data: $ca}}]
+   users: [{name: deployer, user: {token: $token}}]
+   contexts: [{name: deployer, context: {cluster: in-cluster, user: deployer, namespace: soundings-production}}]
+   current-context: deployer
+   YAML
+   ```
+
+   Alternatives: give the production runner pods the ServiceAccount too (Enterprise,
+   with the runner group limited to `deploy-env.yml`), or let the API server trust
+   GitHub's OIDC tokens for `environment: production` (Kubernetes 1.30+,
+   `--authentication-config`; [research §1.5](research/github-cd.md)).
+4. **Environments**: `staging` (deployment branch `main`) and `production` (deployment
+   tag `v*.*.*`, required reviewers with *Prevent self-review* and no admin bypass where
+   the plan has them), each with its `DEPLOY_URL` variable.
+5. **Rulesets and settings**: protect `v*` tags (create, update, delete: maintainers),
+   protect `main` (pull requests, status checks, CODEOWNERS for `.github/workflows/`,
+   `scripts/deploy*.sh` and `deploy/`); require SHA-pinned actions; default
+   `GITHUB_TOKEN` read-only; no workflows from fork pull requests.
+
+What the plan allows, and the gate to use:
+
+| Plan | Environments, secrets, tag rules | Required reviewers | Production gate |
+|---|---|---|---|
+| Public repository (any plan), Enterprise | yes | yes | `deploy-production` waits for a reviewer |
+| Private, Pro or Team | yes | no | `SOUNDINGS_PRODUCTION_GATE=manual`: someone with write access runs **Actions > deploy > Run workflow** on the tag (production); protect the tags |
+| Private, Free | no | no | no environment secrets or rules: not supported for production |
+
+### Releases and versions
+
+A `vX.Y.Z` tag must match the repository: the app reports `backend/pyproject.toml`'s
+version, so a release commit sets it (then `uv lock` in `backend/`) and
+`deploy/helm/Chart.yaml`'s `version` and `appVersion` to `X.Y.Z`; the pipeline's release
+check (`scripts/deploy.sh check-release vX.Y.Z`) fails the tag otherwise. The tag's image
+carries `X.Y.Z` in its version label, the smoke checks the running app says `X.Y.Z`, and
+the release has the CycloneDX SBOM (`soundings-X.Y.Z.cdx.json`, from Trivy) and the chart
+(`soundings-X.Y.Z.tgz`) attached (GitLab: generic package registry; GitHub: release
+assets, plus `image.env` with the digest). Signing is optional: set `COSIGN_PRIVATE_KEY`
+(from `cosign generate-key-pair`) and `COSIGN_PASSWORD`; the pipeline signs the digest
+without a transparency log; verify with `cosign verify --key cosign.pub
+--insecure-ignore-tlog=true <repository>@<digest>` (not yet run against a registry).
+
+### Rollback, and migrations
+
+- **GitLab**: run the manual `rollback:staging` / `rollback:production` job (variables
+  `ROLLBACK_REVISION`, `DEPLOY_FORCE`). *Operate > Environments > Rollback* re-runs an
+  older deploy job instead, i.e. deploys the older image again.
+- **GitHub**: **Actions > deploy > Run workflow**, operation `rollback` (production: run
+  it from a `vX.Y.Z` tag, as the environment's tag rule requires).
+- **By hand**: `scripts/deploy.sh rollback <env>` (`status` shows each revision's
+  migrations and who deployed it).
+
+**Helm's rollback restores the pods, not the database**, and migrations only go forward.
+The rule: a migration stays compatible with the previous release's code (expand first:
+add columns and tables the old code ignores; contract, i.e. drop what it used, only in a
+later release). That is what lets a failed deploy roll back automatically. A manual
+rollback to a revision that ran other migrations, and a deploy of an image whose newest
+migration is older than the database's, are refused unless `DEPLOY_FORCE=1`: use it only
+when you know that code runs on the current schema (the release just before does, by the
+rule). The check relies on migration ids being zero-padded sequence numbers (`0001`,
+`0002`, ...).
+
+### On-prem and air-gapped
+
+Nothing in the pipeline needs the internet at run time when these come from your mirrors:
+the tool images (`REGISTRY_MIRROR`: BuildKit, Trivy and its databases, alpine/k8s, glab,
+alpine/helm, the e2e images), the package indexes (`UBUNTU_MIRROR`, `PIP_INDEX_URL`,
+`UV_DEFAULT_INDEX`, `NPM_CONFIG_REGISTRY`), the runner helper image, the agentk image and
+the `gitlab-agent` chart (registry.gitlab.com, charts.gitlab.io), ARC's charts and images
+and cosign (ghcr.io). GitHub's own runners need only GitHub (443 out); on GitHub
+Enterprise Server that stays inside too. Every image is pinned by digest and every action
+by commit SHA; Dependabot (`.github/dependabot.yml`) proposes updates a week after a
+release; images named in CI variables are bumped by hand. `make check-workflows` runs
+actionlint, zizmor and gitlab-ci-local on both pipelines.
+
+### Rehearsing it locally
+
+```bash
+K3S_NAME=my-k3s K3S_API_PORT=8900 K3S_HTTP_PORT=8901 make k3s-up
+make k3s-deploy ENV=staging IMAGE=soundings:0.1.0 K3S_NAME=my-k3s K3S_API_PORT=8900 K3S_HTTP_PORT=8901
+make k3s-deploy ENV=staging IMAGE=soundings:dev ...        # an upgrade by digest
+make k3s-deploy ACTION=rollback ENV=staging ...            # refused: other migrations
+```
+
+`scripts/lib/k3s-deploy.sh` applies `cluster-setup.yaml`, binds a ServiceAccount in the
+environment's namespace only and runs `scripts/deploy.sh` as it, in the deploy tools image,
+with `deploy/environments/<env>.values.yaml` plus `k3s.values.yaml` (bundled Postgres,
+Traefik, http on localhost). Verified there on 2026-10-09: first install, upgrade by
+digest, an image the node can't pull (rolled back by `--atomic`, previous release
+serving), a version mismatch (rolled back by the script), refused rollback and older
+deploy across migrations, a manual rollback, the other-CI guard, with helm 3.16 and with
+GitLab's default deploy image (helm 3.19). Not yet run on a real GitLab or GitHub.

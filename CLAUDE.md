@@ -81,12 +81,13 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 
 | Target | What it does |
 |---|---|
-| `make check` | Every check: `check-backend check-frontend check-helm check-scripts check-fake-agent` |
+| `make check` | Every check: `check-backend check-frontend check-helm check-scripts check-fake-agent check-workflows` |
 | `make check-backend` | `make -C backend check`: ruff, mypy --strict, pytest (needs Docker) |
 | `make check-frontend` | `npm --prefix frontend run check`: tsc, eslint + prettier, vitest, build |
-| `make check-helm` | `helm lint --strict` + `helm template` for defaults and `deploy/helm/ci/*-values.yaml`, via the helm container |
+| `make check-helm` | `helm lint --strict` + `helm template` for defaults and `deploy/helm/ci/*-values.yaml`, via the helm container; then `scripts/deploy.sh template` renders `deploy/environments/{staging,production}.values.yaml` |
 | `make check-scripts` | `bash -n` + shellcheck (when available) on `scripts/` |
 | `make check-fake-agent` | `make -C dev/fake-agent check`: ruff, mypy --strict, pytest (~25 s; includes a2a-sdk 0.3.23's own client in an isolated uv env) |
+| `make check-workflows` | actionlint 1.7.12 (`ACTIONLINT_IMAGE`, by digest, with shellcheck) and zizmor 1.30.1 (`uvx`, `--offline`; `.github/zizmor.yml`) on `.github/workflows/`, then `scripts/lib/check-gitlab-ci.sh`: gitlab-ci-local 4.75.1 (`npx`) validates `.gitlab-ci.yml` against GitLab's schema and checks which delivery jobs main, a branch, a `vX.Y.Z` tag, `IMAGE_BUILDER=dind` and signing get (a throwaway repo; ~1 min) |
 | `scripts/check-task.sh [area…]` | The TaskCompleted gate by hand: `backend frontend helm e2e scripts fake-agent` (e2e = `npm --prefix e2e run check`); no args = areas with uncommitted changes, `CHECK_TASK_ALL=1` = all |
 | `make dev-up` / `dev-down` / `dev-logs` | Dev services via `docker compose -f dev/docker-compose.yml` |
 | `make dev` | Prints how to run API, worker and SPA against the dev services |
@@ -107,6 +108,9 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
 | `make e2e` | Playwright e2e in `e2e/` against `E2E_BASE_URL` (default http://localhost:8000, i.e. `make demo`); CI runs it against the built image with the demo data |
+| `make deploy` · `deploy-rollback` · `deploy-smoke` · `deploy-status` (`ENV=staging\|production`) | `scripts/deploy.sh <action> $(ENV)` against the current kubeconfig context (needs helm 3.16+, kubectl, curl): deploy = `IMAGE_REPOSITORY` + `IMAGE_DIGEST` + `IMAGE_TAG`, values `deploy/environments/<env>.values.yaml`, `--atomic --wait`, `helm test`, the cluster checks and `scripts/deploy-smoke.sh <url>` (read-only, anonymous; also by hand), rollback on failure; rollback = `ROLLBACK_REVISION` (default the one before), refused across a migration head unless `DEPLOY_FORCE=1`; `DRY_RUN=1`; `scripts/deploy.sh check-release vX.Y.Z` (the tag = pyproject/uv.lock/Chart.yaml versions). Operator guide "Continuous delivery", ADR 0017 |
+| `make deploy-tools-image` · `make deploy-runner-image` | `deploy/ci/deploy-runner.Dockerfile`: `--target tools` (alpine/helm + kubectl: `DEPLOY_TOOLS_IMAGE`, default `soundings-deploy-tools:dev`) or the ARC runner (`ghcr.io/actions/actions-runner` + helm + kubectl: `DEPLOY_RUNNER_IMAGE`; its ghcr base can't be pulled here, `--build-context` it to test) |
+| `make k3s-deploy` (`ACTION=deploy\|rollback\|smoke\|status ENV=staging IMAGE=soundings:dev`) | CD rehearsal on the local k3s (`scripts/lib/k3s-deploy.sh`): applies `deploy/environments/cluster-setup.yaml`, binds SA `ci-deployers/soundings-<env>` in `soundings-<env>` only, creates the Secrets, imports `IMAGE` (also named by digest, so the kubelet finds it), reads its migration head, and runs `scripts/deploy.sh` as that SA in `DEPLOY_TOOLS_IMAGE` with `<env>.values.yaml` + `k3s.values.yaml`, smoke on localhost:`K3S_HTTP_PORT`. `IMAGE_DIGEST=` rehearses an unpullable image; pass the old image again before a rollback (the kubelet deletes unused images when the disk is >85 % full) |
 
 Backend (`make -C backend <target>`): `install` (uv sync --locked), `check`, `lint`,
 `typecheck`, `test`, `test-slow` (10k-idea performance checks, excluded from `test`;
