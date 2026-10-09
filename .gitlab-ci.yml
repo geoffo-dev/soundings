@@ -34,6 +34,10 @@
 #   COSIGN_PRIVATE_KEY (File) / COSIGN_PASSWORD   sign the image when set
 #   IMAGE_REGISTRY_USER / IMAGE_REGISTRY_PASSWORD credentials when IMAGE_REPOSITORY is
 #                         another registry (default: the job token for GitLab's)
+#   CD_ONLY               "1" skips the lint, test, e2e and k3s jobs for one pipeline (a
+#                         delivery rehearsal: git push -o ci.variable="CD_ONLY=1", or Run
+#                         pipeline); release:check, helm:lint, the build and the scan gate
+#                         still run. Never set it as a project variable.
 
 stages:
   - lint
@@ -76,7 +80,7 @@ variables:
   # 1.31.13). Or your own build of deploy/ci/deploy-runner.Dockerfile --target tools.
   DEPLOY_IMAGE: ${REGISTRY_MIRROR}/alpine/k8s:1.31.13@sha256:7a319b15cfc99c9aaa27ec9891d6b4ca24632b795908591c7b0ba89b03549e0a
   GLAB_IMAGE: ${REGISTRY_MIRROR}/gitlab/glab:v1.122.0@sha256:ca113f949a17d119984884b8937ae7aeff7b471ecaafc6ade015cc9c23707fc9
-  COSIGN_IMAGE: ghcr.io/sigstore/cosign/cosign:v3.1.3-dev@sha256:3b1a2e2742351ab440255626f079a337e6c263249644800a52f5eaa389a5b730
+  COSIGN_IMAGE: ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8
   K3S_IMAGE: ${REGISTRY_MIRROR}/rancher/k3s:v1.31.4-k3s1
   KEYCLOAK_IMAGE: ${REGISTRY_MIRROR}/keycloak/keycloak:26.0
   MAILPIT_IMAGE: ${REGISTRY_MIRROR}/axllent/mailpit:v1.31.3
@@ -96,6 +100,8 @@ variables:
   PRODUCTION_URL: ""
   SCAN_SEVERITY: HIGH,CRITICAL
   SCAN_IGNORE_UNFIXED: "true"
+  # "1": no lint/test/e2e/k3s jobs in this pipeline (see the header). Off by default.
+  CD_ONLY: ""
   # Caches live in the project dir so GitLab can cache them.
   UV_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/uv
   UV_LINK_MODE: copy
@@ -104,6 +110,13 @@ variables:
   PIP_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/pip
 
 # --- Templates --------------------------------------------------------------------------
+
+# The checks' rules: every lint, test, e2e and k3s job starts with these (CD_ONLY above).
+.checks:
+  rules:
+    - if: $CD_ONLY == "1"
+      when: never
+    - when: on_success
 
 .ca-bundle: &ca-bundle
   # Trust CI_BUILD_CA (a File variable) in pip/uv/npm/curl when it is set.
@@ -114,6 +127,8 @@ variables:
 
 .backend:
   image: ${PYTHON_IMAGE}
+  rules:
+    - !reference [.checks, rules]
   cache:
     key:
       files: [backend/uv.lock]
@@ -127,6 +142,8 @@ variables:
 
 .frontend:
   image: ${NODE_IMAGE}
+  rules:
+    - !reference [.checks, rules]
   cache:
     key:
       files: [frontend/package-lock.json]
@@ -200,6 +217,8 @@ contract:types:
 fake-agent:test:
   stage: test
   image: ${PYTHON_IMAGE}
+  rules:
+    - !reference [.checks, rules]
   cache:
     key:
       files: [dev/fake-agent/uv.lock]
@@ -446,13 +465,28 @@ image:build:dind:
       done
       if [ -n "${CI_BUILD_CA:-}" ] && [ -f "$CI_BUILD_CA" ]; then
         set -- "$@" --secret "id=build_ca,src=$CI_BUILD_CA"
-        printf '[registry."%s"]\n  ca = ["%s"]\n' "$registry" "$CI_BUILD_CA" > buildkitd.toml
+        # The builder container (buildx copies the CA into it) trusts it for the registry it
+        # pushes to and for the base images' registries (an internal mirror); this client
+        # trusts it for the registries' token endpoints (GitLab: /jwt/auth on GitLab's host),
+        # which BuildKit reaches through the client.
+        hosts="$registry"
+        for ref in "$UBUNTU_IMAGE" "$NODE_IMAGE"; do
+          host="${ref%%/*}"
+          case "$host" in *.* | *:* | localhost) ;; *) host=docker.io ;; esac
+          case " $hosts " in *" $host "*) ;; *) hosts="$hosts $host" ;; esac
+        done
+        for host in $hosts; do printf '[registry."%s"]\n  ca = ["%s"]\n' "$host" "$CI_BUILD_CA"; done > buildkitd.toml
         config="--config buildkitd.toml"
+        export SSL_CERT_FILE="$CI_BUILD_CA"
       fi
       for name in $(printf '%s' "$names" | tr ',' ' '); do set -- "$@" --tag "$name"; done
+      # network=host: the builder shares the dind service's network and so its resolver.
+      # On its own bridge it would fall back to 8.8.8.8 whenever the service resolves names
+      # through Docker's embedded DNS (network_mode, FF_NETWORK_PER_BUILD), which an air-gapped
+      # network can't reach: the registry and the mirror would not resolve.
       # shellcheck disable=SC2086
       docker buildx create --name soundings --driver docker-container \
-        --driver-opt "image=$BUILDKIT_DIND_IMAGE" $config --use
+        --driver-opt "image=$BUILDKIT_DIND_IMAGE" --driver-opt network=host $config --use
       docker buildx build --push --provenance=false "$@" \
         --cache-from "type=registry,ref=$IMAGE_REPOSITORY/cache:buildkit" \
         --cache-to "type=registry,ref=$IMAGE_REPOSITORY/cache:buildkit,mode=max" \
@@ -560,6 +594,8 @@ e2e:
     - job: image:build:dind
       optional: true
   rules:
+    - if: $CD_ONLY == "1"
+      when: never
     - exists: [e2e/package.json]
   services:
     - name: ${POSTGRES_IMAGE}
@@ -642,6 +678,8 @@ e2e:sso:
     - job: image:build:dind
       optional: true
   rules:
+    - if: $CD_ONLY == "1"
+      when: never
     - exists: [e2e/package.json]
   services:
     - name: ${POSTGRES_IMAGE}
@@ -722,6 +760,8 @@ k3s:install-upgrade:
   extends: .dind
   stage: deploy-test
   image: ${DOCKER_IMAGE}
+  rules:
+    - !reference [.checks, rules]
   needs:
     - job: image:build
       optional: true
@@ -797,6 +837,8 @@ k3s:install-upgrade:
     entrypoint: [""]
   before_script:
     - *ca-bundle
+    # The runner writes file variables world-readable; Helm warns on every call otherwise.
+    - '[ -z "${KUBECONFIG:-}" ] || chmod 600 "$KUBECONFIG"'
     - |
       # With the agents configured in this project, its ci_access must name the project
       # itself: otherwise implicit access lets every job here use the agent, on any branch.
@@ -822,6 +864,7 @@ k3s:install-upgrade:
     optional: true
     artifacts: false
   - job: k3s:install-upgrade
+    optional: true # always in the pipeline, except with CD_ONLY
     artifacts: false
 
 # main: every push; a vX.Y.Z tag: the release image first goes to staging.

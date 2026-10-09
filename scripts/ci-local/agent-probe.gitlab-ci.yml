@@ -1,0 +1,78 @@
+# What a CI job can reach through the GitLab agents (scripts/ci-local/ci-local.sh probe):
+# ci-local pushes this file as .gitlab-ci.yml of two throwaway branches, one protected and
+# one not, and reads the PROBE lines. Never part of the product pipeline.
+#
+# Each job lists the kubeconfig contexts GitLab gave it (the agents' ci_access decides:
+# environment, protected ref), then, with its environment's context, tries what the
+# soundings-deployer RoleBinding must allow (its own namespace) and what it must refuse
+# (kube-system, the other environment's namespace, cluster-scoped reads, exec). A job
+# fails only when a refusal or permission differs from that.
+
+variables:
+  # The deploy jobs' image (.gitlab-ci.yml's default; a DEPLOY_IMAGE CI/CD variable wins).
+  DEPLOY_IMAGE: ${REGISTRY_MIRROR}/alpine/k8s:1.31.13@sha256:7a319b15cfc99c9aaa27ec9891d6b4ca24632b795908591c7b0ba89b03549e0a
+
+.probe:
+  image:
+    name: ${DEPLOY_IMAGE}
+    entrypoint: [""]
+  script:
+    - |
+      set -u
+      [ -z "${CI_BUILD_CA:-}" ] || export SSL_CERT_FILE="$CI_BUILD_CA"
+      contexts="$(kubectl config get-contexts -o name 2>/dev/null | tr '\n' ' ' || true)"
+      echo "PROBE info ref=$CI_COMMIT_REF_NAME protected=$CI_COMMIT_REF_PROTECTED environment=${CI_ENVIRONMENT_NAME:-none} contexts=[${contexts% }]"
+      [ -n "${PROBE_ENV:-}" ] || exit 0
+      context="$CI_PROJECT_PATH:soundings-$PROBE_ENV"
+      case " $contexts " in
+        *" $context "*) ;;
+        *) echo "PROBE info no context $context in this job"; exit 0 ;;
+      esac
+      other=production
+      [ "$PROBE_ENV" != production ] || other=staging
+      failed=0
+      probe() { # want description command...
+        want="$1"; what="$2"; shift 2
+        if out="$("$@" 2>&1)"; then got=allowed
+        elif printf '%s' "$out" | grep -Eqi 'forbidden|^no$'; then got=denied
+        else got=error; fi
+        result=ok
+        [ "$got" = "$want" ] || { result=FAIL; failed=1; }
+        echo "PROBE $result $what: $got (want $want): $(printf '%s' "$out" | tail -n 1 | cut -c1-150)"
+      }
+      k() { kubectl --context "$context" "$@"; }
+      probe allowed "list deployments in soundings-$PROBE_ENV" k -n "soundings-$PROBE_ENV" get deployments
+      probe allowed "may create deployments in soundings-$PROBE_ENV" k -n "soundings-$PROBE_ENV" auth can-i create deployments
+      # (`auth can-i create pods/exec` would ask about a pod named "exec": use --subresource.)
+      probe denied "exec into pods in soundings-$PROBE_ENV" k -n "soundings-$PROBE_ENV" auth can-i create pods --subresource=exec
+      pod="$(k -n "soundings-$PROBE_ENV" get pods -o name 2>/dev/null | grep -m 1 api || true)"
+      [ -z "$pod" ] || probe denied "kubectl exec into $pod" k -n "soundings-$PROBE_ENV" exec "$pod" -- true
+      probe denied "create a RoleBinding in soundings-$PROBE_ENV" k -n "soundings-$PROBE_ENV" auth can-i create rolebindings
+      probe denied "list pods in kube-system" k -n kube-system get pods
+      probe denied "read Secrets in kube-system" k -n kube-system get secrets
+      probe denied "list deployments in soundings-$other" k -n "soundings-$other" get deployments
+      probe denied "read Secrets in soundings-$other" k -n "soundings-$other" get secrets
+      probe denied "list namespaces" k get namespaces
+      probe denied "create a ConfigMap in default" k -n default create configmap ci-local-probe --from-literal=a=b --dry-run=server
+      echo "PROBE summary $PROBE_ENV: $([ "$failed" = 0 ] && echo 'as expected' || echo 'UNEXPECTED')"
+      exit "$failed"
+
+probe:staging:
+  extends: .probe
+  environment:
+    name: staging
+    action: access
+  variables:
+    PROBE_ENV: staging
+
+probe:production:
+  extends: .probe
+  environment:
+    name: production
+    action: access
+  variables:
+    PROBE_ENV: production
+
+# No environment: no agent's ci_access matches, so no context at all.
+probe:no-environment:
+  extends: .probe

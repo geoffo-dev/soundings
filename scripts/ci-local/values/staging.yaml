@@ -1,0 +1,10 @@
+# ci-local (scripts/ci-local/): layered after deploy/environments/staging.values.yaml and
+# deploy/environments/k3s.values.yaml through the DEPLOY_VALUES CI/CD variable that
+# ci-local.sh sets for the staging environment. Only what differs from the k3s rehearsal:
+# the nodes pull from GitLab's registry with the operators' pull Secret, and the release
+# answers on the k3s node's alias in the ci-local Docker network (the smoke's STAGING_URL).
+image:
+  pullSecrets:
+    - soundings-registry
+baseUrls:
+  - http://staging.soundings.test

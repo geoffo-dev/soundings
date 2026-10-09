@@ -13,7 +13,9 @@
 # no other host). A private CA: SSL_CERT_FILE or CURL_CA_BUNDLE (the CI's CI_BUILD_CA);
 # proxies: HTTPS_PROXY / NO_PROXY as curl reads them.
 #
-#   SMOKE_ATTEMPTS  tries per check, 2 s apart (default 30: an ingress may need a minute)
+#   SMOKE_ATTEMPTS  tries per check, 2 s apart (default 30: an ingress may need a minute);
+#                   once one check has used them all, the others get one try each, so a
+#                   broken release is rolled back within about a minute, not one per check
 set -euo pipefail
 
 BASE_URL="${1:-${DEPLOY_URL:-}}"
@@ -55,6 +57,7 @@ expect() {
     sleep 2
   done
   fail "$method $path -> ${meta:-nothing} ($(head -c 200 "$workdir/$name.err" 2>/dev/null)), want $want_status $want_type"
+  ATTEMPTS=1
   return 1
 }
 

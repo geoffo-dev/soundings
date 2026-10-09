@@ -33,7 +33,8 @@
 #   DEPLOY_VALUES     values files, space-separated (default deploy/environments/<env>.values.yaml)
 #   DEPLOY_URL        the smoke's base URL (default: the release's first baseUrls entry)
 #   HELM_TIMEOUT      default 10m (each of upgrade, test and rollback)
-#   ROLLBACK_REVISION rollback target revision (default: the one before the current one)
+#   ROLLBACK_REVISION rollback target revision (default: the newest earlier revision that
+#                     passed its checks and runs something else than the current one)
 #   MIGRATION_HEAD    the image's newest Alembic revision (default: read from this
 #                     checkout's backend/app/migrations; set it when deploying an image
 #                     built from another commit)
@@ -48,6 +49,9 @@ CHART="$REPO_ROOT/deploy/helm"
 MIGRATIONS_DIR="$REPO_ROOT/backend/app/migrations/versions"
 LABEL_HEAD="soundings.io/migration-head"
 LABEL_BY="soundings.io/deployed-by"
+# Set on a revision that deployed but failed helm test or the smoke (the script rolled it
+# back): never a rollback target, although Helm lists it as superseded.
+LABEL_VERIFY="soundings.io/verify"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -204,8 +208,38 @@ revision_label() { # revision label
 }
 deployed_revision() { revisions | awk '$2 == "deployed" { r = $1 } END { print r }'; }
 pending_revision() { revisions | awk '$2 ~ /^pending/ { r = $1 " " $2 } END { print r }'; }
-# The revision that ran before <revision>: the newest older one that deployed successfully.
-previous_revision() { revisions | awk -v cur="$1" '$1 < cur && $2 == "superseded" { r = $1 } END { print r }'; }
+verify_failed() { [ "$(revision_label "$1" "$LABEL_VERIFY")" = failed ]; }
+# A rollback revision gets its target's labels from Helm: it is this CI's now, and checked.
+label_rollback() { # revision
+  kc label "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v$1" "$LABEL_BY=$DEPLOYED_BY" "$LABEL_VERIFY-" --overwrite >/dev/null 2>&1 ||
+    warn "could not label revision $1 ($LABEL_BY=$DEPLOYED_BY)"
+}
+mark_verify_failed() { # revision
+  kc label "$store_kind" "sh.helm.release.v1.$HELM_RELEASE.v$1" "$LABEL_VERIFY=failed" --overwrite >/dev/null 2>&1 ||
+    warn "could not label revision $1 as failed ($LABEL_VERIFY): don't roll back to it"
+}
+# The rollback target for <revision>: the newest older revision that deployed, passed its
+# checks and runs other content. "Rollback to N" revisions (Helm's --atomic, helm rollback,
+# this script) run N's content, so after an automatic rollback the target is the release
+# before the one that is running again, not a copy of it.
+previous_revision() {
+  local failed
+  failed="$(kc get "$store_kind" -l "owner=helm,name=$HELM_RELEASE,$LABEL_VERIFY=failed" \
+    -o jsonpath='{range .items[*]}{.metadata.labels.version}{" "}{end}' 2>/dev/null || true)"
+  hl history "$HELM_RELEASE" --max 1000 2>/dev/null | awk -F'\t' -v cur="$1" -v failed=" $failed " '
+    NR == 1 { next }
+    { rev = $1 + 0; status = $3; desc = $6; gsub(/ +$/, "", status); gsub(/^ +| +$/, "", desc)
+      same[rev] = rev
+      if (desc ~ /^Rollback to [0-9]+$/) { t = substr(desc, 13) + 0; same[rev] = (t in same) ? same[t] : t }
+      st[rev] = status }
+    END {
+      for (r = cur - 1; r > 0; r--) {
+        if (!(r in st) || st[r] != "superseded" || index(failed, " " r " ")) continue
+        if (same[r] == same[cur]) continue
+        print r; exit
+      }
+    }'
+}
 
 preflight() {
   local out
@@ -384,9 +418,10 @@ case "$ACTION" in
   status)
     preflight
     hl history "$HELM_RELEASE" --max 10 || true
-    printf '\nREVISION STATUS MIGRATION-HEAD DEPLOYED-BY\n'
+    printf '\nREVISION STATUS MIGRATION-HEAD DEPLOYED-BY CHECKS\n'
     while read -r rev status; do
-      printf '%s %s %s %s\n' "$rev" "$status" "$(revision_label "$rev" "$LABEL_HEAD")" "$(revision_label "$rev" "$LABEL_BY")"
+      printf '%s %s %s %s %s\n' "$rev" "$status" "$(revision_label "$rev" "$LABEL_HEAD")" "$(revision_label "$rev" "$LABEL_BY")" \
+        "$(verify_failed "$rev" && echo failed || echo -)"
     done < <(revisions | tail -n 10)
     printf '\n'
     kc get pods -l "app.kubernetes.io/instance=$HELM_RELEASE" -o wide
@@ -453,12 +488,15 @@ case "$ACTION" in
     if [ -n "$problem" ]; then
       if [ -n "$current" ]; then
         log "$problem failed: rolling back to revision $current"
+        mark_verify_failed "$new_revision"
         hl rollback "$HELM_RELEASE" "$current" --wait --cleanup-on-fail --timeout "$HELM_TIMEOUT" ||
           die "$problem failed on revision $new_revision and the rollback to $current failed too: see helm history"
+        label_rollback "$(deployed_revision)"
         smoke "" >&2 || warn "the restored release fails its smoke test too"
         summary "Deploy to $ENVIRONMENT failed" "\`$want_ref\` failed $problem; rolled back to revision $current."
         die "$problem failed for $IMAGE_TAG on $ENVIRONMENT: rolled back, the previous release (revision $current) is running again"
       fi
+      mark_verify_failed "$new_revision"
       die "$problem failed for $IMAGE_TAG on $ENVIRONMENT's first install (revision $new_revision left in place to debug)"
     fi
     summary "Deployed to $ENVIRONMENT" "\`$want_ref\` is revision $new_revision of $HELM_RELEASE in $KUBE_NAMESPACE (migrations $head) at $(release_url)."
@@ -474,12 +512,16 @@ case "$ACTION" in
     fi
     [ -n "$current" ] || die "release $HELM_RELEASE has no revision in $KUBE_NAMESPACE"
     target="${ROLLBACK_REVISION:-$(previous_revision "$current")}"
-    [ -n "$target" ] || die "revision $current has no earlier successful revision to roll back to"
+    [ -n "$target" ] || die "revision $current has no earlier revision that passed its checks and runs something else (helm history; ROLLBACK_REVISION to choose one)"
     [[ "$target" =~ ^[0-9]+$ ]] || die "ROLLBACK_REVISION must be a revision number (helm history)"
     [ "$target" != "$current" ] || die "revision $target is the one running"
     target_status="$(revisions | awk -v t="$target" '$1 == t { print $2 }')"
     [ "$target_status" = superseded ] ||
       die "revision $target is '${target_status:-missing}': roll back only to a revision that ran successfully (helm history)"
+    if verify_failed "$target"; then
+      [ "$DEPLOY_FORCE" = 1 ] || die "revision $target failed helm test or the smoke when it was deployed (label $LABEL_VERIFY=failed): choose another ROLLBACK_REVISION, or DEPLOY_FORCE=1"
+      warn "revision $target failed its checks when deployed; DEPLOY_FORCE=1: rolling back to it anyway"
+    fi
     guard_other_ci "$current"
 
     # Helm's rollback restores Kubernetes objects, not the database: refuse to put back
@@ -502,10 +544,14 @@ case "$ACTION" in
     fi
     hl rollback "$HELM_RELEASE" "$target" --wait --cleanup-on-fail --timeout "$HELM_TIMEOUT" ||
       die "helm rollback to revision $target failed: see helm history"
+    label_rollback "$(deployed_revision)"
     manifest="$(hl get manifest "$HELM_RELEASE" --revision "$target")"
     target_digest="$(sed -n '/image: .*@sha256:/{s/.*@\(sha256:[0-9a-f]\{64\}\).*/\1/p;q;}' <<<"$manifest")"
     problem="$(verify "$target_digest")"
-    [ -z "$problem" ] || die "rolled back to revision $target, but $problem failed: see helm history and the pods"
+    if [ -n "$problem" ]; then
+      mark_verify_failed "$(deployed_revision)"
+      die "rolled back to revision $target, but $problem failed: see helm history and the pods"
+    fi
     summary "Rolled back $ENVIRONMENT" "Revision $target's content is running again as revision $(deployed_revision)."
     log "rolled back $ENVIRONMENT to revision $target's content: now revision $(deployed_revision)"
     ;;

@@ -15,3 +15,7 @@ ci_access:
       # context; every other job has no cluster access through this agent.
       environments:
         - staging
+      # ...and only in pipelines of protected refs (main, the v* tags): without this, a job
+      # with `environment: staging` on any branch someone pushes would get the context, and
+      # with it the namespace's Secrets (verified on GitLab 19.4, docs/test-plans/phase-9.md).
+      protected_branches_only: true

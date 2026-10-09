@@ -81,6 +81,10 @@ jobs:
           ROLLBACK_REVISION: ${{ inputs.revision }}
           DEPLOY_FORCE: ${{ inputs.force && '1' || '0' }}
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+          # Site values on top of (or instead of) deploy/environments/<env>.values.yaml, as
+          # the GitLab CI/CD variable of the same name (environment variables; empty = default).
+          DEPLOY_VALUES: ${{ vars.DEPLOY_VALUES }}
+          HELM_TIMEOUT: ${{ vars.HELM_TIMEOUT }}
           KUBE_NAMESPACE: ${{ vars.KUBE_NAMESPACE }}
           KUBE_CONTEXT: ${{ vars.KUBE_CONTEXT }}
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}

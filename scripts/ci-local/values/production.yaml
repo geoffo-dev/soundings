@@ -1,0 +1,11 @@
+# ci-local (scripts/ci-local/): layered after deploy/environments/production.values.yaml
+# and deploy/environments/k3s.values.yaml through the DEPLOY_VALUES CI/CD variable that
+# ci-local.sh sets for the production environment (see staging.yaml). One worker instead of
+# production's two, to fit a laptop next to GitLab.
+image:
+  pullSecrets:
+    - soundings-registry
+baseUrls:
+  - http://production.soundings.test
+worker:
+  replicas: 1
