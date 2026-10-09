@@ -401,6 +401,18 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
   const changed = researcherId !== currentId || due !== currentDue
   const outsider = choice.kind === 'person' && !choice.inProject
   const visibility = project?.visibility ?? 'private'
+  // An outsider an admin asked, seen by someone whose picker lists only the project's
+  // people (the owner of a private idea): a row of its own, so they can keep them (and
+  // change only the due date) and the highlight can start on them.
+  const keptOutsider =
+    !canAssignOutside &&
+    assignment.researcher !== null &&
+    !assignment.researcher_in_project &&
+    assignment.researcher.id !== owner?.id
+      ? assignment.researcher
+      : null
+  const keptChosen =
+    keptOutsider !== null && choice.kind === 'person' && choice.person.id === keptOutsider.id
 
   const finish = (message: string, description?: string) => {
     onDone()
@@ -485,6 +497,33 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
           className={cn('text-accent!', choice.kind === 'owner' ? 'opacity-100' : 'opacity-0')}
         />
       </CommandItem>
+      {keptOutsider && (
+        <CommandItem
+          value="research-current"
+          onSelect={() => setChoice({ kind: 'person', person: keptOutsider, inProject: false })}
+          className="h-auto min-h-11 py-1.5 sm:h-auto sm:min-h-10"
+        >
+          <Avatar
+            name={keptOutsider.display_name}
+            src={keptOutsider.avatar_url}
+            size="sm"
+            decorative
+          />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate">
+              {keptOutsider.display_name}
+              {keptChosen && <span className="sr-only">, chosen</span>}
+            </span>
+            <span className="truncate text-xs text-muted">
+              Not in this project
+            </span>
+          </span>
+          <Check
+            aria-hidden="true"
+            className={cn('text-accent!', keptChosen ? 'opacity-100' : 'opacity-0')}
+          />
+        </CommandItem>
+      )}
     </CommandGroup>
   )
 
@@ -545,7 +584,13 @@ function AssignmentForm({ mode, onDone }: { mode: 'change' | 'start'; onDone: ()
               ineligible={() => undefined}
               exclude={owner ? [owner.id] : []}
               before={ownerRow}
-              beforeChosen={choice.kind === 'owner' ? 'research-owner' : undefined}
+              beforeChosen={
+                choice.kind === 'owner'
+                  ? 'research-owner'
+                  : keptChosen
+                    ? 'research-current'
+                    : undefined
+              }
               listClassName="max-h-64"
               onSelect={(person: UserSearchResult) =>
                 setChoice({

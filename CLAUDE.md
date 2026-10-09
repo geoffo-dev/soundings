@@ -266,7 +266,10 @@ Research, TOOLS-3's proposal ends with the research appendix. Sustainability (12
 has it before the proposal and a "Carbon impact" section (GREEN-4's proposal); GREEN-6
 (Shortlisted) is partly answered, GREEN-5 not yet. Customer Innovation is unchanged (step off). So a New
 TOOLS idea needs its checklist answered (or an admin's "Move anyway") before Evaluating or
-its first evaluator.
+its first evaluator. Phase 8b (`app/seed/research.py` `ASSIGNMENTS`): bob, not in the private
+Internal Tools, researches TOOLS-12 as its guest (due in 3 days, asked by dave); amara, its
+owner, researches GREEN-6 explicitly (asked by alice); alice's GREEN-5 is overdue (asked by
+sven); TOOLS-11 has nobody (its owner does it).
 `screenshots:phase4` writes `docs/screenshots/phase-4/` (12 screens × 1440 light/dark and
 390), `pdf/` (the exported PDF and its pages) and `emails/` (as Mailpit received them).
 **API keys and MCP (Phase 5):** specs use keys only through `tests/support/mcp.ts`
@@ -1017,3 +1020,29 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   here (156-214 ms; 0.1.0's code 162 ms on the same machine that day). Test plan
   `docs/test-plans/phase-8.md`; screenshots `docs/screenshots/phase-8/` (+ `pdf/`), every
   earlier set re-captured, tour shots 13-14. Stop for the human's review.
+- **Phase 8b** (product owner's change after Phase 8; `docs/decisions.md` "Phase 8b (product
+  owner, 2026-10-08)", contract-phase8b, ADR 0016, role matrix column R / table L): **one
+  researcher per idea** (anyone active, also outside the project; nobody = the owner) with an
+  optional research due date; assigned by the owner and admins in a session (in a private
+  project only admins name an outsider, c25), handed back by the researcher; cleared by
+  closing, the step off, deactivation and leaving a private project (`left_project`);
+  "Asked to research" and "Research reminder" notifications (preferences, digest,
+  unsubscribe, two email templates); My work's "Research to do" and the sidebar's Research
+  badge; "Start research" asks who and by when; Research cards show the researcher. A
+  **guest researcher** (no role in a private project) reaches that one idea only, through
+  the deny-by-default `RESEARCH_GUEST_ACCESS` table: overview, comments, the feed's
+  allow-list, the checklist, Similar ideas among what they see anyway; never score data,
+  the evaluation area, the proposal, the AI panel or the project (404); search, ⌘K, My work,
+  the inbox and MCP show that idea and nothing else of the project; access ends at the next
+  request. Phase 8 follow-ups: owned groups send 10 ideas (both p95 budgets back to 150 ms),
+  removed template sections and checklist items keep their position, "Ask AI to research".
+  Migration 0015 (head 0015). Integration (2026-10-09): QA's P8B-QA-F1 (any write refused
+  with 404 re-checks the idea, so a guest unassigned meanwhile sees "doesn't exist"; RA-10's
+  mark removed), N1 (the picker's highlight starts on the chosen owner), N2 ("No due date"
+  beside the field), N3, and from the real-stack walkthrough the owner's picker keeping an
+  admin-named outsider as its own row. Checks: backend (8,109 tests + `test-slow` at 150
+  ms), frontend check (656 vitest) + test:pw (430), e2e in all three modes (default 312,
+  `E2E_SSO=1` 333, `E2E_AI=1` see below), e2e check, fake agent, Helm, scripts, `make
+  gen-api` (no diff), `make image` (525 MB). Test plan `docs/test-plans/phase-8b.md`;
+  screenshots `docs/screenshots/phase-8b/` (+ `emails/`), phase-1, phase-3 (+ the two
+  research emails), phase-8 and the tour re-captured. Stop for the human's review.

@@ -108,4 +108,9 @@ idea's queries and refreshes My work's counts; RA-10's mark removed, `src/api/qu
 N1: the person picker starts its highlight on the chosen owner row (`PeopleList
 beforeChosen`; the mock test "QA N1"). N2: "No due date" sits beside the date field (the
 390 px mock test checks they share a row). N3: the docstring names the right test.
+The integration's walkthrough of the real stack found one more: the owner of a private
+idea (sven on TOOLS-12) opened "Change" and, since his picker lists only the project's
+people, bob (the outsider dave asked) had no row, so the highlight started on Alice and
+Enter would have replaced bob. Fixed: the kept outsider has a row of their own, chosen and
+highlighted (the mock test "may pick only the project's people").
 

@@ -197,6 +197,13 @@ test.describe('assigning (a project admin)', () => {
       const dialog = page.getByRole('dialog', { name: 'Who does the research' })
       const search = dialog.getByRole('combobox', { name: 'Researcher' })
       await expect(search).toHaveAttribute('placeholder', 'Search the project’s people…')
+      // The outsider an admin asked has a row of their own (the list holds only the
+      // project's people), chosen and highlighted: Enter keeps them.
+      const kept = dialog.getByRole('option', { name: /Ivan .*, chosen/ })
+      await expect(kept).toContainText('Not in this project')
+      await expect(kept).toHaveAttribute('aria-selected', 'true')
+      await search.press('Enter')
+      await expect(dialog).toContainText(/Chosen: Ivan [^·]+· Not in this project/)
       await dialog.getByRole('option', { name: /You \(owner\)/ }).click()
       await expect(dialog).toContainText(
         'Only a project admin can ask someone outside this project.',
