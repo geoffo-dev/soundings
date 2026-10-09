@@ -17,11 +17,11 @@
 # [registry."ghcr.io"] mirrors = ["harbor.internal/ghcr"] (or the Docker daemon's
 # registry-mirrors for docker.io). Nothing is downloaded from the internet otherwise.
 
-FROM docker.io/alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec AS helm
+FROM docker.io/alpine/helm:4.3.0@sha256:a6cf54599ccb99d90cf0712b30f03fdb3cab062e6b94e0418cc4db7e8a1464b2 AS helm
 FROM docker.io/rancher/kubectl:v1.31.14@sha256:c01afebbff02d9e67108604f48a8cc780ff7dd1af0ea12d108f0fc019e532301 AS kubectl
 
 # --- tools: GitLab's deploy jobs, people ------------------------------------------------
-FROM docker.io/alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec AS tools
+FROM docker.io/alpine/helm:4.3.0@sha256:a6cf54599ccb99d90cf0712b30f03fdb3cab062e6b94e0418cc4db7e8a1464b2 AS tools
 COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
 # A shell as the default command: CI jobs run their script in it.
 ENTRYPOINT []
