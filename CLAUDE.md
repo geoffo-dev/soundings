@@ -19,7 +19,7 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 | File | Why |
 |---|---|
 | `README.md` | The front door: what Soundings is, the tour (`docs/screenshots/tour/`), quick start, architecture |
-| `docs/RELEASE-NOTES.md` | 0.1.0: what is in it, known issues, upgrade notes, decisions to confirm |
+| `docs/RELEASE-NOTES.md` | 0.2.0 (and 0.1.0 below it): what is in it, known issues, upgrade notes, decisions to confirm |
 | `SPEC.md` | The product brief and source of truth (read-only) |
 | `docs/ownership.md` | Which paths you may edit; how to ask other owners for changes |
 | `docs/role-matrix.md` | Every permission rule by stable name, and the exact blind-evaluation rules |
@@ -64,7 +64,8 @@ deploy/environments/  CD values per environment (staging, production; no secrets
 deploy/ci/        GitHub ARC: runner values, arc-rbac.yaml (no runner rights; soundings-ci-deployer
                   per environment), deploy-runner.Dockerfile (ARC runner and `tools` deploy images)
 deploy/gitlab-agent/  the GitLab agents' RBAC and chart values; .gitlab/agents/soundings-<env>/ their
-                  ci_access (this project, the environment, protected refs)
+                  ci_access (this project, the environment, protected refs); .gitlab/CODEOWNERS
+                  (Premium: release managers approve delivery files; its group is a placeholder)
 dev/              docker-compose: Postgres 16, Keycloak 26 (realm export), Mailpit, the fake agent
                   (profile `ai`); k3s/ (Mailpit, Keycloak, fake-agent manifests), k3s-*-values.yaml
   fake-agent/       Soundings' deterministic fake kagent agent (a2a-sdk 1.2.1 server; calls /mcp
@@ -91,13 +92,14 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 
 | Target | What it does |
 |---|---|
-| `make check` | Every check: `check-backend check-frontend check-helm check-scripts check-fake-agent check-workflows` |
+| `make check` | Every check: `check-backend check-frontend check-helm check-scripts check-fake-agent check-workflows check-migrations` |
 | `make check-backend` | `make -C backend check`: ruff, mypy --strict, pytest (needs Docker) |
 | `make check-frontend` | `npm --prefix frontend run check`: tsc, eslint + prettier, vitest, build |
 | `make check-helm` | `helm lint --strict` + `helm template` for defaults and `deploy/helm/ci/*-values.yaml`, via the helm container; then `scripts/deploy.sh template` renders `deploy/environments/{staging,production}.values.yaml` |
 | `make check-scripts` | `bash -n` + shellcheck (when available) on `scripts/` |
 | `make check-fake-agent` | `make -C dev/fake-agent check`: ruff, mypy --strict, pytest (~25 s; includes a2a-sdk 0.3.23's own client in an isolated uv env) |
 | `make check-workflows` | actionlint 1.7.12 (`ACTIONLINT_IMAGE`, by digest, with shellcheck) and zizmor 1.30.1 (`uvx`, `--offline`; `.github/zizmor.yml`) on `.github/workflows/`, then `scripts/lib/check-gitlab-ci.sh`: gitlab-ci-local 4.75.1 (`npx`) validates `.gitlab-ci.yml` against GitLab's schema and checks which delivery jobs main, a branch, a `vX.Y.Z` tag, `IMAGE_BUILDER=dind` and signing get (a throwaway repo; ~1 min) |
+| `make check-migrations` | `scripts/lib/check-migrations.py`: new Alembic migrations (0016 on) must be expand/contract safe: `upgrade()` may not drop, rename or retype a table or column or make one NOT NULL unless the file says `# contract-ok: <reason>` (GitLab's `migrations:lint`, GitHub's `helm` job) |
 | `scripts/check-task.sh [area…]` | The TaskCompleted gate by hand: `backend frontend helm e2e scripts fake-agent` (e2e = `npm --prefix e2e run check`); no args = areas with uncommitted changes, `CHECK_TASK_ALL=1` = all |
 | `make dev-up` / `dev-down` / `dev-logs` | Dev services via `docker compose -f dev/docker-compose.yml` |
 | `make dev` | Prints how to run API, worker and SPA against the dev services |
@@ -665,9 +667,12 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   owner or an admin) can't change answers (c26) and nobody new is asked (both 409
   `research_finished`; the SPA offers Remove there); tests that need a researcher past
   Research assign while it is New or in Research, then move it. Closing the idea, turning the step off,
-  deactivation and losing one's role in a private project (`left_project`: every path that
+  deactivation, losing one's role in a private project (`left_project`: every path that
   removes project roles calls `research_assignment.roles_before` / `end_after_role_loss`)
-  clear it, audited, answers and the due date kept; archiving only suspends it. A
+  and making an internal project private for researchers without a role (`made_private`;
+  the SPA warns first with `Project.outside_researcher_count`, read afresh on Save) clear
+  it, audited, answers and the due date kept; archiving only suspends it. A research run's
+  agent reads only `search_ideas` and `get_idea`, as its guest would (`RUN_READ_TOOLS`). A
   researcher with no role in a private project is **column R**: that one idea through
   `RESEARCH_GUEST_ACCESS` (`app/authz/guest.py`; deny by default: a new idea route or MCP
   tool needs a row, a meta-test fails otherwise), never score data, the evaluation area,
@@ -691,7 +696,14 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   (the line, the picker dialog, "Start research", Hand back), `features/work/research-to-
   do.tsx`; `IdeaPermissions.can_view_project` false = the guest's page (Overview only,
   breadcrumb text); any write refused with 404 re-checks the idea on screen
-  (`api/query.ts`), so a guest unassigned meanwhile sees "doesn't exist".
+  (`api/query.ts`), so a guest unassigned meanwhile sees "doesn't exist" (`IdeaAccessEnded`,
+  focus to the h1 via `route-focus.ts` `pageHeading()`). Phase 8b review pieces: due-date
+  pickers start at `pickerMin` (`features/idea/due-date.ts`: an overdue date stays
+  choosable), a guest's @mention picker lists only people on the idea (`MentionOptions.only`),
+  avatar size `2xs` sits in board and list research chips, a status change can carry a
+  client-only `toastDescription` (`api/ideas.ts`), research-panel focus requests expire after
+  15 s (`features/research/research-focus.ts`), and the feed folds one change's
+  `researcher_changed` + `research_due_date_changed` into one line (`lib/activity.ts`).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -795,6 +807,13 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   (new URL-fetcher API), Python `altcha` 2.x with the `altcha@3` widget, `a2a-sdk[http-server]`
 1.2.1 (the fake agent only; the backend's A2A client is hand-written on httpx). OIDC is httpx +
   `joserfc` (no Authlib: `authlib.jose` is deprecated and its Starlette client isn't used).
+- **Bundled Postgres roles:** the app's role (`soundings`) is not a superuser and can't
+  create databases (Phase 7); maintenance from inside the pod uses the bootstrap superuser:
+  `kubectl exec <release>-postgresql-0 -- psql -U postgres` (`scripts/k3s-test-external-db.sh`
+  does, and admits its second namespace through a NetworkPolicy of its own for the test).
+- **Time-of-day tests:** `build_digests` and the reminder scans compare the instance's local
+  hour with `digest_hour` (8): a test that calls them with `utcnow()` sets `digest_hour: 0`
+  (`settings.model_copy(update=...)`), or it fails between midnight and 08:00 UTC.
 - **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
   stop what you start, never kill other agents' processes or containers. `make -C backend
   test-slow`'s My work p95 sits near its 150 ms budget here (about 140 ms): run it on an
@@ -1076,5 +1095,29 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   `E2E_SSO=1` 333, `E2E_AI=1` 352 passed, none failed), e2e check, fake agent, Helm,
   scripts, `make gen-api` (no diff), `make image` (525 MB). Test plan
   `docs/test-plans/phase-8b.md`; screenshots `docs/screenshots/phase-8b/` (+ `emails/`),
-  phase-1, phase-3 (+ the two research emails), phase-8 and the tour re-captured. Stop for
-  the human's review.
+  phase-1, phase-3 (+ the two research emails), phase-8 and the tour re-captured.
+  Reviews (2026-10-09; `docs/phase-summaries/phase-8.md`): code, guest-access and UX
+  reviews fixed (`28a1d72`: research runs read only `search_ideas`/`get_idea`, a guest's
+  `last_activity_at` from their own feed, the "Asked to research" hold and cap, one
+  notification per assignment, UTC due dates, `pickerMin`, a guest's mentions, focus, one
+  feed line per assignment); the lead's follow-ups D1-D5 (`bb777b3`: c26 `research_finished`
+  past Research for the researcher, `made_private` with `Project.outside_researcher_count`,
+  D3 hold/cap/dedupe, D4 an owner asked by name stays, `DueAt` in UTC) and the adversarial
+  check's L1 (research runs can't `list_projects`), L2 (nobody new asked past Research:
+  Remove only), N1, N2 (`0473232`); RA-12…RA-14.
+- **Phase 9** (continuous delivery, product owner 2026-10-09; `docs/decisions.md` "Phase 9",
+  ADR 0017, operator guide "Continuous delivery", `docs/test-plans/phase-9.md`,
+  `docs/phase-summaries/phase-9.md`): push to main builds (rootless BuildKit or dind), scans
+  (Trivy gate, SBOM) and deploys staging; a `vX.Y.Z` tag checks the versions
+  (`scripts/deploy.sh check-release`), rebuilds, deploys staging, publishes the release and
+  waits at the production gate (staging's digest). GitLab self-managed through the GitLab
+  agent only (`.gitlab/agents/`, `deploy/gitlab-agent/`: namespaced RBAC, protected refs);
+  GitHub Actions with ARC runners without rights and `KUBECONFIG_DATA` per environment
+  (`deploy/ci/`, `scripts/lib/ci-kubeconfig.sh`); one `scripts/deploy.sh` (render check,
+  `--atomic` by digest, helm test, `deploy-smoke.sh`, automatic rollback, migration-head,
+  deployer and run labels, refusals); `make k3s-deploy`, `scripts/ci-local/` (a whole
+  GitLab CE 19.4.1, the pipeline ran end to end: F1-F8 fixed), `make check-workflows`,
+  `make check-migrations`. Review fixes `14c97b5` (H1-H3, M1-M8, L1-L12; F9). The product
+  owner runs GitLab Premium or Ultimate: the guide leads with protected environments,
+  approvals, Maintainer-only pipeline variables and `.gitlab/CODEOWNERS` (a placeholder
+  group); unfixed CRITICAL findings stay reported, not gated.

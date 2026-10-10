@@ -12543,7 +12543,7 @@
   "info": {
     "description": "Soundings REST API.\n\n* Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details\n  (`application/problem+json`); branch on the `code` field.\n* Lists use cursor pagination: pass `next_cursor` back as `?cursor=`.\n* JSON fields are snake_case; timestamps are ISO 8601 with a UTC offset.\n",
     "title": "Soundings API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {

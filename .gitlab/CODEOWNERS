@@ -1,0 +1,20 @@
+# Code owners of the delivery path (GitLab Premium or Ultimate). With "Code owner approval"
+# required on the protected branch main, a merge request that changes any file below needs
+# an approval from the release managers before it can merge: these files decide what
+# reaches staging and production (the pipeline, the agents' access, the deploy script, the
+# chart and the environments' values).
+#
+# @platform/release-managers is a placeholder: replace it with your release managers'
+# group (the people allowed to deploy the protected environment "production") before
+# turning the rule on. docs/operator-guide.md, "Continuous delivery" > "Who can deploy".
+#
+# [Delivery][1]: one approval from the section's owners for every path in it; /deploy/
+# covers the Helm chart (deploy/helm/), the environments' values and the agents' RBAC.
+[Delivery][1] @platform/release-managers
+/.gitlab-ci.yml
+/.gitlab/CODEOWNERS
+/.gitlab/agents/
+/.github/
+/scripts/deploy*
+/scripts/lib/
+/deploy/

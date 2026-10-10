@@ -283,6 +283,13 @@ warning colour.
 - The researcher answers the checklist, comments (and can be @mentioned: the mention list
   calls them "researcher") and is told about status changes. They can't move the idea or
   use **Move anyway**: when the checklist is complete, the owner moves it on.
+- **Once the idea has moved past Research**, the research is done: the researcher reads
+  the answers but can no longer change them ("The idea has moved past Research, so only
+  its owner or an admin can change these answers now."), and nobody new can be asked: the
+  panel offers **Remove** instead of **Change** (it asks first and says why). Moving the
+  idea back into Research lets the owner ask someone again. An answer the researcher
+  typed but hadn't saved when this happened stays under its item with **Copy** and
+  **Discard**, so it can be passed on.
 - Asking someone sends them **Asked to research** (with the due date and a link to the
   checklist) and puts the idea in their My work, under **Research to do**. With a due
   date, a **Research reminder** goes out 2 days before and on the day, at the usual
@@ -291,8 +298,10 @@ warning colour.
   or the idea moves on.
 - Closing the idea, or turning the project's research step off, ends the assignment
   (reopening doesn't bring it back); in an archived project it is paused. If a
-  researcher leaves a private project, or their account is deactivated, it ends too.
-  Answers already written always stay.
+  researcher leaves a private project, or their account is deactivated, it ends too, and
+  so does the research of everyone outside the project when an internal project is made
+  private (its admin is asked first: "2 people researching ideas here aren't in the
+  project and will lose access."). Answers already written always stay.
 
 On the board and in the list (phones too), ideas in Research show the researcher's
 avatar inside the checklist badge ("Researched by Bob Chen") when someone other than the
@@ -819,7 +828,10 @@ the default.
 
 General settings: name, description, visibility (private: members only; internal:
 everyone who can sign in can read it), whether members may volunteer to own ideas, and
-the evaluation window in days. **Archive** makes a project read-only and hides it from
+the evaluation window in days. Making an internal project **private** ends the research
+of anyone researching one of its ideas without a role in the project; when there are
+such people, Save asks first ("Make this project private?") and says how many lose
+access. **Archive** makes a project read-only and hides it from
 lists, search and My work; restore it from the archived notice or the settings.
 
 **Branding** (project settings → Public form, below the form's settings) overrides the global branding for this
@@ -1062,5 +1074,24 @@ log is kept indefinitely (MCP calls: 90 days).
 
 ## Who can do what
 
-See [role-matrix.md](role-matrix.md) for the full table; a plain-language summary goes
-here in Phase 7.
+In plain words; [role-matrix.md](role-matrix.md) has every rule and its exceptions. A
+project's **viewers**, **members** and **admins** come from its Members tab (directly or
+through a group); **platform admins** act as an admin of every project. Being an idea's
+**owner**, **evaluator** or **researcher** adds to your role on that idea only.
+
+| | Viewer | Member | Idea owner | Researcher | Project admin | Platform admin |
+|---|---|---|---|---|---|---|
+| Read the project's ideas (internal projects: everyone signed in) | yes | yes | yes | that idea (also from outside a private project) | yes | yes |
+| Submit ideas, comment, vote | watch only | yes | yes | comment on that idea | yes | yes |
+| Volunteer to own an idea ("I'll own this") | | yes (where the project allows it) | | | yes | yes |
+| Invite evaluators, set the due date, move the idea, close or reopen evaluation | | | yes | | yes | yes |
+| Evaluate (evaluators are members or admins of the project) | | when invited | | | when invited | when invited |
+| See the scores | unless you are a pending evaluator | same | same | never from outside a private project | same | same |
+| Answer the research checklist | | | yes | yes, while the idea is in Research or before it | yes | yes |
+| Ask someone to research, change the research due date | | | yes (in a private project: only people with a role there) | hand it back | yes | yes |
+| **Move anyway** past Research with items open | | | | | yes | yes |
+| Write the proposal, accept suggestions | | suggest text | yes | | yes | yes |
+| Project settings: members, rubric, research step, proposal template, public form | | | | | yes | yes |
+| Create projects; Admin (users, groups, sign-in, branding, email, API keys, AI agents, audit log) | | | | | | yes |
+
+Pending evaluators never see anyone's scores, anywhere, until they submit their own.

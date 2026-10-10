@@ -60,7 +60,11 @@ rollback. Neither CI may hold a credential that reaches the cluster from outside
   digest that passed staging. A vX.Y.Z tag requires the repo's versions to say X.Y.Z.
 - The GitLab path needs GitLab on https (kubectl sends the agent token only over TLS).
 - On GitLab Free the production gate is only as strong as who may merge into protected
-  branches; GitHub Pro/Team has no second approver. Both are documented, not hidden.
+  branches; GitHub Pro/Team has no second approver. Both are documented, not hidden. The
+  product owner runs GitLab Premium or Ultimate (2026-10-09), so the operator guide leads
+  with protected environments for staging and production, a required approval for
+  production, pipeline variables for Maintainers only and Code Owner approval on main
+  (`.gitlab/CODEOWNERS`); the Free notes are its appendix.
 - GitHub keeps a 30-day namespaced token per environment (renewed by hand); API-server
   OIDC trust is the alternative where the API server can reach the issuer.
 - Run end to end on a self-managed GitLab CE 19.4.1 with its agents and k3s

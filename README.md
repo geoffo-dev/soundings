@@ -5,8 +5,9 @@ anonymously too through a public form. Each idea gets one accountable **owner** 
 several **evaluators**, who score it **blind** against a short rubric. The scores roll
 up into a weighted aggregate with a "high disagreement" flag. Strong ideas become a
 commercial proposal over the project's own template, exported as a branded PDF or as
-Markdown. A project can add a research step: before the team invests, the owner checks
-the idea isn't already being done elsewhere and records which teams were consulted. AI agents in
+Markdown. A project can add a research step: before the team invests, the owner (or
+someone they ask, from another team too) checks the idea isn't already being done
+elsewhere and records which teams were consulted. AI agents in
 [kagent](https://kagent.dev) can act as an extra evaluator or research assistant
 through Soundings' own MCP server.
 
@@ -14,7 +15,9 @@ It is one container image and one Helm chart. PostgreSQL is its only stateful
 dependency, it sends mail through any SMTP server and it runs air-gapped. Guiding rule:
 **simple beats configurable**.
 
-Version **0.1.0**: [release notes](docs/RELEASE-NOTES.md).
+Version **0.2.0**: [release notes](docs/RELEASE-NOTES.md) (per-project proposal
+templates, the research step with outside researchers, continuous delivery from GitLab
+and GitHub).
 
 ![My work: evaluations due, ideas you own and what changed recently](docs/screenshots/tour/02-my-work-1440-light.png)
 
@@ -25,10 +28,12 @@ Version **0.1.0**: [release notes](docs/RELEASE-NOTES.md).
 | ![Sign in with single sign-on](docs/screenshots/tour/01-sign-in-1440-light.png) **1. Sign in** with your organisation's single sign-on (OIDC: Keycloak, Entra ID, Google). Project access follows your directory groups. | ![My work](docs/screenshots/tour/02-my-work-1440-light.png) **2. My work**: evaluations due (overdue first), the ideas you own by status, and what changed recently. |
 | ![The board](docs/screenshots/tour/03-board-1440-light.png) **3. Board and list** for each project, sorted by aggregate score and filtered in a keystroke. It stays fast with 10,000 ideas. | ![An idea](docs/screenshots/tour/04-idea-page-1440-light.png) **4. The idea page**: the owner's next step as the one blue button, the activity feed, @mentions and votes. |
 | ![Evaluating blind](docs/screenshots/tour/05-evaluate-sheet-1440-light.png) **5. Evaluate blind**: score each criterion 1–5 and recommend Go, Maybe or No. Nobody else's scores are in sight until you submit. | ![Scores revealed](docs/screenshots/tour/06-evaluate-reveal-1440-light.png) **6. Then see everyone's scores**, the weighted aggregate and where evaluators disagree. |
-| ![The proposal editor](docs/screenshots/tour/07-proposal-1440-light.png) **7. Proposals** over the project's template, with comments in the margin and suggestions to accept or discard. | ![The exported PDF](docs/screenshots/tour/08-proposal-pdf.png) **8. Export** a branded, tagged PDF or Markdown. |
+| ![The proposal editor](docs/screenshots/tour/07-proposal-1440-light.png) **7. Proposals** over the project's own template (here Internal Tools': Effort & rollout, The ask), with comments in the margin and suggestions to accept or discard. | ![The exported PDF](docs/screenshots/tour/08-proposal-pdf.png) **8. Export** a branded, tagged PDF or Markdown, ending with the research the idea went through. |
 | ![The public form](docs/screenshots/tour/09-public-form-1440-light.png) **9. Public form**: anyone can send an idea, protected by a proof of work. Submitters track it through a private link. | ![Notifications](docs/screenshots/tour/10-notifications-1440-light.png) **10. Notifications** in the app and by email, immediately or as a daily digest. ([An email](docs/screenshots/tour/10-email-1440-light.png).) |
 | ![Admin](docs/screenshots/tour/11-admin-1440-light.png) **11. Admin**: users, groups and IdP mappings, single sign-on, branding, email, API keys, AI agents and the audit log. | ![An AI evaluation](docs/screenshots/tour/12-ai-evaluation-1440-light.png) **12. AI evaluation** by a kagent agent: a rationale and cited sources per criterion. It stays out of the score until the owner includes it. (Here Soundings' deterministic stand-in agent wrote it.) |
-| ![The research step](docs/screenshots/tour/13-research-1440-light.png) **13. Research step** (optional, per project): a short checklist ("Not already being done elsewhere", "Departments or teams consulted") answered before evaluation or before the proposal, with similar ideas from every project you can see. | ![A project's proposal template](docs/screenshots/tour/14-proposal-template-1440-light.png) **14. Your own proposal template**: project admins rename, reorder, add and remove sections; removed text is kept and comes back on restore. |
+| ![The Research column](docs/screenshots/tour/13-research-column-1440-light.png) **13. A research step** (optional, per project): before evaluation or before the proposal, ideas wait in a Research column; each card shows what is left and who is researching it. | ![The research checklist](docs/screenshots/tour/14-research-checklist-1440-light.png) **14. The checklist**: "Not already being done elsewhere", "Departments or teams consulted", answered in plain words, with similar ideas from every project you can see. |
+| ![The research gate](docs/screenshots/tour/15-research-gate-1440-light.png) **15. The gate**: an idea can't move on while a required item is open. Project admins may move it anyway, with a reason, in the audit log. | ![An outside researcher](docs/screenshots/tour/16-outside-researcher-1440-light.png) **16. Ask someone outside the project**: the researcher, with a due date and reminders, sees that one idea and nothing else of a private project, never its scores. |
+| ![A project's proposal template](docs/screenshots/tour/17-proposal-template-1440-light.png) **17. Your own proposal template**: project admins rename, reorder, add and remove sections; removed text is kept and comes back on restore. | |
 
 Dark mode and phone layouts: [docs/screenshots/tour/](docs/screenshots/tour/). Every
 screen at 1440 px light and dark, and at 390 px:
@@ -46,7 +51,7 @@ make demo-down     # remove it all
 ```
 
 **On Kubernetes** (1.27+, an ingress controller, a default StorageClass): build the
-image and push it where your cluster pulls from (`make image IMAGE=<registry>/soundings:0.1.0`),
+image and push it where your cluster pulls from (`make image IMAGE=<registry>/soundings:0.2.0`),
 then:
 
 ```sh
@@ -60,6 +65,13 @@ then how to connect single sign-on. The [operator guide](docs/operator-guide.md)
 the rest: SSO, SMTP, an external database, TLS, the public form, MCP and kagent,
 backups, upgrades and what is stored about people.
 
+**Deploy on push**: every push to `main` builds, scans and deploys staging, and a `vX.Y.Z`
+tag goes to production after an approval, from self-managed GitLab (through the GitLab
+agent for Kubernetes, no cluster credentials in the CI) or GitHub Actions (self-hosted
+runners in your network), with one script, `scripts/deploy.sh`, that also rolls back.
+Set-up, variables and who can deploy: [operator guide, "Continuous
+delivery"](docs/operator-guide.md#continuous-delivery-phase-9).
+
 ## Documentation
 
 | | |
@@ -69,7 +81,7 @@ backups, upgrades and what is stored about people.
 | [Helm chart](deploy/helm/README.md) | Every value |
 | [MCP guide](docs/mcp.md) | Connecting Claude Code, Claude Desktop or an SDK with an API key; the ten tools |
 | [kagent integration](deploy/kagent/README.md) | AI agents: how a run flows, example manifests |
-| [Release notes](docs/RELEASE-NOTES.md) | What 0.1.0 does, known issues, decisions to confirm |
+| [Release notes](docs/RELEASE-NOTES.md) | What 0.2.0 and 0.1.0 do, known issues, upgrade notes, decisions to confirm |
 | [Decisions](docs/decisions.md), [ADRs](docs/adr/README.md) | Why it is built this way |
 | [Role matrix](docs/role-matrix.md) | Every permission rule, and the exact blind-evaluation rules |
 | [API contract](docs/api/) | REST API per phase (`/api/docs` on a running instance) |
@@ -122,8 +134,11 @@ backend/     FastAPI app (app/), Alembic migrations, tests (pytest, testcontaine
 frontend/    React SPA and design system (src/components/ui/), vitest + Playwright on mocks
 e2e/         Playwright end-to-end tests against the real stack; screenshots; perf kit
 deploy/helm/ the Helm chart            deploy/kagent/  example kagent manifests
+deploy/environments/, deploy/gitlab-agent/, deploy/ci/, .gitlab-ci.yml, .github/workflows/
+             continuous delivery: staging and production values, the CIs' cluster access
 dev/         docker-compose (Postgres, Keycloak, Mailpit, a fake kagent agent), k3s values
-scripts/     demo, smoke tests (SSO, email, public form, MCP, AI), local k3s helpers
+scripts/     demo, smoke tests (SSO, email, public form, MCP, AI), local k3s helpers,
+             deploy.sh (the CIs' deploy and rollback), ci-local/ (a local GitLab to rehearse CD)
 docs/        guides, ADRs, decisions, role matrix, API contract, test plans, screenshots
 Dockerfile   the one image (API + built SPA; `worker` and `migrate` subcommands)
 ```
@@ -137,7 +152,8 @@ make help                 # every target
 make dev-up               # Postgres, Keycloak, Mailpit in Docker
 make dev                  # how to run the API, the worker and the SPA against them
 make check                # every check: backend (ruff, mypy --strict, pytest), frontend
-                          # (tsc, eslint, prettier, vitest, build), Helm, scripts, fake agent
+                          # (tsc, eslint, prettier, vitest, build), Helm, scripts, fake agent,
+                          # both CI pipelines (actionlint, zizmor, gitlab-ci-local), migrations
 npm --prefix frontend run test:pw   # Playwright + axe against the SPA's mock API
 npm --prefix e2e test               # end-to-end against the real stack (Docker)
 make k3s-up k3s-install k3s-smoke   # the chart on a local k3s cluster in Docker

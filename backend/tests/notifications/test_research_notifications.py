@@ -330,7 +330,9 @@ async def test_preferences_digest_and_off(
 
     assert await outbox.emails() == []  # digest and off: nothing now
     assert only(await outbox.notifications(team.evaluators[0].id, ASSIGNED))  # still in-app
-    assert await build_digests(app.state.sessionmaker, settings, utcnow()) == 1
+    # The digest hour is 0, so the digest is due whatever time of day the test runs.
+    any_hour = settings.model_copy(update={"digest_hour": 0})
+    assert await build_digests(app.state.sessionmaker, any_hour, utcnow()) == 1
     await _send_all(outbox, runtime)
     subject, _, text = _bodies(only(transport.messages))
     assert subject.startswith("Soundings digest")

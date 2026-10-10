@@ -1,6 +1,6 @@
 [project]
 name = "soundings"
-version = "0.1.0"
+version = "0.2.0"
 description = "Soundings: submit ideas, give each an owner, and evaluate them blind."
 readme = "README.md"
 requires-python = ">=3.12"

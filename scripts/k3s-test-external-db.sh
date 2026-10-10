@@ -26,10 +26,38 @@ pg_pod="$pg_service-0"
 db_host="$pg_service.$NAMESPACE.svc"
 password="$(kubectl -n "$NAMESPACE" get secret "$pg_service" -o jsonpath='{.data.password}' | base64 -d)"
 
+# The app's role can't create databases (not a superuser since Phase 7): the bootstrap
+# superuser "postgres" creates it, owned by the app's role, from inside the pod.
 log "creating database $EXT_DB on $pg_pod"
 kubectl -n "$NAMESPACE" exec "$pg_pod" -- sh -c \
-  "psql -U soundings -d soundings -tAc \"select 1 from pg_database where datname = '$EXT_DB'\" | grep -q 1 ||
-   psql -U soundings -d soundings -c 'create database $EXT_DB'" >/dev/null
+  "psql -U postgres -d postgres -tAc \"select 1 from pg_database where datname = '$EXT_DB'\" | grep -q 1 ||
+   psql -U postgres -d postgres -c 'create database $EXT_DB owner soundings'" >/dev/null
+
+# The first release's NetworkPolicy admits only its own pods to its Postgres: let the
+# second release's namespace in for this test only.
+np="$EXT_RELEASE-to-postgresql"
+cleanup_np() { kubectl -n "$NAMESPACE" delete networkpolicy "$np" --ignore-not-found >/dev/null || true; }
+trap cleanup_np EXIT
+kubectl -n "$NAMESPACE" apply -f - >/dev/null <<POLICY
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: $np
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgresql
+      app.kubernetes.io/instance: $RELEASE
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: $EXT_NAMESPACE
+      ports:
+        - port: 5432
+          protocol: TCP
+POLICY
 
 install() {
   RELEASE="$EXT_RELEASE" NAMESPACE="$EXT_NAMESPACE" "$(dirname "$0")/k3s-install.sh" \

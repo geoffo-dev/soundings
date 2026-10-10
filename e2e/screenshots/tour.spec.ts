@@ -13,9 +13,11 @@ import { renderPdfPages } from '../tests/support/pdf'
 import { fillPublicForm, humanCheckDone } from '../tests/support/public'
 
 /**
- * The product tour: fourteen hero screenshots that tell Soundings' story in order, from the
+ * The product tour: seventeen hero screenshots that tell Soundings' story in order, from the
  * real app with the demo data (for the root README and the release notes). Not a
- * regression test.
+ * regression test. 07-08 show Internal Tools' own proposal template (TOOLS-3), 13-16 its
+ * research step: the Research column, the checklist with similar ideas, the gate and an
+ * outside researcher (bob on TOOLS-12, who has no role in the private project).
  *
  * `npm run screenshots:tour` (E2E_SSO=1 E2E_AI=1: the sign-in page with single sign-on,
  * and the fake kagent agent for the AI evaluation) → docs/screenshots/tour/
@@ -35,24 +37,12 @@ const baseURL = () => test.info().project.use.baseURL ?? ''
 test.describe.configure({ mode: 'serial' })
 
 const IDEA = 'CUST-12'
-const PROPOSAL = 'CUST-6'
-const SECTIONS = {
-  summary:
-    'Add a **Starter** tier for teams of up to ten people, billed by active seats each month instead of the annual Team plan.',
-  problem:
-    'Small teams trial the product and leave at the paywall: the Team plan is annual and starts at 25 seats.\n\n- 61% of trials from teams under ten don’t convert\n- Sales spends a third of its calls on discount requests from small teams',
-  solution:
-    'A monthly Starter tier:\n\n1. Pay for the seats used in the month, from 2 to 10\n2. The same features as Team, without SSO and audit export\n3. One click to move to Team when they grow',
-  market:
-    'About 4,800 small teams trial us each year. Competitors with a monthly tier convert 18–24% of them.',
-  cost: '| Work | Weeks |\n|---|---|\n| Billing changes | 3 |\n| Plan limits | 2 |\n| Pricing page and emails | 1 |',
-  benefits:
-    'At a 15% conversion: about 720 new teams and **£410k** in the first year, with a path into Team.',
-  risks:
-    'Some Team customers under ten seats may downgrade. We limit the tier to new accounts for the first two quarters.',
-  next_steps:
-    'Approve a two-quarter pilot in the UK and Ireland, with a go/no-go review at the end of Q2.',
-}
+// Internal Tools' six-section template (Summary, Problem, Solution, Effort & rollout,
+// Risks, The ask), seeded with text and the research appendix; the tour adds "The ask"
+// and two margin threads.
+const PROPOSAL = 'TOOLS-3'
+const THE_ASK =
+  'Two developers for six weeks from the next sprint, with QA and payments as the first users. We review the scenarios with QA after the first month.'
 
 interface Prepared {
   /** The invitation's HTML, the run-unique project shown under a plain name. */
@@ -77,32 +67,36 @@ async function ideaEvaluator(alice: Api): Promise<string> {
 }
 
 /**
- * Once per run: CUST-6's proposal with margin threads and its PDF, Idea evaluator's
+ * Once per run: TOOLS-3's proposal with "The ask" and margin threads, and its PDF; Idea evaluator's
  * evaluation of CUST-12 (left out of the score), and an invitation email to a new person
  * in a project that is archived again (so the seeded story looks as seeded).
  */
 function prepare(browser: Browser): Promise<Prepared> {
   ready ??= (async () => {
     const alice = await Api.as(baseURL(), 'alice')
-    const bob = await Api.as(baseURL(), 'bob')
+    const kenji = await Api.as(baseURL(), 'kenji')
     const carol = await Api.as(baseURL(), 'carol')
+    const dave = await Api.as(baseURL(), 'dave')
     try {
-      if ((await alice.proposal(PROPOSAL)).proposal === null) {
-        await alice.startProposal(PROPOSAL)
-        await alice.writeSections(PROPOSAL, SECTIONS)
-        const pricing = await bob.startThread(
+      if ((await kenji.threads(PROPOSAL)).length === 0) {
+        await kenji.writeSections(PROPOSAL, { the_ask: THE_ASK })
+        const sprint = await carol.startThread(
           PROPOSAL,
           'problem',
-          'Is the 61% from the last two quarters or the whole year?',
+          'Is the day a sprint only QA’s, or the payments team’s copies too?',
         )
-        await alice.reply(PROPOSAL, pricing.id, 'The last four quarters; I’ll add the source.')
-        await carol.startThread(
+        await kenji.reply(
           PROPOSAL,
-          'risks',
-          'Could we grandfather existing small Team customers instead?',
+          sprint.id,
+          'Only QA’s. Payments spend about two days a month on top; I’ll add it.',
+        )
+        await dave.startThread(
+          PROPOSAL,
+          'effort_rollout',
+          'Could the platform team host it, so you don’t run another service?',
         )
       }
-      const { body } = await alice.exportProposal(PROPOSAL, 'pdf')
+      const { body } = await kenji.exportProposal(PROPOSAL, 'pdf')
       writeFileSync(join(outDir, '08-proposal.pdf'), body)
       await renderPdfPages(browser, body, [{ page: 1, path: join(outDir, '08-proposal-pdf.png') }])
 
@@ -142,8 +136,9 @@ function prepare(browser: Browser): Promise<Prepared> {
       return { email }
     } finally {
       await alice.dispose()
-      await bob.dispose()
+      await kenji.dispose()
       await carol.dispose()
+      await dave.dispose()
     }
   })()
   return ready
@@ -229,13 +224,14 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // TOOLS-3 in Internal Tools' own template, with a margin thread on Problem.
     name: '07-proposal',
-    as: 'alice',
+    as: 'kenji',
     variants: ['1440-light', '1440-dark'],
     open: async (page) => {
       await page.goto(`/ideas/${PROPOSAL}?tab=proposal`)
       await expect(page.getByRole('heading', { level: 2, name: /Problem$/ })).toBeVisible()
-      await expect(page.getByText('Is the 61% from the last two quarters')).toBeVisible()
+      await expect(page.getByText('Is the day a sprint only QA')).toBeVisible()
       // The tabs at the top edge: the outline, Summary and Problem's margin thread in view.
       await page
         .getByRole('tablist')
@@ -294,9 +290,22 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    // Phase 8: Internal Tools checks ideas before evaluation. TOOLS-11's checklist is
-    // complete, and "Similar ideas" found Customer Innovation's status page.
-    name: '13-research',
+    // Phase 8: Internal Tools checks ideas before evaluation: the Research column, each
+    // card with its checklist progress and, on TOOLS-12, its researcher.
+    name: '13-research-column',
+    as: 'sven',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page, phone) => {
+      await page.goto('/p/internal-tools?view=board')
+      const column = page.getByRole('region', { name: /^Research\b/ })
+      await expect(column.getByRole('link', { name: /\(TOOLS-12\)$/ })).toBeVisible()
+      if (phone) await column.evaluate((node) => node.scrollIntoView({ inline: 'start' }))
+    },
+  },
+  {
+    // TOOLS-11's checklist is complete, and "Similar ideas" found Customer Innovation's
+    // status page.
+    name: '14-research-checklist',
     as: 'carol',
     variants: ['1440-light', '1440-dark', '390-light'],
     open: async (page, phone) => {
@@ -307,8 +316,44 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // The gate: dave (the project admin) drags TOOLS-12 on to Evaluating while one required
+    // item is open; nothing is saved (the dialog is the shot).
+    name: '15-research-gate',
+    as: 'dave',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page) => {
+      await page.goto('/p/internal-tools?view=board')
+      const card = page.getByRole('link', { name: /\(TOOLS-12\)$/ })
+      await expect(card).toBeVisible()
+      await settled(page)
+      const announcer = page.locator('[id^="DndLiveRegion"]')
+      await card.focus()
+      await page.keyboard.press('Space')
+      await expect(announcer).toContainText('Picked up TOOLS-12')
+      await page.keyboard.press('ArrowRight')
+      await expect(announcer).toContainText('TOOLS-12 is over')
+      await page.keyboard.press('Space')
+      await expect(page.getByRole('dialog', { name: 'Finish the research first' })).toBeVisible()
+    },
+  },
+  {
+    // Phase 8b: bob has no role in the private Internal Tools; he researches TOOLS-12 as its
+    // guest and sees that one idea only.
+    name: '16-outside-researcher',
+    as: 'bob',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page) => {
+      await page.goto('/ideas/TOOLS-12')
+      await expect(
+        page.getByText('You can see this idea because you’re researching it.'),
+      ).toBeVisible()
+      // The guest's own line says "You" (no "not in this project" about yourself).
+      await expect(page.getByTestId('researcher-line')).toContainText('You')
+    },
+  },
+  {
     // Phase 8: Internal Tools' own proposal template, as its admin edits it.
-    name: '14-proposal-template',
+    name: '17-proposal-template',
     as: 'dave',
     variants: ['1440-light', '1440-dark'],
     open: async (page) => {

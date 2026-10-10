@@ -125,10 +125,10 @@ machine or a throwaway cluster. Production mode refuses it.
 
 The chart runs the image `soundings:<appVersion>` (`image.registry`, `image.repository`,
 `image.tag`). Build it and push it where your cluster pulls from:
-`make image IMAGE=registry.example.com/soundings:0.1.0`, `docker push …`, then add
+`make image IMAGE=registry.example.com/soundings:0.2.0`, `docker push …`, then add
 `--set image.registry=registry.example.com` below. On k3s or k3d you can import it into
-the node instead (`make image IMAGE=soundings:0.1.0`, then `make k3s-load
-IMAGE=soundings:0.1.0` or `k3d image import soundings:0.1.0`). Then one command:
+the node instead (`make image IMAGE=soundings:0.2.0`, then `make k3s-load
+IMAGE=soundings:0.2.0` or `k3d image import soundings:0.2.0`). Then one command:
 
 ```sh
 helm install soundings ./deploy/helm -n soundings --create-namespace \
@@ -252,6 +252,29 @@ Phase 8 added: custom template sections and their text, research checklists and 
 ideas in Research go back to the status before it. 0013 only adds two indexes on idea
 titles and summaries for "Similar ideas" (a few seconds per 10,000 ideas while it runs).
 There is nothing to configure: no new values or environment variables.
+
+**Phase 8b (migrations 0014 and 0015, release 0.2.0):** 0014 only swaps and adds indexes
+(My work's owned groups, the cards' counts). 0015 adds the research assignment (an idea's
+researcher, when they were asked, the research due date) and the two notification types
+"Asked to research" and "Research reminder" (immediate by default; anyone who had every
+type off gets them off too). Every existing idea starts with nobody assigned: its owner
+does the research, as before. Downgrading past 0015 deletes every research assignment
+and research due date and the two types' notifications (the answers stay). Upgrading
+0.1.0 to 0.2.0 runs 0012 to 0015 in one go (rehearsed on k3s with 0.1.0's demo data and
+0.1.0's chart, both through `helm upgrade` and through `scripts/deploy.sh`: every row
+kept). The image still defaults to production (`SOUNDINGS_ENVIRONMENT=production`, since
+0.1.0): development setups say so.
+
+**Moving a release installed by hand to `scripts/deploy.sh`** (continuous delivery):
+the environments' values name Secrets instead of letting the chart generate them, so
+create them from the release's generated Secret first, or the upgrade changes the
+instance's secret key (it signs unsubscribe and confirmation links and seals stored
+tracking tokens, so links already sent would stop working) and the break-glass password: `kubectl -n <ns> get secret <release> -o
+jsonpath='{.data.secret-key}' | base64 -d` into `soundings-app` (key `secret-key`), and
+`break-glass-username` / `break-glass-password` into `soundings-break-glass` (`username`,
+`password`). The first deploy then takes the release over (a revision without the
+script's labels counts as nobody's), and a rollback to the hand-installed revision is
+refused (its migrations are unknown), as it should be across 0011 → 0015.
 
 ### Sessions
 
@@ -1417,7 +1440,7 @@ image). `make check-helm` renders both. A whole deploy can take about 7 × `HELM
 | | GitLab | GitHub |
 |---|---|---|
 | Cluster | `cluster-setup.yaml`, each namespace's Secrets, `deploy/gitlab-agent/` (RBAC, two agents) | `cluster-setup.yaml`, each namespace's Secrets, `deploy/ci/arc-rbac.yaml`, ARC with two scale sets |
-| Who deploys | protected `main` and `v*` (merge and create: the release managers), the agents' configuration in a project the platform team owns; Premium: protected environments | rulesets for `main` and `v*`, environments `staging` (main, `v*.*.*`) and `production` (`v*.*.*`, reviewers), `SOUNDINGS_PRODUCTION_DEPLOYERS`, immutable releases |
+| Who deploys | Premium: protected environments `staging` and `production` (*Allowed to deploy*), one approval for production (not by its triggerer), Code Owner approval on `main` (`.gitlab/CODEOWNERS`, its placeholder group replaced); protected `main` and `v*`; the agents' configuration in a project the platform team owns ([Free](#appendix-gitlab-free): merge and tag creation limited to the release managers) | rulesets for `main` and `v*`, environments `staging` (main, `v*.*.*`) and `production` (`v*.*.*`, reviewers), `SOUNDINGS_PRODUCTION_DEPLOYERS`, immutable releases |
 | Runners | a protected runner tagged `soundings-deploy` for deploy jobs only; build runners as in "Image builds" | ARC runner image within 30 days of each runner release; private repository, no fork workflows |
 | Settings | Minimum role to use pipeline variables: Maintainer; *Prevent outdated deployment jobs* off | default `GITHUB_TOKEN` read-only, SHA-pinned actions |
 | Variables | `SOUNDINGS_DEPLOY`, URLs, `CI_BUILD_CA` and mirrors | `SOUNDINGS_DEPLOY`, `DEPLOY_URL` and `KUBECONFIG_DATA` per environment (renew monthly), `CI_BUILD_CA` |
@@ -1468,7 +1491,7 @@ connection out of the cluster. No kubeconfig or cluster credential is stored in 
    untagged jobs, and not shared with merge-request or privileged dind jobs: whoever takes
    over a runner host sees every later job's kubeconfig and job token. Deploy jobs never
    start anywhere else (they wait for that runner).
-4. **Protected refs** and **who can deploy**: below.
+4. **Protected refs**, **protected environments, approvals and Code Owners**: "Who can deploy" below.
 5. **Settings > CI/CD > General pipelines**: leave *Prevent outdated deployment jobs*
    **off**. GitLab compares deployments by when their pipeline was created, so whenever
    `main` deploys staging while a tag pipeline runs, the tag's `deploy:staging` would fail
@@ -1493,41 +1516,46 @@ connection out of the cluster. No kubeconfig or cluster credential is stored in 
 
 The agent can't tell `main` from a tag: production's context goes to any job with
 `environment: production` in a pipeline of **any protected ref** (seen in the live run).
-So the production gate (a manual job on the protected `v*` tag) holds only if the people
-who may merge into protected branches are also the people allowed to deploy production.
+So the manual `deploy:production` job on the protected `v*` tag is not the gate on its
+own: GitLab's protections decide who may deploy. This organisation runs **GitLab Premium
+or Ultimate** (the product owner, 2026-10-09), and these four settings are the setup to
+use (the YAML is the same on every tier; [Free](#appendix-gitlab-free) is at the end):
 
-- **Free**: protect `main` (and every other protected branch) with *Allowed to merge* and
-  *Allowed to push and merge* set to the same people as *Allowed to create* on the `v*`
-  tags (Maintainers, or a release group): Developers open merge requests, release
-  managers merge. Only they can run `deploy:production` (*can create this tag*) or put a
-  job on `main` that reaches production. There is no four-eyes rule on Free: the tag's
-  pusher may play the gate. If Developers must merge, give production its own project
-  instead (a deploy project only release managers write to, holding the production
-  agent's configuration and a pipeline running `scripts/deploy.sh` with the staged digest):
-  not built here.
-- **Premium**: protect the environment `production` (*Settings > CI/CD > Protected
-  environments*, *Allowed to deploy*: the release group; approval rules with one approval
-  and no self-approval). GitLab then drops, as it starts, any job for that environment,
-  whatever its action, from a pipeline whose user may not deploy, and lets only them play
-  or retry it (GitLab 19.4: `EE::Ci::ProcessBuildService#enqueue`,
-  `EE::Ci::DeployablePolicy`); with approval rules `deploy:production` waits for approval,
-  and the rollback jobs too (unless the project setting `prevent_blocking_non_deployment_jobs` is on). Protect
-  `staging` the same way if its Secrets matter. Also require Code Owner approval on `main`
-  with a `CODEOWNERS` file:
+1. **Protected environments** (*Settings > CI/CD > Protected environments*): protect
+   `production` with *Allowed to deploy* set to the release managers' group, and
+   `staging` with *Allowed to deploy* set to the people who may deploy it (Maintainers,
+   or the same group): its Secrets matter too. GitLab then drops, as it starts, any job
+   for a protected environment, whatever its action, from a pipeline whose user may not
+   deploy it, and lets only allowed people play or retry it (GitLab 19.4:
+   `EE::Ci::ProcessBuildService#enqueue`, `EE::Ci::DeployablePolicy`). A Developer's
+   merge into `main` therefore can't reach production, and can't even deploy staging
+   unless they may.
+2. **Deployment approvals for production**: on the protected environment `production`,
+   an approval rule (*Required approvals*: 1, from the release managers' group), and
+   leave *Allow pipeline triggerer to approve deployment* off (the default; *Settings >
+   CI/CD > Protected environments > Approval options*). `deploy:production` then waits for
+   an approval from someone other than the person who triggered it, and the `rollback:production` job does too (unless
+   the project setting `prevent_blocking_non_deployment_jobs` is on). This is the four-eyes
+   rule Free doesn't have.
+3. **Pipeline variables limited to Maintainers** (*Settings > CI/CD > Variables > Minimum
+   role to use pipeline variables*: Maintainer, the self-managed default; or *No one
+   allowed* if nobody needs `ROLLBACK_REVISION`, `DEPLOY_FORCE` or `CD_ONLY`): pipeline
+   variables override every gate, the scan's included (above).
+4. **Code Owner approval on `main`** (*Settings > Repository > Protected branches*, `main`:
+   *Code owner approval* on): [`.gitlab/CODEOWNERS`](../.gitlab/CODEOWNERS) makes every
+   merge request that changes the pipeline, the agents' configuration, the deploy
+   scripts, `scripts/lib/`, `deploy/` (the Helm chart and the environments' values
+   included) or `.github/` need one approval from `@platform/release-managers`. That
+   group is a **placeholder**: replace it with your release managers' group before
+   turning the rule on, and check the file in GitLab's repository view (it marks owners
+   it can't resolve).
 
-  ```
-  [Delivery][1] @platform/release-managers
-  /.gitlab-ci.yml
-  /.gitlab/
-  /.github/
-  /scripts/deploy*.sh
-  /scripts/lib/
-  /deploy/
-  ```
-
-- **Both**: the `soundings-production` namespace holds the release's Secrets, which the
-  deployer can read (Helm stores releases as Secrets): whoever can deploy production can
-  read them. Same YAML on both tiers.
+Also register the agents in a project only the platform team writes to
+(`KUBE_AGENT_PROJECT`, step 2 above): GitLab reads their `ci_access` from that project's
+default branch, so Code Owners on this project don't protect an agent configured here
+from someone who may merge into it. The `soundings-production` namespace holds the
+release's Secrets, which the deployer can read (Helm stores releases as Secrets):
+whoever can deploy production can read them.
 
 ### Image builds on your runners
 
@@ -1720,3 +1748,19 @@ Traefik, http on localhost). `scripts/ci-local/` stands up a whole self-managed 
 its registry, KAS, a runner and the agents to run the pipeline itself
 ([README](../scripts/ci-local/README.md)); the [test plan](test-plans/phase-9.md) records
 both runs.
+
+### Appendix: GitLab Free
+
+The same pipeline runs on GitLab Free, which has no protected environments, deployment
+approvals or Code Owner approval. There the production gate holds only through who may
+write to protected refs:
+
+- protect `main` (and every other protected branch) with *Allowed to merge* and *Allowed
+  to push and merge* set to the same people as *Allowed to create* on the `v*` tags
+  (Maintainers, or a release group): Developers open merge requests, release managers
+  merge. Only they can run `deploy:production` (*can create this tag*) or put a job on
+  `main` that reaches production;
+- there is no four-eyes rule: the tag's pusher may play the gate;
+- if Developers must merge, give production its own project instead (a deploy project
+  only release managers write to, holding the production agent's configuration and a
+  pipeline that runs `scripts/deploy.sh` with the staged digest): not built here.

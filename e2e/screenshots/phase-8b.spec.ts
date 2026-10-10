@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url'
 import type { Locator, Page } from '@playwright/test'
 
 import { Api, daysFromNow, type Person } from '../tests/support/api'
-import { disposePeople, Mailpit, newPeople } from '../tests/support/email'
+import { disposePeople, Mailpit, newPeople, signInAs, type Someone } from '../tests/support/email'
 import { expect, settled, signIn, test } from '../tests/support/fixtures'
-import { assignResearcher, researchTeam } from '../tests/support/research'
+import { answerItem, assignResearcher, CHECKLIST, researchTeam } from '../tests/support/research'
 
 /**
  * Review screenshots of the Phase 8b screens (the research assigned to a person) from the
@@ -23,6 +23,13 @@ import { assignResearcher, researchTeam } from '../tests/support/research'
  * My work's "Research to do" as alice. The email comes from a private project of its own
  * ("Facilities"), whose admin asks a new person (Nora Quinn) to research an idea; the
  * project is archived afterwards. Otherwise read-only.
+ *
+ * The review follow-ups, in projects of their own (archived afterwards; nothing is saved
+ * from the dialogs): `research-read-only-past-research` (D1: Nora, outside the private
+ * "Workplace", reads the answers of an idea that has moved on), `remove-researcher-past-
+ * research` (L2: past Research the owner gets Remove, with its confirmation) and
+ * `make-private-confirm` (D2: making the internal "Office moves" private, where Nora
+ * researches an idea, asks first).
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -92,7 +99,8 @@ const SHOTS: Shot[] = [
       await expect(
         page.getByText('You can see this idea because you’re researching it.'),
       ).toBeVisible()
-      await expect(researcherLine(page)).toContainText('not in this project')
+      // The guest's own line says "You" (no "not in this project" about yourself).
+      await expect(researcherLine(page)).toContainText('You')
     },
   },
   {
@@ -103,6 +111,131 @@ const SHOTS: Shot[] = [
       const section = page.getByRole('region', { name: /Research to do/ })
       await expect(section.getByRole('listitem').first()).toContainText(/Overdue/)
       await scrollTo(section)
+    },
+  },
+]
+
+// --- The review follow-ups (D1, L2, D2) ----------------------------------------------------
+interface FollowUps {
+  nora: Someone
+  readOnlyKey: string
+  removeKey: string
+  officeSlug: string
+}
+let followUps: Promise<FollowUps> | undefined
+const cleanups: (() => Promise<void>)[] = []
+
+/** Once per run: Nora Quinn, a new person, researching ideas in two projects of the spec's own. */
+async function buildFollowUps(): Promise<FollowUps> {
+  const alice = await Api.as(baseURL(), 'alice')
+  const people = await newPeople(alice, ['nora'])
+  const { nora } = people
+  cleanups.push(async () => {
+    await disposePeople(people)
+    await alice.archiveCreated()
+    await alice.dispose()
+  })
+  // D1 and L2: the private "Workplace", where Nora has no role; two ideas she researched
+  // have moved on to Evaluating.
+  const workplace = await researchTeam(alice, 'Workplace', 'before_evaluation', {})
+  await alice.send('PATCH', `/projects/${workplace.slug}`, { name: 'Workplace' })
+  const keys: string[] = []
+  for (const [title, summary] of [
+    [
+      'Quiet room on the fourth floor',
+      'Turn the small meeting room by the lifts into a quiet room.',
+    ],
+    ['Standing desks by the windows', 'Six standing desks along the south windows.'],
+  ] as const) {
+    const idea = await alice.createIdea(workplace.slug, { title, summary })
+    await alice.setOwner(idea.key, 'alice')
+    await alice.changeStatus(idea.key, 'research')
+    await assignResearcher(alice, idea.key, nora.user, daysFromNow(3))
+    await answerItem(
+      nora.api,
+      idea.key,
+      CHECKLIST.elsewhere,
+      'Facilities, 7 Oct: nothing planned for the fourth floor.',
+    )
+    await answerItem(
+      nora.api,
+      idea.key,
+      CHECKLIST.consulted,
+      'Facilities and HR, 8 Oct: both in favour; HR asks for simple booking rules.',
+    )
+    await alice.changeStatus(idea.key, 'evaluating')
+    keys.push(idea.key)
+  }
+  // D2: the internal "Office moves", where Nora researches an idea from outside.
+  const office = await researchTeam(alice, 'Office moves', 'before_evaluation', {})
+  await alice.send('PATCH', `/projects/${office.slug}`, {
+    name: 'Office moves',
+    visibility: 'internal',
+  })
+  const bikes = await alice.createIdea(office.slug, {
+    title: 'Pool bikes for site visits',
+    summary: 'Two bikes at reception for trips between the offices.',
+  })
+  await alice.setOwner(bikes.key, 'alice')
+  await assignResearcher(alice, bikes.key, nora.user, daysFromNow(5))
+  const [readOnlyKey, removeKey] = keys
+  if (!readOnlyKey || !removeKey) throw new Error('the Workplace ideas were not created')
+  return { nora, readOnlyKey, removeKey, officeSlug: office.slug }
+}
+
+function arrangeFollowUps(): Promise<FollowUps> {
+  const arranged = followUps ?? buildFollowUps()
+  followUps = arranged
+  return arranged
+}
+
+test.afterAll(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup()
+})
+
+const FOLLOW_UPS: {
+  name: string
+  open: (page: Page, arranged: FollowUps) => Promise<void>
+}[] = [
+  {
+    name: 'research-read-only-past-research',
+    open: async (page, { nora, readOnlyKey }) => {
+      await signInAs(page, nora)
+      await page.goto(`/ideas/${readOnlyKey}`)
+      const panel = page.getByRole('region', { name: 'Research' })
+      // Past Research the panel starts folded for her.
+      await panel.getByRole('button', { name: 'Research', exact: true }).click()
+      await expect(
+        panel.getByText(
+          'The idea has moved past Research, so only its owner or an admin can change these answers now.',
+        ),
+      ).toBeVisible()
+      await scrollTo(panel)
+    },
+  },
+  {
+    name: 'remove-researcher-past-research',
+    open: async (page, { removeKey }) => {
+      await signIn(page, 'alice')
+      await page.goto(`/ideas/${removeKey}`)
+      const panel = page.getByRole('region', { name: 'Research' })
+      await panel.getByRole('button', { name: 'Research', exact: true }).click()
+      await researcherLine(page).getByRole('button', { name: 'Remove the researcher' }).click()
+      await expect(
+        page.getByRole('alertdialog', { name: /^Remove Nora Quinn as researcher\?$/ }),
+      ).toBeVisible()
+    },
+  },
+  {
+    name: 'make-private-confirm',
+    open: async (page, { officeSlug }) => {
+      await signIn(page, 'alice')
+      await page.goto(`/p/${officeSlug}/settings`)
+      await page.getByRole('radio', { name: /Private/ }).check()
+      await page.getByRole('button', { name: /Save changes/ }).click()
+      await expect(
+        page.getByRole('alertdialog', { name: 'Make this project private?' }),
+      ).toContainText('will lose access')
     },
   },
 ]
@@ -191,6 +324,27 @@ for (const variant of VARIANTS) {
         await signIn(page, shot.as)
         await shot.open(page, variant.phone)
         await shoot(page, join(outDir, `${shot.name}-${variant.suffix}.png`), shot.fullPage)
+      })
+    }
+  })
+}
+
+// After every seeded-story shot: the follow-ups' projects ("Office moves" is internal, so
+// in everyone's sidebar) must not appear in them.
+for (const variant of VARIANTS) {
+  test.describe(`${variant.suffix} follow-ups`, () => {
+    test.use({
+      viewport: variant.viewport,
+      colorScheme: variant.colorScheme,
+      isMobile: variant.phone,
+      hasTouch: variant.phone,
+    })
+
+    for (const shot of FOLLOW_UPS) {
+      test(`${shot.name}-${variant.suffix}`, async ({ page }) => {
+        test.setTimeout(90_000)
+        await shot.open(page, await arrangeFollowUps())
+        await shoot(page, join(outDir, `${shot.name}-${variant.suffix}.png`))
       })
     }
   })
