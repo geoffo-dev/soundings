@@ -625,6 +625,30 @@ def test_a_child_that_grew_large_is_replaced_by_a_fresh_one() -> None:
         renderer.stop()
 
 
+def test_a_large_api_process_does_not_make_the_child_retire() -> None:
+    """The child judges its own peak, not the parent's: Linux keeps the peak resident
+    size of the address space ``execve`` replaced, so a spawned child's ``ru_maxrss``
+    starts at the API process's peak (CI: a pytest process past 512 MiB retired the
+    child after every render)."""
+    ballast = b"\1" * (children.RETIRE_ABOVE_256_MIB + 64 * 1024**2)  # resident, then freed
+    del ballast
+    renderer = Renderer(target=children.serve_retiring_above_256_mib)
+    try:
+        assert renderer.render(document(), timeout=20, wait=1).startswith(b"%PDF-")
+        first = renderer.pid
+        assert renderer.render(document(), timeout=20, wait=1).startswith(b"%PDF-")
+        assert renderer.pid == first
+    finally:
+        renderer.stop()
+
+
+def test_the_peak_memory_is_the_childs_own(tmp_path: Any) -> None:
+    status = tmp_path / "status"
+    status.write_text("Name:\tpython\nVmPeak:\t  900000 kB\nVmHWM:\t  112640 kB\nVmRSS:\t 1 kB\n")
+    assert pdf_child._peak_memory(status) == 112640 * 1024
+    assert pdf_child._peak_memory(tmp_path / "missing") > 0  # getrusage where /proc is missing
+
+
 def test_the_child_gets_no_secrets_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 

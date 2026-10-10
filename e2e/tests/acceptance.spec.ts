@@ -153,7 +153,14 @@ test('AC-01…07: project → idea → owner → three blind evaluations → agg
     await invite.getByRole('option', { name: new RegExp(PEOPLE[person]) }).click()
   }
   await invite.getByLabel('Due date').fill(await dateInDays(page, 10))
+  // The list below updates optimistically: the API is read once the invite is saved.
+  const invited = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/ideas/${ideaKey}/evaluators`) &&
+      response.request().method() === 'POST',
+  )
   await invite.getByRole('button', { name: /Invite 3 people/ }).click()
+  expect((await invited).status()).toBe(200)
   await expect(invite).toBeHidden()
   const evaluatorList = details(page).getByRole('list', { name: 'Evaluators' })
   await expect(evaluatorList.getByRole('listitem')).toHaveCount(3)

@@ -8,7 +8,14 @@ import {
   stopMailpit,
   type Message,
 } from '../../scripts/mailpit.ts'
-import { Api, createTeamProject, uniqueSuffix, type CurrentUser, type Project } from './api'
+import {
+  Api,
+  createTeamProject,
+  uniqueSuffix,
+  type CurrentUser,
+  type OutboxEmail,
+  type Project,
+} from './api'
 import { expect, test } from './fixtures'
 
 export { canControlMailpit, links, Mailpit, startMailpit, stopMailpit, type Message }
@@ -180,6 +187,85 @@ export async function outboxSettled(admin: Api, timeoutMs = 20_000) {
       { timeout: timeoutMs, message: 'the outbox should drain (is the worker running?)' },
     )
     .toBe(0)
+}
+
+const HOUR_MS = 3_600_000
+/**
+ * How long after the hour the worker's hourly `notification_schedule` (cron `0 * * * *`:
+ * reminders and the day's digests, about 30 of them on its first run after the seed)
+ * is taken to have queued what it sends.
+ */
+const SCHEDULE_SETTLE_MS = 60_000
+
+/**
+ * Waits for a moment when Mailpit can be stopped for `outageMs` with no email but the
+ * spec's own falling due meanwhile. After five failed connections in a row the worker
+ * stops trying anyone's email for a while (app/email/delivery.py `Breaker`: postponed,
+ * no attempt counted), so a spec that counts its own email's attempts during an outage
+ * can't share the outage with other mail, nor start it with the breaker still open from
+ * an earlier one:
+ * - the hourly schedule must not run before the outage ends, and its last run must be
+ *   over;
+ * - a test email from `admin` (a platform admin of the spec's own: admins may send five
+ *   in 10 minutes) is sent first: test emails are always tried, so it closes the breaker;
+ * - everything already queued (other specs' held or retried email, this spec's set-up)
+ *   that is due before the outage ends is sent first, while Mailpit is up.
+ */
+export async function quietOutbox(admin: Api, outageMs: number, timeoutMs = 8 * 60_000) {
+  await test.step('wait until no other email falls due during the outage', async () => {
+    const deadline = Date.now() + timeoutMs
+    let probed = false
+    for (;;) {
+      const intoHour = Date.now() % HOUR_MS
+      let wait = 0
+      if (intoHour < SCHEDULE_SETTLE_MS) wait = SCHEDULE_SETTLE_MS - intoHour
+      else if (intoHour + outageMs > HOUR_MS) wait = HOUR_MS - intoHour + SCHEDULE_SETTLE_MS
+      if (wait === 0 && !probed) {
+        const probe = await admin.sendTestEmail()
+        await expect
+          .poll(async () => (await admin.outboxEmail(probe.id)).status, {
+            timeout: 60_000,
+            message: 'the test email should be sent (is Mailpit up?)',
+          })
+          .toBe('sent')
+        probed = true
+        continue
+      }
+      if (wait === 0) {
+        const horizon = Date.now() + outageMs
+        const due = (await pendingEmails(admin)).filter(
+          (email) =>
+            email.status === 'sending' ||
+            !email.next_attempt_at ||
+            Date.parse(email.next_attempt_at) <= horizon,
+        )
+        if (due.length === 0) return
+        wait = 2000
+      }
+      if (Date.now() + wait > deadline) {
+        throw new Error(`no quiet ${outageMs / 1000} s for the outage within ${timeoutMs / 1000} s`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, wait))
+    }
+  })
+}
+
+/** Every queued or sending row of the outbox (all pages). */
+async function pendingEmails(admin: Api): Promise<OutboxEmail[]> {
+  const rows: OutboxEmail[] = []
+  let cursor: string | null = null
+  do {
+    const query = new URLSearchParams({ limit: '200' })
+    query.append('status', 'queued')
+    query.append('status', 'sending')
+    if (cursor) query.append('cursor', cursor)
+    const page: { items: OutboxEmail[]; next_cursor: string | null } = await admin.get(
+      `/admin/email/outbox?${query}`,
+    )
+    rows.push(...page.items)
+    cursor = page.next_cursor
+  } while (cursor)
+  return rows
 }
 
 /** The visible text of an email's HTML part (no head, styles, tags or attributes). */

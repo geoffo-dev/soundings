@@ -90,7 +90,7 @@ check_frontend() {
   run frontend npm --prefix frontend run check
 }
 
-# shellcheck disable=SC2329  # invoked through run()
+# shellcheck disable=SC2317,SC2329  # invoked through run() (SC2317 before shellcheck 0.11)
 helm_checks() {
   local values
   docker run --rm -v "$REPO_ROOT/deploy/helm:/chart:ro" -w /chart "$HELM_IMAGE" lint . --strict --quiet || return 1
@@ -136,7 +136,7 @@ check_e2e() {
   fi
 }
 
-# shellcheck disable=SC2329  # invoked through run()
+# shellcheck disable=SC2317,SC2329  # invoked through run() (SC2317 before shellcheck 0.11)
 scripts_checks() {
   local f
   local files=(scripts/*.sh scripts/lib/*.sh scripts/ci-local/*.sh)

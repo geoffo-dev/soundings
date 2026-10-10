@@ -63,6 +63,7 @@ use about 160 MB; the child itself about 65 MB before it renders."""
 CGROUP: Final = Path("/sys/fs/cgroup")
 _UNLIMITED: Final = 1 << 60
 """cgroup v1 reports "no limit" as about 2**63."""
+PROC_STATUS: Final = Path("/proc/self/status")
 
 
 class BlockedURL(ValueError):
@@ -198,8 +199,18 @@ def _limit_memory() -> int:
     return limit
 
 
-def _peak_memory() -> int:
-    """The child's largest resident size so far, in bytes (Linux reports KiB)."""
+def _peak_memory(status: Path = PROC_STATUS) -> int:
+    """The child's own largest resident size so far, in bytes: ``VmHWM``, the peak of
+    its address space. Not ``getrusage().ru_maxrss``: at ``execve`` Linux keeps the peak
+    of the address space it replaced, so a spawned child's ``ru_maxrss`` starts at the
+    API process's peak, and an API process past ``retire_above`` would retire every
+    child after one render. ``ru_maxrss`` (KiB) only where ``/proc`` is missing."""
+    try:
+        for line in status.read_text().splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
 
 
@@ -208,10 +219,11 @@ def serve(connection: Connection, *, retire_above: int | None = None) -> None:
     seconds without one, or when the API process closes the pipe. Replies
     ``("ok", pdf)`` or ``("error", <exception class name>)``: never document text.
 
-    The child also exits right after replying once it ran out of memory or its peak
-    resident size passed ``retire_above`` (default: half its memory limit). Python
-    keeps the memory a large render grew, so a warm child would otherwise creep
-    towards the limit; the next export starts a fresh one (about a second more)."""
+    The child also exits right after replying once it ran out of memory or its own peak
+    resident size (:func:`_peak_memory`) passed ``retire_above`` (default: half its
+    memory limit). Python keeps the memory a large render grew, so a warm child would
+    otherwise creep towards the limit; the next export starts a fresh one (about a
+    second more)."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is for the API process
     limit = _limit_memory()
     retire_above = limit // 2 if retire_above is None else retire_above

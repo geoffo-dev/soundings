@@ -11,6 +11,7 @@ import {
   newPeople,
   pickOnLoginPage,
   projectWithIdea,
+  quietOutbox,
   requireEmail,
   requireMailpitControl,
   signInAs,
@@ -38,6 +39,9 @@ import { evaluateSheet, expect, openIdea, primaryAction, signIn, test } from './
  * "connection failed" when its container name no longer resolves (`make demo`, CI).
  */
 const REFUSED = /connection (refused|failed)/
+
+/** AC3-02's outage: two attempts 30 s apart (polled for up to 90 s), then Admin → Email. */
+const OUTAGE_MS = 150_000
 
 /** "Thu 8 Oct": the date as emails write it (Python's `%a %-d %b`) in the instance zone. */
 function emailDay(iso: string, timeZone: string): string {
@@ -164,17 +168,23 @@ test(
   'AC3-02: with Mailpit stopped the invitation waits in the outbox, retrying; it arrives once when Mailpit is back',
   { tag: '@smtp-outage' },
   async ({ page, api }) => {
-    test.setTimeout(6 * 60_000)
+    // Up to eight minutes more for quietOutbox (the hourly schedule, other mail).
+    test.setTimeout(12 * 60_000)
     requireMailpitControl()
     const alice = await api('alice')
     await requireEmail(alice)
-    const people = await newPeople(alice, ['nora', 'iris'])
-    const { nora, iris } = people
+    // Lena, a platform admin, sends quietOutbox's test email.
+    const people = await newPeople(alice, ['nora', 'iris', 'lena'], { platformAdmins: ['lena'] })
+    const { nora, iris, lena } = people
     const mailpit = new Mailpit()
     try {
       const { key } = await projectWithIdea(alice, 'Email outage', [nora, iris], { owner: nora })
       await signIn(page, 'alice')
 
+      // Mailpit stays down for the two attempts and the Admin → Email checks: at most
+      // OUTAGE_MS, with the worker's breaker closed and no other email due meanwhile (or
+      // the breaker would postpone this one without trying it).
+      await quietOutbox(lena.api, OUTAGE_MS)
       await stopMailpit()
       let since = new Date()
       let emailId = ''

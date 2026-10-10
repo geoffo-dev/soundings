@@ -57,3 +57,14 @@ def serve_and_retire(connection: Connection) -> None:
     from app.proposals.pdf_child import serve
 
     serve(connection, retire_above=0)
+
+
+RETIRE_ABOVE_256_MIB = 256 * 1024 * 1024
+
+
+def serve_retiring_above_256_mib(connection: Connection) -> None:
+    """The real renderer, retiring once its own peak passes 256 MiB (as with a 1 GiB
+    container limit); a render keeps it near 110 MB."""
+    from app.proposals.pdf_child import serve
+
+    serve(connection, retire_above=RETIRE_ABOVE_256_MIB)
