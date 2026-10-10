@@ -82,7 +82,25 @@ on the SPA's mock `frontend/tests/research.spec.ts`, `proposal-template.spec.ts`
 
 ### Final verification for 0.2.0 (2026-10-10)
 
-@@FINAL_VERIFICATION@@
+On the build machine, with the version at 0.2.0 (`scripts/deploy.sh check-release
+v0.2.0` passes):
+
+| Check | Result |
+|---|---|
+| Backend: ruff, mypy --strict (457 files), pytest | 8,282 tests; one failed between 00:00 and 08:00 UTC (`test_preferences_digest_and_off` assumed the digest hour had passed): fixed with digest hour 0, its file re-run green; `make -C backend test-slow` green at 150 ms on a quiet machine |
+| Frontend: `npm run check` (tsc, eslint, prettier, vitest, build), `test:pw` | 661 unit tests; 442 page tests on the mock (205 screenshot specs skipped), none failed |
+| End to end against the real stack | 315 passed (default), 336 (`E2E_SSO=1`), 355 (`E2E_AI=1`), none failed; `npm --prefix e2e run check` |
+| Helm, scripts, fake agent, workflows, migrations | `make check-helm check-scripts check-fake-agent check-workflows check-migrations` green; `make gen-api` changes only the version |
+| Image | `make image IMAGE=soundings:0.2.0`: 525 MB, reports 0.2.0, migration head 0015 |
+| Upgrade with data, through the CD script | 0.1.0's image (`git archive 0046a9a`) and chart with its demo data in `soundings-staging` on k3s, then `make k3s-deploy ENV=staging IMAGE=soundings:0.2.0` (`scripts/deploy.sh` as the namespaced deployer): migrations 0011 → 0012 → 0013 → 0014 → 0015 in the migrate Job, the row counts of nine tables (48 ideas among them) the same before and after, each project with the eight sections and the step off. On the migrated data, signed in with break-glass: a 0.1.0 proposal kept its text and margin thread through renaming, removing, adding and restoring sections, and both exports followed the template; the research step before evaluation, an idea into Research, the gate's 409 `research_incomplete` with `can_override`, an outsider (bob) asked to research (`outside_project` audited), answers then Evaluating, 409 `research_finished` past Research, closing clears the researcher (audited `closed`), Similar ideas across projects. A rollback to 0.1.0's revision was refused (its migrations unknown, the new revision at 0015) |
+| Upgrade as CI | 0.1.0 with demo data in namespace `soundings`, then `make k3s-install SSO=1 SMTP=1 MCP=1 AI=1 IMAGE=soundings:0.2.0` and `k3s-smoke` with the same flags (119 checks), a guest researcher by hand (bob on TOOLS-13: the idea 200; its project, list, evaluations, proposal and another idea 404; Research to do lists it; Hand back → 404), `PROD=1` install and smoke, two API replicas and the smoke again, the external-database test (`scripts/k3s-test-external-db.sh`, fixed: see below) |
+
+Fixed in this verification: `scripts/k3s-test-external-db.sh` (Phase 7's non-superuser
+app role can't create databases, so the bootstrap superuser does; the bundled Postgres's
+NetworkPolicy now has a temporary rule for the second namespace), the notification test
+above, and from the re-captured screenshots the unsubscribe page's footer (it didn't name
+research) and Admin → Email (it didn't list the research reminders); the image was rebuilt
+after the last two.
 
 ## Review findings and outcomes
 
@@ -132,4 +150,24 @@ contract-phase8 §10, contract-phase8b §17.
 
 ## Screenshot index
 
-@@SCREENSHOTS@@
+Real stack, 1440 px light and dark and 390 px light, from freshly seeded data:
+
+- **Phase 8** ([`docs/screenshots/phase-8/`](../screenshots/phase-8/)): `settings-research`,
+  `settings-proposal-template`, `board-research-column`, `idea-research-open-item`,
+  `idea-research-similar-ideas`, `research-gate-dialog`, `proposal-custom-template`,
+  `proposal-research-appendix`; `pdf/`: TOOLS-3 (the six-section template, the research
+  appendix) and GREEN-4 ("Carbon impact"), each as the PDF and its pages.
+- **Phase 8b** ([`docs/screenshots/phase-8b/`](../screenshots/phase-8b/)):
+  `assign-picker-outsider`, `start-research-dialog`, `research-panel-researcher-due`,
+  `guest-researcher-idea`, `my-work-research-to-do-overdue`, and the follow-ups
+  `research-read-only-past-research` (D1), `remove-researcher-past-research` (L2: Remove
+  only) and `make-private-confirm` (D2); `emails/`: "Asked to research" as Mailpit
+  received it (desktop light and dark, 390 px).
+- **Emails** ([`docs/screenshots/phase-3/emails/`](../screenshots/phase-3/emails/)):
+  `researcher_assigned` and `research_reminder` with every other template.
+- **Tour** ([`docs/screenshots/tour/`](../screenshots/tour/)): 07 and 08 now show TOOLS-3's
+  own template and its PDF with the research appendix; 13 `research-column`, 14
+  `research-checklist`, 15 `research-gate`, 16 `outside-researcher`, 17
+  `proposal-template`.
+- Every other real-stack set (phases 1-6) was re-captured for 0.2.0 and read; the mock
+  sets are in each phase's `mock/`.

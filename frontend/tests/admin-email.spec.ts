@@ -26,9 +26,11 @@ test('shows the settings in effect without secrets, and opens the outbox on fail
   await expect(page.getByText('STARTTLS', { exact: true })).toBeVisible()
   await expect(page.getByText('Set (never shown)')).toHaveCount(2)
   await expect(page.getByText('/etc/soundings/smtp-ca/ca.crt')).toBeVisible()
+  // Evaluation and research reminders (Phase 8b) share the days and the hour.
   await expect(
     page.getByText('2 days before and on the due date, at 08:00 (Europe/London)'),
-  ).toBeVisible()
+  ).toHaveCount(2)
+  await expect(page.getByText('Research reminders')).toBeVisible()
 
   // What needs attention first: three failures (two still recent enough to retry) and
   // the email still queued for another try.

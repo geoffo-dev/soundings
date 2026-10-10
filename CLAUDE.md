@@ -312,7 +312,7 @@ The fake's behaviour follows the agent name's suffix (`-slow -fails -silent -ask
 -blind-probe -strays -late -no-cancel -unavailable -drops -lingers`; `dev/fake-agent/README.md`).
 `screenshots:phase6` (E2E_AI=1) writes `docs/screenshots/phase-6/` (11 screens × 1440
 light/dark and 390 light). `screenshots:tour` (E2E_SSO=1 E2E_AI=1) writes the README's
-product tour, `docs/screenshots/tour/` (`NN-<screen>-<variant>.png`: 12 screens at 1440
+product tour, `docs/screenshots/tour/` (`NN-<screen>-<variant>.png`: 17 screens at 1440
 light, most also dark or 390, the PDF's first page and an email). Contract rules not built yet are pinned as
 expected failures (`test.fail(true, …)` in Playwright, `@pytest.mark.xfail(strict=True)`
 in pytest), which fail loudly once fixed: then delete the mark.
@@ -334,7 +334,8 @@ key, user | null, dueAt)` (a session: keys can't assign), `removeResearcher` (al
 use their own private project and `newPeople`; every run makes another "Nora Quinn", so
 pick a new person's picker row by their unique email. RA-03/06/07 read the seeded story
 (bob, TOOLS-12; alice's GREEN-5 overdue) without changing it. `screenshots:phase8b` writes
-`docs/screenshots/phase-8b/` (5 screens × 1440 light/dark and 390 light) and `emails/`.
+`docs/screenshots/phase-8b/` (8 screens × 1440 light/dark and 390 light: the seeded story,
+then three follow-ups on a project and people of their own, removed afterwards) and `emails/`.
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
 `docs/test-plans/phase-1.md` … `phase-8.md` (Phase 7: `performance.md`).
 
@@ -1121,3 +1122,21 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   owner runs GitLab Premium or Ultimate: the guide leads with protected environments,
   approvals, Maintainer-only pipeline variables and `.gitlab/CODEOWNERS` (a placeholder
   group); unfixed CRITICAL findings stay reported, not gated.
+- **Release 0.2.0** (2026-10-10, `docs/RELEASE-NOTES.md`): versions bumped
+  (`backend/pyproject.toml`, `uv.lock`, `Chart.yaml` version and appVersion;
+  `scripts/deploy.sh check-release v0.2.0` passes). Verified: backend (8,282 tests,
+  `test-slow`), frontend check (661 vitest) + test:pw (442), e2e in all three modes
+  (default 315, `E2E_SSO=1` 336, `E2E_AI=1` 355 passed, none failed), every `make check-*`,
+  `make image` (525 MB); on k3s 0.1.0 with its demo data upgraded to 0.2.0 by `make
+  k3s-deploy` (`scripts/deploy.sh` as the deployer SA, 0011 → 0015, row counts unchanged,
+  templates, the gate and an outside researcher on the migrated data, the rollback across
+  the migration refused) and as CI (`SSO=1 SMTP=1 MCP=1 AI=1`, `PROD=1`, two API replicas,
+  the external-database test). Every real-stack screenshot set and the tour re-captured
+  (tour 13-17: the Research column, checklist, gate, outside researcher, template; 07/08
+  TOOLS-3's own template). Fixed in the verification: `scripts/k3s-test-external-db.sh`
+  (the bootstrap superuser creates the database; a NetworkPolicy of its own for the second
+  namespace), a notification test that failed between midnight and 08:00 UTC, the
+  unsubscribe footer and Admin → Email's research reminders row. Not verified: GitLab
+  Premium's environments and approvals, the Kubernetes executor, cosign, GitHub's
+  runners/GHCR/ARC/environments, a real kagent; `scripts/ci-local/` not re-run (it needs
+  about 12 GB free). Stop for the human's review.

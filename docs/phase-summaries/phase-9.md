@@ -89,7 +89,35 @@ rollback.
 
 ## Release verification (2026-10-10)
 
-@@RELEASE_VERIFICATION@@
+- **The checks** with the version at 0.2.0: `make check-workflows` (actionlint, zizmor,
+  gitlab-ci-local's schema check and ten rule scenarios), `make check-migrations`,
+  `make check-helm` (which renders both environments' values through
+  `scripts/deploy.sh template`), `make check-scripts`, and `scripts/deploy.sh
+  check-release v0.2.0` (the tag matches `pyproject.toml`, `uv.lock` and `Chart.yaml`'s
+  version and appVersion).
+- **`scripts/deploy.sh` on real data** (`make k3s-deploy ENV=staging
+  IMAGE=soundings:0.2.0`): 0.1.0's chart and image with its demo data in
+  `soundings-staging`, then the script in the tools image as the namespaced deployer
+  `ci-deployers/soundings-staging`: render check, `helm upgrade --atomic` by digest, the
+  migrate Job (0011 → 0015), `helm test`, the smoke, revision 2 labelled with migration
+  head 0015 and "by hand"; a rollback to revision 1 refused (its migrations are unknown,
+  revision 2 runs 0015; `DEPLOY_FORCE=1` would override).
+- **Taking over a release installed by hand**: the 0.1.0 release had its generated
+  secret key and break-glass password in the chart's own Secret; carrying them into
+  `soundings-app` / `soundings-break-glass` before the first `deploy.sh` run kept every
+  session and the break-glass sign-in working. The operator guide now says so ("Moving a
+  release installed by hand to scripts/deploy.sh").
+- **The Premium setup** the product owner runs: the operator guide's "Who can deploy" now
+  leads with protected environments for staging and production, one required approval
+  for production ("Allow pipeline triggerer to approve deployment" off), pipeline
+  variables for Maintainers only and Code Owner approval on main through
+  `.gitlab/CODEOWNERS` (a placeholder group, `@platform/release-managers`, to replace);
+  Free is an appendix. ADR 0017 and decisions.md ("Phase 9 (product owner answers)")
+  record the answers, also that unfixed CRITICAL findings stay reported, not gated.
+- **Found and fixed**: the CI k3s job's `scripts/k3s-test-external-db.sh` failed since
+  Phase 7 (the app role can't create databases; the bundled Postgres's NetworkPolicy
+  refused the second namespace): the bootstrap superuser now creates the database and a
+  temporary NetworkPolicy admits the other namespace.
 
 ## What is not verified
 
@@ -98,7 +126,8 @@ rollback.
 - **The GitLab-specific changes after the live run** (cache flags by protected ref,
   `DEPLOY_RUNNER_TAG`, the 90-minute timeouts, production refusing `CD_ONLY`, the
   `migrations:lint` job): gitlab-ci-local's schema and rule checks and reading only.
-  @@CILOCAL@@
+  The local GitLab (`scripts/ci-local/`) was not run again for 0.2.0: it needs about
+  12 GB of free disk, and the build machine had 7.
 - **The Kubernetes executor** (the Docker executor ran both build paths), **cosign**
   signing (its image's blobs on ghcr.io can't be fetched here) and the default
   `DEPLOY_IMAGE` (alpine/k8s, 1.3 GB, didn't fit the disk).

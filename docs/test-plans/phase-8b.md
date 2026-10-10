@@ -93,8 +93,13 @@ all** (the demo's two internal projects are visible to everyone): the MSW mock's
 
 `docs/screenshots/phase-8b/`: `assign-picker-outsider`, `start-research-dialog`,
 `research-panel-researcher-due`, `guest-researcher-idea`, `my-work-research-to-do-overdue`
-(each `-1440-light`, `-1440-dark`, `-390-light`) and `emails/asked-to-research-`
-(`desktop-light`, `desktop-dark`, `390-light`, as Mailpit received it).
+(the seeded story), then the follow-ups on a private "Workplace" and an internal "Office
+moves" project with a new "Nora" (all made by the spec; the projects archived afterwards):
+`research-read-only-past-research` (D1, Nora's answers past Research),
+`remove-researcher-past-research` (L2: Remove only) and `make-private-confirm` (D2, the
+warning with the outsider count); each `-1440-light`, `-1440-dark`, `-390-light`; and
+`emails/asked-to-research-` (`desktop-light`, `desktop-dark`, `390-light`, as Mailpit
+received it). Re-captured and read for 0.2.0 on 2026-10-10.
 
 ## Defects and nits found (2026-10-09, real stack)
 
