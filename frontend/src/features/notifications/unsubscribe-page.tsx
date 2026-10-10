@@ -33,7 +33,7 @@ export function UnsubscribePage({ token }: { token: string | undefined }) {
       width="narrow"
       footer={
         <p className="text-center text-xs">
-          Soundings only emails you about ideas you own, evaluate, follow or are mentioned in.
+          Soundings only emails you about ideas you own, evaluate, research, follow or are mentioned in.
         </p>
       }
     >
