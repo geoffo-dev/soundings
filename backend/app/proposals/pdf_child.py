@@ -198,9 +198,17 @@ def _limit_memory() -> int:
     return limit
 
 
-def _peak_memory() -> int:
-    """The child's largest resident size so far, in bytes (Linux reports KiB)."""
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+def _peak_memory(status: Path = Path("/proc/self/status")) -> int:
+    """The child's largest resident size so far, in bytes. Linux's ``VmHWM`` (this
+    process's own peak), not ``ru_maxrss``: that survives fork and exec, so a spawned
+    child would start out with the API process's peak and retire after every render."""
+    try:
+        for line in status.read_text().splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * 1024  # kB
+    except (OSError, ValueError, IndexError):
+        pass
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024  # Linux reports KiB
 
 
 def serve(connection: Connection, *, retire_above: int | None = None) -> None:

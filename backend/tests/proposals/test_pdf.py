@@ -604,6 +604,16 @@ def test_the_child_memory_limit_is_half_the_containers(tmp_path: Any) -> None:
     assert pdf_child.memory_limit(tmp_path / "missing") == pdf_child.MEMORY_CAP
 
 
+def test_the_childs_peak_is_its_own_not_the_api_processs(tmp_path: Any) -> None:
+    """``ru_maxrss`` survives fork and exec: a child spawned by a large API process (or
+    a long pytest session) reported the parent's peak and retired after every render."""
+    status = tmp_path / "status"
+    status.write_text("Name:\tpython\nVmPeak:\t  900000 kB\nVmHWM:\t   65536 kB\nVmRSS:\t 1 kB\n")
+    assert pdf_child._peak_memory(status) == 64 * 1024**2
+    # Without /proc (or VmHWM) it falls back to getrusage.
+    assert pdf_child._peak_memory(tmp_path / "missing") > 0
+
+
 def test_the_child_runs_with_its_memory_limit(fresh_renderer: Renderer) -> None:
     fresh_renderer.render(document(), timeout=20, wait=1)
 
