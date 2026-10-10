@@ -82,7 +82,24 @@ const screenshotSpec =
                 : process.env.SCREENSHOTS === 'tour'
                   ? /screenshots\/tour\.spec\.ts$/
                   : /screenshots\/phase-1\.spec\.ts$/
-const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
+// The SPA needs a secure context (ALTCHA's proof of work uses crypto.subtle, Copy uses
+// navigator.clipboard). Chromium grants it to https and localhost only, so an app reached
+// by another name over http (GitLab CI's service `http://app:8000`) is marked secure here.
+// Only full Chromium honours the flag (the default headless shell ignores it).
+const origin = new URL(baseURL)
+const insecureOrigin =
+  origin.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)
+const secureOrigin = insecureOrigin
+  ? {
+      channel: 'chromium',
+      launchOptions: { args: [`--unsafely-treat-insecure-origin-as-secure=${origin.origin}`] },
+    }
+  : {}
+const desktop = {
+  ...devices['Desktop Chrome'],
+  viewport: { width: 1440, height: 900 },
+  ...secureOrigin,
+}
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/
 const serialOrOutage = /@serial|@smtp-outage/
