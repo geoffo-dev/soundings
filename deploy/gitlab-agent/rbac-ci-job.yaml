@@ -1,0 +1,41 @@
+# One GitLab agent per cluster, both environments on it (GitLab Premium or Ultimate): the
+# agent's ci_access gives this project `access_as: ci_job: {}`, so a deploy job acts as
+# itself, not as the agent's ServiceAccount. GitLab puts each job in the group
+# gitlab:project_env:<project id>:<environment slug>; soundings-deployer
+# (deploy/environments/cluster-setup.yaml) is bound to that group in its own namespace only,
+# so a staging job can't touch production through the same agent. Use this file instead of
+# rbac.yaml (one agent per environment). Apply after cluster-setup.yaml, with the project's
+# numeric ID (Settings > General, or $CI_PROJECT_ID in a job) in place of the placeholder:
+#
+#   sed 's/<SOUNDINGS_PROJECT_ID>/1234/' deploy/gitlab-agent/rbac-ci-job.yaml | kubectl apply -f -
+#
+# Left unreplaced, the bindings match no job (deploys fail; nothing is granted). The agent's
+# own ServiceAccount must be allowed to impersonate (cluster-admin is; a narrower one needs
+# `impersonate` on users, groups and userextras/agent.gitlab.com/*).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: soundings-deployer-ci-job
+  namespace: soundings-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: soundings-deployer
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: gitlab:project_env:<SOUNDINGS_PROJECT_ID>:staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: soundings-deployer-ci-job
+  namespace: soundings-production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: soundings-deployer
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: gitlab:project_env:<SOUNDINGS_PROJECT_ID>:production

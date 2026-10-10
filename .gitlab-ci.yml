@@ -33,8 +33,11 @@
 # Delivery variables (one table in the operator guide):
 #   SOUNDINGS_DEPLOY      environments this CI deploys: "" (checks only), "staging" or
 #                         "staging production". One CI per environment, never both.
-#   KUBE_AGENT_PROJECT    project holding the agents' config (.gitlab/agents/soundings-<env>/);
-#                         jobs use context <KUBE_AGENT_PROJECT>:soundings-<env>
+#   KUBE_AGENT_PROJECT    project holding the agents' config (.gitlab/agents/<agent>/)
+#   STAGING_KUBE_AGENT / PRODUCTION_KUBE_AGENT   each environment's agent (default
+#                         soundings-<env>); jobs use context <KUBE_AGENT_PROJECT>:<agent>.
+#                         One agent per cluster for both: set both to it, with
+#                         access_as: ci_job (deploy/gitlab-agent/rbac-ci-job.yaml)
 #   STAGING_URL / PRODUCTION_URL   the environments' URLs (the smoke test's target)
 #   IMAGE_BUILDER         buildkit (rootless, any Kubernetes runner) or dind (privileged)
 #   SCAN_SEVERITY         Trivy gate before any deploy (default HIGH,CRITICAL with a fix;
@@ -111,7 +114,9 @@ variables:
   IMAGE_TAG: ci-${CI_PIPELINE_ID}
   # Delivery (see the header): off until SOUNDINGS_DEPLOY names environments.
   SOUNDINGS_DEPLOY: ""
-  KUBE_AGENT_PROJECT: ${CI_PROJECT_PATH}
+  KUBE_AGENT_PROJECT: infrastructure/gitlab-kas
+  STAGING_KUBE_AGENT: soundings-staging
+  PRODUCTION_KUBE_AGENT: soundings-production
   STAGING_URL: ""
   PRODUCTION_URL: ""
   SCAN_SEVERITY: HIGH,CRITICAL
@@ -894,10 +899,12 @@ k3s:install-upgrade:
 #
 # Deploy jobs exist only for the environments SOUNDINGS_DEPLOY names (one CI per
 # environment). They reach the cluster through the GitLab agent for Kubernetes: GitLab
-# injects a kubeconfig whose context <KUBE_AGENT_PROJECT>:soundings-<env> works only for
-# this job, through the agent's own connection out of the cluster; the agents' ci_access
-# lets only jobs of that environment on protected refs use it, and the agent's
-# ServiceAccount may act only in soundings-<env> (deploy/gitlab-agent/rbac.yaml). The agent
+# injects a kubeconfig whose context <KUBE_AGENT_PROJECT>:<agent> works only for this job,
+# through the agent's own connection out of the cluster; the agents' ci_access lets only
+# jobs of that environment on protected refs use it, and the job may act only in
+# soundings-<env>: as the agent's ServiceAccount (one agent per environment,
+# deploy/gitlab-agent/rbac.yaml) or, with one agent per cluster and access_as: ci_job, as
+# the job's environment group (deploy/gitlab-agent/rbac-ci-job.yaml). The agent
 # can't tell main from a tag: on Free whoever may merge into a protected branch can deploy
 # production too; Premium's protected environments close that (operator guide, "Who can
 # deploy"). Deploy jobs run only on the protected runner tagged DEPLOY_RUNNER_TAG. GitLab
@@ -923,7 +930,7 @@ k3s:install-upgrade:
       # file can change this check): with the agents configured in this project, its
       # ci_access must name the project itself, else implicit access lets every job here
       # use the agent, on any branch.
-      config=".gitlab/agents/soundings-$CI_ENVIRONMENT_NAME/config.yaml"
+      config=".gitlab/agents/${KUBE_CONTEXT##*:}/config.yaml"
       if [ "$KUBE_AGENT_PROJECT" = "$CI_PROJECT_PATH" ] &&
         ! grep -Eq "^[[:space:]]*-[[:space:]]+id:[[:space:]]+\"?$CI_PROJECT_PATH\"?[[:space:]]*$" "$config"; then
         echo "$config must list this project ($CI_PROJECT_PATH) under ci_access.projects (docs/operator-guide.md, Continuous delivery)"
@@ -968,7 +975,7 @@ deploy:staging:
     deployment_tier: staging
   resource_group: staging
   variables:
-    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-staging
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:${STAGING_KUBE_AGENT}
     DEPLOY_URL: ${STAGING_URL}
   script:
     - IMAGE_TAG="$DEPLOY_TAG" scripts/deploy.sh deploy staging
@@ -998,7 +1005,7 @@ rollback:staging:
     action: access
   resource_group: staging
   variables:
-    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-staging
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:${STAGING_KUBE_AGENT}
     DEPLOY_URL: ${STAGING_URL}
   script:
     - scripts/deploy.sh rollback staging
@@ -1077,7 +1084,7 @@ deploy:production:
     deployment_tier: production
   resource_group: production
   variables:
-    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-production
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:${PRODUCTION_KUBE_AGENT}
     DEPLOY_URL: ${PRODUCTION_URL}
   script:
     - |
@@ -1102,7 +1109,7 @@ rollback:production:
     action: access
   resource_group: production
   variables:
-    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:soundings-production
+    KUBE_CONTEXT: ${KUBE_AGENT_PROJECT}:${PRODUCTION_KUBE_AGENT}
     DEPLOY_URL: ${PRODUCTION_URL}
   script:
     - scripts/deploy.sh rollback production

@@ -11,6 +11,7 @@ settings, is in [docs/operator-guide.md, "Continuous delivery"](../../docs/opera
 |---|---|
 | [`../environments/cluster-setup.yaml`](../environments/cluster-setup.yaml) | The namespaces and the `soundings-deployer` ClusterRole (namespaced rules) |
 | [`rbac.yaml`](rbac.yaml) | The agents' namespaces, agentk's Lease/Events Role, and `soundings-deployer` bound in `soundings-<env>` to each agent's ServiceAccount |
+| [`rbac-ci-job.yaml`](rbac-ci-job.yaml) | Instead of `rbac.yaml` when one agent per cluster serves both environments (Premium, `access_as: ci_job`): `soundings-deployer` bound to each environment's job group, `gitlab:project_env:<project id>:<env>`; set `STAGING_KUBE_AGENT` and `PRODUCTION_KUBE_AGENT` to that agent |
 | [`values.yaml`](values.yaml) | Values for GitLab's `gitlab-agent` chart from your mirror: `rbac.create=false`, no container scanning, the token from a Secret |
 | [`../../.gitlab/agents/soundings-*/config.yaml`](../../.gitlab/agents/) | Each agent's `ci_access`: this project only, its environment only, protected refs only (main counts: see the operator guide's "Who can deploy") |
 

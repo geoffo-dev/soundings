@@ -26,7 +26,7 @@
 #                     label; for X.Y.Z the smoke also checks the app reports that version
 #   KUBE_NAMESPACE    default soundings-<env>; created by operators, never by this script
 #   HELM_RELEASE      default soundings
-#   KUBE_CONTEXT      kubeconfig context (GitLab agent: <agent project>:soundings-<env>);
+#   KUBE_CONTEXT      kubeconfig context (GitLab agent: <agent project>:<agent>);
 #                     default: the current context, or in-cluster credentials (ARC runner)
 #   KUBECONFIG_DATA   a whole kubeconfig as text (GitHub production environment secret);
 #                     written to a private temporary file for this run only
