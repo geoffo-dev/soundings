@@ -22,7 +22,7 @@
 #   TRIVY_DB_REPOSITORY / TRIVY_JAVA_DB_REPOSITORY   mirrors of the Trivy databases
 # COSIGN_IMAGE comes from ghcr.io: mirror it too if you sign. The runner's helper image
 # defaults to registry.gitlab.com: set helper_image in the runner's config.toml.
-# docker:dind (backend tests, deploy-test) pulls postgres/k3s/busybox images itself: give
+# docker:dind (deploy-test) pulls k3s/busybox images itself: give
 # the runner's dind a registry mirror (--registry-mirror) or keep them in REGISTRY_MIRROR.
 # Keycloak (KEYCLOAK_IMAGE) runs as a service for the backend identity tests and the
 # e2e:sso job, Mailpit (MAILPIT_IMAGE) for the backend email tests and both e2e jobs; the
@@ -319,7 +319,7 @@ migrations:lint:
 # --- test -------------------------------------------------------------------------------
 
 backend:test:
-  extends: [.backend, .dind]
+  extends: .backend
   stage: test
   # The runtime image's OS and interpreter (ADR 0011): Ubuntu 24.04, /usr/bin/python3.12,
   # and the Pango stack, so the PDF export tests render as the image does.
@@ -342,14 +342,16 @@ backend:test:
     - export PATH="/opt/uv/bin:$PATH" UV_PYTHON=/usr/bin/python3.12
     - cd backend
     - uv sync --locked
-  # dind for testcontainers (Postgres), and Keycloak 26 for the identity integration
-  # tests (tests/identity/test_keycloak.py: the real code flow, group sync and the SPEC
-  # acceptance). The service can't read the repository, so the dev realm is loaded
-  # through the admin API before the tests (dev/keycloak/import_realm.py).
+  # Postgres as a service (TEST_DATABASE_URL; no dind, so no privileged runner), and
+  # Keycloak 26 for the identity integration tests (tests/identity/test_keycloak.py: the
+  # real code flow, group sync and the SPEC acceptance). The service can't read the
+  # repository, so the dev realm is loaded through the admin API before the tests
+  # (dev/keycloak/import_realm.py).
   services:
-    - name: ${DIND_IMAGE}
-      alias: docker
-      command: ["--tls=false"]
+    - name: ${POSTGRES_IMAGE}
+      alias: postgres
+      # Durability is irrelevant for tests (as the testcontainers Postgres runs).
+      command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
     - name: ${KEYCLOAK_IMAGE}
       alias: keycloak
       command: ["start-dev"]
@@ -367,12 +369,12 @@ backend:test:
         MP_SMTP_AUTH_ALLOW_INSECURE: "true"
         MP_DISABLE_VERSION_CHECK: "true"
   variables:
-    # testcontainers talks to the dind service; published ports live on that host.
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    TESTCONTAINERS_HOST_OVERRIDE: docker
-    # The dind daemon is thrown away with the job, so the reaper container is not needed.
-    TESTCONTAINERS_RYUK_DISABLED: "true"
+    # The service's user is a superuser: the schema tests create scratch databases.
+    POSTGRES_DB: soundings_test
+    POSTGRES_USER: soundings
+    POSTGRES_PASSWORD: soundings
+    # The tests use it instead of a testcontainers Postgres (wiped between tests).
+    TEST_DATABASE_URL: postgresql+psycopg://soundings:soundings@postgres:5432/soundings_test
     # Use the service instead of a testcontainers Keycloak; the tests fail (not skip)
     # when it doesn't answer.
     SOUNDINGS_TEST_KEYCLOAK_URL: http://keycloak:8080
