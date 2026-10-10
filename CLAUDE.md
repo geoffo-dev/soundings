@@ -815,6 +815,17 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
 - **Time-of-day tests:** `build_digests` and the reminder scans compare the instance's local
   hour with `digest_hour` (8): a test that calls them with `utcnow()` sets `digest_hour: 0`
   (`settings.model_copy(update=...)`), or it fails between midnight and 08:00 UTC.
+- **GitHub's runners (first run on main, 2026-10-10):** `ci.yml` installs no shellcheck, so
+  CI uses ubuntu-24.04's apt 0.9.0 while `check-task.sh` here falls back to
+  `koalaman/shellcheck:stable` (0.11): 0.9/0.10 report SC2317 where 0.11 says SC2329 (disable
+  both) and flag `A && B || C` (SC2015; write an `if`). Check scripts with
+  `shellcheck-py==0.9.0.6` too. Outage specs call `quietOutbox` (`e2e/tests/support/email.ts`)
+  before stopping Mailpit: the worker's send breaker counts everyone's failures and the
+  hourly schedule (minute 0) sends the day's digests, so an outage across :00 paused sends.
+  The PDF child measures its own peak (`VmHWM`): `ru_maxrss` after a `spawn` carries the
+  parent's peak, which retired the warm child after every export in big API processes.
+  `get_job_logs` (GitHub MCP) returns only a job's last 5,000 lines and the built-in `gh`
+  can't download logs or artifacts.
 - **Shared machine** (4 CPUs, 15 GB): use your assigned ports and container prefix,
   stop what you start, never kill other agents' processes or containers. `make -C backend
   test-slow`'s My work p95 sits near its 150 ms budget here (about 140 ms): run it on an
