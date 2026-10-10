@@ -117,8 +117,8 @@ variables:
   KUBE_AGENT_PROJECT: infrastructure/gitlab-kas
   STAGING_KUBE_AGENT: soundings-staging
   PRODUCTION_KUBE_AGENT: soundings-production
-  STAGING_URL: ""
-  PRODUCTION_URL: ""
+  STAGING_URL: "soundings-staging.ops.faster.ice.mod.gov.uk"
+  PRODUCTION_URL: "soundings.ops.faster.ice.mod.gov.uk"
   SCAN_SEVERITY: HIGH,CRITICAL
   SCAN_IGNORE_UNFIXED: "true"
   # Deploy jobs run only on a runner with this tag: register one runner for them, protected
