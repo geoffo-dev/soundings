@@ -71,7 +71,7 @@ workflow:
     - if: $CI_COMMIT_TAG
 
 variables:
-  REGISTRY_MIRROR: docker.io
+  REGISTRY_MIRROR: $DOCKER_PROXY
   PYTHON_IMAGE: ${REGISTRY_MIRROR}/library/python:3.12-slim
   # Release-path images by digest (the build, its dind, the chart): update the digest with
   # the tag. Test-only images (Python, Postgres, Playwright, k3s, Keycloak, Mailpit) by tag.
