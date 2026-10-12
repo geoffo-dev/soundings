@@ -489,10 +489,10 @@ TOML
 cmd_runner() {
   if [ ! -s "$DIR/runner.token" ]; then
     log "registering an instance runner (POST /user/runners)"
-    # Tagged soundings-deploy too (the deploy jobs' DEPLOY_RUNNER_TAG): one runner plays
+    # Tagged soundings-deploy and soundings-dind too (DEPLOY_RUNNER_TAG, DIND_RUNNER_TAG): one runner plays
     # both parts here; a site gives the deploy jobs a protected runner of their own.
     (umask 077 && api POST /user/runners --data runner_type=instance_type --data run_untagged=true \
-      --data tag_list=soundings-deploy --data "description=${PREFIX}docker" | jq -r .token >"$DIR/runner.token")
+      --data tag_list=soundings-deploy,soundings-dind --data "description=${PREFIX}docker" | jq -r .token >"$DIR/runner.token")
   fi
   write_runner_config "$(cat "$DIR/runner/mode" 2>/dev/null || echo "${CI_LOCAL_RUNNER_MODE:-rootless}")"
   if ! running "$RUNNER"; then

@@ -1365,6 +1365,7 @@ deploy ran. The checks, the scans and the k3s e2e job run in both CIs either way
 | `HELM_TIMEOUT` | `10m` | CI/CD variable | environment variable | Each of upgrade, test and rollback; keep the migration Job's deadline below it |
 | `KUBE_AGENT_PROJECT` | this project | CI/CD variable | – | Project holding the agents' configuration; jobs use context `<it>:soundings-<env>` |
 | `DEPLOY_RUNNER_TAG` | `soundings-deploy` | CI/CD variable | – | The tag of the protected runner that alone runs deploy jobs |
+| `DIND_RUNNER_TAG` | `soundings-dind` | CI/CD variable | – | The tag of a privileged runner for the dind jobs (`k3s:install-upgrade`, `image:build:dind`) |
 | `KUBECONFIG_DATA` | unset | – | secret of each environment | A namespaced deployer's kubeconfig (`scripts/lib/ci-kubeconfig.sh <env>`) |
 | `SOUNDINGS_PRODUCTION_GATE` | `environment` | – | repository variable | `manual`: production only through the `deploy` workflow run on the tag |
 | `SOUNDINGS_PRODUCTION_DEPLOYERS` | empty (nobody) | – | repository variable | GitHub logins, comma-separated, who may run production by hand (`deploy` workflow) |

@@ -44,6 +44,8 @@
 #                         must include CRITICAL)
 #   DEPLOY_RUNNER_TAG     the tag of the protected runner that alone runs deploy jobs
 #                         (default soundings-deploy)
+#   DIND_RUNNER_TAG       the tag of a privileged runner for the dind jobs (default
+#                         soundings-dind)
 #   COSIGN_PRIVATE_KEY (File) / COSIGN_PASSWORD   sign the image when set
 #   IMAGE_REGISTRY_USER / IMAGE_REGISTRY_PASSWORD credentials when IMAGE_REPOSITORY is
 #                         another registry (default: the job token for GitLab's)
@@ -124,6 +126,8 @@ variables:
   # Deploy jobs run only on a runner with this tag: register one runner for them, protected
   # (runs protected refs only) and not shared with merge-request or privileged dind jobs.
   DEPLOY_RUNNER_TAG: soundings-deploy
+  # The privileged runner's tag for the dind jobs (k3s:install-upgrade, image:build:dind).
+  DIND_RUNNER_TAG: soundings-dind
   # Mirrors for the k3s job (see the header): empty = the public defaults.
   ALPINE_MIRROR: ""
   KAGENT_GIT_URL: https://github.com/kagent-dev/kagent
@@ -182,7 +186,12 @@ variables:
     - *ca-bundle
     - npm --prefix frontend ci --no-audit --no-fund
 
+# Docker-in-Docker needs a privileged runner: dind jobs run only on one tagged
+# DIND_RUNNER_TAG (an unprivileged runner's dind never starts: "Cannot connect to the
+# Docker daemon at tcp://docker:2375").
 .dind:
+  tags:
+    - ${DIND_RUNNER_TAG}
   services:
     - name: ${DIND_IMAGE}
       alias: docker
