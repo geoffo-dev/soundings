@@ -95,6 +95,27 @@ class AuditAction(StrEnum):
     AI_RUN_CANCEL = "ai_run.cancel"
     EVALUATION_INCLUDE_AI = "evaluation.include_ai"
     AI_NOTE_DELETE = "ai_note.delete"
+    # Phase 10: bid evaluation (contract-phase10 section 12; target: the idea, project set;
+    # details name the call, bid, section or document by id, never bidder names, prices,
+    # scores, reasons or file names)
+    PROJECT_BID_TEMPLATE_REPLACE = "project.bid_template_replace"
+    BID_CALL_CREATE = "bid_call.create"
+    BID_CALL_UPDATE = "bid_call.update"
+    BID_CALL_TEMPLATE_REPLACE = "bid_call.template_replace"
+    BID_CALL_STATUS_CHANGE = "bid_call.status_change"
+    BID_CALL_AWARD = "bid_call.award"
+    BID_CALL_DELETE = "bid_call.delete"
+    BID_ASSESSORS_CHANGE = "bid_call.assessors_change"
+    BID_CREATE = "bid.create"
+    BID_UPDATE = "bid.update"
+    BID_DELETE = "bid.delete"
+    BID_REJECT = "bid.reject"
+    BID_REINSTATE = "bid.reinstate"
+    BID_MUST_HAVE_DECIDE = "bid.must_have_decide"
+    BID_DOCUMENT_UPLOAD = "bid_document.upload"
+    BID_DOCUMENT_DELETE = "bid_document.delete"
+    BID_ASSESSMENT_SUBMIT = "bid_assessment.submit"
+    BID_ASSESSMENT_INCLUDE_AI = "bid_assessment.include_ai"
 
 
 class AuditEntry(ResponseModel):

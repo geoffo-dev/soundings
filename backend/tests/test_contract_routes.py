@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 8b): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 10): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -34,6 +34,7 @@ from app.api.v1 import (
     api_keys,
     auth,
     auth_sso,
+    bids,
     branding,
     evaluations,
     groups,
@@ -56,6 +57,7 @@ from app.api.v1.principal import get_principal
 from app.config import BACKEND_DIR
 from app.models.user import User
 from app.openapi import export_openapi
+from app.schemas.bids import DEFAULT_BID_TEMPLATE
 
 IDEA = "0b7c7d1e-7a55-4a4f-9b8b-0d7d3a9d1c11"
 USER = "5f0e8a52-3c1d-4b8e-9a6f-2d7c4e1b9a03"
@@ -259,7 +261,91 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("PUT", "/api/v1/ideas/{idea}/research/assignment", "set_research_assignment"),
     ("DELETE", "/api/v1/ideas/{idea}/research/assignment", "remove_researcher"),
     ("GET", "/api/v1/me/research-to-do", "list_my_research_to_do"),
+    # --- Phase 10: bid evaluation (docs/api/contract-phase10.md) -------------------------
+    ("GET", "/api/v1/projects/{slug}/bid-template", "get_bid_template"),
+    ("PUT", "/api/v1/projects/{slug}/bid-template", "replace_bid_template"),
+    ("GET", "/api/v1/ideas/{idea}/bid-call", "get_bid_call"),
+    ("POST", "/api/v1/ideas/{idea}/bid-call", "create_bid_call"),
+    ("PUT", "/api/v1/ideas/{idea}/bid-call", "update_bid_call"),
+    ("DELETE", "/api/v1/ideas/{idea}/bid-call", "delete_bid_call"),
+    ("POST", "/api/v1/ideas/{idea}/bid-call/status", "change_bid_call_status"),
+    ("PUT", "/api/v1/ideas/{idea}/bid-call/template", "replace_bid_call_template"),
+    ("PUT", "/api/v1/ideas/{idea}/bid-call/assessors", "set_bid_assessors"),
+    ("GET", "/api/v1/ideas/{idea}/bid-call/comparison", "get_bid_comparison"),
+    ("POST", "/api/v1/ideas/{idea}/bid-call/ai-assessments", "request_ai_bid_assessments"),
+    ("POST", "/api/v1/ideas/{idea}/bid-call/award", "award_bid_call"),
+    ("GET", "/api/v1/ideas/{idea}/bid-call/report/markdown", "export_bid_report_markdown"),
+    ("GET", "/api/v1/ideas/{idea}/bid-call/report/pdf", "export_bid_report_pdf"),
+    ("GET", "/api/v1/ideas/{idea}/bid-call/bids", "list_bids"),
+    ("POST", "/api/v1/ideas/{idea}/bid-call/bids", "create_bid"),
+    ("GET", "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}", "get_bid"),
+    ("PUT", "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}", "update_bid"),
+    ("DELETE", "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}", "delete_bid"),
+    ("PUT", "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/rejection", "reject_bid"),
+    ("DELETE", "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/rejection", "reinstate_bid"),
+    (
+        "PUT",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/must-haves/{must_have_id}",
+        "decide_must_have",
+    ),
+    ("POST", "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents", "upload_bid_document"),
+    (
+        "PUT",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}",
+        "update_bid_document",
+    ),
+    (
+        "DELETE",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}",
+        "delete_bid_document",
+    ),
+    (
+        "GET",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/content",
+        "download_bid_document",
+    ),
+    (
+        "GET",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/text",
+        "get_bid_document_text",
+    ),
+    (
+        "GET",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/sections/{section_id}/assessment",
+        "get_my_bid_assessment",
+    ),
+    (
+        "PUT",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/sections/{section_id}/assessment",
+        "save_my_bid_assessment",
+    ),
+    (
+        "GET",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/sections/{section_id}/assessments",
+        "list_bid_section_assessments",
+    ),
+    (
+        "POST",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessment",
+        "request_ai_bid_assessment",
+    ),
+    (
+        "GET",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessments",
+        "list_bid_ai_assessments",
+    ),
+    (
+        "PUT",
+        "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessments/{ai_assessment_id}"
+        "/include-in-totals",
+        "set_bid_ai_inclusion",
+    ),
 ]
+
+PHASE10_OPERATIONS: frozenset[str] = frozenset(
+    operation_id for _, path, operation_id in CONTRACT if "bid" in path
+)
+"""Phase 10's 33 operations (contract-phase10 section 2)."""
 
 ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT
 
@@ -403,7 +489,75 @@ _RESEARCH_BODY: dict[str, Any] = {
 # for a new stub.
 _ASSIGNMENT = {"researcher_id": USER, "due_at": "2026-10-11T17:00:00+01:00"}
 
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+_CALL = "/api/v1/ideas/TOOLS-3/bid-call"
+BID = "d4c3b2a1-0f9e-4d8c-b7a6-5f4e3d2c1b0a"
+SECTION = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+QUESTION = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
+MUST_HAVE = "c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e7f"
+DOCUMENT = "e5f6a7b8-c9d0-4e1f-8a2b-4c5d6e7f8a9b"
+AI_ASSESSMENT = "f6a7b8c9-d0e1-4f2a-9b3c-5d6e7f8a9b0c"
+_BID = f"{_CALL}/bids/{BID}"
+_BID_TEMPLATE: dict[str, Any] = DEFAULT_BID_TEMPLATE.model_dump(mode="json")
+_CALL_SETTINGS: dict[str, Any] = {
+    "title": "Test data generator: build partner",
+    "description": "Build and run the generator for two years.",
+    "currency": "GBP",
+    "deadline_at": (datetime.now(UTC) + timedelta(days=14)).isoformat(),
+    "assessment_due_at": None,
+}
+_NEW_BID: dict[str, Any] = {
+    "bidder": "Northwind Data Ltd",
+    "contact_name": "Ada Okoye",
+    "contact_email": "bids@northwind.example",
+    "price": "120000.00",
+    "notes": "Sent by email and post.",
+}
+
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Phase 10: bid evaluation (contract-phase10) ------------------------------------
+    "get_bid_template": ("/api/v1/projects/internal-tools/bid-template", None),
+    "replace_bid_template": ("/api/v1/projects/internal-tools/bid-template", _BID_TEMPLATE),
+    "get_bid_call": (_CALL, None),
+    "create_bid_call": (_CALL, {"title": "Test data generator: build partner"}),
+    "update_bid_call": (_CALL, _CALL_SETTINGS),
+    "delete_bid_call": (_CALL, None),
+    "change_bid_call_status": (f"{_CALL}/status", {"status": "open"}),
+    "replace_bid_call_template": (f"{_CALL}/template", _BID_TEMPLATE),
+    "set_bid_assessors": (
+        f"{_CALL}/assessors",
+        {"sections": [{"section_id": SECTION, "user_ids": [USER]}], "due_at": None},
+    ),
+    "get_bid_comparison": (f"{_CALL}/comparison", None),
+    "request_ai_bid_assessments": (f"{_CALL}/ai-assessments", {"agent_id": AGENT}),
+    "award_bid_call": (f"{_CALL}/award", {"bid_id": BID, "reason": "Best value overall."}),
+    "export_bid_report_markdown": (f"{_CALL}/report/markdown", None),
+    "export_bid_report_pdf": (f"{_CALL}/report/pdf", None),
+    "list_bids": (f"{_CALL}/bids", None),
+    "create_bid": (f"{_CALL}/bids", _NEW_BID),
+    "get_bid": (_BID, None),
+    "update_bid": (_BID, _NEW_BID | {"received_at": "2026-10-12T16:30:00+01:00"}),
+    "delete_bid": (_BID, None),
+    "reject_bid": (f"{_BID}/rejection", {"reason": "No insurance certificate."}),
+    "reinstate_bid": (f"{_BID}/rejection", None),
+    "decide_must_have": (f"{_BID}/must-haves/{MUST_HAVE}", {"result": "met", "note": ""}),
+    "upload_bid_document": (f"{_BID}/documents?filename=Form%20of%20tender.pdf", None),
+    "update_bid_document": (f"{_BID}/documents/{DOCUMENT}", {"must_have_id": MUST_HAVE}),
+    "delete_bid_document": (f"{_BID}/documents/{DOCUMENT}", None),
+    "download_bid_document": (f"{_BID}/documents/{DOCUMENT}/content", None),
+    "get_bid_document_text": (f"{_BID}/documents/{DOCUMENT}/text?page=2", None),
+    "get_my_bid_assessment": (f"{_BID}/sections/{SECTION}/assessment", None),
+    "save_my_bid_assessment": (
+        f"{_BID}/sections/{SECTION}/assessment",
+        {"answers": [{"question_id": QUESTION, "score": 4, "comment": "Clear plan."}]},
+    ),
+    "list_bid_section_assessments": (f"{_BID}/sections/{SECTION}/assessments", None),
+    "request_ai_bid_assessment": (f"{_BID}/ai-assessment", {"agent_id": AGENT}),
+    "list_bid_ai_assessments": (f"{_BID}/ai-assessments", None),
+    "set_bid_ai_inclusion": (
+        f"{_BID}/ai-assessments/{AI_ASSESSMENT}/include-in-totals",
+        {"include": True},
+    ),
+}
 
 # Phase 8b operations (tests/research): a valid request each, for the shape and session
 # checks.
@@ -629,6 +783,7 @@ def _feature_routes() -> list[APIRoute]:
             api_keys,
             auth,
             auth_sso,
+            bids,
             branding,
             evaluations,
             groups,
@@ -1744,8 +1899,10 @@ def test_research_notifications_are_in_the_contract(app: FastAPI) -> None:
     schemas = app.openapi()["components"]["schemas"]
     types = ["researcher_assigned", "research_reminder"]
 
-    assert schemas["NotificationType"]["enum"][-2:] == types
-    assert schemas["UnsubscribeScope"]["enum"][-4:] == [*types, "digest", "all"]
+    # Phase 10 appends its three bid types after these (contract-phase10 section 9).
+    assert schemas["NotificationType"]["enum"][-5:-3] == types
+    assert schemas["UnsubscribeScope"]["enum"][-7:-5] == types
+    assert schemas["UnsubscribeScope"]["enum"][-2:] == ["digest", "all"]
     assert set(types) <= set(schemas["NotificationPreferencesUpdate"]["properties"])
     assert {"due_at"} <= set(schemas["ResearcherAssignedNotification"]["required"])
     assert {"due_at", "days_before", "as_owner"} <= set(
@@ -1757,3 +1914,474 @@ def test_research_notifications_are_in_the_contract(app: FastAPI) -> None:
     assert {"from_due_at", "to_due_at"} <= set(
         schemas["ResearchDueDateChangedActivity"]["required"]
     )
+
+
+# --- Phase 10 (contract-phase10) ----------------------------------------------------------
+def _template(**changes: Any) -> dict[str, Any]:
+    template: dict[str, Any] = json.loads(json.dumps(_BID_TEMPLATE))
+    template.update(changes)
+    return template
+
+
+def _sections(*weights: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": f"Section {n}",
+            "weight": weight,
+            "questions": [{"text": "How good is it?", "type": "score"}],
+        }
+        for n, weight in enumerate(weights)
+    ]
+
+
+_PRICE = {"text": "Price", "type": "price", "weight": 1}
+_SCORE = {"text": "How good is it?", "type": "score"}
+
+
+def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
+    paths = app.openapi()["paths"]
+    tagged = {
+        operation["operationId"]
+        for item in paths.values()
+        for operation in item.values()
+        if operation.get("tags") == ["bids"]
+    }
+
+    assert tagged == PHASE10_OPERATIONS
+    assert len(PHASE10_OPERATIONS) == 33
+    assert set(STUBS) == PHASE10_OPERATIONS
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        # The project's template: 1-8 sections summing to 100, 1-15 questions with a score
+        # question each, at most one price question, 0-20 unique must-haves, six anchors.
+        ("replace_bid_template", None, _template(sections=_sections(50, 40))),
+        ("replace_bid_template", None, _template(sections=_sections(*[10] * 9 + [10]))),
+        ("replace_bid_template", None, _template(sections=[])),
+        ("replace_bid_template", None, _template(sections=_sections(0, 100))),
+        ("replace_bid_template", None, _template(sections=_sections(101))),
+        (
+            "replace_bid_template",
+            None,
+            _template(sections=[{"title": "A", "weight": 100, "questions": [_PRICE]}]),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(sections=[{"title": "A", "weight": 100, "questions": []}]),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(sections=[{"title": "A", "weight": 100, "questions": [_SCORE] * 16}]),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(
+                sections=[
+                    {"title": "A", "weight": 50, "questions": [_SCORE, _PRICE]},
+                    {"title": "B", "weight": 50, "questions": [_SCORE, _PRICE]},
+                ]
+            ),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(
+                sections=[
+                    {
+                        "title": "A",
+                        "weight": 100,
+                        "questions": [_SCORE, {"text": "Notes", "type": "comment", "weight": 2}],
+                    }
+                ]
+            ),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(
+                sections=[
+                    {"title": "A", "weight": 100, "questions": [{**_SCORE, "weight": 0}]},
+                ]
+            ),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(sections=[{**s, "title": "Same"} for s in _sections(50, 50)]),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(
+                sections=[
+                    {**_sections(50)[0], "title": "Technical"},
+                    {**_sections(50)[0], "title": "TECHNICAL"},
+                ]
+            ),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(sections=[{**_sections(100)[0], "title": "Two\nlines"}]),
+        ),
+        (
+            "replace_bid_template",
+            None,
+            _template(
+                sections=[
+                    {**_sections(100)[0], "questions": [{**_SCORE, "text": "x" * 301}]},
+                ]
+            ),
+        ),
+        ("replace_bid_template", None, _template(scale=["a", "b", "c", "d", "e"])),
+        ("replace_bid_template", None, _template(scale=["a", "b", "c", "d", "e", ""])),
+        (
+            "replace_bid_template",
+            None,
+            _template(must_haves=[{"text": f"Item {n}", "kind": "document"} for n in range(21)]),
+        ),
+        ("replace_bid_template", None, _template(must_haves=[{"text": "CV", "kind": "file"}])),
+        (
+            "replace_bid_template",
+            None,
+            _template(
+                must_haves=[
+                    {"text": "Insurance", "kind": "document"},
+                    {"text": "insurance", "kind": "confirmation"},
+                ]
+            ),
+        ),
+        ("replace_bid_template", None, _template(locked=True)),
+        ("get_bid_template", "/api/v1/projects/Internal_Tools/bid-template", None),
+        # The call's copy: the same rules, ids at most once.
+        (
+            "replace_bid_call_template",
+            None,
+            _template(
+                sections=[
+                    {**_sections(50)[0], "id": SECTION, "title": "A"},
+                    {**_sections(50)[0], "id": SECTION, "title": "B"},
+                ]
+            ),
+        ),
+        (
+            "replace_bid_call_template",
+            None,
+            _template(sections=[{**_sections(100)[0], "id": "technical"}]),
+        ),
+        # The call: a one-line title, an ISO currency, nothing else on create.
+        ("create_bid_call", None, {}),
+        ("create_bid_call", None, {"title": ""}),
+        ("create_bid_call", None, {"title": "   "}),
+        ("create_bid_call", None, {"title": "Call\nfor bids"}),
+        ("create_bid_call", None, {"title": "x" * 121}),
+        ("create_bid_call", None, {"title": "Call", "currency": "gbp"}),
+        ("create_bid_call", None, {"title": "Call", "currency": "POUNDS"}),
+        ("create_bid_call", None, {"title": "Call", "deadline_at": _CALL_SETTINGS["deadline_at"]}),
+        ("create_bid_call", "/api/v1/ideas/TOOLS3/bid-call", None),
+        # Settings are the complete state; due dates with an offset, near now.
+        ("update_bid_call", None, {k: v for k, v in _CALL_SETTINGS.items() if k != "deadline_at"}),
+        ("update_bid_call", None, _CALL_SETTINGS | {"deadline_at": "2026-10-30T17:00:00"}),
+        ("update_bid_call", None, _CALL_SETTINGS | {"deadline_at": "2099-01-01T00:00:00Z"}),
+        ("update_bid_call", None, _CALL_SETTINGS | {"description": "x" * 2_001}),
+        ("update_bid_call", None, _CALL_SETTINGS | {"status": "open"}),
+        # The lifecycle: open, assessing or cancelled here (awarding is its own route).
+        ("change_bid_call_status", None, {"status": "awarded"}),
+        ("change_bid_call_status", None, {"status": "draft"}),
+        ("change_bid_call_status", None, {"status": "closed"}),
+        ("change_bid_call_status", None, {"status": "open", "reason": "Ready"}),
+        ("change_bid_call_status", None, {"status": "cancelled", "reason": "x" * 501}),
+        # Assessors: each section once, at most 10 people a section.
+        ("set_bid_assessors", None, {"sections": [], "due_at": None}),
+        ("set_bid_assessors", None, {"sections": [{"section_id": SECTION, "user_ids": []}]}),
+        (
+            "set_bid_assessors",
+            None,
+            {
+                "sections": [
+                    {"section_id": SECTION, "user_ids": []},
+                    {"section_id": SECTION, "user_ids": [USER]},
+                ],
+                "due_at": None,
+            },
+        ),
+        (
+            "set_bid_assessors",
+            None,
+            {
+                "sections": [
+                    {"section_id": SECTION, "user_ids": [str(uuid4()) for _ in range(11)]}
+                ],
+                "due_at": None,
+            },
+        ),
+        (
+            "set_bid_assessors",
+            None,
+            {"sections": [{"section_id": "technical", "user_ids": []}], "due_at": None},
+        ),
+        # The award: one bid by id.
+        ("award_bid_call", None, {}),
+        ("award_bid_call", None, {"bid_id": "Northwind"}),
+        ("award_bid_call", None, {"bid_id": BID, "reason": "x" * 501}),
+        ("award_bid_call", None, {"bid_id": BID, "price": "1.00"}),
+        # Bids: a one-line bidder, a positive price with at most 2 decimals, a time in the
+        # past year (never ahead), a plain address, bounded notes; no score fields.
+        ("create_bid", None, {}),
+        ("create_bid", None, _NEW_BID | {"bidder": ""}),
+        ("create_bid", None, _NEW_BID | {"bidder": "Northwind\nData"}),
+        ("create_bid", None, _NEW_BID | {"bidder": "North\u202ewind"}),
+        ("create_bid", None, _NEW_BID | {"bidder": "x" * 121}),
+        ("create_bid", None, _NEW_BID | {"price": "0"}),
+        ("create_bid", None, _NEW_BID | {"price": "-5"}),
+        ("create_bid", None, _NEW_BID | {"price": "1.005"}),
+        ("create_bid", None, _NEW_BID | {"price": "a lot"}),
+        ("create_bid", None, _NEW_BID | {"price": "1" * 13}),
+        ("create_bid", None, _NEW_BID | {"contact_email": "not an address"}),
+        ("create_bid", None, _NEW_BID | {"contact_email": "a@b.example\r\nBcc: x@y.example"}),
+        ("create_bid", None, _NEW_BID | {"received_at": _in_days(2)}),
+        ("create_bid", None, _NEW_BID | {"received_at": _in_days(-400)}),
+        ("create_bid", None, _NEW_BID | {"received_at": "2026-10-12T16:30:00"}),
+        ("create_bid", None, _NEW_BID | {"notes": "x" * 2_001}),
+        ("create_bid", None, _NEW_BID | {"status": "qualified"}),
+        ("create_bid", None, _NEW_BID | {"score": 5}),
+        ("get_bid", f"{_CALL}/bids/northwind", None),
+        ("reject_bid", None, {}),
+        ("reject_bid", None, {"reason": ""}),
+        ("reject_bid", None, {"reason": " \u200b "}),
+        ("reject_bid", None, {"reason": "x" * 501}),
+        # Must-haves: a person decides met or not met (or clears the decision).
+        ("decide_must_have", None, {"result": "missing"}),
+        ("decide_must_have", None, {"result": "unchecked"}),
+        ("decide_must_have", None, {"note": "Seen"}),
+        ("decide_must_have", None, {"result": "met", "note": "x" * 501}),
+        ("decide_must_have", f"{_BID}/must-haves/insurance", {"result": "met"}),
+        # Uploads: a one-line file name without folders, not starting with a dot.
+        ("upload_bid_document", f"{_BID}/documents", None),
+        ("upload_bid_document", f"{_BID}/documents?filename=", None),
+        ("upload_bid_document", f"{_BID}/documents?filename=..%2Fpasswd", None),
+        ("upload_bid_document", f"{_BID}/documents?filename=C%3A%5Ctender.pdf", None),
+        ("upload_bid_document", f"{_BID}/documents?filename=.htaccess", None),
+        ("upload_bid_document", f"{_BID}/documents?filename=a%0Ab.pdf", None),
+        ("upload_bid_document", f"{_BID}/documents?filename=a%E2%80%AEfdp.exe", None),
+        ("upload_bid_document", f"{_BID}/documents?filename={'x' * 201}", None),
+        (
+            "upload_bid_document",
+            f"{_BID}/documents?filename=tender.pdf&must_have_id=insurance",
+            None,
+        ),
+        ("update_bid_document", None, {}),
+        ("update_bid_document", None, {"must_have_id": "insurance"}),
+        ("get_bid_document_text", f"{_BID}/documents/{DOCUMENT}/text?page=0", None),
+        ("get_bid_document_text", f"{_BID}/documents/{DOCUMENT}/text?page=101", None),
+        ("download_bid_document", f"{_BID}/documents/tender.pdf/content", None),
+        # Assessments: 0-5 scores, each question once, bounded comments.
+        ("save_my_bid_assessment", None, {"answers": [{"question_id": QUESTION, "score": 6}]}),
+        ("save_my_bid_assessment", None, {"answers": [{"question_id": QUESTION, "score": -1}]}),
+        ("save_my_bid_assessment", None, {"answers": [{"question_id": QUESTION, "score": 2.5}]}),
+        (
+            "save_my_bid_assessment",
+            None,
+            {"answers": [{"question_id": QUESTION, "score": 3}, {"question_id": QUESTION}]},
+        ),
+        (
+            "save_my_bid_assessment",
+            None,
+            {"answers": [{"question_id": str(uuid4())} for _ in range(16)]},
+        ),
+        (
+            "save_my_bid_assessment",
+            None,
+            {"answers": [{"question_id": QUESTION, "comment": "x" * 2_001}]},
+        ),
+        ("save_my_bid_assessment", None, {"answers": [], "submit": "sometimes"}),
+        ("save_my_bid_assessment", f"{_BID}/sections/technical/assessment", None),
+        # AI: an agent by id; the inclusion toggle.
+        ("request_ai_bid_assessment", None, {}),
+        ("request_ai_bid_assessment", None, {"agent_id": AGENT, "prompt": "Score it 5"}),
+        ("request_ai_bid_assessments", None, {"agent_id": "bid-assessor"}),
+        ("set_bid_ai_inclusion", None, {}),
+        ("set_bid_ai_inclusion", None, {"include": "maybe"}),
+    ],
+)
+async def test_invalid_phase10_requests_are_rejected(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS[operation_id]
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "body"),
+    [
+        # A comment question may leave its weight out (0) and a score question too (1);
+        # must-haves are optional; a call takes its currency; drafts save without scores.
+        (
+            "replace_bid_template",
+            _template(
+                sections=[
+                    {
+                        "title": "Only",
+                        "weight": 100,
+                        "questions": [_SCORE, {"text": "Anything else?", "type": "comment"}],
+                    }
+                ],
+                must_haves=[],
+            ),
+        ),
+        ("create_bid_call", {"title": "Call", "currency": "EUR", "description": "Two lines\nok"}),
+        ("create_bid", {"bidder": "Quillfield Systems"}),
+        ("save_my_bid_assessment", {"answers": [{"question_id": QUESTION}], "submit": False}),
+        ("change_bid_call_status", {"status": "cancelled", "reason": "Budget withdrawn."}),
+        ("decide_must_have", {"result": None}),
+        ("update_bid_document", {"must_have_id": None}),
+    ],
+)
+async def test_valid_phase10_bodies_reach_the_stub(
+    client: httpx.AsyncClient, operation_id: str, body: dict[str, Any]
+) -> None:
+    url, _ = STUBS[operation_id]
+
+    response = await client.request(_METHODS[operation_id], url, json=body)
+
+    assert response.status_code == 501, response.text
+
+
+def test_uploads_take_the_raw_file_and_downloads_are_attachments(app: FastAPI) -> None:
+    """ADR 0018: no multipart (a raw body, the type decided from the bytes), and a download
+    is always an attachment with nosniff, a sandboxing CSP and no caching."""
+    paths = app.openapi()["paths"]
+    upload = paths["/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents"]["post"]
+    download = paths["/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/content"][
+        "get"
+    ]
+
+    assert set(upload["requestBody"]["content"]) == {
+        "application/octet-stream",
+        "application/pdf",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/jpeg",
+        "image/png",
+        "text/csv",
+        "text/plain",
+    }
+    assert {"413", "415", "503"} <= set(upload["responses"])
+    assert {(p["name"], p["in"]) for p in upload["parameters"]} >= {
+        ("filename", "query"),
+        ("must_have_id", "query"),
+    }
+    headers = download["responses"]["200"]["headers"]
+    assert {
+        "Content-Disposition",
+        "X-Content-Type-Options",
+        "Content-Security-Policy",
+        "Cache-Control",
+    } <= set(headers)
+    assert "macro" not in json.dumps(download).lower()
+    for report in ("markdown", "pdf"):
+        operation = paths[f"/api/v1/ideas/{{idea}}/bid-call/report/{report}"]["get"]
+        assert "200" in operation["responses"]
+
+
+def test_asking_ai_to_assess_a_bid_is_idempotent_in_the_contract(app: FastAPI) -> None:
+    responses = app.openapi()["paths"]["/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessment"][
+        "post"
+    ]["responses"]
+    run = {"$ref": "#/components/schemas/AiRun"}
+
+    assert responses["201"]["content"]["application/json"]["schema"] == run
+    assert responses["200"]["content"]["application/json"]["schema"] == run
+
+
+def test_bid_requests_name_no_url_prompt_or_score_they_shouldnt(app: FastAPI) -> None:
+    """Prompt injection and tampering (contract-phase10 section 10): AI requests name an
+    agent only; bid entry carries no status or score; nothing takes a URL or a path."""
+    schemas = app.openapi()["components"]["schemas"]
+    forbidden = re.compile(r"url|host|prompt|instruction|path", re.I)
+    for name in ("BidIn", "BidCallCreate", "BidCallUpdate", "BidDocumentUpdate", "AiRunRequest"):
+        fields = set(schemas[name]["properties"])
+        assert not {field for field in fields if forbidden.search(field)}, name
+    assert not {"status", "score", "total", "rank"} & set(schemas["BidIn"]["properties"])
+
+
+def test_the_call_summary_is_all_that_everyone_sees(app: FastAPI) -> None:
+    """L5: everyone who can view the idea sees only that a call exists (title, status,
+    deadline, number of bids): the summary, the idea's field and the feed event carry
+    nothing about bidders, documents, prices, scores or reasons."""
+    schemas = app.openapi()["components"]["schemas"]
+
+    assert set(schemas["BidCallSummary"]["properties"]) == {
+        "id",
+        "title",
+        "status",
+        "deadline_at",
+        "bid_count",
+    }
+    assert set(schemas["BidCallRef"]["properties"]) == {"id", "title", "status"}
+    detail = schemas["IdeaDetail"]["properties"]["bid_call"]
+    assert "#/components/schemas/BidCallSummary" in json.dumps(detail)
+    assert {"can_view_bid_call", "can_create_bid_call"} <= set(
+        schemas["IdeaPermissions"]["required"]
+    )
+    event = set(schemas["BidCallChangedActivity"]["properties"])
+    assert event == {
+        "id",
+        "idea_id",
+        "created_at",
+        "actor",
+        "type",
+        "call",
+        "from_status",
+        "to_status",
+    }
+
+
+def test_bid_notifications_and_my_work_are_in_the_contract(app: FastAPI) -> None:
+    schemas = app.openapi()["components"]["schemas"]
+    types = ["assessor_assigned", "assessment_reminder", "assessments_complete"]
+
+    assert schemas["NotificationType"]["enum"][-3:] == types
+    assert schemas["UnsubscribeScope"]["enum"][-5:] == [*types, "digest", "all"]
+    assert set(types) <= set(schemas["NotificationPreferencesUpdate"]["properties"])
+    assert {"call", "sections", "due_at"} <= set(
+        schemas["AssessorAssignedNotification"]["required"]
+    )
+    assert {"call", "due_at", "days_before"} <= set(
+        schemas["AssessmentReminderNotification"]["required"]
+    )
+    assert {"call", "bid_count", "assessment_count"} <= set(
+        schemas["AssessmentsCompleteNotification"]["required"]
+    )
+    assert {"bid_assessments_due", "bid_assessments_overdue"} <= set(
+        schemas["WorkCounts"]["required"]
+    )
+    assert "bids_to_assess" in schemas["Work"]["required"]
+    assert set(schemas["WorkBidAssessment"]["required"]) == {
+        "idea",
+        "call",
+        "sections",
+        "due_at",
+        "overdue",
+        "progress",
+    }
+    assert "assess_bid" in schemas["AiRunKind"]["enum"]
+    assert {"bid_call_state", "bid_rejected"} <= set(schemas["AiBlockedReason"]["enum"])
+    assert "bid_id" in schemas["AiRun"]["required"]
+    assert "bid_ai_assessment_id" in schemas["AiRunResult"]["required"]

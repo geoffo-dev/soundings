@@ -30,7 +30,10 @@ from tests.test_domain_schema import (  # noqa: F401 - scratch_database_url is a
 )
 
 NEW_TYPES = ("researcher_assigned", "research_reminder")
-EARLIER_TYPES = tuple(t.value for t in NotificationType if t.value not in NEW_TYPES)
+LATER_TYPES = ("assessor_assigned", "assessment_reminder", "assessments_complete")
+"""Phase 10's (migration 0016): not there at 0015."""
+AT_0015 = tuple(t.value for t in NotificationType if t.value not in LATER_TYPES)
+EARLIER_TYPES = tuple(t for t in AT_0015 if t not in NEW_TYPES)
 
 
 def _migration() -> Any:
@@ -47,11 +50,12 @@ def test_enum_values_are_the_migrations() -> None:
     """The migration spells the values out, in the enums' order (the CHECKs list them so)."""
     migration = _migration()
 
-    assert tuple(NotificationType) == migration.NOTIFICATION_TYPES
+    assert AT_0015 == migration.NOTIFICATION_TYPES
     assert migration.NOTIFICATION_TYPES_BEFORE == EARLIER_TYPES
     assert migration.NEW_TYPES == NEW_TYPES
-    assert tuple(EmailType) == migration.EMAIL_TYPES
-    assert tuple(t for t in EmailType if t.value not in NEW_TYPES) == migration.EMAIL_TYPES_BEFORE
+    email_at_0015 = tuple(t.value for t in EmailType if t.value not in LATER_TYPES)
+    assert email_at_0015 == migration.EMAIL_TYPES
+    assert tuple(t for t in email_at_0015 if t not in NEW_TYPES) == migration.EMAIL_TYPES_BEFORE
     assert migration.NEW_ACTIVITY_TYPES == PHASE8B_ACTIVITY_TYPES
 
 

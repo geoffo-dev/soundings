@@ -8,6 +8,11 @@ New types are added per phase; clients should skip types they do not know.
 Phase 8b (review M2): the evaluation events (:data:`EVALUATION_ACTIVITY_TYPES`) rebuild the
 evaluation area a guest researcher must not see, so a principal without
 ``evaluation.view_own`` gets only :data:`RESEARCH_GUEST_ACTIVITY_TYPES` (an allow-list).
+
+Phase 10: the call for bids' one feed event (:data:`BID_ACTIVITY_TYPES`) says only what
+everyone who sees the call may know (that it was started, opened, closed to new bids,
+awarded or cancelled): never a bidder, price, score or reason. Guests never get it (it is
+not on their allow-list: a guest researcher sees nothing of the call).
 """
 
 from __future__ import annotations
@@ -18,21 +23,25 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.models.enums import IdeaStatus, Resolution
+from app.models.enums import BidCallStatus, IdeaStatus, Resolution
 from app.schemas.ai import ResearchNote
 from app.schemas.base import ResponseModel
+from app.schemas.bid_refs import BidCallRef
 from app.schemas.common import Page
 from app.schemas.users import UserRef
 
 __all__ = [
     "ACTIVITY_TYPES",
     "AI_RESEARCH_NOTE",
+    "BID_ACTIVITY_TYPES",
     "EVALUATION_ACTIVITY_TYPES",
     "PHASE8B_ACTIVITY_TYPES",
+    "PHASE10_ACTIVITY_TYPES",
     "RESEARCH_GUEST_ACTIVITY_TYPES",
     "ActivityItem",
     "ActivityPage",
     "AiResearchNoteActivity",
+    "BidCallChangedActivity",
     "CommentActivity",
     "CommentBody",
     "DueDateChangedActivity",
@@ -188,6 +197,21 @@ class ResearchDueDateChangedActivity(_ActivityBase):
     to_due_at: datetime | None
 
 
+class BidCallChangedActivity(_ActivityBase):
+    """Phase 10: the idea's call for bids was started, or moved (opened, closed to new bids
+    and assessing, back to open, awarded, cancelled). Stored as ``bid_call_changed`` with
+    payload ``{call_id, from_status, to_status}`` (``from_status`` null when it was started).
+    Says nothing about bids: no bidder, price, score or reason, so everyone who can see that
+    the call exists may read it (``bid.view_call``); a guest researcher never gets it. The
+    SPA: "started a call for bids", "opened the call for bids", "closed the call to new bids",
+    "reopened the call for bids", "awarded the call for bids", "cancelled the call for bids"."""
+
+    type: Literal["bid_call_changed"]
+    call: BidCallRef | None = Field(description="The call as it is now; null once deleted.")
+    from_status: BidCallStatus | None = Field(description="Null: the call was started.")
+    to_status: BidCallStatus
+
+
 ActivityItem = Annotated[
     CommentActivity
     | IdeaCreatedActivity
@@ -202,7 +226,8 @@ ActivityItem = Annotated[
     | DueDateChangedActivity
     | AiResearchNoteActivity
     | ResearcherChangedActivity
-    | ResearchDueDateChangedActivity,
+    | ResearchDueDateChangedActivity
+    | BidCallChangedActivity,
     Field(discriminator="type"),
 ]
 """One feed entry; branch on ``type``."""
@@ -228,6 +253,19 @@ research assignment; ``app.services.activity.PAYLOAD_KEYS`` covers exactly these
 
 PHASE8B_ACTIVITY_TYPES: tuple[str, ...] = ("researcher_changed", "research_due_date_changed")
 """Phase 8b's two feed events (the research assignment), part of :data:`ACTIVITY_TYPES`."""
+
+PHASE10_ACTIVITY_TYPES: tuple[str, ...] = ("bid_call_changed",)
+"""Phase 10's feed event (the call for bids). It joins :data:`ACTIVITY_TYPES` together with
+its ``app.services.activity.PAYLOAD_KEYS`` row when backend emits it (an import-time guard ties
+the two)."""
+
+BID_ACTIVITY_TYPES: frozenset[str] = frozenset(PHASE10_ACTIVITY_TYPES)
+"""Phase 10: the call for bids' feed events. Shown to every caller who passes
+``bid.view_call`` on the idea, which is everyone who passes ``evaluation.view_own`` (the same
+columns), so the feed needs no new filter; they are deliberately **not** in
+:data:`RESEARCH_GUEST_ACTIVITY_TYPES`. Every feed type is in exactly one of
+:data:`EVALUATION_ACTIVITY_TYPES`, :data:`RESEARCH_GUEST_ACTIVITY_TYPES` and this set
+(``tests/test_schemas_phase10.py``)."""
 
 EVALUATION_ACTIVITY_TYPES: frozenset[str] = frozenset(
     {

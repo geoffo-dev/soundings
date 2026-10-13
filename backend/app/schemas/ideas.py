@@ -33,6 +33,7 @@ from app.schemas.base import (
     SingleLine,
     TagName,
 )
+from app.schemas.bid_refs import BidCallSummary
 from app.schemas.common import Page
 from app.schemas.projects import ProjectRef
 from app.schemas.research import ResearchOverride, ResearchProgress
@@ -254,6 +255,20 @@ class IdeaPermissions(IdeaSummaryPermissions):
             "menu and anything else that reads the project (board, members, rubric, tags)."
         ),
     )
+    can_view_bid_call: bool = Field(
+        default=False,
+        description=(
+            "Phase 10: bid.view_call and the idea has a call for bids (or can_create_bid_call): "
+            "show the Bids tab. False for a guest researcher (role matrix column R)."
+        ),
+    )
+    can_create_bid_call: bool = Field(
+        default=False,
+        description=(
+            "Phase 10: bid.manage and c27 (the idea in Proposal with a proposal, not closed, "
+            'no call yet, the project not archived): offer "Start a call for bids".'
+        ),
+    )
 
 
 # --- Responses -----------------------------------------------------------------------
@@ -338,6 +353,14 @@ class IdeaDetail(IdeaSummary):
             'show "via the public form" and the submission panel (GET '
             "/ideas/{idea}/submission). False for every internal idea."
         )
+    )
+    bid_call: BidCallSummary | None = Field(
+        default=None,
+        description=(
+            "Phase 10: the idea's call for bids as everyone who may see it sees it (title, "
+            "status, deadline, number of bids; bid.view_call), for the Bids tab's label. Null "
+            "without a call, and always for a guest researcher."
+        ),
     )
 
 

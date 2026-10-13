@@ -1,6 +1,6 @@
 # Data model (ERD)
 
-Schema after Phase 8b: `backend/app/models/` (SQLAlchemy 2, typed), created by the
+Schema after Phase 10: `backend/app/models/` (SQLAlchemy 2, typed), created by the
 Alembic revisions `backend/app/migrations/versions/20260930_0002_domain_tables.py`
 (Phase 1), `20261001_0003_sign_in_and_access.py` (Phase 2: identities, external IDs,
 groups, group grants, the group-aware effective-roles view, audit indexes),
@@ -25,9 +25,11 @@ build: trigram GiST indexes for "Similar ideas"), `20261008_0014_list_count_inde
 (Phase 8 review: indexes only, `ix_ideas_owner_id_status_last_activity_at` replacing
 `ix_ideas_owner_id`, `ix_evaluations_idea_id_status`, `ix_comments_idea_id_live`) and
 `20261008_0015_research_assignment.py` (Phase 8b: an idea's researcher and research due
-date, two notification types). The procrastinate job-queue tables (revision `0001`) are
+date, two notification types) and `20261013_0016_bid_evaluation.py` (Phase 10: calls for
+bids, their template copies, bids, documents, section assessors, assessments, the AI
+assessor; `ai_runs.bid_id` and `bid_ai_assessment_id`; three notification types). The procrastinate job-queue tables (revision `0001`) are
 not shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md) to
-[api/contract-phase8b.md](api/contract-phase8b.md).
+[api/contract-phase10.md](api/contract-phase10.md).
 
 **Operators:** the migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. `pg_trgm`
 is a trusted extension, so the application's database user needs `CREATE` on the
@@ -103,6 +105,32 @@ erDiagram
     ideas ||--o{ research_answers : "is researched in"
     research_checklist_items ||--o{ research_answers : "is answered in"
     users |o--o{ research_answers : "answered or updated"
+    projects ||--o| bid_templates : "evaluates bids with (Phase 10)"
+    ideas ||--o| bid_calls : "calls for bids on"
+    bid_calls ||--o{ bid_call_sections : "is assessed in"
+    bid_call_sections ||--o{ bid_call_questions : asks
+    bid_calls ||--o{ bid_call_must_haves : requires
+    bid_call_sections ||--o{ bid_section_assessors : "is assessed by"
+    users ||--o{ bid_section_assessors : assesses
+    bid_calls ||--o{ bids : receives
+    bids ||--o{ bid_must_have_results : "is checked in"
+    bid_call_must_haves ||--o{ bid_must_have_results : "is checked in"
+    bids ||--o{ bid_documents : includes
+    bid_call_must_haves |o--o{ bid_documents : "is evidenced by"
+    bid_documents ||--|| bid_document_contents : "bytes of"
+    bid_documents ||--o| bid_document_texts : "text of"
+    bids ||--o{ bid_assessments : "is assessed in"
+    bid_section_assessors ||--o{ bid_assessments : writes
+    bid_assessments ||--o{ bid_assessment_answers : answers
+    bid_call_questions ||--o{ bid_assessment_answers : "is answered in"
+    bids ||--o{ bid_ai_assessments : "is AI-assessed in"
+    ai_agents ||--o{ bid_ai_assessments : writes
+    bid_ai_assessments ||--o{ bid_ai_scores : scores
+    bid_ai_assessments ||--o{ bid_ai_findings : finds
+    bids |o--o{ ai_runs : "assessed by (assess_bid)"
+    bid_ai_assessments |o--o{ ai_runs : "result (assess_bid)"
+    users |o--o{ bids : "entered, rejected"
+    users |o--o{ bid_calls : "created, awarded"
 
     users {
         uuid id PK
@@ -450,7 +478,7 @@ erDiagram
         uuid id PK
         uuid idea_id FK
         uuid agent_id FK
-        varchar kind "evaluate, research, draft_section"
+        varchar kind "evaluate, research, draft_section, assess_bid"
         varchar section_key "draft_section only"
         uuid requested_by_id FK
         varchar status "queued, running, succeeded, failed, cancelled, timed_out"
@@ -469,6 +497,8 @@ erDiagram
         uuid suggestion_id FK "result"
         uuid activity_event_id FK "result: research note"
         bool assigned_evaluator "evaluate: this run assigned the agent"
+        uuid bid_id FK "assess_bid only (Phase 10)"
+        uuid bid_ai_assessment_id FK "result (assess_bid)"
     }
     ai_run_events {
         uuid run_id PK, FK
@@ -493,6 +523,146 @@ erDiagram
         varchar hint "what to write"
         bool required "default true: gates"
         timestamptz archived_at "removed: answers kept"
+    }
+    bid_templates {
+        uuid project_id PK, FK
+        jsonb template "scale, sections, questions, must-haves"
+        timestamptz updated_at
+        uuid updated_by_id FK
+    }
+    bid_calls {
+        uuid id PK
+        uuid idea_id FK "unique: one per idea"
+        varchar title "1-120"
+        text description "<= 2000"
+        varchar status "draft, open, assessing, awarded, cancelled"
+        varchar currency "ISO 4217, default GBP"
+        varchar_array scale "6 labels, scores 0-5"
+        timestamptz deadline_at "required unless draft"
+        timestamptz assessment_due_at
+        uuid created_by_id FK
+        timestamptz awarded_at "set iff awarded"
+        uuid awarded_by_id FK
+        text award_reason
+        timestamptz cancelled_at "set iff cancelled"
+        text cancel_reason
+    }
+    bid_call_sections {
+        uuid id PK
+        uuid call_id FK
+        int position
+        varchar title "1-60, unique lower() per call"
+        varchar guidance
+        smallint weight "1-100 percent"
+    }
+    bid_call_questions {
+        uuid id PK
+        uuid call_id FK
+        uuid section_id FK
+        int position
+        varchar text "1-300"
+        varchar guidance
+        varchar type "score, price, comment"
+        smallint weight "0 iff comment; one price per call"
+    }
+    bid_call_must_haves {
+        uuid id PK
+        uuid call_id FK
+        int position
+        varchar text "1-200, unique lower() per call"
+        varchar kind "document, confirmation"
+    }
+    bid_section_assessors {
+        uuid section_id PK, FK
+        uuid user_id PK, FK
+        uuid call_id FK "denormalised for My work"
+        uuid assigned_by_id FK
+        timestamptz assigned_at
+    }
+    bids {
+        uuid id PK
+        uuid call_id FK
+        varchar bidder "1-120"
+        varchar contact_name
+        varchar contact_email
+        timestamptz received_at
+        numeric price "14,2; > 0"
+        text notes "<= 2000"
+        varchar status "received, qualified, rejected, awarded, unsuccessful"
+        timestamptz rejected_at "set iff rejected"
+        uuid rejected_by_id FK
+        text rejection_reason "1-500 iff rejected"
+        uuid entered_by_id FK
+    }
+    bid_must_have_results {
+        uuid bid_id PK, FK
+        uuid must_have_id PK, FK
+        varchar result "missing, unchecked, met, not_met"
+        uuid decided_by_id FK
+        timestamptz decided_at "a person's decision: met or not_met"
+        varchar note "<= 500"
+    }
+    bid_documents {
+        uuid id PK
+        uuid bid_id FK "unique with sha256"
+        uuid call_id FK "denormalised for the 500 MiB cap"
+        uuid must_have_id FK "null: not linked"
+        varchar filename "1-200, as given"
+        varchar type "pdf, docx, xlsx, pptx, odt, ods, txt, csv, png, jpeg"
+        varchar content_type
+        int size_bytes "1 .. 25 MiB"
+        varchar sha256
+        uuid uploaded_by_id FK
+        timestamptz uploaded_at
+        varchar extraction_state "pending, done, no_text, failed"
+        varchar extraction_error "set iff failed"
+        timestamptz extracted_at
+        int text_chars "set iff done"
+        bool text_truncated
+    }
+    bid_document_contents {
+        uuid document_id PK, FK
+        bytea data
+    }
+    bid_document_texts {
+        uuid document_id PK, FK
+        text text "<= 2,000,000 characters"
+    }
+    bid_assessments {
+        uuid id PK
+        uuid bid_id FK
+        uuid section_id FK "with assessor_id: the assignment"
+        uuid assessor_id FK
+        varchar status "draft, submitted"
+        timestamptz submitted_at
+        timestamptz edited_at
+    }
+    bid_assessment_answers {
+        uuid assessment_id PK, FK
+        uuid question_id PK, FK
+        smallint score "0-5, score questions"
+        text comment "<= 2000"
+    }
+    bid_ai_assessments {
+        uuid id PK
+        uuid bid_id FK "unique with agent_id"
+        uuid agent_id FK
+        timestamptz submitted_at
+        bool included "default false: out of totals"
+    }
+    bid_ai_scores {
+        uuid ai_assessment_id PK, FK
+        uuid question_id PK, FK
+        smallint score "0-5"
+        varchar rationale "1-1000"
+        jsonb evidence "<= 3 quotes: document_id, quote, found"
+    }
+    bid_ai_findings {
+        uuid ai_assessment_id PK, FK
+        uuid must_have_id PK, FK
+        varchar finding "met, not_met, unclear"
+        varchar rationale "1-1000"
+        jsonb evidence "<= 3 quotes"
     }
     research_answers {
         uuid idea_id PK, FK
@@ -589,6 +759,20 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | `research_answers` | Phase 8: an idea's answer to one item, primary key `(idea_id, item_id)` (no row = unanswered), indexed by `item_id`. `answer` plain text, 1–2,000 characters (`ck_research_answers_answer_length`). `answered_by_id` / `answered_at`: the first answer; `updated_by_id` / `updated_at`: the last change (`SET NULL` when a user is deleted). Cascades with the idea; `item_id` is `NO ACTION` (an answered item can't be deleted, only archived; deleting the project removes items and answers in one statement). Never score data. |
 | `audit_log` | Append-only. No foreign keys, so entries outlive what they mention. `details` holds ids, enum values, field names, the IdP issuer/subject and group mapping values; never secrets, tokens, emails or claims. The admin viewer pages newest first on `ix_audit_log_created_at_id (created_at, id)`; its filters use `(actor_id, created_at)`, `(action, created_at)`, `(project_id, created_at)` and `(target_type, target_id)`. Actions: `app.schemas.audit.AuditAction`. Phase 5: `api_key.create`, `api_key.revoke` and `mcp.call` (one per MCP tool call, with the tool, rule, decision and code; deleted after 90 days by the hourly cleanup on `(action, created_at)`; every other entry is kept). Entries made through a key carry `details.auth = "api_key"` and `details.api_key_id`. |
 
+Phase 10 tables:
+
+| Table | Notes |
+|---|---|
+| `bid_templates` | Phase 10: a project's default bid evaluation template as one JSON document (`ck_bid_templates_template_object`), validated by `BidTemplateIn` on write; no row = the built-in `DEFAULT_BID_TEMPLATE` (migration 0016 writes it for every existing project, `create_project` for new ones). Calls copy it into rows and never read it again. |
+| `bid_calls` | One per idea (`uq_bid_calls_idea_id`). The status `CHECK`s: a deadline unless draft, `awarded_at` iff awarded, `cancelled_at` iff cancelled, reasons only in those states (≤ 500). `scale` has exactly six labels. `ix_bid_calls_assessment_due_at_assessing` (partial) feeds the reminder scan. |
+| `bid_call_sections`, `bid_call_questions`, `bid_call_must_haves` | The call's own template copy, by id. Unique titles / texts per call on `lower()`; a comment question has weight 0 and every other one 1-100 (`ck_bid_call_questions_comment_iff_unweighted`); at most one price question per call (`uq_bid_call_questions_call_id_price`, partial). Weights summing to 100 and a score question per section are API checks. Replaced only until a person's assessment is submitted (application). |
+| `bid_section_assessors` | Who assesses which section (primary key `(section_id, user_id)`); `call_id` copied for My work's "Bids to assess" (`ix_bid_section_assessors_user_id_call_id`) and the reminder scan. Removing a row deletes that person's assessments of the section (the composite FK from `bid_assessments` cascades). |
+| `bids` | `status` kept by the service (`call_bid_status`); `rejected_at` iff rejected, with a reason (1-500). One awarded bid per call (`uq_bids_call_id_awarded`, partial). `price` is `numeric(14,2)`, > 0. `contact_email` is stored as given and never emailed. |
+| `bid_must_have_results` | One per bid and must-have, created with the bid (and for every bid when a must-have is added). `decided_at` marks a person's decision, which is `met` or `not_met` (`ck_bid_must_have_results_decision_is_met_or_not`); `missing` / `met` for a document must-have without a decision follow its linked files (application). |
+| `bid_documents` | Metadata only; the bytes are in `bid_document_contents` and the extracted text in `bid_document_texts`, so lists never read either. The same file once per bid (`uq_bid_documents_bid_id_sha256`). Extraction state `CHECK`s: an error iff failed, `extracted_at` iff not pending, `text_chars` iff done. `ix_bid_documents_uploaded_at_pending` (partial) is the worker's queue sweep. `call_id` sums sizes for the 500 MiB cap (`ix_bid_documents_call_id`). |
+| `bid_assessments`, `bid_assessment_answers` | One assessment per bid, section and assessor (`uq_bid_assessments_bid_id_section_id_assessor_id`), referencing the assignment `(section_id, assessor_id)`. Drafts are private; a submitted one has `submitted_at`. Scores 0-5 on score questions only (application: never the price question). |
+| `bid_ai_assessments`, `bid_ai_scores`, `bid_ai_findings` | One per bid and agent (`uq_bid_ai_assessments_bid_id_agent_id`), replaced by a re-submission; `included` (default false) puts its scores in the bid's totals. Evidence is a JSON array of at most three `{document_id, quote, found}` (`ck_*_evidence_array`); `found` is the server's whitespace-normalised check. The run points at its result (`ai_runs.bid_ai_assessment_id`), not the other way round. |
+
 ## Delete behaviour
 
 | Deleting | Effect |
@@ -620,6 +804,15 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 | an answered checklist item | Refused (`NO ACTION`): archive it instead. |
 | a template section | Only when nothing names its key (the replace archives it otherwise); its empty section rows go first. |
 | a user (Phase 8b) | Ideas they research get `researcher_id` null (users are deactivated, not deleted: deactivation clears the assignment in the application, audited). |
+| an idea (Phase 10) | Also cascades to its call for bids and everything under it: sections, questions, must-haves, assessors, bids, results, documents with their bytes and text, assessments, AI assessments and the `assess_bid` runs (through `ai_runs.idea_id` and `bid_id`). |
+| a bid | Cascades to its results, documents (bytes, text), assessments and answers, AI assessments, scores and findings, and its `assess_bid` runs. |
+| a section of a call (template copy replaced) | Cascades to its questions, assessors and their assessments (answers too). |
+| a must-have of a call | Cascades to its results and AI findings; documents linked to it stay, `must_have_id` null. |
+| an assessor assignment | Cascades to that person's assessments of the section. |
+| an agent's AI assessment (re-submission, template change) | Cascades to its scores and findings; the run that produced it keeps its row with `bid_ai_assessment_id` null. |
+| a project (Phase 10) | Also cascades to its `bid_templates` row (and its ideas' calls). |
+| a user (Phase 10) | Their assessor assignments and assessments cascade (users are deactivated, not deleted); `entered_by_id`, `rejected_by_id`, `uploaded_by_id`, `decided_by_id`, `created_by_id`, `awarded_by_id`, `assigned_by_id` become null. |
+| downgrading 0016 | Deletes the notifications, outbox rows and preferences of the three bid types, the `bid_call_changed` events and the `assess_bid` runs; removes `assess_bid` from agents' purposes (an agent with no other purpose gets `research` back as a placeholder, is disabled and its key revoked); restores the `CHECK`s and the active-runs index, drops the two `ai_runs` columns and the 16 bid tables: every call, bid, document and assessment is lost. |
 | downgrading 0015 | Deletes the notifications, outbox rows and preferences of the two research types and the `researcher_changed` / `research_due_date_changed` events, restores the type `CHECK`s and drops the three `ideas` columns with their indexes and `ck_ideas_researcher_assigned_at`: research assignments and research due dates are lost (answers are kept). |
 | downgrading 0014 | Indexes only: recreates `ix_ideas_owner_id` and drops the three Phase 8 review indexes. |
 | downgrading 0013 | Drops the two trigram GiST indexes. |
@@ -634,6 +827,14 @@ it is `app.models.project_effective_roles` (a lightweight `table()`, kept out of
 The database does not check these (they span tables); the backend validates them in the
 same transaction and tests them:
 
+- Phase 10: everything under a call belongs to that call (a bid's documents, results and
+  assessments; an assessment's section and questions; a document's must-have; an AI
+  score's question); a document must-have counts `met` automatically while a file is
+  linked, a person's decision overrides it, and `met` is refused without a file; a bid's
+  `status` equals `call_bid_status` of its facts; only qualified bids enter the price
+  formula, totals and ranking; the template copy changes only until a person's
+  assessment is submitted, and every change deletes the call's AI assessments; at most
+  50 bids per call, 30 documents per bid, 500 MiB per call, 10 assessors per section.
 - A score's criterion belongs to the evaluated idea's project (else 422 `unknown_criterion`).
 - An idea's tags belong to the idea's project.
 - An activity event's `project_id` is its idea's project.

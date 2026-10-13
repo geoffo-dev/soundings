@@ -23,6 +23,7 @@ go in [../decisions.md](../decisions.md) instead.
 | [0015](0015-proposal-templates-and-research-step.md) | Per-project proposal templates (key rows, no FK) and an optional research step with a checklist gate | Proposed |
 | [0016](0016-research-assignment-and-guest-researcher.md) | A researcher per idea (columns on ideas) and guest access to that one idea as a policy column (R) with a researcher overlay and a deny-by-default route table | Proposed |
 | [0017](0017-continuous-delivery.md) | Continuous delivery from GitLab and GitHub through one deploy script (Helm, image by digest), cluster access only from inside (GitLab agent, ARC runners), one CI per environment | Proposed |
+| [0018](0018-bid-evaluation.md) | Bid evaluation: a call per idea with its own template copy, documents in Postgres with a raw-body upload and its own limit, extraction in a worker child, blind per section, AI evidence checked against the text | Proposed |
 
 ## Writing a new ADR
 

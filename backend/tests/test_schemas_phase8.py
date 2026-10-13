@@ -573,7 +573,11 @@ def test_cards_carry_no_override_flag_and_invites_say_when_research_blocks() -> 
 
 
 def test_ai_evaluation_can_be_blocked_by_research() -> None:
-    assert list(AiBlockedReason)[-1] is AiBlockedReason.RESEARCH_INCOMPLETE
+    # Checked after every Phase 6 reason (Phase 10's bid reasons follow it).
+    reasons = list(AiBlockedReason)
+    assert reasons.index(AiBlockedReason.RESEARCH_INCOMPLETE) == (
+        reasons.index(AiBlockedReason.NO_AGENT) + 1
+    )
 
 
 def test_phase8_audit_actions() -> None:

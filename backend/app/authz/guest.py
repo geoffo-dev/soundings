@@ -80,11 +80,27 @@ RESEARCH_GUEST_ACCESS: Final[dict[str, GuestAccess]] = {
     "list_idea_ai_runs": _H, "request_ai_evaluation": _H, "request_ai_research": _H,
     "request_ai_section_draft": _H, "get_ai_run": _H, "cancel_ai_run": _H,
     "stream_ai_run_events": _H,
+    # Phase 10: the call for bids, its bids, documents, assessments and AI (404: a guest
+    # researcher sees nothing of the call, not even that it exists; role matrix table M)
+    "get_bid_call": _H, "create_bid_call": _H, "update_bid_call": _H, "delete_bid_call": _H,
+    "change_bid_call_status": _H, "replace_bid_call_template": _H, "set_bid_assessors": _H,
+    "get_bid_comparison": _H, "award_bid_call": _H, "export_bid_report_markdown": _H,
+    "export_bid_report_pdf": _H, "list_bids": _H, "create_bid": _H, "get_bid": _H,
+    "update_bid": _H, "delete_bid": _H, "reject_bid": _H, "reinstate_bid": _H,
+    "decide_must_have": _H, "upload_bid_document": _H, "update_bid_document": _H,
+    "delete_bid_document": _H, "download_bid_document": _H, "get_bid_document_text": _H,
+    "get_my_bid_assessment": _H, "save_my_bid_assessment": _H,
+    "list_bid_section_assessments": _H, "request_ai_bid_assessment": _H,
+    "request_ai_bid_assessments": _H, "list_bid_ai_assessments": _H,
+    "set_bid_ai_inclusion": _H,
     # MCP tools (table L)
     "mcp.get_idea": _V, "mcp.search_ideas": _L, "mcp.add_comment": _R,
     "mcp.list_projects": _L, "mcp.add_research_note": _R,
     "mcp.get_rubric": _H, "mcp.get_proposal": _H, "mcp.create_idea": _H,
     "mcp.propose_proposal_section": _H, "mcp.submit_evaluation": _H,
+    # Phase 10: the AI assessor's tools (agents only; never a guest)
+    "mcp.get_bid_for_assessment": _H, "mcp.get_bid_document_text": _H,
+    "mcp.submit_bid_assessment": _H,
 }
 # fmt: on
 """Every operation and MCP tool a guest researcher may reach; anything else is hidden."""

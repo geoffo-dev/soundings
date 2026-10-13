@@ -1029,6 +1029,482 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/bid-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Bids tab
+         * @description bid.view_call: the call's summary (title, status, deadline, number of bids) for everyone who may see it, the whole call for call managers and section assessors (bid.view_bids), the agents that may assess and what you may do. Null summary and call when the idea has none. A guest researcher: 404. No score data.
+         */
+        get: operations["get_bid_call"];
+        /**
+         * Change the call's settings
+         * @description bid.manage: title, description, currency (until the template is locked: 409 bid_call_template_locked), deadline (an open call keeps one: 409 bid_call_deadline_required) and the assessment due date; the complete new state, last write wins. Audited bid_call.update (the fields changed, never their values). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["update_bid_call"];
+        /**
+         * Start a call for bids
+         * @description bid.manage (c27): a draft call with a copy of the project's bid evaluation template. The idea must be in Proposal with a proposal (409 bid_call_not_available) and have no call yet (409 bid_call_exists). Emits bid_call_changed (started); audited bid_call.create. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["create_bid_call"];
+        /**
+         * Delete the call
+         * @description bid.decide (session only): a draft or cancelled call, with its bids, documents and assessments (409 bid_call_active otherwise: cancel it first). Frees the idea for a new call. Audited bid_call.delete. 409 project_archived.
+         */
+        delete: operations["delete_bid_call"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/ai-assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assess all bids with AI
+         * @description ai.assess_bid (c5, c10): one assess run per bid that isn't rejected, for the agent named (active runs are returned as they are). The call must be open or being assessed (409 bid_call_not_assessable). Each new run counts toward your 20 AI requests an hour; beyond: 429 too_many_attempts and nothing starts. Audited ai_run.request per run. 409 ai_unavailable. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["request_ai_bid_assessments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/assessors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Assign the section assessors
+         * @description bid.manage, **session only** (an assignment opens the bids and their documents to a person): every section's assessors and the assessment due date, the complete new state. Assessors must be active people who can view the idea (in a private project: a role there; c28, else 422 assessor_not_eligible), never an AI agent or the break-glass account. People added get "Asked to assess bids"; people removed from a section lose their assessments of it. Audited bid_call.assessors_change. 422 unknown_section (a section of another call or one left out). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["set_bid_assessors"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/award": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Award the call
+         * @description bid.decide (session only), while the call is being assessed (409 bid_call_not_assessing): one qualified bid is awarded (409 bid_not_qualified; a rejected one: 409 bid_rejected), every other bid that isn't rejected becomes unsuccessful, and the call is read-only. Outstanding assessments don't block it (the SPA warns). Emits bid_call_changed (awarded); audited bid_call.award. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["award_bid_call"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The call's bids
+         * @description bid.view_bids (call managers and section assessors): in the order received. Section assessors don't get rejected bids, contact details, notes or rejection reasons; prices follow bid.view_price. Not paged (at most 50).
+         */
+        get: operations["list_bids"];
+        put?: never;
+        /**
+         * Enter a bid
+         * @description bid.manage, while the call is open (409 bid_call_not_open): the bidder, optional contact, when it was received (late after the deadline, not refused), the price (422 price_not_asked without a price question) and notes. Its must-haves start missing or unchecked. 409 too_many_bids (50). Audited bid.create. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["create_bid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A bid
+         * @description bid.view_bids: the bid with its documents, must-have results (and the AI's suggestions), your sections and what you may do. A rejected bid is 404 for a section assessor who isn't a call manager. No score data.
+         */
+        get: operations["get_bid"];
+        /**
+         * Edit a bid
+         * @description bid.manage: the complete new state (received_at required). Before the award. A changed price changes every qualified bid's price score. Audited bid.update (the fields changed, never their values). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["update_bid"];
+        post?: never;
+        /**
+         * Delete a bid
+         * @description bid.decide (session only), while the call is a draft or open (409 bid_call_not_open; nobody has assessed it then): the bid and its documents. Audited bid.delete. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        delete: operations["delete_bid"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask AI to assess a bid
+         * @description ai.assess_bid (c5, c10): an assess run for this bid (201), or the active one (200). The call open or being assessed (409 bid_call_not_assessable), the bid not rejected (409 bid_rejected). Counts toward your 20 AI requests an hour (429). Audited ai_run.request. 409 ai_unavailable. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["request_ai_bid_assessment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The AI's assessments of a bid
+         * @description bid.view_scores (call managers): each agent's scores with rationale and quoted evidence (each quote checked against the document's text), its must-have findings, and whether it counts. Scores of sections you owe an assessment for are left out.
+         */
+        get: operations["list_bid_ai_assessments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/ai-assessments/{ai_assessment_id}/include-in-totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Count the AI's assessment in the totals
+         * @description bid.manage, and the assessment visible to you (404 while you owe an assessment of the bid): include it in this bid's scores or leave it out; idempotent. A re-submission that changes a score leaves it out again. Audited bid_assessment.include_ai. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["set_bid_ai_inclusion"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a bid document
+         * @description bid.upload_document (session only), before the award: the raw file as the body (this route alone takes up to 25 MiB: 413 content_too_large beyond, also for a body longer than its Content-Length says or a chunked one). Allowed by its bytes: 415 unsupported_document_type (anything else, also an empty or encrypted file), macro_document (VBA or ActiveX in an Office file, scripts in an OpenDocument file), document_type_mismatch (Content-Type is another allowed type). 409 too_many_documents (30 per bid), call_storage_full (500 MiB per call), duplicate_document (the same file on this bid). 422 invalid_must_have (must_have_id names a confirmation or another call's). 503 upload_busy (with Retry-After). Text is extracted afterwards by the worker (extraction.state pending). Audited bid_document.upload. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["upload_bid_document"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Link a document to a must-have
+         * @description bid.manage: link it to a required-document must-have (which then counts as present: met unless a person decided otherwise) or unlink it (null; the must-have is missing again when no other file is linked). 422 invalid_must_have. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["update_bid_document"];
+        post?: never;
+        /**
+         * Delete a bid document
+         * @description bid.upload_document (session only), before the award: the file, its text and its link (a must-have left without a file is missing again). Audited bid_document.delete. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        delete: operations["delete_bid_document"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a bid document
+         * @description bid.view_bids: the file as stored, always as an attachment (never shown inline), with its type's media type, nosniff, a sandboxing CSP and Cache-Control private, no-store; read from the database in chunks. Not audited (a read).
+         */
+        get: operations["download_bid_document"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A bid document's text
+         * @description bid.view_bids: one page (20,000 characters) of the text the worker extracted (plain text written by the bidder: show it as text, never as HTML). Empty while pending, for images and when extraction failed. 404 for a page past the last.
+         */
+        get: operations["get_bid_document_text"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/must-haves/{must_have_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Decide a must-have
+         * @description bid.manage: met or not met (with a note), or clear the decision. A document must-have without a linked file can't be met (409 document_missing). The bid becomes qualified when every must-have is met. Audited bid.must_have_decide. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["decide_must_have"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/rejection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reject a bid
+         * @description bid.decide (session only): one click and a reason, any time before the award (a new reason replaces the old one). The bid leaves the assessors' queues, the totals, the price formula and the ranking. Audited bid.reject. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["reject_bid"];
+        post?: never;
+        /**
+         * Reinstate a bid
+         * @description bid.decide (session only): undo a rejection before the award (idempotent); the bid is received or qualified again by its must-haves, its assessments count again. Audited bid.reinstate. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        delete: operations["reinstate_bid"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/sections/{section_id}/assessment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your assessment of a section
+         * @description bid.assess (you assess the section): your draft or submitted answers (state invited when nothing is saved). 403 for a section you don't assess.
+         */
+        get: operations["get_my_bid_assessment"];
+        /**
+         * Save or submit your assessment
+         * @description bid.assess, while the call is being assessed (409 bid_call_not_assessing) and the bid isn't rejected (409 bid_rejected): save a draft, or submit (every score question scored 0-5: 422 assessment_incomplete); editable after submitting until the award. 422 unknown_question, not_assessable (the price question). The first submission is audited bid_assessment.submit and locks the template. An API key needs evaluate. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["save_my_bid_assessment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/sections/{section_id}/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A section's assessments
+         * @description bid.view_section_scores: the submitted assessments of the section for this bid, the AI's scores for it, per-question statistics and the section score. Hidden (hidden: true, nothing else) while you owe this assessment yourself; an assessor of another section: 403.
+         */
+        get: operations["list_bid_section_assessments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare the bids
+         * @description bid.view_scores (call managers): every bid with its section scores (0-100), total (0-100), rank, price score, disagreement and progress; qualified bids ranked first. What you owe an assessment for yourself is hidden (blind: role matrix section 3a).
+         */
+        get: operations["get_bid_comparison"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/report/markdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The evaluation report (Markdown)
+         * @description bid.view_scores (call managers only): the ranking, each bid's section scores and total, must-have results, rejected bids with their reasons, the assessors per section, whether the AI was included, and the award. What you owe an assessment for is left out. Shares the export limit with proposals (429 too_many_attempts).
+         */
+        get: operations["export_bid_report_markdown"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/report/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The evaluation report (PDF)
+         * @description bid.view_scores (call managers only): the Markdown report's content as a branded PDF from the PDF child process (as proposal exports). 429 too_many_attempts; 503 export_busy.
+         */
+        get: operations["export_bid_report_pdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open, assess or cancel the call
+         * @description bid.manage (open, assessing; cancelling is bid.decide, session only): draft -> open (needs a deadline: 409 bid_call_deadline_required), open -> assessing (no new bids), assessing -> open (only while no assessment is submitted: 409 assessments_submitted), draft / open / assessing -> cancelled (an optional reason). Any other move: 409 invalid_bid_call_transition. Emits bid_call_changed; audited bid_call.status_change. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["change_bid_call_status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit the call's evaluation template
+         * @description bid.manage: the call's own template, complete (items keep their ids; left out = deleted with their assessor assignments, results and document links; new must-haves get a result for every bid). Until the first human assessment is submitted (409 bid_call_template_locked). Any change clears the call's AI assessments. Audited bid_call.template_replace. 422 validation_error, unknown_template_item. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        put: operations["replace_bid_call_template"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/comments": {
         parameters: {
             query?: never;
@@ -2065,6 +2541,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{slug}/bid-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project settings: the bid evaluation template
+         * @description project.view: the project's default bid evaluation template (scale anchors, weighted sections of questions, must-haves). Calls copy it when they start. Holds no bids.
+         */
+        get: operations["get_bid_template"];
+        /**
+         * Replace the bid evaluation template
+         * @description project.edit_bid_template (project and platform admins, session only): the complete template; last write wins. Existing calls keep their own copy. Audited project.bid_template_replace. 422 validation_error (1-8 sections whose weights sum to 100, 1-15 questions each with a score question, at most one price question, 0-20 must-haves, unique titles). Allowed in an archived project (settings, like the proposal template).
+         */
+        put: operations["replace_bid_template"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{slug}/board": {
         parameters: {
             query?: never;
@@ -2624,7 +3124,7 @@ export interface components {
          */
         ActivityPage: {
             /** Items */
-            items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"] | components["schemas"]["ResearcherChangedActivity"] | components["schemas"]["ResearchDueDateChangedActivity"])[];
+            items: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"] | components["schemas"]["ResearcherChangedActivity"] | components["schemas"]["ResearchDueDateChangedActivity"] | components["schemas"]["BidCallChangedActivity"])[];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -3060,7 +3560,7 @@ export interface components {
             protocol?: components["schemas"]["AiAgentProtocol"] | null;
             /**
              * Purposes
-             * @description 1-3 distinct kinds (duplicates are dropped).
+             * @description 1-4 distinct kinds (duplicates are dropped).
              */
             purposes: components["schemas"]["AiRunKind"][];
         };
@@ -3202,7 +3702,7 @@ export interface components {
          *     order (the order the request checks them).
          * @enum {string}
          */
-        AiBlockedReason: "not_allowed" | "ai_off" | "project_archived" | "awaiting_moderation" | "idea_closed" | "evaluation_closed" | "proposal_not_available" | "no_proposal" | "no_agent" | "research_incomplete";
+        AiBlockedReason: "not_allowed" | "ai_off" | "project_archived" | "awaiting_moderation" | "idea_closed" | "evaluation_closed" | "proposal_not_available" | "no_proposal" | "no_agent" | "research_incomplete" | "bid_call_state" | "bid_rejected";
         /**
          * AiEvaluationRequest
          * @description "Ask AI to evaluate". Phase 8: with a research step before evaluation, asking for
@@ -3226,6 +3726,13 @@ export interface components {
              */
             override_research?: boolean | null;
         };
+        /**
+         * AiMustHaveFinding
+         * @description The AI assessor's pre-check of one must-have: only a suggestion, stored apart from
+         *     the result, which it never changes.
+         * @enum {string}
+         */
+        AiMustHaveFinding: "met" | "not_met" | "unclear";
         /**
          * AiPermissions
          * @description What you may do with AI on this idea now (rules, conditions and c10 included). Each
@@ -3308,6 +3815,11 @@ export interface components {
         AiRun: {
             agent: components["schemas"]["AiAgentRef"];
             /**
+             * Bid Id
+             * @description Phase 10, assess_bid only: the bid of the idea's call it assesses. Runs of this kind are listed and shown only to people who see the call's bids (bid.view_bids).
+             */
+            bid_id: string | null;
+            /**
              * Can Cancel
              * @description ai.cancel_run, and the run is active.
              */
@@ -3359,11 +3871,31 @@ export interface components {
             status: components["schemas"]["AiRunStatus"];
         };
         /**
+         * AiRunBatch
+         * @description "Assess all with AI": a run per bid that isn't rejected (an active one is returned as
+         *     it is). Each new run counts toward your 20 AI requests an hour; more than that: 429,
+         *     nothing started.
+         */
+        AiRunBatch: {
+            /**
+             * Created
+             * @description New runs started.
+             */
+            created: number;
+            /** Items */
+            items: components["schemas"]["AiRun"][];
+        };
+        /**
          * AiRunDetail
          * @description A run with its events (the polling fallback of the SSE stream).
          */
         AiRunDetail: {
             agent: components["schemas"]["AiAgentRef"];
+            /**
+             * Bid Id
+             * @description Phase 10, assess_bid only: the bid of the idea's call it assesses. Runs of this kind are listed and shown only to people who see the call's bids (bid.view_bids).
+             */
+            bid_id: string | null;
             /**
              * Can Cancel
              * @description ai.cancel_run, and the run is active.
@@ -3475,7 +4007,7 @@ export interface components {
          *     and drafting assistant.
          * @enum {string}
          */
-        AiRunKind: "evaluate" | "research" | "draft_section";
+        AiRunKind: "evaluate" | "research" | "draft_section" | "assess_bid";
         /**
          * AiRunList
          * @description An idea's AI runs and what can be asked.
@@ -3514,6 +4046,11 @@ export interface components {
          * @description What the run produced (all null until then; kept if the run later fails).
          */
         AiRunResult: {
+            /**
+             * Bid Ai Assessment Id
+             * @description Phase 10, assess_bid: the AI assessment of the bid.
+             */
+            bid_ai_assessment_id: string | null;
             /**
              * Evaluation Id
              * @description evaluate: the AI evaluation.
@@ -3751,6 +4288,137 @@ export interface components {
          */
         ApiKeyState: "active" | "expired" | "dormant";
         /**
+         * AssessmentReminderNotification
+         * @description Phase 10: bid assessments you owe are due soon or today (the call is being assessed).
+         *     Show the date ("Bid assessments due Fri 9 Oct"), never a countdown. Link:
+         *     ``/ideas/{key}?tab=bids``.
+         */
+        AssessmentReminderNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            call: components["schemas"]["BidCallRef"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Days Before
+             * @description Which reminder this was (days before the due date, 0 = on the due date); not a countdown: phrase the reminder with due_at.
+             */
+            days_before: number;
+            /**
+             * Due At
+             * Format: date-time
+             * @description The assessment due date the reminder was sent for.
+             */
+            due_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "assessment_reminder";
+        };
+        /**
+         * AssessmentsCompleteNotification
+         * @description Phase 10: every assigned assessor has submitted every section they assess for every
+         *     bid that isn't rejected (to the idea's owner and the call's creator). Counts only: never
+         *     scores, prices or bidders.
+         */
+        AssessmentsCompleteNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Assessment Count
+             * @description Assessments submitted.
+             */
+            assessment_count: number;
+            /**
+             * Bid Count
+             * @description Bids assessed (rejected ones aren't).
+             */
+            bid_count: number;
+            call: components["schemas"]["BidCallRef"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "assessments_complete";
+        };
+        /**
+         * AssessorAssignedNotification
+         * @description Phase 10, "Asked to assess bids": someone else made you an assessor of sections of
+         *     the idea's call for bids. One per request that added you (``dedupe_key``
+         *     ``assessor_assigned:<call id>:<request id>``). Link: ``/ideas/{key}?tab=bids``.
+         */
+        AssessorAssignedNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /** @description The call, as it is now. */
+            call: components["schemas"]["BidCallRef"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Due At
+             * @description The assessment due date set by the request that added you.
+             */
+            due_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * Sections
+             * @description The titles of the sections you assess now (the call's current template).
+             */
+            sections: string[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "assessor_assigned";
+        };
+        /**
          * AuditAction
          * @description Every action the audit log records (``audit_log.action``).
          *
@@ -3759,7 +4427,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete" | "project.bid_template_replace" | "bid_call.create" | "bid_call.update" | "bid_call.template_replace" | "bid_call.status_change" | "bid_call.award" | "bid_call.delete" | "bid_call.assessors_change" | "bid.create" | "bid.update" | "bid.delete" | "bid.reject" | "bid.reinstate" | "bid.must_have_decide" | "bid_document.upload" | "bid_document.delete" | "bid_assessment.submit" | "bid_assessment.include_ai";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -3846,6 +4514,1547 @@ export interface components {
          * @enum {string}
          */
         AuthMethod: "dev_login" | "sso" | "break_glass";
+        /**
+         * Bid
+         * @description A bid, for call managers and section assessors (``bid.view_bids``). Assessors never
+         *     see rejected bids (404), contact details, notes or rejection reasons.
+         */
+        Bid: {
+            /**
+             * Bidder
+             * @description The bidder organisation, as the team entered it.
+             */
+            bidder: string;
+            /**
+             * Contact Email
+             * @description Call managers only.
+             */
+            contact_email: string | null;
+            /**
+             * Contact Name
+             * @description Call managers only ("" for assessors).
+             */
+            contact_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Document Count */
+            document_count: number;
+            entered_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Late
+             * @description Received after the call's deadline.
+             */
+            late: boolean;
+            must_haves: components["schemas"]["BidMustHaveCounts"];
+            /** @description Yours on this bid (your sections), when you assess the call. */
+            my_progress: components["schemas"]["BidProgress"] | null;
+            /**
+             * Notes
+             * @description Call managers only ("" for assessors).
+             */
+            notes: string;
+            /**
+             * Price
+             * @description Decimal string in the call's currency ("120000.00"); null when not entered or hidden (price_hidden).
+             */
+            price: string | null;
+            /**
+             * Price Hidden
+             * @description bid.view_price denied: you assess a section that doesn't hold the price question.
+             */
+            price_hidden: boolean;
+            /** @description Its assessments: submitted / expected. */
+            progress: components["schemas"]["BidProgress"];
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** @description Call managers only. */
+            rejection: components["schemas"]["BidRejection"] | null;
+            status: components["schemas"]["BidStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * BidAiAssessment
+         * @description The AI's assessment of a bid (``bid.view_scores``). Scores of sections you owe an
+         *     assessment for are left out (``hidden_section_ids``).
+         */
+        BidAiAssessment: {
+            /** @description The agent's service account (AI badge). */
+            agent: components["schemas"]["UserRef"];
+            /**
+             * Bid Id
+             * Format: uuid
+             */
+            bid_id: string;
+            /** Findings */
+            findings: components["schemas"]["BidAiFindingView"][];
+            /** Hidden Section Ids */
+            hidden_section_ids: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Included
+             * @description Counted in this bid's scores. False until a call manager includes it, and again after a re-submission that changed a score.
+             */
+            included: boolean;
+            /**
+             * Quotes Not Found
+             * @description Quotes the server couldn't find in the text.
+             */
+            quotes_not_found: number;
+            /** Scores */
+            scores: components["schemas"]["BidAiScoreView"][];
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /** BidAiAssessmentList */
+        BidAiAssessmentList: {
+            /**
+             * Can Include
+             * @description bid.manage, before the award.
+             */
+            can_include: boolean;
+            /**
+             * Items
+             * @description One per agent that assessed the bid.
+             */
+            items: components["schemas"]["BidAiAssessment"][];
+        };
+        /**
+         * BidAiFindingView
+         * @description The AI's pre-check of one must-have: a suggestion only.
+         */
+        BidAiFindingView: {
+            /** @description The agent's service account (show an AI badge). */
+            agent: components["schemas"]["UserRef"];
+            /**
+             * Ai Assessment Id
+             * Format: uuid
+             */
+            ai_assessment_id: string;
+            /** Evidence */
+            evidence: components["schemas"]["BidEvidence"][];
+            finding: components["schemas"]["AiMustHaveFinding"];
+            /**
+             * Rationale
+             * @description Untrusted agent text (rendered as plain text).
+             */
+            rationale: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /**
+         * BidAiInclusionUpdate
+         * @description Count an AI assessment in this bid's scores, or leave it out again.
+         */
+        BidAiInclusionUpdate: {
+            /** Include */
+            include: boolean;
+        };
+        /** BidAiScoreView */
+        BidAiScoreView: {
+            /** Evidence */
+            evidence: components["schemas"]["BidEvidence"][];
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /**
+             * Rationale
+             * @description Untrusted agent text.
+             */
+            rationale: string;
+            /** Score */
+            score: number;
+        };
+        /** BidAiSectionScores */
+        BidAiSectionScores: {
+            /** @description The agent's service account (AI badge). */
+            agent: components["schemas"]["UserRef"];
+            /**
+             * Ai Assessment Id
+             * Format: uuid
+             */
+            ai_assessment_id: string;
+            /**
+             * Included
+             * @description Counted in the totals for this bid.
+             */
+            included: boolean;
+            /**
+             * Scores
+             * @description The section's score questions.
+             */
+            scores: components["schemas"]["BidAiScoreView"][];
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /** BidAnswer */
+        BidAnswer: {
+            /** Comment */
+            comment: string;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Score */
+            score: number | null;
+        };
+        /** BidAnswerIn */
+        BidAnswerIn: {
+            /**
+             * Comment
+             * @description The answer for comment questions; a note for score questions.
+             * @default
+             */
+            comment: string;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /**
+             * Score
+             * @description Score questions (null only in a draft); comment questions take none (422).
+             */
+            score?: number | null;
+        };
+        /**
+         * BidAssessmentView
+         * @description Someone's submitted assessment of a section (never a draft).
+         */
+        BidAssessmentView: {
+            /** Answers */
+            answers: components["schemas"]["BidAnswer"][];
+            assessor: components["schemas"]["UserRef"];
+            /** Edited At */
+            edited_at: string | null;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /**
+         * BidAssessor
+         * @description A section's assessor and their progress on it. Never scores.
+         */
+        BidAssessor: {
+            /**
+             * Assigned At
+             * Format: date-time
+             */
+            assigned_at: string;
+            /**
+             * Can Assess
+             * @description Still eligible: active and able to view the idea (in a private project, a role there). False: their assignment grants nothing; remove or replace them.
+             */
+            can_assess: boolean;
+            /** @description Their submitted assessments of this section / bids that aren't rejected. */
+            progress: components["schemas"]["BidProgress"];
+            user: components["schemas"]["UserRef"];
+        };
+        /**
+         * BidAssessorsUpdate
+         * @description Who assesses each section, and by when: the complete new state (``PUT``, session
+         *     only). Every section of the call exactly once. People added are asked ("Asked to assess
+         *     bids"); people removed from a section lose their assessments of it (audited).
+         */
+        BidAssessorsUpdate: {
+            /**
+             * Due At
+             * @description The assessment due date (null: none).
+             */
+            due_at: string | null;
+            /** Sections */
+            sections: components["schemas"]["BidSectionAssessorsIn"][];
+        };
+        /**
+         * BidAwardIn
+         * @description Award the call to one qualified bid (``bid.decide``, session only, while assessing).
+         */
+        BidAwardIn: {
+            /**
+             * Bid Id
+             * Format: uuid
+             */
+            bid_id: string;
+            /**
+             * Reason
+             * @description Optional, plain text (call managers read it).
+             * @default
+             */
+            reason: string;
+        };
+        /**
+         * BidCall
+         * @description The call for those who see its bids (call managers and section assessors:
+         *     ``bid.view_bids``).
+         */
+        BidCall: {
+            /** Assessment Due At */
+            assessment_due_at: string | null;
+            /**
+             * Award Reason
+             * @description Call managers only (null for assessors).
+             */
+            award_reason: string | null;
+            /** Awarded At */
+            awarded_at: string | null;
+            /** @description Set once awarded. */
+            awarded_bid: components["schemas"]["BidRef"] | null;
+            /**
+             * Bid Count
+             * @description Bids entered (rejected ones included).
+             */
+            bid_count: number;
+            /**
+             * Cancel Reason
+             * @description Call managers only (null for assessors).
+             */
+            cancel_reason: string | null;
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by: components["schemas"]["UserRef"] | null;
+            /** Currency */
+            currency: string;
+            /** Deadline At */
+            deadline_at: string | null;
+            /**
+             * Description
+             * @description Plain text: what is being bought.
+             */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description Every assigned assessor x section x bid that isn't rejected. */
+            progress: components["schemas"]["BidProgress"];
+            status: components["schemas"]["BidCallStatus"];
+            template: components["schemas"]["BidCallTemplate"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * BidCallChangedActivity
+         * @description Phase 10: the idea's call for bids was started, or moved (opened, closed to new bids
+         *     and assessing, back to open, awarded, cancelled). Stored as ``bid_call_changed`` with
+         *     payload ``{call_id, from_status, to_status}`` (``from_status`` null when it was started).
+         *     Says nothing about bids: no bidder, price, score or reason, so everyone who can see that
+         *     the call exists may read it (``bid.view_call``); a guest researcher never gets it. The
+         *     SPA: "started a call for bids", "opened the call for bids", "closed the call to new bids",
+         *     "reopened the call for bids", "awarded the call for bids", "cancelled the call for bids".
+         */
+        BidCallChangedActivity: {
+            /** @description Who did it; null if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /** @description The call as it is now; null once deleted. */
+            call: components["schemas"]["BidCallRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** @description Null: the call was started. */
+            from_status: components["schemas"]["BidCallStatus"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Idea Id
+             * Format: uuid
+             */
+            idea_id: string;
+            to_status: components["schemas"]["BidCallStatus"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bid_call_changed";
+        };
+        /**
+         * BidCallCreate
+         * @description Start the idea's call for bids: a draft with a copy of the project's template.
+         */
+        BidCallCreate: {
+            /**
+             * Currency
+             * @description ISO 4217, e.g. GBP.
+             * @default GBP
+             */
+            currency: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Title
+             * @description e.g. "Test data generator: build partner".
+             */
+            title: string;
+        };
+        /** BidCallMustHave */
+        BidCallMustHave: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["MustHaveKind"];
+            /** Position */
+            position: number;
+            /** Text */
+            text: string;
+        };
+        /** BidCallMustHaveIn */
+        BidCallMustHaveIn: {
+            /**
+             * Id
+             * @description An existing must-have of this call (keeps its results and linked documents); omit for a new one.
+             */
+            id?: string | null;
+            kind: components["schemas"]["MustHaveKind"];
+            /**
+             * Text
+             * @description e.g. "Insurance certificate" (document) or "Accepts our standard terms".
+             */
+            text: string;
+        };
+        /**
+         * BidCallPermissions
+         * @description What you may do on the Bids tab (the API enforces the same rules).
+         */
+        BidCallPermissions: {
+            /**
+             * Assess Section Ids
+             * @description The sections you assess (any status).
+             */
+            assess_section_ids: string[];
+            /**
+             * Can Assess
+             * @description You assess at least one section and the call is being assessed.
+             */
+            can_assess: boolean;
+            /**
+             * Can Create
+             * @description bid.manage and c27: no call yet, the idea in Proposal with a proposal, not closed, the project not archived: show "Start a call for bids".
+             */
+            can_create: boolean;
+            /**
+             * Can Decide
+             * @description bid.decide (session only): reject or reinstate bids, award or cancel the call.
+             */
+            can_decide: boolean;
+            /**
+             * Can Delete Call
+             * @description bid.decide and the call is a draft or cancelled: delete it and its bids.
+             */
+            can_delete_call: boolean;
+            /**
+             * Can Edit Template
+             * @description can_manage_call and the template isn't locked (no human assessment yet).
+             */
+            can_edit_template: boolean;
+            /**
+             * Can Export
+             * @description bid.view_scores: the evaluation report (Markdown, PDF).
+             */
+            can_export: boolean;
+            /**
+             * Can Manage Call
+             * @description bid.manage (the idea's owner, project admins, platform admins) and the call not awarded or cancelled: settings, lifecycle, assessors, bids, must-haves, AI inclusion.
+             */
+            can_manage_call: boolean;
+            /**
+             * Can Request Ai
+             * @description ai.assess_bid and c10: "Ask AI to assess" / "Assess all with AI" (the call open or being assessed).
+             */
+            can_request_ai: boolean;
+            /**
+             * Can See Prices
+             * @description bid.view_price: call managers, and the assessors of the section holding the price question.
+             */
+            can_see_prices: boolean;
+            /**
+             * Can Upload Documents
+             * @description bid.upload_document (session only): upload and delete bid documents.
+             */
+            can_upload_documents: boolean;
+            /**
+             * Can View Bids
+             * @description bid.view_bids: the bids, their documents and must-have results.
+             */
+            can_view_bids: boolean;
+            /**
+             * Can View Scores
+             * @description bid.view_scores (call managers): the comparison, the AI's assessments and the report (parts hidden while you owe an assessment yourself).
+             */
+            can_view_scores: boolean;
+            /** @description Why can_request_ai is false (null when true). */
+            request_ai_blocked_by: components["schemas"]["AiBlockedReason"] | null;
+        };
+        /** BidCallQuestion */
+        BidCallQuestion: {
+            /** Guidance */
+            guidance: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Position
+             * @description 0-based, within its section.
+             */
+            position: number;
+            /**
+             * Section Id
+             * Format: uuid
+             */
+            section_id: string;
+            /** Text */
+            text: string;
+            type: components["schemas"]["BidQuestionType"];
+            /** Weight */
+            weight: number;
+        };
+        /** BidCallQuestionIn */
+        BidCallQuestionIn: {
+            /**
+             * Guidance
+             * @description What a good answer shows (plain text; line breaks kept). Shown to assessors.
+             * @default
+             */
+            guidance: string;
+            /**
+             * Id
+             * @description An existing question of this call (keeps it); omit for a new one. Another call's or an unknown id: 422 unknown_template_item.
+             */
+            id?: string | null;
+            /**
+             * Text
+             * @description The question assessors answer (one line).
+             */
+            text: string;
+            /** @default score */
+            type: components["schemas"]["BidQuestionType"];
+            /**
+             * Weight
+             * @description Relative to the section's other scored questions: score and price questions 1-100 (default 1), comment questions 0 (the default; any other value is a 422).
+             */
+            weight?: number | null;
+        };
+        /**
+         * BidCallRef
+         * @description Enough to name and link a call (``/ideas/{key}?tab=bids``).
+         */
+        BidCallRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["BidCallStatus"];
+            /** Title */
+            title: string;
+        };
+        /** BidCallSection */
+        BidCallSection: {
+            /**
+             * Assessors
+             * @description By name.
+             */
+            assessors: components["schemas"]["BidAssessor"][];
+            /** Guidance */
+            guidance: string;
+            /**
+             * Has Price
+             * @description Holds the call's price question.
+             */
+            has_price: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Position */
+            position: number;
+            /**
+             * Questions
+             * @description In order.
+             */
+            questions: components["schemas"]["BidCallQuestion"][];
+            /** Title */
+            title: string;
+            /**
+             * Weight
+             * @description Percent of the total.
+             */
+            weight: number;
+        };
+        /** BidCallSectionIn */
+        BidCallSectionIn: {
+            /**
+             * Guidance
+             * @default
+             */
+            guidance: string;
+            /**
+             * Id
+             * @description An existing section of this call (keeps its assessors); omit for a new one.
+             */
+            id?: string | null;
+            /** Questions */
+            questions: components["schemas"]["BidCallQuestionIn"][];
+            /** Title */
+            title: string;
+            /**
+             * Weight
+             * @description Percent of the total; the sections sum to 100.
+             */
+            weight: number;
+        };
+        /**
+         * BidCallStatus
+         * @description Where an idea's call for bids is (``bid_calls.status``; contract-phase10 section 3).
+         *     ``awarded`` and ``cancelled`` are final: the call is read-only.
+         * @enum {string}
+         */
+        BidCallStatus: "draft" | "open" | "assessing" | "awarded" | "cancelled";
+        /**
+         * BidCallStatusChange
+         * @description Move the call: draft -> open (needs a deadline), open -> assessing, assessing ->
+         *     open (only while no assessment is submitted), draft / open / assessing -> cancelled
+         *     (``bid.decide``, session only; ``reason`` optional). Awarding is ``award_bid_call``.
+         */
+        BidCallStatusChange: {
+            /**
+             * Reason
+             * @description Cancelling only (plain text, at most 500).
+             * @default
+             */
+            reason: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "assessing" | "cancelled";
+        };
+        /**
+         * BidCallSummary
+         * @description What everyone who can view the idea sees of its call (``bid.view_call``): that it
+         *     exists, its title, status, deadline and number of bids. No bidders, documents, prices,
+         *     scores or reasons. Null for a guest researcher (role matrix column R).
+         */
+        BidCallSummary: {
+            /**
+             * Bid Count
+             * @description Bids entered (rejected ones included).
+             */
+            bid_count: number;
+            /** Deadline At */
+            deadline_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["BidCallStatus"];
+            /** Title */
+            title: string;
+        };
+        /**
+         * BidCallTemplate
+         * @description The call's own evaluation template (a copy of the project's when it was created).
+         */
+        BidCallTemplate: {
+            /**
+             * Locked
+             * @description A human assessment has been submitted: the template can't change any more (409 bid_call_template_locked).
+             */
+            locked: boolean;
+            /**
+             * Must Haves
+             * @description In order.
+             */
+            must_haves: components["schemas"]["BidCallMustHave"][];
+            /** Price Question Id */
+            price_question_id: string | null;
+            /**
+             * Scale
+             * @description Six anchors, scores 0 to 5.
+             */
+            scale: string[];
+            /**
+             * Sections
+             * @description In order.
+             */
+            sections: components["schemas"]["BidCallSection"][];
+        };
+        /**
+         * BidCallTemplateIn
+         * @description A call's own copy of the template (``replace_bid_call_template``): the complete
+         *     template, editable until the call's first **human** assessment is submitted (then 409
+         *     ``bid_call_template_locked``). Items keep their id; items left out are deleted (a
+         *     section with its assessor assignments, a must-have with its results and document
+         *     links); new must-haves get a result for every bid (``missing`` or ``unchecked``, which
+         *     may move a qualified bid back to received). Any change clears the call's AI assessments
+         *     (they were made against the old questions: ask again).
+         */
+        BidCallTemplateIn: {
+            /** Must Haves */
+            must_haves?: components["schemas"]["BidCallMustHaveIn"][];
+            /** Scale */
+            scale: string[];
+            /** Sections */
+            sections: components["schemas"]["BidCallSectionIn"][];
+        };
+        /**
+         * BidCallUpdate
+         * @description The call's settings, the complete new state (``PUT``; last write wins). The
+         *     currency changes only until the template is locked (409 ``bid_call_template_locked``);
+         *     an open call keeps a deadline (409 ``bid_call_deadline_required``).
+         */
+        BidCallUpdate: {
+            /**
+             * Assessment Due At
+             * @description When assessors should have submitted (reminders 2 days before and on it).
+             */
+            assessment_due_at: string | null;
+            /**
+             * Currency
+             * @description ISO 4217, e.g. GBP.
+             */
+            currency: string;
+            /**
+             * Deadline At
+             * @description Bids received after it are marked late, not refused. Needed to open.
+             */
+            deadline_at: string | null;
+            /** Description */
+            description: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * BidCallView
+         * @description The Bids tab: the call (as much of it as you may see) and what you may do.
+         */
+        BidCallView: {
+            /**
+             * Ai Agents
+             * @description Agents you may ask to assess bids now (c10 for assess_bid), by name.
+             */
+            ai_agents: components["schemas"]["AiAgentRef"][];
+            /** @description Call managers and section assessors only (bid.view_bids); else null. */
+            call: components["schemas"]["BidCall"] | null;
+            permissions: components["schemas"]["BidCallPermissions"];
+            /** @description Null when the idea has no call (or for a guest researcher: 404 anyway). */
+            summary: components["schemas"]["BidCallSummary"] | null;
+        };
+        /**
+         * BidComparison
+         * @description Every bid side by side (``bid.view_scores``, call managers): ranked qualified bids
+         *     first (by rank, then lower price, earlier received, id), then bids still received, then
+         *     rejected ones. Parts you owe an assessment for are hidden (``hidden``).
+         */
+        BidComparison: {
+            call: components["schemas"]["BidCallRef"];
+            /**
+             * Complete
+             * @description Every assigned assessor has submitted every bid that isn't rejected.
+             */
+            complete: boolean;
+            /** Currency */
+            currency: string;
+            /**
+             * Lowest Price
+             * @description The lowest qualified price (the formula's).
+             */
+            lowest_price: string | null;
+            /** Price Section Id */
+            price_section_id: string | null;
+            progress: components["schemas"]["BidProgress"];
+            /** Rows */
+            rows: components["schemas"]["BidComparisonRow"][];
+            /** Sections */
+            sections: components["schemas"]["BidComparisonSection"][];
+        };
+        /** BidComparisonRow */
+        BidComparisonRow: {
+            /**
+             * Ai Included
+             * @description An AI assessment is counted in this bid's scores.
+             */
+            ai_included: boolean;
+            bid: components["schemas"]["BidRef"];
+            /** Late */
+            late: boolean;
+            /**
+             * Price
+             * @description As Bid.price.
+             */
+            price: string | null;
+            /** Price Hidden */
+            price_hidden: boolean;
+            /**
+             * Price Score
+             * @description 0-5, 2 decimal places: lowest qualified price / this price x 5.
+             */
+            price_score: number | null;
+            progress: components["schemas"]["BidProgress"];
+            /**
+             * Rank
+             * @description 1 = best; equal totals share a rank (1, 2, 2, 4). Qualified bids only.
+             */
+            rank: number | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Sections
+             * @description In the template's order.
+             */
+            sections: components["schemas"]["BidSectionScore"][];
+            /**
+             * Tied
+             * @description Another bid has the same rank.
+             */
+            tied: boolean;
+            /**
+             * Total
+             * @description 0-100, 1 decimal place: the sum of section weight x section score. Null until every section has a score, for a bid that isn't qualified, or while hidden.
+             */
+            total: number | null;
+            /**
+             * Total Hidden
+             * @description You owe an assessment of this bid.
+             */
+            total_hidden: boolean;
+        };
+        /** BidComparisonSection */
+        BidComparisonSection: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Weight */
+            weight: number;
+        };
+        /**
+         * BidDetail
+         * @description One bid: its documents, must-have results and your sections.
+         */
+        BidDetail: {
+            /**
+             * Bidder
+             * @description The bidder organisation, as the team entered it.
+             */
+            bidder: string;
+            /**
+             * Contact Email
+             * @description Call managers only.
+             */
+            contact_email: string | null;
+            /**
+             * Contact Name
+             * @description Call managers only ("" for assessors).
+             */
+            contact_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Document Count */
+            document_count: number;
+            /**
+             * Documents
+             * @description In upload order.
+             */
+            documents: components["schemas"]["BidDocument"][];
+            entered_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Late
+             * @description Received after the call's deadline.
+             */
+            late: boolean;
+            /**
+             * Must Have Results
+             * @description In the template's order.
+             */
+            must_have_results: components["schemas"]["BidMustHaveState"][];
+            must_haves: components["schemas"]["BidMustHaveCounts"];
+            /** @description Yours on this bid (your sections), when you assess the call. */
+            my_progress: components["schemas"]["BidProgress"] | null;
+            /**
+             * My Sections
+             * @description Your sections, in order.
+             */
+            my_sections: components["schemas"]["BidSectionState"][];
+            /**
+             * Notes
+             * @description Call managers only ("" for assessors).
+             */
+            notes: string;
+            permissions: components["schemas"]["BidPermissions"];
+            /**
+             * Price
+             * @description Decimal string in the call's currency ("120000.00"); null when not entered or hidden (price_hidden).
+             */
+            price: string | null;
+            /**
+             * Price Hidden
+             * @description bid.view_price denied: you assess a section that doesn't hold the price question.
+             */
+            price_hidden: boolean;
+            /** @description Its assessments: submitted / expected. */
+            progress: components["schemas"]["BidProgress"];
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** @description Call managers only. */
+            rejection: components["schemas"]["BidRejection"] | null;
+            status: components["schemas"]["BidStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * BidDocument
+         * @description A bid document's metadata. The SPA never renders a document inline: it shows the
+         *     extracted text (``get_bid_document_text``) and offers the file as a download.
+         */
+        BidDocument: {
+            /**
+             * Content Type
+             * @description What a download is served as (the type's).
+             */
+            content_type: string;
+            extraction: components["schemas"]["BidDocumentExtraction"];
+            /**
+             * Filename
+             * @description Safe display name; ends with its type's extension.
+             */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Must Have Id
+             * @description The required-document must-have it satisfies.
+             */
+            must_have_id: string | null;
+            /**
+             * Sha256
+             * @description Hex SHA-256 of the file.
+             */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            type: components["schemas"]["BidDocumentType"];
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            uploaded_by: components["schemas"]["UserRef"] | null;
+        };
+        /** BidDocumentExtraction */
+        BidDocumentExtraction: {
+            /**
+             * Chars
+             * @description Characters of text kept (done only).
+             */
+            chars: number | null;
+            /** @description failed only. */
+            error: components["schemas"]["ExtractionError"] | null;
+            /**
+             * Page Count
+             * @description Pages of 20,000 characters (0 unless done).
+             */
+            page_count: number;
+            state: components["schemas"]["ExtractionState"];
+            /**
+             * Truncated
+             * @description The text was cut at 2,000,000 characters.
+             */
+            truncated: boolean;
+        };
+        /**
+         * BidDocumentText
+         * @description One page of a document's extracted text (untrusted: written by the bidder).
+         */
+        BidDocumentText: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Page */
+            page: number;
+            /** Page Count */
+            page_count: number;
+            state: components["schemas"]["ExtractionState"];
+            /**
+             * Text
+             * @description Plain text; empty unless done. Never render it as HTML.
+             */
+            text: string;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * BidDocumentType
+         * @description What an uploaded bid document **is**, decided from its bytes (magic numbers and,
+         *     for ZIP-based formats, the archive's entries), never from its name or the request's
+         *     ``Content-Type`` (contract-phase10 section 6). Anything else is refused (415).
+         * @enum {string}
+         */
+        BidDocumentType: "pdf" | "docx" | "xlsx" | "pptx" | "odt" | "ods" | "txt" | "csv" | "png" | "jpeg";
+        /**
+         * BidDocumentUpdate
+         * @description Link a document to a required-document must-have, or unlink it (``bid.manage``).
+         */
+        BidDocumentUpdate: {
+            /**
+             * Must Have Id
+             * @description A document must-have of the call (a confirmation: 422 invalid_must_have), or null.
+             */
+            must_have_id: string | null;
+        };
+        /**
+         * BidEvidence
+         * @description A quote the AI gave as evidence, and the server's check of it.
+         */
+        BidEvidence: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Found
+             * @description The quote is in the document's extracted text (whitespace-normalised). False: show "not found in the document".
+             */
+            found: boolean;
+            /**
+             * Quote
+             * @description Untrusted: the AI's text, as it gave it.
+             */
+            quote: string;
+        };
+        /**
+         * BidIn
+         * @description A bid as the team enters it (``create_bid``; ``update_bid`` takes the complete new
+         *     state). Contact details are stored as given and never emailed by Soundings.
+         */
+        BidIn: {
+            /**
+             * Bidder
+             * @description The bidder organisation.
+             */
+            bidder: string;
+            /** Contact Email */
+            contact_email?: string | null;
+            /**
+             * Contact Name
+             * @default
+             */
+            contact_name: string;
+            /**
+             * Notes
+             * @description Plain text.
+             * @default
+             */
+            notes: string;
+            /**
+             * Price
+             * @description Only when the call has a price question (else 422 price_not_asked); a bid without one gets no price score (and so no total).
+             */
+            price?: (number | string) | null;
+            /**
+             * Received At
+             * @description When the bid arrived (default now; at most a year back, not ahead).
+             */
+            received_at?: string | null;
+        };
+        /**
+         * BidList
+         * @description The call's bids, in the order they were received (not paged: at most 50).
+         */
+        BidList: {
+            /** Items */
+            items: components["schemas"]["Bid"][];
+        };
+        /**
+         * BidMustHaveCounts
+         * @description The bid's must-have results at a glance ("1 missing").
+         */
+        BidMustHaveCounts: {
+            /** Met */
+            met: number;
+            /** Missing */
+            missing: number;
+            /** Not Met */
+            not_met: number;
+            /** Unchecked */
+            unchecked: number;
+        };
+        /** BidMustHaveIn */
+        BidMustHaveIn: {
+            kind: components["schemas"]["MustHaveKind"];
+            /**
+             * Text
+             * @description e.g. "Insurance certificate" (document) or "Accepts our standard terms".
+             */
+            text: string;
+        };
+        /**
+         * BidMustHaveState
+         * @description A bid's result for one must-have, with the evidence for it.
+         */
+        BidMustHaveState: {
+            /**
+             * Ai Findings
+             * @description The AI's suggestions (never change the result).
+             */
+            ai_findings: components["schemas"]["BidAiFindingView"][];
+            /**
+             * Automatic
+             * @description Nobody decided it: missing (no file) or met because a document is linked. False once a person decided (decided_by).
+             */
+            automatic: boolean;
+            /** Decided At */
+            decided_at: string | null;
+            decided_by: components["schemas"]["UserRef"] | null;
+            /**
+             * Document Ids
+             * @description Documents linked to it.
+             */
+            document_ids: string[];
+            must_have: components["schemas"]["BidCallMustHave"];
+            /** Note */
+            note: string;
+            result: components["schemas"]["MustHaveResult"];
+        };
+        /**
+         * BidPermissions
+         * @description What you may do with this bid (the API enforces the same rules).
+         */
+        BidPermissions: {
+            /**
+             * Can Assess
+             * @description You assess a section, the call is being assessed, the bid isn't rejected.
+             */
+            can_assess: boolean;
+            /**
+             * Can Decide Must Haves
+             * @description bid.manage, before the award.
+             */
+            can_decide_must_haves: boolean;
+            /**
+             * Can Delete
+             * @description bid.decide, the call draft or open.
+             */
+            can_delete: boolean;
+            /**
+             * Can Edit
+             * @description bid.manage, the call not awarded or cancelled.
+             */
+            can_edit: boolean;
+            /**
+             * Can Reinstate
+             * @description bid.decide, before the award, rejected.
+             */
+            can_reinstate: boolean;
+            /**
+             * Can Reject
+             * @description bid.decide, before the award, not rejected yet.
+             */
+            can_reject: boolean;
+            /**
+             * Can Request Ai
+             * @description ai.assess_bid and c10, the bid not rejected.
+             */
+            can_request_ai: boolean;
+            /**
+             * Can Upload
+             * @description bid.upload_document, before the award.
+             */
+            can_upload: boolean;
+            /**
+             * Can View Ai
+             * @description bid.view_scores: the AI's assessment of this bid.
+             */
+            can_view_ai: boolean;
+            /**
+             * Reject Suggested
+             * @description A must-have is missing or not met: offer "Reject" prominently.
+             */
+            reject_suggested: boolean;
+        };
+        /**
+         * BidProgress
+         * @description Assessments submitted / expected (``n of m assessed``). Never scores.
+         */
+        BidProgress: {
+            /** Submitted */
+            submitted: number;
+            /** Total */
+            total: number;
+        };
+        /** BidQuestionIn */
+        BidQuestionIn: {
+            /**
+             * Guidance
+             * @description What a good answer shows (plain text; line breaks kept). Shown to assessors.
+             * @default
+             */
+            guidance: string;
+            /**
+             * Text
+             * @description The question assessors answer (one line).
+             */
+            text: string;
+            /** @default score */
+            type: components["schemas"]["BidQuestionType"];
+            /**
+             * Weight
+             * @description Relative to the section's other scored questions: score and price questions 1-100 (default 1), comment questions 0 (the default; any other value is a 422).
+             */
+            weight?: number | null;
+        };
+        /**
+         * BidQuestionStats
+         * @description One question's scores for one bid: those counted (submitted human scores, plus the AI's
+         *     when included). Price questions: the automatic score only.
+         */
+        BidQuestionStats: {
+            /** Count */
+            count: number;
+            /**
+             * Disagreement
+             * @description Two counted scores differ by 2 or more.
+             */
+            disagreement: boolean;
+            /** Max */
+            max: number | null;
+            /**
+             * Mean
+             * @description 0-5, 1 decimal place; null with no scores.
+             */
+            mean: number | null;
+            /** Min */
+            min: number | null;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            type: components["schemas"]["BidQuestionType"];
+        };
+        /**
+         * BidQuestionType
+         * @description What a question of a bid evaluation template asks for.
+         * @enum {string}
+         */
+        BidQuestionType: "score" | "price" | "comment";
+        /** BidRef */
+        BidRef: {
+            /**
+             * Bidder
+             * @description The bidder organisation, as the team entered it.
+             */
+            bidder: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["BidStatus"];
+        };
+        /** BidRejection */
+        BidRejection: {
+            /** Reason */
+            reason: string;
+            /**
+             * Rejected At
+             * Format: date-time
+             */
+            rejected_at: string;
+            rejected_by: components["schemas"]["UserRef"] | null;
+        };
+        /**
+         * BidRejectionIn
+         * @description Reject a bid (one click, a reason; ``bid.decide``, session only). Allowed until the
+         *     award; ``reinstate_bid`` undoes it.
+         */
+        BidRejectionIn: {
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * BidSectionAssessments
+         * @description A section of a bid as you may see it (``bid.view_section_scores``): after you
+         *     submitted it yourself, or as a call manager who doesn't owe it.
+         */
+        BidSectionAssessments: {
+            /** Ai */
+            ai: components["schemas"]["BidAiSectionScores"][];
+            /**
+             * Assessments
+             * @description Submitted ones, yours included.
+             */
+            assessments: components["schemas"]["BidAssessmentView"][];
+            /**
+             * Bid Id
+             * Format: uuid
+             */
+            bid_id: string;
+            /**
+             * Hidden
+             * @description You still owe this assessment: nothing below ("Hidden until you submit").
+             */
+            hidden: boolean;
+            /**
+             * Questions
+             * @description Score and price questions, in order.
+             */
+            questions: components["schemas"]["BidQuestionStats"][];
+            section: components["schemas"]["BidSectionRef"];
+            /**
+             * Section Score
+             * @description 0-100, 1 decimal place; null until every scored question has a score.
+             */
+            section_score: number | null;
+        };
+        /** BidSectionAssessorsIn */
+        BidSectionAssessorsIn: {
+            /**
+             * Section Id
+             * Format: uuid
+             */
+            section_id: string;
+            /**
+             * User Ids
+             * @description 0-10 people (duplicates merged); each must be eligible (c28).
+             */
+            user_ids: string[];
+        };
+        /** BidSectionIn */
+        BidSectionIn: {
+            /**
+             * Guidance
+             * @default
+             */
+            guidance: string;
+            /**
+             * Questions
+             * @description 1-15, in order; at least one score question (assessors score it).
+             */
+            questions: components["schemas"]["BidQuestionIn"][];
+            /** Title */
+            title: string;
+            /**
+             * Weight
+             * @description Percent of the total; the sections sum to 100.
+             */
+            weight: number;
+        };
+        /** BidSectionRef */
+        BidSectionRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /** BidSectionScore */
+        BidSectionScore: {
+            /**
+             * Disagreement
+             * @description A question of the section has disagreement.
+             */
+            disagreement: boolean;
+            /**
+             * Hidden
+             * @description You owe this section's assessment of this bid.
+             */
+            hidden: boolean;
+            progress: components["schemas"]["BidProgress"];
+            /**
+             * Score
+             * @description 0-100, 1 decimal place.
+             */
+            score: number | null;
+            /**
+             * Section Id
+             * Format: uuid
+             */
+            section_id: string;
+        };
+        /**
+         * BidSectionState
+         * @description One of your sections for this bid.
+         */
+        BidSectionState: {
+            section: components["schemas"]["BidSectionRef"];
+            /** @description invited (nothing saved), draft or submitted. */
+            state: components["schemas"]["EvaluatorState"];
+        };
+        /**
+         * BidStatus
+         * @description Where one bid is (``bids.status``), kept by the service from the bid's must-have
+         *     results, its rejection and the award.
+         * @enum {string}
+         */
+        BidStatus: "received" | "qualified" | "rejected" | "awarded" | "unsuccessful";
+        /**
+         * BidTemplate
+         * @description A project's default bid evaluation template (Project settings -> Bids).
+         */
+        BidTemplate: {
+            /**
+             * Can Edit
+             * @description project.edit_bid_template (project and platform admins, session only).
+             */
+            can_edit: boolean;
+            /**
+             * Is Default
+             * @description Nobody has changed it (the built-in default).
+             */
+            is_default: boolean;
+            /** Must Haves */
+            must_haves: components["schemas"]["BidTemplateMustHave"][];
+            /**
+             * Scale
+             * @description Six anchors, scores 0 to 5.
+             */
+            scale: string[];
+            /** Sections */
+            sections: components["schemas"]["BidTemplateSection"][];
+            /** Updated At */
+            updated_at: string | null;
+            updated_by: components["schemas"]["UserRef"] | null;
+        };
+        /**
+         * BidTemplateIn
+         * @description A project's default bid evaluation template (``replace_bid_template``, the complete
+         *     template; last write wins). Calls copy it when they are created: changing it never
+         *     touches an existing call.
+         */
+        BidTemplateIn: {
+            /**
+             * Must Haves
+             * @description 0-20, in order, unique (any case).
+             */
+            must_haves?: components["schemas"]["BidMustHaveIn"][];
+            /**
+             * Scale
+             * @description One anchor per score, 0 to 5 ("0: No response", ..., "5: Excellent").
+             */
+            scale: string[];
+            /**
+             * Sections
+             * @description 1-8 sections in order; weights sum to 100; titles unique (any case).
+             */
+            sections: components["schemas"]["BidSectionIn"][];
+        };
+        /** BidTemplateMustHave */
+        BidTemplateMustHave: {
+            kind: components["schemas"]["MustHaveKind"];
+            /** Text */
+            text: string;
+        };
+        /** BidTemplateQuestion */
+        BidTemplateQuestion: {
+            /** Guidance */
+            guidance: string;
+            /** Text */
+            text: string;
+            type: components["schemas"]["BidQuestionType"];
+            /**
+             * Weight
+             * @description 0 for comment questions.
+             */
+            weight: number;
+        };
+        /** BidTemplateSection */
+        BidTemplateSection: {
+            /** Guidance */
+            guidance: string;
+            /** Questions */
+            questions: components["schemas"]["BidTemplateQuestion"][];
+            /** Title */
+            title: string;
+            /**
+             * Weight
+             * @description Percent of the total.
+             */
+            weight: number;
+        };
         /**
          * Board
          * @description One column per status of the project's lifecycle, in its order: five, or six with
@@ -4398,7 +6607,7 @@ export interface components {
          * @description What an outbox email is (``outbound_email.type``).
          * @enum {string}
          */
-        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "digest" | "test" | "submission_received" | "submission_status_changed";
+        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "digest" | "test" | "submission_received" | "submission_status_changed";
         /**
          * EmailVerified
          * @description The confirmation page after the person clicked "Confirm" (the page posts the
@@ -4830,6 +7039,20 @@ export interface components {
             external_ids: components["schemas"]["ExternalIdIn"][];
         };
         /**
+         * ExtractionError
+         * @description Why a bid document's text extraction failed (``bid_documents.extraction_error``);
+         *     the SPA words each one, never the parser's own message.
+         * @enum {string}
+         */
+        ExtractionError: "timeout" | "memory" | "damaged" | "encrypted" | "archive_limits" | "internal_error";
+        /**
+         * ExtractionState
+         * @description Where a bid document's text extraction is (``bid_documents.extraction_state``).
+         *     Extraction runs in the worker, in a child process with time, memory and output caps.
+         * @enum {string}
+         */
+        ExtractionState: "pending" | "done" | "no_text" | "failed";
+        /**
          * FieldError
          * @description One request-validation error.
          */
@@ -5149,6 +7372,8 @@ export interface components {
         IdeaDetail: {
             /** @description Null when there is nothing to aggregate yet, or when score_hidden. */
             aggregate: components["schemas"]["AggregateScore"] | null;
+            /** @description Phase 10: the idea's call for bids as everyone who may see it sees it (title, status, deadline, number of bids; bid.view_call), for the Bids tab's label. Null without a call, and always for a guest researcher. */
+            bid_call: components["schemas"]["BidCallSummary"] | null;
             /**
              * Comment Count
              * @description Comments that are not deleted.
@@ -5365,6 +7590,12 @@ export interface components {
              */
             can_comment: boolean;
             /**
+             * Can Create Bid Call
+             * @description Phase 10: bid.manage and c27 (the idea in Proposal with a proposal, not closed, no call yet, the project not archived): offer "Start a call for bids".
+             * @default false
+             */
+            can_create_bid_call: boolean;
+            /**
              * Can Delete
              * @description idea.delete
              */
@@ -5400,6 +7631,12 @@ export interface components {
              * @description evaluator.manage without c6: remove evaluators, open or closed. Offer it only on rows of others who have not submitted (403 cannot_remove_self, 409 evaluator_has_submitted).
              */
             can_remove_evaluators: boolean;
+            /**
+             * Can View Bid Call
+             * @description Phase 10: bid.view_call and the idea has a call for bids (or can_create_bid_call): show the Bids tab. False for a guest researcher (role matrix column R).
+             * @default false
+             */
+            can_view_bid_call: boolean;
             /**
              * Can View Project
              * @description Phase 8b: project.view. False only for a guest researcher (role matrix column R): show the project's name as text (no link), and hide the evaluation area (evaluators, progress, due date), the Evaluations and Proposal tabs, the AI menu and anything else that reads the project (board, members, rubric, tags).
@@ -5955,6 +8192,78 @@ export interface components {
             total: number;
         };
         /**
+         * MustHaveDecisionIn
+         * @description A person's decision on one must-have of a bid (``bid.manage``).
+         */
+        MustHaveDecisionIn: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Result
+             * @description met or not_met; null clears the decision (back to missing or met for a document, depending on its linked files, or unchecked). A document must-have without a linked file can't be met (409 document_missing): upload it first.
+             */
+            result: ("met" | "not_met") | null;
+        };
+        /**
+         * MustHaveKind
+         * @description What a must-have of a call is (``bid_call_must_haves.kind``).
+         * @enum {string}
+         */
+        MustHaveKind: "document" | "confirmation";
+        /**
+         * MustHaveResult
+         * @description A bid's result for one must-have (``bid_must_have_results.result``).
+         * @enum {string}
+         */
+        MustHaveResult: "missing" | "unchecked" | "met" | "not_met";
+        /** MyBidAssessment */
+        MyBidAssessment: {
+            /**
+             * Answers
+             * @description In question order; empty when invited.
+             */
+            answers: components["schemas"]["BidAnswer"][];
+            /**
+             * Bid Id
+             * Format: uuid
+             */
+            bid_id: string;
+            /**
+             * Can Edit
+             * @description The call is being assessed and the bid isn't rejected.
+             */
+            can_edit: boolean;
+            /**
+             * Edited At
+             * @description Saved again after submitting.
+             */
+            edited_at: string | null;
+            section: components["schemas"]["BidSectionRef"];
+            /** @description invited (nothing saved yet), draft or submitted. */
+            state: components["schemas"]["EvaluatorState"];
+            /** Submitted At */
+            submitted_at: string | null;
+        };
+        /**
+         * MyBidAssessmentIn
+         * @description Your assessment of one section of a bid (``bid.assess``): save a draft or submit.
+         *     Questions of the section only (others: 422 unknown_question; the price question isn't
+         *     yours to score: 422 not_assessable); submitting needs every score question scored (422
+         *     assessment_incomplete). Editable after submitting while the call is being assessed.
+         */
+        MyBidAssessmentIn: {
+            /** Answers */
+            answers: components["schemas"]["BidAnswerIn"][];
+            /**
+             * Submit
+             * @default false
+             */
+            submit: boolean;
+        };
+        /**
          * MyEvaluation
          * @description Your evaluation of an idea you were asked to evaluate (the evaluate sheet).
          */
@@ -6055,7 +8364,7 @@ export interface components {
          */
         NotificationPage: {
             /** Items */
-            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"] | components["schemas"]["ResearcherAssignedNotification"] | components["schemas"]["ResearchReminderNotification"])[];
+            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"] | components["schemas"]["ResearcherAssignedNotification"] | components["schemas"]["ResearchReminderNotification"] | components["schemas"]["AssessorAssignedNotification"] | components["schemas"]["AssessmentReminderNotification"] | components["schemas"]["AssessmentsCompleteNotification"])[];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -6098,6 +8407,9 @@ export interface components {
          *     clears your choice (later default changes then apply to you).
          */
         NotificationPreferencesUpdate: {
+            assessment_reminder?: components["schemas"]["NotificationMode"] | null;
+            assessments_complete?: components["schemas"]["NotificationMode"] | null;
+            assessor_assigned?: components["schemas"]["NotificationMode"] | null;
             comment?: components["schemas"]["NotificationMode"] | null;
             evaluation_reminder?: components["schemas"]["NotificationMode"] | null;
             evaluations_complete?: components["schemas"]["NotificationMode"] | null;
@@ -6135,7 +8447,7 @@ export interface components {
          *     email preference; the in-app inbox always gets every notification.
          * @enum {string}
          */
-        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder";
+        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete";
         /**
          * OutboxEmail
          * @description One email in the outbox. Its content isn't stored (rendered when sent).
@@ -8513,7 +10825,7 @@ export interface components {
          *     currently sent in the digest (the digest's link), or every type.
          * @enum {string}
          */
-        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "digest" | "all";
+        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "digest" | "all";
         /**
          * UserGroup
          * @description A group the user belongs to, with provenance (both flags can be true).
@@ -8673,6 +10985,11 @@ export interface components {
         };
         /** Work */
         Work: {
+            /**
+             * Bids To Assess
+             * @description Phase 10: "Bids to assess": calls being assessed where you owe assessments, overdue first, then soonest due, no due date last (then by call). At most 50.
+             */
+            bids_to_assess: components["schemas"]["WorkBidAssessment"][];
             counts: components["schemas"]["WorkCounts"];
             /**
              * Evaluations Due
@@ -8706,10 +11023,50 @@ export interface components {
             research_to_do_next_cursor: string | null;
         };
         /**
+         * WorkBidAssessment
+         * @description Phase 10: a call for bids being assessed in which you still owe assessments (a section
+         *     you assess, for a bid that isn't rejected). Progress only: never scores, prices or
+         *     bidders.
+         */
+        WorkBidAssessment: {
+            call: components["schemas"]["BidCallRef"];
+            /**
+             * Due At
+             * @description The call's assessment due date, or null.
+             */
+            due_at: string | null;
+            /** @description The call's idea and its project. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Overdue
+             * @description due_at is in the past.
+             */
+            overdue: boolean;
+            /** @description Yours: submitted / (your sections x bids that aren't rejected). */
+            progress: components["schemas"]["BidProgress"];
+            /**
+             * Sections
+             * @description The sections you assess, in order.
+             */
+            sections: components["schemas"]["BidSectionRef"][];
+        };
+        /**
          * WorkCounts
          * @description Sidebar badges (also ``GET /me/work/counts``, which runs only the counts).
          */
         WorkCounts: {
+            /**
+             * Bid Assessments Due
+             * @description Phase 10: bid assessments you owe (a section you assess x a bid that isn't rejected, not submitted yet) in calls being assessed.
+             * @default 0
+             */
+            bid_assessments_due: number;
+            /**
+             * Bid Assessments Overdue
+             * @description Phase 10: those of them past their call's assessment due date.
+             * @default 0
+             */
+            bid_assessments_overdue: number;
             /**
              * Evaluations Due
              * @description All evaluations you owe (Work.evaluations_due lists the first 50 of them).
@@ -8798,7 +11155,7 @@ export interface components {
         WorkRecentIdea: {
             idea: components["schemas"]["IdeaSummary"];
             /** Latest Activity */
-            latest_activity: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"] | components["schemas"]["ResearcherChangedActivity"] | components["schemas"]["ResearchDueDateChangedActivity"]) | null;
+            latest_activity: (components["schemas"]["CommentActivity"] | components["schemas"]["IdeaCreatedActivity"] | components["schemas"]["IdeaEditedActivity"] | components["schemas"]["StatusChangedActivity"] | components["schemas"]["OwnerChangedActivity"] | components["schemas"]["EvaluatorAddedActivity"] | components["schemas"]["EvaluatorRemovedActivity"] | components["schemas"]["EvaluationSubmittedActivity"] | components["schemas"]["EvaluationClosedActivity"] | components["schemas"]["EvaluationReopenedActivity"] | components["schemas"]["DueDateChangedActivity"] | components["schemas"]["AiResearchNoteActivity"] | components["schemas"]["ResearcherChangedActivity"] | components["schemas"]["ResearchDueDateChangedActivity"] | components["schemas"]["BidCallChangedActivity"]) | null;
         };
         /**
          * WorkResearch
@@ -12875,6 +15232,2516 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_bid_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_bid_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidCallUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_bid_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidCallCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_bid_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    request_ai_bid_assessments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunBatch"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    set_bid_assessors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidAssessorsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    award_bid_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidAwardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_bids: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidList"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_bid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bid"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_bid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidDetail"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_bid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bid"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_bid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    request_ai_bid_assessment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiRunRequest"];
+            };
+        };
+        responses: {
+            /** @description An assess run of this bid by this agent is already active (queued or running): that run, unchanged (idempotent). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRun"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRun"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_bid_ai_assessments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidAiAssessmentList"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    set_bid_ai_inclusion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description An AI assessment of that bid. */
+                ai_assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidAiInclusionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidAiAssessment"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    upload_bid_document: {
+        parameters: {
+            query: {
+                /** @description The file's name (shown and used on download). */
+                filename: string;
+                /** @description A required-document must-have it satisfies. */
+                must_have_id?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The file itself as the body (no multipart, no JSON), at most 25 MiB. Its type is decided from its bytes: PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text, CSV, PNG or JPEG; macro-enabled Office files and anything else are refused. Content-Type: the file's own type or application/octet-stream (a different allowed type than the bytes are: 415 document_type_mismatch). */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "application/pdf": string;
+                "application/vnd.oasis.opendocument.spreadsheet": string;
+                "application/vnd.oasis.opendocument.text": string;
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation": string;
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                "image/jpeg": string;
+                "image/png": string;
+                "text/csv": string;
+                "text/plain": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidDocument"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Request body too large (content_too_large) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Busy (see code): retry shortly */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_bid_document: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A document of that bid. */
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidDocumentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidDocument"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_bid_document: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A document of that bid. */
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    download_bid_document: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A document of that bid. */
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The document. */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    /** @description attachment; filename="<safe ASCII name>"; filename*=UTF-8''<the stored name> */
+                    "Content-Disposition"?: string;
+                    /** @description default-src 'none'; sandbox */
+                    "Content-Security-Policy"?: string;
+                    /** @description nosniff */
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.oasis.opendocument.spreadsheet": string;
+                    "application/vnd.oasis.opendocument.text": string;
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "text/csv; charset=utf-8": string;
+                    "text/plain; charset=utf-8": string;
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_bid_document_text: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A document of that bid. */
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidDocumentText"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    decide_must_have: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A must-have of the call's template. */
+                must_have_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MustHaveDecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidMustHaveState"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reject_bid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidRejectionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bid"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reinstate_bid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bid"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_my_bid_assessment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A section of the call's template. */
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyBidAssessment"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    save_my_bid_assessment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A section of the call's template. */
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MyBidAssessmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyBidAssessment"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_bid_section_assessments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+                /** @description A bid of the idea's call. */
+                bid_id: string;
+                /** @description A section of the call's template. */
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidSectionAssessments"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_bid_comparison: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidComparison"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    export_bid_report_markdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report as Markdown (UTF-8). */
+            200: {
+                headers: {
+                    /** @description attachment; filename="<KEY>-bid-evaluation.<ext>" (e.g. TOOLS-3). */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": string;
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    export_bid_report_pdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report as a PDF. */
+            200: {
+                headers: {
+                    /** @description attachment; filename="<KEY>-bid-evaluation.<ext>" (e.g. TOOLS-3). */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Busy (see code): retry shortly */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    change_bid_call_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidCallStatusChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_bid_call_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidCallTemplateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallTemplate"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
             /** @description Problem */
@@ -17182,6 +22049,137 @@ export interface operations {
             };
             /** @description Not signed in (unauthorized) */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_bid_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidTemplate"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_bid_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidTemplateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidTemplate"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -21,14 +21,19 @@ from pydantic import Field
 
 from app.models.enums import IdeaStatus, NotificationMode, NotificationType, Resolution
 from app.schemas.base import RequestModel, ResponseModel
+from app.schemas.bid_refs import BidCallRef
 from app.schemas.common import Page
 from app.schemas.ideas import IdeaRef
 from app.schemas.users import UserRef
 
 __all__ = [
+    "BID_NOTIFICATION_TYPES",
     "DEFAULT_MODES",
     "RESEARCH_GUEST_NOTIFICATION_TYPES",
     "UNREAD_COUNT_CAP",
+    "AssessmentReminderNotification",
+    "AssessmentsCompleteNotification",
+    "AssessorAssignedNotification",
     "CommentExcerpt",
     "CommentNotification",
     "EvaluationReminderNotification",
@@ -62,12 +67,30 @@ DEFAULT_MODES: Final[Mapping[NotificationType, NotificationMode]] = MappingProxy
         NotificationType.MENTION: NotificationMode.IMMEDIATE,
         NotificationType.RESEARCHER_ASSIGNED: NotificationMode.IMMEDIATE,
         NotificationType.RESEARCH_REMINDER: NotificationMode.IMMEDIATE,
+        NotificationType.ASSESSOR_ASSIGNED: NotificationMode.IMMEDIATE,
+        NotificationType.ASSESSMENT_REMINDER: NotificationMode.IMMEDIATE,
+        NotificationType.ASSESSMENTS_COMPLETE: NotificationMode.IMMEDIATE,
     }
 )
 """Email preference per type for anyone who hasn't chosen (contract-phase3 section 3.4):
 what you must act on arrives now; what you follow arrives once a day. Phase 8b's two
 research types are things you must act on (migration 0015 gives them ``off`` for anyone
-who had every earlier type off)."""
+who had every earlier type off), and so are Phase 10's three bid types (migration 0016 does
+the same for them)."""
+
+BID_NOTIFICATION_TYPES: Final = frozenset(
+    {
+        NotificationType.ASSESSOR_ASSIGNED,
+        NotificationType.ASSESSMENT_REMINDER,
+        NotificationType.ASSESSMENTS_COMPLETE,
+    }
+)
+"""Phase 10: the bid types. Each needs its recipient to pass a bid rule on the idea when it is
+created and again when shown or emailed (``assessor_assigned`` and ``assessment_reminder``:
+the person still assesses a section of the call; ``assessments_complete``: ``bid.manage``),
+so a guest researcher (column R, no bid rule) never holds one; they are deliberately not in
+:data:`RESEARCH_GUEST_NOTIFICATION_TYPES`. None carries score data, prices, bidder names or
+document text (role matrix section 3a rule 5)."""
 
 RESEARCH_GUEST_NOTIFICATION_TYPES: Final = frozenset(
     {
@@ -215,6 +238,49 @@ class ResearchReminderNotification(_NotificationBase):
     )
 
 
+class AssessorAssignedNotification(_NotificationBase):
+    """Phase 10, "Asked to assess bids": someone else made you an assessor of sections of
+    the idea's call for bids. One per request that added you (``dedupe_key``
+    ``assessor_assigned:<call id>:<request id>``). Link: ``/ideas/{key}?tab=bids``."""
+
+    type: Literal["assessor_assigned"]
+    call: BidCallRef = Field(description="The call, as it is now.")
+    sections: list[str] = Field(
+        description="The titles of the sections you assess now (the call's current template)."
+    )
+    due_at: datetime | None = Field(
+        description="The assessment due date set by the request that added you."
+    )
+
+
+class AssessmentReminderNotification(_NotificationBase):
+    """Phase 10: bid assessments you owe are due soon or today (the call is being assessed).
+    Show the date ("Bid assessments due Fri 9 Oct"), never a countdown. Link:
+    ``/ideas/{key}?tab=bids``."""
+
+    type: Literal["assessment_reminder"]
+    call: BidCallRef
+    due_at: datetime = Field(description="The assessment due date the reminder was sent for.")
+    days_before: int = Field(
+        ge=0,
+        description=(
+            "Which reminder this was (days before the due date, 0 = on the due date); not a "
+            "countdown: phrase the reminder with due_at."
+        ),
+    )
+
+
+class AssessmentsCompleteNotification(_NotificationBase):
+    """Phase 10: every assigned assessor has submitted every section they assess for every
+    bid that isn't rejected (to the idea's owner and the call's creator). Counts only: never
+    scores, prices or bidders."""
+
+    type: Literal["assessments_complete"]
+    call: BidCallRef
+    bid_count: int = Field(ge=1, description="Bids assessed (rejected ones aren't).")
+    assessment_count: int = Field(ge=1, description="Assessments submitted.")
+
+
 NotificationItem = Annotated[
     OwnerAssignedNotification
     | EvaluatorInvitedNotification
@@ -224,7 +290,10 @@ NotificationItem = Annotated[
     | CommentNotification
     | MentionNotification
     | ResearcherAssignedNotification
-    | ResearchReminderNotification,
+    | ResearchReminderNotification
+    | AssessorAssignedNotification
+    | AssessmentReminderNotification
+    | AssessmentsCompleteNotification,
     Field(discriminator="type"),
 ]
 """One inbox entry; branch on ``type`` (skip types you don't know)."""
@@ -290,6 +359,9 @@ class NotificationPreferencesUpdate(RequestModel):
     mention: NotificationMode | None = None
     researcher_assigned: NotificationMode | None = None
     research_reminder: NotificationMode | None = None
+    assessor_assigned: NotificationMode | None = None
+    assessment_reminder: NotificationMode | None = None
+    assessments_complete: NotificationMode | None = None
 
 
 # --- Unsubscribe links ------------------------------------------------------------------
@@ -306,6 +378,9 @@ class UnsubscribeScope(StrEnum):
     MENTION = "mention"
     RESEARCHER_ASSIGNED = "researcher_assigned"
     RESEARCH_REMINDER = "research_reminder"
+    ASSESSOR_ASSIGNED = "assessor_assigned"
+    ASSESSMENT_REMINDER = "assessment_reminder"
+    ASSESSMENTS_COMPLETE = "assessments_complete"
     DIGEST = "digest"
     ALL = "all"
 

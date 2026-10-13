@@ -117,6 +117,15 @@ class NotificationType(StrEnum):
     RESEARCH_REMINDER = "research_reminder"
     """Phase 8b: research you do (as the idea's researcher, or as its owner when nobody is
     assigned) is due soon or today and a required checklist item is still open."""
+    ASSESSOR_ASSIGNED = "assessor_assigned"
+    """Phase 10, "Asked to assess bids": someone else made you an assessor of one or more
+    sections of an idea's call for bids (the call, your sections, the due date)."""
+    ASSESSMENT_REMINDER = "assessment_reminder"
+    """Phase 10: bid assessments you owe (a section you assess, for a bid that isn't
+    rejected) are due soon or today, while the call is being assessed."""
+    ASSESSMENTS_COMPLETE = "assessments_complete"
+    """Phase 10: every assigned assessor has submitted every section they assess for every
+    bid that isn't rejected (to the idea's owner and the call's creator). Never scores."""
 
 
 class NotificationMode(StrEnum):
@@ -144,6 +153,12 @@ class EmailType(StrEnum):
     """Phase 8b: "Asked to research"."""
     RESEARCH_REMINDER = "research_reminder"
     """Phase 8b: research due soon or today."""
+    ASSESSOR_ASSIGNED = "assessor_assigned"
+    """Phase 10: "Asked to assess bids"."""
+    ASSESSMENT_REMINDER = "assessment_reminder"
+    """Phase 10: bid assessments due soon or today."""
+    ASSESSMENTS_COMPLETE = "assessments_complete"
+    """Phase 10: every bid assessment of a call is in."""
     DIGEST = "digest"
     """The daily digest: every pending digest notification of one person."""
     TEST = "test"
@@ -301,6 +316,13 @@ class AiRunKind(StrEnum):
     DRAFT_SECTION = "draft_section"
     """"Draft section": the agent suggests the text of one proposal section through MCP
     ``propose_proposal_section`` (a Phase 5 suggestion the owner accepts or discards)."""
+    ASSESS_BID = "assess_bid"
+    """Phase 10, "Ask AI to assess": the AI assessor reads one bid of the idea's call for
+    bids (the call's questions and must-haves, the bid's documents' extracted text) and
+    records a score with evidence for every score question and a finding for every
+    must-have through MCP ``submit_bid_assessment``. Its scores are left out of the totals
+    until a call manager includes them; its findings are only suggestions. One run per
+    bid (``ai_runs.bid_id``). Also the purpose an agent needs for it."""
 
 
 class AiRunStatus(StrEnum):
@@ -394,3 +416,132 @@ class AiRunError(StrEnum):
     """The worker running it stopped (no heartbeat for 2 minutes)."""
     INTERNAL_ERROR = "internal_error"
     """Anything unexpected (logged with the traceback)."""
+
+
+# --- Phase 10: bid evaluation (contract-phase10) ------------------------------------------
+class BidCallStatus(StrEnum):
+    """Where an idea's call for bids is (``bid_calls.status``; contract-phase10 section 3).
+    ``awarded`` and ``cancelled`` are final: the call is read-only."""
+
+    DRAFT = "draft"
+    """Being set up: its evaluation template, deadline and assessors; no bids yet."""
+    OPEN = "open"
+    """Bids are entered (one after the deadline is marked late, not refused)."""
+    ASSESSING = "assessing"
+    """No new bids; the section assessors (and the AI assessor) score the bids. Back to open
+    only while no assessment is submitted."""
+    AWARDED = "awarded"
+    """One qualified bid was awarded; every other bid that isn't rejected is unsuccessful."""
+    CANCELLED = "cancelled"
+    """Stopped without an award (a reason is optional)."""
+
+
+class BidStatus(StrEnum):
+    """Where one bid is (``bids.status``), kept by the service from the bid's must-have
+    results, its rejection and the award."""
+
+    RECEIVED = "received"
+    """Entered, and a must-have is missing, unchecked or not met (not qualified yet)."""
+    QUALIFIED = "qualified"
+    """Every must-have of the call is met."""
+    REJECTED = "rejected"
+    """A call manager rejected it with a reason (one click; "Reinstate" undoes it until the
+    award). Out of assessors' queues, the totals, the price formula and the ranking."""
+    AWARDED = "awarded"
+    UNSUCCESSFUL = "unsuccessful"
+    """Not awarded when another bid was (rejected bids stay rejected)."""
+
+
+class BidQuestionType(StrEnum):
+    """What a question of a bid evaluation template asks for."""
+
+    SCORE = "score"
+    """Each assessor of its section scores it 0-5 against the template's scale anchors."""
+    PRICE = "price"
+    """At most one per call: the team enters each bid's price; scored automatically as
+    lowest qualified price / this bid's price x 5. Assessors don't score it."""
+    COMMENT = "comment"
+    """Free text from each assessor of its section; not scored (weight 0)."""
+
+
+class MustHaveKind(StrEnum):
+    """What a must-have of a call is (``bid_call_must_haves.kind``)."""
+
+    DOCUMENT = "document"
+    """A required document: missing (flagged automatically) until a file is linked to it."""
+    CONFIRMATION = "confirmation"
+    """A statement a person confirms (e.g. "Accepts our standard terms"); the AI assessor
+    pre-checks it."""
+
+
+class MustHaveResult(StrEnum):
+    """A bid's result for one must-have (``bid_must_have_results.result``)."""
+
+    MISSING = "missing"
+    """A required document with no file linked to it (automatic)."""
+    UNCHECKED = "unchecked"
+    """A confirmation nobody has decided yet."""
+    MET = "met"
+    """Confirmed by a person, or (a document) a file is linked and nobody decided otherwise."""
+    NOT_MET = "not_met"
+    """A person decided it isn't met (with an optional note)."""
+
+
+class AiMustHaveFinding(StrEnum):
+    """The AI assessor's pre-check of one must-have: only a suggestion, stored apart from
+    the result, which it never changes."""
+
+    MET = "met"
+    NOT_MET = "not_met"
+    UNCLEAR = "unclear"
+
+
+class BidDocumentType(StrEnum):
+    """What an uploaded bid document **is**, decided from its bytes (magic numbers and,
+    for ZIP-based formats, the archive's entries), never from its name or the request's
+    ``Content-Type`` (contract-phase10 section 6). Anything else is refused (415)."""
+
+    PDF = "pdf"
+    DOCX = "docx"
+    XLSX = "xlsx"
+    PPTX = "pptx"
+    ODT = "odt"
+    ODS = "ods"
+    TXT = "txt"
+    CSV = "csv"
+    PNG = "png"
+    JPEG = "jpeg"
+
+
+class ExtractionState(StrEnum):
+    """Where a bid document's text extraction is (``bid_documents.extraction_state``).
+    Extraction runs in the worker, in a child process with time, memory and output caps."""
+
+    PENDING = "pending"
+    """Queued (the worker extracts it shortly after the upload)."""
+    DONE = "done"
+    """Text extracted (``text_truncated`` when it hit the 2,000,000-character cap)."""
+    NO_TEXT = "no_text"
+    """Nothing to extract: an image (no OCR), or a document without text."""
+    FAILED = "failed"
+    """It couldn't be read in time or within the limits (``extraction_error``)."""
+
+
+class ExtractionError(StrEnum):
+    """Why a bid document's text extraction failed (``bid_documents.extraction_error``);
+    the SPA words each one, never the parser's own message."""
+
+    TIMEOUT = "timeout"
+    """The child process didn't finish in 30 seconds and was killed."""
+    MEMORY = "memory"
+    """The child process hit its memory cap."""
+    DAMAGED = "damaged"
+    """The file couldn't be parsed (truncated, corrupt, not what its bytes first said)."""
+    ENCRYPTED = "encrypted"
+    """Password-protected or encrypted: Soundings has no password to open it with."""
+    ARCHIVE_LIMITS = "archive_limits"
+    """An Office or OpenDocument file whose archive is over the caps (total uncompressed
+    size, one entry's size or compression ratio, number of entries): a zip bomb, or simply
+    too big to read."""
+    INTERNAL_ERROR = "internal_error"
+    """Anything unexpected (logged with the document id, never its text)."""

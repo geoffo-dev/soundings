@@ -11,7 +11,12 @@ from pydantic import BaseModel, ValidationError
 
 from app.domain.rubric_defaults import DEFAULT_RUBRIC, default_rubric_criteria
 from app.models.enums import IdeaStatus, Resolution
-from app.schemas.activity import ACTIVITY_TYPES, PHASE8B_ACTIVITY_TYPES, ActivityPage
+from app.schemas.activity import (
+    ACTIVITY_TYPES,
+    PHASE8B_ACTIVITY_TYPES,
+    PHASE10_ACTIVITY_TYPES,
+    ActivityPage,
+)
 from app.schemas.base import ResponseModel
 from app.schemas.evaluations import MyEvaluationIn
 from app.schemas.ideas import EvaluationDueDate, IdeaCreate, IdeaUpdate, StatusChange
@@ -209,8 +214,10 @@ def test_activity_union_covers_every_type() -> None:
     items_schema = ActivityPage.model_json_schema(mode="serialization")["properties"]["items"]
     mapping = items_schema["items"]["discriminator"]["mapping"]
 
-    # Phase 8b's two events join ACTIVITY_TYPES when the backend stores them.
-    assert set(mapping) == set(ACTIVITY_TYPES) | set(PHASE8B_ACTIVITY_TYPES)
+    # Phase 8b's two events and Phase 10's join ACTIVITY_TYPES when the backend stores them.
+    assert set(mapping) == set(ACTIVITY_TYPES) | set(PHASE8B_ACTIVITY_TYPES) | set(
+        PHASE10_ACTIVITY_TYPES
+    )
 
 
 def _response_models() -> list[type[BaseModel]]:

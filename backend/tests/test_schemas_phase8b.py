@@ -12,8 +12,10 @@ from pydantic import ValidationError
 from app.models.enums import IdeaStatus, NotificationType, ResearchStep
 from app.schemas.activity import (
     ACTIVITY_TYPES,
+    BID_ACTIVITY_TYPES,
     EVALUATION_ACTIVITY_TYPES,
     PHASE8B_ACTIVITY_TYPES,
+    PHASE10_ACTIVITY_TYPES,
     RESEARCH_GUEST_ACTIVITY_TYPES,
     StatusChangedActivity,
 )
@@ -198,7 +200,7 @@ def test_a_guest_researcher_holds_only_the_types_about_their_job_and_the_discuss
 
 # --- The feed for a guest researcher (review M2) ------------------------------------------
 def test_the_guest_feed_is_an_allow_list_that_leaves_out_the_evaluation_area() -> None:
-    every_type = {*ACTIVITY_TYPES, *PHASE8B_ACTIVITY_TYPES}
+    every_type = {*ACTIVITY_TYPES, *PHASE8B_ACTIVITY_TYPES, *PHASE10_ACTIVITY_TYPES}
 
     assert {
         "evaluator_added",
@@ -208,7 +210,12 @@ def test_the_guest_feed_is_an_allow_list_that_leaves_out_the_evaluation_area() -
         "evaluation_reopened",
         "due_date_changed",
     } == EVALUATION_ACTIVITY_TYPES
-    # Every feed type is decided: shown to a guest or part of the evaluation area. A new
-    # type fails here until someone adds it to one of the two (deny by default for guests).
-    assert every_type == RESEARCH_GUEST_ACTIVITY_TYPES | EVALUATION_ACTIVITY_TYPES
+    # Every feed type is decided: shown to a guest, part of the evaluation area or (Phase 10)
+    # about the call for bids. A new type fails here until someone adds it to one of the
+    # three (deny by default for guests: only the first reaches them).
+    assert every_type == (
+        RESEARCH_GUEST_ACTIVITY_TYPES | EVALUATION_ACTIVITY_TYPES | BID_ACTIVITY_TYPES
+    )
     assert not RESEARCH_GUEST_ACTIVITY_TYPES & EVALUATION_ACTIVITY_TYPES
+    assert not RESEARCH_GUEST_ACTIVITY_TYPES & BID_ACTIVITY_TYPES
+    assert not EVALUATION_ACTIVITY_TYPES & BID_ACTIVITY_TYPES

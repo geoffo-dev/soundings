@@ -108,7 +108,9 @@ def test_enum_values_are_the_migrations() -> None:
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
 
-    assert tuple(AiRunKind) == migration.KINDS
+    # Phase 10 (0016) added assess_bid after 0011's three kinds.
+    assert tuple(AiRunKind)[: len(migration.KINDS)] == migration.KINDS
+    assert tuple(AiRunKind)[len(migration.KINDS) :] == (AiRunKind.ASSESS_BID,)
     assert tuple(AiAgentProtocol) == migration.PROTOCOLS
     assert tuple(AiRunStatus) == migration.STATUSES
     assert tuple(AiRunEventType) == migration.EVENT_TYPES

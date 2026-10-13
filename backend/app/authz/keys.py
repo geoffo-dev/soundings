@@ -153,6 +153,28 @@ ROUTE_KEY_ACCESS: Final[dict[str, KeyAccess]] = {
     # idea to an account and would outlive a leaked key); removing or handing it back
     # follows its rules (write); the research to do is a read route like My work
     "set_research_assignment": _S, "remove_researcher": _P, "list_my_research_to_do": _R,
+    # Phase 10: bid evaluation. The project template is edited in a session only (like the
+    # proposal template); uploads, the decisions (reject, reinstate, award, cancel, delete)
+    # and assigning assessors (it opens the bids and their documents to a person, like
+    # assigning a researcher) are session only; reading needs read, managing write,
+    # assessing evaluate (their rules decide)
+    "get_bid_template": _P, "replace_bid_template": _S,
+    "get_bid_call": _P, "create_bid_call": _P, "update_bid_call": _P,
+    "delete_bid_call": _S,                                  # bid.decide
+    "change_bid_call_status": _P,                           # bid.manage; cancelling bid.decide
+    "replace_bid_call_template": _P,
+    "set_bid_assessors": _S,                                # by decision (opens the bids)
+    "get_bid_comparison": _P, "award_bid_call": _S,
+    "export_bid_report_markdown": _P, "export_bid_report_pdf": _P,
+    "list_bids": _P, "create_bid": _P, "get_bid": _P, "update_bid": _P,
+    "delete_bid": _S, "reject_bid": _S, "reinstate_bid": _S,   # bid.decide
+    "decide_must_have": _P,
+    "upload_bid_document": _S, "delete_bid_document": _S,  # bid.upload_document
+    "update_bid_document": _P, "download_bid_document": _P, "get_bid_document_text": _P,
+    "get_my_bid_assessment": _P, "save_my_bid_assessment": _P,
+    "list_bid_section_assessments": _P,
+    "request_ai_bid_assessment": _P, "request_ai_bid_assessments": _P,
+    "list_bid_ai_assessments": _P, "set_bid_ai_inclusion": _P,
 }
 # fmt: on
 """Every API operation (``operation_id``) and what a key may do there."""

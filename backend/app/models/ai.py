@@ -56,6 +56,7 @@ from app.models.proposal import SECTION_KEY_MAX_LENGTH, SECTION_KEY_PATTERN
 from app.models.types import str_enum
 
 __all__ = [
+    "AI_PURPOSES_MAX",
     "AI_RUN_ACTIVE_STATUSES_SQL",
     "KUBERNETES_LABEL_PATTERN",
     "AiAgent",
@@ -68,18 +69,22 @@ KUBERNETES_LABEL_PATTERN = r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
 """A DNS-1123 label (1-63 characters): kagent namespaces and agent names. Only these
 characters reach the A2A URL path, so a name can't add a path, query or host."""
 
-AI_RUN_KINDS_SQL = "ARRAY['evaluate', 'research', 'draft_section']::varchar[]"
+AI_RUN_KINDS_SQL = "ARRAY['evaluate', 'research', 'draft_section', 'assess_bid']::varchar[]"
 """The ``AiRunKind`` values as a SQL array, for the ``purposes`` check."""
+AI_PURPOSES_MAX = 4
+"""An agent serves at most every kind once (Phase 10 added ``assess_bid``)."""
 
 AI_RUN_ACTIVE_STATUSES_SQL = "status IN ('queued', 'running')"
 """An active run: the partial indexes' predicate."""
 
-AI_PURPOSES_DISTINCT_SQL = (
-    "(cardinality(purposes) < 2 OR purposes[1] <> purposes[2])"
-    " AND (cardinality(purposes) < 3"
-    " OR (purposes[1] <> purposes[3] AND purposes[2] <> purposes[3]))"
+AI_PURPOSES_DISTINCT_SQL = " AND ".join(
+    f"(cardinality(purposes) < {j} OR purposes[{i}] <> purposes[{j}])"
+    for j in range(2, AI_PURPOSES_MAX + 1)
+    for i in range(1, j)
 )
-"""No purpose twice (at most three, so three comparisons; a CHECK can't use a subquery)."""
+"""No purpose twice: every pair of the at most four elements differs (six comparisons; a
+CHECK can't use a subquery). Phase 10 (migration 0016) replaced 0011's three-element
+form."""
 
 
 class AiAgent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -92,7 +97,8 @@ class AiAgent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(f"name ~ '{KUBERNETES_LABEL_PATTERN}'", name="name_format"),
         CheckConstraint("length(display_name) > 0", name="display_name_not_empty"),
         CheckConstraint(
-            f"cardinality(purposes) BETWEEN 1 AND 3 AND purposes <@ {AI_RUN_KINDS_SQL}"
+            f"cardinality(purposes) BETWEEN 1 AND {AI_PURPOSES_MAX}"
+            f" AND purposes <@ {AI_RUN_KINDS_SQL}"
             f" AND array_position(purposes, NULL) IS NULL AND {AI_PURPOSES_DISTINCT_SQL}",
             name="purposes",
         ),
@@ -106,7 +112,8 @@ class AiAgent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     namespace: Mapped[str] = mapped_column(String(63))
     name: Mapped[str] = mapped_column(String(63))
     protocol: Mapped[AiAgentProtocol] = mapped_column(str_enum(AiAgentProtocol, "protocol"))
-    # AiRunKind values, canonical order (evaluate, research, draft_section), no duplicates.
+    # AiRunKind values, canonical order (evaluate, research, draft_section, assess_bid), no
+    # duplicates.
     purposes: Mapped[list[str]] = mapped_column(ARRAY(String(16)))
     # The users row it acts as (is_service_account); one agent per service account.
     # NO ACTION: users are deactivated, never deleted.
@@ -162,9 +169,12 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
         CheckConstraint(
             "(evaluation_id IS NULL OR kind = 'evaluate')"
             " AND (suggestion_id IS NULL OR kind = 'draft_section')"
-            " AND (activity_event_id IS NULL OR kind = 'research')",
+            " AND (activity_event_id IS NULL OR kind = 'research')"
+            " AND (bid_ai_assessment_id IS NULL OR kind = 'assess_bid')",
             name="result_matches_kind",
         ),
+        # Phase 10: an assess run is about one bid, and only it names one.
+        CheckConstraint("(kind = 'assess_bid') = (bid_id IS NOT NULL)", name="bid_iff_assess"),
         CheckConstraint("timeout_seconds BETWEEN 30 AND 3600", name="timeout_range"),
         CheckConstraint("event_count >= 0", name="event_count_positive"),
         CheckConstraint(
@@ -174,14 +184,15 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
         CheckConstraint(
             "NOT assigned_evaluator OR kind = 'evaluate'", name="assigned_evaluator_evaluate"
         ),
-        # Idempotency: one active run per idea, agent, kind and section (sections are
-        # null for evaluate and research, and NULLs count as equal here).
+        # Idempotency: one active run per idea, agent, kind, section and bid (sections are
+        # null except for drafts, bids except for assess runs; NULLs count as equal here).
         Index(
             "uq_ai_runs_active",
             "idea_id",
             "agent_id",
             "kind",
             "section_key",
+            "bid_id",
             unique=True,
             postgresql_nulls_not_distinct=True,
             postgresql_where=text(AI_RUN_ACTIVE_STATUSES_SQL),
@@ -212,6 +223,14 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
             "ix_ai_runs_activity_event_id",
             "activity_event_id",
             postgresql_where=text("activity_event_id IS NOT NULL"),
+        ),
+        # Phase 10: a bid's assess runs (its AI panel; the cascade when a bid is deleted)
+        # and the AI assessment a run recorded (ON DELETE SET NULL).
+        Index("ix_ai_runs_bid_id", "bid_id", postgresql_where=text("bid_id IS NOT NULL")),
+        Index(
+            "ix_ai_runs_bid_ai_assessment_id",
+            "bid_ai_assessment_id",
+            postgresql_where=text("bid_ai_assessment_id IS NOT NULL"),
         ),
     )
 
@@ -272,6 +291,12 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
     # (and the agent's draft), so it never waits for an evaluation that won't come.
     assigned_evaluator: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
+    )
+    # Phase 10, assess_bid only: the bid of the idea's call that the run assesses (its MCP
+    # calls reach only this bid, c22), and the AI assessment it recorded.
+    bid_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bids.id", ondelete="CASCADE"))
+    bid_ai_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bid_ai_assessments.id", ondelete="SET NULL")
     )
 
 

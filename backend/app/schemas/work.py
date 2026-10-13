@@ -1,5 +1,5 @@
-"""My work (home): evaluations I owe, research to do (Phase 8b), ideas I own, recent
-activity, sidebar counts."""
+"""My work (home): evaluations I owe, research to do (Phase 8b), bids to assess (Phase 10),
+ideas I own, recent activity, sidebar counts."""
 
 from __future__ import annotations
 
@@ -11,16 +11,19 @@ from pydantic import Field
 from app.models.enums import IdeaStatus
 from app.schemas.activity import ActivityItem
 from app.schemas.base import ResponseModel
+from app.schemas.bid_refs import BidCallRef, BidProgress, BidSectionRef
 from app.schemas.common import Page
 from app.schemas.ideas import IdeaRef, IdeaSummary
 from app.schemas.research import ResearchProgress
 from app.schemas.users import UserRef
 
 __all__ = [
+    "BIDS_TO_ASSESS_MAX",
     "EVALUATIONS_DUE_PAGE",
     "OWNED_GROUP_PREVIEW",
     "RESEARCH_TO_DO_PAGE",
     "Work",
+    "WorkBidAssessment",
     "WorkCounts",
     "WorkEvaluation",
     "WorkEvaluationPage",
@@ -37,6 +40,10 @@ EVALUATIONS_DUE_PAGE = 50
 RESEARCH_TO_DO_PAGE = 50
 """Phase 8b: ``GET /me/work`` lists the first 50 ideas whose research you do;
 ``GET /me/research-to-do?cursor=`` pages through the rest in the same order."""
+
+BIDS_TO_ASSESS_MAX = 50
+"""Phase 10: ``GET /me/work`` lists at most 50 calls with bid assessments you owe (no "Show
+all" route: a person assesses few calls at a time)."""
 
 OWNED_GROUP_PREVIEW = 10
 """Phase 8b (D, lead decision on the Phase 8 review): each owned group in ``GET /me/work``
@@ -97,6 +104,21 @@ class WorkResearchPage(Page[WorkResearch]):
     ``Work.research_to_do_next_cursor``."""
 
 
+class WorkBidAssessment(ResponseModel):
+    """Phase 10: a call for bids being assessed in which you still owe assessments (a section
+    you assess, for a bid that isn't rejected). Progress only: never scores, prices or
+    bidders."""
+
+    idea: IdeaRef = Field(description="The call's idea and its project.")
+    call: BidCallRef
+    sections: list[BidSectionRef] = Field(description="The sections you assess, in order.")
+    due_at: datetime | None = Field(description="The call's assessment due date, or null.")
+    overdue: bool = Field(description="due_at is in the past.")
+    progress: BidProgress = Field(
+        description="Yours: submitted / (your sections x bids that aren't rejected)."
+    )
+
+
 class WorkOwnedGroup(ResponseModel):
     status: IdeaStatus
     label: str = Field(description="The default status label (groups span projects).")
@@ -139,6 +161,16 @@ class WorkCounts(ResponseModel):
     research_overdue: int = Field(
         default=0, description="Phase 8b: those of them past their research due date."
     )
+    bid_assessments_due: int = Field(
+        default=0,
+        description=(
+            "Phase 10: bid assessments you owe (a section you assess x a bid that isn't "
+            "rejected, not submitted yet) in calls being assessed."
+        ),
+    )
+    bid_assessments_overdue: int = Field(
+        default=0, description="Phase 10: those of them past their call's assessment due date."
+    )
 
 
 class Work(ResponseModel):
@@ -167,6 +199,13 @@ class Work(ResponseModel):
         description=(
             "More research to do: GET /me/research-to-do?cursor=<this>; null when "
             "research_to_do holds it all."
+        ),
+    )
+    bids_to_assess: list[WorkBidAssessment] = Field(
+        default_factory=list,
+        description=(
+            'Phase 10: "Bids to assess": calls being assessed where you owe assessments, '
+            "overdue first, then soonest due, no due date last (then by call). At most 50."
         ),
     )
     owned: list[WorkOwnedGroup] = Field(
