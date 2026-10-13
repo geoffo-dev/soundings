@@ -74,7 +74,8 @@ What makes it work:
 `make seed` (or `soundings seed` in `backend/`, or the image's `seed` command) loads a
 story told through the real services, backdated over the last two months: 12 people,
 three projects and 48 ideas in every status, with owners, blind evaluations (submitted,
-drafts, not started), due dates (some overdue), comments, votes and tags. It is the same
+drafts, not started), due dates (some overdue), comments, votes and tags, and a call for
+bids on `TOOLS-3`. It is the same
 every time (people keep their ids), refuses `SOUNDINGS_ENVIRONMENT=production` unless
 `--force`, and does nothing once the database has projects: `make seed RESET=1`
 (`soundings seed --reset`) wipes all application data and loads it again. `--reset`
@@ -94,18 +95,18 @@ have the external IDs `employee_no` E1001–E1003):
 
 | User | Name | Roles |
 |---|---|---|
-| `alice` | Alice Anders | **platform admin**; admin of CUST, member of TOOLS and GREEN. Five evaluations due (two overdue, one draft), owns ideas in five statuses; researches `GREEN-5`, **overdue** (asked by sven) |
+| `alice` | Alice Anders | **platform admin**; admin of CUST, member of TOOLS and GREEN. Five evaluations due (two overdue, one draft), owns ideas in five statuses; researches `GREEN-5`, **overdue** (asked by sven); assesses Delivery on `TOOLS-3`'s call for bids and **owes both bids** (My work's "Bids to assess"; her comparison has no ranks) |
 | `bob` | Bob Brown | member of CUST and GREEN; **researches `TOOLS-12` as its guest** (not a member of the private Internal Tools: he sees that one idea, its feed and checklist, never its scores or proposal), due in 3 days, asked by dave |
-| `carol` | Carol Chen | member of CUST and TOOLS, viewer of GREEN; owns `TOOLS-11`, in Research with its checklist complete |
-| `dave` | Dave Davies | admin of TOOLS (edits its research checklist and proposal template; may "Move anyway") |
+| `carol` | Carol Chen | member of CUST and TOOLS, viewer of GREEN; owns `TOOLS-11`, in Research with its checklist complete; assesses Technical on `TOOLS-3`'s call (submitted; pricing schedules "present (restricted)") |
+| `dave` | Dave Davies | admin of TOOLS (edits its research checklist, proposal and bid templates; may "Move anyway"); a call manager of `TOOLS-3`'s call for bids |
 | `erin` | Erin Evans | viewer of CUST and GREEN (can look, not submit) |
 | `farah` | Farah Haddad | member of CUST and GREEN |
-| `kenji` | Kenji Watanabe | member of all three; owns `TOOLS-3`, whose proposal uses the TOOLS template and ends with the research appendix |
+| `kenji` | Kenji Watanabe | member of all three; owns `TOOLS-3`, whose proposal uses the TOOLS template and ends with the research appendix, and runs its call for bids (the comparison, the AI's left-out assessment, the report) |
 | `amara` | Amara Okafor | admin of GREEN, member of CUST; owns `GREEN-6`, Shortlisted with its checklist started, and researches it (asked by alice) |
-| `mateo` | Mateo Rodríguez | member of CUST and TOOLS |
-| `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN |
-| `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST; owns `TOOLS-12`, in Research with "Departments or teams consulted" still open (the gate refuses Evaluating; bob researches it) |
-| `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS; owns `GREEN-4`, whose proposal has Carbon impact written |
+| `mateo` | Mateo Rodríguez | member of CUST and TOOLS; assesses Technical on `TOOLS-3`'s call (disagrees with carol on Tessellate's first question) |
+| `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN; assesses Commercial (with the price) on `TOOLS-3`'s call, so she sees prices and opens the pricing schedules |
+| `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST; owns `TOOLS-12`, in Research with "Departments or teams consulted" still open (the gate refuses Evaluating; bob researches it); assesses Delivery on `TOOLS-3`'s call (submitted) |
+| `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS; owns `GREEN-4`, whose proposal has Carbon impact written; sees only the summary of `TOOLS-3`'s call (title, status, deadline, 3 bids) |
 
 Groups (Admin → Groups), mapped to the Keycloak realm's groups. Manual members
 already hold the granted role directly, so the dev login shows the same access as
@@ -132,9 +133,25 @@ and consultation". Phase 8b: sign in as bob for a guest researcher (My work's "R
 to do" with `TOOLS-12`, "Asked to research" in his inbox, the idea without its project's
 board, scores or proposal; Internal Tools is 404 for him), as alice for an overdue research
 assignment (`GREEN-5`), as sven or dave to see "Research: Bob Brown · not in this project"
-on `TOOLS-12`. `TOOLS-11` keeps its owner doing the research (nobody assigned). The content
-lives in `backend/app/seed/content.py` (Phase 8: `backend/app/seed/research.py`, Phase 8b:
-its `ASSIGNMENTS`).
+on `TOOLS-12`. `TOOLS-11` keeps its owner doing the research (nobody assigned).
+
+Phase 10, bid evaluation: `TOOLS-3`'s Bids tab has the call **"Data platform build"**, being
+assessed (its deadline passed 4 days ago; assessments due in 4 days; no AI assessor named),
+on Internal Tools' default template: Technical (carol, mateo), Commercial with the price
+(priya), Delivery (sven, alice). Three fictional bids, each with a form of tender and a
+pricing schedule (PDF; the schedule is a **pricing document**) and a technical proposal
+(Word), extracted at seed time: **Northwind Data Ltd** (complete and strong, 120,000 GBP,
+ranked 1st), **Tessellate Software** (complete and cheaper at 96,000 GBP, weaker
+technically, 2nd; carol and mateo disagree on its first question; an AI assessment by the
+disabled "Bid assessor (demo)" agent is **left out** of its totals, with one quote "not found
+in the document") and **Quillfield Systems** (no insurance certificate: flagged missing and
+rejected by kenji, "No insurance certificate provided."). 8 of 10 assessments are in:
+walk the comparison as **kenji** (the owner) or **dave** (the project admin); alice's is
+fully hidden while she owes her two. Export the evaluation report (Markdown or PDF) from
+the Bids tab as kenji. carol, mateo, priya, sven and alice each have "Asked to assess bids"
+in their inbox. The content lives in `backend/app/seed/content.py` (Phase 8:
+`backend/app/seed/research.py`, Phase 8b: its `ASSIGNMENTS`; Phase 10:
+`backend/app/seed/bids.py` and the documents in `backend/app/seed/bids/`).
 
 ## The whole app from the image
 

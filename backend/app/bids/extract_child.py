@@ -582,9 +582,6 @@ def _pdf_names(value: Any, depth: int = 0, seen: set[int] | None = None) -> bool
 
 
 def _pdf(data: bytes, limits: Limits) -> Result:
-    import logging
-
-    logging.disable(logging.CRITICAL)  # pypdf warns on stderr about odd files
     from pypdf import PdfReader
     from pypdf.errors import FileNotDecryptedError, PdfReadError
 
@@ -687,6 +684,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     kind, raw_limits = args
     limits = Limits(**json.loads(raw_limits))
+    # pypdf warns on stderr about odd files: nothing to log from the child (only here, in
+    # the child's own process: called in-process, extract() leaves logging alone).
+    import logging
+
+    logging.disable(logging.CRITICAL)
     out = sys.stdout.buffer
     try:
         _limit_memory(limits.memory_bytes)

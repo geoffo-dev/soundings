@@ -673,6 +673,10 @@ Everything time-based follows **one time zone for the whole installation**, `tim
   the idea's researcher (or its owner while nobody is assigned), while a required
   checklist item is still open and the idea hasn't moved past Research. Same setting,
   their own preference ("Research reminders").
+- **Bid assessment reminders** (Phase 10): the same days and hour for a call's assessment
+  due date, to each section assessor who still owes an assessment while the call is being
+  assessed (never for a closed idea, an archived project or someone who no longer has a
+  role in a private project). Same setting, their own preference.
 - The schedule runs in the worker every hour and handles daylight-saving changes; the
   cleanup (old notifications and outbox rows) runs at the end of every hourly run.
 
@@ -1233,6 +1237,30 @@ scripts, launch actions or attached files; an Office file's remote template, ext
 links or DDE fields). Where your policy needs a virus scan, put a scanning proxy (ICAP,
 or a ClamAV-based one) in front of the upload path at the ingress, or scan
 `bid_document_contents` from a backup on a schedule.
+
+### Pricing documents
+
+A document can be marked **pricing** (a pricing schedule; the default template's "Pricing
+schedule" must-have marks every file linked to it). Pricing documents and the price field
+are for call managers and the assessors of the section holding the price question only:
+everyone else sees "present (restricted)" with a count, never the file name, and gets 404
+for its download and text. The AI assessor never reads them. They are stored, backed up
+and deleted like every other document; there is no separate encryption, so treat database
+backups that hold bids as commercially sensitive.
+
+### Notifications and the evaluation report
+
+Three notification types follow the email settings above (immediate by default, digest
+or off per person): "Asked to assess bids" when a call manager adds someone to a
+section, "Bid assessment reminder" two days before and on the assessment due date at the
+digest hour (`notifications.digestHour` and `notifications.reminderDays`, as above)
+while they still owe an assessment and the call is being assessed, and "Bid assessments
+complete" to the idea's owner and the call's creator once nothing expected is outstanding.
+They carry the call's title, section titles, dates and counts: never scores, prices,
+bidders or document text, so the outbox and your mail server never hold any. The
+**evaluation report** (Markdown or PDF, call managers only) is rendered like a proposal
+export: the same PDF child process (20 s, one render at a time per API process, 503
+`export_busy` beyond) and the same limit of 10 exports a minute per person (429).
 
 ### The AI assessor
 

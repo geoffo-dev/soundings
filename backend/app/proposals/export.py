@@ -56,6 +56,8 @@ from app.services.refs import idea_key
 
 __all__ = [
     "EXPORT_THROTTLE",
+    "branding_for",
+    "check_limit",
     "export_document",
     "markdown_response",
     "pdf_response",
@@ -66,6 +68,11 @@ logger = logging.getLogger(__name__)
 EXPORT_THROTTLE: Final = ("proposal_export", 10, 60.0)
 """Exports (Markdown and PDF together) per user per minute."""
 _SAFE_KEY: Final = re.compile(r"[A-Za-z][A-Za-z0-9]{0,9}-[0-9]{1,9}")
+
+
+def check_limit(app: Any, principal: Principal) -> None:
+    """The export limit (proposals and, Phase 10, bid evaluation reports together)."""
+    _check_limit(app, principal)
 
 
 def _check_limit(app: Any, principal: Principal) -> None:
@@ -81,6 +88,11 @@ def _check_limit(app: Any, principal: Principal) -> None:
             headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
         )
     throttle.hit(key)
+
+
+async def branding_for(db: AsyncSession, project_id: UUID) -> ExportBranding:
+    """The project's effective branding for an export (Phase 10: the bid report too)."""
+    return await _branding(db, project_id)
 
 
 async def _branding(db: AsyncSession, project_id: UUID) -> ExportBranding:
@@ -177,8 +189,8 @@ async def _research(
     )
 
 
-def _filename(key: str, extension: str) -> str:
-    stem = f"{key}-proposal" if _SAFE_KEY.fullmatch(key) else "proposal"
+def _filename(key: str, extension: str, kind: str = "proposal") -> str:
+    stem = f"{key}-{kind}" if _SAFE_KEY.fullmatch(key) else kind
     return f"{stem}.{extension}"
 
 
@@ -190,17 +202,19 @@ def _download(content: bytes, media_type: str, filename: str) -> Response:
     )
 
 
-async def markdown_response(document: ExportDocument) -> Response:
+async def markdown_response(document: ExportDocument, *, kind: str = "proposal") -> Response:
     # Parsing (heading demotion) is CPU work: off the event loop.
     text = await asyncio.to_thread(build_markdown, document)
     return _download(
         text.encode("utf-8"),
         "text/markdown; charset=utf-8",
-        _filename(document.idea_key, "md"),
+        _filename(document.idea_key, "md", kind),
     )
 
 
-async def pdf_response(state: Any, document: ExportDocument, idea_id: UUID) -> Response:
+async def pdf_response(
+    state: Any, document: ExportDocument, idea_id: UUID, *, kind: str = "proposal"
+) -> Response:
     try:
         pdf = await render_pdf(state, document)
     except ExportBusy as busy:
@@ -222,4 +236,4 @@ async def pdf_response(state: Any, document: ExportDocument, idea_id: UUID) -> R
             "internal_error",
             detail="The PDF couldn't be made. Quote the request id when reporting it.",
         ) from None
-    return _download(pdf, "application/pdf", _filename(document.idea_key, "pdf"))
+    return _download(pdf, "application/pdf", _filename(document.idea_key, "pdf", kind))

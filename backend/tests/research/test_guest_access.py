@@ -400,14 +400,9 @@ ROUTES: dict[str, tuple[str, str, Any, object]] = {
         404,
     ),
 }
-STILL_STUBS: frozenset[str] = frozenset(
-    {
-        "export_bid_report_markdown",
-        "export_bid_report_pdf",
-    }
-)
-"""Phase 10 operations still answering 501 (backend parts 2-3 build them): their 404 for a
-guest is pinned as an expected failure until then (delete each from here when it's built)."""
+STILL_STUBS: frozenset[str] = frozenset()
+"""Operations still answering 501 (none since Phase 10's last backend part): a guest's 404
+for one would be pinned as an expected failure until it's built."""
 
 
 def _operations() -> list[Any]:

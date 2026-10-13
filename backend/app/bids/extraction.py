@@ -76,6 +76,7 @@ __all__ = [
     "ChildOutcome",
     "defer_extraction",
     "extract_document",
+    "extract_in_session",
     "output_bound",
     "run_child",
     "sweep_documents",
@@ -387,6 +388,24 @@ async def extract_document(
             select(BidDocument.extraction_state).where(BidDocument.id == document_id)
         )
     return final
+
+
+async def extract_in_session(
+    db: AsyncSession, document: BidDocument, data: bytes
+) -> ExtractionState | None:
+    """Extract one document **now, in the caller's unit of work**, with the same child as
+    the worker (the demo seed: its documents are extracted at seed time, in the seed's
+    transaction). A crash counts as ``internal_error`` (no retries here). The worker's job,
+    deferred by the upload, then finds it done and does nothing."""
+    document.extraction_attempts += 1
+    outcome = await run_child(document.type.value, data)
+    if outcome.crashed:
+        outcome = ChildOutcome.failed(ExtractionError.INTERNAL_ERROR)
+    if outcome.state is ExtractionState.DONE:
+        db.add(BidDocumentText(document_id=document.id, text=outcome.text))
+    _finish(document, outcome)
+    await db.flush()
+    return document.extraction_state
 
 
 # --- The sweep -------------------------------------------------------------------------------

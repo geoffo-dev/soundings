@@ -74,6 +74,7 @@ __all__ = [
     "contrast",
     "font_face_css",
     "logo_data_uri",
+    "markdown_text",
     "readable_on_white",
     "safe_color",
     "text_color_on",
@@ -179,6 +180,9 @@ class ExportDocument:
     research: tuple[ExportResearchItem, ...] = ()
     """Phase 8: the answered items, in checklist order, while the project's research step
     is on (empty: no appendix)."""
+    eyebrow: str = "Proposal"
+    """What the document is, above its title on the cover (Phase 10: "Bid evaluation
+    report", the same child and layout)."""
 
     @property
     def score_line(self) -> str | None:
@@ -212,6 +216,13 @@ def _yaml(value: str | None) -> str:
 def _md_text(value: str) -> str:
     """Text that must stay text inside Markdown (a title, a name)."""
     return _MD_SPECIAL.sub(lambda match: "\\" + match[0], " ".join(value.split()))
+
+
+def markdown_text(value: str) -> str:
+    """Text people or bidders wrote, made one line of literal Markdown text (every
+    special character escaped, so it can't become markup, a link or a table column):
+    Phase 10's bid evaluation report."""
+    return _md_text(value)
 
 
 def build_markdown(document: ExportDocument) -> str:

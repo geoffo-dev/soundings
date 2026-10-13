@@ -28,8 +28,7 @@ lock project (``FOR KEY SHARE``) -> idea -> call (``FOR UPDATE``) -> bid -> AI r
 The services are :mod:`app.bids` (``access`` for the order of checks and the locks,
 ``service`` for the commands, ``views`` for what each principal may see, ``scoring`` and
 ``data`` for the numbers; ``documents`` and ``sniff`` for files, ``assess`` for the AI
-assessor). Still 501 until the last backend part builds them (``tests/test_contract_routes.py``
-``STUBS``): the evaluation report.
+assessor, ``report`` for the evaluation report).
 """
 
 from __future__ import annotations
@@ -47,19 +46,20 @@ from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import binary, binary_body, problems
 from app.authz import Rule, can, load_project, not_found, require
-from app.bids import access, assess, documents, service, templates, views
+from app.bids import access, assess, documents, report, service, templates, views
 from app.bids.data import load_call_data
 from app.bids.problems import conflict
 from app.config import Settings
 from app.db import SessionDep
 from app.domain.principal import Principal
-from app.errors import NotImplementedProblem
+from app.models.base import utcnow
 from app.models.bid import Bid as BidRow
 from app.models.bid import BidCall as BidCallRow
 from app.models.bid import BidCallMustHave as BidCallMustHaveRow
 from app.models.bid import BidDocument as BidDocumentRow
 from app.models.enums import BidCallStatus, BidStatus
 from app.models.proposal import Proposal
+from app.proposals import export
 from app.schemas.ai import AiRun, AiRunRequest
 from app.schemas.bids import (
     BID_DOCUMENT_TYPES,
@@ -485,7 +485,12 @@ async def award_bid_call(
 async def export_bid_report_markdown(
     request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> Response:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_SCORES)
+    loaded.check()
+    document = await report.report_document(
+        session, principal, loaded, _settings(request), request.app, now=utcnow()
+    )
+    return await export.markdown_response(document, kind=report.REPORT_KIND)
 
 
 @router.get(
@@ -506,7 +511,14 @@ async def export_bid_report_markdown(
 async def export_bid_report_pdf(
     request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> Response:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_SCORES)
+    loaded.check()
+    document = await report.report_document(
+        session, principal, loaded, _settings(request), request.app, now=utcnow()
+    )
+    return await export.pdf_response(
+        request.app.state, document, loaded.idea.id, kind=report.REPORT_KIND
+    )
 
 
 # --- Bids ----------------------------------------------------------------------------------

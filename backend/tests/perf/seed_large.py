@@ -21,6 +21,10 @@ rubrics and dev logins), bulk SQL adds:
 * Phase 8: in the demo projects with a research step (Internal Tools, Sustainability), a
   third of the ideas at the step's place in Research and about half of every checklist
   answered;
+* Phase 10: a call for bids on the first Big Ideas idea in Proposal (``BIG_CALL_IDEA``),
+  being assessed, with **20 bids x 3 sections x 4 assessors**, every one of those 240
+  assessments submitted (through the bid services), and Pat Pending a fifth Delivery
+  assessor who owes all 20 (My work's "Bids to assess");
 
 then recomputes every cached aggregate through ``app.services.scoring`` and runs
 ``ANALYZE``. Every count is deterministic (``hashtext``), so runs compare.
@@ -44,23 +48,38 @@ import json
 import sys
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.authz import Rule, require
+from app.bids import access, service
+from app.bids.data import load_call_data
 from app.config import Settings, get_settings
 from app.db import create_engine, create_sessionmaker
 from app.domain.principal import Principal
-from app.models.enums import ResearchStep
+from app.models.enums import BidCallStatus, BidQuestionType, ResearchStep
 from app.models.project import Project
+from app.models.proposal import Proposal
 from app.models.user import User
+from app.schemas.bids import (
+    BidAnswerIn,
+    BidAssessorsUpdate,
+    BidCallCreate,
+    BidCallUpdate,
+    BidIn,
+    BidSectionAssessorsIn,
+    MyBidAssessmentIn,
+)
 from app.schemas.projects import ProjectCreate
 from app.services.projects import create_project
 from app.services.scoring import recompute_aggregates
 
-__all__ = ["BIG_KEY", "BIG_SLUG", "PENDING_EMAIL", "Size", "seed_large"]
+__all__ = ["BIG_KEY", "BIG_SLUG", "PENDING_EMAIL", "Size", "big_call_idea", "seed_large"]
 
 BIG_SLUG = "big-ideas"
 BIG_KEY = "BIG"
@@ -509,6 +528,127 @@ async def _fill_project(
         await _execute(db, RESEARCH, {"project": project.id, "step": project.research_step.value})
 
 
+BID_ASSESSORS = 4
+BIDS = 20
+
+
+async def big_call_idea(db: AsyncSession) -> str:
+    """The key of the Big Ideas idea that has the large call for bids."""
+    number = await db.scalar(
+        text(
+            "SELECT min(i.number) FROM ideas i JOIN projects p ON p.id = i.project_id "
+            "WHERE p.slug = :big AND i.status = 'proposal' AND i.held_for IS NULL"
+        ),
+        {"big": BIG_SLUG},
+    )
+    return f"{BIG_KEY}-{number}"
+
+
+async def _fill_bids(db: AsyncSession, pending: UUID) -> None:
+    """Phase 10: the large call (module docstring), through the services as Alice (a
+    platform admin: a call manager) and each assessor."""
+    key = await big_call_idea(db)
+    alice = await db.scalar(select(User).where(User.email == "alice@example.com"))
+    assert alice is not None
+    manager = Principal(user=alice)
+    loaded_idea = await access.load_idea_for_call(db, manager, key, write=True)
+    db.add(Proposal(idea_id=loaded_idea.idea.id, created_by_id=alice.id))
+    await db.flush()
+    require(manager, Rule.BID_MANAGE, loaded_idea.resource)
+    await service.create_call(
+        db, manager, loaded_idea, BidCallCreate(title="Company-wide platform partner")
+    )
+
+    async def loaded(principal: Principal, rule: Rule = Rule.BID_MANAGE) -> access.LoadedCall:
+        return await access.load_call(db, principal, key, rule, write=True)
+
+    call = await loaded(manager)
+    now = datetime.now(UTC)
+    await service.update_call(
+        db,
+        manager,
+        None,  # type: ignore[arg-type]  # no AI assessor named: settings unread
+        call,
+        BidCallUpdate(
+            title="Company-wide platform partner",
+            description="",
+            currency="GBP",
+            deadline_at=now - timedelta(days=1),
+            ai_assessor_id=None,
+        ),
+    )
+    await service.change_status(db, manager, await loaded(manager), BidCallStatus.OPEN)
+    for n in range(BIDS):
+        await service.create_bid(
+            db,
+            manager,
+            await loaded(manager),
+            BidIn(bidder=f"Supplier {n + 1:02d} Ltd", price=Decimal(90_000 + 1_000 * n)),
+        )
+    call = await loaded(manager)
+    await db.execute(
+        text(
+            "UPDATE bid_must_have_results SET result = 'met', decided_at = now(), "
+            "decided_by_id = :alice WHERE call_id = :call"
+        ),
+        {"alice": alice.id, "call": call.call.id},
+    )
+    await service.refresh_statuses(db, call.call)
+    people = list(
+        await db.scalars(
+            select(User)
+            .where(User.email.like("perf%@example.com"), User.email != PENDING_EMAIL)
+            .order_by(User.email)
+            .offset(5)  # perf02-05 are admins and viewers
+            .limit(3 * BID_ASSESSORS)
+        )
+    )
+    data = await load_call_data(db, call.call)
+    groups = {
+        section.id: people[i * BID_ASSESSORS : (i + 1) * BID_ASSESSORS]
+        for i, section in enumerate(data.sections)
+    }
+    delivery = data.sections[-1].id
+    await service.set_assessors(
+        db,
+        manager,
+        call,
+        data,
+        BidAssessorsUpdate(
+            sections=[
+                BidSectionAssessorsIn(
+                    section_id=section_id,
+                    user_ids=[u.id for u in users] + ([pending] if section_id == delivery else []),
+                )
+                for section_id, users in groups.items()
+            ],
+            due_at=now + timedelta(days=7),
+        ),
+    )
+    await service.change_status(db, manager, await loaded(manager), BidCallStatus.ASSESSING)
+    bids = list((await load_call_data(db, call.call)).bids)
+    for section in data.sections:
+        questions = data.questions[section.id]
+        for position, user in enumerate(groups[section.id]):
+            principal = Principal(user=user)
+            for index, bid in enumerate(bids):
+                assessing = await loaded(principal, Rule.BID_VIEW_BIDS)
+                access.require_section_rule(principal, assessing, Rule.BID_ASSESS, section.id)
+                answers = [
+                    BidAnswerIn(question_id=q.id, score=(index + position + q.position) % 6)
+                    for q in questions
+                    if q.type is BidQuestionType.SCORE
+                ]
+                await service.save_my_assessment(
+                    db,
+                    principal,
+                    assessing,
+                    bid,
+                    section.id,
+                    MyBidAssessmentIn(answers=answers, submit=True),
+                )
+
+
 async def seed_large(db: AsyncSession, size: Size | None = None) -> dict[str, int]:
     """Add the large data set to a database holding the demo story; commits. Returns the
     row counts afterwards."""
@@ -552,6 +692,8 @@ async def seed_large(db: AsyncSession, size: Size | None = None) -> dict[str, in
     await db.execute(text(SIGN_INS))
     for project in projects:
         await recompute_aggregates(db, project_id=project.id)
+    await db.commit()
+    await _fill_bids(db, pending)
     await db.commit()
     counts = (await db.execute(text(COUNTS), {"big": BIG_SLUG})).mappings().one()
     return {key: int(value) for key, value in counts.items()}

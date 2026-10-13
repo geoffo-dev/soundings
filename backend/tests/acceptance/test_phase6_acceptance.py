@@ -70,6 +70,7 @@ from app.models.idea import Idea
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.api_keys import API_KEY_PATTERN
+from app.seed.bids import AI_AGENT_NAME as DEMO_BID_ASSESSOR
 from app.worker import MAIN_QUEUES, ai_worker_options, procrastinate_app, worker_options
 from tests.acceptance.test_phase5_acceptance import (
     API,
@@ -517,7 +518,8 @@ async def test_ac6_api_1_ask_ai_to_evaluate_gives_a_badged_cited_evaluation_left
     listed = await alice.http.get(f"{API}/admin/ai-agents")
     assert secret not in listed.text
     assert secret[16:] not in listed.text
-    assert [a["id"] for a in ok(listed)["items"]] == [agent_id]
+    # Phase 10: the demo seed's disabled "Bid assessor (demo)" is listed too.
+    assert [a["id"] for a in ok(listed)["items"] if a["name"] != DEMO_BID_ASSESSOR] == [agent_id]
     fake_agent.give_key("idea-evaluator", secret)
     tested = await alice.send("POST", f"/admin/ai-agents/{agent_id}/test")
     assert (tested["ok"], tested["http_status"], tested["error_code"]) == (True, 200, None)

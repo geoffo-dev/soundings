@@ -41,7 +41,7 @@ from app.config import Settings
 from app.db import create_engine, create_sessionmaker
 from app.models.user import User
 from app.seed.runner import seed_demo_data
-from tests.perf.seed_large import BIG_SLUG, PENDING_EMAIL, seed_large
+from tests.perf.seed_large import BIG_SLUG, PENDING_EMAIL, big_call_idea, seed_large
 
 pytestmark = pytest.mark.slow
 
@@ -78,7 +78,9 @@ STATEMENT_BUDGET: dict[str, int] = {
     "idea.get": 11,  # Phase 7 B6: 14 before (no re-read, two lookups merged); 10-11 measured
     "idea.activity": 7,
     "idea.evaluations": 7,
-    "idea.ai_runs": 7,
+    # Phase 10: + the idea's call, read to decide whether its assess runs (they name bids)
+    # are listed (bid.view_bids; review S9).
+    "idea.ai_runs": 8,
     "evaluation.me": 6,
     # Pat (1,000 due, owns nothing); owned groups come in one statement (P7); Phase 8
     # review: the page's people and the projects with roles in one statement each (12 -> 9).
@@ -95,6 +97,12 @@ STATEMENT_BUDGET: dict[str, int] = {
     "admin.audit": 5,
     "admin.users": 2,
     "moderation": 5,
+    # Phase 10: one call's reads, the same for 3 bids (the demo's TOOLS-3) as for 20 bids x
+    # 3 sections x 4 assessors (the big call): the call's rows in a fixed set of statements
+    # (app.bids.data.load_call_data), never one per bid or assessment.
+    "bids.call": 15,
+    "bids.list": 15,
+    "bids.comparison": 15,
 }
 
 
@@ -249,12 +257,27 @@ async def test_no_n_plus_one_queries_at_10k(perf_app: FastAPI) -> None:
         (await statements(counter, owner, "/me/work"))[0],
         (await statements(counter, pat, "/me/work"))[0],
     )
+    # Phase 10: the demo's call (3 bids, 5 assessors) and the big one (20 x 3 x 4).
+    big_call = await _big_call(perf_app)
+    for name, tail in (("bids.comparison", "/comparison"), ("bids.list", "/bids")):
+        found[f"{name} (3 vs 20 bids)"] = (
+            (await statements(counter, alice, f"/ideas/TOOLS-3/bid-call{tail}"))[0],
+            (await statements(counter, alice, f"/ideas/{big_call}/bid-call{tail}"))[0],
+        )
     print(json.dumps({"statements (small, large)": found}, indent=2))  # noqa: T201
     grows = {name: counts for name, counts in found.items() if counts[1] > counts[0]}
     assert not grows, grows
 
 
+async def _big_call(app: FastAPI) -> str:
+    """The Big Ideas idea with the call of 20 bids x 3 sections x 4 assessors."""
+    db: AsyncSession
+    async with app.state.sessionmaker() as db:
+        return await big_call_idea(db)
+
+
 async def test_statements_per_request_stay_within_budget(perf_app: FastAPI) -> None:
+    big_call = await _big_call(perf_app)
     counter = Counter(perf_app)
     alice = await client_for(perf_app, "alice@example.com")
     pat = await client_for(perf_app, PENDING_EMAIL)
@@ -286,6 +309,9 @@ async def test_statements_per_request_stay_within_budget(perf_app: FastAPI) -> N
         "admin.audit": (alice, "/admin/audit", {"limit": 50}),
         "admin.users": (alice, "/admin/users", {"limit": 50}),
         "moderation": (alice, "/projects/customer-innovation/moderation", {"limit": 50}),
+        "bids.call": (alice, f"/ideas/{big_call}/bid-call", {}),
+        "bids.list": (alice, f"/ideas/{big_call}/bid-call/bids", {}),
+        "bids.comparison": (alice, f"/ideas/{big_call}/bid-call/comparison", {}),
     }
     measured = {}
     for name, (http, url, params) in calls.items():
@@ -336,6 +362,7 @@ async def best_p95(name: str, one_round: Callable[[], Awaitable[float]], budget_
 
 
 async def service_times(perf_app: FastAPI) -> dict[str, float]:
+    big_call = await _big_call(perf_app)
     alice = await client_for(perf_app, "alice@example.com")
     pat = await client_for(perf_app, PENDING_EMAIL)
     due = (await pat.get(f"{API}/me/work")).json()["evaluations_due"][0]["idea"]["key"]
@@ -363,6 +390,10 @@ async def service_times(perf_app: FastAPI) -> dict[str, float]:
         "me.work (owner)": (alice, "/me/work", {}),
         "me.work.counts (1,000 due)": (pat, "/me/work/counts", {}),
         "me.evaluations_due (page of 50)": (pat, "/me/evaluations-due", {"limit": 50}),
+        # Phase 10: 20 bids x 3 sections x 4 assessors (240 assessments), as a call manager.
+        "bids.call (20 bids)": (alice, f"/ideas/{big_call}/bid-call", {}),
+        "bids.list (20 bids)": (alice, f"/ideas/{big_call}/bid-call/bids", {}),
+        "bids.comparison (20 x 3 x 4)": (alice, f"/ideas/{big_call}/bid-call/comparison", {}),
     }
     results: dict[str, float] = {}
     with frozen_heap():

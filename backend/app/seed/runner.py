@@ -73,6 +73,7 @@ from app.models.notification import Notification
 from app.models.public import PublicSubmission
 from app.models.research import ResearchChecklistItem
 from app.models.user import UserExternalId
+from app.notifications import bids as bid_notifications
 from app.notifications import fanout
 from app.notifications import preferences as notification_preferences
 from app.proposals import service as proposal_service
@@ -92,6 +93,8 @@ from app.schemas.research import (
     ResearchSettingsUpdate,
 )
 from app.schemas.rubric import RubricUpdate
+from app.seed import bids as bid_story
+from app.seed.bids import IDEA_TITLE as BID_IDEA
 from app.seed.content import (
     GROUPS,
     IDEAS,
@@ -153,7 +156,9 @@ _LOCK_KEY: Final = 0x5EED_50D1
 _MARGIN: Final = timedelta(minutes=5)
 """The latest step happens at least this long before the seed runs."""
 
-_FUTURE_COLUMNS: Final = frozenset({"ideas.evaluation_due_at", "ideas.research_due_at"})
+_FUTURE_COLUMNS: Final = frozenset(
+    {"ideas.evaluation_due_at", "ideas.research_due_at", "bid_calls.assessment_due_at"}
+)
 """Timestamps a step sets to a future value on purpose: never shifted."""
 
 _READ_AFTER: Final = timedelta(days=3)
@@ -180,6 +185,7 @@ class SeedReport:
 
     skipped: str | None = None
     users: int = 0
+    """People (not AI agents' service accounts)."""
     groups: int = 0
     projects: int = 0
     ideas: int = 0
@@ -224,7 +230,12 @@ async def check_reset_allowed(db: AsyncSession, *, force: bool = False) -> None:
     if force:
         return
     demo_emails = [person.email.lower() for person in PEOPLE]
-    if await db.scalar(select(exists().where(func.lower(User.email).not_in(demo_emails)))):
+    # People only: AI agents' service accounts (Phase 10's demo bid assessor, agents
+    # registered in a demo) hold no one's personal data.
+    others = exists().where(
+        func.lower(User.email).not_in(demo_emails), User.is_service_account.is_(False)
+    )
+    if await db.scalar(select(others)):
         raise SeedRefused(
             "Refusing to --reset: the database has people who are not in the demo data, "
             "so it may hold real data. Use --force if you really mean to delete everything."
@@ -279,7 +290,9 @@ async def _report(db: AsyncSession) -> SeedReport:
         )
     )
     return SeedReport(
-        users=await count(select(func.count()).select_from(User)),
+        users=await count(
+            select(func.count()).select_from(User).where(User.is_service_account.is_(False))
+        ),
         groups=await count(select(func.count()).select_from(Group)),
         projects=await count(select(func.count()).select_from(Project)),
         ideas=await count(select(func.count()).select_from(Idea)),
@@ -400,6 +413,8 @@ class _Player:
             self._idea(index, idea)
         for assignment in ASSIGNMENTS:
             self._assignment(*assignment)
+        # Phase 10: the call for bids on TOOLS-3 (app/seed/bids.py).
+        bid_story.schedule(self, next(i for i, s in enumerate(IDEAS) if s.title == BID_IDEA))
         self._branding()
         self._public_form()
         for index, public_idea in enumerate(PUBLIC_IDEAS):
@@ -412,6 +427,7 @@ class _Player:
                 await self.db.flush()
                 # The step's notifications, in-app only (no settings: no email).
                 await fanout.fan_out(self.db, settings=None)
+                await bid_notifications.fan_out(self.db, settings=None)
             except Exception as exc:
                 exc.add_note(f"seed step: {step.label}")
                 raise

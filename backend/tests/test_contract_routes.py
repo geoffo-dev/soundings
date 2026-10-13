@@ -514,11 +514,7 @@ _NEW_BID: dict[str, Any] = {
     "notes": "Sent by email and post.",
 }
 
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
-    # --- Phase 10: still 501 (the report; backend part 3)
-    "export_bid_report_markdown": (f"{_CALL}/report/markdown", None),
-    "export_bid_report_pdf": (f"{_CALL}/report/pdf", None),
-}
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
 
 # Phase 10 operations already implemented (tests/bids): a valid request each, for the
 # shape and session checks. Move a row here from STUBS when you implement it.
@@ -528,6 +524,8 @@ PHASE10_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "replace_bid_template": ("/api/v1/projects/internal-tools/bid-template", _BID_TEMPLATE),
     "get_bid_call": (_CALL, None),
     "create_bid_call": (_CALL, {"title": "Test data generator: build partner"}),
+    "export_bid_report_markdown": (f"{_CALL}/report/markdown", None),
+    "export_bid_report_pdf": (f"{_CALL}/report/pdf", None),
     "update_bid_call": (_CALL, _CALL_SETTINGS),
     "delete_bid_call": (_CALL, None),
     "change_bid_call_status": (f"{_CALL}/status", {"status": "open"}),

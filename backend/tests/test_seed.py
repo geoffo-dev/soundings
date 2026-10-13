@@ -303,6 +303,7 @@ async def test_seed_tells_the_demo_story(
             if not isinstance(column.type, DateTime) or column.name in (
                 "evaluation_due_at",
                 "research_due_at",  # Phase 8b: TOOLS-12's is in 3 days
+                "assessment_due_at",  # Phase 10: TOOLS-3's bid assessments, in 4 days
             ):
                 continue
             latest = select(func.max(column))
@@ -582,3 +583,92 @@ async def test_reset_replaces_existing_data(settings: Settings, db_session: Asyn
         .where(Evaluation.status == EvaluationStatus.SUBMITTED)
     )
     assert submitted == report.evaluations_submitted
+
+
+# --- Phase 10: the call for bids on TOOLS-3 (contract-phase10 section 17) ------------------
+async def test_seed_has_the_call_for_bids_on_tools_3(
+    settings: Settings, db_session: AsyncSession, login: Login
+) -> None:
+    await run_seed(settings)
+    users = {user.email: user for user in await db_session.scalars(select(User))}
+
+    def person(name: str) -> User:
+        return users[f"{name}@example.com"]
+
+    kenji = await login(person("kenji"))
+    view = (await kenji.get(f"{API}/ideas/TOOLS-3/bid-call")).json()
+    call = view["call"]
+    assert (call["title"], call["status"]) == ("Data platform build", "assessing")
+    assert datetime.fromisoformat(call["deadline_at"]) < utcnow()
+    assert datetime.fromisoformat(call["assessment_due_at"]) > utcnow() + timedelta(days=3)
+    assert call["ai_assessor"] is None
+    assessors = {
+        section["title"]: sorted(a["user"]["display_name"] for a in section["assessors"])
+        for section in call["template"]["sections"]
+    }
+    assert assessors == {
+        "Technical": ["Carol Chen", "Mateo Rodríguez"],
+        "Commercial": ["Priya Raman"],
+        "Delivery": ["Alice Anders", "Sven Lindqvist"],
+    }
+
+    comparison = (await kenji.get(f"{API}/ideas/TOOLS-3/bid-call/comparison")).json()
+    rows = {row["bid"]["bidder"]: row for row in comparison["rows"]}
+    assert [row["bid"]["bidder"] for row in comparison["rows"]] == [
+        "Northwind Data Ltd",
+        "Tessellate Software",
+        "Quillfield Systems",
+    ]
+    assert (rows["Northwind Data Ltd"]["rank"], rows["Tessellate Software"]["rank"]) == (1, 2)
+    assert rows["Quillfield Systems"]["bid"]["status"] == "rejected"
+    assert rows["Tessellate Software"]["price"] == "96000.00"
+    assert rows["Tessellate Software"]["ai_included"] is False
+    technical = comparison["sections"][0]["id"]
+    cell = next(c for c in rows["Tessellate Software"]["sections"] if c["section_id"] == technical)
+    assert cell["disagreement"] is True  # carol 4, mateo 2 on its first question
+    assert comparison["progress"] == {"submitted": 8, "total": 10}
+    assert comparison["complete"] is False
+
+    # Alice owes both Delivery assessments: My work, and no ranks for her.
+    alice = await login(person("alice"))
+    work = (await alice.get(f"{API}/me/work")).json()["bids_to_assess"]
+    assert [(item["idea"]["key"], item["progress"]) for item in work] == [
+        ("TOOLS-3", {"submitted": 0, "total": 2})
+    ]
+    assert (await alice.get(f"{API}/ideas/TOOLS-3/bid-call/comparison")).json()[
+        "ranking_hidden"
+    ] is True
+
+    # Documents: extracted at seed time; the pricing schedule is restricted for carol and
+    # open for priya; Quillfield has no insurance certificate (missing) and was rejected.
+    bids = {
+        b["bidder"]: b["id"]
+        for b in (await kenji.get(f"{API}/ideas/TOOLS-3/bid-call/bids")).json()["items"]
+    }
+    northwind = f"{API}/ideas/TOOLS-3/bid-call/bids/{bids['Northwind Data Ltd']}"
+    carol = await login(person("carol"))
+    seen = (await carol.get(northwind)).json()
+    assert seen["restricted_document_count"] == 1
+    assert {d["extraction"]["state"] for d in seen["documents"]} == {"done"}
+    priya = await login(person("priya"))
+    assert {d["filename"] for d in (await priya.get(northwind)).json()["documents"]} >= {
+        "northwind-pricing-schedule.pdf"
+    }
+    quillfield = (
+        await kenji.get(f"{API}/ideas/TOOLS-3/bid-call/bids/{bids['Quillfield Systems']}")
+    ).json()
+    assert quillfield["rejection"]["reason"] == "No insurance certificate provided."
+    results = {r["must_have"]["text"]: r["result"] for r in quillfield["must_have_results"]}
+    assert results["Insurance certificate"] == "missing"
+
+    # The AI's assessment of Tessellate: stored, left out, one quote not found.
+    tessellate = f"{API}/ideas/TOOLS-3/bid-call/bids/{bids['Tessellate Software']}"
+    (ai,) = (await kenji.get(f"{tessellate}/ai-assessments")).json()["items"]
+    assert (ai["included"], ai["quotes_not_found"]) == (False, 1)
+
+    # Zanele (a viewer) sees the summary only; carol got "Asked to assess bids".
+    zanele = await login(person("zanele"))
+    assert (await zanele.get(f"{API}/ideas/TOOLS-3")).json()["bid_call"]["bid_count"] == 3
+    assert (await zanele.get(f"{API}/ideas/TOOLS-3/bid-call/bids")).status_code == 403
+    inbox = (await carol.get(f"{API}/me/notifications")).json()["items"]
+    assert [i["sections"] for i in inbox if i["type"] == "assessor_assigned"] == [["Technical"]]
