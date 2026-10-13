@@ -48,6 +48,9 @@ TYPE_LABELS: Final[Mapping[NotificationType, str]] = {
     NotificationType.MENTION: "mentions",
     NotificationType.RESEARCHER_ASSIGNED: "research requests",
     NotificationType.RESEARCH_REMINDER: "research reminders",
+    NotificationType.ASSESSOR_ASSIGNED: "bid assessment requests",
+    NotificationType.ASSESSMENT_REMINDER: "bid assessment reminders",
+    NotificationType.ASSESSMENTS_COMPLETE: "“all bid assessments are in” emails",
 }
 """"Unsubscribe from <label>" in an email's footer."""
 
@@ -162,12 +165,15 @@ class Links:
         evaluate: bool = False,
         comment_id: object = None,
         research: bool = False,
+        bids: bool = False,
     ) -> str:
         url = f"{self.base}/ideas/{quote(key)}"
         if evaluate:
             url += "?evaluate=1"
         elif research:  # Phase 8b: open the idea at its Research panel
             url += "?research=1"
+        elif bids:  # Phase 10: open the idea at its Bids tab
+            url += "?tab=bids"
         if comment_id is not None:
             url += f"#comment-{quote(str(comment_id))}"
         return url

@@ -568,8 +568,9 @@ def test_the_research_note_tool_is_listed_last() -> None:
     assert (ADD_RESEARCH_NOTE.rule, ADD_RESEARCH_NOTE.scope) == ("comment.create", "write")
     assert not ADD_RESEARCH_NOTE.read_only
     assert ADD_RESEARCH_NOTE.idempotent
-    assert MCP_TOOLS[-1] is ADD_RESEARCH_NOTE
-    assert len(MCP_TOOLS) == 10
+    # Phase 10's three bid tools follow it (contract-phase10 section 9.2).
+    assert MCP_TOOLS[9] is ADD_RESEARCH_NOTE
+    assert len(MCP_TOOLS) == 13
     assert RESEARCH_NOTE_INSTRUCTION in MCP_INSTRUCTIONS
 
     note = AddResearchNoteInput.model_validate({"idea": "cust-1", "body_md": "# Findings"})

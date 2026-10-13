@@ -402,8 +402,6 @@ ROUTES: dict[str, tuple[str, str, Any, object]] = {
 }
 STILL_STUBS: frozenset[str] = frozenset(
     {
-        "request_ai_bid_assessments",
-        "request_ai_bid_assessment",
         "export_bid_report_markdown",
         "export_bid_report_pdf",
     }

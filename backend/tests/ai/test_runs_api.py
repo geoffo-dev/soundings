@@ -39,6 +39,9 @@ PATHS = {
     AiRunKind.RESEARCH: "research",
     AiRunKind.DRAFT_SECTION: "section-draft",
 }
+IDEA_RUN_KINDS = list(PATHS)
+"""The kinds asked for on the idea's AI runs routes; Phase 10's ``assess_bid`` runs are
+asked for on the call's bids (tests/bids/test_ai_assessor.py)."""
 
 
 def _url(crew: Crew, kind: AiRunKind, ref: str | None = None) -> str:
@@ -73,7 +76,7 @@ COLUMNS = {
 }
 
 
-@pytest.mark.parametrize("kind", list(AiRunKind))
+@pytest.mark.parametrize("kind", IDEA_RUN_KINDS)
 @pytest.mark.parametrize(("who", "status"), list(COLUMNS.items()))
 async def test_who_may_ask(
     api: AsUser, crew: Crew, db_session: AsyncSession, kind: AiRunKind, who: str, status: int
@@ -89,7 +92,7 @@ async def test_who_may_ask(
         assert response.json()["requested_by"]["id"] == str(user.id)
 
 
-@pytest.mark.parametrize("kind", list(AiRunKind))
+@pytest.mark.parametrize("kind", IDEA_RUN_KINDS)
 async def test_anonymous_is_401_and_an_internal_non_member_403(
     client: Any, api: AsUser, db_session: AsyncSession, crew: Crew, kind: AiRunKind
 ) -> None:

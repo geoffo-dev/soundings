@@ -27,9 +27,9 @@ lock project (``FOR KEY SHARE``) -> idea -> call (``FOR UPDATE``) -> bid -> AI r
 
 The services are :mod:`app.bids` (``access`` for the order of checks and the locks,
 ``service`` for the commands, ``views`` for what each principal may see, ``scoring`` and
-``data`` for the numbers). Still 501 until the later backend parts build them
-(``tests/test_contract_routes.py`` ``STUBS``): the document routes, the two AI requests and
-the evaluation report.
+``data`` for the numbers; ``documents`` and ``sniff`` for files, ``assess`` for the AI
+assessor). Still 501 until the last backend part builds them (``tests/test_contract_routes.py``
+``STUBS``): the evaluation report.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import binary, binary_body, problems
 from app.authz import Rule, can, load_project, not_found, require
-from app.bids import access, documents, service, templates, views
+from app.bids import access, assess, documents, service, templates, views
 from app.bids.data import load_call_data
 from app.bids.problems import conflict
 from app.config import Settings
@@ -429,9 +429,14 @@ async def get_bid_comparison(
     responses=problems(401, 403, 404, 409, 422, 429),
 )
 async def request_ai_bid_assessments(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: AiRunRequest
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: AiRunRequest,
 ) -> AiRunBatch:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.AI_ASSESS_BID, write=True)
+    return await assess.request_all(session, principal, _settings(request), loaded, body.agent_id)
 
 
 @router.post(
@@ -1025,13 +1030,22 @@ async def list_bid_section_assessments(
     },
 )
 async def request_ai_bid_assessment(
+    request: Request,
+    response: Response,
     principal: PrincipalDep,
     session: SessionDep,
     idea: IdeaParam,
     bid_id: BidId,
     body: AiRunRequest,
 ) -> AiRun:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.AI_ASSESS_BID, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    run, created = await assess.request_assessment(
+        session, principal, _settings(request), loaded, bid, body.agent_id
+    )
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return run
 
 
 @router.get(

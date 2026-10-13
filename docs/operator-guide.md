@@ -191,7 +191,8 @@ private ranges) names the proxies whose `X-Forwarded-For`/`-Proto` headers are b
 narrow it to your ingress controller's pod range if you can.
 
 Request bodies over 1 MiB get 413 `content_too_large` from the app itself, before
-authentication and without buffering them. ingress-nginx enforces the same 1 MiB by
+authentication and without buffering them (Phase 10: the bid document upload alone takes
+up to 25 MiB; see [its section](#the-upload-routes-body-size-and-timeout)). ingress-nginx enforces the same 1 MiB by
 default; Traefik and Gateway API need their own limit if you want one at the edge (the
 [chart README](../deploy/helm/README.md#security) shows how).
 
@@ -1149,6 +1150,101 @@ instructions), `timed_out` (raise `ai.runTimeout` or use a faster model),
 stopped mid-run), `ai_disabled` and `internal_error` (logged with its traceback). Worker
 logs carry run ids, error classes and HTTP statuses, never prompts, keys or agent text.
 
+## Bid evaluation: documents and the AI assessor [Phase 10]
+
+Calls for bids keep the bidders' documents in PostgreSQL, next to everything else
+(contract-phase10 section 6, ADR 0018): no object store, one backup, deletion by cascade.
+
+### Storage, limits and backups
+
+| Limit | Value | Refusal |
+|---|---|---|
+| One file | 25 MiB | 413 `content_too_large` |
+| Files per bid | 30 | 409 `too_many_documents` |
+| One call | 500 MiB: the files **plus** their extracted text (a character counts as a byte) | 409 `call_storage_full` |
+| One project | 5 GiB, counted the same way over all its calls | 409 `project_storage_full` |
+
+The bytes are in `bid_document_contents` (`bytea`, stored uncompressed out of line so
+downloads read 1 MiB at a time), the text in `bid_document_texts`, the metadata in
+`bid_documents`. Size the database volume and its backups for them: the bundled Postgres
+volume is `postgresql.persistence.size` (8 GiB by default), and a project that uses its
+5 GiB needs at least that much again in every backup. `pg_dump` (and CloudNativePG's
+backups) include them like any other table. To see what each project holds:
+
+```sql
+SELECT p.key, pg_size_pretty(sum(d.size_bytes + coalesce(d.text_chars, 0))) AS stored
+FROM bid_documents d JOIN bid_calls c ON c.id = d.call_id
+JOIN ideas i ON i.id = c.idea_id JOIN projects p ON p.id = i.project_id
+GROUP BY p.key ORDER BY sum(d.size_bytes) DESC;
+```
+
+### The upload route's body size and timeout
+
+`POST /api/v1/ideas/{idea}/bid-call/bids/{bid}/documents` is the only route that takes
+more than 1 MiB: the raw file as the body, up to 25 MiB, within 120 seconds (408
+`upload_timeout` after that). The app enforces both itself, counting the bytes as they
+arrive (a body longer than its `Content-Length`, or a chunked one, is cut off at the
+limit), and keeps 1 MiB everywhere else. Your ingress must let that one path through:
+a body of 25 MiB plus headers (26 MiB is enough) and a read timeout of at least 120 s,
+without raising the limit for the rest of the API. The chart's own ingress does this
+(see the [chart README](../deploy/helm/README.md)); with a proxy of your own, give the
+path its own rule (ingress-nginx: a second Ingress for the path with
+`nginx.ingress.kubernetes.io/proxy-body-size: 26m` and `proxy-read-timeout: "180"`;
+Traefik: a `Buffering` middleware with `maxRequestBodyBytes` on a router for the path).
+Each API pod reads at most two uploads at once (503 `upload_busy` with `Retry-After: 5`
+beyond), so an upload holds at most 50 MiB of an API pod's memory.
+
+### Text extraction on the worker
+
+The worker reads each new document's text in a **child process**, one at a time per
+worker pod, on its own `bid_documents` queue (email, the schedules and AI runs never
+wait for it): 30 seconds, a 512 MiB address-space cap, 2,000,000 characters, an
+environment without the database URL, secret key or SMTP credentials, the file on stdin,
+its text on stdout. The worker container therefore needs **1 GiB** of memory (the
+chart's default since Phase 10). PDFs are read with `pypdf`; Office and OpenDocument
+files with the standard library (`zipfile` within fixed entry, size and compression-ratio
+caps, XML without DTDs or entities); images have no text (no OCR). A document whose
+reading fails is kept and says why on the bid (`timeout`, `memory`, `damaged`,
+`encrypted`, `archive_limits`, `internal_error`); one that crashes the child three times
+is `internal_error`, so a bad file can't crash-loop the worker. A document left pending
+by a worker that died is queued again by the minute sweep. Worker logs carry document
+ids, states and error classes, never file names or text.
+
+### Retention and personal data
+
+Documents live as long as their call. They go when a call manager deletes a document,
+a bid, or a draft or cancelled call, when a platform admin deletes an awarded call (the
+way to remove bidders' data without deleting the idea), or when the idea is deleted.
+Bidders' documents and contact details may hold personal data (CVs, signatures, names
+and addresses): they are not Soundings users, so `soundings anonymise-user` doesn't touch
+them; delete the call when you no longer need it, and remember that backups keep a copy
+until they expire.
+
+### No antivirus scanning
+
+Soundings doesn't scan uploads in this phase. Files are never executed, rendered or
+opened on the server except by the extraction child (above); uploads are allowed by
+their bytes (PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text, CSV, PNG, JPEG), and Office
+files with macros, ActiveX controls or embedded OLE packages, OpenDocument files with
+scripts, and encrypted Office files are refused (415). Downloads are always attachments
+(`nosniff`, a sandboxing CSP, `no-store`); the app shows the extracted text, never the
+file, and warns before downloading a file the extractor flagged (`active_content`: PDF
+scripts, launch actions or attached files; an Office file's remote template, external
+links or DDE fields). Where your policy needs a virus scan, put a scanning proxy (ICAP,
+or a ClamAV-based one) in front of the upload path at the ingress, or scan
+`bid_document_contents` from a backup on a schedule.
+
+### The AI assessor
+
+An agent registered with the purpose **Assess bids** (`assess_bid`) scores bids through
+three MCP tools that reach only its run's bid, never other bids, people's scores, prices
+or pricing documents ([docs/mcp.md](mcp.md); the example Agent in `deploy/kagent/`). A
+call may name one as its AI assessor: each bid then gets **one automatic run**, once
+none of its documents is still being read and nothing was uploaded to it for five
+minutes; those runs are counted toward nobody's 20 AI requests an hour and aren't
+audited as requests. Their scores stay out of every total until a call manager includes
+them.
+
 ## Operations [Phase 1, 7]
 
 ### Health probes: `/healthz`, `/readyz`
@@ -1179,7 +1275,8 @@ responses, so a user's error report can be matched to the log.
 ### Backups and restore
 
 Everything Soundings keeps is in PostgreSQL: ideas, evaluations, proposals, the audit
-log, the email outbox and the job queue, and the branding images. Back up the database
+log, the email outbox and the job queue, the branding images, and (Phase 10) bid
+documents with their text, up to 5 GiB per project. Back up the database
 and the chart's Secret (`<release>-soundings`: the signing key; without it sealed
 values, unsubscribe and tracking links stop working, and people sign in again).
 

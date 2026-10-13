@@ -19,13 +19,15 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.authz import (
+    BidCallFacts,
     IdeaFacts,
     ProjectFacts,
     Resource,
@@ -36,23 +38,36 @@ from app.authz import (
 )
 from app.domain.principal import Principal
 from app.models.activity import Comment
-from app.models.enums import EvaluationStatus, EvaluatorState, NotificationType
+from app.models.bid import Bid, BidAssessment, BidCall, BidSectionAssessor
+from app.models.enums import (
+    BidCallStatus,
+    BidStatus,
+    EvaluationStatus,
+    EvaluatorState,
+    IdeaStatus,
+    NotificationType,
+)
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.comments import mentioned_user_ids
-from app.schemas.notifications import RESEARCH_GUEST_NOTIFICATION_TYPES
+from app.schemas.notifications import BID_NOTIFICATION_TYPES, RESEARCH_GUEST_NOTIFICATION_TYPES
 from app.schemas.research import research_to_do
 from app.services.sql import any_of
 
 __all__ = [
+    "BidNotice",
     "Recipient",
     "applies",
+    "assesses",
+    "bid_notice",
     "does_research",
     "evaluator_ids",
     "holds",
+    "manages_call",
     "notifiable_users",
+    "owed_assessments",
     "parse_time",
     "parse_uuid",
     "recipients",
@@ -136,6 +151,99 @@ async def recipients(
     return found
 
 
+@dataclass(frozen=True, slots=True)
+class BidNotice:
+    """Phase 10: what a bid notification's checks need about its call, for one recipient:
+    the call as it is now, the sections of it they are assigned to, and (reminders only)
+    how many assessments they still owe (sections x bids that aren't rejected, without
+    their submitted assessment)."""
+
+    call: BidCall
+    section_ids: frozenset[UUID]
+    owed: int = 0
+
+    def facts(self) -> BidCallFacts:
+        return BidCallFacts(
+            id=self.call.id, status=self.call.status, my_section_ids=self.section_ids
+        )
+
+
+async def owed_assessments(db: AsyncSession, call_id: UUID, user_id: UUID) -> int:
+    """The assessments ``user_id`` owes in the call: their sections x its bids that aren't
+    rejected, without their submitted assessment (eligibility is the policy's check)."""
+    submitted = aliased(BidAssessment)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(BidSectionAssessor)
+        .join(
+            Bid,
+            and_(Bid.call_id == BidSectionAssessor.call_id, Bid.status != BidStatus.REJECTED),
+        )
+        .outerjoin(
+            submitted,
+            and_(
+                submitted.bid_id == Bid.id,
+                submitted.section_id == BidSectionAssessor.section_id,
+                submitted.assessor_id == BidSectionAssessor.user_id,
+                submitted.status == EvaluationStatus.SUBMITTED,
+            ),
+        )
+        .where(
+            BidSectionAssessor.call_id == call_id,
+            BidSectionAssessor.user_id == user_id,
+            submitted.id.is_(None),
+        )
+    )
+    return int(count or 0)
+
+
+async def bid_notice(
+    db: AsyncSession, type_: NotificationType, payload: Mapping[str, Any], user_id: UUID
+) -> BidNotice | None:
+    """Phase 10: the :class:`BidNotice` of a bid notification for ``user_id`` (``None`` for
+    other types, and once the call is gone). Two statements (three for a reminder)."""
+    if type_ not in BID_NOTIFICATION_TYPES:
+        return None
+    call_id = parse_uuid(payload.get("call_id"))
+    if call_id is None:
+        return None
+    call = await db.get(BidCall, call_id, populate_existing=True)
+    if call is None:
+        return None
+    sections = frozenset(
+        await db.scalars(
+            select(BidSectionAssessor.section_id).where(
+                BidSectionAssessor.call_id == call.id, BidSectionAssessor.user_id == user_id
+            )
+        )
+    )
+    owed = 0
+    if type_ is NotificationType.ASSESSMENT_REMINDER and sections:
+        owed = await owed_assessments(db, call.id, user_id)
+    return BidNotice(call=call, section_ids=sections, owed=owed)
+
+
+def assesses(recipient: Recipient, notice: BidNotice) -> bool:
+    """Phase 10: the recipient assesses a section of the call now: ``bid.view_own_assessment``
+    for one of their sections (the +Asr overlay, c28 live; never through column R)."""
+    if not notice.section_ids:
+        return False
+    resource = recipient.resource.replace(
+        bid_call=notice.facts(), bid_section_id=min(notice.section_ids)
+    )
+    return can(recipient.principal, Rule.BID_VIEW_OWN_ASSESSMENT, resource)
+
+
+def manages_call(recipient: Recipient, notice: BidNotice) -> bool:
+    """Phase 10: the recipient is a call manager now (``bid.view_scores`` with no section in
+    question, as :func:`app.bids.access.manages`)."""
+    resource = recipient.resource.replace(bid_call=notice.facts(), bid_section_id=None)
+    return can(recipient.principal, Rule.BID_VIEW_SCORES, resource)
+
+
+_FINISHED_CALLS: Final = frozenset({BidCallStatus.AWARDED, BidCallStatus.CANCELLED})
+
+
 def parse_time(value: object) -> datetime | None:
     return datetime.fromisoformat(str(value)) if value else None
 
@@ -198,10 +306,13 @@ def applies(
     comment: Comment | None = None,
     now: datetime,
     required_open: int | None = None,
+    bid: BidNotice | None = None,
 ) -> bool:
     """The type's own condition (contract-phase3 section 3.3 table), for a recipient
     who already passed ``idea.view`` (:func:`recipients`). ``required_open``: the idea's
-    open required research items, for research reminders (unknown: not sent)."""
+    open required research items, for research reminders (unknown: not sent). ``bid``:
+    Phase 10, the call of a bid notification for this recipient (:func:`bid_notice`;
+    unknown or gone: not sent)."""
     if not holds(type_, recipient):
         return False
     match type_:
@@ -257,6 +368,38 @@ def applies(
                 and required_open is not None
                 and bool(payload.get("as_owner")) is (idea.researcher_id is None)
                 and does_research(recipient, idea, required_open=required_open)
+            )
+        case NotificationType.ASSESSOR_ASSIGNED:
+            # Phase 10: still an assessor of a section of the call, which isn't finished.
+            return (
+                bid is not None
+                and bid.call.status not in _FINISHED_CALLS
+                and assesses(recipient, bid)
+            )
+        case NotificationType.ASSESSMENT_REMINDER:
+            # Phase 10: the call is being assessed with this due date, still ahead, on an
+            # open idea in a live project, and the recipient still owes an assessment.
+            due_at = parse_time(payload.get("due_at"))
+            project = recipient.resource.project
+            return (
+                bid is not None
+                and due_at is not None
+                and bid.call.status is BidCallStatus.ASSESSING
+                and bid.call.assessment_due_at == due_at
+                and now < due_at
+                and project is not None
+                and not project.archived
+                and idea.status is not IdeaStatus.CLOSED
+                and idea.held_for is None
+                and bid.owed > 0
+                and assesses(recipient, bid)
+            )
+        case NotificationType.ASSESSMENTS_COMPLETE:
+            # Phase 10: to a call manager, while the call is being assessed or awarded.
+            return (
+                bid is not None
+                and bid.call.status in (BidCallStatus.ASSESSING, BidCallStatus.AWARDED)
+                and manages_call(recipient, bid)
             )
 
 

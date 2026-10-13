@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
-import httpx
 import psycopg
 import pytest
 from fastapi import FastAPI
@@ -49,49 +48,17 @@ from tests.bids.conftest import (
     add_bid,
     assert_problem,
     assign,
+    bid_detail,
     call_url,
+    must_haves,
     ok,
     open_call,
+    result_of,
     start,
+    upload,
 )
 from tests.bids.files import DOCM_MAIN
 from tests.factories import make_idea
-
-
-# --- Helpers -----------------------------------------------------------------------------------
-async def upload(
-    who: Api,
-    crew: Crew,
-    bid_id: str,
-    data: bytes,
-    filename: str = "Form of tender.pdf",
-    *,
-    headers: dict[str, str] | None = None,
-    **params: Any,
-) -> httpx.Response:
-    query = {
-        "filename": filename,
-        **{k: str(v).lower() if isinstance(v, bool) else v for k, v in params.items()},
-    }
-    return await who.http.post(
-        API + call_url(crew, f"/bids/{bid_id}/documents"),
-        params=query,
-        content=data,
-        headers={"Content-Type": "application/octet-stream", **(headers or {})},
-    )
-
-
-def must_haves(view: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {m["text"]: m for m in view["call"]["template"]["must_haves"]}
-
-
-async def bid_detail(who: Api, crew: Crew, bid_id: str) -> dict[str, Any]:
-    detail: dict[str, Any] = ok(await who.get(call_url(crew, f"/bids/{bid_id}")))
-    return detail
-
-
-def result_of(detail: dict[str, Any], text: str) -> dict[str, Any]:
-    return next(r for r in detail["must_have_results"] if r["must_have"]["text"] == text)
 
 
 @pytest.fixture
@@ -394,6 +361,7 @@ async def test_no_transaction_is_open_while_the_body_is_read(
             cursor = await connection.execute(
                 "SELECT count(*) FROM pg_stat_activity WHERE state LIKE 'idle in transaction%'"
                 " AND application_name = 'soundings-api' AND pid <> pg_backend_pid()"
+                " AND datname = current_database()"
             )
             row = await cursor.fetchone()
             assert row is not None
@@ -924,3 +892,32 @@ async def test_a_must_have_result_of_a_deleted_link_is_recomputed(
     # One file is still linked: still met.
     result = result_of(await bid_detail(owner, crew, bid["id"]), "Insurance certificate")
     assert result["result"] == MustHaveResult.MET.value
+
+
+async def test_a_call_and_an_idea_go_with_their_linked_documents(
+    call: tuple[Api, dict[str, Any], dict[str, Any]],
+    crew: Crew,
+    db_session: AsyncSession,
+    api: AsUser,
+) -> None:
+    """The documents' composite key to the must-haves is NO ACTION: deleting the call (or
+    the idea) unlinks them first, so the cascade takes everything."""
+    owner, view, bid = call
+    tender = must_haves(view)["Signed form of tender"]["id"]
+    ok(await upload(owner, crew, bid["id"], files.pdf("Signed"), must_have_id=tender), 201)
+    ok(await owner.post(call_url(crew, "/cancellation"), {"reason": "Budget withdrawn."}))
+    deleted = await owner.delete(call_url(crew))
+    assert deleted.status_code == 204, deleted.text
+    assert await db_session.scalar(select(func.count()).select_from(BidDocument)) == 0
+    assert await db_session.scalar(select(func.count()).select_from(BidDocumentContent)) == 0
+
+    # Again, then the idea itself.
+    view = await start(owner, crew)
+    view = await open_call(owner, crew, view)
+    bid = await add_bid(owner, crew, "Northwind Data Ltd", price="120000.00")
+    tender = must_haves(view)["Signed form of tender"]["id"]
+    ok(await upload(owner, crew, bid["id"], files.pdf("Signed"), must_have_id=tender), 201)
+    platform = await api(crew.platform)
+    gone = await platform.delete(f"/ideas/{crew.key}")
+    assert gone.status_code == 204, gone.text
+    assert await db_session.scalar(select(func.count()).select_from(BidDocument)) == 0

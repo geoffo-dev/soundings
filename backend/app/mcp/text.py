@@ -72,22 +72,42 @@ AGENT_TEXT_FIELDS: Final = ("body_md", "comment")
 """The free-text arguments of the write tools an agent may call (and ``scores[].comment``)."""
 
 
+_ITEM_TEXT_FIELDS: Final = ("comment", "rationale")
+"""Free text in each item of ``scores`` (an evaluation's comments; Phase 10, a bid
+assessment's rationales) and of ``findings`` (Phase 10)."""
+
+
+def _clean_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    cleaned = dict(item)
+    for name in _ITEM_TEXT_FIELDS:
+        if isinstance(cleaned.get(name), str):
+            cleaned[name] = visible_text(cleaned[name])
+    evidence = cleaned.get("evidence")
+    if isinstance(evidence, list):
+        cleaned["evidence"] = [
+            {**quote, "quote": visible_text(quote["quote"])}
+            if isinstance(quote, dict) and isinstance(quote.get("quote"), str)
+            else quote
+            for quote in evidence
+        ]
+    return cleaned
+
+
 def agent_text_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     """An agent's write arguments with :data:`HIDDEN` removed from its Markdown and
-    comments (:data:`AGENT_TEXT_FIELDS`, and each score's ``comment``); everything else as
-    sent (identifiers and URLs are validated as they are)."""
+    comments (:data:`AGENT_TEXT_FIELDS`, and each score's ``comment``; Phase 10: each
+    score's and finding's ``rationale`` and evidence ``quote``); everything else as sent
+    (identifiers and URLs are validated as they are)."""
     cleaned = dict(arguments)
     for name in AGENT_TEXT_FIELDS:
         if isinstance(cleaned.get(name), str):
             cleaned[name] = visible_text(cleaned[name])
-    scores = cleaned.get("scores")
-    if isinstance(scores, list):
-        cleaned["scores"] = [
-            {**score, "comment": visible_text(score["comment"])}
-            if isinstance(score, dict) and isinstance(score.get("comment"), str)
-            else score
-            for score in scores
-        ]
+    for group in ("scores", "findings"):
+        items = cleaned.get(group)
+        if isinstance(items, list):
+            cleaned[group] = [_clean_item(item) for item in items]
     return cleaned
 
 

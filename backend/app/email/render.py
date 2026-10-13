@@ -36,6 +36,9 @@ TEMPLATES: Final = (
     "mention",
     "researcher_assigned",  # Phase 8b
     "research_reminder",  # Phase 8b
+    "assessor_assigned",  # Phase 10
+    "assessment_reminder",  # Phase 10
+    "assessments_complete",  # Phase 10
     "digest",
     "test",
     "submission_received",

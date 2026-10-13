@@ -308,7 +308,10 @@ async def test_preferences_digest_and_off(
     member = await api(team.member)
     prefs = ok(await member.get("/me/notification-preferences"))
     types = [row["type"] for row in prefs["items"]]
-    assert types[-2:] == ["researcher_assigned", "research_reminder"]
+    # The research types follow the Phase 3 ones (Phase 10's bid types come after them).
+    start = types.index("researcher_assigned")
+    assert types[start : start + 2] == ["researcher_assigned", "research_reminder"]
+    assert types.index("mention") < start
     assert {row["type"]: row["mode"] for row in prefs["items"]}["researcher_assigned"] == (
         "immediate"
     )

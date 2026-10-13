@@ -515,11 +515,9 @@ _NEW_BID: dict[str, Any] = {
 }
 
 STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
-    # --- Phase 10: still 501 (the AI requests, the report; backend parts 2-3)
-    "request_ai_bid_assessments": (f"{_CALL}/ai-assessments", {"agent_id": AGENT}),
+    # --- Phase 10: still 501 (the report; backend part 3)
     "export_bid_report_markdown": (f"{_CALL}/report/markdown", None),
     "export_bid_report_pdf": (f"{_CALL}/report/pdf", None),
-    "request_ai_bid_assessment": (f"{_BID}/ai-assessment", {"agent_id": AGENT}),
 }
 
 # Phase 10 operations already implemented (tests/bids): a valid request each, for the
@@ -540,6 +538,7 @@ PHASE10_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
         {"sections": [{"section_id": SECTION, "user_ids": [USER]}], "due_at": None},
     ),
     "get_bid_comparison": (f"{_CALL}/comparison", None),
+    "request_ai_bid_assessments": (f"{_CALL}/ai-assessments", {"agent_id": AGENT}),
     "award_bid_call": (f"{_CALL}/award", {"bid_id": BID, "reason": "Best value overall."}),
     "list_bids": (f"{_CALL}/bids", None),
     "create_bid": (f"{_CALL}/bids", _NEW_BID),
@@ -563,6 +562,7 @@ PHASE10_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
         {"answers": [{"question_id": QUESTION, "score": 4, "comment": "Clear plan."}]},
     ),
     "list_bid_section_assessments": (f"{_BID}/sections/{SECTION}/assessments", None),
+    "request_ai_bid_assessment": (f"{_BID}/ai-assessment", {"agent_id": AGENT}),
     "list_bid_ai_assessments": (f"{_BID}/ai-assessments", None),
     "set_bid_ai_inclusion": (
         f"{_BID}/ai-assessments/{AI_ASSESSMENT}/include-in-totals",

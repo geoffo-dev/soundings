@@ -20,7 +20,7 @@ pytestmark = pytest.mark.usefixtures("team")
 
 
 def test_the_jobs_are_registered() -> None:
-    assert TASK_MODULES == ["app.email.tasks", "app.ai.tasks"]
+    assert TASK_MODULES == ["app.email.tasks", "app.ai.tasks", "app.bids.tasks"]
     procrastinate_app.perform_import_paths()  # type: ignore[no-untyped-call]
     assert {
         "send_email",
@@ -29,6 +29,8 @@ def test_the_jobs_are_registered() -> None:
         "remove_old_jobs",
         "run_ai",
         "sweep_ai_runs",
+        "extract_bid_document",
+        "sweep_bid_documents",
     } <= set(procrastinate_app.tasks)
     periodic = {
         task.task.name: task.cron
@@ -39,12 +41,16 @@ def test_the_jobs_are_registered() -> None:
         "notification_schedule": "0 * * * *",
         "remove_old_jobs": "17 3 * * *",
         "sweep_ai_runs": "* * * * *",
+        "sweep_bid_documents": "* * * * *",
     }
     assert procrastinate_app.tasks["send_email"].queue == "email"
     assert procrastinate_app.tasks["notification_schedule"].queue == "notifications"
     # Phase 6: runs on the ai queue (the worker's own pool); the sweep on the main pool.
     assert procrastinate_app.tasks["run_ai"].queue == "ai"
     assert procrastinate_app.tasks["sweep_ai_runs"].queue == "notifications"
+    # Phase 10: extraction on the bid_documents queue (its own pool); the sweep on the main.
+    assert procrastinate_app.tasks["extract_bid_document"].queue == "bid_documents"
+    assert procrastinate_app.tasks["sweep_bid_documents"].queue == "notifications"
 
 
 async def test_the_worker_sends_queued_mail_and_keeps_no_finished_jobs(

@@ -41,6 +41,10 @@ dependencies = [
     # SDK's low-level Server over stateless streamable HTTP; 2.x is the API verified in
     # research R1 section 1 (brings httpx2, sse-starlette and pyjwt).
     "mcp>=2.2,<3",
+    # Bid document text extraction (app/bids/extract_child.py, in the worker's child process;
+    # contract-phase10 section 6.3, ADR 0018): PDF text; BSD-3-Clause, pure Python. Was a dev
+    # dependency (tests read exported proposal PDFs back with it).
+    "pypdf>=6,<7",
 ]
 
 [project.optional-dependencies]
@@ -59,8 +63,6 @@ dev = [
     "mypy>=1.11",
     # So mypy and the tests cover app/tracing.py.
     "fastapi[opentelemetry]>=0.142",
-    # Reads exported proposal PDFs back in tests (text, metadata, outline, fonts); pure Python.
-    "pypdf>=6",
 ]
 
 [build-system]

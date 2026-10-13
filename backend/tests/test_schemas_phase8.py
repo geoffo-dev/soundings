@@ -533,7 +533,7 @@ def test_research_models_cannot_carry_score_data(model: type[BaseModel]) -> None
 
 # --- MCP, AI and audit -----------------------------------------------------------------------
 def test_mcp_keeps_ten_tools_and_shows_the_research_read_only() -> None:
-    assert len(MCP_TOOLS) == 10
+    assert len(MCP_TOOLS) == 13  # Phase 10 added the AI assessor's three
     assert "research" in McpIdeaDetail.model_fields
     SearchIdeasInput.model_validate({"status": list(IdeaStatus)})
     propose = tool_by_name("propose_proposal_section")

@@ -13,12 +13,14 @@ Finished jobs are deleted as they complete (``delete_jobs="successful"``) and th
 daily ``remove_old_jobs`` clears failed, cancelled and aborted jobs after a week, so
 the per-minute sweep doesn't grow the job table (contract-phase3 section 3.9).
 
-**Two pools in one process** (contract-phase6 section 3.3): the main pool
-(:data:`MAIN_QUEUES`, ``SOUNDINGS_WORKER_CONCURRENCY`` jobs: email, notifications, the
-schedules and the AI sweep) and the AI pool (the ``ai`` queue,
+**Three pools in one process** (contract-phase6 section 3.3, contract-phase10 section
+6.3): the main pool (:data:`MAIN_QUEUES`, ``SOUNDINGS_WORKER_CONCURRENCY`` jobs: email,
+notifications, the schedules and the sweeps), the AI pool (the ``ai`` queue,
 ``SOUNDINGS_AI_MAX_CONCURRENT_RUNS`` jobs: ``run_ai``), so runs that take minutes never
-hold up email. procrastinate's own signal handlers are off in both (two workers' handlers
-would replace each other); one handler of ours stops both. The main pool keeps its
+hold up email, and the document pool (:data:`DOCUMENT_QUEUES`, one job: bid document
+text extraction in a child process). procrastinate's own signal handlers are off in
+all of them (two workers' handlers would replace each other); one handler of ours stops
+them all. The main pool keeps its
 25-second grace; the AI pool doesn't wait: its jobs are cancelled at once and end their
 runs ``worker_lost`` (after a best-effort ``tasks/cancel``) well inside Kubernetes'
 30-second grace period.
@@ -44,13 +46,19 @@ logger = logging.getLogger(__name__)
 TASK_MODULES: list[str] = [
     "app.email.tasks",
     "app.ai.tasks",
+    "app.bids.tasks",
 ]
 
 SHUTDOWN_GRACE_SECONDS = 25
 """Finish within Kubernetes' default 30 s termination grace period."""
 MAIN_QUEUES: Final = ("email", "notifications")
-"""The main pool's queues: everything but ``ai`` (the AI pool's)."""
+"""The main pool's queues: everything but ``ai`` (the AI pool's) and ``bid_documents``
+(the document pool's)."""
 AI_QUEUES: Final = ("ai",)
+DOCUMENT_QUEUES: Final = ("bid_documents",)
+"""Phase 10: bid document text extraction (``extract_bid_document``), one at a time per
+worker (``app.schemas.bids.BID_EXTRACTIONS_PER_WORKER``) in a pool of its own, so a 30 s
+extraction never waits behind email or holds it up."""
 
 
 def create_connector(settings: Settings, *, max_size: int) -> PsycopgConnector:
@@ -140,6 +148,22 @@ def ai_worker_options(
     }
 
 
+def document_worker_options(*, runtime: Any, ai_runtime: Any | None = None) -> dict[str, Any]:
+    """The document pool's options (Phase 10): the ``bid_documents`` queue, one job at a
+    time; no grace on shutdown (a cancelled extraction kills its child and the document
+    stays pending: the minute sweep queues it again)."""
+    from app.schemas.bids import BID_EXTRACTIONS_PER_WORKER
+
+    return {
+        "concurrency": BID_EXTRACTIONS_PER_WORKER,
+        "name": "soundings-document-worker",
+        "queues": list(DOCUMENT_QUEUES),
+        "delete_jobs": "successful",
+        "additional_context": _context(runtime, ai_runtime),
+        "shutdown_graceful_timeout": 0,
+    }
+
+
 async def run_pools(*workers: Worker) -> None:
     """Run the workers until SIGINT/SIGTERM (or until one of them stops), then stop them
     all and wait for them: one signal handler for every pool, since procrastinate's own
@@ -170,15 +194,16 @@ async def run_pools(*workers: Worker) -> None:
 
 
 async def run_worker(settings: Settings, *, concurrency: int | None = None) -> None:
-    """Run the worker until SIGINT/SIGTERM: the main pool (the email sender, the outbox
-    and AI sweeps, the notification schedule) and the AI pool (``run_ai``)."""
+    """Run the worker until SIGINT/SIGTERM: the main pool (the email sender, the outbox,
+    AI and document sweeps, the notification schedule), the AI pool (``run_ai``) and the
+    document pool (``extract_bid_document``)."""
     from app.ai.runner import AiRuntime
     from app.db import create_engine, create_sessionmaker
     from app.email.delivery import Runtime
 
     concurrency = concurrency or settings.worker_concurrency
     ai_concurrency = settings.ai_max_concurrent_runs
-    connector = create_connector(settings, max_size=concurrency + ai_concurrency + 4)
+    connector = create_connector(settings, max_size=concurrency + ai_concurrency + 5)
     engine = create_engine(settings, application_name="soundings-worker")
     try:
         with procrastinate_app.replace_connector(connector) as app:
@@ -202,6 +227,11 @@ async def run_worker(settings: Settings, *, concurrency: int | None = None) -> N
                         concurrency=ai_concurrency, runtime=runtime, ai_runtime=ai_runtime
                     ),
                 )
+                documents = Worker(
+                    app=app,
+                    install_signal_handlers=False,
+                    **document_worker_options(runtime=runtime, ai_runtime=ai_runtime),
+                )
                 logger.info(
                     "worker started",
                     extra={
@@ -211,7 +241,7 @@ async def run_worker(settings: Settings, *, concurrency: int | None = None) -> N
                         "ai": settings.ai_enabled,
                     },
                 )
-                await run_pools(main, ai)
+                await run_pools(main, ai, documents)
     finally:
         await engine.dispose()
         logger.info("worker stopped")

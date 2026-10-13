@@ -24,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import select, update
@@ -68,13 +69,17 @@ __all__ = [
     "assert_problem",
     "assign",
     "attach",
+    "bid_detail",
     "call_url",
+    "must_haves",
     "ok",
     "open_call",
     "qualify",
+    "result_of",
     "start",
     "submit",
     "to_assessing",
+    "upload",
 ]
 
 
@@ -325,3 +330,39 @@ async def must_have_ids(db: AsyncSession, call_id: str) -> dict[str, UUID]:
 @pytest.fixture
 def app_settings(app: FastAPI) -> Any:
     return app.state.settings
+
+
+# --- Documents (Phase 10, part 2) -------------------------------------------------------------
+async def upload(
+    who: Api,
+    crew: Crew,
+    bid_id: str,
+    data: bytes,
+    filename: str = "Form of tender.pdf",
+    *,
+    headers: dict[str, str] | None = None,
+    **params: Any,
+) -> httpx.Response:
+    query = {
+        "filename": filename,
+        **{k: str(v).lower() if isinstance(v, bool) else v for k, v in params.items()},
+    }
+    return await who.http.post(
+        API + call_url(crew, f"/bids/{bid_id}/documents"),
+        params=query,
+        content=data,
+        headers={"Content-Type": "application/octet-stream", **(headers or {})},
+    )
+
+
+def must_haves(view: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {m["text"]: m for m in view["call"]["template"]["must_haves"]}
+
+
+async def bid_detail(who: Api, crew: Crew, bid_id: str) -> dict[str, Any]:
+    detail: dict[str, Any] = ok(await who.get(call_url(crew, f"/bids/{bid_id}")))
+    return detail
+
+
+def result_of(detail: dict[str, Any], text: str) -> dict[str, Any]:
+    return next(r for r in detail["must_have_results"] if r["must_have"]["text"] == text)

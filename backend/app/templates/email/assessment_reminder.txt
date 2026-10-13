@@ -1,0 +1,11 @@
+{% extends "_layout.txt" %}
+{% block content %}
+{% if due_today %}Bid assessments are due today{% else %}Bid assessments are due {{ due_day }}{% endif %}
+
+
+A reminder that you still have {{ owed }} to submit in the call for bids “{{ call }}” on:
+
+{% include "_idea.txt" %}
+
+Due {% if due_today %}today, {% endif %}{{ due }}
+{%- endblock %}

@@ -30,10 +30,12 @@ read, the call's AI assessor may start its automatic run (:mod:`app.bids.assess`
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import shutil
+import signal
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -248,10 +250,19 @@ async def run_child(
             return ChildOutcome(crashed=True)
         return _parse(output, limits["max_chars"])
     finally:
-        if process is not None and process.returncode is None:
-            process.kill()
-            await process.wait()
+        if process is not None:
+            await _kill(process)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+async def _kill(process: asyncio.subprocess.Process) -> None:
+    """End the child and anything it started: its process group (it leads its own
+    session), so nothing it left behind keeps the pipes open."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(TimeoutError):
+        async with asyncio.timeout(5):
+            await process.wait()
 
 
 # --- The job ---------------------------------------------------------------------------------

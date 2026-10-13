@@ -63,6 +63,7 @@ RESULT_MESSAGES: Final[dict[AiRunKind, str]] = {
     AiRunKind.EVALUATE: "Evaluation submitted",
     AiRunKind.RESEARCH: "Research note saved",
     AiRunKind.DRAFT_SECTION: "Suggestion saved",
+    AiRunKind.ASSESS_BID: "Bid assessment saved",
 }
 """``result_recorded`` messages per kind."""
 
@@ -151,6 +152,7 @@ _HAS_RESULT = or_(
     AiRun.evaluation_id.is_not(None),
     AiRun.activity_event_id.is_not(None),
     AiRun.suggestion_id.is_not(None),
+    AiRun.bid_ai_assessment_id.is_not(None),
 )
 
 

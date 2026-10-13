@@ -71,6 +71,7 @@ from app.models.enums import (
 from app.models.idea import Idea
 from app.models.proposal import Proposal
 from app.models.user import User
+from app.notifications import bids as bid_notifications
 from app.schemas.bids import (
     BIDS_PER_CALL_MAX,
     BidAiInclusionUpdate,
@@ -320,6 +321,17 @@ async def update_call(
         db, principal, loaded, "bid_call.update", Rule.BID_MANAGE, call_id=call.id, fields=changed
     )
     await db.flush()
+    if "ai_assessor_id" in changed and call.ai_assessor_id is not None:
+        await _check_automatic(db, call)
+
+
+async def _check_automatic(db: AsyncSession, call: BidCall) -> None:
+    """The call's AI assessor may now start automatic runs: the worker checks once this
+    commits (contract-phase10 section 9.1)."""
+    from app.bids.assess import defer_automatic_check
+
+    if call.status in (BidCallStatus.OPEN, BidCallStatus.ASSESSING):
+        await defer_automatic_check(db, call.id)
 
 
 async def change_status(
@@ -351,6 +363,8 @@ async def change_status(
         to_status=status,
     )
     await db.flush()
+    if call.ai_assessor_id is not None:
+        await _check_automatic(db, call)
 
 
 async def cancel_call(
@@ -401,6 +415,9 @@ async def delete_call(db: AsyncSession, principal: Principal, loaded: LoadedCall
         status=call.status,
         bids=bids,
     )
+    from app.bids.documents import unlink_documents
+
+    await unlink_documents(db, call_id=call.id)
     await db.delete(call)
     await db.flush()
 
@@ -612,6 +629,8 @@ async def reject_bid(
     bid.reinstated_by_id = None
     await db.flush()
     cancelled = await runs.cancel_assess_runs(db, principal, loaded.call, bid_id=bid.id)
+    # Its outstanding assessments are no longer expected (contract section 8, "Progress").
+    bid_notifications.queue_completion_check(db, loaded.call.id, principal.user_id)
     await _audit(
         db,
         principal,
@@ -842,6 +861,13 @@ async def set_assessors(
     due_changed = body.due_at != call.assessment_due_at
     call.assessment_due_at = body.due_at
     await db.flush()
+    # "Asked to assess bids" for the people added (one each, with the due date this request
+    # set), and (someone removed) whether nothing expected is outstanding any more.
+    bid_notifications.queue_assessors_added(
+        db, call.id, principal.user_id, (u for users in added.values() for u in users)
+    )
+    if removed:
+        bid_notifications.queue_completion_check(db, call.id, principal.user_id)
     if added or removed or due_changed:
         await _audit(
             db,
@@ -942,6 +968,7 @@ async def save_my_assessment(
     elif body.submit:
         existing.status = EvaluationStatus.SUBMITTED
         existing.submitted_at = now
+        bid_notifications.queue_completion_check(db, loaded.call.id, principal.user_id)
         await _audit(
             db,
             principal,

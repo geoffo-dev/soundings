@@ -487,17 +487,20 @@ def test_received_times_are_stored_in_utc_and_never_ahead() -> None:
 
 
 # --- The AI assessor --------------------------------------------------------------------------
-def test_the_bid_tools_wait_for_their_handlers() -> None:
+def test_the_bid_tools_joined_with_their_handlers() -> None:
+    from app.mcp.tools import TOOLS
+
     names = [tool.name for tool in PHASE10_MCP_TOOLS]
 
     assert names == ["get_bid_for_assessment", "get_bid_document_text", "submit_bid_assessment"]
-    assert not set(names) & {tool.name for tool in MCP_TOOLS}  # they join with the handlers
+    assert [tool.name for tool in MCP_TOOLS][-3:] == names  # with their handlers
+    assert set(names) <= set(TOOLS)
     assert {tool.rule for tool in PHASE10_MCP_TOOLS} == {"bid.ai_assess"}
     assert {tool.scope for tool in PHASE10_MCP_TOOLS} == {ApiKeyScope.EVALUATE}
     assert {t.name for t in PHASE10_MCP_TOOLS if t.read_only} == ASSESS_RUN_READ_TOOLS
     assert AGENT_RUN_WRITE_TOOLS[AiRunKind.ASSESS_BID] == "submit_bid_assessment"
     assert set(names) <= set(AI_TOOL_MESSAGES)
-    assert BID_ASSESSMENT_INSTRUCTION not in MCP_INSTRUCTIONS  # joins with the tools
+    assert BID_ASSESSMENT_INSTRUCTION in MCP_INSTRUCTIONS  # joined with the tools
     assert agent_key_scopes([AiRunKind.ASSESS_BID]) == [
         ApiKeyScope.READ,
         ApiKeyScope.EVALUATE,

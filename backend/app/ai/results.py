@@ -44,6 +44,7 @@ async def attach(
     *,
     evaluation_id: UUID | None = None,
     suggestion_id: UUID | None = None,
+    bid_ai_assessment_id: UUID | None = None,
 ) -> bool:
     """Put the result on ``run`` (locked by :func:`~app.ai.scope.lock_run`) while it is
     still open: ``running`` and not cancel-requested. ``False`` when it isn't."""
@@ -52,6 +53,8 @@ async def attach(
         values["evaluation_id"] = evaluation_id
     if suggestion_id is not None:
         values["suggestion_id"] = suggestion_id
+    if bid_ai_assessment_id is not None:
+        values["bid_ai_assessment_id"] = bid_ai_assessment_id
     if not values:
         raise ValueError("attach a result")
     attached = await db.scalar(

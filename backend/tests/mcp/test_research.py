@@ -26,8 +26,8 @@ def key_of(team: Team, idea: Idea) -> str:
     return f"{team.project.key}-{idea.number}"
 
 
-def test_still_ten_tools() -> None:
-    assert len(MCP_TOOLS) == 10
+def test_still_ten_tools_and_the_bid_tools() -> None:
+    assert len(MCP_TOOLS) == 13  # Phase 10 added the AI assessor's three
 
 
 async def test_get_idea_shows_the_checklist_read_only(

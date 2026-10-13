@@ -131,6 +131,7 @@ class _Run:
     id: UUID
     kind: AiRunKind
     section_key: str | None
+    bid_id: UUID | None
     idea_key: str
     agent_id: UUID
     agent_name: str
@@ -215,6 +216,7 @@ async def _prepare(runtime: AiRuntime, run_id: UUID) -> _Run | None:
             id=run.id,
             kind=run.kind,
             section_key=run.section_key,
+            bid_id=run.bid_id,
             idea_key=format_key(project.key, idea.number),
             agent_id=agent.id,
             agent_name=agent.display_name,
@@ -276,6 +278,7 @@ async def _converse(
         idea_key=run.idea_key,
         agent_name=run.agent_name,
         section_key=run.section_key,
+        bid_id=run.bid_id,
     )
     attempt = 0
     while True:

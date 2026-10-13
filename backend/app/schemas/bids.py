@@ -1618,13 +1618,12 @@ def call_bid_status(
     return BidStatus.RECEIVED
 
 
-_WHITESPACE = re.compile(r"\s+")
-
-
 def normalise_quote_text(text: str) -> str:
     """What quote checks compare: every run of whitespace (Unicode ``\\s``: spaces, tabs,
-    line breaks, no-break spaces) as one space, ends trimmed. Case and punctuation count."""
-    return _WHITESPACE.sub(" ", text).strip()
+    line breaks, no-break spaces) as one space, ends trimmed. Case and punctuation count.
+    (``str.split()`` splits on exactly the characters ``\\s`` matches, about four times
+    faster than the regular expression on a 2,000,000-character text.)"""
+    return " ".join(text.split())
 
 
 def quote_found(quote: str, document_text: str) -> bool:

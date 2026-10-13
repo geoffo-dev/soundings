@@ -1,0 +1,11 @@
+{% extends "_layout.txt" %}
+{% block content %}
+All bid assessments are in
+
+
+Every assessor has submitted their assessments in the call for bids “{{ call }}” ({{ assessments }} of {{ bids }}) on:
+
+{% include "_idea.txt" %}
+
+Open the idea's Bids tab to compare the bids and decide on the award.
+{%- endblock %}

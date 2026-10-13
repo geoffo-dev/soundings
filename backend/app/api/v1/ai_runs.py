@@ -321,7 +321,7 @@ async def stream_ai_run_events(
     ] = None,
 ) -> Response:
     loaded = await ideas.load_idea(session, principal, idea)
-    run = await _load_run(session, loaded, run_id)
+    run = await _load_run(session, loaded, run_id, principal=principal)
     cursor = last_event_id if last_event_id is not None else (after or 0)
     if run.status not in (AiRunStatus.QUEUED, AiRunStatus.RUNNING) and cursor >= run.event_count:
         return Response(status_code=status.HTTP_204_NO_CONTENT)

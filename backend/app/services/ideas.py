@@ -450,6 +450,10 @@ async def delete_idea(db: AsyncSession, principal: Principal, loaded: LoadedIdea
         project_id=idea.project_id,
         details={"rule": Rule.IDEA_DELETE, "number": idea.number},
     )
+    # Phase 10: its call's documents lose their must-have links first (see unlink_documents).
+    from app.bids.documents import unlink_documents
+
+    await unlink_documents(db, idea_id=idea.id)
     await db.delete(idea)
     await db.flush()
 

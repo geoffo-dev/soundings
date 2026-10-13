@@ -1,6 +1,6 @@
-"""The hourly ``notification_schedule`` job: evaluation and (Phase 8b) research reminders,
-then daily digests, then the cleanup (contract-phase3 sections 3.6, 3.7 and 3.9;
-contract-phase8b section 6.3).
+"""The hourly ``notification_schedule`` job: evaluation, (Phase 8b) research and (Phase 10)
+bid assessment reminders, then daily digests, then the cleanup (contract-phase3 sections
+3.6, 3.7 and 3.9; contract-phase8b section 6.3; contract-phase10 section 11).
 
 Everything follows the instance time zone (``SOUNDINGS_TIMEZONE``) and takes ``now``
 as an argument, so tests drive it with any clock. Both jobs are idempotent: reminders
@@ -52,6 +52,7 @@ from app.models.notification import Notification, OutboundEmail
 from app.models.project import Project
 from app.models.user import User
 from app.notifications import access, preferences
+from app.notifications import bids as bid_notifications
 from app.notifications.fanout import NotificationWriter, usable_address
 from app.public import retention as public_retention
 from app.services import brand_assets, research, sessions
@@ -448,6 +449,8 @@ async def run_schedule(
     async with session_scope(sessionmaker, settings=settings) as db:
         reminders = await send_reminders(db, settings, now)
         reminders += await send_research_reminders(db, settings, now)
+        # Phase 10: bid assessments due soon or today.
+        reminders += await bid_notifications.send_assessment_reminders(db, settings, now)
     digests = await build_digests(sessionmaker, settings, now)
     async with session_scope(sessionmaker) as db:
         await cleanup(db, now)

@@ -1,0 +1,8 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">All bid assessments are in</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Every assessor has submitted their assessments in the call for bids “{{ call }}” ({{ assessments }} of {{ bids }}) on:</p>
+{{ m.idea_card(idea, c, s) }}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Open the idea's Bids tab to compare the bids and decide on the award.</p>
+{% endblock %}

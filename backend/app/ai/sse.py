@@ -44,7 +44,7 @@ from app.db import SessionMaker
 from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.models.ai import AiRun, AiRunEvent
-from app.models.enums import AuthMethod
+from app.models.enums import AiRunKind, AuthMethod
 from app.observability import AI_RUN_EVENT_STREAMS
 from app.schemas.ai import (
     AI_SSE_HEARTBEAT,
@@ -244,13 +244,20 @@ async def still_allowed(
         # passes the re-check either (app.authz.guest; Phase 8b).
         live = dataclasses.replace(live, operation=principal.operation)
         try:
-            await load_idea(db, live, str(idea_id))
+            loaded = await load_idea(db, live, str(idea_id))
         except ProblemError:
             return False
-        found_run = await db.scalar(
-            select(AiRun.id).where(AiRun.id == run_id, AiRun.idea_id == idea_id)
+        kind = await db.scalar(
+            select(AiRun.kind).where(AiRun.id == run_id, AiRun.idea_id == idea_id)
         )
-        return found_run is not None
+        if kind is None:
+            return False
+        if kind is AiRunKind.ASSESS_BID:
+            # Phase 10: an assess run's stream stays open only while they see the bids.
+            from app.bids.access import may_view_bids
+
+            return await may_view_bids(db, live, loaded)
+        return True
 
 
 Recheck = Callable[[], Any]

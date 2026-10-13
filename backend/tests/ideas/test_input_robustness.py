@@ -284,6 +284,9 @@ def _string_params(app: FastAPI) -> list[tuple[str, str, str]]:
     return found
 
 
+# Every write route of the app, one after another: more than the 120 session writes a
+# minute one person may make (Phase 10's document and AI routes took it past them).
+@pytest.mark.settings(session_writes_per_minute=10_000)
 async def test_nul_in_any_query_or_path_parameter_is_never_a_500(
     app: FastAPI, api: AsUser, team: Team, db_session: AsyncSession
 ) -> None:

@@ -99,9 +99,11 @@ async def test_tools_list_is_exactly_the_catalogue(connect: Connect, secret: str
         assert tool.output_schema == spec.output.model_json_schema(mode="serialization")
         assert tool.annotations is not None
         assert tool.annotations.read_only_hint is spec.read_only
-        assert tool.annotations.destructive_hint is (spec.name == "submit_evaluation")
+        # Submitting replaces what was saved (Phase 10: the AI's bid assessment too).
+        replaces = {"submit_evaluation", "submit_bid_assessment"}
+        assert tool.annotations.destructive_hint is (spec.name in replaces)
         assert tool.annotations.idempotent_hint is (
-            spec.read_only or spec.name in {"submit_evaluation", "add_research_note"}
+            spec.read_only or spec.name in replaces | {"add_research_note"}
         )
         assert tool.annotations.open_world_hint is False
 

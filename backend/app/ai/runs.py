@@ -135,6 +135,8 @@ async def runs_out(
                 idea_id=run.idea_id,
                 kind=run.kind,
                 section_key=run.section_key,
+                bid_id=run.bid_id,
+                automatic=run.automatic,
                 agent=agent_service.agent_ref(agent),
                 requested_by=users.get(run.requested_by_id) if run.requested_by_id else None,
                 status=run.status,
@@ -153,6 +155,7 @@ async def runs_out(
                     evaluation_id=run.evaluation_id,
                     note_id=run.activity_event_id,
                     suggestion_id=run.suggestion_id,
+                    bid_ai_assessment_id=run.bid_ai_assessment_id,
                 ),
                 event_count=run.event_count,
                 can_cancel=may_cancel and run.status in _ACTIVE,
@@ -168,15 +171,36 @@ async def run_out(
 
 
 async def _load_run(
-    db: AsyncSession, loaded: LoadedIdea, run_id: UUID, *, for_update: bool = False
+    db: AsyncSession,
+    loaded: LoadedIdea,
+    run_id: UUID,
+    *,
+    for_update: bool = False,
+    principal: Principal | None = None,
 ) -> AiRun:
+    """The idea's run (404 otherwise). Phase 10 (review S9): an ``assess_bid`` run names a
+    bid, so with ``principal`` it is 404 for someone without ``bid.view_bids``."""
     statement = select(AiRun).where(AiRun.id == run_id, AiRun.idea_id == loaded.idea.id)
     if for_update:
         statement = statement.with_for_update(key_share=True)
     run = await db.scalar(statement.execution_options(populate_existing=True))
     if run is None:
         raise _run_not_found()
+    if (
+        principal is not None
+        and run.kind is AiRunKind.ASSESS_BID
+        and not await sees_bids(db, principal, loaded)
+    ):
+        raise _run_not_found()
     return run
+
+
+async def sees_bids(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> bool:
+    """``bid.view_bids`` on the idea's call (call managers and its section assessors):
+    who may see its assess runs (Phase 10)."""
+    from app.bids.access import may_view_bids
+
+    return await may_view_bids(db, principal, loaded)
 
 
 # --- Permissions -------------------------------------------------------------------------------
@@ -264,6 +288,9 @@ async def list_runs(
     statement = select(AiRun).where(AiRun.idea_id == loaded.idea.id)
     if kind is not None:
         statement = statement.where(AiRun.kind == kind)
+    if not await sees_bids(db, principal, loaded):
+        # Phase 10: assess runs name bids (left out, as if they didn't exist).
+        statement = statement.where(AiRun.kind != AiRunKind.ASSESS_BID)
     runs = list(
         await db.scalars(statement.order_by(AiRun.created_at.desc(), AiRun.id.desc()).limit(limit))
     )
@@ -285,7 +312,7 @@ async def get_run(
 ) -> schemas.AiRunDetail:
     """``GET /ideas/{idea}/ai-runs/{run_id}``: the run and every event (the polling
     fallback of the stream)."""
-    run = await _load_run(db, loaded, run_id)
+    run = await _load_run(db, loaded, run_id, principal=principal)
     events = await db.scalars(
         select(AiRunEvent).where(AiRunEvent.run_id == run.id).order_by(AiRunEvent.seq)
     )
@@ -515,7 +542,7 @@ async def cancel_run(
 ) -> schemas.AiRun:
     """``POST .../cancel`` (``ai.cancel_run``; the route holds the idea's lock): 404 ->
     403 -> 409 ``ai_run_finished``. Idempotent while the run is active."""
-    run = await _load_run(db, loaded, run_id)
+    run = await _load_run(db, loaded, run_id, principal=principal)
     require(principal, Rule.AI_CANCEL_RUN, loaded.resource)
     already = run.cancel_requested_at is not None and run.status is AiRunStatus.RUNNING
     status = await cancel_run_status(db, run.id, by_id=principal.user_id)
@@ -537,7 +564,7 @@ async def cancel_run(
             },
         )
     await db.flush()
-    return await run_out(db, principal, loaded, await _load_run(db, loaded, run_id))
+    return await run_out(db, principal, loaded, await _load_run(db, loaded, run_id))  # seen above
 
 
 # --- The include-AI toggle ------------------------------------------------------------------------

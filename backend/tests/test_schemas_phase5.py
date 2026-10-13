@@ -16,6 +16,7 @@ from app.authz import Rule
 from app.authz.rules import RULE_SCOPES, SESSION_ONLY_RULES
 from app.domain.principal import ApiKeyScope as PrincipalScope
 from app.models.enums import ApiKeyScope
+from app.schemas.ai import ASSESS_RUN_READ_TOOLS
 from app.schemas.api_keys import (
     API_KEY_OWNER_IDLE_LIMIT,
     API_KEY_PATTERN,
@@ -72,9 +73,12 @@ SPEC_TOOLS = [
     "submit_evaluation",
     "propose_proposal_section",
     "add_research_note",
+    "get_bid_for_assessment",
+    "get_bid_document_text",
+    "submit_bid_assessment",
 ]
 """SPEC section 8's tools, in role matrix section 6's order, then Phase 6's research note
-tool (ten)."""
+tool (ten), then Phase 10's three bid tools for the AI assessor."""
 
 
 # --- API keys --------------------------------------------------------------------------
@@ -193,7 +197,8 @@ def test_each_tool_names_a_rule_and_its_scope(tool: typing.Any) -> None:
 
     assert rule not in SESSION_ONLY_RULES
     assert RULE_SCOPES[rule] == tool.scope
-    assert tool.read_only == (tool.scope == ApiKeyScope.READ)
+    # Phase 10: the AI assessor's two reads need evaluate (bid.ai_assess, its run's rule).
+    assert tool.read_only == (tool.scope == ApiKeyScope.READ or tool.name in ASSESS_RUN_READ_TOOLS)
     assert not (tool.read_only and tool.destructive)
     assert re.fullmatch(r"[a-z][a-z_]{2,40}", tool.name)
     assert tool.title

@@ -59,6 +59,7 @@ __all__ = [
     "load_idea_for_call",
     "load_section",
     "manages",
+    "may_view_bids",
     "require_section_rule",
     "sees_price",
 ]
@@ -173,6 +174,17 @@ async def load_call(
     resource = loaded.resource.replace(bid_call=await call_facts(db, principal, call))
     deferred = _decide(authorize(principal, rule, resource))
     return LoadedCall(loaded.idea, loaded.project, call, resource, deferred)
+
+
+async def may_view_bids(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> bool:
+    """``bid.view_bids`` on the idea's call now (call managers, and its section assessors
+    while c28 holds), ``False`` without a call: who may see the call's assess runs
+    (Phase 10 review S9: they name bids)."""
+    call = await call_of(db, loaded.idea.id)
+    if call is None:
+        return False
+    resource = loaded.resource.replace(bid_call=await call_facts(db, principal, call))
+    return authorize(principal, Rule.BID_VIEW_BIDS, resource).allowed
 
 
 def manages(principal: Principal, resource: Resource) -> bool:

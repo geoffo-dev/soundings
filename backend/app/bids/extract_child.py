@@ -142,7 +142,7 @@ class _Text:
         self.size += len(piece)
 
     def result(self, *, active_content: bool = False) -> Result:
-        text = visible_text("".join(self.pieces))
+        text = visible_text("".join(self.pieces)).rstrip()
         truncated = self.full or len(text) > self.limit
         text = text[: self.limit]
         if not text.strip():
@@ -420,9 +420,11 @@ class _Archive:
             info = self.archive.getinfo(name)
         except KeyError:
             return
+        allowed = self.limits.max_ratio * max(info.compress_size, 1)
+        if info.file_size > allowed:
+            raise _Failed("archive_limits")  # what it claims is already too much
         parser = _parser(handler)
         part = 0
-        allowed = self.limits.max_ratio * max(info.compress_size, 1)
         try:
             with self.archive.open(info) as stream:
                 while chunk := stream.read(64 * 1024):
@@ -667,6 +669,10 @@ def extract(kind: str, data: bytes, limits: Limits) -> Result:
         return Result("failed", error=failed.error)
     except RecursionError:
         return Result("failed", error="damaged")
+    except MemoryError:
+        raise
+    except Exception:  # noqa: BLE001 - a reader's own bug on this file: no point retrying
+        return Result("failed", error="internal_error")
 
 
 def _limit_memory(memory_bytes: int) -> None:

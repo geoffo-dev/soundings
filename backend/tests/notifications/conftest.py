@@ -4,7 +4,8 @@ Every test here runs with SMTP configured (a host nobody listens on: nothing lea
 the test unless a test points the transport at :class:`FakeSmtpServer`); turn it off
 with ``@pytest.mark.settings(smtp_host=None, smtp_from=None)``.
 
-* ``team`` / ``api``: the ideas test team (tests/ideas/conftest.py).
+* ``team`` / ``api``: the ideas test team (tests/ideas/conftest.py); ``crew``: the bid
+  evaluation crew (tests/bids/conftest.py).
 * ``outbox``: helpers to read notifications, outbox rows and procrastinate jobs.
 * ``runtime``: the worker's :class:`~app.email.delivery.Runtime` with a
   :class:`RecordingTransport` (or any transport) and a settable clock.
@@ -31,6 +32,7 @@ from app.models.base import utcnow
 from app.models.enums import NotificationType
 from app.models.notification import Notification, OutboundEmail
 from app.worker import procrastinate_app
+from tests.bids.conftest import crew  # noqa: F401 - Phase 10's bid notifications
 from tests.ideas.conftest import (  # noqa: F401 - fixtures
     API,
     Api,

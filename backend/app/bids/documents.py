@@ -95,6 +95,7 @@ __all__ = [
     "page_count",
     "read_body",
     "stored_filename",
+    "unlink_documents",
     "update_document",
     "upload_slots",
 ]
@@ -565,3 +566,28 @@ async def delete_document(
     await db.flush()
     if linked is not None:
         await sync_document_must_have(db, loaded.call.id, bid.id, linked)
+
+
+async def unlink_documents(
+    db: AsyncSession, *, call_id: UUID | None = None, idea_id: UUID | None = None
+) -> None:
+    """Unlink a call's (or an idea's call's) documents from their must-haves before the
+    call goes with everything in it: the documents' composite key to the must-haves is NO
+    ACTION (the service unlinks before a must-have is deleted; review S7), and Postgres
+    checks it while the cascade from the call deletes the must-haves before the bids'
+    documents. For ``delete_call`` and ``delete_idea``."""
+    from sqlalchemy import update
+
+    if call_id is None and idea_id is None:  # pragma: no cover - a programming error
+        raise ValueError("a call or an idea")
+    where = (
+        BidDocument.call_id == call_id
+        if call_id is not None
+        else BidDocument.call_id.in_(select(BidCall.id).where(BidCall.idea_id == idea_id))
+    )
+    await db.execute(
+        update(BidDocument)
+        .where(where, BidDocument.must_have_id.is_not(None))
+        .values(must_have_id=None)
+        .execution_options(synchronize_session=False)
+    )

@@ -38,6 +38,7 @@ from app.email.model import (
 )
 from app.email.outbox import max_age, message_id_domain
 from app.models.activity import Comment
+from app.models.bid import BidCallSection
 from app.models.enums import (
     EmailType,
     IdeaStatus,
@@ -212,6 +213,7 @@ async def _notification(
     comment = await db.get(Comment, notification.comment_id) if notification.comment_id else None
     recipient = (await access.recipients(db, idea, project, [user.id])).get(user.id)
     required_open = await _required_open(db, notification.type, idea)
+    notice = await access.bid_notice(db, notification.type, notification.payload, user.id)
     if recipient is None or not access.applies(
         notification.type,
         recipient,
@@ -220,6 +222,7 @@ async def _notification(
         comment=comment,
         now=context.now,
         required_open=required_open,
+        bid=notice,
     ):
         return Cancelled(NO_LONGER_APPLIES)
     if await preferences.mode_of(db, user.id, notification.type) is NotificationMode.OFF:
@@ -389,6 +392,108 @@ async def _notification(
                 reason=f"You own {key}." if as_owner else f"You're researching {key}.",
                 **base,
             )
+        case (
+            NotificationType.ASSESSOR_ASSIGNED
+            | NotificationType.ASSESSMENT_REMINDER
+            | NotificationType.ASSESSMENTS_COMPLETE
+        ):
+            assert notice is not None  # noqa: S101 - checked by access.applies
+            return await _bid_email(context, notification, idea, info, notice, actor, base)
+
+
+async def _bid_email(
+    context: _Context,
+    notification: Notification,
+    idea: Idea,
+    info: IdeaInfo,
+    notice: access.BidNotice,
+    actor: str,
+    base: Mapping[str, Any],
+) -> EmailContent:
+    """Phase 10's three bid emails (contract-phase10 section 11): the call's title, the
+    recipient's section titles, dates and counts; never bid score data, prices, bidders or
+    document text. The button opens the idea's Bids tab."""
+    call = notice.call
+    key = info.key
+    call_title = subject_title(call.title)
+    bids_button = Button("Open the bids", context.links.idea(key, bids=True))
+    payload = notification.payload
+    match notification.type:
+        case NotificationType.ASSESSOR_ASSIGNED:
+            # The due date and sections now (the request's may have changed since).
+            due_at = call.assessment_due_at
+            by = f" by {context.day(due_at)}" if due_at else ""
+            sections = await _section_titles(context.db, notice)
+            return EmailContent(
+                template="assessor_assigned",
+                subject=f'[{key}] Please assess the bids for "{call_title}"{by}',
+                preheader=f"{actor} asked you to assess bids on {key}{by}.",
+                context={
+                    "actor": actor,
+                    "idea": info,
+                    "call": call.title,
+                    "sections": sections,
+                    "due": context.moment(due_at) if due_at else None,
+                },
+                button=bids_button,
+                reason=f"You're assessing bids for {key}.",
+                **base,
+            )
+        case NotificationType.ASSESSMENT_REMINDER:
+            due_at = access.parse_time(payload.get("due_at"))
+            assert due_at is not None  # noqa: S101 - checked by access.applies
+            today = context.same_day(due_at)
+            day = context.day(due_at)
+            when = f"today, {day}" if today else day
+            return EmailContent(
+                template="assessment_reminder",
+                subject=f'[{key}] Reminder: bid assessments for "{call_title}" are due {when}',
+                preheader=f"Your bid assessments on {key} are due {when}.",
+                context={
+                    "idea": info,
+                    "call": call.title,
+                    "due": context.moment(due_at),
+                    "due_day": day,
+                    "due_today": today,
+                    "owed": plural(max(1, notice.owed), "assessment"),
+                },
+                button=bids_button,
+                reason=f"You're assessing bids for {key}.",
+                **base,
+            )
+        case _:  # NotificationType.ASSESSMENTS_COMPLETE
+            bids = max(1, int(payload.get("bid_count") or 1))
+            assessments = max(1, int(payload.get("assessment_count") or 1))
+            reason = f"You started the call for bids on {key}."
+            if idea.owner_id == notification.user_id:
+                reason = f"You're the owner of {key}."
+            return EmailContent(
+                template="assessments_complete",
+                subject=f'[{key}] All bid assessments are in for "{call_title}"',
+                preheader=f"Every assessor has submitted in the call for bids on {key}.",
+                context={
+                    "idea": info,
+                    "call": call.title,
+                    "assessments": plural(assessments, "assessment"),
+                    "bids": plural(bids, "bid"),
+                },
+                button=Button("Compare the bids", context.links.idea(key, bids=True)),
+                reason=reason,
+                **base,
+            )
+
+
+async def _section_titles(db: AsyncSession, notice: access.BidNotice) -> list[str]:
+    """The titles of the recipient's sections of the call, in the template's order."""
+    if not notice.section_ids:
+        return []
+    return list(
+        await db.scalars(
+            select(BidCallSection.title)
+            .where(any_of(BidCallSection.id, notice.section_ids))
+            .order_by(BidCallSection.position, BidCallSection.id)
+        )
+    )
 
 
 async def _required_open(db: AsyncSession, type_: NotificationType, idea: Idea) -> int | None:
@@ -430,8 +535,10 @@ def _digest_line(
     project: Project,
     actor: str,
     comment: Comment | None,
+    notice: access.BidNotice | None = None,
 ) -> str:
     payload = notification.payload
+    call = f"“{notice.call.title}”" if notice is not None else "the call for bids"
     match notification.type:
         case NotificationType.OWNER_ASSIGNED:
             return f"{actor} made you the owner"
@@ -459,6 +566,16 @@ def _digest_line(
         case NotificationType.RESEARCH_REMINDER:
             due_at = access.parse_time(payload.get("due_at"))
             return f"Research due {context.day(due_at)}" if due_at else "Research reminder"
+        case NotificationType.ASSESSOR_ASSIGNED:
+            due_at = access.parse_time(payload.get("due_at"))
+            due = f" (due {context.day(due_at)})" if due_at else ""
+            return f"{actor} asked you to assess the bids in {call}{due}"
+        case NotificationType.ASSESSMENT_REMINDER:
+            due_at = access.parse_time(payload.get("due_at"))
+            when = f" due {context.day(due_at)}" if due_at else " due soon"
+            return f"Your bid assessments in {call} are{when}"
+        case NotificationType.ASSESSMENTS_COMPLETE:
+            return f"All bid assessments are in for {call}"
 
 
 async def _digest(
@@ -485,6 +602,7 @@ async def _digest(
     for row in rows:
         by_idea.setdefault(row[1].id, []).append(row)
     kept: list[tuple[Notification, Idea, Project]] = []
+    notices: dict[UUID, access.BidNotice] = {}
     for items in by_idea.values():
         idea, project = items[0][1], items[0][2]
         recipient = (await access.recipients(db, idea, project, [user.id])).get(user.id)
@@ -494,6 +612,7 @@ async def _digest(
             comment = comments.get(notification.comment_id) if notification.comment_id else None
             if modes[notification.type] is NotificationMode.OFF:
                 continue
+            notice = await access.bid_notice(db, notification.type, notification.payload, user.id)
             if access.applies(
                 notification.type,
                 recipient,
@@ -502,8 +621,11 @@ async def _digest(
                 comment=comment,
                 now=context.now,
                 required_open=await _required_open(db, notification.type, idea),
+                bid=notice,
             ):
                 kept.append((notification, idea, project))
+                if notice is not None:
+                    notices[notification.id] = notice
     if not kept:
         return Cancelled(NOTHING_LEFT)
     names = await context.names([n.actor_id for n, _, _ in kept])
@@ -516,7 +638,11 @@ async def _digest(
         lines: list[str] = group["lines"]
         actor = names.get(notification.actor_id, SOMEONE) if notification.actor_id else SOMEONE
         comment = comments.get(notification.comment_id) if notification.comment_id else None
-        lines.append(_digest_line(context, notification, project, actor, comment))
+        lines.append(
+            _digest_line(
+                context, notification, project, actor, comment, notices.get(notification.id)
+            )
+        )
         shown += 1
     idea_count = len({idea.id for _, idea, _ in kept})
     summary = f"{plural(len(kept), 'update')} on {plural(idea_count, 'idea')} you follow."

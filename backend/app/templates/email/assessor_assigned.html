@@ -1,0 +1,10 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Please assess the bids</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{{ actor }} asked you to assess the bids in the call for bids “{{ call }}” on:</p>
+{{ m.idea_card(idea, c, s) }}
+{% if sections %}<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Your {% if sections|length == 1 %}section{% else %}sections{% endif %}: <strong>{{ sections|join(", ") }}</strong></p>{% endif %}
+{% if due %}<p class="sx-text" style="{{ s.p }}color:{{ c.text }};"><strong>Due {{ due }}</strong></p>{% endif %}
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Score your sections for every bid on the idea's Bids tab. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours.</p>
+{% endblock %}

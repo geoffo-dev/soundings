@@ -812,10 +812,21 @@ async def everything(api: AsUser, team: Team, db_session: AsyncSession) -> dict[
     }
 
 
+AGENT_RUN_ONLY = frozenset(
+    {
+        "add_research_note",
+        "get_bid_for_assessment",
+        "get_bid_document_text",
+        "submit_bid_assessment",
+    }
+)
+
+
 @pytest.mark.parametrize(
-    # add_research_note is for agents during a research run only (tests/ai/test_scope.py).
+    # add_research_note is for agents during a research run only (tests/ai/test_scope.py),
+    # the bid tools during an assess run only (tests/bids/test_ai_assessor.py).
     "tool",
-    [tool.name for tool in MCP_TOOLS if tool.name != "add_research_note"],
+    [tool.name for tool in MCP_TOOLS if tool.name not in AGENT_RUN_ONLY],
 )
 async def test_every_tool_needs_its_scope(
     as_agent: AsAgent, team: Team, everything: dict[str, Any], tool: str

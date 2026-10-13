@@ -49,7 +49,7 @@ from app.models.ai import AiAgent, AiRun
 from app.models.enums import AiRunKind, AiRunStatus
 from app.models.idea import Idea
 from app.models.project import Project
-from app.schemas.ai import AGENT_READ_TOOLS, AGENT_RUN_WRITE_TOOLS
+from app.schemas.ai import AGENT_READ_TOOLS, AGENT_RUN_WRITE_TOOLS, ASSESS_RUN_READ_TOOLS
 
 __all__ = [
     "RESEARCH_NOTE_TOOL",
@@ -62,6 +62,7 @@ __all__ = [
     "named_run",
     "reads_as_guest",
     "refuse_agent_write",
+    "require_bid_run",
     "require_read",
     "require_run",
 ]
@@ -76,6 +77,9 @@ RUN_READ_TOOLS: Final[dict[AiRunKind, frozenset[str]]] = {
     # and the agent's role there are 404 for its guest; get_idea and search_ideas name
     # the project (id, slug, key, name).
     AiRunKind.RESEARCH: frozenset({"search_ideas", "get_idea"}),
+    # Phase 10 (c22): an assess run reads its bid through the two bid tools only, and no
+    # other kind may call them.
+    AiRunKind.ASSESS_BID: ASSESS_RUN_READ_TOOLS,
 }
 """c22: the read tools of :data:`~app.schemas.ai.AGENT_READ_TOOLS` each run kind may call
 on its idea; another one is ``ai_run_not_active`` (before anything is looked up)."""
@@ -116,6 +120,8 @@ class NamedRun:
     project_id: UUID
     project_key: str
     project_slug: str
+    bid_id: UUID | None = None
+    """Phase 10: an assess run's bid (its calls reach only this bid)."""
 
     def names_idea(self, ref: str) -> bool:
         """Whether an idea reference (a UUID, or a key in any case) is this run's idea."""
@@ -167,6 +173,7 @@ async def named_run(db: AsyncSession, principal: Principal, run_id: UUID | None)
         project_id=project_id,
         project_key=project_key,
         project_slug=project_slug,
+        bid_id=run.bid_id,
     )
 
 
@@ -193,6 +200,23 @@ async def require_run(
     if project is not None and not run.names_project(project):
         raise RunNotActiveProblem
     if read is not None and read not in RUN_READ_TOOLS[run.kind]:
+        raise RunNotActiveProblem
+    return run
+
+
+async def require_bid_run(
+    db: AsyncSession, principal: Principal, run_id: UUID | None, bid_id: UUID, *, tool: str
+) -> NamedRun:
+    """c22 for the bid tools (Phase 10), before anything is looked up: people are
+    ``forbidden`` (``bid.ai_assess`` is granted only through an assess run); an agent's
+    call must name its open **assess** run whose bid ``bid_id`` is, and the run's kind must
+    read (or write) ``tool``, else ``ai_run_not_active``, whether that bid exists or not."""
+    if not is_agent(principal):
+        raise _forbidden()
+    run = await named_run(db, principal, run_id)
+    if run is None or run.kind is not AiRunKind.ASSESS_BID or run.bid_id != bid_id:
+        raise RunNotActiveProblem
+    if tool not in RUN_READ_TOOLS[run.kind] and AGENT_RUN_WRITE_TOOLS[run.kind] != tool:
         raise RunNotActiveProblem
     return run
 

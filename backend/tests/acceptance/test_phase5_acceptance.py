@@ -83,6 +83,10 @@ TOOLS = {
     "submit_evaluation",
     "propose_proposal_section",
     "add_research_note",  # Phase 6: agents only, during a research run
+    # Phase 10: the AI assessor's, agents only, during an assess run.
+    "get_bid_for_assessment",
+    "get_bid_document_text",
+    "submit_bid_assessment",
 }
 CUST, TOOLS_PROJECT = "customer-innovation", "internal-tools"
 # Text only the tool arguments carry: it must never reach a log record or the audit.
@@ -381,7 +385,7 @@ async def test_ac5_api_1_an_mcp_key_searches_and_evaluates_only_where_it_reaches
         assert client.instructions == MCP_INSTRUCTIONS
         listed_tools = (await client.list_tools()).tools
         assert {tool.name for tool in listed_tools} == TOOLS
-        assert len(listed_tools) == 10
+        assert len(listed_tools) == 13
 
         projects = data(await call(client, "list_projects"))["projects"]
         assert [(p["slug"], p["my_role"]) for p in projects] == [(CUST, "member")]

@@ -2012,6 +2012,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pypdf" },
     { name = "python-json-logger" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
@@ -2027,7 +2028,6 @@ otel = [
 dev = [
     { name = "fastapi", extra = ["opentelemetry"] },
     { name = "mypy" },
-    { name = "pypdf" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -2052,6 +2052,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.7" },
+    { name = "pypdf", specifier = ">=6,<7" },
     { name = "python-json-logger", specifier = ">=3.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.30" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
@@ -2063,7 +2064,6 @@ provides-extras = ["otel"]
 dev = [
     { name = "fastapi", extras = ["opentelemetry"], specifier = ">=0.142" },
     { name = "mypy", specifier = ">=1.11" },
-    { name = "pypdf", specifier = ">=6" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "ruff", specifier = ">=0.6" },

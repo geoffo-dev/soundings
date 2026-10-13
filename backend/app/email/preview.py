@@ -60,6 +60,14 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
         status="Research",
         url=links.idea("TOOLS-12"),
     )
+    bids = IdeaInfo(
+        key="TOOLS-3",
+        title="Self-serve data platform for analysts",
+        project="Internal Tools",
+        status="Proposal",
+        url=links.idea("TOOLS-3"),
+    )
+    bids_button = Button("Open the bids", links.idea("TOOLS-3", bids=True))
     token = "sample-token.preview-only"  # noqa: S105 - not a secret
     all_token = "sample-all-token.preview-only"  # noqa: S105 - not a secret
 
@@ -171,6 +179,51 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             },
             button=Button("Open the research checklist", links.idea("TOOLS-12", research=True)),
             **footer(NotificationType.RESEARCH_REMINDER, "You're researching TOOLS-12."),
+        ),
+        # Phase 10: the bid types (the call's title, sections, dates and counts only).
+        "assessor_assigned": EmailContent(
+            template="assessor_assigned",
+            subject=f'[TOOLS-3] Please assess the bids for "Data platform build" by {day}',
+            preheader=f"Kenji Kato asked you to assess bids on TOOLS-3 by {day}.",
+            context={
+                "actor": "Kenji Kato",
+                "idea": bids,
+                "call": "Data platform build",
+                "sections": ["Technical", "Delivery"],
+                "due": moment,
+            },
+            button=bids_button,
+            **footer(NotificationType.ASSESSOR_ASSIGNED, "You're assessing bids for TOOLS-3."),
+        ),
+        "assessment_reminder": EmailContent(
+            template="assessment_reminder",
+            subject=(
+                f'[TOOLS-3] Reminder: bid assessments for "Data platform build" are due {day}'
+            ),
+            preheader=f"Your bid assessments on TOOLS-3 are due {day}.",
+            context={
+                "idea": bids,
+                "call": "Data platform build",
+                "due": moment,
+                "due_day": day,
+                "due_today": False,
+                "owed": "2 assessments",
+            },
+            button=bids_button,
+            **footer(NotificationType.ASSESSMENT_REMINDER, "You're assessing bids for TOOLS-3."),
+        ),
+        "assessments_complete": EmailContent(
+            template="assessments_complete",
+            subject='[TOOLS-3] All bid assessments are in for "Data platform build"',
+            preheader="Every assessor has submitted in the call for bids on TOOLS-3.",
+            context={
+                "idea": bids,
+                "call": "Data platform build",
+                "assessments": "10 assessments",
+                "bids": "2 bids",
+            },
+            button=Button("Compare the bids", links.idea("TOOLS-3", bids=True)),
+            **footer(NotificationType.ASSESSMENTS_COMPLETE, "You're the owner of TOOLS-3."),
         ),
         "digest": EmailContent(
             template="digest",

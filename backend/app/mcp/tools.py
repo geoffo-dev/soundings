@@ -375,6 +375,8 @@ async def search_ideas(ctx: ToolContext, args: SearchIdeasInput) -> SearchIdeasO
     run = None
     if ai_scope.is_agent(principal):  # c22: only the named run's idea, nothing looked up
         run = await ai_scope.named_run(ctx.db, principal, args.run_id)
+        # Phase 10: an assess run reads its bid only (RUN_READ_TOOLS): ai_run_not_active.
+        ai_scope.require_read(run, "search_ideas")
         if run is None or (args.project is not None and not run.names_project(args.project)):
             return SearchIdeasOutput(items=[], next_cursor=None)
         where.append(Idea.id == run.idea_id)
@@ -847,3 +849,14 @@ TOOLS: Final[dict[str, ToolFunction]] = {
     "add_research_note": add_research_note,
 }
 """Each catalogue tool (:data:`app.schemas.mcp.MCP_TOOLS`) and its implementation."""
+
+# Phase 10: the AI assessor's tools reuse this module's pieces (ToolContext, _idea).
+from app.mcp import bid_tools  # noqa: E402
+
+TOOLS.update(
+    {
+        "get_bid_for_assessment": bid_tools.get_bid_for_assessment,
+        "get_bid_document_text": bid_tools.get_bid_document_text,
+        "submit_bid_assessment": bid_tools.submit_bid_assessment,
+    }
+)
