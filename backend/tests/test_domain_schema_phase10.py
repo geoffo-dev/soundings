@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import uuid
+from collections.abc import Mapping
 from typing import Any
 
 import psycopg
@@ -107,7 +108,7 @@ def test_enum_values_are_the_migrations() -> None:
     assert max(len(t) for t in NEW_TYPES) <= 20  # notifications.type is varchar(20)
 
 
-async def _fails(session: AsyncSession, sql: str, values: dict[str, object], name: str) -> None:
+async def _fails(session: AsyncSession, sql: str, values: Mapping[str, object], name: str) -> None:
     with pytest.raises(IntegrityError, match=name):
         async with session.begin_nested():
             await session.execute(text(sql), values)
@@ -132,8 +133,8 @@ async def _call(
         "INSERT INTO bid_section_assessors (section_id, user_id, call_id)"
         " VALUES (:section, :user, :call)",
         "INSERT INTO bids (id, call_id, bidder, price) VALUES (:bid, :call, 'Northwind', 96000)",
-        "INSERT INTO bid_must_have_results (bid_id, must_have_id, result)"
-        " VALUES (:bid, :must, 'missing')",
+        "INSERT INTO bid_must_have_results (bid_id, must_have_id, call_id, result)"
+        " VALUES (:bid, :must, :call, 'missing')",
     )
     for statement in statements:
         await session.execute(
@@ -193,6 +194,101 @@ async def test_a_call_and_its_template_copy(db_session: AsyncSession) -> None:
         {"id": uuid.uuid4(), "call": ids["call"]},
         "text_lower",
     )
+    await _fails(
+        db_session,
+        "INSERT INTO bid_call_must_haves (id, call_id, position, text, kind, pricing)"
+        " VALUES (:id, :call, 1, 'Prices', 'confirmation', true)",
+        {"id": uuid.uuid4(), "call": ids["call"]},
+        "pricing_is_document",
+    )
+    await db_session.rollback()
+
+
+async def test_no_row_mixes_two_calls(db_session: AsyncSession) -> None:
+    """Review S7: every row naming two of a call's rows carries the call in a composite
+    foreign key; a question, assessor, result, document, assessment or AI run that pairs
+    rows of two calls (or a run on another idea than its bid's call) is refused."""
+    idea_id, user_id = await _idea_and_user(db_session)
+    first = await _call(db_session, idea_id, user_id)
+    other_idea, _ = await _idea_and_user_in(db_session, idea_id)
+    second = await _call(db_session, other_idea, user_id)
+    agent = await _agent(db_session)
+    mixed = {"call": first["call"], "user": user_id}
+    stranger = uuid.uuid4()
+    await db_session.execute(
+        text("INSERT INTO users (id, email, display_name) VALUES (:u, :email, 'Stranger')"),
+        {"u": stranger, "email": f"{stranger.hex}@example.com"},
+    )
+
+    await _fails(
+        db_session,
+        "INSERT INTO bid_call_questions (id, call_id, section_id, position, text, type, weight)"
+        " VALUES (:id, :call, :section, 5, 'Q', 'score', 1)",
+        mixed | {"id": uuid.uuid4(), "section": second["section"]},
+        "fk_bid_call_questions_section_id",
+    )
+    await _fails(
+        db_session,
+        "INSERT INTO bid_section_assessors (section_id, user_id, call_id)"
+        " VALUES (:section, :user, :call)",
+        mixed | {"section": second["section"], "user": stranger},
+        "fk_bid_section_assessors_section_id",
+    )
+    await _fails(
+        db_session,
+        "INSERT INTO bid_must_have_results (bid_id, must_have_id, call_id, result)"
+        " VALUES (:bid, :must, :call, 'missing')",
+        mixed | {"bid": first["bid"], "must": second["must"]},
+        "fk_bid_must_have_results_must_have_id",
+    )
+    document = (
+        "INSERT INTO bid_documents (id, bid_id, call_id, must_have_id, filename, type,"
+        " content_type, size_bytes, sha256) VALUES (:id, :bid, :call, :must, 'a.pdf', 'pdf',"
+        " 'application/pdf', 1, :sha)"
+    )
+    values = mixed | {"id": uuid.uuid4(), "sha": _sha(b"x"), "must": None}
+    await _fails(
+        db_session, document, values | {"bid": second["bid"]}, "fk_bid_documents_bid_id_bids"
+    )
+    await _fails(
+        db_session,
+        document,
+        values | {"bid": first["bid"], "must": second["must"]},
+        "fk_bid_documents_must_have_id",
+    )
+    await _fails(
+        db_session,
+        "INSERT INTO bid_assessments (id, bid_id, section_id, assessor_id, call_id)"
+        " VALUES (:id, :bid, :section, :user, :call)",
+        mixed | {"id": uuid.uuid4(), "bid": second["bid"], "section": first["section"]},
+        "fk_bid_assessments_bid_id_bids",
+    )
+    await _fails(
+        db_session,
+        "INSERT INTO bid_assessments (id, bid_id, section_id, assessor_id, call_id)"
+        " VALUES (:id, :bid, :section, :user, :call)",
+        mixed | {"id": uuid.uuid4(), "bid": first["bid"], "section": second["section"]},
+        "fk_bid_assessments_section_id_assessor_id",
+    )
+    run = (
+        "INSERT INTO ai_runs (id, idea_id, agent_id, kind, timeout_seconds, bid_id, bid_call_id)"
+        " VALUES (:id, :idea, :agent, 'assess_bid', 300, :bid, :bid_call)"
+    )
+    values = {"id": uuid.uuid4(), "agent": agent, "bid": first["bid"]}
+    await _fails(
+        db_session,
+        run,
+        values | {"idea": idea_id, "bid_call": second["call"]},
+        "fk_ai_runs_bid_id_bids",
+    )
+    await _fails(
+        db_session,
+        run,
+        values | {"idea": other_idea, "bid_call": first["call"]},
+        "fk_ai_runs_bid_call_id_bid_calls",
+    )
+    async with db_session.begin_nested():
+        await db_session.execute(text(run), values | {"idea": idea_id, "bid_call": first["call"]})
     await db_session.rollback()
 
 
@@ -230,12 +326,28 @@ async def test_bids_are_rejected_with_a_reason_and_one_is_awarded(
     }
 
     await _fails(db_session, insert, bid | {"price": 0}, "price_positive")
-    await _fails(db_session, insert, bid | {"status": "rejected"}, "rejected_iff_at")
+    await _fails(db_session, insert, bid | {"status": "rejected"}, "rejected_has_rejection")
     rejected = {"status": "rejected", "at": "2026-10-12T10:00:00Z"}
     await _fails(db_session, insert, bid | rejected, "rejection_reason_iff_at")
     await _fails(db_session, insert, bid | rejected | {"reason": ""}, "rejection_reason_length")
     async with db_session.begin_nested():
         await db_session.execute(text(insert), bid | rejected | {"reason": "No insurance."})
+    # Reinstating keeps the last rejection on record (review: the reason isn't lost).
+    reinstate = "UPDATE bids SET status = :status, reinstated_at = now() WHERE id = :id"
+    await _fails(
+        db_session,
+        reinstate,
+        {"status": "rejected", "id": bid["id"]},
+        "rejected_has_rejection|reinstated_after_rejection",
+    )
+    async with db_session.begin_nested():
+        await db_session.execute(text(reinstate), {"status": "received", "id": bid["id"]})
+    await _fails(
+        db_session,
+        "UPDATE bids SET reinstated_at = now() WHERE id = :id",
+        {"id": ids["bid"]},
+        "reinstated_after_rejection",
+    )
 
     await db_session.execute(
         text("UPDATE bids SET status = 'awarded' WHERE id = :b"), {"b": ids["bid"]}
@@ -307,12 +419,29 @@ async def test_documents_their_bytes_and_text(db_session: AsyncSession) -> None:
         db_session, insert, document | {"id": uuid.uuid4()}, "uq_bid_documents_bid_id_sha256"
     )
 
-    # A must-have removed from the template leaves the file, unlinked.
+    # A must-have removed from the template leaves the file, unlinked: the service unlinks
+    # it first (the composite key is NO ACTION, review S7).
+    await _fails(
+        db_session,
+        "DELETE FROM bid_call_must_haves WHERE id = :must",
+        ids,
+        "fk_bid_documents_must_have_id",
+    )
+    await db_session.execute(
+        text("UPDATE bid_documents SET must_have_id = NULL WHERE must_have_id = :must"), ids
+    )
     await db_session.execute(text("DELETE FROM bid_call_must_haves WHERE id = :must"), ids)
     link = await db_session.scalar(
         text("SELECT must_have_id FROM bid_documents WHERE id = :d"), {"d": document["id"]}
     )
     assert link is None
+    storage = await db_session.scalar(
+        text(
+            "SELECT attstorage FROM pg_attribute WHERE attrelid = 'bid_document_contents'::regclass"
+            " AND attname = 'data'"
+        )
+    )
+    assert storage == "e"  # EXTERNAL: range reads without decompressing
     # A deleted bid takes its documents, their bytes and their text with it.
     await db_session.execute(text("DELETE FROM bids WHERE id = :bid"), ids)
     left = await db_session.scalar(
@@ -329,14 +458,15 @@ async def test_assessments_belong_to_a_section_assessor(db_session: AsyncSession
     idea_id, user_id = await _idea_and_user(db_session)
     ids = await _call(db_session, idea_id, user_id)
     insert = (
-        "INSERT INTO bid_assessments (id, bid_id, section_id, assessor_id, status, submitted_at)"
-        " VALUES (:id, :bid, :section, :assessor, :status, :at)"
+        "INSERT INTO bid_assessments (id, bid_id, section_id, assessor_id, call_id, status,"
+        " submitted_at) VALUES (:id, :bid, :section, :assessor, :call, :status, :at)"
     )
     assessment: dict[str, object] = {
         "id": uuid.uuid4(),
         "bid": ids["bid"],
         "section": ids["section"],
         "assessor": user_id,
+        "call": ids["call"],
         "status": "draft",
         "at": None,
     }
@@ -355,7 +485,8 @@ async def test_assessments_belong_to_a_section_assessor(db_session: AsyncSession
     await _fails(db_session, answer, values | {"score": -1}, "score_range")
     await db_session.execute(text(answer), values | {"score": 4})
 
-    # Removing someone as the section's assessor deletes their assessments of it.
+    # Removing someone as the section's assessor deletes their assessments of it (the
+    # service only does so for drafts: 409 assessor_has_submitted otherwise).
     await db_session.execute(
         text("DELETE FROM bid_section_assessors WHERE section_id = :s AND user_id = :u"),
         {"s": ids["section"], "u": user_id},
@@ -407,8 +538,9 @@ async def test_the_ai_assessor_and_its_runs(db_session: AsyncSession) -> None:
     )
 
     run = (
-        "INSERT INTO ai_runs (id, idea_id, agent_id, kind, timeout_seconds, bid_id)"
-        " VALUES (:id, :idea, :agent, :kind, 300, :bid)"
+        "INSERT INTO ai_runs (id, idea_id, agent_id, kind, timeout_seconds, bid_id, bid_call_id,"
+        " automatic, requested_by_id) VALUES (:id, :idea, :agent, :kind, 300, :bid, :call,"
+        " :automatic, :by)"
     )
     values: dict[str, object] = {
         "id": uuid.uuid4(),
@@ -416,9 +548,15 @@ async def test_the_ai_assessor_and_its_runs(db_session: AsyncSession) -> None:
         "agent": agent,
         "kind": "assess_bid",
         "bid": ids["bid"],
+        "call": ids["call"],
+        "automatic": False,
+        "by": user_id,
     }
     await _fails(db_session, run, values | {"bid": None}, "ck_ai_runs_bid_iff_assess")
+    await _fails(db_session, run, values | {"call": None}, "ck_ai_runs_bid_iff_assess")
     await _fails(db_session, run, values | {"kind": "evaluate"}, "ck_ai_runs_bid_iff_assess")
+    # Automatic runs are the call's AI assessor's: assess runs that nobody requested.
+    await _fails(db_session, run, values | {"automatic": True}, "ck_ai_runs_automatic_assess")
     await db_session.execute(text(run), values)
     # One active run per bid; another bid of the same call may run beside it.
     await _fails(db_session, run, values | {"id": uuid.uuid4()}, "uq_ai_runs_active")
@@ -613,11 +751,11 @@ def test_0016_downgrade_removes_bid_evaluation(scratch_database_url: str) -> Non
                 " 'sso')",
                 (uuid.uuid4(), accounts[name], f"{name}Key0000001"[:12], "0" * 64),
             )
-        for kind, bid_id in (("assess_bid", bid), ("evaluate", None)):
+        for kind, bid_id, call_id in (("assess_bid", bid, call), ("evaluate", None, None)):
             connection.execute(
-                "INSERT INTO ai_runs (id, idea_id, agent_id, kind, timeout_seconds, bid_id)"
-                " VALUES (%s, %s, %s, %s, 300, %s)",
-                (uuid.uuid4(), idea, agents["both"], kind, bid_id),
+                "INSERT INTO ai_runs (id, idea_id, agent_id, kind, timeout_seconds, bid_id,"
+                " bid_call_id) VALUES (%s, %s, %s, %s, 300, %s, %s)",
+                (uuid.uuid4(), idea, agents["both"], kind, bid_id, call_id),
             )
         for type_ in (*NEW_TYPES, "owner_assigned"):
             email = uuid.uuid4()

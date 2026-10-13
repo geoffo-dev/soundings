@@ -83,7 +83,8 @@ RESEARCH_GUEST_ACCESS: Final[dict[str, GuestAccess]] = {
     # Phase 10: the call for bids, its bids, documents, assessments and AI (404: a guest
     # researcher sees nothing of the call, not even that it exists; role matrix table M)
     "get_bid_call": _H, "create_bid_call": _H, "update_bid_call": _H, "delete_bid_call": _H,
-    "change_bid_call_status": _H, "replace_bid_call_template": _H, "set_bid_assessors": _H,
+    "change_bid_call_status": _H, "cancel_bid_call": _H, "replace_bid_call_template": _H,
+    "set_bid_assessors": _H,
     "get_bid_comparison": _H, "award_bid_call": _H, "export_bid_report_markdown": _H,
     "export_bid_report_pdf": _H, "list_bids": _H, "create_bid": _H, "get_bid": _H,
     "update_bid": _H, "delete_bid": _H, "reject_bid": _H, "reinstate_bid": _H,

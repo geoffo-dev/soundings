@@ -6,16 +6,24 @@ the comparison, the AI assessor, the award and the evaluation report.
 
 Rules (role matrix table M): ``bid.view_call`` (that a call exists: everyone who can view
 the idea but a guest researcher), ``bid.manage`` (call managers: the idea's owner, project
-admins, platform admins), ``bid.upload_document`` and ``bid.decide`` (call managers,
-**session only**), ``bid.view_bids`` (call managers and section assessors),
-``bid.view_price`` (call managers and the price section's assessors), ``bid.assess`` (a
-section's assessors), ``bid.view_scores`` (call managers; blind for their own pending
-assessments), ``bid.view_section_scores`` (a section's assessors after submitting it, and
-call managers), ``ai.assess_bid`` (call managers, c10), ``project.edit_bid_template``
-(project and platform admins, session only). Order of checks: 401 -> 404 (the idea, the
-call, the bid, a section or document of another call; a rejected bid for an assessor who
-isn't a call manager) -> 403 -> 422 -> 409 (``project_archived``, ``idea_closed``, the
-call's state) -> 413 / 415 for uploads.
+admins, platform admins), ``bid.upload_document``, ``bid.decide`` and ``bid.delete_call``
+(call managers, **session only**; an awarded call only by a platform admin, c30),
+``bid.view_bids`` (call managers and section assessors), ``bid.view_price`` (call managers
+and the price section's assessors: prices and pricing documents), ``bid.view_own_assessment``
+and ``bid.assess`` (a section's assessors), ``bid.view_scores`` (call managers; blind for
+their own pending assessments), ``bid.view_section_scores`` (a section's assessors after
+submitting it, and call managers), ``ai.assess_bid`` (call managers, c10),
+``project.edit_bid_template`` (project and platform admins, session only).
+
+Order of checks (contract-phase10 section 2.1): 401 -> 404 (the idea, ``idea.view``; then
+``bid.view_call``; the call when the operation needs one) -> 403 (the call-level rule, a
+key's scope or a session-only route; **before** any bid, section, document or AI assessment
+is looked up, so its id reveals nothing) -> 404 (a bid, section, question, must-have,
+document or AI assessment of another call; a rejected bid for an assessor who isn't a call
+manager; a pricing document without ``bid.view_price``) -> 403 (c29, ``cannot_remove_self``)
+-> 413 / 408 / 415 (uploads) -> 422 (bodies; c28) -> 409 (``project_archived``, c19
+``awaiting_moderation``, c5 ``idea_closed``, then the call's state, then the rest). Writes
+lock project (``FOR KEY SHARE``) -> idea -> call (``FOR UPDATE``) -> bid -> AI run.
 
 Every route here answers 501 until backend builds it (``tests/test_contract_routes.py``
 ``STUBS``).
@@ -23,7 +31,7 @@ Every route here answers 501 until backend builds it (``tests/test_contract_rout
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Path, Query, Request, status
@@ -45,6 +53,7 @@ from app.schemas.bids import (
     BidAiInclusionUpdate,
     BidAssessorsUpdate,
     BidAwardIn,
+    BidCallCancelIn,
     BidCallCreate,
     BidCallStatusChange,
     BidCallTemplate,
@@ -64,6 +73,7 @@ from app.schemas.bids import (
     BidSectionAssessments,
     BidTemplate,
     BidTemplateIn,
+    BidUpdate,
     MustHaveDecisionIn,
     MyBidAssessment,
     MyBidAssessmentIn,
@@ -96,16 +106,24 @@ _REPORT_HEADERS = {
     "Content-Disposition": 'attachment; filename="<KEY>-bid-evaluation.<ext>" (e.g. TOOLS-3).',
 }
 _UPLOAD = binary_body(
-    *sorted({info.media_type.split(";")[0] for info in BID_DOCUMENT_TYPES.values()}),
     "application/octet-stream",
+    *sorted({info.media_type.split(";")[0] for info in BID_DOCUMENT_TYPES.values()}),
     description=(
-        "The file itself as the body (no multipart, no JSON), at most 25 MiB. Its type is "
-        "decided from its bytes: PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text, CSV, PNG or "
-        "JPEG; macro-enabled Office files and anything else are refused. Content-Type: the "
-        "file's own type or application/octet-stream (a different allowed type than the "
-        "bytes are: 415 document_type_mismatch)."
+        "The file itself as the body (no multipart, no JSON), at most 25 MiB, arriving within "
+        "120 s. Its type is decided from its bytes alone: PDF, DOCX, XLSX, PPTX, ODT, ODS, "
+        "plain text, CSV, PNG or JPEG; macro-enabled Office files, embedded OLE packages and "
+        "anything else are refused. The request's Content-Type is ignored (the SPA sends "
+        "application/octet-stream)."
     ),
 )
+_TIMEOUT: dict[int | str, dict[str, Any]] = {
+    408: {
+        "description": "The body didn't arrive within 120 s (upload_timeout)",
+        "content": {
+            "application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}
+        },
+    }
+}
 
 
 # --- The project's default template (Project settings -> Bids) -------------------------
@@ -188,11 +206,12 @@ async def create_bid_call(
     operation_id="update_bid_call",
     summary="Change the call's settings",
     description=(
-        "bid.manage: title, description, currency (until the template is locked: 409 "
-        "bid_call_template_locked), deadline (an open call keeps one: 409 "
-        "bid_call_deadline_required) and the assessment due date; the complete new state, "
-        "last write wins. Audited bid_call.update (the fields changed, never their values)."
-        + _CALL_STATE
+        "bid.manage: title, description, currency (a label), the deadline (only while the call "
+        "is a draft or open: a change while assessing is 409 bid_call_not_open; an open call "
+        "keeps one: 409 bid_call_deadline_required) and the call's AI assessor (an agent "
+        "passing c10 for assess_bid, else 409 ai_unavailable; null for none); the complete "
+        "new state, last write wins. The assessment due date is set with the assessors. "
+        "Audited bid_call.update (the fields changed, never their values)." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -208,9 +227,11 @@ async def update_bid_call(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete the call",
     description=(
-        "bid.decide (session only): a draft or cancelled call, with its bids, documents and "
-        "assessments (409 bid_call_active otherwise: cancel it first). Frees the idea for a "
-        "new call. Audited bid_call.delete. 409 project_archived."
+        "bid.delete_call (session only, c30): a draft or cancelled call, or (platform admins "
+        "only, for the bidders' personal data) an awarded one, with its bids, documents and "
+        "assessments; an open or assessing call, or an awarded one for anyone else: 409 "
+        "bid_call_active (cancel it first). Frees the idea for a new call. Audited "
+        "bid_call.delete. 409 project_archived."
     ),
     responses=problems(401, 403, 404, 409),
 )
@@ -221,19 +242,36 @@ async def delete_bid_call(principal: PrincipalDep, session: SessionDep, idea: Id
 @router.post(
     _CALL + "/status",
     operation_id="change_bid_call_status",
-    summary="Open, assess or cancel the call",
+    summary="Open the call, or close it to new bids",
     description=(
-        "bid.manage (open, assessing; cancelling is bid.decide, session only): draft -> open "
-        "(needs a deadline: 409 bid_call_deadline_required), open -> assessing (no new bids), "
-        "assessing -> open (only while no assessment is submitted: 409 "
-        "assessments_submitted), draft / open / assessing -> cancelled (an optional reason). "
-        "Any other move: 409 invalid_bid_call_transition. Emits bid_call_changed; audited "
-        "bid_call.status_change." + _CALL_STATE
+        "bid.manage: draft -> open (needs a deadline: 409 bid_call_deadline_required), open "
+        "-> assessing (no new bids), assessing -> open (only while no person's assessment is "
+        "submitted: 409 assessments_submitted). Any other move: 409 "
+        "invalid_bid_call_transition (cancelling is cancel_bid_call, awarding "
+        "award_bid_call). Emits bid_call_changed; audited bid_call.status_change." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
 async def change_bid_call_status(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallStatusChange
+) -> BidCallView:
+    raise NotImplementedProblem
+
+
+@router.post(
+    _CALL + "/cancellation",
+    operation_id="cancel_bid_call",
+    summary="Cancel the call",
+    description=(
+        "bid.decide (session only): a draft, open or assessing call is cancelled (an optional "
+        "reason, kept for call managers) and becomes read-only; active AI assess runs of its "
+        "bids are cancelled. Awarded or cancelled already: 409 bid_call_finished. Emits "
+        "bid_call_changed (cancelled); audited bid_call.status_change." + _CALL_STATE
+    ),
+    responses=problems(401, 403, 404, 409, 422),
+)
+async def cancel_bid_call(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallCancelIn
 ) -> BidCallView:
     raise NotImplementedProblem
 
@@ -245,9 +283,10 @@ async def change_bid_call_status(
     description=(
         "bid.manage: the call's own template, complete (items keep their ids; left out = "
         "deleted with their assessor assignments, results and document links; new must-haves "
-        "get a result for every bid). Until the first human assessment is submitted (409 "
-        "bid_call_template_locked). Any change clears the call's AI assessments. Audited "
-        "bid_call.template_replace. 422 validation_error, unknown_template_item." + _CALL_STATE
+        "get a result for every bid). Until the first person's assessment is submitted (409 "
+        "bid_call_template_locked). Any change deletes the call's AI assessments and cancels "
+        "its active assess runs. Audited bid_call.template_replace. 422 validation_error, "
+        "unknown_template_item." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -263,12 +302,16 @@ async def replace_bid_call_template(
     summary="Assign the section assessors",
     description=(
         "bid.manage, **session only** (an assignment opens the bids and their documents to a "
-        "person): every section's assessors and the assessment due date, the complete new "
-        "state. Assessors must be active people who can view the idea (in a private project: "
-        "a role there; c28, else 422 assessor_not_eligible), never an AI agent or the "
-        'break-glass account. People added get "Asked to assess bids"; people removed from a '
-        "section lose their assessments of it. Audited bid_call.assessors_change. 422 "
-        "unknown_section (a section of another call or one left out)." + _CALL_STATE
+        "person): every section's assessors and the assessment due date (its one writer), the "
+        "complete new state. Assessors must be active people who can view the idea in their "
+        "own right (in a private project: a role there, never as its guest researcher; c28, "
+        "else 422 assessor_not_eligible), never an AI agent or the break-glass account. "
+        "Removing yourself from a section you still owe for any bid of the call (rejected "
+        "ones included): 403 cannot_remove_self. Removing someone who has submitted an "
+        "assessment of that section: 409 assessor_has_submitted (drafts go with the "
+        'assignment). People added get "Asked to assess bids". Audited '
+        "bid_call.assessors_change. 422 unknown_section (a section of another call or one "
+        "left out)." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -284,8 +327,10 @@ async def set_bid_assessors(
     summary="Compare the bids",
     description=(
         "bid.view_scores (call managers): every bid with its section scores (0-100), total "
-        "(0-100), rank, price score, disagreement and progress; qualified bids ranked first. "
-        "What you owe an assessment for yourself is hidden (blind: role matrix section 3a)."
+        "(0-100), rank, price score, disagreement and progress; scored bids (not rejected, "
+        "every must-have met: also after the award) ranked first, rejected bids without "
+        "scores. What you owe an assessment for yourself is hidden, and while you owe any, "
+        "no bid has a rank (ranking_hidden; blind: role matrix section 3a)."
     ),
     responses=problems(401, 403, 404),
 )
@@ -303,8 +348,9 @@ async def get_bid_comparison(
         "ai.assess_bid (c5, c10): one assess run per bid that isn't rejected, for the agent "
         "named (active runs are returned as they are). The call must be open or being "
         "assessed (409 bid_call_not_assessable). Each new run counts toward your 20 AI "
-        "requests an hour; beyond: 429 too_many_attempts and nothing starts. Audited "
-        "ai_run.request per run. 409 ai_unavailable." + _CALL_STATE
+        "requests an hour: what fits starts (bids in the order received), the rest are "
+        "skipped; 429 too_many_attempts only when none fits. Audited ai_run.request per run. "
+        "409 ai_unavailable." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422, 429),
 )
@@ -322,8 +368,9 @@ async def request_ai_bid_assessments(
         "bid.decide (session only), while the call is being assessed (409 "
         "bid_call_not_assessing): one qualified bid is awarded (409 bid_not_qualified; a "
         "rejected one: 409 bid_rejected), every other bid that isn't rejected becomes "
-        "unsuccessful, and the call is read-only. Outstanding assessments don't block it "
-        "(the SPA warns). Emits bid_call_changed (awarded); audited bid_call.award." + _CALL_STATE
+        "unsuccessful, the call is read-only and active AI assess runs are cancelled. "
+        "Outstanding assessments don't block it (the SPA warns). Emits bid_call_changed "
+        "(awarded); audited bid_call.award." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -340,9 +387,10 @@ async def award_bid_call(
     summary="The evaluation report (Markdown)",
     description=(
         "bid.view_scores (call managers only): the ranking, each bid's section scores and "
-        "total, must-have results, rejected bids with their reasons, the assessors per "
-        "section, whether the AI was included, and the award. What you owe an assessment "
-        "for is left out. Shares the export limit with proposals (429 too_many_attempts)."
+        "total, must-have counts and the items missing or not met, rejected bids with their "
+        "reasons, the assessors per section, whether the AI was included, and the award. "
+        "What you owe an assessment for is left out, and the ranking with it. Shares the "
+        "export limit with proposals (429 too_many_attempts)."
     ),
     responses={
         **binary(200, "The report as Markdown (UTF-8).", "text/markdown", headers=_REPORT_HEADERS),
@@ -433,14 +481,15 @@ async def get_bid(
     operation_id="update_bid",
     summary="Edit a bid",
     description=(
-        "bid.manage: the complete new state (received_at required). Before the award. A "
-        "changed price changes every qualified bid's price score. Audited bid.update (the "
+        "bid.manage: the complete new state (received_at required: the stored value is always "
+        "accepted, a changed one within a year back and not ahead). Before the award. A "
+        "changed price changes every scored bid's price score. Audited bid.update (the "
         "fields changed, never their values)." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_bid(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId, body: BidIn
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId, body: BidUpdate
 ) -> BidOut:
     raise NotImplementedProblem
 
@@ -469,7 +518,8 @@ async def delete_bid(
     description=(
         "bid.decide (session only): one click and a reason, any time before the award (a new "
         "reason replaces the old one). The bid leaves the assessors' queues, the totals, the "
-        "price formula and the ranking. Audited bid.reject." + _CALL_STATE
+        "price formula and the ranking, and its active AI assess runs are cancelled; it never "
+        "ends anyone's blindness for it (role matrix 3a). Audited bid.reject." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -489,8 +539,8 @@ async def reject_bid(
     summary="Reinstate a bid",
     description=(
         "bid.decide (session only): undo a rejection before the award (idempotent); the bid "
-        "is received or qualified again by its must-haves, its assessments count again. "
-        "Audited bid.reinstate." + _CALL_STATE
+        "is received or qualified again by its must-haves, its assessments count again, and "
+        "the last rejection stays on record (reinstated_at). Audited bid.reinstate." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409),
 )
@@ -507,7 +557,8 @@ async def reinstate_bid(
     description=(
         "bid.manage: met or not met (with a note), or clear the decision. A document "
         "must-have without a linked file can't be met (409 document_missing). The bid "
-        "becomes qualified when every must-have is met. Audited bid.must_have_decide." + _CALL_STATE
+        "becomes qualified when every must-have is met. Audited bid.must_have_decide. A "
+        "pricing must-have without bid.view_price: 404." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -529,19 +580,24 @@ async def decide_must_have(
     status_code=status.HTTP_201_CREATED,
     summary="Upload a bid document",
     description=(
-        "bid.upload_document (session only), before the award: the raw file as the body (this "
-        "route alone takes up to 25 MiB: 413 content_too_large beyond, also for a body longer "
-        "than its Content-Length says or a chunked one). Allowed by its bytes: 415 "
-        "unsupported_document_type (anything else, also an empty or encrypted file), "
-        "macro_document (VBA or ActiveX in an Office file, scripts in an OpenDocument file), "
-        "document_type_mismatch (Content-Type is another allowed type). 409 "
-        "too_many_documents (30 per bid), call_storage_full (500 MiB per call), "
-        "duplicate_document (the same file on this bid). 422 invalid_must_have "
-        "(must_have_id names a confirmation or another call's). 503 upload_busy (with "
-        "Retry-After). Text is extracted afterwards by the worker (extraction.state pending). "
-        "Audited bid_document.upload." + _CALL_STATE
+        "bid.upload_document (session only), before the award. The checks before the body is "
+        "read: 401, 404, 403, then an upload slot (503 upload_busy with Retry-After). Then "
+        "the raw file as the body, read with no transaction open (this route alone takes up "
+        "to 25 MiB: 413 content_too_large beyond, also for a body longer than its "
+        "Content-Length says or a chunked one; 408 upload_timeout after 120 s). Allowed by "
+        "its bytes alone (the ZIP's entry count, central-directory names and two bounded "
+        "entries, off the event loop; no PDF is parsed here): 415 unsupported_document_type "
+        "(anything else, an empty file, an encrypted Office file, more than 2,000 archive "
+        "entries), macro_document (VBA, ActiveX, embedded OLE packages or macro-enabled files "
+        "in an Office file, Basic/ or Scripts/ in an OpenDocument file). 422 "
+        "invalid_must_have (must_have_id names a confirmation or another call's, or a pricing "
+        "must-have with pricing=false). 409 too_many_documents (30 per bid), "
+        "call_storage_full (500 MiB per call, text included), project_storage_full (5 GiB per "
+        "project), duplicate_document (the same file on this bid). Text is extracted "
+        "afterwards by the worker (extraction.state pending; an encrypted PDF ends failed, "
+        "encrypted). Audited bid_document.upload." + _CALL_STATE
     ),
-    responses=problems(401, 403, 404, 409, 413, 415, 422, 503),
+    responses={**problems(401, 403, 404, 409, 413, 415, 422, 503), **_TIMEOUT},
     openapi_extra=_UPLOAD,
 )
 async def upload_bid_document(
@@ -556,6 +612,15 @@ async def upload_bid_document(
     must_have_id: Annotated[
         UUID | None, Query(description="A required-document must-have it satisfies.")
     ] = None,
+    pricing: Annotated[
+        bool | None,
+        Query(
+            description=(
+                "A pricing document (bid.view_price only, never read by the AI). Default: the "
+                "must-have's pricing mark (false without one)."
+            )
+        ),
+    ] = None,
 ) -> BidDocument:
     raise NotImplementedProblem
 
@@ -563,11 +628,14 @@ async def upload_bid_document(
 @router.put(
     _BID + "/documents/{document_id}",
     operation_id="update_bid_document",
-    summary="Link a document to a must-have",
+    summary="Link a document or mark it pricing",
     description=(
-        "bid.manage: link it to a required-document must-have (which then counts as present: "
-        "met unless a person decided otherwise) or unlink it (null; the must-have is missing "
-        "again when no other file is linked). 422 invalid_must_have." + _CALL_STATE
+        "bid.upload_document (session only), before the award: the complete new state. Link "
+        "it to a required-document must-have (which then counts as present: met unless a "
+        "person decided otherwise) or unlink it (null: a must-have left without a file is "
+        "missing again, a person's met included; a not met stays); mark it pricing or not "
+        "(marking deletes the bid's AI assessments and cancels its active assess runs). 422 "
+        "invalid_must_have. Audited bid_document.update." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409, 422),
 )
@@ -589,8 +657,8 @@ async def update_bid_document(
     summary="Delete a bid document",
     description=(
         "bid.upload_document (session only), before the award: the file, its text and its "
-        "link (a must-have left without a file is missing again). Audited "
-        "bid_document.delete." + _CALL_STATE
+        "link (a must-have left without a file is missing again, a person's met included; a "
+        "not met stays). Audited bid_document.delete." + _CALL_STATE
     ),
     responses=problems(401, 403, 404, 409),
 )
@@ -612,7 +680,8 @@ async def delete_bid_document(
     description=(
         "bid.view_bids: the file as stored, always as an attachment (never shown inline), "
         "with its type's media type, nosniff, a sandboxing CSP and Cache-Control private, "
-        "no-store; read from the database in chunks. Not audited (a read)."
+        "no-store; read from the database in chunks. A pricing document without "
+        "bid.view_price: 404. Not audited (a read)."
     ),
     responses={
         **binary(
@@ -641,7 +710,8 @@ async def download_bid_document(
     description=(
         f"bid.view_bids: one page ({BID_TEXT_PAGE_CHARS:,} characters) of the text the worker "
         "extracted (plain text written by the bidder: show it as text, never as HTML). Empty "
-        "while pending, for images and when extraction failed. 404 for a page past the last."
+        "while pending, for images and when extraction failed. 404 for a page past the last, "
+        "and for a pricing document without bid.view_price."
     ),
     responses=problems(401, 403, 404),
 )
@@ -662,8 +732,9 @@ async def get_bid_document_text(
     operation_id="get_my_bid_assessment",
     summary="Your assessment of a section",
     description=(
-        "bid.assess (you assess the section): your draft or submitted answers (state invited "
-        "when nothing is saved). 403 for a section you don't assess."
+        "bid.view_own_assessment (you assess the section; an API key needs read): your draft "
+        "or submitted answers (state invited when nothing is saved). 403 "
+        "not_section_assessor for a section you don't assess."
     ),
     responses=problems(401, 403, 404),
 )
@@ -709,8 +780,8 @@ async def save_my_bid_assessment(
     description=(
         "bid.view_section_scores: the submitted assessments of the section for this bid, the "
         "AI's scores for it, per-question statistics and the section score. Hidden (hidden: "
-        "true, nothing else) while you owe this assessment yourself; an assessor of another "
-        "section: 403."
+        "true, nothing else) while you owe this assessment yourself, also once the bid is "
+        "rejected (a rejection never ends blindness); an assessor of another section: 403."
     ),
     responses=problems(401, 403, 404),
 )

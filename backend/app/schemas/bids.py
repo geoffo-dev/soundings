@@ -14,14 +14,14 @@ until a call manager includes it.
 Who may do what (role matrix table M; the one policy module decides):
 
 * **call managers** (the idea's owner, project admins, platform admins): everything
-  about the call (``bid.manage``; uploads ``bid.upload_document`` and the decisions
-  ``bid.decide`` session only), its bids and prices, every score (``bid.view_scores``),
-  the report;
+  about the call (``bid.manage``; documents ``bid.upload_document``, the decisions
+  ``bid.decide`` and deleting the call ``bid.delete_call`` session only), its bids and
+  prices, every score (``bid.view_scores``), the report;
 * **section assessors**: the call, every bid that isn't rejected, its documents and
   must-have results (``bid.view_bids``), scoring their own sections (``bid.assess``),
   other people's scores of a section **only after submitting it for that bid**
-  (``bid.view_section_scores``), prices only when their section holds the price question
-  (``bid.view_price``);
+  (``bid.view_section_scores``), prices and **pricing documents** only when their section
+  holds the price question (``bid.view_price``);
 * **everyone else who can view the idea**: that a call exists (``bid.view_call``: title,
   status, deadline, number of bids) and nothing more; a guest researcher (column R) not
   even that; an AI agent only the bid of its open assess run, through MCP (c22).
@@ -29,7 +29,8 @@ Who may do what (role matrix table M; the one policy module decides):
 Scoring is pure arithmetic over the submitted assessments (:func:`question_mean`,
 :func:`section_score`, :func:`bid_total`, :func:`price_score`, :func:`rank_bids`), so the
 API, the report and the tests compute exactly the same numbers (worked example:
-contract-phase10 section 7, ``tests/test_schemas_phase10.py``).
+contract-phase10 section 8.1, ``tests/test_schemas_phase10.py``). Scored bids are those
+:func:`is_scored` accepts (not rejected, every must-have met), before and after the award.
 """
 
 from __future__ import annotations
@@ -80,19 +81,32 @@ from app.schemas.users import UserRef
 __all__ = [
     "ASSESSORS_PER_SECTION_MAX",
     "BIDS_PER_CALL_MAX",
+    "BID_ARCHIVE_MAX_ENTRIES",
+    "BID_ARCHIVE_MAX_RATIO",
+    "BID_ARCHIVE_PART_MAX_BYTES",
+    "BID_ARCHIVE_TOTAL_MAX_BYTES",
+    "BID_AUTO_AI_QUIET",
     "BID_CALL_STORAGE_MAX_BYTES",
     "BID_CALL_TITLE_MAX_LENGTH",
+    "BID_CONTENT_TYPES_MAX_BYTES",
     "BID_DOCUMENTS_PER_BID_MAX",
     "BID_DOCUMENT_TYPES",
+    "BID_EXTRACTIONS_PER_WORKER",
+    "BID_EXTRACTION_MAX_ATTEMPTS",
+    "BID_EXTRACTION_MEMORY_BYTES",
     "BID_EXTRACTION_TIMEOUT",
     "BID_FILENAME_MAX_LENGTH",
     "BID_MUST_HAVES_MAX",
+    "BID_ODF_MIMETYPE_MAX_BYTES",
+    "BID_PROJECT_STORAGE_MAX_BYTES",
     "BID_QUESTIONS_PER_SECTION_MAX",
     "BID_QUOTE_MAX_LENGTH",
     "BID_QUOTE_MIN_LENGTH",
+    "BID_REFUSED_ARCHIVE_ENTRY",
     "BID_SECTIONS_MAX",
     "BID_TEXT_PAGE_CHARS",
     "BID_UPLOADS_PER_PROCESS",
+    "BID_UPLOAD_READ_TIMEOUT",
     "DEFAULT_BID_SCALE",
     "DEFAULT_BID_TEMPLATE",
     "DISAGREEMENT_SPREAD",
@@ -111,6 +125,7 @@ __all__ = [
     "BidAssessorsUpdate",
     "BidAwardIn",
     "BidCall",
+    "BidCallCancelIn",
     "BidCallCreate",
     "BidCallMustHave",
     "BidCallMustHaveIn",
@@ -161,6 +176,7 @@ __all__ = [
     "BidTemplateMustHave",
     "BidTemplateQuestion",
     "BidTemplateSection",
+    "BidUpdate",
     "MustHaveDecisionIn",
     "MyBidAssessment",
     "MyBidAssessmentIn",
@@ -168,10 +184,12 @@ __all__ = [
     "bid_total",
     "call_bid_status",
     "disagreement",
+    "is_scored",
     "normalise_quote_text",
     "price_score",
     "question_mean",
     "quote_found",
+    "quotes_found",
     "rank_bids",
     "round_score",
     "section_score",
@@ -188,19 +206,59 @@ ASSESSORS_PER_SECTION_MAX: Final = 10
 BID_DOCUMENTS_PER_BID_MAX: Final = 30
 """Documents per bid: 409 ``too_many_documents`` beyond."""
 BID_CALL_STORAGE_MAX_BYTES: Final = 500 * 1024 * 1024
-"""500 MiB of documents per call (the sum of ``size_bytes``): 409 ``call_storage_full``."""
+"""500 MiB per call: the sum of its documents' ``size_bytes`` **plus** their extracted text
+(``text_chars``, one character counted as one byte): 409 ``call_storage_full`` for an upload
+that would pass it (review S6; text extracted later may take a call a little over, by at
+most :data:`app.models.bid.BID_TEXT_MAX_CHARS` per document)."""
+BID_PROJECT_STORAGE_MAX_BYTES: Final = 5 * 1024 * 1024 * 1024
+"""5 GiB per project, counted the same way over every call of the project's ideas: 409
+``project_storage_full`` (review S6: one member owning many ideas can't fill the database)."""
 BID_FILENAME_MAX_LENGTH: Final = 200
 BID_UPLOADS_PER_PROCESS: Final = 2
 """Uploads an API process reads at once (each holds up to 25 MiB in memory): beyond, 503
-``upload_busy`` with ``Retry-After: 5``."""
+``upload_busy`` with ``Retry-After: 5``. Taken after the 401/404/403 checks and before the
+body is read (review S5)."""
+BID_UPLOAD_READ_TIMEOUT: Final = timedelta(seconds=120)
+"""The whole upload body must arrive within this (one buffer, no transaction held while
+reading); slower: 408 ``upload_timeout``."""
+BID_ARCHIVE_MAX_ENTRIES: Final = 2_000
+"""ZIP-based uploads (OOXML, OpenDocument): more entries than this in the end-of-central-
+directory record is 415 ``unsupported_document_type`` at upload (read before anything else,
+review M5), and ``archive_limits`` in the extraction child."""
+BID_CONTENT_TYPES_MAX_BYTES: Final = 256 * 1024
+"""At upload, ``[Content_Types].xml`` is read (decompressed) up to this many bytes and
+checked by substring, never parsed; bigger: 415 ``unsupported_document_type``."""
+BID_ODF_MIMETYPE_MAX_BYTES: Final = 64
+"""At upload, an OpenDocument file's ``mimetype`` entry is read up to this many bytes."""
+BID_ARCHIVE_PART_MAX_BYTES: Final = 50 * 1024 * 1024
+BID_ARCHIVE_TOTAL_MAX_BYTES: Final = 200 * 1024 * 1024
+BID_ARCHIVE_MAX_RATIO: Final = 100
+"""The extraction child's archive caps (review S4): an entry read past 50 MiB, the archive's
+entries read past 200 MiB in total (actual bytes as they stream, never the sizes the
+archive claims), or an entry whose uncompressed size is more than 100 times its compressed
+size: ``failed`` ``archive_limits``. Nested archives are never opened."""
 BID_EXTRACTION_TIMEOUT: Final = timedelta(seconds=30)
 """The extraction child's wall-clock limit (then killed: ``failed``, ``timeout``)."""
+BID_EXTRACTION_MEMORY_BYTES: Final = 512 * 1024 * 1024
+"""The extraction child's address-space cap (``RLIMIT_AS``; then ``failed``, ``memory``),
+in a worker container with 1 GiB (review S4: the chart's worker limit goes to 1 GiB)."""
+BID_EXTRACTIONS_PER_WORKER: Final = 1
+"""Extraction children one worker process runs at once (the queue's concurrency)."""
+BID_EXTRACTION_MAX_ATTEMPTS: Final = 3
+"""A document whose extraction crashed the child (or the worker) this many times is
+``failed`` ``internal_error`` (``bid_documents.extraction_attempts``): one bad file can't
+crash-loop the worker."""
 BID_TEXT_PAGE_CHARS: Final = 20_000
 """``get_bid_document_text`` (REST and MCP) returns the extracted text in pages of this many
 characters (the last one shorter)."""
-BID_QUOTE_MIN_LENGTH: Final = 10
+BID_QUOTE_MIN_LENGTH: Final = 20
 BID_QUOTE_MAX_LENGTH: Final = 500
-"""An AI quote's length after whitespace normalisation (10 characters: "Yes" proves nothing)."""
+"""An AI quote's length after whitespace normalisation (at least 20 characters: a short
+phrase like "ISO 27001" is found in almost any bid and proves nothing)."""
+BID_AUTO_AI_QUIET: Final = timedelta(minutes=5)
+"""The call's AI assessor starts a bid's one automatic assess run once none of its documents
+is pending extraction **and** nothing was uploaded to the bid for this long (so a batch of
+uploads is read together)."""
 DISAGREEMENT_SPREAD: Final = 2
 """Two scores counted for one question that differ by this much or more flag disagreement."""
 
@@ -242,7 +300,26 @@ BID_DOCUMENT_TYPES: Final[Mapping[BidDocumentType, BidDocumentTypeInfo]] = {
 """Every type an upload may be (contract-phase10 section 6), decided from the bytes. Macro-
 enabled Office files (``.docm``, ``.xlsm``, ``.pptm``: a ``vbaProject.bin`` or a
 ``macroEnabled`` content type) and anything else are refused (415). Text is UTF-8 on
-download (decoded with a fallback at upload, served as it was stored)."""
+download (decoded with a fallback at upload, served as it was stored). Plain text is
+``csv`` when the given name ends in ``.csv`` (any case) and ``txt`` otherwise: the bytes
+decide that it is text, the name only which of the two labels it gets."""
+
+BID_REFUSED_ARCHIVE_ENTRY: Final = re.compile(
+    r"(?:^|/)(?:vbaProject\.bin|vbaData\.xml|vbaProjectSignature\.bin)$"
+    r"|(?:^|/)activeX/"
+    r"|(?:^|/)embeddings/[^/]*\.bin$"
+    r"|(?:^|/)oleObject[^/]*\.bin$"
+    r"|(?:^|/)(?:Basic|Scripts)/"
+    r"|\.(?:docm|dotm|xlsm|xltm|xlsb|xlam|pptm|potm|ppsm|ppam|sldm)$",
+    re.IGNORECASE,
+)
+"""An entry name (from the ZIP's central directory only, review M5) that makes an Office or
+OpenDocument upload 415 ``macro_document``: VBA projects, ActiveX controls, embedded OLE
+packages (an embedded ``.docm`` would get round the macro rule), OpenDocument ``Basic/`` and
+``Scripts/``, and nested macro-enabled files by name. Active content the names can't show (a
+PDF's JavaScript, launch actions or attached files; an Office file's remote template,
+external links or DDE fields) is found by the extraction child, which sets
+``BidDocument.active_content`` (review S3)."""
 
 
 def _filename(value: str) -> str:
@@ -263,7 +340,9 @@ BidDocumentFilename = Annotated[
 """The ``filename`` query parameter of an upload: one line (no control, bidi or tag
 characters), no folders (``/`` or ``\\``: 422, never stripped), not starting with a dot, at
 most 200 characters. The stored name ends with an extension of the type the bytes are (one
-is appended otherwise: ``invoice.exe`` holding a PDF is stored as ``invoice.exe.pdf``)."""
+is appended otherwise: ``invoice.exe`` holding a PDF is stored as ``invoice.exe.pdf``); when
+the name and that extension would pass 200 characters, the **stem** is cut so they fit
+(review S12: ``bid_documents.filename`` is ``varchar(200)``)."""
 
 
 # --- Templates: requests ------------------------------------------------------------------
@@ -327,6 +406,21 @@ class BidMustHaveIn(RequestModel):
         description='e.g. "Insurance certificate" (document) or "Accepts our standard terms".'
     )
     kind: MustHaveKind
+    pricing: bool = Field(
+        default=False,
+        description=(
+            'Document must-haves only (e.g. "Pricing schedule"): a file linked to it is a '
+            "pricing document, shown only to call managers and the assessors of the section "
+            "holding the price question (bid.view_price), never to the AI assessor, which isn't "
+            "asked about it. A confirmation can't be one (422)."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _pricing_documents_only(self) -> BidMustHaveIn:
+        if self.pricing and self.kind is not MustHaveKind.DOCUMENT:
+            raise ValueError("only a document must-have can be a pricing one")
+        return self
 
 
 def _check_template(
@@ -488,8 +582,9 @@ DEFAULT_BID_TEMPLATE: Final = BidTemplateIn.model_validate(
                     {
                         "text": "Price",
                         "guidance": (
-                            "The total price for the contract term, entered by the team. Scored "
-                            "automatically: lowest qualified price / this price x 5."
+                            "The total price for the contract term, from the pricing schedule, "
+                            "entered by the team. Scored automatically: lowest qualified price / "
+                            "this price x 5."
                         ),
                         "type": "price",
                         "weight": 3,
@@ -530,15 +625,18 @@ DEFAULT_BID_TEMPLATE: Final = BidTemplateIn.model_validate(
         ],
         "must_haves": [
             {"text": "Signed form of tender", "kind": "document"},
+            {"text": "Pricing schedule", "kind": "document", "pricing": True},
             {"text": "Insurance certificate", "kind": "document"},
             {"text": "Accepts our standard terms", "kind": "confirmation"},
         ],
     }
 )
 """Every project's starting template (L3): Technical 40 / Commercial 40 (with the price
-question) / Delivery 20, and three must-haves. Migration 0016 writes this JSON for every
-existing project (``tests/test_schemas_phase10.py`` keeps the two equal); new projects get
-it when they are created."""
+question) / Delivery 20, and four must-haves, the "Pricing schedule" a pricing one (review
+M4, lead decision: prices travel in their own document, which only call managers and the
+Commercial assessors open, not in the form of tender). Migration 0016 writes this JSON for
+every existing project (``tests/test_schemas_phase10.py`` keeps the two equal); new
+projects get it when they are created."""
 
 
 # --- Templates: responses -------------------------------------------------------------------
@@ -559,6 +657,7 @@ class BidTemplateSection(ResponseModel):
 class BidTemplateMustHave(ResponseModel):
     text: str
     kind: MustHaveKind
+    pricing: bool = Field(description="A pricing document must-have (bid.view_price only).")
 
 
 class BidTemplate(ResponseModel):
@@ -567,7 +666,6 @@ class BidTemplate(ResponseModel):
     scale: list[str] = Field(description="Six anchors, scores 0 to 5.")
     sections: list[BidTemplateSection]
     must_haves: list[BidTemplateMustHave]
-    is_default: bool = Field(description="Nobody has changed it (the built-in default).")
     updated_at: datetime | None
     updated_by: UserRef | None
     can_edit: bool = Field(
@@ -592,8 +690,11 @@ class BidAssessor(ResponseModel):
     assigned_at: datetime
     can_assess: bool = Field(
         description=(
-            "Still eligible: active and able to view the idea (in a private project, a role "
-            "there). False: their assignment grants nothing; remove or replace them."
+            "Still eligible (c28, checked live): an active person who can view the idea as a "
+            "person in their own right (in a private project, a role there; never as the "
+            "idea's guest researcher). False: their assignment grants nothing, their "
+            "unsubmitted assessments aren't expected any more (progress) and their submitted "
+            "ones still count; remove or replace them."
         )
     )
     progress: BidProgress = Field(
@@ -617,6 +718,12 @@ class BidCallMustHave(ResponseModel):
     position: int
     text: str
     kind: MustHaveKind
+    pricing: bool = Field(
+        description=(
+            "Its files are pricing documents (bid.view_price only; never read by the AI, which "
+            "isn't asked about this must-have)."
+        )
+    )
 
 
 class BidCallTemplate(ResponseModel):
@@ -656,6 +763,13 @@ class BidCall(BidCallSummary):
     progress: BidProgress = Field(
         description="Every assigned assessor x section x bid that isn't rejected."
     )
+    ai_assessor: AiAgentRef | None = Field(
+        description=(
+            "The call's AI assessor (an agent with the purpose assess_bid), or null. While one "
+            "is set and AI is on, each bid gets one automatic assess run once its documents "
+            "are read (contract-phase10 section 9.1)."
+        )
+    )
     awarded_at: datetime | None
     awarded_bid: BidRef | None = Field(description="Set once awarded.")
     award_reason: str | None = Field(description="Call managers only (null for assessors).")
@@ -675,14 +789,18 @@ class BidCallPermissions(ResponseModel):
     can_manage_call: bool = Field(
         description=(
             "bid.manage (the idea's owner, project admins, platform admins) and the call not "
-            "awarded or cancelled: settings, lifecycle, assessors, bids, must-haves, AI inclusion."
+            "awarded or cancelled: settings (and the AI assessor), opening and closing it, "
+            "assessors, bids, must-haves, AI inclusion."
         )
     )
     can_edit_template: bool = Field(
         description="can_manage_call and the template isn't locked (no human assessment yet)."
     )
     can_upload_documents: bool = Field(
-        description="bid.upload_document (session only): upload and delete bid documents."
+        description=(
+            "bid.upload_document (session only), before the award: upload bid documents, mark "
+            "them pricing, link them to must-haves, delete them."
+        )
     )
     can_decide: bool = Field(
         description=(
@@ -690,7 +808,10 @@ class BidCallPermissions(ResponseModel):
         )
     )
     can_delete_call: bool = Field(
-        description="bid.decide and the call is a draft or cancelled: delete it and its bids."
+        description=(
+            "bid.delete_call (session only, c30): the call is a draft or cancelled, or awarded "
+            "and you are a platform admin (the bidders' data goes with it)."
+        )
     )
     can_view_bids: bool = Field(
         description="bid.view_bids: the bids, their documents and must-have results."
@@ -704,10 +825,9 @@ class BidCallPermissions(ResponseModel):
     can_view_scores: bool = Field(
         description=(
             "bid.view_scores (call managers): the comparison, the AI's assessments and the "
-            "report (parts hidden while you owe an assessment yourself)."
+            "report, Markdown and PDF (parts hidden while you owe an assessment yourself)."
         )
     )
-    can_export: bool = Field(description="bid.view_scores: the evaluation report (Markdown, PDF).")
     can_assess: bool = Field(
         description="You assess at least one section and the call is being assessed."
     )
@@ -748,8 +868,10 @@ class BidCallCreate(RequestModel):
 
 class BidCallUpdate(RequestModel):
     """The call's settings, the complete new state (``PUT``; last write wins). The
-    currency changes only until the template is locked (409 ``bid_call_template_locked``);
-    an open call keeps a deadline (409 ``bid_call_deadline_required``)."""
+    deadline changes only while the call is a draft or open (a change while assessing: 409
+    ``bid_call_not_open``, so ``late`` never flips after bids are closed); an open call keeps
+    one (409 ``bid_call_deadline_required``). The currency is a label and changes until the
+    award. The assessment due date is set with the assessors (``set_bid_assessors``)."""
 
     title: CallTitle
     description: str = Field(max_length=BID_CALL_DESCRIPTION_MAX_LENGTH)
@@ -757,24 +879,28 @@ class BidCallUpdate(RequestModel):
     deadline_at: DueAt | None = Field(
         description="Bids received after it are marked late, not refused. Needed to open."
     )
-    assessment_due_at: DueAt | None = Field(
-        description="When assessors should have submitted (reminders 2 days before and on it)."
+    ai_assessor_id: UUID | None = Field(
+        description=(
+            "The call's AI assessor: an agent that may assess bids on this idea now (c10 for "
+            "assess_bid, else 409 ai_unavailable; an unchanged value isn't checked again), or "
+            "null for none. Each bid then gets one automatic assess run (section 9.1)."
+        )
     )
 
 
 class BidCallStatusChange(RequestModel):
-    """Move the call: draft -> open (needs a deadline), open -> assessing, assessing ->
-    open (only while no assessment is submitted), draft / open / assessing -> cancelled
-    (``bid.decide``, session only; ``reason`` optional). Awarding is ``award_bid_call``."""
+    """Move the call (``bid.manage``): draft -> open (needs a deadline), open -> assessing,
+    assessing -> open (only while no person's assessment is submitted). Cancelling is
+    ``cancel_bid_call``, awarding ``award_bid_call``."""
 
-    status: Literal[BidCallStatus.OPEN, BidCallStatus.ASSESSING, BidCallStatus.CANCELLED]
-    reason: Reason = Field(default="", description="Cancelling only (plain text, at most 500).")
+    status: Literal[BidCallStatus.OPEN, BidCallStatus.ASSESSING]
 
-    @model_validator(mode="after")
-    def _reason_only_to_cancel(self) -> BidCallStatusChange:
-        if self.reason and self.status is not BidCallStatus.CANCELLED:
-            raise ValueError("a reason is only for cancelling")
-        return self
+
+class BidCallCancelIn(RequestModel):
+    """Cancel the call (``bid.decide``, session only) from draft, open or assessing: it
+    becomes read-only; active AI assess runs of its bids are cancelled."""
+
+    reason: Reason = Field(default="", description="Optional, plain text (at most 500).")
 
 
 class BidSectionAssessorsIn(RequestModel):
@@ -792,11 +918,18 @@ class BidSectionAssessorsIn(RequestModel):
 
 class BidAssessorsUpdate(RequestModel):
     """Who assesses each section, and by when: the complete new state (``PUT``, session
-    only). Every section of the call exactly once. People added are asked ("Asked to assess
-    bids"); people removed from a section lose their assessments of it (audited)."""
+    only; the one writer of the call's assessment due date). Every section of the call
+    exactly once. People added are asked ("Asked to assess bids"). Removing someone from a
+    section deletes their **drafts** of it; someone who has **submitted** an assessment of
+    that section can't be removed (409 ``assessor_has_submitted``), and you can't remove
+    yourself from a section while you still owe it for any bid of the call, rejected ones
+    included (403 ``cannot_remove_self``: otherwise a pending assessor could step out, read
+    the scores and come back)."""
 
     sections: list[BidSectionAssessorsIn] = Field(min_length=1, max_length=BID_SECTIONS_MAX)
-    due_at: DueAt | None = Field(description="The assessment due date (null: none).")
+    due_at: DueAt | None = Field(
+        description="The assessment due date (null: none): reminders 2 days before and on it."
+    )
 
     @field_validator("sections")
     @classmethod
@@ -837,7 +970,8 @@ Price = Annotated[
 
 class BidIn(RequestModel):
     """A bid as the team enters it (``create_bid``; ``update_bid`` takes the complete new
-    state). Contact details are stored as given and never emailed by Soundings."""
+    state as :class:`BidUpdate`). Contact details are stored as given and never emailed by
+    Soundings."""
 
     bidder: Annotated[str, Field(min_length=1, max_length=120), VisibleLine, SingleLine] = Field(
         description="The bidder organisation."
@@ -856,6 +990,16 @@ class BidIn(RequestModel):
         ),
     )
     notes: str = Field(default="", max_length=BID_NOTES_MAX_LENGTH, description="Plain text.")
+
+
+class BidUpdate(BidIn):
+    """``update_bid``: the complete new state, with ``received_at`` **required** (review S11:
+    leaving it out must not reset it to now and flip ``late``). Its stored value is always
+    accepted; a changed one must be within a year back and not ahead (422)."""
+
+    received_at: AwareDatetime = Field(
+        description="When the bid arrived: send the stored value unless correcting it."
+    )
 
 
 class BidRejectionIn(RequestModel):
@@ -879,9 +1023,14 @@ class MustHaveDecisionIn(RequestModel):
 
 
 class BidRejection(ResponseModel):
+    """The bid's current rejection, or its last one once reinstated (review consider-11: the
+    reason is kept, so the decision stays on record)."""
+
     reason: str
     rejected_by: UserRef | None
     rejected_at: datetime
+    reinstated_at: datetime | None = Field(description="Set when the bid was reinstated.")
+    reinstated_by: UserRef | None
 
 
 class BidMustHaveCounts(ResponseModel):
@@ -891,6 +1040,13 @@ class BidMustHaveCounts(ResponseModel):
     not_met: int
     missing: int
     unchecked: int
+
+
+class BidSectionState(ResponseModel):
+    """One of your sections for this bid."""
+
+    section: BidSectionRef
+    state: EvaluatorState = Field(description="invited (nothing saved), draft or submitted.")
 
 
 class Bid(BidRef):
@@ -913,12 +1069,24 @@ class Bid(BidRef):
         )
     )
     notes: str = Field(description='Call managers only ("" for assessors).')
-    rejection: BidRejection | None = Field(description="Call managers only.")
+    rejection: BidRejection | None = Field(
+        description="Call managers only: the current rejection, or the last one if reinstated."
+    )
     must_haves: BidMustHaveCounts
-    document_count: int
+    document_count: int = Field(
+        description="Documents you can see (pricing documents only with bid.view_price)."
+    )
+    restricted_document_count: int = Field(
+        description=(
+            "Pricing documents you may not open (counted, never named); 0 with bid.view_price."
+        )
+    )
     progress: BidProgress = Field(description="Its assessments: submitted / expected.")
     my_progress: BidProgress | None = Field(
         description="Yours on this bid (your sections), when you assess the call."
+    )
+    my_sections: list[BidSectionState] = Field(
+        description="Your sections for this bid and where you are with each, in order (the queue)."
     )
     entered_by: UserRef | None
     created_at: datetime
@@ -932,14 +1100,15 @@ class BidList(ResponseModel):
 
 
 class BidEvidence(ResponseModel):
-    """A quote the AI gave as evidence, and the server's check of it."""
+    """A quote the AI gave as evidence, and the server's check of it. It proves the words are
+    in the document, not that they support the score: people judge that."""
 
     document_id: UUID
     quote: str = Field(description="Untrusted: the AI's text, as it gave it.")
     found: bool = Field(
         description=(
-            "The quote is in the document's extracted text (whitespace-normalised). False: "
-            'show "not found in the document".'
+            "The quote is in the document's extracted text (whitespace-normalised): show "
+            '"Found in the document"; false: "Not found in the document".'
         )
     )
 
@@ -969,17 +1138,21 @@ class BidMustHaveState(ResponseModel):
     decided_by: UserRef | None
     decided_at: datetime | None
     note: str
-    document_ids: list[UUID] = Field(description="Documents linked to it.")
-    ai_findings: list[BidAiFindingView] = Field(
-        description="The AI's suggestions (never change the result)."
+    document_ids: list[UUID] = Field(
+        description="Documents linked to it that you can see (pricing ones need bid.view_price)."
     )
-
-
-class BidSectionState(ResponseModel):
-    """One of your sections for this bid."""
-
-    section: BidSectionRef
-    state: EvaluatorState = Field(description="invited (nothing saved), draft or submitted.")
+    restricted_document_count: int = Field(
+        description=(
+            'Linked pricing documents you may not see: show the must-have as "present '
+            '(restricted)", without a file name.'
+        )
+    )
+    ai_findings: list[BidAiFindingView] = Field(
+        description=(
+            "The AI's suggestions (never change the result). None for a pricing must-have "
+            "(the AI isn't asked about it)."
+        )
+    )
 
 
 class BidPermissions(ResponseModel):
@@ -987,12 +1160,17 @@ class BidPermissions(ResponseModel):
 
     can_edit: bool = Field(description="bid.manage, the call not awarded or cancelled.")
     can_delete: bool = Field(description="bid.decide, the call draft or open.")
-    can_upload: bool = Field(description="bid.upload_document, before the award.")
+    can_upload: bool = Field(
+        description="bid.upload_document (session only), before the award: upload, mark, delete."
+    )
     can_decide_must_haves: bool = Field(description="bid.manage, before the award.")
     can_reject: bool = Field(description="bid.decide, before the award, not rejected yet.")
     can_reinstate: bool = Field(description="bid.decide, before the award, rejected.")
     reject_suggested: bool = Field(
-        description='A must-have is missing or not met: offer "Reject" prominently.'
+        description=(
+            "A must-have is missing or not met, or an AI assessor found one not met (a "
+            'suggestion a person checks): offer "Reject" prominently.'
+        )
     )
     can_assess: bool = Field(
         description="You assess a section, the call is being assessed, the bid isn't rejected."
@@ -1014,7 +1192,8 @@ class BidDocumentExtraction(ResponseModel):
 
 class BidDocument(ResponseModel):
     """A bid document's metadata. The SPA never renders a document inline: it shows the
-    extracted text (``get_bid_document_text``) and offers the file as a download."""
+    extracted text (``get_bid_document_text``) and offers the file as a download. A pricing
+    document is listed only to principals with ``bid.view_price``."""
 
     id: UUID
     filename: str = Field(description="Safe display name; ends with its type's extension.")
@@ -1023,6 +1202,19 @@ class BidDocument(ResponseModel):
     size_bytes: int
     sha256: str = Field(description="Hex SHA-256 of the file.")
     must_have_id: UUID | None = Field(description="The required-document must-have it satisfies.")
+    pricing: bool = Field(
+        description=(
+            "A pricing document (marked at upload or later, or linked to a pricing must-have): "
+            "only call managers and the price section's assessors see it; the AI never reads it."
+        )
+    )
+    active_content: bool = Field(
+        description=(
+            "The extraction found content that can act when the file is opened (a PDF's "
+            "JavaScript, launch actions or attached files; an Office file's remote template, "
+            "external links or DDE fields): warn before the download."
+        )
+    )
     uploaded_by: UserRef | None
     uploaded_at: datetime
     extraction: BidDocumentExtraction
@@ -1040,21 +1232,32 @@ class BidDocumentText(ResponseModel):
 
 
 class BidDocumentUpdate(RequestModel):
-    """Link a document to a required-document must-have, or unlink it (``bid.manage``)."""
+    """A document's link and pricing mark, the complete new state (``bid.upload_document``,
+    session only; audited ``bid_document.update``). Marking a document **pricing** deletes the
+    bid's AI assessments and cancels its active assess runs (the AI may have read it: ask
+    again); unmarking opens it to every assessor and the AI."""
 
     must_have_id: UUID | None = Field(
         description=(
-            "A document must-have of the call (a confirmation: 422 invalid_must_have), or null."
+            "A document must-have of the call (a confirmation or another call's: 422 "
+            "invalid_must_have), or null."
+        )
+    )
+    pricing: bool = Field(
+        description=(
+            "A pricing document. Linked to a pricing must-have it must be true (else 422 "
+            "invalid_must_have)."
         )
     )
 
 
 class BidDetail(Bid):
-    """One bid: its documents, must-have results and your sections."""
+    """One bid: its documents, must-have results and what you may do."""
 
-    documents: list[BidDocument] = Field(description="In upload order.")
+    documents: list[BidDocument] = Field(
+        description="In upload order; pricing documents only with bid.view_price."
+    )
     must_have_results: list[BidMustHaveState] = Field(description="In the template's order.")
-    my_sections: list[BidSectionState] = Field(description="Your sections, in order.")
     permissions: BidPermissions
 
 
@@ -1139,7 +1342,7 @@ class BidQuestionStats(ResponseModel):
 
     question_id: UUID
     type: BidQuestionType
-    mean: float | None = Field(description="0-5, 1 decimal place; null with no scores.")
+    mean: float | None = Field(description="0-5, 2 decimal places; null with no scores.")
     min: int | None
     max: int | None
     count: int
@@ -1182,21 +1385,29 @@ class BidComparisonRow(ResponseModel):
     bid: BidRef
     received_at: datetime
     late: bool
-    price: str | None = Field(description="As Bid.price.")
-    price_hidden: bool
+    price: str | None = Field(description="Decimal string in the call's currency, or null.")
     price_score: float | None = Field(
-        description="0-5, 2 decimal places: lowest qualified price / this price x 5."
+        description=(
+            "0-5, 2 decimal places: lowest scored price / this price x 5 (scored bids only: "
+            "not rejected, every must-have met; section 8)."
+        )
     )
-    sections: list[BidSectionScore] = Field(description="In the template's order.")
+    sections: list[BidSectionScore] = Field(
+        description="In the template's order. A rejected bid's cells carry no score."
+    )
     total: float | None = Field(
         description=(
             "0-100, 1 decimal place: the sum of section weight x section score. Null until "
-            "every section has a score, for a bid that isn't qualified, or while hidden."
+            "every section has a score, for a bid that isn't scored (rejected, or a must-have "
+            "not met), or while hidden."
         )
     )
     total_hidden: bool = Field(description="You owe an assessment of this bid.")
     rank: int | None = Field(
-        description="1 = best; equal totals share a rank (1, 2, 2, 4). Qualified bids only."
+        description=(
+            "1 = best; equal rounded totals share a rank (1, 2, 2, 4). Scored bids with a "
+            "total only; null for every row while ranking_hidden."
+        )
     )
     tied: bool = Field(description="Another bid has the same rank.")
     ai_included: bool = Field(description="An AI assessment is counted in this bid's scores.")
@@ -1204,15 +1415,27 @@ class BidComparisonRow(ResponseModel):
 
 
 class BidComparison(ResponseModel):
-    """Every bid side by side (``bid.view_scores``, call managers): ranked qualified bids
-    first (by rank, then lower price, earlier received, id), then bids still received, then
-    rejected ones. Parts you owe an assessment for are hidden (``hidden``)."""
+    """Every bid side by side (``bid.view_scores``, call managers): ranked bids first (by
+    rank, then lower price, earlier received, id), then the other scored and not yet
+    qualified bids by when they were received, then rejected ones (no scores). Parts you
+    owe an assessment for are hidden (``hidden``); while any row's total is hidden from you,
+    **no row has a rank** and the rows are in the order received (``ranking_hidden``: the
+    gaps in a ranking would show where the hidden bid stands, review M2). Before and after
+    the award alike (an awarded or unsuccessful bid that met every must-have is scored)."""
 
     call: BidCallRef
     currency: str
     sections: list[BidComparisonSection]
     price_section_id: UUID | None
-    lowest_price: str | None = Field(description="The lowest qualified price (the formula's).")
+    lowest_price: str | None = Field(
+        description="The lowest scored price (the formula's: not rejected, every must-have met)."
+    )
+    ranking_hidden: bool = Field(
+        description=(
+            "You owe an assessment of at least one bid: every rank is null, rows by received "
+            '("The ranking shows once you have submitted your assessments").'
+        )
+    )
     rows: list[BidComparisonRow]
     progress: BidProgress
     complete: bool = Field(
@@ -1254,11 +1477,13 @@ class BidAiInclusionUpdate(RequestModel):
 
 class AiRunBatch(ResponseModel):
     """ "Assess all with AI": a run per bid that isn't rejected (an active one is returned as
-    it is). Each new run counts toward your 20 AI requests an hour; more than that: 429,
-    nothing started."""
+    it is). Each new run counts toward your 20 AI requests an hour: the runs that fit are
+    started, in the order the bids were received, the rest are ``skipped`` (ask again later);
+    429 only when none fits."""
 
     items: list[AiRun]
     created: int = Field(description="New runs started.")
+    skipped: int = Field(description="Bids not started: your hourly AI limit was reached.")
 
 
 # --- Scoring (contract-phase10 section 7; ADR 0018) ------------------------------------------
@@ -1288,10 +1513,21 @@ def disagreement(scores: Iterable[int]) -> bool:
     return len(values) >= 2 and max(values) - min(values) >= DISAGREEMENT_SPREAD
 
 
+def is_scored(*, rejected: bool, results: Iterable[MustHaveResult]) -> bool:
+    """A bid takes part in the scoring (the price formula's lowest price, section scores,
+    totals, the ranking) when it isn't rejected and every must-have is met (a call without
+    must-haves: every bid that isn't rejected), **whatever the award made it** (review M1:
+    after the award no bid is ``qualified`` any more, yet the report and the comparison
+    still rank the awarded and unsuccessful bids). Before the award this is exactly
+    ``status == qualified``."""
+    return not rejected and all(result is MustHaveResult.MET for result in results)
+
+
 def price_score(price: Decimal | None, lowest_qualified: Decimal | None) -> Fraction | None:
-    """Lowest qualified price / this bid's price x 5 (0-5), for a **qualified** bid (whose
-    price is never below the lowest qualified one); ``None`` without a price or a qualified
-    price to compare with. Rejected and not yet qualified bids are out of the formula."""
+    """Lowest scored price / this bid's price x 5 (0-5), for a **scored** bid
+    (:func:`is_scored`, whose price is never below the lowest scored one); ``None`` without a
+    price or a scored price to compare with. Rejected bids and bids with a must-have not met
+    are out of the formula."""
     if price is None or lowest_qualified is None or price <= 0:
         return None
     return Fraction(lowest_qualified) / Fraction(price) * BID_SCORE_MAX
@@ -1334,10 +1570,12 @@ class RankedBid:
 def rank_bids(
     bids: Iterable[tuple[UUID, Fraction | None, Decimal | None, datetime]],
 ) -> list[RankedBid]:
-    """The ranking of qualified bids, best first: ``(bid id, total, price, received_at)``
-    for each qualified bid; bids without a total aren't ranked. Ranks follow the **rounded**
+    """The ranking of scored bids (:func:`is_scored`), best first: ``(bid id, total, price,
+    received_at)`` for each; bids without a total aren't ranked. Ranks follow the **rounded**
     total (what people see), so equal rounded totals share a rank ("1, 2, 2, 4"); within a
-    tie, the lower price comes first (no price last), then the earlier bid, then the id."""
+    tie, the lower price comes first (no price last), then the earlier bid, then the id.
+    The caller shows no rank at all to someone who owes an assessment of any bid
+    (``BidComparison.ranking_hidden``)."""
     scored = [
         (round_score(total), price, received_at, bid_id)
         for bid_id, total, price, received_at in bids
@@ -1391,6 +1629,31 @@ def normalise_quote_text(text: str) -> str:
 
 def quote_found(quote: str, document_text: str) -> bool:
     """The AI's quote appears in the document's extracted text (both normalised), and is at
-    least :data:`BID_QUOTE_MIN_LENGTH` characters once normalised."""
+    least :data:`BID_QUOTE_MIN_LENGTH` characters once normalised. For one quote; a
+    submission checks all of its quotes with :func:`quotes_found`."""
     needle = normalise_quote_text(quote)
     return len(needle) >= BID_QUOTE_MIN_LENGTH and needle in normalise_quote_text(document_text)
+
+
+def quotes_found(
+    quotes: Sequence[tuple[UUID, str]], document_texts: Mapping[UUID, str]
+) -> list[bool]:
+    """:func:`quote_found` for every ``(document id, quote)`` of a submission, normalising each
+    cited document **once** (review S2: up to 420 quotes over 2,000,000-character texts). A
+    document missing from ``document_texts`` finds nothing. CPU-bound: the service runs it
+    off the event loop (``anyio.to_thread.run_sync``). The texts are the stored ones, which
+    the extraction child already passed through ``app.mcp.text.visible_text`` (review S1), so
+    REST, MCP and this check read the same characters."""
+    normalised = {
+        document_id: normalise_quote_text(document_texts[document_id])
+        for document_id in {document_id for document_id, _ in quotes}
+        if document_id in document_texts
+    }
+    found: list[bool] = []
+    for document_id, quote in quotes:
+        needle = normalise_quote_text(quote)
+        haystack = normalised.get(document_id)
+        found.append(
+            haystack is not None and len(needle) >= BID_QUOTE_MIN_LENGTH and needle in haystack
+        )
+    return found

@@ -498,8 +498,9 @@ class AiMustHaveFinding(StrEnum):
 
 class BidDocumentType(StrEnum):
     """What an uploaded bid document **is**, decided from its bytes (magic numbers and,
-    for ZIP-based formats, the archive's entries), never from its name or the request's
-    ``Content-Type`` (contract-phase10 section 6). Anything else is refused (415)."""
+    for ZIP-based formats, the archive's entry names and content types), never from the
+    request's ``Content-Type`` (contract-phase10 section 6.1). Anything else is refused (415).
+    The name only labels plain text: ``csv`` when it ends in ``.csv``, else ``txt``."""
 
     PDF = "pdf"
     DOCX = "docx"

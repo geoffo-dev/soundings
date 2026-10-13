@@ -27,7 +27,8 @@ build: trigram GiST indexes for "Similar ideas"), `20261008_0014_list_count_inde
 `20261008_0015_research_assignment.py` (Phase 8b: an idea's researcher and research due
 date, two notification types) and `20261013_0016_bid_evaluation.py` (Phase 10: calls for
 bids, their template copies, bids, documents, section assessors, assessments, the AI
-assessor; `ai_runs.bid_id` and `bid_ai_assessment_id`; three notification types). The procrastinate job-queue tables (revision `0001`) are
+assessor; `ai_runs.bid_id`, `bid_call_id`, `automatic` and `bid_ai_assessment_id`; three
+notification types). The procrastinate job-queue tables (revision `0001`) are
 not shown. API shapes are in [api/contract-phase1.md](api/contract-phase1.md) to
 [api/contract-phase10.md](api/contract-phase10.md).
 
@@ -497,7 +498,9 @@ erDiagram
         uuid suggestion_id FK "result"
         uuid activity_event_id FK "result: research note"
         bool assigned_evaluator "evaluate: this run assigned the agent"
-        uuid bid_id FK "assess_bid only (Phase 10)"
+        uuid bid_id FK "assess_bid only (Phase 10); with bid_call_id"
+        uuid bid_call_id FK "the bid's call, of this idea (composite keys)"
+        bool automatic "started by the call's AI assessor"
         uuid bid_ai_assessment_id FK "result (assess_bid)"
     }
     ai_run_events {
@@ -539,7 +542,8 @@ erDiagram
         varchar currency "ISO 4217, default GBP"
         varchar_array scale "6 labels, scores 0-5"
         timestamptz deadline_at "required unless draft"
-        timestamptz assessment_due_at
+        timestamptz assessment_due_at "written by set_bid_assessors only"
+        uuid ai_assessor_id FK "the call's AI assessor (optional)"
         uuid created_by_id FK
         timestamptz awarded_at "set iff awarded"
         uuid awarded_by_id FK
@@ -548,7 +552,7 @@ erDiagram
         text cancel_reason
     }
     bid_call_sections {
-        uuid id PK
+        uuid id PK "unique with call_id"
         uuid call_id FK
         int position
         varchar title "1-60, unique lower() per call"
@@ -557,7 +561,7 @@ erDiagram
     }
     bid_call_questions {
         uuid id PK
-        uuid call_id FK
+        uuid call_id FK "with section_id: the section's call"
         uuid section_id FK
         int position
         varchar text "1-300"
@@ -566,37 +570,42 @@ erDiagram
         smallint weight "0 iff comment; one price per call"
     }
     bid_call_must_haves {
-        uuid id PK
+        uuid id PK "unique with call_id"
         uuid call_id FK
         int position
         varchar text "1-200, unique lower() per call"
         varchar kind "document, confirmation"
+        bool pricing "document only: its files are pricing documents"
     }
     bid_section_assessors {
-        uuid section_id PK, FK
+        uuid section_id PK, FK "with call_id: the section's call"
         uuid user_id PK, FK
-        uuid call_id FK "denormalised for My work"
+        uuid call_id FK "also for My work"
         uuid assigned_by_id FK
         timestamptz assigned_at
     }
     bids {
-        uuid id PK
+        uuid id PK "unique with call_id"
         uuid call_id FK
         varchar bidder "1-120"
         varchar contact_name
-        varchar contact_email
+        varchar contact_email "<= 254"
         timestamptz received_at
         numeric price "14,2; > 0"
         text notes "<= 2000"
         varchar status "received, qualified, rejected, awarded, unsuccessful"
-        timestamptz rejected_at "set iff rejected"
+        timestamptz rejected_at "set when rejected; kept after reinstating"
         uuid rejected_by_id FK
-        text rejection_reason "1-500 iff rejected"
+        text rejection_reason "1-500, with rejected_at"
+        timestamptz reinstated_at "set by Reinstate, cleared by a new rejection"
+        uuid reinstated_by_id FK
         uuid entered_by_id FK
+        timestamptz auto_ai_run_at "the one automatic assess run started"
     }
     bid_must_have_results {
-        uuid bid_id PK, FK
-        uuid must_have_id PK, FK
+        uuid bid_id PK, FK "with call_id"
+        uuid must_have_id PK, FK "with call_id"
+        uuid call_id "both of this call"
         varchar result "missing, unchecked, met, not_met"
         uuid decided_by_id FK
         timestamptz decided_at "a person's decision: met or not_met"
@@ -604,14 +613,16 @@ erDiagram
     }
     bid_documents {
         uuid id PK
-        uuid bid_id FK "unique with sha256"
-        uuid call_id FK "denormalised for the 500 MiB cap"
-        uuid must_have_id FK "null: not linked"
+        uuid bid_id FK "unique with sha256; with call_id"
+        uuid call_id "the bid's call; the storage caps"
+        uuid must_have_id FK "null: not linked; with call_id, NO ACTION"
         varchar filename "1-200, as given"
         varchar type "pdf, docx, xlsx, pptx, odt, ods, txt, csv, png, jpeg"
         varchar content_type
         int size_bytes "1 .. 25 MiB"
         varchar sha256
+        bool pricing "bid.view_price only; never read by the AI"
+        bool active_content "found by the extractor: warn before download"
         uuid uploaded_by_id FK
         timestamptz uploaded_at
         varchar extraction_state "pending, done, no_text, failed"
@@ -619,20 +630,22 @@ erDiagram
         timestamptz extracted_at
         int text_chars "set iff done"
         bool text_truncated
+        smallint extraction_attempts "3 crashes: failed"
     }
     bid_document_contents {
         uuid document_id PK, FK
-        bytea data
+        bytea data "STORAGE EXTERNAL"
     }
     bid_document_texts {
         uuid document_id PK, FK
-        text text "<= 2,000,000 characters"
+        text text "<= 2,000,000 characters, visible_text"
     }
     bid_assessments {
         uuid id PK
-        uuid bid_id FK
-        uuid section_id FK "with assessor_id: the assignment"
+        uuid bid_id FK "with call_id"
+        uuid section_id FK "with assessor_id and call_id: the assignment"
         uuid assessor_id FK
+        uuid call_id "the bid's and the assignment's call"
         varchar status "draft, submitted"
         timestamptz submitted_at
         timestamptz edited_at
@@ -765,12 +778,12 @@ Phase 10 tables:
 |---|---|
 | `bid_templates` | Phase 10: a project's default bid evaluation template as one JSON document (`ck_bid_templates_template_object`), validated by `BidTemplateIn` on write; no row = the built-in `DEFAULT_BID_TEMPLATE` (migration 0016 writes it for every existing project, `create_project` for new ones). Calls copy it into rows and never read it again. |
 | `bid_calls` | One per idea (`uq_bid_calls_idea_id`). The status `CHECK`s: a deadline unless draft, `awarded_at` iff awarded, `cancelled_at` iff cancelled, reasons only in those states (≤ 500). `scale` has exactly six labels. `ix_bid_calls_assessment_due_at_assessing` (partial) feeds the reminder scan. |
-| `bid_call_sections`, `bid_call_questions`, `bid_call_must_haves` | The call's own template copy, by id. Unique titles / texts per call on `lower()`; a comment question has weight 0 and every other one 1-100 (`ck_bid_call_questions_comment_iff_unweighted`); at most one price question per call (`uq_bid_call_questions_call_id_price`, partial). Weights summing to 100 and a score question per section are API checks. Replaced only until a person's assessment is submitted (application). |
-| `bid_section_assessors` | Who assesses which section (primary key `(section_id, user_id)`); `call_id` copied for My work's "Bids to assess" (`ix_bid_section_assessors_user_id_call_id`) and the reminder scan. Removing a row deletes that person's assessments of the section (the composite FK from `bid_assessments` cascades). |
-| `bids` | `status` kept by the service (`call_bid_status`); `rejected_at` iff rejected, with a reason (1-500). One awarded bid per call (`uq_bids_call_id_awarded`, partial). `price` is `numeric(14,2)`, > 0. `contact_email` is stored as given and never emailed. |
-| `bid_must_have_results` | One per bid and must-have, created with the bid (and for every bid when a must-have is added). `decided_at` marks a person's decision, which is `met` or `not_met` (`ck_bid_must_have_results_decision_is_met_or_not`); `missing` / `met` for a document must-have without a decision follow its linked files (application). |
-| `bid_documents` | Metadata only; the bytes are in `bid_document_contents` and the extracted text in `bid_document_texts`, so lists never read either. The same file once per bid (`uq_bid_documents_bid_id_sha256`). Extraction state `CHECK`s: an error iff failed, `extracted_at` iff not pending, `text_chars` iff done. `ix_bid_documents_uploaded_at_pending` (partial) is the worker's queue sweep. `call_id` sums sizes for the 500 MiB cap (`ix_bid_documents_call_id`). |
-| `bid_assessments`, `bid_assessment_answers` | One assessment per bid, section and assessor (`uq_bid_assessments_bid_id_section_id_assessor_id`), referencing the assignment `(section_id, assessor_id)`. Drafts are private; a submitted one has `submitted_at`. Scores 0-5 on score questions only (application: never the price question). |
+| `bid_call_sections`, `bid_call_questions`, `bid_call_must_haves` | The call's own template copy, by id; sections and must-haves carry `UNIQUE (id, call_id)` for the composite keys, a question's section is of its call. A pricing must-have is a document one (`ck_bid_call_must_haves_pricing_is_document`). Unique titles / texts per call on `lower()`; a comment question has weight 0 and every other one 1-100 (`ck_bid_call_questions_comment_iff_unweighted`); at most one price question per call (`uq_bid_call_questions_call_id_price`, partial). Weights summing to 100 and a score question per section are API checks. Replaced only until a person's assessment is submitted (application). |
+| `bid_section_assessors` | Who assesses which section (primary key `(section_id, user_id)`); `call_id` is the section's (composite FK to `bid_call_sections (id, call_id)`) and feeds My work's "Bids to assess" (`ix_bid_section_assessors_user_id_call_id`) and the reminder scan. Removing a row deletes that person's assessments of the section (the composite FK from `bid_assessments` cascades); the service removes only people without a submitted one (409 `assessor_has_submitted`). |
+| `bids` | `status` kept by the service (`call_bid_status`); a rejected bid has its rejection and no `reinstated_at` (`ck_bids_rejected_has_rejection`), a reinstated one keeps its last rejection (`ck_bids_reinstated_after_rejection`); a reason (1-500) with every `rejected_at`. One awarded bid per call (`uq_bids_call_id_awarded`, partial). `price` is `numeric(14,2)`, > 0. `contact_email` (≤ 254) is stored as given and never emailed. `auto_ai_run_at` caps the call's AI assessor at one automatic run per bid. |
+| `bid_must_have_results` | One per bid and must-have, created with the bid (and for every bid when a must-have is added); `call_id` keeps both of one call (composite FKs). `decided_at` marks a person's decision, which is `met` or `not_met` (`ck_bid_must_have_results_decision_is_met_or_not`); `missing` / `met` for a document must-have without a decision follow its linked files (application). |
+| `bid_documents` | Metadata only; the bytes are in `bid_document_contents` (`STORAGE EXTERNAL`) and the extracted text in `bid_document_texts`, so lists never read either. The same file once per bid (`uq_bid_documents_bid_id_sha256`). Extraction state `CHECK`s: an error iff failed, `extracted_at` iff not pending, `text_chars` iff done. `ix_bid_documents_uploaded_at_pending` (partial) is the worker's queue sweep. `call_id` (the bid's: composite FK to `bids (id, call_id)`) sums sizes and text for the 500 MiB cap (`ix_bid_documents_call_id`). The must-have link is a composite FK with `NO ACTION`: the service unlinks documents before it deletes a must-have. `pricing` documents are for `bid.view_price` only. |
+| `bid_assessments`, `bid_assessment_answers` | One assessment per bid, section and assessor (`uq_bid_assessments_bid_id_section_id_assessor_id`), referencing the assignment `(section_id, assessor_id, call_id)` and the bid `(bid_id, call_id)`. Drafts are private; a submitted one has `submitted_at`. Scores 0-5 on score questions only (application: never the price question). |
 | `bid_ai_assessments`, `bid_ai_scores`, `bid_ai_findings` | One per bid and agent (`uq_bid_ai_assessments_bid_id_agent_id`), replaced by a re-submission; `included` (default false) puts its scores in the bid's totals. Evidence is a JSON array of at most three `{document_id, quote, found}` (`ck_*_evidence_array`); `found` is the server's whitespace-normalised check. The run points at its result (`ai_runs.bid_ai_assessment_id`), not the other way round. |
 
 ## Delete behaviour
@@ -812,7 +825,7 @@ Phase 10 tables:
 | an agent's AI assessment (re-submission, template change) | Cascades to its scores and findings; the run that produced it keeps its row with `bid_ai_assessment_id` null. |
 | a project (Phase 10) | Also cascades to its `bid_templates` row (and its ideas' calls). |
 | a user (Phase 10) | Their assessor assignments and assessments cascade (users are deactivated, not deleted); `entered_by_id`, `rejected_by_id`, `uploaded_by_id`, `decided_by_id`, `created_by_id`, `awarded_by_id`, `assigned_by_id` become null. |
-| downgrading 0016 | Deletes the notifications, outbox rows and preferences of the three bid types, the `bid_call_changed` events and the `assess_bid` runs; removes `assess_bid` from agents' purposes (an agent with no other purpose gets `research` back as a placeholder, is disabled and its key revoked); restores the `CHECK`s and the active-runs index, drops the two `ai_runs` columns and the 16 bid tables: every call, bid, document and assessment is lost. |
+| downgrading 0016 | Deletes the notifications, outbox rows and preferences of the three bid types, the `bid_call_changed` events and the `assess_bid` runs; removes `assess_bid` from agents' purposes (an agent with no other purpose gets `research` back as a placeholder, is disabled and its key revoked); restores the `CHECK`s and the active-runs index, drops the four `ai_runs` columns and the 16 bid tables: every call, bid, document and assessment is lost. |
 | downgrading 0015 | Deletes the notifications, outbox rows and preferences of the two research types and the `researcher_changed` / `research_due_date_changed` events, restores the type `CHECK`s and drops the three `ideas` columns with their indexes and `ck_ideas_researcher_assigned_at`: research assignments and research due dates are lost (answers are kept). |
 | downgrading 0014 | Indexes only: recreates `ix_ideas_owner_id` and drops the three Phase 8 review indexes. |
 | downgrading 0013 | Drops the two trigram GiST indexes. |
@@ -827,14 +840,19 @@ Phase 10 tables:
 The database does not check these (they span tables); the backend validates them in the
 same transaction and tests them:
 
-- Phase 10: everything under a call belongs to that call (a bid's documents, results and
-  assessments; an assessment's section and questions; a document's must-have; an AI
-  score's question); a document must-have counts `met` automatically while a file is
-  linked, a person's decision overrides it, and `met` is refused without a file; a bid's
-  `status` equals `call_bid_status` of its facts; only qualified bids enter the price
-  formula, totals and ranking; the template copy changes only until a person's
+- Phase 10: the composite keys keep a question, assessor, result, document, assessment
+  and assess run in one call (and the run on its call's idea); the application checks
+  the rest: an answer's and an AI score's question are of the assessment's section and
+  call, an AI finding's must-have of the bid's call and not a pricing one; a document
+  must-have counts `met` automatically while a file is linked, a person's decision
+  overrides it, `met` is refused without a file, and losing its last file makes it
+  `missing` again (a `not_met` stays); a document linked to a pricing must-have is a
+  pricing document; a bid's `status` equals `call_bid_status` of its facts; only scored
+  bids (`is_scored`: not rejected, every must-have met, whatever the award) enter the
+  price formula, totals and ranking; the template copy changes only until a person's
   assessment is submitted, and every change deletes the call's AI assessments; at most
-  50 bids per call, 30 documents per bid, 500 MiB per call, 10 assessors per section.
+  50 bids per call, 30 documents per bid, 500 MiB per call and 5 GiB per project (text
+  counted), 10 assessors per section.
 - A score's criterion belongs to the evaluated idea's project (else 422 `unknown_criterion`).
 - An idea's tags belong to the idea's project.
 - An activity event's `project_id` is its idea's project.

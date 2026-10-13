@@ -14,22 +14,26 @@ assessor's assessments with quoted evidence.
   assessing to open only while no assessment is submitted). Its copy of the template is
   ``bid_call_sections`` / ``bid_call_questions`` / ``bid_call_must_haves`` (rows with ids:
   assessments, assessors, must-have results and document links refer to them), editable
-  until the first assessment (human or AI) is submitted.
+  until the first **person's** assessment is submitted (an AI assessment never locks it).
+  ``ai_assessor_id`` names the call's AI assessor (one automatic assess run per bid).
 * ``bids``: entered by a call manager while the call is open (P1: no bidder accounts);
   ``status`` is kept by the service: ``received`` until every must-have is met
   (``qualified``), ``rejected`` (one click and a reason; reinstating undoes it until the
   award), ``awarded`` / ``unsuccessful`` at the award. ``bid_must_have_results`` holds one
   row per bid and must-have (``missing`` for a required document without a file,
   ``unchecked`` for a confirmation nobody decided, ``met`` / ``not_met``).
-* ``bid_documents`` (metadata), ``bid_document_contents`` (the bytes, ``bytea``) and
-  ``bid_document_texts`` (the text the worker extracted in a child process): stored in
-  PostgreSQL (ADR 0018), allowed by their bytes (``BidDocumentType``), at most 25 MiB each,
-  30 per bid and 500 MiB per call, the same file once per bid (``sha256``). Extracted text
-  is **untrusted** (prompt injection) wherever it flows.
+* ``bid_documents`` (metadata), ``bid_document_contents`` (the bytes, ``bytea``, stored
+  ``EXTERNAL`` so 1 MiB range reads stay cheap) and ``bid_document_texts`` (the text the
+  worker extracted in a child process, already without NULs and hidden characters): stored
+  in PostgreSQL (ADR 0018), allowed by their bytes (``BidDocumentType``), at most 25 MiB
+  each, 30 per bid, 500 MiB per call and 5 GiB per project (text counted), the same file
+  once per bid (``sha256``). ``pricing`` documents are only for ``bid.view_price``.
+  Extracted text is **untrusted** (prompt injection) wherever it flows.
 * ``bid_section_assessors``: who assesses which section of the call (P3), and
   ``bid_assessments`` / ``bid_assessment_answers``: one assessment per bid, section and
   assessor (a draft, then submitted; it references the assignment, so removing an assessor
-  from a section deletes their assessments of it, as removing an evaluator does).
+  from a section deletes their drafts of it; the service refuses to remove someone who has
+  submitted one, 409 ``assessor_has_submitted``, as Phase 1 does for evaluators).
 * ``bid_ai_assessments`` / ``bid_ai_scores`` / ``bid_ai_findings``: the AI assessor's
   assessment of a bid (one per bid and agent; a re-submission replaces it), a score with a
   rationale and quoted evidence (``[{document_id, quote, found}]``, the server checking each
@@ -39,8 +43,15 @@ assessor's assessments with quoted evidence.
 
 Blind assessment (role matrix section 3a): nothing here is filtered; the services apply
 the policy. Score data never leaves through notifications, emails, the feed or My work,
-and prices only reach call managers and the assessors of the section holding the price
-question.
+and prices and pricing documents only reach call managers and the assessors of the
+section holding the price question.
+
+**One call per row family** (review S7): sections, must-haves and bids carry
+``UNIQUE (id, call_id)``, and every row that names two of them (a question and its
+section, an assessor and their section, a must-have result, a document and its bid and
+must-have, an assessment and its bid and assignment) carries the ``call_id`` in a composite
+foreign key, so the database refuses a row that mixes two calls; ``ai_runs`` names its
+bid's call the same way (``bid_call_id``, matching its ``idea_id``).
 """
 
 from __future__ import annotations
@@ -132,6 +143,8 @@ BID_COMMENT_MAX_LENGTH = 2_000
 BID_RATIONALE_MAX_LENGTH = 1_000
 
 _SHA256 = "^[0-9a-f]{64}$"
+_FALSE = text("false")
+"""``server_default`` for boolean columns (``text`` is a column name in some classes below)."""
 
 
 def _evidence_array(column: str) -> CheckConstraint:
@@ -198,6 +211,8 @@ class BidCall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "assessment_due_at",
             postgresql_where=text("status = 'assessing' AND assessment_due_at IS NOT NULL"),
         ),
+        # The target of ai_runs' (bid_call_id, idea_id): an assess run's call is its idea's.
+        UniqueConstraint("id", "idea_id"),
     )
 
     idea_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ideas.id", ondelete="CASCADE"))
@@ -216,8 +231,12 @@ class BidCall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scale: Mapped[list[str]] = mapped_column(ARRAY(String(80)))
     # Bids received after it are marked late (not refused). Instance time zone in the SPA.
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # When the section assessors should have submitted (reminders 2 days before and on it).
+    # When the section assessors should have submitted (reminders 2 days before and on it);
+    # written only with the assessors (set_bid_assessors).
     assessment_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The call's AI assessor (an agent with the assess_bid purpose; NO ACTION: agents are
+    # disabled, never deleted): each bid gets one automatic assess run (bids.auto_ai_run_at).
+    ai_assessor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_agents.id"))
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -240,6 +259,8 @@ class BidCallSection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("position >= 0", name="position_non_negative"),
         CheckConstraint("weight BETWEEN 1 AND 100", name="weight_range"),
         Index("ix_bid_call_sections_call_id_position", "call_id", "position"),
+        # The target of the composite foreign keys that keep a call's rows in one call.
+        UniqueConstraint("id", "call_id"),
         Index(
             "uq_bid_call_sections_call_id_title_lower",
             "call_id",
@@ -266,6 +287,12 @@ class BidCallQuestion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("position >= 0", name="position_non_negative"),
         CheckConstraint("weight BETWEEN 0 AND 100", name="weight_range"),
         CheckConstraint("(type = 'comment') = (weight = 0)", name="comment_iff_unweighted"),
+        # Its section is of the same call.
+        ForeignKeyConstraint(
+            ["section_id", "call_id"],
+            ["bid_call_sections.id", "bid_call_sections.call_id"],
+            ondelete="CASCADE",
+        ),
         Index("ix_bid_call_questions_section_id_position", "section_id", "position"),
         Index("ix_bid_call_questions_call_id", "call_id"),
         Index(
@@ -276,11 +303,9 @@ class BidCallQuestion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
     )
 
-    # The question's call (its section's), for the one-price-question index.
-    call_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bid_calls.id", ondelete="CASCADE"))
-    section_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bid_call_sections.id", ondelete="CASCADE")
-    )
+    # The question's call (its section's: the composite key), for the one-price index.
+    call_id: Mapped[uuid.UUID] = mapped_column()
+    section_id: Mapped[uuid.UUID] = mapped_column()
     position: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(String(300))
     guidance: Mapped[str] = mapped_column(String(1000), default="", server_default="")
@@ -296,7 +321,9 @@ class BidCallMustHave(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("length(text) > 0", name="text_not_empty"),
         CheckConstraint("position >= 0", name="position_non_negative"),
+        CheckConstraint("NOT pricing OR kind = 'document'", name="pricing_is_document"),
         Index("ix_bid_call_must_haves_call_id_position", "call_id", "position"),
+        UniqueConstraint("id", "call_id"),
         Index(
             "uq_bid_call_must_haves_call_id_text_lower",
             "call_id",
@@ -309,6 +336,9 @@ class BidCallMustHave(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(String(200))
     kind: Mapped[MustHaveKind] = mapped_column(str_enum(MustHaveKind, "kind"))
+    # A pricing document must-have ("Pricing schedule"): its files are pricing documents
+    # (bid.view_price only), and the AI assessor isn't asked about it.
+    pricing: Mapped[bool] = mapped_column(Boolean, default=False, server_default=_FALSE)
 
 
 class BidSectionAssessor(Base):
@@ -316,20 +346,26 @@ class BidSectionAssessor(Base):
 
     __tablename__ = "bid_section_assessors"
     __table_args__ = (
+        # The section is of this call.
+        ForeignKeyConstraint(
+            ["section_id", "call_id"],
+            ["bid_call_sections.id", "bid_call_sections.call_id"],
+            ondelete="CASCADE",
+        ),
+        # The target of bid_assessments' (section_id, assessor_id, call_id).
+        UniqueConstraint("section_id", "user_id", "call_id"),
         # My work's "Bids to assess", WorkCounts and the reminder scan: a person's calls.
         Index("ix_bid_section_assessors_user_id_call_id", "user_id", "call_id"),
         Index("ix_bid_section_assessors_call_id", "call_id"),
     )
 
-    section_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bid_call_sections.id", ondelete="CASCADE"), primary_key=True
-    )
+    section_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     # Users are deactivated, never deleted (the cascade only keeps tests' cleanup simple).
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    # The section's call (denormalised for the indexes above).
-    call_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bid_calls.id", ondelete="CASCADE"))
+    # The section's call (the composite key; also for the indexes above).
+    call_id: Mapped[uuid.UUID] = mapped_column()
     assigned_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -346,8 +382,15 @@ class Bid(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("length(bidder) > 0", name="bidder_not_empty"),
         CheckConstraint("price > 0", name="price_positive"),
         CheckConstraint(f"length(notes) <= {BID_NOTES_MAX_LENGTH}", name="notes_length"),
+        # A rejected bid has its rejection, not reinstated; a reinstated one keeps its last
+        # rejection on record (review: the reason isn't lost) and isn't rejected.
         CheckConstraint(
-            "(status = 'rejected') = (rejected_at IS NOT NULL)", name="rejected_iff_at"
+            "status <> 'rejected' OR (rejected_at IS NOT NULL AND reinstated_at IS NULL)",
+            name="rejected_has_rejection",
+        ),
+        CheckConstraint(
+            "reinstated_at IS NULL OR (rejected_at IS NOT NULL AND status <> 'rejected')",
+            name="reinstated_after_rejection",
         ),
         CheckConstraint(
             "(rejected_at IS NULL) = (rejection_reason IS NULL)", name="rejection_reason_iff_at"
@@ -358,6 +401,7 @@ class Bid(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         # The call's bids by status (lists, the ranking, the price pool, counts).
         Index("ix_bids_call_id_status", "call_id", "status"),
+        UniqueConstraint("id", "call_id"),
         # One awarded bid per call.
         Index(
             "uq_bids_call_id_awarded",
@@ -372,7 +416,7 @@ class Bid(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     bidder: Mapped[str] = mapped_column(String(120))
     # Contact details as given; call managers only; never emailed by Soundings.
     contact_name: Mapped[str] = mapped_column(String(120), default="", server_default="")
-    contact_email: Mapped[str | None] = mapped_column(String(320))
+    contact_email: Mapped[str | None] = mapped_column(String(254))
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now()
     )
@@ -390,9 +434,18 @@ class Bid(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     rejection_reason: Mapped[str | None] = mapped_column(Text)
+    # Set by "Reinstate" (the rejection above stays as the last one); cleared by a new
+    # rejection.
+    reinstated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reinstated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     entered_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # When the call's AI assessor started this bid's one automatic assess run (null: not
+    # yet); never reset, so a document change doesn't run it again.
+    auto_ai_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BidMustHaveResult(Base):
@@ -409,14 +462,21 @@ class BidMustHaveResult(Base):
             "decided_by_id IS NULL OR decided_at IS NOT NULL", name="decided_by_needs_at"
         ),
         CheckConstraint(f"length(note) <= {BID_REASON_MAX_LENGTH}", name="note_length"),
+        # The bid and the must-have are of the same call.
+        ForeignKeyConstraint(
+            ["bid_id", "call_id"], ["bids.id", "bids.call_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["must_have_id", "call_id"],
+            ["bid_call_must_haves.id", "bid_call_must_haves.call_id"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_bid_must_have_results_must_have_id", "must_have_id"),
     )
 
-    bid_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bids.id", ondelete="CASCADE"), primary_key=True
-    )
-    must_have_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bid_call_must_haves.id", ondelete="CASCADE"), primary_key=True, index=True
-    )
+    bid_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    must_have_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    call_id: Mapped[uuid.UUID] = mapped_column()
     result: Mapped[MustHaveResult] = mapped_column(str_enum(MustHaveResult, "result"))
     # Who decided met / not met, when (null: automatic, e.g. a document linked).
     decided_by_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -449,6 +509,17 @@ class BidDocument(UUIDPrimaryKeyMixin, Base):
             "(extraction_state = 'done') = (text_chars IS NOT NULL)", name="text_iff_done"
         ),
         CheckConstraint(f"text_chars BETWEEN 0 AND {BID_TEXT_MAX_CHARS}", name="text_chars_range"),
+        CheckConstraint("extraction_attempts >= 0", name="extraction_attempts_non_negative"),
+        # The bid is of this call, and so is the must-have it is linked to (NO ACTION: the
+        # service unlinks documents before it deletes a must-have; MATCH SIMPLE skips the
+        # check while must_have_id is null).
+        ForeignKeyConstraint(
+            ["bid_id", "call_id"], ["bids.id", "bids.call_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["must_have_id", "call_id"],
+            ["bid_call_must_haves.id", "bid_call_must_haves.call_id"],
+        ),
         # A call's documents and their total size (the 500 MiB cap).
         Index("ix_bid_documents_call_id", "call_id"),
         # The worker's sweep of documents still waiting for extraction.
@@ -464,13 +535,11 @@ class BidDocument(UUIDPrimaryKeyMixin, Base):
         ),
     )
 
-    bid_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bids.id", ondelete="CASCADE"))
-    # The bid's call (denormalised for the per-call size cap).
-    call_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bid_calls.id", ondelete="CASCADE"))
+    bid_id: Mapped[uuid.UUID] = mapped_column()
+    # The bid's call (the composite keys; also for the per-call size cap).
+    call_id: Mapped[uuid.UUID] = mapped_column()
     # The required-document must-have it satisfies (which then counts as present).
-    must_have_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("bid_call_must_haves.id", ondelete="SET NULL")
-    )
+    must_have_id: Mapped[uuid.UUID | None] = mapped_column()
     # A safe display name (one line, no path separators), with the extension of its type.
     filename: Mapped[str] = mapped_column(String(200))
     type: Mapped[BidDocumentType] = mapped_column(str_enum(BidDocumentType, "type"))
@@ -479,6 +548,15 @@ class BidDocument(UUIDPrimaryKeyMixin, Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     # Hex SHA-256 of the bytes: the same file twice on one bid is refused (409).
     sha256: Mapped[str] = mapped_column(String(64))
+    # A pricing document (marked at upload or later, or linked to a pricing must-have):
+    # bid.view_price only; the AI assessor never reads it.
+    pricing: Mapped[bool] = mapped_column(Boolean, default=False, server_default=_FALSE)
+    # The extraction child found content that can act when the file is opened (PDF
+    # JavaScript, launch actions, attached files; an Office file's remote template, external
+    # links, DDE): the SPA warns before a download.
+    active_content: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -501,6 +579,11 @@ class BidDocument(UUIDPrimaryKeyMixin, Base):
     text_truncated: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    # Extraction attempts that crashed the child or the worker; at
+    # app.schemas.bids.BID_EXTRACTION_MAX_ATTEMPTS the document is failed (internal_error).
+    extraction_attempts: Mapped[int] = mapped_column(
+        SmallInteger, default=0, server_default=text("0")
+    )
 
 
 class BidDocumentContent(Base):
@@ -520,7 +603,10 @@ class BidDocumentContent(Base):
 
 
 class BidDocumentText(Base):
-    """The text extracted from a bid document (untrusted: never instructions)."""
+    """The text extracted from a bid document (untrusted: never instructions), stored after
+    the child removed NULs and the characters ``app.mcp.text.visible_text`` hides (soft
+    hyphens, zero-width, bidi controls, tag characters), so REST, MCP and quote checks all
+    read the same text."""
 
     __tablename__ = "bid_document_texts"
     __table_args__ = (CheckConstraint(f"length(text) <= {BID_TEXT_MAX_CHARS}", name="text_length"),)
@@ -534,15 +620,25 @@ class BidDocumentText(Base):
 class BidAssessment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """One assessor's assessment of one section of one bid (a draft, then submitted).
 
-    References the assignment ``(section_id, assessor_id)``, so it can't exist without it
-    and goes with it (removing an assessor from a section deletes their assessments)."""
+    References the assignment ``(section_id, assessor_id, call_id)``, so it can't exist
+    without it and goes with it: removing an assessor from a section deletes their drafts,
+    and the service refuses to remove one who has submitted (409
+    ``assessor_has_submitted``)."""
 
     __tablename__ = "bid_assessments"
     __table_args__ = (
         UniqueConstraint("bid_id", "section_id", "assessor_id"),
+        # The bid and the assignment are of the same call.
         ForeignKeyConstraint(
-            ["section_id", "assessor_id"],
-            ["bid_section_assessors.section_id", "bid_section_assessors.user_id"],
+            ["bid_id", "call_id"], ["bids.id", "bids.call_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["section_id", "assessor_id", "call_id"],
+            [
+                "bid_section_assessors.section_id",
+                "bid_section_assessors.user_id",
+                "bid_section_assessors.call_id",
+            ],
             name="fk_bid_assessments_section_id_assessor_id_bid_section_assessors",
             ondelete="CASCADE",
         ),
@@ -552,9 +648,10 @@ class BidAssessment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_bid_assessments_section_id_assessor_id", "section_id", "assessor_id"),
     )
 
-    bid_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bids.id", ondelete="CASCADE"))
+    bid_id: Mapped[uuid.UUID] = mapped_column()
     section_id: Mapped[uuid.UUID] = mapped_column()
     assessor_id: Mapped[uuid.UUID] = mapped_column()
+    call_id: Mapped[uuid.UUID] = mapped_column()
     status: Mapped[EvaluationStatus] = mapped_column(
         str_enum(EvaluationStatus, "status"),
         default=EvaluationStatus.DRAFT,

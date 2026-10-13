@@ -7,20 +7,27 @@ renamed or retyped.
 
 * ``bid_templates``: each project's default bid evaluation template (one JSON document).
   **Every existing project gets the built-in default** (Technical 40 / Commercial 40 with
-  the price question / Delivery 20, three must-haves: ``DEFAULT_TEMPLATE`` below, the same
-  as ``app.schemas.bids.DEFAULT_BID_TEMPLATE``). A project created later by the previous
-  release (a rollback window) has no row and reads as the built-in default.
-* ``bid_calls`` (one per idea), its template copy ``bid_call_sections``,
-  ``bid_call_questions`` (at most one price question per call: a partial unique index) and
-  ``bid_call_must_haves``; ``bid_section_assessors``; ``bids`` (one awarded per call: a
-  partial unique index) and ``bid_must_have_results``; ``bid_documents`` with
-  ``bid_document_contents`` (``bytea``) and ``bid_document_texts``; ``bid_assessments``
-  (referencing the assessor assignment, so removing an assessor deletes their assessments)
-  and ``bid_assessment_answers``; ``bid_ai_assessments`` with ``bid_ai_scores`` and
-  ``bid_ai_findings`` (quoted evidence as JSON arrays of at most three).
-* ``ai_runs.bid_id`` (``assess_bid`` runs, and only they: ``ck_ai_runs_bid_iff_assess``) and
-  ``ai_runs.bid_ai_assessment_id`` (the result; ``ck_ai_runs_result_matches_kind`` gains it);
-  the run kind ``assess_bid`` (``ck_ai_runs_kind``) and the agent purpose
+  the price question / Delivery 20, four must-haves, the "Pricing schedule" a pricing one:
+  ``DEFAULT_TEMPLATE`` below, the same as ``app.schemas.bids.DEFAULT_BID_TEMPLATE``). A
+  project created later by the previous release (a rollback window) has no row and reads
+  as the built-in default.
+* ``bid_calls`` (one per idea; its AI assessor ``ai_assessor_id``), its template copy
+  ``bid_call_sections``, ``bid_call_questions`` (at most one price question per call: a
+  partial unique index) and ``bid_call_must_haves`` (``pricing``); ``bid_section_assessors``;
+  ``bids`` (one awarded per call: a partial unique index; the last rejection kept after
+  reinstating; ``auto_ai_run_at``) and ``bid_must_have_results``; ``bid_documents``
+  (``pricing``, ``active_content``, ``extraction_attempts``) with ``bid_document_contents``
+  (``bytea``, ``STORAGE EXTERNAL``) and ``bid_document_texts``; ``bid_assessments``
+  (referencing the assessor assignment) and ``bid_assessment_answers``;
+  ``bid_ai_assessments`` with ``bid_ai_scores`` and ``bid_ai_findings`` (quoted evidence as
+  JSON arrays of at most three). Every row that names two of a call's rows does it through a
+  composite foreign key with the ``call_id`` (sections, must-haves, bids and calls carry
+  ``UNIQUE (id, call_id)`` / ``(id, idea_id)``), so no row mixes two calls.
+* ``ai_runs.bid_id`` and ``ai_runs.bid_call_id`` (``assess_bid`` runs, and only they:
+  ``ck_ai_runs_bid_iff_assess``; the bid is of that call and the call of the run's idea:
+  two composite foreign keys), ``ai_runs.automatic`` (started by the call's AI assessor) and
+  ``ai_runs.bid_ai_assessment_id`` (the result; ``ck_ai_runs_result_matches_kind`` gains
+  it); the run kind ``assess_bid`` (``ck_ai_runs_kind``) and the agent purpose
   (``ck_ai_agents_purposes``: 1-4 distinct purposes now); ``uq_ai_runs_active`` gains
   ``bid_id`` (one active run per idea, agent, kind, section **and bid**; the same as before
   for every other kind).
@@ -183,8 +190,9 @@ DEFAULT_TEMPLATE: dict[str, Any] = {
                 {
                     "text": "Price",
                     "guidance": (
-                        "The total price for the contract term, entered by the team. Scored "
-                        "automatically: lowest qualified price / this price x 5."
+                        "The total price for the contract term, from the pricing schedule, "
+                        "entered by the team. Scored automatically: lowest qualified price / "
+                        "this price x 5."
                     ),
                     "type": "price",
                     "weight": 3,
@@ -224,9 +232,10 @@ DEFAULT_TEMPLATE: dict[str, Any] = {
         },
     ],
     "must_haves": [
-        {"text": "Signed form of tender", "kind": "document"},
-        {"text": "Insurance certificate", "kind": "document"},
-        {"text": "Accepts our standard terms", "kind": "confirmation"},
+        {"text": "Signed form of tender", "kind": "document", "pricing": False},
+        {"text": "Pricing schedule", "kind": "document", "pricing": True},
+        {"text": "Insurance certificate", "kind": "document", "pricing": False},
+        {"text": "Accepts our standard terms", "kind": "confirmation", "pricing": False},
     ],
 }
 """``app.schemas.bids.DEFAULT_BID_TEMPLATE`` as JSON (``tests/test_schemas_phase10.py``
@@ -275,6 +284,27 @@ def _fk(
     return sa.ForeignKeyConstraint(
         [column], [target], name=op.f(f"fk_{table}_{column}_{referred}"), ondelete=ondelete
     )
+
+
+def _same_call_fk(
+    table: str,
+    columns: Sequence[str],
+    referred: str,
+    referred_columns: Sequence[str],
+    ondelete: str | None = "CASCADE",
+    name: str | None = None,
+) -> sa.ForeignKeyConstraint:
+    """A composite foreign key that also matches the ``call_id`` (review S7)."""
+    return sa.ForeignKeyConstraint(
+        list(columns),
+        [f"{referred}.{column}" for column in referred_columns],
+        name=op.f(name or f"fk_{table}_{columns[0]}_{referred}"),
+        ondelete=ondelete,
+    )
+
+
+def _unique(table: str, *columns: str) -> sa.UniqueConstraint:
+    return sa.UniqueConstraint(*columns, name=op.f(f"uq_{table}_{'_'.join(columns)}"))
 
 
 def _pk(table: str, *columns: str) -> sa.PrimaryKeyConstraint:
@@ -333,6 +363,7 @@ def _calls() -> None:
         sa.Column("scale", postgresql.ARRAY(sa.String(length=80)), nullable=False),
         sa.Column("deadline_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("assessment_due_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("ai_assessor_id", sa.Uuid(), nullable=True),
         sa.Column("created_by_id", sa.Uuid(), nullable=True),
         sa.Column("awarded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("awarded_by_id", sa.Uuid(), nullable=True),
@@ -360,10 +391,12 @@ def _calls() -> None:
             f"length(award_reason) <= {REASON_MAX} AND length(cancel_reason) <= {REASON_MAX}",
         ),
         _fk(t, "idea_id", "ideas.id"),
+        _fk(t, "ai_assessor_id", "ai_agents.id", None),
         _fk(t, "created_by_id", "users.id", "SET NULL"),
         _fk(t, "awarded_by_id", "users.id", "SET NULL"),
         _pk(t, "id"),
         sa.UniqueConstraint("idea_id", name=op.f("uq_bid_calls_idea_id")),
+        _unique(t, "id", "idea_id"),
     )
     op.create_index(
         "ix_bid_calls_assessment_due_at_assessing",
@@ -389,6 +422,7 @@ def _template_copy() -> None:
         _check(t, "weight_range", "weight BETWEEN 1 AND 100"),
         _fk(t, "call_id", "bid_calls.id"),
         _pk(t, "id"),
+        _unique(t, "id", "call_id"),
     )
     op.create_index("ix_bid_call_sections_call_id_position", t, ["call_id", "position"])
     op.create_index(
@@ -415,8 +449,7 @@ def _template_copy() -> None:
         _check(t, "position_non_negative", "position >= 0"),
         _check(t, "weight_range", "weight BETWEEN 0 AND 100"),
         _check(t, "comment_iff_unweighted", "(type = 'comment') = (weight = 0)"),
-        _fk(t, "call_id", "bid_calls.id"),
-        _fk(t, "section_id", "bid_call_sections.id"),
+        _same_call_fk(t, ("section_id", "call_id"), "bid_call_sections", ("id", "call_id")),
         _pk(t, "id"),
     )
     op.create_index("ix_bid_call_questions_section_id_position", t, ["section_id", "position"])
@@ -437,12 +470,15 @@ def _template_copy() -> None:
         sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("text", sa.String(length=200), nullable=False),
         _enum("kind", MUST_HAVE_KINDS, nullable=False),
+        sa.Column("pricing", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         *_timestamps(),
         _enum_check(t, "kind", MUST_HAVE_KINDS),
         _check(t, "text_not_empty", "length(text) > 0"),
         _check(t, "position_non_negative", "position >= 0"),
+        _check(t, "pricing_is_document", "NOT pricing OR kind = 'document'"),
         _fk(t, "call_id", "bid_calls.id"),
         _pk(t, "id"),
+        _unique(t, "id", "call_id"),
     )
     op.create_index("ix_bid_call_must_haves_call_id_position", t, ["call_id", "position"])
     op.create_index(
@@ -460,11 +496,11 @@ def _template_copy() -> None:
         sa.Column("call_id", sa.Uuid(), nullable=False),
         sa.Column("assigned_by_id", sa.Uuid(), nullable=True),
         _timestamp("assigned_at"),
-        _fk(t, "section_id", "bid_call_sections.id"),
+        _same_call_fk(t, ("section_id", "call_id"), "bid_call_sections", ("id", "call_id")),
         _fk(t, "user_id", "users.id"),
-        _fk(t, "call_id", "bid_calls.id"),
         _fk(t, "assigned_by_id", "users.id", "SET NULL"),
         _pk(t, "section_id", "user_id"),
+        _unique(t, "section_id", "user_id", "call_id"),
     )
     op.create_index("ix_bid_section_assessors_user_id_call_id", t, ["user_id", "call_id"])
     op.create_index("ix_bid_section_assessors_call_id", t, ["call_id"])
@@ -478,7 +514,7 @@ def _bids() -> None:
         sa.Column("call_id", sa.Uuid(), nullable=False),
         sa.Column("bidder", sa.String(length=120), nullable=False),
         sa.Column("contact_name", sa.String(length=120), server_default="", nullable=False),
-        sa.Column("contact_email", sa.String(length=320), nullable=True),
+        sa.Column("contact_email", sa.String(length=254), nullable=True),
         _timestamp("received_at"),
         sa.Column("price", sa.Numeric(precision=14, scale=2), nullable=True),
         sa.Column("notes", sa.Text(), server_default="", nullable=False),
@@ -486,21 +522,35 @@ def _bids() -> None:
         sa.Column("rejected_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("rejected_by_id", sa.Uuid(), nullable=True),
         sa.Column("rejection_reason", sa.Text(), nullable=True),
+        sa.Column("reinstated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("reinstated_by_id", sa.Uuid(), nullable=True),
         sa.Column("entered_by_id", sa.Uuid(), nullable=True),
+        sa.Column("auto_ai_run_at", sa.DateTime(timezone=True), nullable=True),
         *_timestamps(),
         _enum_check(t, "status", BID_STATUSES),
         _check(t, "bidder_not_empty", "length(bidder) > 0"),
         _check(t, "price_positive", "price > 0"),
         _check(t, "notes_length", "length(notes) <= 2000"),
-        _check(t, "rejected_iff_at", "(status = 'rejected') = (rejected_at IS NOT NULL)"),
+        _check(
+            t,
+            "rejected_has_rejection",
+            "status <> 'rejected' OR (rejected_at IS NOT NULL AND reinstated_at IS NULL)",
+        ),
+        _check(
+            t,
+            "reinstated_after_rejection",
+            "reinstated_at IS NULL OR (rejected_at IS NOT NULL AND status <> 'rejected')",
+        ),
         _check(t, "rejection_reason_iff_at", "(rejected_at IS NULL) = (rejection_reason IS NULL)"),
         _check(
             t, "rejection_reason_length", f"length(rejection_reason) BETWEEN 1 AND {REASON_MAX}"
         ),
         _fk(t, "call_id", "bid_calls.id"),
         _fk(t, "rejected_by_id", "users.id", "SET NULL"),
+        _fk(t, "reinstated_by_id", "users.id", "SET NULL"),
         _fk(t, "entered_by_id", "users.id", "SET NULL"),
         _pk(t, "id"),
+        _unique(t, "id", "call_id"),
     )
     op.create_index("ix_bids_call_id_status", t, ["call_id", "status"])
     op.create_index(
@@ -516,6 +566,7 @@ def _bids() -> None:
         t,
         sa.Column("bid_id", sa.Uuid(), nullable=False),
         sa.Column("must_have_id", sa.Uuid(), nullable=False),
+        sa.Column("call_id", sa.Uuid(), nullable=False),
         _enum("result", MUST_HAVE_RESULTS, nullable=False),
         sa.Column("decided_by_id", sa.Uuid(), nullable=True),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
@@ -524,12 +575,12 @@ def _bids() -> None:
         _check(t, "decision_is_met_or_not", "decided_at IS NULL OR result IN ('met', 'not_met')"),
         _check(t, "decided_by_needs_at", "decided_by_id IS NULL OR decided_at IS NOT NULL"),
         _check(t, "note_length", f"length(note) <= {REASON_MAX}"),
-        _fk(t, "bid_id", "bids.id"),
-        _fk(t, "must_have_id", "bid_call_must_haves.id"),
+        _same_call_fk(t, ("bid_id", "call_id"), "bids", ("id", "call_id")),
+        _same_call_fk(t, ("must_have_id", "call_id"), "bid_call_must_haves", ("id", "call_id")),
         _fk(t, "decided_by_id", "users.id", "SET NULL"),
         _pk(t, "bid_id", "must_have_id"),
     )
-    op.create_index(op.f("ix_bid_must_have_results_must_have_id"), t, ["must_have_id"])
+    op.create_index("ix_bid_must_have_results_must_have_id", t, ["must_have_id"])
 
 
 def _documents() -> None:
@@ -545,6 +596,8 @@ def _documents() -> None:
         sa.Column("content_type", sa.String(length=100), nullable=False),
         sa.Column("size_bytes", sa.Integer(), nullable=False),
         sa.Column("sha256", sa.String(length=64), nullable=False),
+        sa.Column("pricing", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column("active_content", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("uploaded_by_id", sa.Uuid(), nullable=True),
         _timestamp("uploaded_at"),
         _enum("extraction_state", EXTRACTION_STATES, server_default="pending", nullable=False),
@@ -552,6 +605,9 @@ def _documents() -> None:
         sa.Column("extracted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("text_chars", sa.Integer(), nullable=True),
         sa.Column("text_truncated", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column(
+            "extraction_attempts", sa.SmallInteger(), server_default=sa.text("0"), nullable=False
+        ),
         _enum_check(t, "type", DOCUMENT_TYPES),
         _enum_check(t, "extraction_state", EXTRACTION_STATES),
         _enum_check(t, "extraction_error", EXTRACTION_ERRORS),
@@ -564,9 +620,12 @@ def _documents() -> None:
         _check(t, "extracted_iff_done", "(extraction_state = 'pending') = (extracted_at IS NULL)"),
         _check(t, "text_iff_done", "(extraction_state = 'done') = (text_chars IS NOT NULL)"),
         _check(t, "text_chars_range", f"text_chars BETWEEN 0 AND {TEXT_MAX_CHARS}"),
-        _fk(t, "bid_id", "bids.id"),
-        _fk(t, "call_id", "bid_calls.id"),
-        _fk(t, "must_have_id", "bid_call_must_haves.id", "SET NULL"),
+        _check(t, "extraction_attempts_non_negative", "extraction_attempts >= 0"),
+        _same_call_fk(t, ("bid_id", "call_id"), "bids", ("id", "call_id")),
+        # NO ACTION: the service unlinks documents before it deletes a must-have.
+        _same_call_fk(
+            t, ("must_have_id", "call_id"), "bid_call_must_haves", ("id", "call_id"), None
+        ),
         _fk(t, "uploaded_by_id", "users.id", "SET NULL"),
         _pk(t, "id"),
         sa.UniqueConstraint("bid_id", "sha256", name=op.f("uq_bid_documents_bid_id_sha256")),
@@ -594,6 +653,9 @@ def _documents() -> None:
         _fk(t, "document_id", "bid_documents.id"),
         _pk(t, "document_id"),
     )
+    # Uncompressed out-of-line storage: downloads read 1 MiB ranges (substring) without
+    # decompressing the whole file; the formats are compressed already (review C9).
+    op.execute("ALTER TABLE bid_document_contents ALTER COLUMN data SET STORAGE EXTERNAL")
 
     t = "bid_document_texts"
     op.create_table(
@@ -614,18 +676,20 @@ def _assessments() -> None:
         sa.Column("bid_id", sa.Uuid(), nullable=False),
         sa.Column("section_id", sa.Uuid(), nullable=False),
         sa.Column("assessor_id", sa.Uuid(), nullable=False),
+        sa.Column("call_id", sa.Uuid(), nullable=False),
         _enum("status", ASSESSMENT_STATUSES, server_default="draft", nullable=False),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("edited_at", sa.DateTime(timezone=True), nullable=True),
         *_timestamps(),
         _enum_check(t, "status", ASSESSMENT_STATUSES),
         _check(t, "submitted_has_at", "status <> 'submitted' OR submitted_at IS NOT NULL"),
-        _fk(t, "bid_id", "bids.id"),
-        sa.ForeignKeyConstraint(
-            ["section_id", "assessor_id"],
-            ["bid_section_assessors.section_id", "bid_section_assessors.user_id"],
-            name=op.f("fk_bid_assessments_section_id_assessor_id_bid_section_assessors"),
-            ondelete="CASCADE",
+        _same_call_fk(t, ("bid_id", "call_id"), "bids", ("id", "call_id")),
+        _same_call_fk(
+            t,
+            ("section_id", "assessor_id", "call_id"),
+            "bid_section_assessors",
+            ("section_id", "user_id", "call_id"),
+            name="fk_bid_assessments_section_id_assessor_id_bid_section_assessors",
         ),
         _pk(t, "id"),
         sa.UniqueConstraint(
@@ -735,9 +799,27 @@ def _active_runs_index(columns: list[str]) -> None:
 
 def _ai_runs() -> None:
     op.add_column("ai_runs", sa.Column("bid_id", sa.Uuid(), nullable=True))
+    op.add_column("ai_runs", sa.Column("bid_call_id", sa.Uuid(), nullable=True))
+    op.add_column(
+        "ai_runs",
+        sa.Column("automatic", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+    )
     op.add_column("ai_runs", sa.Column("bid_ai_assessment_id", sa.Uuid(), nullable=True))
     op.create_foreign_key(
-        op.f("fk_ai_runs_bid_id_bids"), "ai_runs", "bids", ["bid_id"], ["id"], ondelete="CASCADE"
+        op.f("fk_ai_runs_bid_id_bids"),
+        "ai_runs",
+        "bids",
+        ["bid_id", "bid_call_id"],
+        ["id", "call_id"],
+        ondelete="CASCADE",
+    )
+    op.create_foreign_key(
+        op.f("fk_ai_runs_bid_call_id_bid_calls"),
+        "ai_runs",
+        "bid_calls",
+        ["bid_call_id", "idea_id"],
+        ["id", "idea_id"],
+        ondelete="CASCADE",
     )
     op.create_foreign_key(
         op.f("fk_ai_runs_bid_ai_assessment_id_bid_ai_assessments"),
@@ -750,11 +832,24 @@ def _ai_runs() -> None:
     _swap_check("ai_runs", "ck_ai_runs_kind", f"kind IN ({_values(KINDS)})")
     _swap_check("ai_runs", "ck_ai_runs_result_matches_kind", RESULT_MATCHES_KIND)
     op.create_check_constraint(
-        op.f("ck_ai_runs_bid_iff_assess"), "ai_runs", "(kind = 'assess_bid') = (bid_id IS NOT NULL)"
+        op.f("ck_ai_runs_bid_iff_assess"),
+        "ai_runs",
+        "(kind = 'assess_bid') = (bid_id IS NOT NULL) AND (bid_id IS NULL) = (bid_call_id IS NULL)",
+    )
+    op.create_check_constraint(
+        op.f("ck_ai_runs_automatic_assess"),
+        "ai_runs",
+        "NOT automatic OR (kind = 'assess_bid' AND requested_by_id IS NULL)",
     )
     _active_runs_index(["idea_id", "agent_id", "kind", "section_key", "bid_id"])
     op.create_index(
         "ix_ai_runs_bid_id", "ai_runs", ["bid_id"], postgresql_where=sa.text("bid_id IS NOT NULL")
+    )
+    op.create_index(
+        "ix_ai_runs_bid_call_id",
+        "ai_runs",
+        ["bid_call_id"],
+        postgresql_where=sa.text("bid_call_id IS NOT NULL"),
     )
     op.create_index(
         "ix_ai_runs_bid_ai_assessment_id",
@@ -811,16 +906,21 @@ def downgrade() -> None:
     # AI: the assess runs go (their events cascade); agents lose the purpose.
     op.execute("DELETE FROM ai_runs WHERE kind = 'assess_bid'")
     op.drop_index("ix_ai_runs_bid_ai_assessment_id", table_name="ai_runs")
+    op.drop_index("ix_ai_runs_bid_call_id", table_name="ai_runs")
     op.drop_index("ix_ai_runs_bid_id", table_name="ai_runs")
     _active_runs_index(["idea_id", "agent_id", "kind", "section_key"])
+    op.drop_constraint(op.f("ck_ai_runs_automatic_assess"), "ai_runs", type_="check")
     op.drop_constraint(op.f("ck_ai_runs_bid_iff_assess"), "ai_runs", type_="check")
     _swap_check("ai_runs", "ck_ai_runs_result_matches_kind", RESULT_MATCHES_KIND_BEFORE)
     _swap_check("ai_runs", "ck_ai_runs_kind", f"kind IN ({_values(KINDS_BEFORE)})")
     op.drop_constraint(
         op.f("fk_ai_runs_bid_ai_assessment_id_bid_ai_assessments"), "ai_runs", type_="foreignkey"
     )
+    op.drop_constraint(op.f("fk_ai_runs_bid_call_id_bid_calls"), "ai_runs", type_="foreignkey")
     op.drop_constraint(op.f("fk_ai_runs_bid_id_bids"), "ai_runs", type_="foreignkey")
     op.drop_column("ai_runs", "bid_ai_assessment_id")
+    op.drop_column("ai_runs", "automatic")
+    op.drop_column("ai_runs", "bid_call_id")
     op.drop_column("ai_runs", "bid_id")
     op.execute(
         "UPDATE api_keys SET revoked_at = now() WHERE revoked_at IS NULL AND user_id IN"

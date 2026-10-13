@@ -1043,7 +1043,7 @@ export interface paths {
         get: operations["get_bid_call"];
         /**
          * Change the call's settings
-         * @description bid.manage: title, description, currency (until the template is locked: 409 bid_call_template_locked), deadline (an open call keeps one: 409 bid_call_deadline_required) and the assessment due date; the complete new state, last write wins. Audited bid_call.update (the fields changed, never their values). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.manage: title, description, currency (a label), the deadline (only while the call is a draft or open: a change while assessing is 409 bid_call_not_open; an open call keeps one: 409 bid_call_deadline_required) and the call's AI assessor (an agent passing c10 for assess_bid, else 409 ai_unavailable; null for none); the complete new state, last write wins. The assessment due date is set with the assessors. Audited bid_call.update (the fields changed, never their values). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["update_bid_call"];
         /**
@@ -1053,7 +1053,7 @@ export interface paths {
         post: operations["create_bid_call"];
         /**
          * Delete the call
-         * @description bid.decide (session only): a draft or cancelled call, with its bids, documents and assessments (409 bid_call_active otherwise: cancel it first). Frees the idea for a new call. Audited bid_call.delete. 409 project_archived.
+         * @description bid.delete_call (session only, c30): a draft or cancelled call, or (platform admins only, for the bidders' personal data) an awarded one, with its bids, documents and assessments; an open or assessing call, or an awarded one for anyone else: 409 bid_call_active (cancel it first). Frees the idea for a new call. Audited bid_call.delete. 409 project_archived.
          */
         delete: operations["delete_bid_call"];
         options?: never;
@@ -1072,7 +1072,7 @@ export interface paths {
         put?: never;
         /**
          * Assess all bids with AI
-         * @description ai.assess_bid (c5, c10): one assess run per bid that isn't rejected, for the agent named (active runs are returned as they are). The call must be open or being assessed (409 bid_call_not_assessable). Each new run counts toward your 20 AI requests an hour; beyond: 429 too_many_attempts and nothing starts. Audited ai_run.request per run. 409 ai_unavailable. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description ai.assess_bid (c5, c10): one assess run per bid that isn't rejected, for the agent named (active runs are returned as they are). The call must be open or being assessed (409 bid_call_not_assessable). Each new run counts toward your 20 AI requests an hour: what fits starts (bids in the order received), the rest are skipped; 429 too_many_attempts only when none fits. Audited ai_run.request per run. 409 ai_unavailable. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         post: operations["request_ai_bid_assessments"];
         delete?: never;
@@ -1091,7 +1091,7 @@ export interface paths {
         get?: never;
         /**
          * Assign the section assessors
-         * @description bid.manage, **session only** (an assignment opens the bids and their documents to a person): every section's assessors and the assessment due date, the complete new state. Assessors must be active people who can view the idea (in a private project: a role there; c28, else 422 assessor_not_eligible), never an AI agent or the break-glass account. People added get "Asked to assess bids"; people removed from a section lose their assessments of it. Audited bid_call.assessors_change. 422 unknown_section (a section of another call or one left out). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.manage, **session only** (an assignment opens the bids and their documents to a person): every section's assessors and the assessment due date (its one writer), the complete new state. Assessors must be active people who can view the idea in their own right (in a private project: a role there, never as its guest researcher; c28, else 422 assessor_not_eligible), never an AI agent or the break-glass account. Removing yourself from a section you still owe for any bid of the call (rejected ones included): 403 cannot_remove_self. Removing someone who has submitted an assessment of that section: 409 assessor_has_submitted (drafts go with the assignment). People added get "Asked to assess bids". Audited bid_call.assessors_change. 422 unknown_section (a section of another call or one left out). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["set_bid_assessors"];
         post?: never;
@@ -1112,7 +1112,7 @@ export interface paths {
         put?: never;
         /**
          * Award the call
-         * @description bid.decide (session only), while the call is being assessed (409 bid_call_not_assessing): one qualified bid is awarded (409 bid_not_qualified; a rejected one: 409 bid_rejected), every other bid that isn't rejected becomes unsuccessful, and the call is read-only. Outstanding assessments don't block it (the SPA warns). Emits bid_call_changed (awarded); audited bid_call.award. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.decide (session only), while the call is being assessed (409 bid_call_not_assessing): one qualified bid is awarded (409 bid_not_qualified; a rejected one: 409 bid_rejected), every other bid that isn't rejected becomes unsuccessful, the call is read-only and active AI assess runs are cancelled. Outstanding assessments don't block it (the SPA warns). Emits bid_call_changed (awarded); audited bid_call.award. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         post: operations["award_bid_call"];
         delete?: never;
@@ -1159,7 +1159,7 @@ export interface paths {
         get: operations["get_bid"];
         /**
          * Edit a bid
-         * @description bid.manage: the complete new state (received_at required). Before the award. A changed price changes every qualified bid's price score. Audited bid.update (the fields changed, never their values). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.manage: the complete new state (received_at required: the stored value is always accepted, a changed one within a year back and not ahead). Before the award. A changed price changes every scored bid's price score. Audited bid.update (the fields changed, never their values). 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["update_bid"];
         post?: never;
@@ -1244,7 +1244,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a bid document
-         * @description bid.upload_document (session only), before the award: the raw file as the body (this route alone takes up to 25 MiB: 413 content_too_large beyond, also for a body longer than its Content-Length says or a chunked one). Allowed by its bytes: 415 unsupported_document_type (anything else, also an empty or encrypted file), macro_document (VBA or ActiveX in an Office file, scripts in an OpenDocument file), document_type_mismatch (Content-Type is another allowed type). 409 too_many_documents (30 per bid), call_storage_full (500 MiB per call), duplicate_document (the same file on this bid). 422 invalid_must_have (must_have_id names a confirmation or another call's). 503 upload_busy (with Retry-After). Text is extracted afterwards by the worker (extraction.state pending). Audited bid_document.upload. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.upload_document (session only), before the award. The checks before the body is read: 401, 404, 403, then an upload slot (503 upload_busy with Retry-After). Then the raw file as the body, read with no transaction open (this route alone takes up to 25 MiB: 413 content_too_large beyond, also for a body longer than its Content-Length says or a chunked one; 408 upload_timeout after 120 s). Allowed by its bytes alone (the ZIP's entry count, central-directory names and two bounded entries, off the event loop; no PDF is parsed here): 415 unsupported_document_type (anything else, an empty file, an encrypted Office file, more than 2,000 archive entries), macro_document (VBA, ActiveX, embedded OLE packages or macro-enabled files in an Office file, Basic/ or Scripts/ in an OpenDocument file). 422 invalid_must_have (must_have_id names a confirmation or another call's, or a pricing must-have with pricing=false). 409 too_many_documents (30 per bid), call_storage_full (500 MiB per call, text included), project_storage_full (5 GiB per project), duplicate_document (the same file on this bid). Text is extracted afterwards by the worker (extraction.state pending; an encrypted PDF ends failed, encrypted). Audited bid_document.upload. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         post: operations["upload_bid_document"];
         delete?: never;
@@ -1262,14 +1262,14 @@ export interface paths {
         };
         get?: never;
         /**
-         * Link a document to a must-have
-         * @description bid.manage: link it to a required-document must-have (which then counts as present: met unless a person decided otherwise) or unlink it (null; the must-have is missing again when no other file is linked). 422 invalid_must_have. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * Link a document or mark it pricing
+         * @description bid.upload_document (session only), before the award: the complete new state. Link it to a required-document must-have (which then counts as present: met unless a person decided otherwise) or unlink it (null: a must-have left without a file is missing again, a person's met included; a not met stays); mark it pricing or not (marking deletes the bid's AI assessments and cancels its active assess runs). 422 invalid_must_have. Audited bid_document.update. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["update_bid_document"];
         post?: never;
         /**
          * Delete a bid document
-         * @description bid.upload_document (session only), before the award: the file, its text and its link (a must-have left without a file is missing again). Audited bid_document.delete. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.upload_document (session only), before the award: the file, its text and its link (a must-have left without a file is missing again, a person's met included; a not met stays). Audited bid_document.delete. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         delete: operations["delete_bid_document"];
         options?: never;
@@ -1286,7 +1286,7 @@ export interface paths {
         };
         /**
          * Download a bid document
-         * @description bid.view_bids: the file as stored, always as an attachment (never shown inline), with its type's media type, nosniff, a sandboxing CSP and Cache-Control private, no-store; read from the database in chunks. Not audited (a read).
+         * @description bid.view_bids: the file as stored, always as an attachment (never shown inline), with its type's media type, nosniff, a sandboxing CSP and Cache-Control private, no-store; read from the database in chunks. A pricing document without bid.view_price: 404. Not audited (a read).
          */
         get: operations["download_bid_document"];
         put?: never;
@@ -1306,7 +1306,7 @@ export interface paths {
         };
         /**
          * A bid document's text
-         * @description bid.view_bids: one page (20,000 characters) of the text the worker extracted (plain text written by the bidder: show it as text, never as HTML). Empty while pending, for images and when extraction failed. 404 for a page past the last.
+         * @description bid.view_bids: one page (20,000 characters) of the text the worker extracted (plain text written by the bidder: show it as text, never as HTML). Empty while pending, for images and when extraction failed. 404 for a page past the last, and for a pricing document without bid.view_price.
          */
         get: operations["get_bid_document_text"];
         put?: never;
@@ -1327,7 +1327,7 @@ export interface paths {
         get?: never;
         /**
          * Decide a must-have
-         * @description bid.manage: met or not met (with a note), or clear the decision. A document must-have without a linked file can't be met (409 document_missing). The bid becomes qualified when every must-have is met. Audited bid.must_have_decide. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.manage: met or not met (with a note), or clear the decision. A document must-have without a linked file can't be met (409 document_missing). The bid becomes qualified when every must-have is met. Audited bid.must_have_decide. A pricing must-have without bid.view_price: 404. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["decide_must_have"];
         post?: never;
@@ -1347,13 +1347,13 @@ export interface paths {
         get?: never;
         /**
          * Reject a bid
-         * @description bid.decide (session only): one click and a reason, any time before the award (a new reason replaces the old one). The bid leaves the assessors' queues, the totals, the price formula and the ranking. Audited bid.reject. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.decide (session only): one click and a reason, any time before the award (a new reason replaces the old one). The bid leaves the assessors' queues, the totals, the price formula and the ranking, and its active AI assess runs are cancelled; it never ends anyone's blindness for it (role matrix 3a). Audited bid.reject. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["reject_bid"];
         post?: never;
         /**
          * Reinstate a bid
-         * @description bid.decide (session only): undo a rejection before the award (idempotent); the bid is received or qualified again by its must-haves, its assessments count again. Audited bid.reinstate. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.decide (session only): undo a rejection before the award (idempotent); the bid is received or qualified again by its must-haves, its assessments count again, and the last rejection stays on record (reinstated_at). Audited bid.reinstate. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         delete: operations["reinstate_bid"];
         options?: never;
@@ -1370,7 +1370,7 @@ export interface paths {
         };
         /**
          * Your assessment of a section
-         * @description bid.assess (you assess the section): your draft or submitted answers (state invited when nothing is saved). 403 for a section you don't assess.
+         * @description bid.view_own_assessment (you assess the section; an API key needs read): your draft or submitted answers (state invited when nothing is saved). 403 not_section_assessor for a section you don't assess.
          */
         get: operations["get_my_bid_assessment"];
         /**
@@ -1394,11 +1394,31 @@ export interface paths {
         };
         /**
          * A section's assessments
-         * @description bid.view_section_scores: the submitted assessments of the section for this bid, the AI's scores for it, per-question statistics and the section score. Hidden (hidden: true, nothing else) while you owe this assessment yourself; an assessor of another section: 403.
+         * @description bid.view_section_scores: the submitted assessments of the section for this bid, the AI's scores for it, per-question statistics and the section score. Hidden (hidden: true, nothing else) while you owe this assessment yourself, also once the bid is rejected (a rejection never ends blindness); an assessor of another section: 403.
          */
         get: operations["list_bid_section_assessments"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea}/bid-call/cancellation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel the call
+         * @description bid.decide (session only): a draft, open or assessing call is cancelled (an optional reason, kept for call managers) and becomes read-only; active AI assess runs of its bids are cancelled. Awarded or cancelled already: 409 bid_call_finished. Emits bid_call_changed (cancelled); audited bid_call.status_change. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         */
+        post: operations["cancel_bid_call"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1414,7 +1434,7 @@ export interface paths {
         };
         /**
          * Compare the bids
-         * @description bid.view_scores (call managers): every bid with its section scores (0-100), total (0-100), rank, price score, disagreement and progress; qualified bids ranked first. What you owe an assessment for yourself is hidden (blind: role matrix section 3a).
+         * @description bid.view_scores (call managers): every bid with its section scores (0-100), total (0-100), rank, price score, disagreement and progress; scored bids (not rejected, every must-have met: also after the award) ranked first, rejected bids without scores. What you owe an assessment for yourself is hidden, and while you owe any, no bid has a rank (ranking_hidden; blind: role matrix section 3a).
          */
         get: operations["get_bid_comparison"];
         put?: never;
@@ -1434,7 +1454,7 @@ export interface paths {
         };
         /**
          * The evaluation report (Markdown)
-         * @description bid.view_scores (call managers only): the ranking, each bid's section scores and total, must-have results, rejected bids with their reasons, the assessors per section, whether the AI was included, and the award. What you owe an assessment for is left out. Shares the export limit with proposals (429 too_many_attempts).
+         * @description bid.view_scores (call managers only): the ranking, each bid's section scores and total, must-have counts and the items missing or not met, rejected bids with their reasons, the assessors per section, whether the AI was included, and the award. What you owe an assessment for is left out, and the ranking with it. Shares the export limit with proposals (429 too_many_attempts).
          */
         get: operations["export_bid_report_markdown"];
         put?: never;
@@ -1475,8 +1495,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Open, assess or cancel the call
-         * @description bid.manage (open, assessing; cancelling is bid.decide, session only): draft -> open (needs a deadline: 409 bid_call_deadline_required), open -> assessing (no new bids), assessing -> open (only while no assessment is submitted: 409 assessments_submitted), draft / open / assessing -> cancelled (an optional reason). Any other move: 409 invalid_bid_call_transition. Emits bid_call_changed; audited bid_call.status_change. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * Open the call, or close it to new bids
+         * @description bid.manage: draft -> open (needs a deadline: 409 bid_call_deadline_required), open -> assessing (no new bids), assessing -> open (only while no person's assessment is submitted: 409 assessments_submitted). Any other move: 409 invalid_bid_call_transition (cancelling is cancel_bid_call, awarding award_bid_call). Emits bid_call_changed; audited bid_call.status_change. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         post: operations["change_bid_call_status"];
         delete?: never;
@@ -1495,7 +1515,7 @@ export interface paths {
         get?: never;
         /**
          * Edit the call's evaluation template
-         * @description bid.manage: the call's own template, complete (items keep their ids; left out = deleted with their assessor assignments, results and document links; new must-haves get a result for every bid). Until the first human assessment is submitted (409 bid_call_template_locked). Any change clears the call's AI assessments. Audited bid_call.template_replace. 422 validation_error, unknown_template_item. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.manage: the call's own template, complete (items keep their ids; left out = deleted with their assessor assignments, results and document links; new must-haves get a result for every bid). Until the first person's assessment is submitted (409 bid_call_template_locked). Any change deletes the call's AI assessments and cancels its active assess runs. Audited bid_call.template_replace. 422 validation_error, unknown_template_item. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         put: operations["replace_bid_call_template"];
         post?: never;
@@ -3815,8 +3835,14 @@ export interface components {
         AiRun: {
             agent: components["schemas"]["AiAgentRef"];
             /**
+             * Automatic
+             * @description Phase 10, assess_bid only: started by the call's AI assessor (one per bid, once its documents are read; requested_by null; show "Started automatically"), not counted toward anyone's hourly AI requests.
+             * @default false
+             */
+            automatic: boolean;
+            /**
              * Bid Id
-             * @description Phase 10, assess_bid only: the bid of the idea's call it assesses. Runs of this kind are listed and shown only to people who see the call's bids (bid.view_bids).
+             * @description Phase 10, assess_bid only: the bid of the idea's call it assesses. Runs of this kind are listed, read, streamed and cancelled only by people who see the call's bids (bid.view_bids; else 404).
              */
             bid_id: string | null;
             /**
@@ -3873,8 +3899,9 @@ export interface components {
         /**
          * AiRunBatch
          * @description "Assess all with AI": a run per bid that isn't rejected (an active one is returned as
-         *     it is). Each new run counts toward your 20 AI requests an hour; more than that: 429,
-         *     nothing started.
+         *     it is). Each new run counts toward your 20 AI requests an hour: the runs that fit are
+         *     started, in the order the bids were received, the rest are ``skipped`` (ask again later);
+         *     429 only when none fits.
          */
         AiRunBatch: {
             /**
@@ -3884,6 +3911,11 @@ export interface components {
             created: number;
             /** Items */
             items: components["schemas"]["AiRun"][];
+            /**
+             * Skipped
+             * @description Bids not started: your hourly AI limit was reached.
+             */
+            skipped: number;
         };
         /**
          * AiRunDetail
@@ -3892,8 +3924,14 @@ export interface components {
         AiRunDetail: {
             agent: components["schemas"]["AiAgentRef"];
             /**
+             * Automatic
+             * @description Phase 10, assess_bid only: started by the call's AI assessor (one per bid, once its documents are read; requested_by null; show "Started automatically"), not counted toward anyone's hourly AI requests.
+             * @default false
+             */
+            automatic: boolean;
+            /**
              * Bid Id
-             * @description Phase 10, assess_bid only: the bid of the idea's call it assesses. Runs of this kind are listed and shown only to people who see the call's bids (bid.view_bids).
+             * @description Phase 10, assess_bid only: the bid of the idea's call it assesses. Runs of this kind are listed, read, streamed and cancelled only by people who see the call's bids (bid.view_bids; else 404).
              */
             bid_id: string | null;
             /**
@@ -4427,7 +4465,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete" | "project.bid_template_replace" | "bid_call.create" | "bid_call.update" | "bid_call.template_replace" | "bid_call.status_change" | "bid_call.award" | "bid_call.delete" | "bid_call.assessors_change" | "bid.create" | "bid.update" | "bid.delete" | "bid.reject" | "bid.reinstate" | "bid.must_have_decide" | "bid_document.upload" | "bid_document.delete" | "bid_assessment.submit" | "bid_assessment.include_ai";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete" | "project.bid_template_replace" | "bid_call.create" | "bid_call.update" | "bid_call.template_replace" | "bid_call.status_change" | "bid_call.award" | "bid_call.delete" | "bid_call.assessors_change" | "bid.create" | "bid.update" | "bid.delete" | "bid.reject" | "bid.reinstate" | "bid.must_have_decide" | "bid_document.upload" | "bid_document.update" | "bid_document.delete" | "bid_assessment.submit" | "bid_assessment.include_ai";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -4540,7 +4578,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Document Count */
+            /**
+             * Document Count
+             * @description Documents you can see (pricing documents only with bid.view_price).
+             */
             document_count: number;
             entered_by: components["schemas"]["UserRef"] | null;
             /**
@@ -4556,6 +4597,11 @@ export interface components {
             must_haves: components["schemas"]["BidMustHaveCounts"];
             /** @description Yours on this bid (your sections), when you assess the call. */
             my_progress: components["schemas"]["BidProgress"] | null;
+            /**
+             * My Sections
+             * @description Your sections for this bid and where you are with each, in order (the queue).
+             */
+            my_sections: components["schemas"]["BidSectionState"][];
             /**
              * Notes
              * @description Call managers only ("" for assessors).
@@ -4578,8 +4624,13 @@ export interface components {
              * Format: date-time
              */
             received_at: string;
-            /** @description Call managers only. */
+            /** @description Call managers only: the current rejection, or the last one if reinstated. */
             rejection: components["schemas"]["BidRejection"] | null;
+            /**
+             * Restricted Document Count
+             * @description Pricing documents you may not open (counted, never named); 0 with bid.view_price.
+             */
+            restricted_document_count: number;
             status: components["schemas"]["BidStatus"];
             /**
              * Updated At
@@ -4775,7 +4826,7 @@ export interface components {
             assigned_at: string;
             /**
              * Can Assess
-             * @description Still eligible: active and able to view the idea (in a private project, a role there). False: their assignment grants nothing; remove or replace them.
+             * @description Still eligible (c28, checked live): an active person who can view the idea as a person in their own right (in a private project, a role there; never as the idea's guest researcher). False: their assignment grants nothing, their unsubmitted assessments aren't expected any more (progress) and their submitted ones still count; remove or replace them.
              */
             can_assess: boolean;
             /** @description Their submitted assessments of this section / bids that aren't rejected. */
@@ -4785,13 +4836,18 @@ export interface components {
         /**
          * BidAssessorsUpdate
          * @description Who assesses each section, and by when: the complete new state (``PUT``, session
-         *     only). Every section of the call exactly once. People added are asked ("Asked to assess
-         *     bids"); people removed from a section lose their assessments of it (audited).
+         *     only; the one writer of the call's assessment due date). Every section of the call
+         *     exactly once. People added are asked ("Asked to assess bids"). Removing someone from a
+         *     section deletes their **drafts** of it; someone who has **submitted** an assessment of
+         *     that section can't be removed (409 ``assessor_has_submitted``), and you can't remove
+         *     yourself from a section while you still owe it for any bid of the call, rejected ones
+         *     included (403 ``cannot_remove_self``: otherwise a pending assessor could step out, read
+         *     the scores and come back).
          */
         BidAssessorsUpdate: {
             /**
              * Due At
-             * @description The assessment due date (null: none).
+             * @description The assessment due date (null: none): reminders 2 days before and on it.
              */
             due_at: string | null;
             /** Sections */
@@ -4820,6 +4876,8 @@ export interface components {
          *     ``bid.view_bids``).
          */
         BidCall: {
+            /** @description The call's AI assessor (an agent with the purpose assess_bid), or null. While one is set and AI is on, each bid gets one automatic assess run once its documents are read (contract-phase10 section 9.1). */
+            ai_assessor: components["schemas"]["AiAgentRef"] | null;
             /** Assessment Due At */
             assessment_due_at: string | null;
             /**
@@ -4874,6 +4932,19 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * BidCallCancelIn
+         * @description Cancel the call (``bid.decide``, session only) from draft, open or assessing: it
+         *     becomes read-only; active AI assess runs of its bids are cancelled.
+         */
+        BidCallCancelIn: {
+            /**
+             * Reason
+             * @description Optional, plain text (at most 500).
+             * @default
+             */
+            reason: string;
         };
         /**
          * BidCallChangedActivity
@@ -4946,6 +5017,11 @@ export interface components {
             kind: components["schemas"]["MustHaveKind"];
             /** Position */
             position: number;
+            /**
+             * Pricing
+             * @description Its files are pricing documents (bid.view_price only; never read by the AI, which isn't asked about this must-have).
+             */
+            pricing: boolean;
             /** Text */
             text: string;
         };
@@ -4957,6 +5033,12 @@ export interface components {
              */
             id?: string | null;
             kind: components["schemas"]["MustHaveKind"];
+            /**
+             * Pricing
+             * @description Document must-haves only (e.g. "Pricing schedule"): a file linked to it is a pricing document, shown only to call managers and the assessors of the section holding the price question (bid.view_price), never to the AI assessor, which isn't asked about it. A confirmation can't be one (422).
+             * @default false
+             */
+            pricing: boolean;
             /**
              * Text
              * @description e.g. "Insurance certificate" (document) or "Accepts our standard terms".
@@ -4990,7 +5072,7 @@ export interface components {
             can_decide: boolean;
             /**
              * Can Delete Call
-             * @description bid.decide and the call is a draft or cancelled: delete it and its bids.
+             * @description bid.delete_call (session only, c30): the call is a draft or cancelled, or awarded and you are a platform admin (the bidders' data goes with it).
              */
             can_delete_call: boolean;
             /**
@@ -4999,13 +5081,8 @@ export interface components {
              */
             can_edit_template: boolean;
             /**
-             * Can Export
-             * @description bid.view_scores: the evaluation report (Markdown, PDF).
-             */
-            can_export: boolean;
-            /**
              * Can Manage Call
-             * @description bid.manage (the idea's owner, project admins, platform admins) and the call not awarded or cancelled: settings, lifecycle, assessors, bids, must-haves, AI inclusion.
+             * @description bid.manage (the idea's owner, project admins, platform admins) and the call not awarded or cancelled: settings (and the AI assessor), opening and closing it, assessors, bids, must-haves, AI inclusion.
              */
             can_manage_call: boolean;
             /**
@@ -5020,7 +5097,7 @@ export interface components {
             can_see_prices: boolean;
             /**
              * Can Upload Documents
-             * @description bid.upload_document (session only): upload and delete bid documents.
+             * @description bid.upload_document (session only), before the award: upload bid documents, mark them pricing, link them to must-haves, delete them.
              */
             can_upload_documents: boolean;
             /**
@@ -5030,7 +5107,7 @@ export interface components {
             can_view_bids: boolean;
             /**
              * Can View Scores
-             * @description bid.view_scores (call managers): the comparison, the AI's assessments and the report (parts hidden while you owe an assessment yourself).
+             * @description bid.view_scores (call managers): the comparison, the AI's assessments and the report, Markdown and PDF (parts hidden while you owe an assessment yourself).
              */
             can_view_scores: boolean;
             /** @description Why can_request_ai is false (null when true). */
@@ -5166,22 +5243,16 @@ export interface components {
         BidCallStatus: "draft" | "open" | "assessing" | "awarded" | "cancelled";
         /**
          * BidCallStatusChange
-         * @description Move the call: draft -> open (needs a deadline), open -> assessing, assessing ->
-         *     open (only while no assessment is submitted), draft / open / assessing -> cancelled
-         *     (``bid.decide``, session only; ``reason`` optional). Awarding is ``award_bid_call``.
+         * @description Move the call (``bid.manage``): draft -> open (needs a deadline), open -> assessing,
+         *     assessing -> open (only while no person's assessment is submitted). Cancelling is
+         *     ``cancel_bid_call``, awarding ``award_bid_call``.
          */
         BidCallStatusChange: {
-            /**
-             * Reason
-             * @description Cancelling only (plain text, at most 500).
-             * @default
-             */
-            reason: string;
             /**
              * Status
              * @enum {string}
              */
-            status: "open" | "assessing" | "cancelled";
+            status: "open" | "assessing";
         };
         /**
          * BidCallSummary
@@ -5255,15 +5326,17 @@ export interface components {
         /**
          * BidCallUpdate
          * @description The call's settings, the complete new state (``PUT``; last write wins). The
-         *     currency changes only until the template is locked (409 ``bid_call_template_locked``);
-         *     an open call keeps a deadline (409 ``bid_call_deadline_required``).
+         *     deadline changes only while the call is a draft or open (a change while assessing: 409
+         *     ``bid_call_not_open``, so ``late`` never flips after bids are closed); an open call keeps
+         *     one (409 ``bid_call_deadline_required``). The currency is a label and changes until the
+         *     award. The assessment due date is set with the assessors (``set_bid_assessors``).
          */
         BidCallUpdate: {
             /**
-             * Assessment Due At
-             * @description When assessors should have submitted (reminders 2 days before and on it).
+             * Ai Assessor Id
+             * @description The call's AI assessor: an agent that may assess bids on this idea now (c10 for assess_bid, else 409 ai_unavailable; an unchanged value isn't checked again), or null for none. Each bid then gets one automatic assess run (section 9.1).
              */
-            assessment_due_at: string | null;
+            ai_assessor_id: string | null;
             /**
              * Currency
              * @description ISO 4217, e.g. GBP.
@@ -5297,9 +5370,13 @@ export interface components {
         };
         /**
          * BidComparison
-         * @description Every bid side by side (``bid.view_scores``, call managers): ranked qualified bids
-         *     first (by rank, then lower price, earlier received, id), then bids still received, then
-         *     rejected ones. Parts you owe an assessment for are hidden (``hidden``).
+         * @description Every bid side by side (``bid.view_scores``, call managers): ranked bids first (by
+         *     rank, then lower price, earlier received, id), then the other scored and not yet
+         *     qualified bids by when they were received, then rejected ones (no scores). Parts you
+         *     owe an assessment for are hidden (``hidden``); while any row's total is hidden from you,
+         *     **no row has a rank** and the rows are in the order received (``ranking_hidden``: the
+         *     gaps in a ranking would show where the hidden bid stands, review M2). Before and after
+         *     the award alike (an awarded or unsuccessful bid that met every must-have is scored).
          */
         BidComparison: {
             call: components["schemas"]["BidCallRef"];
@@ -5312,12 +5389,17 @@ export interface components {
             currency: string;
             /**
              * Lowest Price
-             * @description The lowest qualified price (the formula's).
+             * @description The lowest scored price (the formula's: not rejected, every must-have met).
              */
             lowest_price: string | null;
             /** Price Section Id */
             price_section_id: string | null;
             progress: components["schemas"]["BidProgress"];
+            /**
+             * Ranking Hidden
+             * @description You owe an assessment of at least one bid: every rank is null, rows by received ("The ranking shows once you have submitted your assessments").
+             */
+            ranking_hidden: boolean;
             /** Rows */
             rows: components["schemas"]["BidComparisonRow"][];
             /** Sections */
@@ -5335,20 +5417,18 @@ export interface components {
             late: boolean;
             /**
              * Price
-             * @description As Bid.price.
+             * @description Decimal string in the call's currency, or null.
              */
             price: string | null;
-            /** Price Hidden */
-            price_hidden: boolean;
             /**
              * Price Score
-             * @description 0-5, 2 decimal places: lowest qualified price / this price x 5.
+             * @description 0-5, 2 decimal places: lowest scored price / this price x 5 (scored bids only: not rejected, every must-have met; section 8).
              */
             price_score: number | null;
             progress: components["schemas"]["BidProgress"];
             /**
              * Rank
-             * @description 1 = best; equal totals share a rank (1, 2, 2, 4). Qualified bids only.
+             * @description 1 = best; equal rounded totals share a rank (1, 2, 2, 4). Scored bids with a total only; null for every row while ranking_hidden.
              */
             rank: number | null;
             /**
@@ -5358,7 +5438,7 @@ export interface components {
             received_at: string;
             /**
              * Sections
-             * @description In the template's order.
+             * @description In the template's order. A rejected bid's cells carry no score.
              */
             sections: components["schemas"]["BidSectionScore"][];
             /**
@@ -5368,7 +5448,7 @@ export interface components {
             tied: boolean;
             /**
              * Total
-             * @description 0-100, 1 decimal place: the sum of section weight x section score. Null until every section has a score, for a bid that isn't qualified, or while hidden.
+             * @description 0-100, 1 decimal place: the sum of section weight x section score. Null until every section has a score, for a bid that isn't scored (rejected, or a must-have not met), or while hidden.
              */
             total: number | null;
             /**
@@ -5391,7 +5471,7 @@ export interface components {
         };
         /**
          * BidDetail
-         * @description One bid: its documents, must-have results and your sections.
+         * @description One bid: its documents, must-have results and what you may do.
          */
         BidDetail: {
             /**
@@ -5414,11 +5494,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Document Count */
+            /**
+             * Document Count
+             * @description Documents you can see (pricing documents only with bid.view_price).
+             */
             document_count: number;
             /**
              * Documents
-             * @description In upload order.
+             * @description In upload order; pricing documents only with bid.view_price.
              */
             documents: components["schemas"]["BidDocument"][];
             entered_by: components["schemas"]["UserRef"] | null;
@@ -5442,7 +5525,7 @@ export interface components {
             my_progress: components["schemas"]["BidProgress"] | null;
             /**
              * My Sections
-             * @description Your sections, in order.
+             * @description Your sections for this bid and where you are with each, in order (the queue).
              */
             my_sections: components["schemas"]["BidSectionState"][];
             /**
@@ -5468,8 +5551,13 @@ export interface components {
              * Format: date-time
              */
             received_at: string;
-            /** @description Call managers only. */
+            /** @description Call managers only: the current rejection, or the last one if reinstated. */
             rejection: components["schemas"]["BidRejection"] | null;
+            /**
+             * Restricted Document Count
+             * @description Pricing documents you may not open (counted, never named); 0 with bid.view_price.
+             */
+            restricted_document_count: number;
             status: components["schemas"]["BidStatus"];
             /**
              * Updated At
@@ -5480,9 +5568,15 @@ export interface components {
         /**
          * BidDocument
          * @description A bid document's metadata. The SPA never renders a document inline: it shows the
-         *     extracted text (``get_bid_document_text``) and offers the file as a download.
+         *     extracted text (``get_bid_document_text``) and offers the file as a download. A pricing
+         *     document is listed only to principals with ``bid.view_price``.
          */
         BidDocument: {
+            /**
+             * Active Content
+             * @description The extraction found content that can act when the file is opened (a PDF's JavaScript, launch actions or attached files; an Office file's remote template, external links or DDE fields): warn before the download.
+             */
+            active_content: boolean;
             /**
              * Content Type
              * @description What a download is served as (the type's).
@@ -5504,6 +5598,11 @@ export interface components {
              * @description The required-document must-have it satisfies.
              */
             must_have_id: string | null;
+            /**
+             * Pricing
+             * @description A pricing document (marked at upload or later, or linked to a pricing must-have): only call managers and the price section's assessors see it; the AI never reads it.
+             */
+            pricing: boolean;
             /**
              * Sha256
              * @description Hex SHA-256 of the file.
@@ -5566,25 +5665,35 @@ export interface components {
         /**
          * BidDocumentType
          * @description What an uploaded bid document **is**, decided from its bytes (magic numbers and,
-         *     for ZIP-based formats, the archive's entries), never from its name or the request's
-         *     ``Content-Type`` (contract-phase10 section 6). Anything else is refused (415).
+         *     for ZIP-based formats, the archive's entry names and content types), never from the
+         *     request's ``Content-Type`` (contract-phase10 section 6.1). Anything else is refused (415).
+         *     The name only labels plain text: ``csv`` when it ends in ``.csv``, else ``txt``.
          * @enum {string}
          */
         BidDocumentType: "pdf" | "docx" | "xlsx" | "pptx" | "odt" | "ods" | "txt" | "csv" | "png" | "jpeg";
         /**
          * BidDocumentUpdate
-         * @description Link a document to a required-document must-have, or unlink it (``bid.manage``).
+         * @description A document's link and pricing mark, the complete new state (``bid.upload_document``,
+         *     session only; audited ``bid_document.update``). Marking a document **pricing** deletes the
+         *     bid's AI assessments and cancels its active assess runs (the AI may have read it: ask
+         *     again); unmarking opens it to every assessor and the AI.
          */
         BidDocumentUpdate: {
             /**
              * Must Have Id
-             * @description A document must-have of the call (a confirmation: 422 invalid_must_have), or null.
+             * @description A document must-have of the call (a confirmation or another call's: 422 invalid_must_have), or null.
              */
             must_have_id: string | null;
+            /**
+             * Pricing
+             * @description A pricing document. Linked to a pricing must-have it must be true (else 422 invalid_must_have).
+             */
+            pricing: boolean;
         };
         /**
          * BidEvidence
-         * @description A quote the AI gave as evidence, and the server's check of it.
+         * @description A quote the AI gave as evidence, and the server's check of it. It proves the words are
+         *     in the document, not that they support the score: people judge that.
          */
         BidEvidence: {
             /**
@@ -5594,7 +5703,7 @@ export interface components {
             document_id: string;
             /**
              * Found
-             * @description The quote is in the document's extracted text (whitespace-normalised). False: show "not found in the document".
+             * @description The quote is in the document's extracted text (whitespace-normalised): show "Found in the document"; false: "Not found in the document".
              */
             found: boolean;
             /**
@@ -5606,7 +5715,8 @@ export interface components {
         /**
          * BidIn
          * @description A bid as the team enters it (``create_bid``; ``update_bid`` takes the complete new
-         *     state). Contact details are stored as given and never emailed by Soundings.
+         *     state as :class:`BidUpdate`). Contact details are stored as given and never emailed by
+         *     Soundings.
          */
         BidIn: {
             /**
@@ -5664,6 +5774,12 @@ export interface components {
         BidMustHaveIn: {
             kind: components["schemas"]["MustHaveKind"];
             /**
+             * Pricing
+             * @description Document must-haves only (e.g. "Pricing schedule"): a file linked to it is a pricing document, shown only to call managers and the assessors of the section holding the price question (bid.view_price), never to the AI assessor, which isn't asked about it. A confirmation can't be one (422).
+             * @default false
+             */
+            pricing: boolean;
+            /**
              * Text
              * @description e.g. "Insurance certificate" (document) or "Accepts our standard terms".
              */
@@ -5676,7 +5792,7 @@ export interface components {
         BidMustHaveState: {
             /**
              * Ai Findings
-             * @description The AI's suggestions (never change the result).
+             * @description The AI's suggestions (never change the result). None for a pricing must-have (the AI isn't asked about it).
              */
             ai_findings: components["schemas"]["BidAiFindingView"][];
             /**
@@ -5689,12 +5805,17 @@ export interface components {
             decided_by: components["schemas"]["UserRef"] | null;
             /**
              * Document Ids
-             * @description Documents linked to it.
+             * @description Documents linked to it that you can see (pricing ones need bid.view_price).
              */
             document_ids: string[];
             must_have: components["schemas"]["BidCallMustHave"];
             /** Note */
             note: string;
+            /**
+             * Restricted Document Count
+             * @description Linked pricing documents you may not see: show the must-have as "present (restricted)", without a file name.
+             */
+            restricted_document_count: number;
             result: components["schemas"]["MustHaveResult"];
         };
         /**
@@ -5739,7 +5860,7 @@ export interface components {
             can_request_ai: boolean;
             /**
              * Can Upload
-             * @description bid.upload_document, before the award.
+             * @description bid.upload_document (session only), before the award: upload, mark, delete.
              */
             can_upload: boolean;
             /**
@@ -5749,7 +5870,7 @@ export interface components {
             can_view_ai: boolean;
             /**
              * Reject Suggested
-             * @description A must-have is missing or not met: offer "Reject" prominently.
+             * @description A must-have is missing or not met, or an AI assessor found one not met (a suggestion a person checks): offer "Reject" prominently.
              */
             reject_suggested: boolean;
         };
@@ -5801,7 +5922,7 @@ export interface components {
             max: number | null;
             /**
              * Mean
-             * @description 0-5, 1 decimal place; null with no scores.
+             * @description 0-5, 2 decimal places; null with no scores.
              */
             mean: number | null;
             /** Min */
@@ -5833,10 +5954,20 @@ export interface components {
             id: string;
             status: components["schemas"]["BidStatus"];
         };
-        /** BidRejection */
+        /**
+         * BidRejection
+         * @description The bid's current rejection, or its last one once reinstated (review consider-11: the
+         *     reason is kept, so the decision stays on record).
+         */
         BidRejection: {
             /** Reason */
             reason: string;
+            /**
+             * Reinstated At
+             * @description Set when the bid was reinstated.
+             */
+            reinstated_at: string | null;
+            reinstated_by: components["schemas"]["UserRef"] | null;
             /**
              * Rejected At
              * Format: date-time
@@ -5981,11 +6112,6 @@ export interface components {
              * @description project.edit_bid_template (project and platform admins, session only).
              */
             can_edit: boolean;
-            /**
-             * Is Default
-             * @description Nobody has changed it (the built-in default).
-             */
-            is_default: boolean;
             /** Must Haves */
             must_haves: components["schemas"]["BidTemplateMustHave"][];
             /**
@@ -6025,6 +6151,11 @@ export interface components {
         /** BidTemplateMustHave */
         BidTemplateMustHave: {
             kind: components["schemas"]["MustHaveKind"];
+            /**
+             * Pricing
+             * @description A pricing document must-have (bid.view_price only).
+             */
+            pricing: boolean;
             /** Text */
             text: string;
         };
@@ -6054,6 +6185,43 @@ export interface components {
              * @description Percent of the total.
              */
             weight: number;
+        };
+        /**
+         * BidUpdate
+         * @description ``update_bid``: the complete new state, with ``received_at`` **required** (review S11:
+         *     leaving it out must not reset it to now and flip ``late``). Its stored value is always
+         *     accepted; a changed one must be within a year back and not ahead (422).
+         */
+        BidUpdate: {
+            /**
+             * Bidder
+             * @description The bidder organisation.
+             */
+            bidder: string;
+            /** Contact Email */
+            contact_email?: string | null;
+            /**
+             * Contact Name
+             * @default
+             */
+            contact_name: string;
+            /**
+             * Notes
+             * @description Plain text.
+             * @default
+             */
+            notes: string;
+            /**
+             * Price
+             * @description Only when the call has a price question (else 422 price_not_asked); a bid without one gets no price score (and so no total).
+             */
+            price?: (number | string) | null;
+            /**
+             * Received At
+             * Format: date-time
+             * @description When the bid arrived: send the stored value unless correcting it.
+             */
+            received_at: string;
         };
         /**
          * Board
@@ -16026,7 +16194,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BidIn"];
+                "application/json": components["schemas"]["BidUpdate"];
             };
         };
         responses: {
@@ -16435,6 +16603,8 @@ export interface operations {
                 filename: string;
                 /** @description A required-document must-have it satisfies. */
                 must_have_id?: string | null;
+                /** @description A pricing document (bid.view_price only, never read by the AI). Default: the must-have's pricing mark (false without one). */
+                pricing?: boolean | null;
             };
             header?: never;
             path: {
@@ -16445,7 +16615,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description The file itself as the body (no multipart, no JSON), at most 25 MiB. Its type is decided from its bytes: PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text, CSV, PNG or JPEG; macro-enabled Office files and anything else are refused. Content-Type: the file's own type or application/octet-stream (a different allowed type than the bytes are: 415 document_type_mismatch). */
+        /** @description The file itself as the body (no multipart, no JSON), at most 25 MiB, arriving within 120 s. Its type is decided from its bytes alone: PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text, CSV, PNG or JPEG; macro-enabled Office files, embedded OLE packages and anything else are refused. The request's Content-Type is ignored (the SPA sends application/octet-stream). */
         requestBody: {
             content: {
                 "application/octet-stream": string;
@@ -16491,6 +16661,15 @@ export interface operations {
             };
             /** @description Not found, or not visible to you (not_found) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The body didn't arrive within 120 s (upload_timeout) */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -17331,6 +17510,87 @@ export interface operations {
             };
             /** @description Not found, or not visible to you (not_found) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancel_bid_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BidCallCancelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidCallView"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -113,6 +113,7 @@ class AuditAction(StrEnum):
     BID_REINSTATE = "bid.reinstate"
     BID_MUST_HAVE_DECIDE = "bid.must_have_decide"
     BID_DOCUMENT_UPLOAD = "bid_document.upload"
+    BID_DOCUMENT_UPDATE = "bid_document.update"
     BID_DOCUMENT_DELETE = "bid_document.delete"
     BID_ASSESSMENT_SUBMIT = "bid_assessment.submit"
     BID_ASSESSMENT_INCLUDE_AI = "bid_assessment.include_ai"

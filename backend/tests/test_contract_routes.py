@@ -269,6 +269,7 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("PUT", "/api/v1/ideas/{idea}/bid-call", "update_bid_call"),
     ("DELETE", "/api/v1/ideas/{idea}/bid-call", "delete_bid_call"),
     ("POST", "/api/v1/ideas/{idea}/bid-call/status", "change_bid_call_status"),
+    ("POST", "/api/v1/ideas/{idea}/bid-call/cancellation", "cancel_bid_call"),
     ("PUT", "/api/v1/ideas/{idea}/bid-call/template", "replace_bid_call_template"),
     ("PUT", "/api/v1/ideas/{idea}/bid-call/assessors", "set_bid_assessors"),
     ("GET", "/api/v1/ideas/{idea}/bid-call/comparison", "get_bid_comparison"),
@@ -503,7 +504,7 @@ _CALL_SETTINGS: dict[str, Any] = {
     "description": "Build and run the generator for two years.",
     "currency": "GBP",
     "deadline_at": (datetime.now(UTC) + timedelta(days=14)).isoformat(),
-    "assessment_due_at": None,
+    "ai_assessor_id": None,
 }
 _NEW_BID: dict[str, Any] = {
     "bidder": "Northwind Data Ltd",
@@ -522,6 +523,7 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "update_bid_call": (_CALL, _CALL_SETTINGS),
     "delete_bid_call": (_CALL, None),
     "change_bid_call_status": (f"{_CALL}/status", {"status": "open"}),
+    "cancel_bid_call": (f"{_CALL}/cancellation", {"reason": "Budget withdrawn."}),
     "replace_bid_call_template": (f"{_CALL}/template", _BID_TEMPLATE),
     "set_bid_assessors": (
         f"{_CALL}/assessors",
@@ -541,7 +543,10 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "reinstate_bid": (f"{_BID}/rejection", None),
     "decide_must_have": (f"{_BID}/must-haves/{MUST_HAVE}", {"result": "met", "note": ""}),
     "upload_bid_document": (f"{_BID}/documents?filename=Form%20of%20tender.pdf", None),
-    "update_bid_document": (f"{_BID}/documents/{DOCUMENT}", {"must_have_id": MUST_HAVE}),
+    "update_bid_document": (
+        f"{_BID}/documents/{DOCUMENT}",
+        {"must_have_id": MUST_HAVE, "pricing": False},
+    ),
     "delete_bid_document": (f"{_BID}/documents/{DOCUMENT}", None),
     "download_bid_document": (f"{_BID}/documents/{DOCUMENT}/content", None),
     "get_bid_document_text": (f"{_BID}/documents/{DOCUMENT}/text?page=2", None),
@@ -1938,7 +1943,7 @@ _PRICE = {"text": "Price", "type": "price", "weight": 1}
 _SCORE = {"text": "How good is it?", "type": "score"}
 
 
-def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
+def test_phase10_has_its_34_operations_under_one_tag(app: FastAPI) -> None:
     paths = app.openapi()["paths"]
     tagged = {
         operation["operationId"]
@@ -1948,7 +1953,7 @@ def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
     }
 
     assert tagged == PHASE10_OPERATIONS
-    assert len(PHASE10_OPERATIONS) == 33
+    assert len(PHASE10_OPERATIONS) == 34
     assert set(STUBS) == PHASE10_OPERATIONS
 
 
@@ -2058,6 +2063,13 @@ def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
             ),
         ),
         ("replace_bid_template", None, _template(locked=True)),
+        ("replace_bid_template", None, _template(is_default=True)),
+        # A confirmation can't be a pricing must-have.
+        (
+            "replace_bid_template",
+            None,
+            _template(must_haves=[{"text": "Prices", "kind": "confirmation", "pricing": True}]),
+        ),
         ("get_bid_template", "/api/v1/projects/Internal_Tools/bid-template", None),
         # The call's copy: the same rules, ids at most once.
         (
@@ -2091,12 +2103,24 @@ def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
         ("update_bid_call", None, _CALL_SETTINGS | {"deadline_at": "2099-01-01T00:00:00Z"}),
         ("update_bid_call", None, _CALL_SETTINGS | {"description": "x" * 2_001}),
         ("update_bid_call", None, _CALL_SETTINGS | {"status": "open"}),
+        # One writer of the assessment due date: the assessors (review consider-3).
+        ("update_bid_call", None, _CALL_SETTINGS | {"assessment_due_at": None}),
+        (
+            "update_bid_call",
+            None,
+            {k: v for k, v in _CALL_SETTINGS.items() if k != "ai_assessor_id"},
+        ),
+        ("update_bid_call", None, _CALL_SETTINGS | {"ai_assessor_id": "bid-assessor"}),
         # The lifecycle: open, assessing or cancelled here (awarding is its own route).
         ("change_bid_call_status", None, {"status": "awarded"}),
         ("change_bid_call_status", None, {"status": "draft"}),
         ("change_bid_call_status", None, {"status": "closed"}),
         ("change_bid_call_status", None, {"status": "open", "reason": "Ready"}),
         ("change_bid_call_status", None, {"status": "cancelled", "reason": "x" * 501}),
+        # Cancelling has its own operation (review consider-2).
+        ("change_bid_call_status", None, {"status": "cancelled"}),
+        ("cancel_bid_call", None, {"reason": "x" * 501}),
+        ("cancel_bid_call", None, {"reason": "Stop", "status": "cancelled"}),
         # Assessors: each section once, at most 10 people a section.
         ("set_bid_assessors", None, {"sections": [], "due_at": None}),
         ("set_bid_assessors", None, {"sections": [{"section_id": SECTION, "user_ids": []}]}),
@@ -2151,6 +2175,10 @@ def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
         ("create_bid", None, _NEW_BID | {"notes": "x" * 2_001}),
         ("create_bid", None, _NEW_BID | {"status": "qualified"}),
         ("create_bid", None, _NEW_BID | {"score": 5}),
+        ("create_bid", None, _NEW_BID | {"contact_email": "a" * 250 + "@b.example"}),
+        # An update sends the complete state: received_at too (review S11).
+        ("update_bid", None, _NEW_BID),
+        ("update_bid", None, _NEW_BID | {"received_at": None}),
         ("get_bid", f"{_CALL}/bids/northwind", None),
         ("reject_bid", None, {}),
         ("reject_bid", None, {"reason": ""}),
@@ -2176,8 +2204,15 @@ def test_phase10_has_its_33_operations_under_one_tag(app: FastAPI) -> None:
             f"{_BID}/documents?filename=tender.pdf&must_have_id=insurance",
             None,
         ),
+        (
+            "upload_bid_document",
+            f"{_BID}/documents?filename=tender.pdf&pricing=perhaps",
+            None,
+        ),
         ("update_bid_document", None, {}),
-        ("update_bid_document", None, {"must_have_id": "insurance"}),
+        ("update_bid_document", None, {"must_have_id": "insurance", "pricing": False}),
+        ("update_bid_document", None, {"must_have_id": None}),  # pricing: the complete state
+        ("update_bid_document", None, {"must_have_id": None, "pricing": "maybe"}),
         ("get_bid_document_text", f"{_BID}/documents/{DOCUMENT}/text?page=0", None),
         ("get_bid_document_text", f"{_BID}/documents/{DOCUMENT}/text?page=101", None),
         ("download_bid_document", f"{_BID}/documents/tender.pdf/content", None),
@@ -2245,9 +2280,18 @@ async def test_invalid_phase10_requests_are_rejected(
         ("create_bid_call", {"title": "Call", "currency": "EUR", "description": "Two lines\nok"}),
         ("create_bid", {"bidder": "Quillfield Systems"}),
         ("save_my_bid_assessment", {"answers": [{"question_id": QUESTION}], "submit": False}),
-        ("change_bid_call_status", {"status": "cancelled", "reason": "Budget withdrawn."}),
+        ("change_bid_call_status", {"status": "assessing"}),
+        ("cancel_bid_call", {}),
+        ("cancel_bid_call", {"reason": "Budget withdrawn."}),
         ("decide_must_have", {"result": None}),
-        ("update_bid_document", {"must_have_id": None}),
+        ("update_bid_document", {"must_have_id": None, "pricing": True}),
+        (
+            "replace_bid_template",
+            _template(
+                must_haves=[{"text": "Pricing schedule", "kind": "document", "pricing": True}]
+            ),
+        ),
+        ("update_bid", _NEW_BID | {"received_at": "2025-01-02T09:00:00Z"}),  # stored, kept
     ],
 )
 async def test_valid_phase10_bodies_reach_the_stub(

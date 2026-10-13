@@ -34,6 +34,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -173,8 +174,24 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
             " AND (bid_ai_assessment_id IS NULL OR kind = 'assess_bid')",
             name="result_matches_kind",
         ),
-        # Phase 10: an assess run is about one bid, and only it names one.
-        CheckConstraint("(kind = 'assess_bid') = (bid_id IS NOT NULL)", name="bid_iff_assess"),
+        # Phase 10: an assess run is about one bid of its idea's call, and only it names one;
+        # only an assess run can be automatic (the call's AI assessor, requested by nobody).
+        CheckConstraint(
+            "(kind = 'assess_bid') = (bid_id IS NOT NULL)"
+            " AND (bid_id IS NULL) = (bid_call_id IS NULL)",
+            name="bid_iff_assess",
+        ),
+        CheckConstraint(
+            "NOT automatic OR (kind = 'assess_bid' AND requested_by_id IS NULL)",
+            name="automatic_assess",
+        ),
+        # Phase 10 (review S7): the bid is of that call, and the call is of the run's idea.
+        ForeignKeyConstraint(
+            ["bid_id", "bid_call_id"], ["bids.id", "bids.call_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["bid_call_id", "idea_id"], ["bid_calls.id", "bid_calls.idea_id"], ondelete="CASCADE"
+        ),
         CheckConstraint("timeout_seconds BETWEEN 30 AND 3600", name="timeout_range"),
         CheckConstraint("event_count >= 0", name="event_count_positive"),
         CheckConstraint(
@@ -227,6 +244,11 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
         # Phase 10: a bid's assess runs (its AI panel; the cascade when a bid is deleted)
         # and the AI assessment a run recorded (ON DELETE SET NULL).
         Index("ix_ai_runs_bid_id", "bid_id", postgresql_where=text("bid_id IS NOT NULL")),
+        Index(
+            "ix_ai_runs_bid_call_id",
+            "bid_call_id",
+            postgresql_where=text("bid_call_id IS NOT NULL"),
+        ),
         Index(
             "ix_ai_runs_bid_ai_assessment_id",
             "bid_ai_assessment_id",
@@ -293,8 +315,12 @@ class AiRun(UUIDPrimaryKeyMixin, Base):
         Boolean, default=False, server_default=text("false")
     )
     # Phase 10, assess_bid only: the bid of the idea's call that the run assesses (its MCP
-    # calls reach only this bid, c22), and the AI assessment it recorded.
-    bid_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bids.id", ondelete="CASCADE"))
+    # calls reach only this bid, c22), its call (the composite keys above), whether the
+    # call's AI assessor started it (not counted toward anyone's hourly requests), and the
+    # AI assessment it recorded.
+    bid_id: Mapped[uuid.UUID | None] = mapped_column()
+    bid_call_id: Mapped[uuid.UUID | None] = mapped_column()
+    automatic: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     bid_ai_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("bid_ai_assessments.id", ondelete="SET NULL")
     )

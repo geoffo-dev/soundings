@@ -44,18 +44,29 @@ from app.schemas.audit import AuditAction
 from app.schemas.bid_refs import BidCallRef, BidCallSummary, BidProgress
 from app.schemas.bids import (
     BID_DOCUMENT_TYPES,
+    BID_REFUSED_ARCHIVE_ENTRY,
     DEFAULT_BID_TEMPLATE,
+    Bid,
+    BidCallStatusChange,
     BidCallTemplateIn,
+    BidComparison,
+    BidComparisonRow,
     BidDocumentFilename,
+    BidDocumentUpdate,
     BidIn,
+    BidMustHaveIn,
     BidQuestionIn,
+    BidTemplate,
     BidTemplateIn,
+    BidUpdate,
     bid_total,
     call_bid_status,
     disagreement,
+    is_scored,
     price_score,
     question_mean,
     quote_found,
+    quotes_found,
     rank_bids,
     round_score,
     section_score,
@@ -110,12 +121,25 @@ def test_the_default_template_is_l3s() -> None:
     assert [q.text for q in prices] == ["Price"]
     assert prices[0] in sections[1].questions
     assert all(2 <= len(s.questions) <= 3 for s in sections)
-    assert [(m.text, m.kind.value) for m in DEFAULT_BID_TEMPLATE.must_haves] == [
-        ("Signed form of tender", "document"),
-        ("Insurance certificate", "document"),
-        ("Accepts our standard terms", "confirmation"),
+    assert [(m.text, m.kind.value, m.pricing) for m in DEFAULT_BID_TEMPLATE.must_haves] == [
+        ("Signed form of tender", "document", False),
+        ("Pricing schedule", "document", True),  # review M4: prices in their own document
+        ("Insurance certificate", "document", False),
+        ("Accepts our standard terms", "confirmation", False),
     ]
     assert len(DEFAULT_BID_TEMPLATE.scale) == 6
+
+
+def test_only_a_document_must_have_can_be_a_pricing_one() -> None:
+    assert BidMustHaveIn.model_validate({"text": "Prices", "kind": "document"}).pricing is False
+    BidMustHaveIn.model_validate({"text": "Prices", "kind": "document", "pricing": True})
+    with pytest.raises(ValidationError, match="pricing"):
+        BidMustHaveIn.model_validate({"text": "Prices", "kind": "confirmation", "pricing": True})
+
+
+def test_the_project_template_has_no_is_default_flag() -> None:
+    """Review consider-3: every project has a row (migration 0016, create_project)."""
+    assert "is_default" not in BidTemplate.model_fields
 
 
 def test_question_weights_default_by_type() -> None:
@@ -260,6 +284,38 @@ def test_equal_rounded_totals_share_a_rank() -> None:
 
 
 @pytest.mark.parametrize(
+    ("rejected", "results", "scored"),
+    [
+        (False, [MustHaveResult.MET, MustHaveResult.MET], True),
+        (False, [], True),  # a call without must-haves
+        (False, [MustHaveResult.MET, MustHaveResult.MISSING], False),
+        (False, [MustHaveResult.UNCHECKED], False),
+        (False, [MustHaveResult.NOT_MET], False),
+        (True, [MustHaveResult.MET], False),
+    ],
+)
+def test_scored_bids_follow_their_facts_not_the_award(
+    rejected: bool, results: list[MustHaveResult], scored: bool
+) -> None:
+    """Review M1: after the award no bid is qualified, yet the awarded and unsuccessful bids
+    that met every must-have keep their scores, totals and ranks (the report)."""
+    assert is_scored(rejected=rejected, results=results) is scored
+    for awarded in (None, True, False):
+        status = call_bid_status(rejected=rejected, results=results, awarded=awarded)
+        assert is_scored(rejected=rejected, results=results) is scored, status
+    if scored:
+        assert call_bid_status(rejected=rejected, results=results) is BidStatus.QUALIFIED
+
+
+def test_the_comparison_can_hide_the_whole_ranking() -> None:
+    """Review M2: while you owe an assessment of any bid, no row has a rank (the gaps in a
+    ranking would place the hidden bid); managers always see prices (no price_hidden)."""
+    assert "ranking_hidden" in BidComparison.model_fields
+    assert "price_hidden" not in BidComparisonRow.model_fields
+    assert "my_sections" in Bid.model_fields  # the assessor's queue (review consider-7)
+
+
+@pytest.mark.parametrize(
     ("rejected", "results", "awarded", "status"),
     [
         (False, [MustHaveResult.MET, MustHaveResult.MET], None, BidStatus.QUALIFIED),
@@ -291,11 +347,30 @@ TEXT = "Our team holds ISO 27001\ncertification since 2019.\u00a0Data stays in t
         ("2019. Data stays in the UK.", True),  # a no-break space
         ("holds iso 27001 certification", False),  # case counts
         ("holds ISO 9001 certification", False),  # an invented quote
-        ("the UK.", False),  # under 10 characters: proves nothing
+        ("stays in the UK.", False),  # under 20 characters: proves nothing
+        ("ISO 27001", False),
     ],
 )
 def test_quotes_are_found_whitespace_normalised(quote: str, found: bool) -> None:
     assert quote_found(quote, TEXT) is found
+
+
+def test_a_submissions_quotes_are_checked_against_their_own_documents() -> None:
+    """Review S2: every cited document is normalised once; a quote is looked for only in
+    the document it names (another document, or one that isn't the bid's, finds nothing)."""
+    first, second, unknown = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    texts = {first: TEXT, second: "Delivery in   three phases over\nsix months."}
+
+    assert quotes_found(
+        [
+            (first, "holds ISO 27001 certification"),
+            (second, "three phases over six months"),
+            (second, "holds ISO 27001 certification"),  # in the other document
+            (unknown, "holds ISO 27001 certification"),
+            (first, "short one"),
+        ],
+        texts,
+    ) == [True, True, False, False, False]
 
 
 # --- Uploads ------------------------------------------------------------------------------------
@@ -338,6 +413,65 @@ def test_file_names_people_use_are_fine(name: str) -> None:
 def test_file_names_with_folders_or_control_characters_are_refused(name: str) -> None:
     with pytest.raises(ValidationError):
         FILENAME.validate_python(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "word/vbaProject.bin",
+        "xl/vbaProject.bin",
+        "ppt/VBAPROJECT.BIN",
+        "word/vbaData.xml",
+        "word/activeX/activeX1.xml",
+        "xl/embeddings/oleObject1.bin",
+        "word/embeddings/Microsoft_Word_Macro-Enabled_Document.docm",
+        "ppt/embeddings/Presentation.pptm",
+        "Basic/Standard/Module1.xml",
+        "Scripts/python/macro.py",
+    ],
+)
+def test_macro_and_ole_entries_are_refused_by_name(name: str) -> None:
+    assert BID_REFUSED_ARCHIVE_ENTRY.search(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "word/document.xml",
+        "[Content_Types].xml",
+        "xl/embeddings/Microsoft_Excel_Worksheet.xlsx",  # a chart's data: no macros
+        "word/media/image1.png",
+        "content.xml",
+        "mimetype",
+        "Pictures/Basic.png",
+    ],
+)
+def test_ordinary_entries_pass(name: str) -> None:
+    assert not BID_REFUSED_ARCHIVE_ENTRY.search(name)
+
+
+def test_a_bid_update_carries_its_received_time() -> None:
+    """Review S11: leaving received_at out of an update must not reset it to now; the
+    stored value (a year old or more) is accepted, the service checks a changed one."""
+    with pytest.raises(ValidationError):
+        BidUpdate.model_validate({"bidder": "Northwind"})
+    old = BidUpdate.model_validate({"bidder": "Northwind", "received_at": "2024-01-02T09:00:00Z"})
+    assert old.received_at == datetime(2024, 1, 2, 9, 0, tzinfo=UTC)
+    with pytest.raises(ValidationError):
+        BidIn.model_validate({"bidder": "Northwind", "received_at": "2024-01-02T09:00:00Z"})
+
+
+def test_a_documents_link_and_pricing_mark_are_one_state() -> None:
+    with pytest.raises(ValidationError):
+        BidDocumentUpdate.model_validate({"must_have_id": None})
+    assert BidDocumentUpdate.model_validate({"must_have_id": None, "pricing": True}).pricing
+
+
+def test_cancelling_is_its_own_operation() -> None:
+    with pytest.raises(ValidationError):
+        BidCallStatusChange.model_validate({"status": "cancelled"})
+    with pytest.raises(ValidationError):
+        BidCallStatusChange.model_validate({"status": "open", "reason": "Ready"})
 
 
 def test_received_times_are_stored_in_utc_and_never_ahead() -> None:
@@ -451,7 +585,8 @@ def _property_names(schema: Any) -> set[str]:
 
 def test_the_ai_never_reads_a_price_or_peoples_scores() -> None:
     """L9: the AI assessor's reads carry the call's questions, the bid and its documents,
-    never another bid, a price, a person's score or a contact."""
+    never another bid, a price, a person's score or a contact (and, review M4, pricing
+    documents are left out of its lists: no field even says which are pricing)."""
     for tool in PHASE10_MCP_TOOLS:
         if not tool.read_only:
             continue
@@ -470,6 +605,7 @@ def test_the_ai_never_reads_a_price_or_peoples_scores() -> None:
                 "notes",
                 "rejection",
                 "included",
+                "pricing",
             }
             & names
         ), tool.name
@@ -535,6 +671,7 @@ def test_the_audit_actions() -> None:
         "bid.reinstate",
         "bid.must_have_decide",
         "bid_document.upload",
+        "bid_document.update",
         "bid_document.delete",
         "bid_assessment.submit",
         "bid_assessment.include_ai",
@@ -551,6 +688,7 @@ EXPECTED_KEY_ACCESS: dict[str, KeyAccess] = {
     "update_bid_call": _P,
     "delete_bid_call": _S,
     "change_bid_call_status": _P,
+    "cancel_bid_call": _S,
     "replace_bid_call_template": _P,
     "set_bid_assessors": _S,
     "get_bid_comparison": _P,
@@ -567,7 +705,7 @@ EXPECTED_KEY_ACCESS: dict[str, KeyAccess] = {
     "reinstate_bid": _S,
     "decide_must_have": _P,
     "upload_bid_document": _S,
-    "update_bid_document": _P,
+    "update_bid_document": _S,
     "delete_bid_document": _S,
     "download_bid_document": _P,
     "get_bid_document_text": _P,
@@ -578,8 +716,9 @@ EXPECTED_KEY_ACCESS: dict[str, KeyAccess] = {
     "list_bid_ai_assessments": _P,
     "set_bid_ai_inclusion": _P,
 }
-"""Role matrix section 5: uploads, the decisions (reject, reinstate, award, cancel, delete),
-the project template and assigning assessors are session only; the rest follow their rules."""
+"""Role matrix section 5: documents (upload, pricing mark and link, delete), the decisions
+(reject, reinstate, award, cancel, delete), the project template and assigning assessors are
+session only; the rest follow their rules."""
 
 
 def test_every_phase10_operation_is_classified_for_keys() -> None:

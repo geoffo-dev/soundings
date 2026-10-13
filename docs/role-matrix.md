@@ -18,7 +18,7 @@ code is wrong. To change a rule, message the lead, who updates this file first.
 | **NMp** | Signed-in non-member, project visibility `private` | Signed in, no project role, project is `private` |
 | **Pub** | Public (anonymous) | No session and no API key |
 | **R** | Guest researcher (Phase 8b; **table L**) | Signed in as an active **person** with **no project role** in a **private** project, and the **assigned researcher of the idea** in question while the assignment is **live** (c24). Only for idea-scoped rules on **that one idea**: every project-scoped rule (`project.view`, `idea.create`, table F) and every other idea of the project stay NMp (404). R's cells are in table L (tables A–K keep their nine columns). |
-| **+Asr** | Section assessor (Phase 10; overlay, **table M**) | The person is assigned to assess a section of the idea's call for bids (`bid_section_assessors`), is an active person and still passes `idea.view` (a private project's assessor has a role there, c28; R never holds +Asr). Added to whatever column they hold, PA to NMi. |
+| **+Asr** | Section assessor (Phase 10; overlay, **table M**) | The person is assigned to assess a section of the idea's call for bids (`bid_section_assessors`) **and c28 holds now** (checked live on every request): an active person who can view the idea in their own right (in a private project a role there; internal: any signed-in person), **never through column R** (an assessor who left a private project but researches the idea holds nothing; review M6). Added to whatever column they hold, PA to NMi. |
 
 **Effective project role** = the highest of the user's direct membership and every
 group-derived membership (`admin > member > viewer`), evaluated live on every request
@@ -619,9 +619,11 @@ cell and +Rsr `·`.
 | bid.manage | 404 | · | |
 | bid.upload_document | 404 | · | |
 | bid.decide | 404 | · | |
+| bid.delete_call | 404 | · | |
 | bid.view_bids | 404 | · | |
 | bid.view_price | 404 | · | |
-| bid.assess | 404 | · | R is never an assessor (c28: a role in the private project). |
+| bid.view_own_assessment | 404 | · | |
+| bid.assess | 404 | · | R is never an assessor (c28: a role in the private project, checked live). |
 | bid.view_section_scores | 404 | · | |
 | bid.view_scores | 404 | · | |
 | bid.ai_assess | 404 | · | |
@@ -677,12 +679,14 @@ is `·`). `✱` here = blind for the principal's own pending assessments (sectio
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl | +Asr |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | `bid.view_call` | See that the idea has a call for bids and its summary (title, status, deadline, number of bids; the feed's `bid_call_changed`) | Y | Y | Y | Y | Y | 404 | 401 | · | · | · |
-| `bid.manage` | Create the call (c27), edit it and its template copy, open it, close it to new bids, reopen it; assign section assessors and the assessment due date (c28); enter and edit bids; decide must-haves; link documents; include or leave out an AI assessment | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · | · |
-| `bid.upload_document` | Upload a bid's documents and delete them (session only) | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · | · |
-| `bid.decide` | Reject a bid with a reason, reinstate it, award the call, cancel it, delete a bid or the call (session only) | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · | · |
+| `bid.manage` | Create the call (c27), edit it (and name its AI assessor) and its template copy, open it, close it to new bids, reopen it; assign section assessors and the assessment due date (c28); enter and edit bids; decide must-haves; include or leave out an AI assessment | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · | · |
+| `bid.upload_document` | Upload a bid's documents, mark them pricing, link them to must-haves, delete them (session only) | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · | · |
+| `bid.decide` | Reject a bid with a reason, reinstate it, award the call, cancel it, delete a bid (session only) | Y (c5) | Y (c5) | 403 | 403 | 403 | 404 | 401 | + (c5) | · | · |
+| `bid.delete_call` | Delete the call with its bids and documents (session only) | Y (c30) | Y (c30) | 403 | 403 | 403 | 404 | 401 | + (c30) | · | · |
 | `bid.view_bids` | See the whole call (template copy, assessors, progress), its bids, their documents and extracted text, must-have results and the AI's findings | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · | + |
-| `bid.view_price` | See bids' prices and price scores | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · | + (c29) |
-| `bid.assess` | Read, save and submit one's own assessment of a section for a bid | 403 | 403 | 403 | 403 | 403 | 404 | 401 | · | · | + (c29) |
+| `bid.view_price` | See bids' prices and price scores, and **pricing documents** (file, text, quotes from them, their must-have link) | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · | + (c29) |
+| `bid.view_own_assessment` | Read one's own assessment (draft or submitted) of a section for a bid | 403 | 403 | 403 | 403 | 403 | 404 | 401 | · | · | + (c29) |
+| `bid.assess` | Save and submit one's own assessment of a section for a bid | 403 | 403 | 403 | 403 | 403 | 404 | 401 | · | · | + (c29) |
 | `bid.view_section_scores` | See a section's submitted assessments, the AI's scores and the section score for a bid | Y ✱ | Y ✱ | 403 | 403 | 403 | 404 | 401 | + ✱ | · | + ✱ (c29) |
 | `bid.view_scores` | See the comparison (every section score, totals, ranks), the AI assessments, and export the report | Y ✱ | Y ✱ | 403 | 403 | 403 | 404 | 401 | + ✱ | · | · |
 | `bid.ai_assess` | The AI assessor's MCP tools on its run's bid (granted only by c22; people: `forbidden`) | 403 | 403 | 403 | 403 | 403 | 404 | 401 | · | · | · |
@@ -691,24 +695,32 @@ is `·`). `✱` here = blind for the principal's own pending assessments (sectio
 Notes ([contract-phase10](api/contract-phase10.md)):
 
 - **Every rule implies `idea.view` and `bid.view_call` first**, and the call exists when
-  the operation needs one (404 `not_found` otherwise). A bid, section, question, must-have,
+  the operation needs one (404 `not_found` otherwise). The operation's call-level rule is
+  checked **before** a bid, section, document or AI assessment is looked up (a member gets
+  the same 403 for a real and an unknown bid id). A bid, section, question, must-have,
   document or AI assessment of another call is 404. **A rejected bid is 404 for a section
-  assessor who isn't a call manager** (it left their queue).
+  assessor who isn't a call manager** (it left their queue). **A pricing document or
+  pricing must-have is 404 without `bid.view_price`** (shown as "present (restricted)").
 - **+Asr for `bid.view_bids`**: the call, every bid that isn't rejected (bidder, received,
   late, documents and text, must-have results, the AI's findings, their own progress);
-  **never** contacts, notes, rejection reasons, prices (unless c29 for the price
-  section), totals, ranks or rejected bids. They see the call even as Vwr or NMi.
-- **c29 names the section**: `bid.assess` and `bid.view_section_scores` for section *S*
-  need +Asr on *S* (another section: 403 `not_section_assessor`); `bid.view_price` needs
-  +Asr on the section holding the price question.
-- **Session only** (section 5): `bid.upload_document`, `bid.decide`, and assigning
-  assessors (`set_bid_assessors`, `bid.manage` by decision: an assignment opens the bids
-  and their documents to a person, as researcher assignment does).
+  **never** contacts, notes, rejection reasons, prices or pricing documents (unless c29
+  for the price section), totals, ranks or rejected bids. They see the call even as Vwr or
+  NMi.
+- **c29 names the section**: `bid.view_own_assessment`, `bid.assess` and
+  `bid.view_section_scores` for section *S* need +Asr on *S* (another section: 403
+  `not_section_assessor`); `bid.view_price` needs +Asr on the section holding the price
+  question.
+- **Session only** (section 5): `bid.upload_document`, `bid.decide`, `bid.delete_call`,
+  and assigning assessors (`set_bid_assessors`, `bid.manage` by decision: an assignment
+  opens the bids and their documents to a person, as researcher assignment does).
+- **Assigning** (`set_bid_assessors`): removing yourself from a section you still owe for
+  any bid (rejected ones included) is 403 `cannot_remove_self` (as c16); removing someone
+  who submitted an assessment of that section is 409 `assessor_has_submitted`.
 - **State refusals are 409s, not conditions** (contract-phase10 §3.2): `project_archived`,
   c19 `awaiting_moderation`, c5 `idea_closed`, then `bid_call_finished` (awarded or
   cancelled: read-only), `bid_call_not_open`, `bid_call_not_assessing`,
-  `bid_call_not_assessable`, `bid_call_template_locked`, `bid_rejected`. Deleting a draft
-  or cancelled call (`bid.decide`) is also allowed on a closed idea (it only removes).
+  `bid_call_not_assessable`, `bid_call_template_locked`, `bid_rejected`. Deleting a call
+  (`bid.delete_call`) is also allowed on a closed idea (it only removes).
 - **`bid.ai_assess`** is granted to an agent's service account only, during an open
   `assess_bid` run, on that run's bid (c22); `ai.assess_bid` is the person's request
   (c10: an agent with the purpose `assess_bid`; 20 requests an hour per person).
@@ -729,16 +741,18 @@ on REST: 403 `insufficient_scope`; NMp and anything outside `idea.view`: 404):
 | `get_bid_template` | `project.view` | `project.view` | `project.view` | 404 | project-scoped (R is NMp) |
 | `replace_bid_template` | PA, PAd only (owner: 403) | 403 | 403 | 404 | session only |
 | `get_bid_call` | the whole call | the whole call (prices per c29) | summary only | 404 | `permissions` says what each may do |
-| `create_bid_call`, `update_bid_call`, `change_bid_call_status` (open, assessing), `replace_bid_call_template`, `set_bid_assessors`, `create_bid`, `update_bid`, `decide_must_have`, `update_bid_document`, `set_bid_ai_inclusion` | Y | 403 | 403 | 404 | `bid.manage`; `set_bid_assessors` session only |
-| `delete_bid_call`, `change_bid_call_status` (cancelled), `award_bid_call`, `delete_bid`, `reject_bid`, `reinstate_bid` | Y | 403 | 403 | 404 | `bid.decide`, session only |
-| `upload_bid_document`, `delete_bid_document` | Y | 403 | 403 | 404 | `bid.upload_document`, session only |
-| `list_bids`, `get_bid`, `download_bid_document`, `get_bid_document_text` | Y | Y (not rejected bids: 404; no contacts or notes; price per c29) | 403 | 404 | `bid.view_bids` |
-| `get_my_bid_assessment`, `save_my_bid_assessment` | only with +Asr on *S* (else 403) | Y on *S*; another section 403 | 403 | 404 | `bid.assess`; a key needs `evaluate` |
+| `create_bid_call`, `update_bid_call`, `change_bid_call_status` (open, assessing), `replace_bid_call_template`, `set_bid_assessors`, `create_bid`, `update_bid`, `decide_must_have`, `set_bid_ai_inclusion` | Y | 403 | 403 | 404 | `bid.manage`; `set_bid_assessors` session only |
+| `cancel_bid_call`, `award_bid_call`, `delete_bid`, `reject_bid`, `reinstate_bid` | Y | 403 | 403 | 404 | `bid.decide`, session only |
+| `delete_bid_call` | Y (c30: an awarded call PA only) | 403 | 403 | 404 | `bid.delete_call`, session only |
+| `upload_bid_document`, `update_bid_document`, `delete_bid_document` | Y | 403 | 403 | 404 | `bid.upload_document`, session only |
+| `list_bids`, `get_bid`, `download_bid_document`, `get_bid_document_text` | Y | Y (not rejected bids: 404; no contacts or notes; price and pricing documents per c29, else 404 / "present (restricted)") | 403 | 404 | `bid.view_bids` |
+| `get_my_bid_assessment` | only with +Asr on *S* (else 403) | Y on *S*; another section 403 | 403 | 404 | `bid.view_own_assessment`; a key needs `read` |
+| `save_my_bid_assessment` | only with +Asr on *S* (else 403) | Y on *S*; another section 403 | 403 | 404 | `bid.assess`; a key needs `evaluate` |
 | `list_bid_section_assessments` | Y ✱ | Y on *S* after submitting it for the bid (before: `hidden: true`); another section 403 | 403 | 404 | `bid.view_section_scores` |
 | `get_bid_comparison`, `list_bid_ai_assessments`, `export_bid_report_markdown`, `export_bid_report_pdf` | Y ✱ | 403 | 403 | 404 | `bid.view_scores` |
 | `request_ai_bid_assessment`, `request_ai_bid_assessments` | Y (c5, c10) | 403 | 403 | 404 | `ai.assess_bid` |
 | `get_idea` | `bid_call` summary, flags | summary, flags | summary, flags | `bid_call` null | |
-| `list_idea_ai_runs` | assess runs listed | assess runs listed (`bid.view_bids`) | assess runs left out | 404 | runs name bids |
+| `list_idea_ai_runs`, `get_ai_run`, `stream_ai_run_events`, `cancel_ai_run` | assess runs listed and readable | assess runs listed and readable (`bid.view_bids`) | assess runs left out, 404 | 404 | runs name bids |
 | `get_my_work` | | "Bids to assess" | | | progress only |
 | MCP `get_bid_for_assessment`, `get_bid_document_text`, `submit_bid_assessment` | `forbidden` | `forbidden` | `forbidden` | `forbidden` (`not_found` for the idea) | Ag only: its run's bid (c22); another bid, run kind or no run: `ai_run_not_active` |
 | MCP `get_idea`, `search_ideas` | no bid data | no bid data | no bid data | as table L | the call isn't in MCP for people |
@@ -831,25 +845,32 @@ comparison, the report's rows.
 
 1. **A pending assessor of (*B*, *S*) sees no bid score data of (*B*, *S*), anywhere**,
    whatever their role (a call manager who assesses too): `list_bid_section_assessments`
-   (`hidden: true` and nothing else), the comparison (`hidden` cells, `total_hidden`, no
-   rank for *B*), `list_bid_ai_assessments` (*S* in `hidden_section_ids`, its scores left
-   out), the report (*B*'s scores left out), SSE and AI run events (never scores anyway),
-   MCP, My work, counts, the inbox and emails.
+   (`hidden: true` and nothing else), the comparison (`hidden` cells, `total_hidden`, and
+   **no rank for any bid**: `ranking_hidden`, rows in the order received, since the other
+   bids' ranks would place *B*), `list_bid_ai_assessments` (*S* in `hidden_section_ids`,
+   its scores left out), the report (*B*'s scores and every rank left out), SSE and AI run
+   events (never scores anyway), MCP, My work, counts, the inbox and emails. **Rejecting
+   *B* never ends it** (the comparison shows no scores for rejected bids at all), and a
+   pending assessor can't remove themselves from *S* (403 `cannot_remove_self`).
 2. **After submitting *S* for *B*** they see (*B*, *S*)'s submitted assessments and the
    AI's scores for *S* (`bid.view_section_scores`), even while it is excluded. Totals,
    ranks, other sections' scores and the report stay with the call managers
    (`bid.view_scores`).
 3. **Drafts are private to their author.** Nobody reads another person's draft.
-4. **Prices** (and price scores, the lowest price, anything sorted by price) are only for
-   call managers and the assessors of the section holding the price question
-   (`bid.view_price`); everyone else gets `price: null, price_hidden: true` and no price
-   in any list, export, notification or MCP result. The AI assessor never reads a price.
+4. **Prices** (and price scores, the lowest price, anything sorted by price) and **pricing
+   documents** (their file, extracted text, quotes from them and their must-have link)
+   are only for call managers and the assessors of the section holding the price question
+   (`bid.view_price`); everyone else gets `price: null, price_hidden: true`, no price in
+   any list, export, notification or MCP result, and a pricing document only as "present
+   (restricted)" (counted, never named). The AI assessor never reads a price or a pricing
+   document.
 5. **Notifications, emails, the feed, My work and counts never carry bid score data,
    prices, bidder names, document text or rejection reasons**, for anyone: they carry the
    call (`BidCallRef`), section titles, dates and counts.
-6. **Service accounts never see bid score data or prices**: the assess tools return the
-   call's questions, the bid and its documents only (rule 9 for bids); an agent's own
-   earlier assessment of the bid is returned to it in its assess run only.
+6. **Service accounts never see bid score data, the price field or a pricing document**:
+   the assess tools return the call's questions, the must-haves that aren't pricing ones,
+   the bid and its other documents only (rule 9 for bids); an agent's own earlier
+   assessment of the bid is returned to it in its assess run only.
 7. **A guest researcher sees nothing of a call** (table L), and a bid's documents and
    extracted text are only for `bid.view_bids`.
 8. **Included set**: totals count submitted human assessments and the AI assessments
@@ -857,9 +878,10 @@ comparison, the report's rows.
    submitted one, included or not.
 
 Minimum tests: for each surface in rule 1, a pending assessor (draft and none), the same
-person after submitting, a call manager who assesses, an assessor of another section, the
-price section's assessor and a member, with two other submitted assessments and an AI
-assessment present.
+person after submitting, a call manager who assesses (no ranks while they owe any bid), an
+assessor of another section, the price section's assessor and a member, with two other
+submitted assessments and an AI assessment present; the same after rejecting and
+reinstating *B*; and rule 4 for a pricing document per principal kind.
 
 ## 4. Conditions
 
@@ -892,8 +914,9 @@ assessment present.
 | c25 | Phase 8b, product owner's answer to review S1 (a): in a **private** project, the person the **owner** names as researcher holds a role in the project (an internal project's owner may name anyone). Only on the owner overlay of `idea.assign_researcher`: project and platform admins may name someone outside a private project. Checked on the person's role read after their user row is locked (contract-phase8b §17) | 403 `outside_researcher_needs_admin` |
 | c26 | Phase 8b, lead decision D1 (review leftovers): the idea **still awaits research**: the project's research step is on, the idea isn't closed and it is in Research or a status before it (`awaits_research`). Only on the +Rsr overlay of `idea.answer_research` (table L): past Research only the owner (with a member or admin role) and project and platform admins change the answers, under Phase 8's rule (`research_answer_required`) | 409 `research_finished` |
 | c27 | Phase 10: the idea can take a call for bids: its status is `proposal`, it has a proposal, and it has no call yet (one per idea) | no proposal or another status → 409 `bid_call_not_available`; a call exists → 409 `bid_call_exists` |
-| c28 | Phase 10: every person named as a section assessor is an **active person** who passes `idea.view` on the idea (in a private project: a role there; an admin adds people as members first), never a service account (AI agent) or the break-glass account. Checked on each person's user row and role, read under a lock (as c25) | 422 `assessor_not_eligible` |
-| c29 | Phase 10: the principal assesses **the section in question** (+Asr on that section; for `bid.view_price` the section holding the price question). Not written for call managers: their cells don't need it | 403 `not_section_assessor` (`bid.view_price`: the price is hidden, not an error) |
+| c28 | Phase 10: every person named as a section assessor is an **active person** who can view the idea in their own right (in a private project: a role there, **never as its guest researcher**, column R; an admin adds people as members first), never a service account (AI agent) or the break-glass account. Checked on each person's user row and role, read under a lock (as c25), when assigning; **and live on every request** for the +Asr overlay (review M6): an assignment that fails c28 now grants nothing and isn't expected work | assigning: 422 `assessor_not_eligible`; live: the overlay doesn't apply |
+| c29 | Phase 10: the principal assesses **the section in question** (+Asr on that section; for `bid.view_price` the section holding the price question). Not written for call managers: their cells don't need it | 403 `not_section_assessor` (`bid.view_price`: the price is hidden and pricing documents are 404 / "present (restricted)", not an error) |
+| c30 | Phase 10 (review S14): deleting the call: it is a **draft or cancelled**, or **awarded and the principal is a platform admin** (the bidders' personal data shouldn't need the idea deleted); never open or assessing | 409 `bid_call_active` |
 
 ## 5. API keys
 
@@ -905,7 +928,7 @@ projects.**
 
 | Scope | Grants the rules |
 |---|---|
-| `read` | `project.view`, `idea.view`, `user.search`, `evaluation.view_own`, `evaluation.view_others`, `score.view_aggregate`, `proposal.view`, `proposal.export`, `bid.view_call`, `bid.view_bids`, `bid.view_price`, `bid.view_section_scores`, `bid.view_scores` (Phase 10) |
+| `read` | `project.view`, `idea.view`, `user.search`, `evaluation.view_own`, `evaluation.view_others`, `score.view_aggregate`, `proposal.view`, `proposal.export`, `bid.view_call`, `bid.view_bids`, `bid.view_price`, `bid.view_own_assessment`, `bid.view_section_scores`, `bid.view_scores` (Phase 10) |
 | `write` | `idea.create`, `idea.edit_own`, `idea.edit_any`, `comment.*`, `idea.vote`, `idea.watch`, `idea.volunteer_owner`, `idea.release_owner`, `idea.assign_owner`, `evaluator.manage`, `idea.set_due_date`, `evaluation.close`, `evaluation.include_ai`, `idea.change_status`, `proposal.write`, `proposal.comment`, `proposal.suggest_section`, `ai.*`, `idea.answer_research` (Phase 8), `idea.assign_researcher` (removing only: assigning is session only, below), `idea.release_researcher` (Phase 8b), `bid.manage` (Phase 10; not assigning assessors: session only, below), `ai.assess_bid` (not `idea.delete` or `idea.moderate`: session only); a `write` key always has `read` too |
 | `evaluate` | `evaluation.submit_own`, `bid.assess` (Phase 10), `bid.ai_assess` (agents, through c22 only); an `evaluate` key always has `read` too |
 | `mcp` | `mcp.connect` only; tools also need the scope of their own rule |
@@ -948,12 +971,14 @@ projects.**
   the inbox routes (list, unread count, mark read: a person's reading state), and (Phase
   8b) assigning an idea's researcher (`set_research_assignment`; removing it is not).
 - **Phase 10, session only**: `project.edit_bid_template`, `bid.upload_document`
-  (uploads and deleting documents), `bid.decide` (reject, reinstate, award, cancel,
-  delete a bid or the call) and assigning assessors (`set_bid_assessors`, by decision:
-  an assignment opens the bids and their documents to a person and would outlive a
-  leaked key). A key may read the call (`read`), run it (`write`: enter bids, decide
-  must-haves, include the AI, ask the AI) and assess (`evaluate`). An assessor's key with
-  `read` only can't save an assessment (403 `insufficient_scope`).
+  (uploads, the pricing mark and link, deleting documents: unmarking a pricing document
+  would open it to every assessor), `bid.decide` (reject, reinstate, award, cancel,
+  delete a bid), `bid.delete_call` and assigning assessors (`set_bid_assessors`, by
+  decision: an assignment opens the bids and their documents to a person and would
+  outlive a leaked key). A key may read the call and one's own assessment (`read`), run
+  it (`write`: enter bids, decide must-haves, include the AI, ask the AI, name the AI
+  assessor) and assess (`evaluate`). An assessor's key with `read` only can't save an
+  assessment (403 `insufficient_scope`).
 - **Signed-in routes without a rule of their own** (`get_me`, My work, owned ideas,
   global search) need `read` with a key, and so does every route that loads an idea or
   project to read it (`require_view`, after the 404s): an `mcp`-only key reads nothing
@@ -1051,10 +1076,11 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   the run reads only `get_bid_for_assessment` and `get_bid_document_text`
   (`ASSESS_RUN_READ_TOOLS`; every other read is `ai_run_not_active` for it) and writes
   only `submit_bid_assessment`; no other run kind may call them; people get
-  `forbidden`. They return the call's score questions, must-haves, the bid's documents
-  and text, never other bids, people's scores, prices, contacts or notes (section 3a
-  rule 6). Every quote is checked against the document's text (contract-phase10 §9.3).
-  No tool reads or changes a call for people.
+  `forbidden`. They return the call's score questions, the must-haves that aren't pricing
+  ones, the bid's other documents and their text, never other bids, people's scores, the
+  price field, pricing documents, contacts or notes (section 3a rule 6). Every quote is
+  checked against the document's text (contract-phase10 §9.3). No tool reads or changes a
+  call for people.
 
 ## 7. Writing the tests
 
