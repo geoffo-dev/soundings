@@ -34,6 +34,7 @@ from app.models.enums import (
     HoldReason,
     IdeaStatus,
     NotificationType,
+    Resolution,
 )
 from app.models.idea import Idea
 from app.models.project import Project, ProjectMember
@@ -184,9 +185,9 @@ async def test_every_stop_condition(
         case "call_open":
             await scene.set_call(status=BidCallStatus.OPEN)
         case "call_awarded":
-            await scene.set_call(status=BidCallStatus.AWARDED)
+            await scene.set_call(status=BidCallStatus.AWARDED, awarded_at=utcnow())
         case "idea_closed":
-            await scene.set_idea(status=IdeaStatus.CLOSED)
+            await scene.set_idea(status=IdeaStatus.CLOSED, resolution=Resolution.PARKED)
         case "idea_held":
             await scene.set_idea(held_for=HoldReason.MODERATION)
         case "project_archived":
@@ -248,7 +249,7 @@ async def test_the_reminder_email(
     for email in await outbox.emails():
         if email.status is EmailStatus.QUEUED:
             await delivery.send_email(runtime, email.id)
-    message = only(transport.messages)
+    message = only([m for m in transport.messages if "Reminder" in str(m["Subject"])])
     subject = str(message["Subject"])
     assert subject.startswith(
         f'[{crew.key}] Reminder: bid assessments for "Data platform build" are due '
