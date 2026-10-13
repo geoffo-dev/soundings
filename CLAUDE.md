@@ -797,7 +797,11 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   evaluation report"; tables wider than A4 portrait are split ("Section scores", four
   sections a table). SPA: `features/bids/` (the Bids tab loads lazily), "the bid from X"
   (never a possessive on a bidder's name), the idea header's next step is an outline
-  button on the Bids tab (the call's own button is the blue one).
+  button on the Bids tab (the call's own button is the blue one). Helm: `ingress.uploads`
+  (on with `ingress.enabled`: a fourth Ingress for the upload path only, 26 MiB and 180 s
+  as ingress-nginx annotations; Traefik needs its entryPoint `readTimeout` raised instead),
+  the worker's 1Gi memory limit (the extraction child), `kagent.agents.bidAssessor` (its
+  system message: document text is untrusted data, quote one exact passage).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -1264,7 +1268,7 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   TOOLS-3's "Data platform build" (dev/README). Integration (2026-10-13): QA's P10-QA-F1
   (no AI inclusion switch while a manager owes the bid), V1 (the report's ranking split so
   A4 holds it), N1-N10, and from the real-stack walkthrough the seeded forms of tender
-  without the price; the fake agent's assess strays in AC6-API-2. Checks: backend (10,197
+  without the price; the fake agent's assess strays in AC6-API-2. Checks: backend (10,200
   tests + `test-slow`), frontend check (688 vitest) + test:pw (463), e2e default 353,
   `E2E_SSO=1` 374, `E2E_AI=1` 394 and against `make demo` 392 passed (none failed), mcp-,
   ai- and bid-smoke on the image, e2e check, Helm, scripts (shellcheck 0.9 too), workflows,
