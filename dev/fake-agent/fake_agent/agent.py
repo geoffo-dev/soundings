@@ -1,7 +1,8 @@
 """The agents' behaviour: one ``AgentExecutor`` per served agent (namespace/name).
 
 A run arrives as one A2A message whose ``metadata.soundings`` says what to do
-(``run_id``, ``kind``, ``idea``, ``section_key``); the text is for a model and is only
+(``run_id``, ``kind``, ``idea``, ``section_key``; Phase 10's ``assess_bid`` runs also
+``bid_id``); the text is for a model and is only
 checked for what must never be in it. The work is done through Soundings' MCP tools
 with the agent's own key, exactly as a kagent agent would call them (every call naming
 the run's id as ``run_id``), so Soundings' rules (c22 run scope, blind evaluation, result
@@ -34,18 +35,31 @@ SECTION_KEY = re.compile(r"[a-z][a-z0-9_]{0,39}")
 """A proposal section's key as Soundings writes it (each project has its own template:
 ``summary``, ``risks``, ``carbon_impact``…). The fake checks only its shape; whether the
 section exists is read from ``get_proposal``, as a real agent would."""
-KINDS = ("evaluate", "research", "draft_section")
+KINDS = ("evaluate", "research", "draft_section", "assess_bid")
 WRITE_TOOLS = {
     "evaluate": "submit_evaluation",
     "research": "add_research_note",
     "draft_section": "propose_proposal_section",
+    "assess_bid": "submit_bid_assessment",
 }
+UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 IDEA_KEY = re.compile(r"([A-Z][A-Z0-9]{0,9})-([1-9][0-9]{0,8})")
 SOURCE_BASE = "https://example.org/fake-agent"
 """Every source the fake cites starts with this, so tests can search for it (it must
 never reach a pending evaluator, a progress event or an error message)."""
 RATIONALE_MARKER = "fake-rationale"
 """Every rationale the fake writes starts with this (the same purpose)."""
+INVENTED_QUOTE = (
+    "We guarantee delivery in three days at no cost (fake-invented-quote: in no document)."
+)
+"""``-invents``: the quote the fake gives as evidence although no document holds it, so
+Soundings must mark it "not found in the document" (contract-phase10 section 9.3)."""
+QUOTE_MIN, QUOTE_MAX = 20, 300
+"""The passages the fake quotes: Soundings takes 20-500 characters once whitespace is
+normalised; the fake stays well inside."""
+MAX_PAGES = 10
+"""Pages of one document the fake reads at most (20,000 characters each)."""
+PLACEHOLDER_ID = "00000000-0000-0000-0000-000000000000"
 
 
 class _Stop(Exception):  # noqa: N818 (a signal, not an error)
@@ -64,6 +78,8 @@ class Run:
     kind: str
     idea: str
     section_key: str | None
+    bid_id: str | None = None
+    """``assess_bid`` runs only: the bid the run names (its calls reach only that bid)."""
 
 
 def _metadata_of(message: Message | None) -> dict[str, Any]:
@@ -87,13 +103,27 @@ def _run_from(context: RequestContext) -> Run | None:
             return None
     else:
         section = None
-    return Run(run_id=run_id, kind=kind, idea=idea, section_key=section)
+    bid_id = soundings.get("bid_id")
+    if kind == "assess_bid":
+        if not (isinstance(bid_id, str) and UUID.fullmatch(bid_id)):
+            return None
+    else:
+        bid_id = None
+    return Run(run_id=run_id, kind=kind, idea=idea, section_key=section, bid_id=bid_id)
 
 
 def with_run(run: Run, arguments: dict[str, Any]) -> dict[str, Any]:
     """Every Soundings tool call names its run (``run_id``, from the run's message), as
     the message tells a model to: Soundings binds the call to that run (c22)."""
     return {"run_id": run.run_id, **arguments}
+
+
+def first_read(run: Run) -> tuple[str, dict[str, Any]]:
+    """The read a run starts with: the bid for an assess run (which may read nothing
+    else), the idea for the others."""
+    if run.kind == "assess_bid":
+        return "get_bid_for_assessment", {"bid_id": run.bid_id}
+    return "get_idea", {"idea": run.idea}
 
 
 def _text_of(message: Message | None) -> str:
@@ -234,17 +264,17 @@ class FakeAgentExecutor(AgentExecutor):
             return "Done (without saving anything)."
         async with self._client() as mcp:
             if behaviour == "asks":
-                await self._call(mcp, run, "get_idea", {"idea": run.idea})
+                await self._call(mcp, run, *first_read(run))
                 raise _Stop(
                     TaskState.TASK_STATE_INPUT_REQUIRED,
                     "input_required",
                     "Which market do you mean?",
                 )
             if behaviour == "fails":
-                await self._call(mcp, run, "get_idea", {"idea": run.idea})
+                await self._call(mcp, run, *first_read(run))
                 raise _Stop(TaskState.TASK_STATE_FAILED, "failed", "Something went wrong.")
             if behaviour in ("slow", "late", "no-cancel"):
-                await self._call(mcp, run, "get_idea", {"idea": run.idea})
+                await self._call(mcp, run, *first_read(run))
                 await self._keep_working(updater, cancelled)
             if behaviour == "drops":
                 # The stream is cut after two events (app.py); work on meanwhile, so the
@@ -254,7 +284,7 @@ class FakeAgentExecutor(AgentExecutor):
                 await self._probe(mcp, run, "before")
             if behaviour == "strays":
                 await self._stray(mcp, run)
-            text = await self._do(mcp, run, updater)
+            text = await self._do(mcp, run, updater, behaviour)
             if behaviour == "blind-probe":
                 await self._probe(mcp, run, "after")
             if behaviour == "lingers":
@@ -272,11 +302,13 @@ class FakeAgentExecutor(AgentExecutor):
                 await asyncio.wait_for(cancelled.wait(), self.settings.slow_interval)
         raise asyncio.CancelledError
 
-    async def _do(self, mcp: McpClient, run: Run, updater: TaskUpdater) -> str:
+    async def _do(self, mcp: McpClient, run: Run, updater: TaskUpdater, behaviour: str) -> str:
         if run.kind == "evaluate":
             return await self._evaluate(mcp, run, updater)
         if run.kind == "research":
             return await self._research(mcp, run, updater)
+        if run.kind == "assess_bid":
+            return await self._assess(mcp, run, updater, behaviour)
         return await self._draft(mcp, run, updater)
 
     async def _evaluate(self, mcp: McpClient, run: Run, updater: TaskUpdater) -> str:
@@ -322,9 +354,74 @@ class FakeAgentExecutor(AgentExecutor):
             return f"I couldn't save the suggestion ({saved.error_code})."
         return f"Suggested text for the {section.get('title') or run.section_key} section."
 
+    async def _assess(self, mcp: McpClient, run: Run, updater: TaskUpdater, behaviour: str) -> str:
+        """Phase 10: read the bid and every document's text it may read (never pricing
+        documents: Soundings doesn't list them), then one assessment with quotes taken
+        from that text (``-invents``: one quote that is in no document; ``-not-met``: the
+        first must-have found not met)."""
+        bid = await self._call(mcp, run, "get_bid_for_assessment", {"bid_id": run.bid_id})
+        if bid.is_error:
+            return f"I couldn't read the bid ({bid.error_code})."
+        await self._step(updater, "Read the bid.")
+        documents = [d for d in bid.content.get("documents") or [] if isinstance(d, dict)]
+        texts: dict[str, str] = {}
+        pages_read = 0
+        for document in documents:
+            if document.get("extraction_state") != "done":
+                continue
+            pages = min(int(document.get("page_count") or 0), MAX_PAGES)
+            parts = []
+            for page in range(1, pages + 1):
+                text = await self._call(
+                    mcp,
+                    run,
+                    "get_bid_document_text",
+                    {"bid_id": run.bid_id, "document_id": document["id"], "page": page},
+                )
+                if text.is_error:
+                    break
+                pages_read += 1
+                parts.append(str(text.content.get("text") or ""))
+            texts[str(document["id"])] = "".join(parts)
+        await self._step(updater, f"Read {len(texts)} of {len(documents)} documents.")
+        call = bid.content.get("call") or {}
+        arguments = assessment_arguments(
+            str(run.bid_id),
+            call,
+            [str(d["id"]) for d in documents],
+            texts,
+            invent=behaviour == "invents",
+            not_met=behaviour == "not-met",
+        )
+        saved = await self._call(mcp, run, "submit_bid_assessment", arguments)
+        self.observations.assess(
+            run.run_id,
+            {
+                "bid_id": run.bid_id,
+                "documents_listed": [str(d["id"]) for d in documents],
+                "documents_read": sorted(texts),
+                "pages_read": pages_read,
+                "questions": len(arguments["scores"]),
+                "must_haves": len(arguments["findings"]),
+                "quotes": sum(len(s["evidence"]) for s in arguments["scores"])
+                + sum(len(f["evidence"]) for f in arguments["findings"]),
+                "invented": behaviour == "invents",
+                "findings": {f["must_have_id"]: f["finding"] for f in arguments["findings"]},
+                "error_code": saved.error_code,
+                "quotes_checked": saved.content.get("quotes_checked"),
+                "quotes_not_found": saved.content.get("quotes_not_found"),
+            },
+        )
+        if saved.is_error:
+            return f"I couldn't save my assessment ({saved.error_code})."
+        return f"Submitted my assessment of bid {run.bid_id}."
+
     # --- Test behaviours ----------------------------------------------------------------
     async def _probe(self, mcp: McpClient, run: Run, phase: str) -> None:
         """Rule 9: what an agent sees of others' score data, before and after its work."""
+        if run.kind == "assess_bid":
+            await self._probe_bid(mcp, run, phase)
+            return
         idea = await self._call(mcp, run, "get_idea", {"idea": run.idea}, phase=f"probe-{phase}")
         if not idea.is_error:
             detail = idea.content.get("idea") or {}
@@ -362,6 +459,29 @@ class FakeAgentExecutor(AgentExecutor):
                 },
             )
 
+    async def _probe_bid(self, mcp: McpClient, run: Run, phase: str) -> None:
+        """Phase 10 (role matrix 3a, rule 6): an assess run's view of its bid carries no
+        price, other bids or people's scores, before or after it submits."""
+        found = await self._call(
+            mcp, run, "get_bid_for_assessment", {"bid_id": run.bid_id}, phase=f"probe-{phase}"
+        )
+        if found.is_error:
+            return
+        bid = found.content.get("bid") or {}
+        previous = found.content.get("previous") or {}
+        self.observations.blind(
+            run.run_id,
+            {
+                "tool": "get_bid_for_assessment",
+                "phase": phase,
+                "keys": sorted(found.content),
+                "bid_keys": sorted(bid),
+                "documents": len(found.content.get("documents") or []),
+                "previous": bool(previous),
+                "previous_keys": sorted(previous),
+            },
+        )
+
     async def _stray(self, mcp: McpClient, run: Run) -> None:
         """c22: try what an agent steered by planted text might, recording the codes."""
         idea = await self._call(mcp, run, "get_idea", {"idea": run.idea}, phase="stray")
@@ -385,6 +505,12 @@ class FakeAgentExecutor(AgentExecutor):
         for kind, tool in WRITE_TOOLS.items():
             if kind != run.kind and tool != "propose_proposal_section":
                 attempts.append((tool, tool, stray_write_arguments(tool, run.idea)))
+        # Phase 10 (c22): another bid's tools; an assess run reads nothing but its bid.
+        attempts.append(("get_bid_other", "get_bid_for_assessment", {"bid_id": PLACEHOLDER_ID}))
+        if run.kind == "assess_bid":
+            attempts.append(("get_idea", "get_idea", {"idea": run.idea}))
+            attempts.append(("get_rubric", "get_rubric", {"idea": run.idea}))
+            attempts.append(("get_proposal", "get_proposal", {"idea": run.idea}))
         if run.kind == "research":
             # Soundings' 8b guest review M1: a research run's note reaches the idea's guest
             # researcher, so it may read neither the proposal nor the rubric.
@@ -424,6 +550,8 @@ class FakeAgentExecutor(AgentExecutor):
                     )
                 elif run.kind == "research":
                     arguments = research_arguments(run.idea)
+                elif run.kind == "assess_bid":
+                    arguments = stray_write_arguments(tool, run.idea, bid_id=run.bid_id)
                 else:
                     arguments = {
                         "idea": run.idea,
@@ -522,7 +650,123 @@ def draft_arguments(idea: str, section: dict[str, Any]) -> dict[str, Any]:
     return arguments
 
 
-def stray_write_arguments(tool: str, idea: str) -> dict[str, Any]:
+def stray_write_arguments(tool: str, idea: str, *, bid_id: str | None = None) -> dict[str, Any]:
     if tool == "submit_evaluation":
         return {"idea": idea, "scores": [], "submit": False}
+    if tool == "submit_bid_assessment":
+        # Well-formed (so Soundings checks the run, not the shape): one score of 0.
+        return {
+            "bid_id": bid_id or PLACEHOLDER_ID,
+            "scores": [{"question_id": PLACEHOLDER_ID, "score": 0, "rationale": "A stray score."}],
+            "findings": [],
+        }
     return {"idea": idea, "body_md": "A stray note.", "sources": []}
+
+
+def passages(text: str) -> list[str]:
+    """The quotable passages of a document's text, in order: its lines and sentences with
+    whitespace normalised (as Soundings compares quotes), cut to at most ``QUOTE_MAX``
+    characters at a word boundary, kept from ``QUOTE_MIN`` characters up. Each is a
+    substring of the document's normalised text, so Soundings finds it."""
+    found: list[str] = []
+    for line in text.splitlines():
+        for sentence in re.split(r"(?<=[.!?])\s+", line):
+            passage = " ".join(sentence.split())
+            if len(passage) > QUOTE_MAX:
+                passage = passage[:QUOTE_MAX].rsplit(" ", 1)[0]
+            if len(passage) >= QUOTE_MIN and passage not in found:
+                found.append(passage)
+    return found
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z]{5,}", text.lower()))
+
+
+def assessment_arguments(
+    bid_id: str,
+    call: dict[str, Any],
+    document_ids: list[str],
+    texts: dict[str, str],
+    *,
+    invent: bool = False,
+    not_met: bool = False,
+) -> dict[str, Any]:
+    """``submit_bid_assessment``: every score question of every section, in order, scored
+    by its position (3, 4, 5, 1, 2, ...) with one quote from the documents' text (taken in
+    turn); a question gets 0 and no quote when no document has text. Every must-have it
+    was shown: a required document with a readable linked file is met (a quote from that
+    file), linked but unreadable (or restricted) unclear, with no file not met; a
+    confirmation met when a passage shares a word of five letters or more with it (that
+    passage), else unclear. ``invent``: the first quote is replaced by one that is in no
+    document; ``not_met``: the first must-have is found not met."""
+    pool = [
+        (document_id, passage)
+        for document_id in document_ids
+        for passage in passages(texts.get(document_id, ""))
+    ]
+    scores: list[dict[str, Any]] = []
+    position = 0
+    for section in call.get("sections") or []:
+        for question in section.get("questions") or []:
+            if pool:
+                score = 1 + (position + 2) % 5
+                document_id, quote = pool[position % len(pool)]
+                evidence = [{"document_id": document_id, "quote": quote}]
+            else:
+                score, evidence = 0, []
+            scores.append(
+                {
+                    "question_id": question["id"],
+                    "score": score,
+                    "rationale": _cut(
+                        f"{RATIONALE_MARKER}: question {position + 1} of the call gets "
+                        f"{score} of 5 from its position. Deterministic fake agent, not a "
+                        "real assessment.",
+                        1000,
+                    ),
+                    "evidence": evidence,
+                }
+            )
+            position += 1
+    findings: list[dict[str, Any]] = []
+    for index, must_have in enumerate(call.get("must_haves") or []):
+        linked = [str(d) for d in must_have.get("document_ids") or []]
+        readable = [d for d in linked if passages(texts.get(d, ""))]
+        finding, evidence = "unclear", []
+        if not_met and index == 0:
+            finding = "not_met"
+        elif must_have.get("kind") == "document":
+            if readable:
+                finding = "met"
+                evidence = [{"document_id": readable[0], "quote": passages(texts[readable[0]])[0]}]
+            elif not linked and not must_have.get("restricted_document_count"):
+                finding = "not_met"
+        else:
+            wanted = _words(str(must_have.get("text") or ""))
+            match = next(((d, p) for d, p in pool if wanted & _words(p)), None)
+            if match is not None:
+                finding = "met"
+                evidence = [{"document_id": match[0], "quote": match[1]}]
+        findings.append(
+            {
+                "must_have_id": must_have["id"],
+                "finding": finding,
+                "rationale": _cut(
+                    f"{RATIONALE_MARKER}: must-have {index + 1} is {finding} by the fake "
+                    "agent's fixed rules (not a real check).",
+                    1000,
+                ),
+                "evidence": evidence,
+            }
+        )
+    if invent:
+        target = next((s for s in scores if s["evidence"]), None)
+        if target is not None:
+            target["evidence"][0] = {
+                "document_id": target["evidence"][0]["document_id"],
+                "quote": INVENTED_QUOTE,
+            }
+        elif scores and document_ids:
+            scores[0]["evidence"] = [{"document_id": document_ids[0], "quote": INVENTED_QUOTE}]
+    return {"bid_id": bid_id, "scores": scores, "findings": findings}

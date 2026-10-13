@@ -107,3 +107,43 @@ spec:
                   name: http
     {{- end }}
 {{- end }}
+{{- if and .Values.ingress.enabled .Values.ingress.uploads.enabled }}
+{{- $hosts := .Values.ingress.hosts | default (include "soundings.baseHosts" . | fromYamlArray) }}
+---
+# Bid document uploads (Phase 10): the one path that takes more than 1 MiB (up to 25 MiB,
+# read within 120 s; the app enforces both and keeps 1 MiB everywhere else), with its own
+# annotations (by default ingress-nginx's body size, request buffering and timeouts for
+# this path only). Only ingress.uploads.annotations apply here, as for the public form's
+# and MCP's Ingresses; the TLS block is the same.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "soundings.fullname" . }}-uploads
+  labels:
+    {{- include "soundings.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+  {{- with .Values.ingress.uploads.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: {{ $.Values.ingress.uploads.path | quote }}
+            pathType: {{ $.Values.ingress.uploads.pathType }}
+            backend:
+              service:
+                name: {{ include "soundings.fullname" $ }}
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

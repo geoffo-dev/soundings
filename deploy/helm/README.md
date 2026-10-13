@@ -71,7 +71,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `kagent.examples` | `false` | Also render kagent 0.10 resources (`kagent.dev/v1alpha2`; needs `kagent.enabled` and kagent's CRDs): the agents below, each with its own `RemoteMCPServer` `<agent>-mcp`, and with `mcp.keySecret` the shared `<fullname>-mcp`. |
 | `kagent.mcp.keySecret` / `.keySecretKey` / `.timeout` | `""` / `authorization` / `30s` | Optional shared `RemoteMCPServer` (Phase 5): an existing Secret holding a whole `Bearer sdg_...` header. kagent's timeout per MCP call (all the examples). |
 | `kagent.agents.modelConfig` | `""` | An existing kagent `ModelConfig` (release namespace) for the example agents; required with `examples` while an agent is enabled. |
-| `kagent.agents.evaluator` / `.researcher` (`.enabled`, `.keySecret`, `.keySecretKey`) | `true`, `""`, `authorization` | The example agents `<fullname>-evaluator` and `<fullname>-researcher`; `keySecret` empty: `soundings-agent-<agent name>`, the Secret registration's manifest creates. |
+| `kagent.agents.evaluator` / `.researcher` / `.bidAssessor` (`.enabled`, `.keySecret`, `.keySecretKey`) | `true`, `""`, `authorization` | The example agents `<fullname>-evaluator`, `<fullname>-researcher` and `<fullname>-bid-assessor` (Phase 10, purpose "Assess bids"); `keySecret` empty: `soundings-agent-<agent name>`, the Secret registration's manifest creates. |
 | `ai.runTimeout` / `.maxConcurrentRuns` | `PT5M` / `4` | How long a run may take once started (30 s-1 h, ISO 8601 or seconds); runs at once per worker pod (1-50; their own pool, email never waits; the worker's database pool grows by as much). |
 | `ai.defaultProtocol` / `.mcpUrl` | `kagent_v0_10` / `""` | Protocol of a new agent (`kagent_v0_10`: A2A 0.3; `kagent_v1_0`: A2A 1.0); the MCP URL shown to admins for agents' `RemoteMCPServer` (empty: the Service URL). |
 | `otel.endpoint` | `""` | OTLP/HTTP endpoint for traces. Metrics are always on `/metrics` (`metrics.port`). |
@@ -81,7 +81,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `api.startupProbe` / `.livenessProbe` / `.readinessProbe` | `/healthz` / `/healthz` / `/readyz` | Full Probe objects; `{}` disables one. |
 | `api.podAnnotations` / `.topologySpreadConstraints` | `{}` / `[]` | |
 | `worker.enabled` / `.replicas` / `.concurrency` | `true` / `1` / `4` | Background worker; email, notification and scheduled jobs per pod (AI runs: `ai.maxConcurrentRuns`). |
-| `worker.terminationGracePeriodSeconds` / `.resources` / `.livenessProbe` / `.podAnnotations` | `60` / 50m, 192Mi-512Mi / `{}` / `{}` | |
+| `worker.terminationGracePeriodSeconds` / `.resources` / `.livenessProbe` / `.podAnnotations` | `60` / 50m, 256Mi-1Gi / `{}` / `{}` | The worker reads bid documents' text in a child process capped at 512 MiB: keep the memory limit at 1Gi or more (see [Bid evaluation](#bid-evaluation)). |
 | `migrations.activeDeadlineSeconds` / `.backoffLimit` / `.waitForDatabaseSeconds` / `.resources` | `900` / `2` / `300` / small | Migration Job, init containers and the demo seed Job. |
 | `autoscaling.enabled` / `.minReplicas` / `.maxReplicas` / `.targetCPUUtilizationPercentage` | `false` / `2` / `6` / `75` | HPA for the API. |
 | `podDisruptionBudget.enabled` / `.maxUnavailable` | `true` / `1` | PDB for the API (never blocks drains). |
@@ -90,10 +90,11 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `ingress.hosts` / `.tls` | `[]` (hosts of `baseUrls`) / `[]` | TLS entries: `{secretName, hosts}`. |
 | `ingress.publicApi.annotations` | `{}` | Not empty: a second Ingress `<release>-soundings-public` for `/api/v1/public` (the anonymous form's API) with only these annotations, e.g. an edge rate limit. See [Public submission](#public-submission). |
 | `ingress.mcp.annotations` | `{}` | Not empty: a third Ingress `<release>-soundings-mcp` for `/mcp` (a Prefix path, so it outranks `/` on Traefik too) with only these annotations, e.g. an allow-list of the networks MCP clients connect from. See [MCP server](#mcp-server-ai-agents-and-mcp-clients). |
+| `ingress.uploads.enabled` / `.path` / `.pathType` / `.annotations` | `true` / an ingress-nginx regular expression for the upload path / `ImplementationSpecific` / ingress-nginx's `use-regex`, `proxy-body-size: 26m`, `proxy-request-buffering: "off"`, 180 s timeouts | With `ingress.enabled`, a fourth Ingress `<release>-soundings-uploads` for the bid document upload route only (25 MiB within 120 s; everything else keeps 1 MiB), with only these annotations. See [Bid evaluation](#bid-evaluation). |
 | `httpRoute.enabled` / `.parentRefs` / `.hostnames` / `.annotations` | `false` / `[]` / `[]` (hosts of `baseUrls`) / `{}` | Gateway API `HTTPRoute` (v1). `parentRefs` required when enabled. |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | No API token is mounted. |
 | `podSecurityContext` / `securityContext` | Restricted | uid/gid 10001, non-root, seccomp `RuntimeDefault`, read-only root FS, no capabilities, no privilege escalation. |
-| `tmpSizeLimit` | `256Mi` | The writable `/tmp` emptyDir (fontconfig's cache under `/tmp/cache`, PDF export's temporary font files). |
+| `tmpSizeLimit` | `256Mi` | The writable `/tmp` emptyDir (fontconfig's cache under `/tmp/cache`, PDF export's temporary font files). Bid document uploads are read into memory and their text extraction writes no file, so they need no more. |
 | `podLabels` / `nodeSelector` / `tolerations` / `affinity` | empty | Applied to every app pod (and Postgres). |
 | `postgresql.enabled` | `true` | Bundled single-replica Postgres (dev/small installs). |
 | `postgresql.image.*` | `docker.io/library/postgres:16-alpine` | |
@@ -391,7 +392,8 @@ app ignores them until the issuer is unset.
   unless you reference a `buffering` Middleware with `maxRequestBodyBytes: 1048576`
   through the `traefik.ingress.kubernetes.io/router.middlewares:
   <namespace>-<name>@kubernetescrd` annotation; Gateway API has no standard body limit.
-  `scripts/k3s-smoke.sh` checks the 413 through the ingress.
+  `scripts/k3s-smoke.sh` checks the 413 through the ingress. The one exception is the bid
+  document upload route (25 MiB): [Bid evaluation](#bid-evaluation).
 
 ## Public submission
 
@@ -462,6 +464,76 @@ largest proposals fail to export. The child gets no secrets in its environment. 
 read-only root filesystem, fontconfig caches under `/tmp/cache` (the `/tmp` emptyDir;
 `XDG_CACHE_HOME` is set in the image).
 
+## Bid evaluation
+
+Calls for bids (Phase 10, ADR 0018) need nothing extra deployed: the bidders' documents
+and their extracted text are stored in PostgreSQL, the worker reads the text, and the AI
+assessor is an ordinary kagent agent (purpose "Assess bids"). Three things in the chart
+are about them (the operator guide, "Bid evaluation: documents and the AI assessor", has
+storage, backups, retention and antivirus).
+
+- **The upload route takes 25 MiB.** `POST /api/v1/ideas/<idea>/bid-call/bids/<bid>/documents`
+  sends the raw file as the body, up to 25 MiB, within 120 s (408 `upload_timeout`
+  after that); every other route keeps the 1 MiB limit. The app counts the bytes itself
+  (a body longer than its `Content-Length`, or a chunked one, is cut off at the limit),
+  checks the sign-in and the caller's rights **before** it reads the body, and reads at
+  most two uploads at a time per API pod (503 `upload_busy` with `Retry-After: 5`). Your
+  ingress has to let that one path through:
+  - **ingress-nginx** (its default `proxy-body-size` is `1m`, so without this every
+    upload over 1 MiB gets nginx's 413): `ingress.uploads` (on by default with
+    `ingress.enabled`) renders `<release>-soundings-uploads` for that path only, as a
+    regular expression (`use-regex`, which ingress-nginx then applies to every path of
+    the host; the longest path wins, so the other Ingresses keep matching as before),
+    with `proxy-body-size: 26m` (25 MiB plus headers), `proxy-request-buffering: "off"`
+    (nginx streams the body to the app, which refuses an unauthenticated or oversized
+    upload at once, instead of first writing 25 MiB to the controller's disk) and
+    `proxy-read-timeout` / `proxy-send-timeout` of 180 s. Keep `1m` (the default) for the
+    rest.
+  - **Traefik** (k3s's default) has no body limit, so the main Ingress carries uploads
+    as it is (the uploads Ingress's nginx regular expression matches nothing there; set
+    `ingress.uploads.enabled: false` if you'd rather not have it). What can cut a slow
+    upload is the entryPoint's `respondingTimeouts.readTimeout` (the whole request,
+    body included), 60 s by default since Traefik v2.11.2 and v3.0: a 25 MiB file over a
+    link slower than about 3.5 Mbit/s needs more. It is static configuration for the
+    whole entryPoint: set it to `180s` or more in Traefik's own values (on k3s, a
+    `HelmChartConfig` for `traefik` in `kube-system` with
+    `ports.web.transport.respondingTimeouts.readTimeout: 180s`, and the same for
+    `websecure`; `scripts/k3s-up.sh` does this for the local cluster). If you cap bodies
+    with a `buffering` Middleware on the main Ingress, give the upload path its own
+    router without it: `ingress.uploads.pathType: ImplementationSpecific` with, on
+    Traefik v3, `path: /api/v1/ideas/[^/]+/bid-call/bids/[^/]+/documents$` and the
+    annotation `traefik.ingress.kubernetes.io/router.pathmatcher: PathRegexp`, or on
+    Traefik v2, `path: /api/v1/ideas/{idea:[^/]+}/bid-call/bids/{bid:[^/]+}/documents`
+    and `router.pathmatcher: Path` (plus your middlewares, if any, in
+    `ingress.uploads.annotations`).
+  - **Other controllers**: give that path a 26 MiB body limit and a 180 s read timeout
+    in the controller's syntax through `ingress.uploads.path`, `.pathType` and
+    `.annotations`, or turn it off and route it yourself. **Gateway API** has no standard
+    body limit; Envoy-based gateways stream request bodies (no limit unless a policy sets
+    one); if your HTTPRoute or gateway sets a request timeout, allow 180 s for that path.
+  - `scripts/bid-smoke.sh` (run by `scripts/k3s-smoke.sh`) uploads through the ingress
+    and checks the 413 for a file over 25 MiB.
+- **The worker needs 1 GiB.** Each worker pod reads one document at a time in a child
+  process (30 s, a 512 MiB address-space cap, 2,000,000 characters; no database URL,
+  secret key or SMTP credentials in its environment; the file on stdin, the text on
+  stdout; it writes no file). `worker.resources.limits.memory` is `1Gi` by default
+  since Phase 10; less and large documents fail with `memory` or the pod is OOM-killed.
+  Extraction has its own queue and pool in the worker, so email, the schedules and AI
+  runs never wait for it. The demo seed Job (`demo.seed`) extracts the demo's small bid
+  documents the same way, within `migrations.resources`.
+- **Storage.** A call holds at most 500 MiB (files plus their text), a project 5 GiB: size
+  `postgresql.persistence.size` (or the external database) and its backups for them. The
+  bundled Postgres's 8 GiB holds one full project with room to spare, not two.
+
+The AI assessor's example Agent is `kagent.agents.bidAssessor` (`<fullname>-bid-assessor`,
+with `kagent.examples`): register it in Admin settings > AI agents with the purpose
+"Assess bids" and apply the Secret manifest it shows. Its system message tells the model
+that everything in a bid's documents is untrusted data, never instructions, and to quote
+one passage exactly (no ellipses); Soundings checks every quote against the document's
+text anyway and shows the ones it can't find as "Not found in the document". Its tools
+reach only its run's bid: never other bids, prices, pricing documents or people's
+scores (contract-phase10 section 9).
+
 ## MCP server (AI agents and MCP clients)
 
 Soundings serves an MCP server at `<baseUrl>/mcp` (streamable HTTP, stateless, JSON
@@ -515,11 +587,12 @@ and every tool call is audited (`mcp.call`). Connecting a client:
 
 ## AI assistance (kagent)
 
-With `features.ai`, "Ask AI to evaluate", "Ask AI to research" and "Draft section" start runs
+With `features.ai`, "Ask AI to evaluate", "Ask AI to research", "Draft section" and (Phase 10) "Ask AI to assess" a bid start runs
 that the **worker** sends to a registered kagent agent over A2A; the agent works through
 `/mcp` with its own service account's key and its result is attached to the run (an
 evaluation with an AI badge, left out of the aggregate until the idea's owner includes
-it; a research note; a proposal suggestion). Progress reaches the browser over SSE
+it; a research note; a proposal suggestion; a bid assessment with quotes, left out of the
+totals until a call manager includes it). Progress reaches the browser over SSE
 (`GET /api/v1/ideas/<idea>/ai-runs/<run>/events`, through the same Ingress: the app sends
 `X-Accel-Buffering: no` and a keep-alive every 15 s, so ingress-nginx's default 60 s read
 timeout is enough; Traefik streams as is); the page falls back to polling.
@@ -533,7 +606,7 @@ timeout is enough; Traefik streams as is); the page falls back to polling.
    is shown once with a Secret manifest `soundings-agent-<name>`: apply it in the agent's
    namespace.
 4. The agents: `kagent.examples` with `kagent.agents.modelConfig` renders
-   `<fullname>-evaluator` and `<fullname>-researcher` (Declarative, streaming, the
+   `<fullname>-evaluator`, `<fullname>-researcher` and `<fullname>-bid-assessor` (Declarative, streaming, the
    standing rules as system message, Soundings' tools), each with a `RemoteMCPServer`
    reading that Secret; or write your own (`deploy/kagent/agents.yaml`).
 
@@ -561,6 +634,7 @@ Helm test uses the app image.
 ```sh
 scripts/check-task.sh helm        # helm lint --strict + template for defaults and ci/*-values.yaml
 make k3s-up image k3s-install k3s-smoke   # local k3s: install with dev/k3s-values.yaml, smoke test
+                                          # (incl. scripts/bid-smoke.sh: uploads through the ingress)
 scripts/k3s-test-external-db.sh   # hook-Job path against a second database
 make k3s-down
 ```

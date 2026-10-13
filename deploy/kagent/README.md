@@ -1,10 +1,14 @@
 # kagent integration
 
-Soundings uses [kagent](https://kagent.dev) for its two AI jobs (SPEC.md section 9): an
+Soundings uses [kagent](https://kagent.dev) for its AI jobs (SPEC.md section 9): an
 **AI evaluator** ("Ask AI to evaluate": a cited evaluation, shown with an AI badge and
-left out of the aggregate unless the idea's owner includes it) and a **research and
+left out of the aggregate unless the idea's owner includes it), a **research and
 drafting assistant** ("Ask AI to research": a cited research note in the activity feed;
-"Draft section": proposal text the owner accepts or discards). The worker starts each run
+"Draft section": proposal text the owner accepts or discards) and, since Phase 10, an
+**AI bid assessor** ("Ask AI to assess" on a bid, "Assess all with AI" on a call, or the
+call's automatic pre-check: a 0-5 score with quotes from the bid's documents for every
+question and a finding for every must-have, left out of the totals until a call manager
+includes it; contract-phase10 section 9). The worker starts each run
 at kagent's controller over A2A; the agent does the work through Soundings' MCP server
 (`/mcp`) as its own service account. Contract: `docs/api/contract-phase6.md`; design: ADR
 0014.
@@ -21,6 +25,7 @@ person ──"Ask AI to evaluate"──► Soundings API ──run row + job─�
                                                                       ▼
             kagent Agent <namespace>/<name> ──MCP, Bearer <its key>──► Soundings /mcp
               get_rubric, get_idea, submit_evaluation / add_research_note / propose_proposal_section
+              (assess runs: get_bid_for_assessment, get_bid_document_text, submit_bid_assessment)
 ```
 
 - **URLs are built, never given:** `SOUNDINGS_KAGENT_URL` (Helm `kagent.controllerUrl`) +
@@ -38,17 +43,23 @@ person ──"Ask AI to evaluate"──► Soundings API ──run row + job─�
   Agents never see other evaluators' scores, and their own only in an evaluate run
   (rule 9).
 - **Results come back through MCP**, matched to the run by the server: A2A text and
-  artifacts are ignored. The run's message holds the run id, kind, idea key, section and
-  the agent's name: no URL, key or idea text.
+  artifacts are ignored. The run's message holds the run id, kind, idea key, section (or,
+  for an assess run, the bid's id) and the agent's name: no URL, key, idea or bid text.
+- **The bid assessor** reaches only its run's bid: the call's score questions and
+  must-haves (pricing ones left out), the bid's documents and their extracted text (never
+  pricing documents, the price, other bids or people's scores). Document text is the
+  bidder's: the example's system message treats it as untrusted data, never
+  instructions, and asks for quotes copied exactly; Soundings checks every quote against
+  the document's text and shows the ones it can't find as "Not found in the document".
 
 ## Files here
 
 | File | What |
 |---|---|
-| `agents.yaml` | The two agents by hand for kagent 0.10 (`kagent.dev/v1alpha2`) in namespace `soundings`: a `ModelConfig`, and for `idea-evaluator` and `idea-researcher` each a placeholder key Secret (the manifest registration shows replaces it), a `RemoteMCPServer` reading it and a Declarative, streaming `Agent` with its tools, skills and standing rules |
+| `agents.yaml` | The three agents by hand for kagent 0.10 (`kagent.dev/v1alpha2`) in namespace `soundings`: a `ModelConfig`, and for `idea-evaluator`, `idea-researcher` and `bid-assessor` (Phase 10) each a placeholder key Secret (the manifest registration shows replaces it), a `RemoteMCPServer` reading it and a Declarative, streaming `Agent` with its tools, skills and standing rules |
 | `fake-agent-byo.yaml` | Soundings' deterministic fake agent (`dev/fake-agent`) as a `type: BYO` Agent: for a test cluster with kagent but no model, so kagent's real controller carries Soundings' runs |
 | `remote-mcp-server.yaml` | Phase 5: a shared `RemoteMCPServer` in kagent's namespace with one key (a person's key for their own kagent agents; an AI agent's key only works in its runs) |
-| Helm `kagent.*`, `ai.*` | `deploy/helm/README.md` "AI assistance (kagent)": `features.ai`, `kagent.controllerUrl`, the token Secret, `kagent.agentNamespaces`, `ai.runTimeout` / `.maxConcurrentRuns` / `.defaultProtocol`, NetworkPolicies, and `kagent.examples` rendering the same two agents (`<fullname>-evaluator`, `<fullname>-researcher`) with one `RemoteMCPServer` each |
+| Helm `kagent.*`, `ai.*` | `deploy/helm/README.md` "AI assistance (kagent)": `features.ai`, `kagent.controllerUrl`, the token Secret, `kagent.agentNamespaces`, `ai.runTimeout` / `.maxConcurrentRuns` / `.defaultProtocol`, NetworkPolicies, and `kagent.examples` rendering the same three agents (`<fullname>-evaluator`, `<fullname>-researcher`, `<fullname>-bid-assessor`) with one `RemoteMCPServer` each |
 
 ## Set it up (kagent 0.10.x)
 
@@ -65,9 +76,11 @@ kubectl apply -f -        # paste: Secret soundings-agent-soundings-evaluator
 # 4. The agents: with the chart's examples (their RemoteMCPServers read exactly that Secret)
 helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
   --set kagent.examples=true --set kagent.agents.modelConfig=soundings-model
-#    or by hand: edit and apply deploy/kagent/agents.yaml (names idea-evaluator/-researcher)
+#    or by hand: edit and apply deploy/kagent/agents.yaml (names idea-evaluator,
+#    idea-researcher, bid-assessor; the bid assessor with purpose "Assess bids")
 # 5. Back in Soundings: Test connection (the card, A2A versions, skills), then on an idea
-#    "Ask AI to evaluate". Rotate key / Disable live on the same page.
+#    "Ask AI to evaluate", or on a bid "Ask AI to assess" (or name the agent the call's AI
+#    assessor). Rotate key / Disable live on the same page.
 ```
 
 - **Namespaces:** agents may be registered only in `kagent.agentNamespaces` (default: the
@@ -94,13 +107,15 @@ helm upgrade soundings ./deploy/helm -n soundings --reuse-values \
   retention don't reach it: set kagent's own retention, or clear those sessions, to match
   (assumed from kagent's design; no live controller here).
 
-## What is verified (2026-10-06)
+## What is verified (2026-10-06; the bid assessor 2026-10-13)
 
 | Check | How | Result |
 |---|---|---|
 | Every manifest here and the chart's `kagent.examples` resources against kagent **v0.10.2**'s CRDs (`agents.kagent.dev` v1alpha2 storage, `remotemcpservers.kagent.dev` v1alpha2, `modelconfigs.kagent.dev` v1alpha2; OpenAPI schemas and CEL rules) | `make k3s-kagent-crds`: the CRD files of git tag `v0.10.2` (commit 68df64f, `helm/kagent-crds/templates`, what the kagent-crds chart packages) applied to k3s v1.31, then `kubectl apply --dry-run=server` of each file and of `helm template --set kagent.examples=true` | accepted (again at the final verification, with the system messages that ask for `run_id`); the API server defaulted `runtime: go` on the Agents and `terminateOnClose: true` on the RemoteMCPServers; a `secretKeyRef` header and an Agent without `declarative` are refused (so the schema really applied) |
 | The chart's example Agents and RemoteMCPServers created for real (they're only CRs without a controller) | `make k3s-install AI=1` with the CRDs installed (adds `kagent.examples`) | created, listed by `make k3s-smoke AI=1` |
 | The A2A loop: Test connection, runs streamed and cancelled, results through `/mcp`, SSE to a pending evaluator | Soundings' **fake agent** (`dev/fake-agent`) in kagent's place: `scripts/ai-smoke.sh` against the e2e stack (`E2E_AI=1`; A2A 0.3 and 1.0), `make demo DEMO_AI=1`, and in k3s as `kagent/kagent-controller:8083` with the default `controllerUrl`, through Traefik, behind the chart's NetworkPolicies (agent pods admitted by label, others dropped; the worker's egress only to DNS, Postgres and 8083), with one and two API replicas (`make k3s-smoke AI=1`, also with `MCP=1`) | pass (2026-10-06; integration repeated `make k3s-install AI=1 MCP=1` + `k3s-smoke AI=1 MCP=1` with the real `make image`; the final verification ran it as CI, `SSO=1 SMTP=1 MCP=1 AI=1`, on one and then two API replicas, after the `run_id` change) |
+| Phase 10's bid assessor: `deploy/kagent/agents.yaml`'s `bid-assessor` and the chart's `kagent.agents.bidAssessor` (`<fullname>-bid-assessor` with its `RemoteMCPServer`) | `make k3s-kagent-crds` against kagent v0.10.2's CRDs (server-side dry run, then created for real) and `make k3s-install AI=1` with `kagent.examples` | accepted and created (2026-10-13) |
+| Assess runs end to end: "Ask AI to assess", the three bid tools bound to the run's bid, quotes checked against the extracted text, the AI's scores left out of the total until included, never the pricing document | the fake agent as `<fullname>-bid-assessor` (and `-invents`, whose invented quote Soundings marks "not found") in k3s through Traefik behind the chart's NetworkPolicies: `scripts/bid-smoke.sh` via `make k3s-smoke SSO=1 SMTP=1 MCP=1 AI=1`; also against a local stack | pass (2026-10-13) |
 | The fake agent's 0.3 wire format | a2a-sdk **0.3.23**'s own client (kagent-adk 0.10.2's A2A library) against it: card, stream, `tasks/get`, `tasks/cancel` | pass |
 | kagent's MCP client (go-sdk v1.6.1) against `/mcp` | Phase 5 | pass |
 

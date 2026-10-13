@@ -1,7 +1,9 @@
 """What the fake agent saw and did, per run, for tests (``GET /_fake/observations``):
 the A2A requests (methods, headers that matter, ``historyLength``, cancels), the MCP
-tools it called with their error codes, and what rule 9 and c22 showed it. Never keys,
-tokens, message text or tool results beyond codes and flags."""
+tools it called with their error codes, what rule 9 and c22 showed it, and for an assess
+run (Phase 10) which documents it was listed and read and what it submitted (counts,
+findings, the quote check's result). Never keys, tokens, message text or tool results
+beyond ids, codes, counts and flags."""
 
 from __future__ import annotations
 
@@ -45,6 +47,7 @@ class Observations:
                 "blind": [],
                 "strays": {},
                 "late": None,
+                "assess": None,
                 "cancel_requests": 0,
                 "final_state": None,
             }
@@ -89,6 +92,10 @@ class Observations:
     def stray(self, run_id: str, attempt: str, error_code: str | None) -> None:
         with self._lock:
             self._run(run_id)["strays"][attempt] = error_code
+
+    def assess(self, run_id: str, entry: dict[str, Any]) -> None:
+        with self._lock:
+            self._run(run_id)["assess"] = {"at": now(), **entry}
 
     def late(self, run_id: str, tool: str, error_code: str | None) -> None:
         with self._lock:

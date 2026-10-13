@@ -135,6 +135,26 @@ MCP server (MCP clients and AI agents)
    Secret {{ .Values.kagent.mcp.keySecret }} (key {{ .Values.kagent.mcp.keySecretKey }}), which must hold "Bearer sdg_...".
    Check: kubectl -n {{ .Release.Namespace }} get rmcps
 {{- end }}
+
+Bid evaluation (calls for bids)
+   Bid documents are uploaded to POST /api/v1/ideas/<idea>/bid-call/bids/<bid>/documents,
+   up to 25 MiB each within 120 s (every other route takes 1 MiB).
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.uploads.enabled }}
+   Ingress {{ $fullname }}-uploads carries that path with ingress.uploads.annotations
+   (by default ingress-nginx's: 26m, no request buffering, 180 s timeouts). On Traefik,
+   give its entryPoint a readTimeout of 180s or more (chart README, "Bid evaluation").
+{{- else }}
+   WARNING: ingress.uploads.enabled is false: route that path through your ingress with a
+   26 MiB body limit and a 180 s timeout yourself (ingress-nginx refuses bodies over 1m).
+{{- end }}
+{{- end }}
+   The files and their text are stored in PostgreSQL (at most 500 MiB a call, 5 GiB a
+   project): size the database volume and its backups for them. The worker reads their
+   text in a child process: its memory limit is {{ dig "limits" "memory" "not set" .Values.worker.resources }} (keep 1Gi or more).
+{{- if not .Values.worker.enabled }}
+   WARNING: worker.enabled is false, so no document's text is read and no AI assessor runs.
+{{- end }}
 {{- if .Values.features.ai }}
 
 AI assistance (features.ai, kagent)
@@ -142,7 +162,7 @@ AI assistance (features.ai, kagent)
    namespace(s) {{ include "soundings.agentNamespaces" . }}. Register each agent in Admin settings > AI agents
    and apply the Secret manifest it shows once (soundings-agent-<name>, in the agent's namespace).
 {{- if and .Values.kagent.enabled .Values.kagent.examples }}
-{{- range $role := list "evaluator" "researcher" }}
+{{- range $role := list "evaluator" "researcher" "bidAssessor" }}
 {{- if (index $.Values.kagent.agents $role).enabled }}
    Example agent: namespace {{ $.Release.Namespace }}, name {{ include "soundings.exampleAgentName" (dict "ctx" $ "agent" $role) }} (key Secret {{ include "soundings.exampleAgentKeySecret" (dict "ctx" $ "agent" $role) }})
 {{- end }}

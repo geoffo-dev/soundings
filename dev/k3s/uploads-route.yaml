@@ -1,0 +1,16 @@
+# The bid document upload route's own Traefik router in the local k3s cluster (dev only):
+# the chart's fourth Ingress (ingress.uploads) carries POST
+# /api/v1/ideas/<idea>/bid-call/bids/<bid>/documents with Traefik v2's Path rule and
+# regular expressions (dev/k3s-values.yaml, the chart README's Traefik recipe; k3s v1.31
+# ships Traefik 2.11), and this middleware marks its responses, so scripts/bid-smoke.sh
+# (run by scripts/k3s-smoke.sh) can tell that the router matched. Applied by
+# scripts/k3s-install.sh in the release's namespace when Traefik's CRDs are there. The
+# app's own 25 MiB limit and 120 s read apply behind it either way.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: uploads-route
+spec:
+  headers:
+    customResponseHeaders:
+      X-Soundings-Route: uploads

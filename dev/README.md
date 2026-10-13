@@ -386,6 +386,11 @@ make ai-smoke                               # register an agent (as alice), hand
                                             # a pending evaluator over SSE, the AI evaluation out
                                             # of the aggregate / included, research, a draft, a
                                             # cancelled slow run, the key refused outside runs
+make bid-smoke                              # Phase 10: a call for bids of its own (bids, PDF/
+                                            # DOCX/CSV uploads, the refused ones, the worker's
+                                            # text extraction, must-haves, reject/reinstate,
+                                            # blind assessments, comparison, report) and, with
+                                            # the fake up, an AI assessment with checked quotes
 ```
 
 By hand: Admin → AI agents → Register agent (namespace `soundings`, any name,
@@ -395,7 +400,9 @@ it on every request; without a key the agent is "not found"). Test connection sh
 card. Then "Ask AI to evaluate" on a Customer Innovation idea. What the agent does
 depends on its name's suffix: `-slow` works until cancelled or the deadline, `-fails`,
 `-silent` (finishes without a result), `-asks`, `-rejects`, `-blind-probe`, `-strays`,
-`-late`, `-no-cancel`, `-unavailable`, `-drops` (the README). What it saw of a run:
+`-late`, `-no-cancel`, `-unavailable`, `-drops` (the README); for bid assessors (purpose
+Assess bids) also `-invents` (a quote that is in no document: "Not found in the document")
+and `-not-met` (the first must-have found not met). What it saw of a run:
 `curl -s localhost:8083/_fake/observations/<run id> | jq`.
 
 The e2e stack does the same with `E2E_AI=1` (fake on :8183, an agent "Idea evaluator",
@@ -413,9 +420,16 @@ make k3s-up             # k3s in a container: API 127.0.0.1:16443, ingress http:
 make k3s-install        # import the image, helm upgrade --install with dev/k3s-values.yaml
                         # (dev login on; a post-install hook Job loads the demo data)
 make k3s-smoke          # /healthz, /readyz, /, /metrics kept off the ingress, dev login with
-                        # CSRF and My work, break-glass with the generated Secret, helm test
+                        # CSRF and My work, break-glass with the generated Secret, the public
+                        # form, calls for bids (scripts/bid-smoke.sh), helm test
 make k3s-down
 ```
+
+Bid document uploads (up to 25 MiB) go through a Traefik router of their own
+(`ingress.uploads` in `dev/k3s-values.yaml`; `dev/k3s/uploads-route.yaml` marks its
+responses so the bid smoke can tell), and `scripts/k3s-up.sh` raises the bundled Traefik's
+`readTimeout` from 60 s to 180 s (`K3S_TRAEFIK_READ_TIMEOUT`) with a `HelmChartConfig`, so a
+slow upload isn't cut off: `BID_SLOW_UPLOAD=1 make k3s-smoke` uploads for about 80 s.
 
 **Single sign-on on k3s.** Keycloak runs in the cluster (`dev/k3s/keycloak.yaml`,
 namespace `keycloak`, the dev realm) at `http://keycloak.localhost:18081`: browsers and

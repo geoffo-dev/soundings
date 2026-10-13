@@ -25,7 +25,8 @@ The e2e stack starts it with `E2E_AI=1` (`e2e/scripts/start-stack.sh`), `make k3
 runs it in k3s as `kagent/kagent-controller:8083`, and `docker compose -f
 dev/docker-compose.yml --profile ai up -d` next to `make dev`. `scripts/ai-smoke.sh`
 (`make ai-smoke`) registers an agent, hands it its key and runs the Phase 6 acceptance
-through it.
+through it; `scripts/bid-smoke.sh` (`make bid-smoke`) does the same for a bid assessor
+(purpose "Assess bids") on a call for bids of its own.
 
 ## Settings (environment)
 
@@ -66,8 +67,8 @@ like an Agent that doesn't exist. Keys are never logged or returned.
 
 ## What a run does
 
-The message's `metadata.soundings` (`run_id`, `kind`, `idea`, `section_key`) says what to
-do; the text is for a model and is only checked for what must never be in it (a URL or an
+The message's `metadata.soundings` (`run_id`, `kind`, `idea`, `section_key`; for an
+`assess_bid` run also `bid_id`) says what to do; the text is for a model and is only checked for what must never be in it (a URL or an
 API key: `message_checks`). It initialises an MCP session with its key, then makes these
 calls, each with the run's id as `run_id` (as the message tells a model to: Soundings binds
 every call of an agent to the run it names, c22; the `-late` write names the run that
@@ -78,6 +79,7 @@ ended):
 | `evaluate` | `get_rubric`, `get_idea`, `submit_evaluation` (`submit: true`) | each criterion scored by its position (3, 4, 5, 1, 2, ...), a rationale starting `fake-rationale:` that names the criterion and the idea, two sources under `https://example.org/fake-agent/...`; recommendation `maybe`; a summary |
 | `research` | `get_idea`, `add_research_note` | a short Markdown note with three sources |
 | `draft_section` | `get_idea`, `get_proposal`, `propose_proposal_section` | the section's text plus a marked paragraph, with its `base_version`. The section is found by its key in `get_proposal`'s sections, so a section a project added to its template (`carbon_impact`) works like a built-in one; a key that isn't in the proposal saves nothing, and a key not shaped like Soundings' (`^[a-z][a-z0-9_]{0,39}$`) isn't a run |
+| `assess_bid` (Phase 10) | `get_bid_for_assessment`, then `get_bid_document_text` for every listed document whose text is `done` (pages 1, 2, ..., at most 10 each), then `submit_bid_assessment` | every score question scored by its position (3, 4, 5, 1, 2, ...) with a rationale starting `fake-rationale:` and one quote: the document text's passages (lines and sentences, whitespace normalised as Soundings compares them, 20-300 characters), taken in turn, so every quote is found; 0 and no quote when no document has text. Every must-have it was shown: a required document with a readable linked file `met` (a quote from that file), linked but unreadable or only restricted (pricing) files `unclear`, no file `not_met`; a confirmation `met` when a passage shares a word of five letters or more with it, else `unclear`. It reads only what Soundings lists, so never a pricing document; observations record the documents listed and read, the counts and the quote check's result (`assess`). A message without a well-formed `bid_id` isn't a run |
 
 A tool error ends the task `completed` with a reply saying so (Soundings: `no_result`); an
 unreachable MCP server or a refused key ends it `failed`. `fake-rationale` and
@@ -95,12 +97,14 @@ evaluator, a progress event or an error message.
 | `-silent` | `completed` without calling a tool (`no_result`) |
 | `-asks` | `input-required` after reading the idea |
 | `-rejects` | `rejected` at once |
-| `-blind-probe` | records what `get_idea` and `search_ideas` show of others' scores before and after its work (`blind`), for every kind (rule 9) |
-| `-strays` | first tries `add_comment`, `create_idea`, `get_idea` on the next idea number, `propose_proposal_section` for another section and the other kinds' write tools (on a `research` run also `get_proposal` and `get_rubric`, which a research run may not read), then `list_projects` (`ai_run_not_active` on a `research` run) and `search_ideas`, recording each code (`strays`; c22), then works |
+| `-blind-probe` | records what `get_idea` and `search_ideas` show of others' scores before and after its work (`blind`), for every kind (rule 9); in an `assess_bid` run, the keys `get_bid_for_assessment` returns (no price, other bids or people's scores) |
+| `-strays` | first tries `add_comment`, `create_idea`, `get_idea` on the next idea number, `propose_proposal_section` for another section, the other kinds' write tools and `get_bid_for_assessment` for another bid (`get_bid_other`; on a `research` run also `get_proposal` and `get_rubric`, which a research run may not read; on an `assess_bid` run `get_idea`, `get_rubric` and `get_proposal`, as it reads only its bid), then `list_projects` (`ai_run_not_active` on `research` and `assess_bid` runs) and `search_ideas`, recording each code (`strays`; c22), then works |
 | `-late` | works like `-slow`; after its cancel it waits `FAKE_AGENT_LATE_DELAY` and calls its write tool anyway (`late`: Soundings must answer `ai_run_not_active`) |
 | `-no-cancel` | like `-slow`, but `tasks/cancel` is answered -32603, as kagent-adk 0.10.2's Python runtime does (`NotImplementedError`) |
 | `-unavailable` | HTTP 503 for every request (card included) |
 | `-drops` | its stream ends after the task and its first update; the work goes on, so the client must poll `tasks/get` (`historyLength` is recorded) |
+| `-invents` | an `assess_bid` run whose first quote is replaced by one that is in no document (`INVENTED_QUOTE`, marked `fake-invented-quote`): Soundings must show it "Not found in the document" (`quotes_not_found` 1) |
+| `-not-met` | an `assess_bid` run that finds the first must-have `not_met` (a suggestion the call managers see; it never changes the result) |
 
 Cancel ends every other agent's task `canceled`.
 
@@ -109,7 +113,9 @@ Cancel ends every other agent's task `canceled`.
 `a2a_requests` (method, `A2A-Version`, `X-User-Id`, whether an `Authorization` header or a
 cookie came, `Accept`, `historyLength` of `tasks/get`, `messageId`, whether a `contextId`
 was sent, the configuration's keys), `cancel_requests`, `message_checks`, `tool_calls`
-(tool, error code, phase), `blind`, `strays`, `late`, `final_state`. Never keys, tokens,
+(tool, error code, phase), `blind`, `strays`, `late`, `assess` (an assess run: the bid,
+the documents listed and read, pages, counts, its findings, `quotes_checked` and
+`quotes_not_found` from Soundings' answer), `final_state`. Never keys, tokens,
 message text or tool results beyond codes and flags. `e2e/scripts/fake-agent.ts` reads
 them from specs; `scripts/k3s-fake-agent.sh observations RUN_ID` in k3s.
 
@@ -119,5 +125,6 @@ them from specs; `scripts/k3s-fake-agent.sh observations RUN_ID` in k3s.
 |---|---|---|
 | 0.3 and 1.0 wire shapes, streaming order, `final`, `tasks/get` `historyLength`, cancel, error codes | its own tests (raw JSON-RPC over real sockets) and **a2a-sdk 0.3.23's client** (what kagent-adk 0.10.2 is built on; `compat/a2a_0_3_client.py`, run by the tests in an isolated uv environment): card resolution, a streamed run, `tasks/get`, `tasks/cancel` | pass |
 | Soundings' worker, API, SSE and `/mcp` end to end | `scripts/ai-smoke.sh` against the e2e stack (`E2E_AI=1`, both protocols), `make demo DEMO_AI=1`, and k3s (`make k3s-smoke AI=1`: through Traefik, with the chart's NetworkPolicies and egress rules, one and two API replicas); every behaviour above against the real backend (outcomes, retries on 503, the deadline, cancel, a cancel answered -32603, c22 refusals, rule 9, a dropped stream polled with `tasks/get` `historyLength: 1`) | pass (2026-10-06) |
+| Assess runs (Phase 10) against the real backend | `scripts/bid-smoke.sh` (`BID_AI=1`) against a local API and worker and in k3s through Traefik (`make k3s-smoke AI=1`): reads the bid and the documents' text, quotes found, never the pricing document; `-invents`' quote marked not found | pass (2026-10-13) |
 | kagent's controller in front of it (proxying, its task store, its 1.0-to-0.3 translation, `X-User-Id` sessions) | **not verified**: no kagent controller runs here (pulling kagent's 0.10.2 chart from `oci://ghcr.io` fails: its blobs are served from `pkg-containers.githubusercontent.com`, which this network's egress policy refuses, and ghcr's image layers come from there too). `deploy/kagent/fake-agent-byo.yaml` runs the fake as a BYO Agent behind a real controller when you have one |
 | An LLM following Soundings' run message | **not verified**: there is no model; Soundings enforces what matters server-side regardless |

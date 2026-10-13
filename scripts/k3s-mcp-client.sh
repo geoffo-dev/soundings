@@ -10,7 +10,7 @@
 #   MCP_KEY=sdg_... MCP_EXPECT=ok scripts/k3s-mcp-client.sh
 #
 #   MCP_KEY            the API key (read from the environment, never from arguments)
-#   MCP_EXPECT         ok: initialize (the handshake kagent's Go SDK uses), the ten
+#   MCP_EXPECT         ok: initialize (the handshake kagent's Go SDK uses), the thirteen
 #                      tools, search_ideas (MCP_QUERY, if set, must find MCP_EXPECT_KEY);
 #                      unauthorized: POST /mcp answers 401 (a revoked key);
 #                      blocked: the NetworkPolicy drops the connection (DNS still works)
@@ -84,7 +84,8 @@ HEADERS = {"Authorization": os.environ["MCP_AUTHORIZATION"]}
 QUERY, WANT_KEY = os.environ.get("MCP_QUERY", ""), os.environ.get("MCP_EXPECT_KEY", "")
 TOOLS = {"list_projects", "search_ideas", "get_idea", "create_idea", "add_comment",
          "submit_evaluation", "get_rubric", "get_proposal", "propose_proposal_section",
-         "add_research_note"}
+         "add_research_note", "get_bid_for_assessment", "get_bid_document_text",
+         "submit_bid_assessment"}
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
     "protocolVersion": "2025-06-18", "capabilities": {},
     "clientInfo": {"name": "k3s-mcp-client", "version": "1"}}}

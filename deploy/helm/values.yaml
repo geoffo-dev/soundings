@@ -266,8 +266,9 @@ kagent:
   # Example Agents (with kagent.examples): Declarative, streaming, one skill per purpose,
   # their tools from Soundings' MCP server. Register each in Admin settings > AI agents
   # (namespace = the release namespace, name = "<fullname>-evaluator" /
-  # "<fullname>-researcher") and apply the Secret manifest it shows once: it is named as
-  # keySecret's default below, so the RemoteMCPServer finds it unchanged.
+  # "<fullname>-researcher" / "<fullname>-bid-assessor") and apply the Secret manifest it
+  # shows once: it is named as keySecret's default below, so the RemoteMCPServer finds it
+  # unchanged.
   agents:
     # -- Name of an existing kagent ModelConfig (release namespace) the agents use, e.g.
     # one for Anthropic or OpenAI with its API key Secret. Required with the agents.
@@ -285,6 +286,15 @@ kagent:
       # -- "<fullname>-researcher": get_idea and get_proposal, then add_research_note
       # ("Ask AI to research") or propose_proposal_section ("Draft section"). Without a web
       # tool its sources come from the model's memory (shown "Cited by AI, not checked").
+      enabled: true
+      keySecret: ""
+      keySecretKey: authorization
+    bidAssessor:
+      # -- "<fullname>-bid-assessor" (Phase 10, purpose "Assess bids"): get_bid_for_assessment
+      # and get_bid_document_text, then submit_bid_assessment: a 0-5 score with quotes from
+      # the bid's documents for every question, a finding for every must-have (left out of
+      # the totals until a call manager includes it). Its system message treats document
+      # text as untrusted data.
       enabled: true
       keySecret: ""
       keySecretKey: authorization
@@ -366,12 +376,16 @@ worker:
   concurrency: 4
   # -- Time for running jobs to finish on shutdown.
   terminationGracePeriodSeconds: 60
+  # -- Phase 10: each worker pod reads one bid document's text at a time in a child
+  # process capped at 512 MiB of address space (the document's bytes, up to 25 MiB, and
+  # its text, up to 2,000,000 characters, pass through the worker too); keep the limit at
+  # 1Gi or more, or large documents fail to be read ("memory") or the pod is OOM-killed.
   resources:
     requests:
       cpu: 50m
-      memory: 192Mi
+      memory: 256Mi
     limits:
-      memory: 512Mi
+      memory: 1Gi
   # -- The worker serves no HTTP; add an exec probe here if you need one.
   livenessProbe: {}
   podAnnotations: {}
@@ -436,6 +450,31 @@ ingress:
     # -- e.g. {nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8"}, or for
     # Traefik {traefik.ingress.kubernetes.io/router.middlewares: <ns>-<ipallowlist>@kubernetescrd}.
     annotations: {}
+  # Bid document uploads (Phase 10): POST /api/v1/ideas/<idea>/bid-call/bids/<bid>/documents
+  # is the only route that takes more than 1 MiB: the raw file, up to 25 MiB, read within
+  # 120 s. The app enforces both itself and keeps 1 MiB everywhere else. With enabled (and
+  # ingress.enabled), a fourth Ingress "<fullname>-uploads" for that path only, with the
+  # class, hosts and TLS above and only these annotations. The defaults are for
+  # ingress-nginx, whose default proxy-body-size (1m) would refuse every upload over
+  # 1 MiB: 26m on this path only, request buffering off (the app refuses an anonymous or
+  # oversized upload before reading it, and no copy lands on the controller's disk) and
+  # 180 s timeouts. Other controllers ignore these annotations; Traefik has no body limit
+  # (its entryPoint's readTimeout, 60 s by default since v2.11.2, must allow a slow
+  # upload: chart README, "Bid evaluation"). For another controller set path, pathType
+  # and annotations in its syntax, or enabled: false and route the path yourself.
+  uploads:
+    enabled: true
+    # -- The upload path as the controller matches it: by default a regular expression for
+    # ingress-nginx's use-regex (which then applies to every path of these hosts).
+    path: /api/v1/ideas/[^/]+/bid-call/bids/[^/]+/documents$
+    # -- Prefix, Exact or ImplementationSpecific (a regular expression needs the last).
+    pathType: ImplementationSpecific
+    annotations:
+      nginx.ingress.kubernetes.io/use-regex: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: 26m
+      nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "180"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "180"
 
 # Gateway API HTTPRoute (alternative to ingress; needs the Gateway API CRDs).
 httpRoute:
@@ -467,7 +506,10 @@ securityContext:
     drop:
       - ALL
 
-# -- Size limit of the writable /tmp (emptyDir) in app pods.
+# -- Size limit of the writable /tmp (emptyDir) in app pods: fontconfig's cache and PDF
+# exports' temporary font files. Bid document uploads are read into memory (at most two
+# at a time per API pod) and text extraction writes no file (its child only gets an empty
+# folder here), so Phase 10 needs no more.
 tmpSizeLimit: 256Mi
 
 podLabels: {}

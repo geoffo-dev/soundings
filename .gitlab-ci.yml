@@ -812,9 +812,11 @@ e2e:sso:
 # sign-on through the ingress against Keycloak in the cluster, email to Mailpit in
 # the cluster with egress NetworkPolicies (an invited evaluator's email; an SMTP outage
 # while Mailpit is scaled to 0, then delivery once it is back), and the MCP server
-# through the ingress and from another namespace (API keys, tools, revoke), and AI
+# through the ingress and from another namespace (API keys, tools, revoke), AI
 # assistance against Soundings' fake kagent agent in kagent's place with kagent v0.10.2's
-# CRDs (the example agents validated and created; an AI evaluation end to end).
+# CRDs (the example agents validated and created; an AI evaluation end to end), and calls
+# for bids (scripts/bid-smoke.sh via k3s-smoke.sh: uploads through the ingress, the
+# worker's text extraction, blind assessments, the report; with AI=1 an AI assessment).
 k3s:install-upgrade:
   extends: .dind
   stage: deploy-test

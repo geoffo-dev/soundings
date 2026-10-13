@@ -19,6 +19,14 @@ logLevel: DEBUG
 ingress:
   enabled: true
   className: traefik
+  # Bid document uploads through a router of their own (the chart README's Traefik v2
+  # recipe: Path with regular expressions). scripts/k3s-install.sh attaches
+  # dev/k3s/uploads-route.yaml, a middleware that marks its responses for the bid smoke.
+  # Traefik ignores the chart's ingress-nginx annotations.
+  uploads:
+    path: /api/v1/ideas/{idea:[^/]+}/bid-call/bids/{bid:[^/]+}/documents
+    annotations:
+      traefik.ingress.kubernetes.io/router.pathmatcher: Path
 
 # The smoke tests (scripts/public-smoke.sh) and demos send the public form from one
 # address; the app's default is 10 an hour. (scripts/k3s-install.sh also puts a Traefik

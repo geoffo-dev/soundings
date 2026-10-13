@@ -223,7 +223,7 @@ Configuration
 
 {{/* An example agent's (dict "ctx" $ "agent" "evaluator") name and key Secret. */}}
 {{- define "soundings.exampleAgentName" -}}
-{{- printf "%s-%s" (include "soundings.fullname" .ctx) .agent }}
+{{- printf "%s-%s" (include "soundings.fullname" .ctx) (kebabcase .agent) }}
 {{- end }}
 
 {{- define "soundings.exampleAgentKeySecret" -}}
@@ -701,8 +701,8 @@ Validation (errors a JSON schema cannot express)
 {{- if and .Values.kagent.examples (not .Values.kagent.enabled) }}
 {{- fail "kagent.examples needs kagent.enabled=true (and kagent's CRDs in the cluster)" }}
 {{- end }}
-{{- if and .Values.kagent.examples (or .Values.kagent.agents.evaluator.enabled .Values.kagent.agents.researcher.enabled) (not .Values.kagent.agents.modelConfig) }}
-{{- fail "kagent.agents.modelConfig is required with kagent.examples: the name of an existing kagent ModelConfig in the release namespace (or turn off kagent.agents.evaluator.enabled and .researcher.enabled)" }}
+{{- if and .Values.kagent.examples (or .Values.kagent.agents.evaluator.enabled .Values.kagent.agents.researcher.enabled .Values.kagent.agents.bidAssessor.enabled) (not .Values.kagent.agents.modelConfig) }}
+{{- fail "kagent.agents.modelConfig is required with kagent.examples: the name of an existing kagent ModelConfig in the release namespace (or turn off kagent.agents.evaluator.enabled, .researcher.enabled and .bidAssessor.enabled)" }}
 {{- end }}
 {{- if and .Values.kagent.examples .Values.kagent.agentNamespaces (not (has .Release.Namespace .Values.kagent.agentNamespaces)) }}
 {{- fail (printf "kagent.examples renders its agents in the release namespace (%s): add it to kagent.agentNamespaces, or they can't be registered" .Release.Namespace) }}

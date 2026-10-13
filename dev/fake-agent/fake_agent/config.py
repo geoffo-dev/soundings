@@ -29,6 +29,8 @@ BEHAVIOURS = (
     "no-cancel",
     "unavailable",
     "drops",
+    "invents",
+    "not-met",
 )
 """What an agent does (README.md): by the suffix of its name (``idea-evaluator-slow``)
 or set per agent in ``FAKE_AGENT_BEHAVIOURS``; ``normal`` otherwise."""

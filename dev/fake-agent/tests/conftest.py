@@ -32,6 +32,12 @@ AGENTS = (
     "idea-evaluator-no-cancel",
     "idea-evaluator-unavailable",
     "idea-evaluator-drops",
+    "bid-assessor",
+    "bid-assessor-invents",
+    "bid-assessor-not-met",
+    "bid-assessor-strays",
+    "bid-assessor-blind-probe",
+    "bid-assessor-slow",
 )
 
 
@@ -163,13 +169,21 @@ def run_message(
     run_id: str | None = None,
     idea: str = IDEA,
     section_key: object = None,
+    bid_id: object = None,
     protocol: str = "0.3",
 ) -> tuple[str, dict[str, Any]]:
-    """A run's message as Soundings builds it (contract-phase6 section 3.4)."""
+    """A run's message as Soundings builds it (contract-phase6 section 3.4; Phase 10's
+    assess runs add ``bid_id``)."""
     run_id = run_id or str(uuid.uuid4())
-    metadata = {
-        "soundings": {"run_id": run_id, "kind": kind, "idea": idea, "section_key": section_key}
+    reference: dict[str, Any] = {
+        "run_id": run_id,
+        "kind": kind,
+        "idea": idea,
+        "section_key": section_key,
     }
+    if bid_id is not None:
+        reference["bid_id"] = bid_id
+    metadata = {"soundings": reference}
     text = f"Soundings AI run {run_id} ({kind}) for idea {idea}."
     if protocol == "0.3":
         message: dict[str, Any] = {

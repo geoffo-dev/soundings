@@ -5,14 +5,18 @@
 # break-glass available, sign in with the credentials from its Secret; the public form,
 # branding and proposal export (scripts/public-smoke.sh: the public project and its logo,
 # and with the dev login an anonymous idea with a solved ALTCHA, approved, shortlisted,
-# its proposal exported as PDF in the API pod and as Markdown, then deleted); with
+# its proposal exported as PDF in the API pod and as Markdown, then deleted); calls for
+# bids (scripts/bid-smoke.sh through the ingress: bids, PDF/DOCX/CSV uploads to the
+# 25 MiB route with the refused ones, the worker's text extraction, must-haves, reject and
+# reinstate, assessors, blind assessments, the comparison and report, the award; with
+# AI=1 also an AI assessment by the fake agent as the chart's example bid assessor); with
 # SSO=1, the single sign-on acceptance through the ingress and the cluster's Keycloak
 # (scripts/sso-smoke.sh: code flow, groups -> project access, removal at the next
 # sign-in, sign-out at the IdP); with SMTP=1, email through the cluster's Mailpit
 # (scripts/email-smoke.sh: an invited evaluator gets the branded email with the evaluate
 # link; with Mailpit scaled to 0 the next one waits in the outbox and arrives, once, when
 # it is back); with MCP=1, the MCP server (scripts/mcp-smoke.sh through the ingress:
-# a key, initialize, the nine tools, blind search and get_idea, submit_evaluation, the
+# a key, initialize, the thirteen tools, blind search and get_idea, submit_evaluation, the
 # key's project restriction and scopes, the audit trail, revoke -> 401; and an MCP SDK
 # client in a pod of the "kagent" namespace calling the Service URL, before and after
 # the revoke: scripts/k3s-mcp-client.sh), plus, when the API's NetworkPolicy restricts
@@ -31,6 +35,8 @@
 #   SMTP=1            also the email checks (after `make k3s-mailpit k3s-install SMTP=1`)
 #   MCP=1             also the MCP checks (after `make k3s-install MCP=1`)
 #   AI=1              also the AI checks (after `make k3s-fake-agent k3s-install AI=1`)
+#   BID_SLOW_UPLOAD=1 the bid smoke also uploads slowly for about 80 s (Traefik's
+#                     readTimeout: scripts/k3s-up.sh raises it to 180 s)
 #   PROD=1            the production checks (after `make k3s-install PROD=1`): no dev
 #                     login, the break-glass admin as the way in, __Host- cookies, the API's
 #                     map for signed-in callers only, /metrics off the app port, a
@@ -285,6 +291,24 @@ if [ "$PROD" != "1" ]; then
   CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
     ALTCHA_PYTHON="docker exec -i $K3S_NAME kubectl -n $NAMESPACE exec -i $deployment -c api -- python" \
     "$(dirname "$0")/public-smoke.sh" "$BASE_URL" || failed=1
+  # Calls for bids (demo data and the dev login, like the public form). With AI=1 the
+  # assessor is the chart's example Agent <fullname>-bid-assessor (kagent.examples), its
+  # key handed to the fake kagent as for ai-smoke.sh below.
+  here="$(cd "$(dirname "$0")" && pwd)"
+  fullname="${deployment##*/}"
+  fullname="${fullname%-api}"
+  bid_ai=(BID_AI=0)
+  if [ "${AI:-0}" = "1" ]; then
+    bid_ai=(BID_AI=1 AI_AGENT_NAMESPACE="$NAMESPACE" BID_AI_AGENT_NAME="$fullname-bid-assessor"
+      AI_KEY_HOOK="$here/k3s-fake-agent.sh key" AI_OBSERVATIONS="$here/k3s-fake-agent.sh observations")
+  fi
+  upload_header=()
+  if kubectl -n "$NAMESPACE" get middleware.traefik.io uploads-route >/dev/null 2>&1; then
+    upload_header=(BID_UPLOAD_HEADER="X-Soundings-Route: uploads")
+  fi
+  env RELEASE="$RELEASE" NAMESPACE="$NAMESPACE" CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
+    BID_SLOW_UPLOAD="${BID_SLOW_UPLOAD:-0}" "${bid_ai[@]}" ${upload_header[@]+"${upload_header[@]}"} \
+    "$here/bid-smoke.sh" "$BASE_URL" || failed=1
 fi
 
 # The edge rate limit on the public form's API (the chart's second Ingress with the

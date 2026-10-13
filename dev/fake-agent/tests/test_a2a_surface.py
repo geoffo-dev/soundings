@@ -28,6 +28,7 @@ def test_card_is_kagent_like(agent: Agent) -> None:
         "evaluate-idea",
         "research-idea",
         "draft-section",
+        "assess-bid",
     }
 
 

@@ -101,11 +101,15 @@ fi
 
 # An edge rate limit for the public form's API (dev/k3s/public-ratelimit.yaml), attached
 # through the chart's second Ingress, when Traefik's CRDs are there (k3s ships them).
+# The bid document upload route's own router gets a middleware that marks its responses
+# (dev/k3s/uploads-route.yaml; scripts/bid-smoke.sh checks for it).
 edge_args=()
 if kubectl get crd middlewares.traefik.io >/dev/null 2>&1; then
   kubectl -n "$NAMESPACE" apply -f - <"$REPO_ROOT/dev/k3s/public-ratelimit.yaml" >/dev/null
-  edge_args=(--set-string "ingress.publicApi.annotations.traefik\\.ingress\\.kubernetes\\.io/router\\.middlewares=$NAMESPACE-public-ratelimit@kubernetescrd")
-  values_label="$values_label + Traefik rate limit on /api/v1/public"
+  kubectl -n "$NAMESPACE" apply -f - <"$REPO_ROOT/dev/k3s/uploads-route.yaml" >/dev/null
+  edge_args=(--set-string "ingress.publicApi.annotations.traefik\\.ingress\\.kubernetes\\.io/router\\.middlewares=$NAMESPACE-public-ratelimit@kubernetescrd"
+    --set-string "ingress.uploads.annotations.traefik\\.ingress\\.kubernetes\\.io/router\\.middlewares=$NAMESPACE-uploads-route@kubernetescrd")
+  values_label="$values_label + Traefik rate limit on /api/v1/public, a marked upload route"
 fi
 
 log "helm upgrade --install $RELEASE (namespace $NAMESPACE, values $values_label)"

@@ -237,6 +237,16 @@ jobs:
         env:
           AI_FAKE_KEYS_DIR: dev/.fake-agent-keys
           AI_FAKE_URL: http://127.0.0.1:8027
+      # Calls for bids against the same image: bids, PDF/DOCX/CSV uploads (a macro file and
+      # a file over 25 MiB refused), the worker's text extraction, must-haves, reject and
+      # reinstate, blind assessments, the comparison and report, an AI assessment by the
+      # fake agent with its quotes checked, the award.
+      - if: steps.e2e.outputs.present == 'true'
+        run: scripts/bid-smoke.sh http://localhost:8000
+        env:
+          BID_AI: "1"
+          AI_FAKE_KEYS_DIR: dev/.fake-agent-keys
+          AI_FAKE_URL: http://127.0.0.1:8027
       - if: failure() && steps.e2e.outputs.present == 'true'
         run: |
           docker logs soundings-demo-app

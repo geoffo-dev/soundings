@@ -535,6 +535,25 @@
                   "maxLength": 253
                 }
               }
+            },
+            "bidAssessor": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "keySecret": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+                  "maxLength": 253
+                },
+                "keySecretKey": {
+                  "type": "string",
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "maxLength": 253
+                }
+              }
             }
           }
         }
@@ -943,6 +962,37 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "annotations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "uploads": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The bid document upload route's own Ingress (Phase 10): rendered with ingress.enabled.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^/",
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "The upload path in the controller's syntax (default: an ingress-nginx regular expression)."
+            },
+            "pathType": {
+              "type": "string",
+              "enum": [
+                "Prefix",
+                "Exact",
+                "ImplementationSpecific"
+              ]
+            },
             "annotations": {
               "type": "object",
               "additionalProperties": {

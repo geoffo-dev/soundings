@@ -47,6 +47,11 @@ AI_BASE_URL ?= http://localhost:8000
 AI_FAKE_KEYS_DIR ?= $(CURDIR)/dev/.fake-agent-keys
 AI_FAKE_URL ?= http://localhost:$(SOUNDINGS_DEV_FAKE_AGENT_PORT)
 SOUNDINGS_DEV_FAKE_AGENT_PORT ?= 8083
+# `make bid-smoke` runs against this app (demo data, dev login and the worker; with
+# features.ai and the fake agent also an AI assess run, keys in AI_FAKE_KEYS_DIR;
+# BID_AI=0 skips that part, BID_AI=1 requires it).
+BID_BASE_URL ?= http://localhost:8000
+BID_AI ?= auto
 
 # Continuous delivery (docs/operator-guide.md "Continuous delivery"): `make deploy ENV=staging`
 # runs scripts/deploy.sh against the current kubeconfig context (helm 3.16+, kubectl, curl;
@@ -67,7 +72,7 @@ build_ca_flag = $(if $(wildcard $(BUILD_CA)),--secret id=build_ca$(comma)src=$(B
 .PHONY: help dev-up dev-down dev-logs dev check check-backend check-frontend check-helm \
         check-scripts check-fake-agent e2e image fake-agent-image demo demo-down k3s-up k3s-load \
         k3s-keycloak k3s-mailpit k3s-fake-agent k3s-kagent-crds k3s-install k3s-smoke k3s-down \
-        openapi gen-api seed sso-smoke email-smoke public-smoke mcp-smoke ai-smoke \
+        openapi gen-api seed sso-smoke email-smoke public-smoke mcp-smoke ai-smoke bid-smoke \
         check-workflows check-migrations deploy deploy-rollback deploy-smoke deploy-status deploy-tools-image \
         deploy-runner-image k3s-deploy
 
@@ -167,7 +172,7 @@ k3s-install: k3s-load ## Load the image (IMAGE) and helm upgrade --install it (d
 	image='$(IMAGE)'; SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' AI='$(AI)' PROD='$(PROD)' scripts/k3s-install.sh \
 	  --set image.repository="$${image%:*}" --set image.tag="$${image##*:}"
 
-k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, then helm test (SSO=1: + SSO flow; SMTP=1: + email; MCP=1: + MCP, in-cluster client; AI=1: + AI runs; PROD=1: production checks)
+k3s-smoke: ## Curl /healthz, /readyz and / through the ingress, public form + PDF export, bids (uploads, extraction, assessing), then helm test (SSO=1: + SSO flow; SMTP=1: + email; MCP=1: + MCP, in-cluster client; AI=1: + AI runs, an AI bid assessment; PROD=1: production checks)
 	SSO='$(SSO)' SMTP='$(SMTP)' MCP='$(MCP)' AI='$(AI)' PROD='$(PROD)' scripts/k3s-smoke.sh
 
 k3s-down: ## Delete the local k3s cluster
@@ -209,6 +214,9 @@ mcp-smoke: ## API key -> /mcp: tools, blind search, submit an evaluation, projec
 
 ai-smoke: ## Register an agent, "Ask AI to evaluate" -> cited AI evaluation left out of the aggregate, research, draft, cancel (AI_BASE_URL, fake agent)
 	AI_FAKE_KEYS_DIR='$(AI_FAKE_KEYS_DIR)' AI_FAKE_URL='$(AI_FAKE_URL)' scripts/ai-smoke.sh $(AI_BASE_URL)
+
+bid-smoke: ## Call for bids: bids, PDF/DOCX/CSV uploads (refused macro/oversized), extraction, must-haves, reject/reinstate, assessors, blind, comparison, report, AI assess, award (BID_BASE_URL)
+	BID_AI='$(BID_AI)' AI_FAKE_KEYS_DIR='$(AI_FAKE_KEYS_DIR)' AI_FAKE_URL='$(AI_FAKE_URL)' scripts/bid-smoke.sh $(BID_BASE_URL)
 
 # --- API contract ------------------------------------------------------------------------
 openapi: ## Export the backend's OpenAPI document to $(OPENAPI_JSON)

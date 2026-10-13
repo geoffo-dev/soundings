@@ -151,6 +151,12 @@ def agent_card(base_url: str, namespace: str, name: str, layout: str) -> AgentCa
                 description="Suggests text for one section of a Soundings proposal.",
                 tags=["soundings"],
             ),
+            AgentSkill(
+                id="assess-bid",
+                name="Assess bid",
+                description="Scores a bid with quotes from its documents; checks must-haves.",
+                tags=["soundings"],
+            ),
         ],
     )
 

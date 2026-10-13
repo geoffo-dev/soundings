@@ -10,6 +10,8 @@
 # networks with a TLS-intercepting proxy.
 # Where the kernel refuses negative oom_score_adj even to privileged containers (some
 # VM sandboxes), containerd is configured with restrict_oom_score_adj so pods can start.
+# K3S_TRAEFIK_READ_TIMEOUT (default 180s): the bundled Traefik's entryPoint readTimeout (a
+# whole request, body included; Traefik's default 60 s cuts slow bid document uploads).
 # K3S_EVICTION_HARD (default imagefs.available<1Gi,nodefs.available<1Gi): the kubelet's
 # disk eviction thresholds. Its defaults are percentages (5-15 % of the disk), which on a
 # large, shared build disk evict every pod while gigabytes are still free.
@@ -23,6 +25,7 @@ K3S_REGISTRY_MIRROR="${K3S_REGISTRY_MIRROR-https://mirror.gcr.io}"
 K3S_EXTRA_CA="${K3S_EXTRA_CA-${SSL_CERT_FILE:-}}"
 K3S_EVICTION_HARD="${K3S_EVICTION_HARD:-imagefs.available<1Gi,nodefs.available<1Gi}"
 K3S_WAIT_SECONDS="${K3S_WAIT_SECONDS:-300}"
+K3S_TRAEFIK_READ_TIMEOUT="${K3S_TRAEFIK_READ_TIMEOUT:-180s}"
 
 # k3s's generated containerd config (containerd 1.7, config version 2) plus
 # restrict_oom_score_adj. Only used when needed (see below).
@@ -75,7 +78,8 @@ printf '*\n' > "$REPO_ROOT/.k3s/.gitignore"
 # bind-mounted), so this also works against a remote Docker daemon (docker:dind in CI).
 rootfs="$K3S_DIR/rootfs"
 rm -rf "$rootfs"
-mkdir -p "$rootfs/etc/rancher/k3s" "$rootfs/var/lib/rancher/k3s/agent/etc/containerd"
+mkdir -p "$rootfs/etc/rancher/k3s" "$rootfs/var/lib/rancher/k3s/agent/etc/containerd" \
+  "$rootfs/var/lib/rancher/k3s/server/manifests"
 ca_config=""
 if [ -n "$K3S_EXTRA_CA" ] && [ -f "$K3S_EXTRA_CA" ]; then
   cp "$K3S_EXTRA_CA" "$rootfs/etc/rancher/k3s/extra-ca.crt"
@@ -101,6 +105,23 @@ fi
     done
   fi
 } > "$rootfs/etc/rancher/k3s/registries.yaml"
+
+# Traefik reads a whole request, body included, within its entryPoint's readTimeout: 60 s
+# by default since v2.11.2 (k3s v1.31 ships 2.11.10), which cuts a 25 MiB bid document
+# upload on a slow link (the app allows 120 s). The chart README's advice, for this
+# cluster: k3s's own HelmChartConfig for its bundled Traefik.
+cat > "$rootfs/var/lib/rancher/k3s/server/manifests/traefik-config.yaml" <<YAML
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    additionalArguments:
+      - "--entrypoints.web.transport.respondingtimeouts.readtimeout=$K3S_TRAEFIK_READ_TIMEOUT"
+      - "--entrypoints.websecure.transport.respondingtimeouts.readtimeout=$K3S_TRAEFIK_READ_TIMEOUT"
+YAML
 
 log "starting k3s '$K3S_NAME' ($K3S_IMAGE): API on $K3S_BIND_ADDRESS:$K3S_API_PORT, HTTP on $K3S_BIND_ADDRESS:$K3S_HTTP_PORT"
 docker create --name "$K3S_NAME" --hostname "$K3S_NAME" \
