@@ -60,6 +60,11 @@ import { defineConfig, devices } from '@playwright/test'
  * seeded story: bob researches TOOLS-12 as its guest, alice's GREEN-5 is overdue). `npm
  * run screenshots:phase8b` (SCREENSHOTS=phase-8b) runs screenshots/phase-8b.spec.ts
  * (docs/screenshots/phase-8b/, with emails/).
+ *
+ * Phase 10: calls for bids need nothing new to run (tests/support/bids.ts arranges calls in
+ * projects of their own; BD-06, BD-08, BD-10, BD-11 and the a11y spec read the seeded
+ * TOOLS-3 call; BD-13 is @ai). `npm run screenshots:phase10` (SCREENSHOTS=phase-10) runs
+ * screenshots/phase-10.spec.ts (docs/screenshots/phase-10/, with emails/ and pdf/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -79,9 +84,11 @@ const screenshotSpec =
               ? /screenshots\/phase-8\.spec\.ts$/
               : process.env.SCREENSHOTS === 'phase-8b'
                 ? /screenshots\/phase-8b\.spec\.ts$/
-                : process.env.SCREENSHOTS === 'tour'
-                  ? /screenshots\/tour\.spec\.ts$/
-                  : /screenshots\/phase-1\.spec\.ts$/
+                : process.env.SCREENSHOTS === 'phase-10'
+                  ? /screenshots\/phase-10\.spec\.ts$/
+                  : process.env.SCREENSHOTS === 'tour'
+                    ? /screenshots\/tour\.spec\.ts$/
+                    : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/

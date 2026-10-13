@@ -9,7 +9,9 @@
  * agent that has a key file `<namespace>.<name>` in E2E_FAKE_AGENT_KEYS_DIR (default
  * e2e/.stack/fake-agent-keys); what an agent does depends on its name's suffix
  * (dev/fake-agent/README.md: -slow, -lingers, -fails, -silent, -asks, -rejects,
- * -blind-probe, -strays, -late, -no-cancel, -unavailable, -drops).
+ * -blind-probe, -strays, -late, -no-cancel, -unavailable, -drops; Phase 10's assess runs
+ * also -invents, one quote that is in no document, and -not-met, the first must-have not
+ * met).
  *
  * In a spec, after registering an agent (its key is shown once):
  *
@@ -80,7 +82,7 @@ export interface FakeRun {
   run_id: string
   agent?: string
   behaviour?: string
-  kind?: 'evaluate' | 'research' | 'draft_section'
+  kind?: 'evaluate' | 'research' | 'draft_section' | 'assess_bid'
   idea?: string
   section_key?: string | null
   task_id?: string
@@ -98,6 +100,22 @@ export interface FakeRun {
   late: { at: string; tool: string; error_code: string | null } | null
   cancel_requests: number
   final_state: string | null
+  /** Phase 10, an assess run: what it listed and read of the bid and what it submitted. */
+  assess?: {
+    at: string
+    bid_id: string
+    documents_listed: string[]
+    documents_read: string[]
+    pages_read: number
+    questions: number
+    must_haves: number
+    quotes: number
+    invented: boolean
+    findings: Record<string, string>
+    error_code: string | null
+    quotes_checked?: number | null
+    quotes_not_found?: number | null
+  } | null
 }
 
 export class FakeAgent {

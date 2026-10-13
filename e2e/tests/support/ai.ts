@@ -127,7 +127,8 @@ export async function retireAgents(admin: Api, agents: RegisteredAgent[]) {
   }
 }
 
-const RUN_PATH: Record<AiRunKind, string> = {
+// Phase 10's `assess_bid` runs are asked for on a bid (tests/support/bids.ts), not here.
+const RUN_PATH: Record<Exclude<AiRunKind, 'assess_bid'>, string> = {
   evaluate: 'evaluation',
   research: 'research',
   draft_section: 'section-draft',
@@ -137,7 +138,7 @@ const RUN_PATH: Record<AiRunKind, string> = {
 export function requestRun(
   api: Api,
   key: string,
-  kind: AiRunKind,
+  kind: Exclude<AiRunKind, 'assess_bid'>,
   agentId: string,
   sectionKey?: string,
 ) {
@@ -150,7 +151,7 @@ export function requestRun(
 export async function askAgent(
   api: Api,
   key: string,
-  kind: AiRunKind,
+  kind: Exclude<AiRunKind, 'assess_bid'>,
   agentId: string,
   sectionKey?: string,
 ): Promise<AiRun> {

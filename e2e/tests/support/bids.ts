@@ -112,7 +112,12 @@ export function bidCall(api: Api, key: string): Promise<BidCallView> {
   return api.get(callPath(key))
 }
 
-export function startCall(api: Api, key: string, title: string, description = ''): Promise<BidCallView> {
+export function startCall(
+  api: Api,
+  key: string,
+  title: string,
+  description = '',
+): Promise<BidCallView> {
   return api.send('POST', callPath(key), { title, description, currency: 'GBP' }, 201)
 }
 
@@ -140,7 +145,13 @@ export function closeToBids(api: Api, key: string): Promise<BidCallView> {
 export function enterBid(
   api: Api,
   key: string,
-  body: { bidder: string; price?: string; contact_name?: string; contact_email?: string; notes?: string },
+  body: {
+    bidder: string
+    price?: string
+    contact_name?: string
+    contact_email?: string
+    notes?: string
+  },
 ): Promise<Bid> {
   return api.send('POST', `${callPath(key)}/bids`, body, 201)
 }
@@ -232,11 +243,7 @@ export async function completeBid(
         'invitation, for the total price set out in our pricing schedule. We accept the ' +
         "buyer's standard terms and conditions without amendment.",
     ],
-    [
-      'pricing',
-      'pricing-schedule.csv',
-      `item,amount\nBuild,${price}\nTotal,${price}\n`,
-    ],
+    ['pricing', 'pricing-schedule.csv', `item,amount\nBuild,${price}\nTotal,${price}\n`],
     [
       'insurance',
       'insurance-certificate.txt',
@@ -269,7 +276,9 @@ export async function setAssessors(
     call.template.sections.map(async (candidate) => ({
       section_id: candidate.id,
       user_ids: await Promise.all(
-        (bySection[candidate.title] ?? []).map(async (person) => (await userOf(api.baseURL, person)).id),
+        (bySection[candidate.title] ?? []).map(
+          async (person) => (await userOf(api.baseURL, person)).id,
+        ),
       ),
     })),
   )
@@ -291,7 +300,7 @@ export async function assess(
 ): Promise<MyBidAssessment> {
   const target = section(call, title)
   const scored = target.questions.filter((question) => question.type === 'score')
-  const answers = target.questions.flatMap((question) => {
+  const answers = target.questions.flatMap((question): Record<string, unknown>[] => {
     if (question.type === 'score') {
       return [{ question_id: question.id, score: scores[scored.indexOf(question)] ?? null }]
     }

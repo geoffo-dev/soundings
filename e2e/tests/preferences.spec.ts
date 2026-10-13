@@ -28,7 +28,7 @@ const row = (page: Page, label: string) =>
 async function openPreferences(page: Page) {
   await page.goto('/settings/notifications')
   await expect(page.getByRole('heading', { level: 2, name: 'Email notifications' })).toBeVisible()
-  await expect(page.getByRole('radiogroup')).toHaveCount(9)
+  await expect(page.getByRole('radiogroup')).toHaveCount(12) // twelve types since Phase 10
 }
 
 async function choose(page: Page, label: string, mode: 'Immediate' | 'Daily digest' | 'Off') {

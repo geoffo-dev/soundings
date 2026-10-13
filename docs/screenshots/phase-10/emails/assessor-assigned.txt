@@ -1,0 +1,27 @@
+Soundings
+=========
+
+Please assess the bids
+
+Alice Anders asked you to assess the bids in the call for bids “Bike shed build” on:
+
+E995I2-1 · Facilities E995I2
+Covered bike shed by the car park
+Status: Proposal
+http://localhost:8100/ideas/E995I2-1
+
+Your section: Delivery
+
+Due Mon 19 Oct, 18:00 (Europe/London)
+
+Score your sections for every bid on the idea's Bids tab. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours.
+
+Open the bids: http://localhost:8100/ideas/E995I2-1?tab=bids
+
+-- 
+You're assessing bids for E995I2-1.
+Email preferences: http://localhost:8100/settings/notifications
+Unsubscribe from bid assessment requests: http://localhost:8100/unsubscribe?token=eyJ2IjoxLCJ1IjoiYjMyM2JkMjYtOTZkYS00YmZiLWI2ZmUtZWQ0ZGUxMjQ1MjIxIiwicyI6ImFzc2Vzc29yX2Fzc2lnbmVkIn0.W7ovFIyoxw0Lj1sjjMFPs3z9CvDF4fxHt3K7U9gMARo
+Unsubscribe from all email: http://localhost:8100/unsubscribe?token=eyJ2IjoxLCJ1IjoiYjMyM2JkMjYtOTZkYS00YmZiLWI2ZmUtZWQ0ZGUxMjQ1MjIxIiwicyI6ImFsbCJ9.KID14M9qDvi_FRygRCx_fQKNv0t6ALpnyYlgItsAc3w
+Soundings demo · Example Retail Ltd
+1 Example Street, London EC1A 1AA

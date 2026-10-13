@@ -14,17 +14,24 @@ import { expect, request, type APIRequestContext, type APIResponse } from '@play
  */
 
 export const PROTOCOL_VERSION = '2025-11-25'
-/** `tools/list`, sorted: ten since Phase 6 (`add_research_note`: agents only, in a research run). */
+/**
+ * `tools/list`, sorted: ten since Phase 6 (`add_research_note`: agents only, in a research
+ * run), thirteen since Phase 10 (the AI assessor's three bid tools: agents only, in an
+ * assess run; people get `forbidden`).
+ */
 export const TOOL_NAMES = [
   'add_comment',
   'add_research_note',
   'create_idea',
+  'get_bid_document_text',
+  'get_bid_for_assessment',
   'get_idea',
   'get_proposal',
   'get_rubric',
   'list_projects',
   'propose_proposal_section',
   'search_ideas',
+  'submit_bid_assessment',
   'submit_evaluation',
 ]
 
