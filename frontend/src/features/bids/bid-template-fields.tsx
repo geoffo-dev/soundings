@@ -437,7 +437,11 @@ function QuestionList({
                   error={error(`${question.id}:text`)}
                   id={fieldId(question.id, 'text')}
                 >
-                  <Input
+                  {/* Wraps instead of scrolling out of view on a phone (P10-QA-N8). */}
+                  <Textarea
+                    singleLine
+                    minRows={1}
+                    maxRows={4}
                     value={question.text}
                     maxLength={TEMPLATE_LIMITS.questionText + 10}
                     placeholder="The question assessors answer"
@@ -483,15 +487,25 @@ function QuestionList({
                     error={error(`${question.id}:weight`)}
                     id={fieldId(question.id, 'weight')}
                   >
-                    <Input
-                      value={question.weight}
-                      inputMode="numeric"
-                      autoComplete="off"
-                      className="tabular-nums"
-                      onChange={(e) => onUpdate(question.id, { weight: e.target.value })}
-                      onBlur={blur(`${question.id}:weight`)}
-                      {...keys}
-                    />
+                    {/* "× 2", as the call's sections show it, with its name on phones,
+                        where the fields stack (P10-QA-N8). */}
+                    <div className="flex items-center gap-2">
+                      <span aria-hidden="true" className="text-sm text-muted sm:hidden">
+                        Weight
+                      </span>
+                      <span aria-hidden="true" className="text-sm text-muted">
+                        ×
+                      </span>
+                      <Input
+                        value={question.weight}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        className="tabular-nums max-sm:w-20"
+                        onChange={(e) => onUpdate(question.id, { weight: e.target.value })}
+                        onBlur={blur(`${question.id}:weight`)}
+                        {...keys}
+                      />
+                    </div>
                   </Field>
                 )}
                 <RowControls

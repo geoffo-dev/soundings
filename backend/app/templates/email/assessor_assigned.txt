@@ -14,5 +14,5 @@ Your {% if sections|length == 1 %}section{% else %}sections{% endif %}: {{ secti
 Due {{ due }}
 {% endif %}
 
-Score your sections for every bid on the idea's Bids tab. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours.
+Score your {% if sections|length == 1 %}section{% else %}sections{% endif %} for every bid on the idea's Bids tab. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours.
 {%- endblock %}

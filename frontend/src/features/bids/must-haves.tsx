@@ -201,7 +201,11 @@ function MustHaveRow({
             {decided && state.decided_by && (
               <>
                 {' '}
-                · {copy.label.toLowerCase()} per {state.decided_by.display_name}{' '}
+                ·{' '}
+                {mustHave.kind === 'confirmation' && result === 'met'
+                  ? 'confirmed'
+                  : `marked ${copy.label.toLowerCase()}`}{' '}
+                by {state.decided_by.display_name}{' '}
                 {state.decided_at && <RelativeTime date={state.decided_at} />}
               </>
             )}

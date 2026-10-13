@@ -968,7 +968,7 @@ every client looks like the ingress controller and shares one failure budget.
 ### Checking it
 
 `make mcp-smoke` (`scripts/mcp-smoke.sh <base URL>`, needs dev login and the demo data)
-runs the acceptance with curl: a key, `initialize`, the ten tools listed, blind results,
+runs the acceptance with curl: a key, `initialize`, the thirteen tools listed, blind results,
 `not_found` outside the key's projects, `insufficient_scope`, a foreign `Origin`, the
 audit entries, then revoke and 401 on the next call. On k3s, `make k3s-install MCP=1` and
 `make k3s-smoke MCP=1` also run an MCP client in a pod of another namespace with its key in
@@ -1189,12 +1189,23 @@ more than 1 MiB: the raw file as the body, up to 25 MiB, within 120 seconds (408
 `upload_timeout` after that). The app enforces both itself, counting the bytes as they
 arrive (a body longer than its `Content-Length`, or a chunked one, is cut off at the
 limit), and keeps 1 MiB everywhere else. Your ingress must let that one path through:
-a body of 25 MiB plus headers (26 MiB is enough) and a read timeout of at least 120 s,
-without raising the limit for the rest of the API. The chart's own ingress does this
-(see the [chart README](../deploy/helm/README.md)); with a proxy of your own, give the
-path its own rule (ingress-nginx: a second Ingress for the path with
-`nginx.ingress.kubernetes.io/proxy-body-size: 26m` and `proxy-read-timeout: "180"`;
-Traefik: a `Buffering` middleware with `maxRequestBodyBytes` on a router for the path).
+a body of 25 MiB plus headers (26 MiB is enough) and a read timeout of at least 180 s,
+without raising the limit for the rest of the API.
+
+- **ingress-nginx** (body limit `1m` by default): the chart's `ingress.uploads` (on by
+  default with `ingress.enabled`) adds a fourth Ingress, `<release>-soundings-uploads`,
+  for that path only, with `proxy-body-size: 26m`, `proxy-request-buffering: "off"` and
+  180 s read and send timeouts.
+- **Traefik** (k3s's default) has no body limit, so uploads pass through the main
+  Ingress; what cuts a slow upload is the entryPoint's
+  `respondingTimeouts.readTimeout` (the whole request, body included), **60 s by
+  default** since Traefik v2.11.2 and v3.0. Raise it to 180 s or more in Traefik's own
+  configuration (on k3s a `HelmChartConfig` for `traefik` in `kube-system`;
+  `scripts/k3s-up.sh` does this for the local cluster, `K3S_TRAEFIK_READ_TIMEOUT`).
+- **Other controllers and Gateway API**: give the path a 26 MiB body limit and a 180 s
+  read timeout through `ingress.uploads.path`, `.pathType` and `.annotations`.
+
+The [chart README](../deploy/helm/README.md#bid-evaluation) has the recipes for each.
 Each API pod reads at most two uploads at once (503 `upload_busy` with `Retry-After: 5`
 beyond), so an upload holds at most 50 MiB of an API pod's memory.
 

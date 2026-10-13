@@ -45,23 +45,36 @@ export function EvaluationPanel({ view }: { view: CallWithView }) {
       </div>
       <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Sections">
         {call.template.sections.map((section) => (
-          <li key={section.id} className="flex flex-col gap-3 rounded-lg border bg-surface p-4">
+          // Four rows shared across the cards (subgrid), so each card's questions and
+          // assessors start on the same line as its neighbours' (P10-QA-N7).
+          <li
+            key={section.id}
+            className="row-span-4 grid grid-rows-subgrid gap-3 rounded-lg border bg-surface p-4"
+          >
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="text-sm font-semibold text-primary">{section.title}</h3>
               <span className="text-sm text-muted tabular-nums">{section.weight}%</span>
             </div>
-            {section.guidance && <p className="text-sm text-muted">{section.guidance}</p>}
+            {section.guidance ? (
+              <p className="text-sm text-muted">{section.guidance}</p>
+            ) : (
+              <span aria-hidden="true" />
+            )}
             <ul className="flex flex-col gap-1 text-sm">
               {section.questions.map((q) => (
                 <li key={q.id} className="flex items-baseline justify-between gap-3">
                   <span className="text-secondary">{q.text}</span>
                   <span className="shrink-0 text-xs text-muted">
-                    {q.type === 'score' ? `× ${q.weight}` : QUESTION_TYPE_LABELS[q.type]}
+                    {q.type === 'score'
+                      ? `× ${q.weight}`
+                      : q.type === 'price'
+                        ? 'From the price'
+                        : QUESTION_TYPE_LABELS[q.type]}
                   </span>
                 </li>
               ))}
             </ul>
-            <div className="mt-auto flex flex-col gap-1.5 border-t border-subtle pt-3">
+            <div className="flex flex-col gap-1.5 border-t border-subtle pt-3">
               <span className="text-xs font-medium text-muted">Assessors</span>
               {section.assessors.length === 0 ? (
                 <span className="text-sm text-muted">Nobody yet</span>

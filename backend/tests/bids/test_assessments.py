@@ -5,6 +5,7 @@ of this part (section assessments, the comparison, the AI's list), and c28 check
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -88,8 +89,11 @@ async def test_who_may_assess(crew: Crew, api: AsUser, db_session: AsyncSession)
     assert all(a["can_assess"] for a in technical["assessors"])
     assert view["call"]["assessment_due_at"].startswith("2026-11-01T17:00:00")
     # Someone without a role in the private project, an agent, a deactivated person, the
-    # break-glass account, an unknown id: 422 naming them.
-    for user_id in (crew.outsider.id, agent.id, gone.id, glass.id, uuid4()):
+    # break-glass account, an unknown id: 422 naming them by name (P10-QA-N2: never an id).
+    people = [(user.id, user.display_name) for user in (crew.outsider, agent, gone, glass)] + [
+        (uuid4(), "That person")
+    ]
+    for user_id, name in people:
         body = {
             "sections": [
                 {
@@ -102,7 +106,9 @@ async def test_who_may_assess(crew: Crew, api: AsUser, db_session: AsyncSession)
         }
         response = await owner.put(call_url(crew, "/assessors"), body)
         problem = assert_problem(response, 422, "assessor_not_eligible")
-        assert str(user_id) in problem["detail"]
+        assert problem["detail"].startswith(f"{name} can't assess bids here")
+        assert problem["errors"][0]["msg"] == f"{name} can't assess bids on this idea"
+        assert str(user_id) not in json.dumps(problem)
 
 
 async def test_an_internal_projects_non_member_may_assess(

@@ -44,10 +44,9 @@ import { answerRequired, assignResearcher, researchTeam } from './support/resear
  * insurance certificate; zanele is a viewer).
  */
 
-/** The "Asked to assess bids" email's fixed line about blind assessment. */
+/** The "Asked to assess bids" email's fixed line about blind assessment ("section" for one). */
 const BLIND_LINE =
-  "Score your sections for every bid on the idea's Bids tab. Your assessment is blind: " +
-  "nobody's scores for a bid and section are shown to you until you submit yours."
+  /Score your sections? for every bid on the idea's Bids tab\. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours\./g
 
 const bidsTab = (page: Page) => page.getByRole('tab', { name: /^Bids/ })
 const bidsRegion = (page: Page) => page.getByRole('region', { name: 'Bids', exact: true })
@@ -293,10 +292,10 @@ test('BD-04 a missing must-have is flagged at once; one click and a reason rejec
   await expect(toast(page, 'Accepts our standard terms: met')).toBeVisible()
   // Reject: one click, the reason already says what is missing.
   await sheet.getByRole('button', { name: 'Reject…' }).click()
-  const reject = page.getByRole('dialog', { name: 'Reject Quillfield Systems’s bid?' })
+  const reject = page.getByRole('dialog', { name: 'Reject the bid from Quillfield Systems?' })
   await expect(reject.getByLabel('Reason')).toHaveValue(/Missing: Insurance certificate\./)
   await reject.getByRole('button', { name: 'Reject the bid' }).click()
-  await expect(toast(page, 'Quillfield Systems’s bid rejected')).toBeVisible()
+  await expect(toast(page, 'Bid from Quillfield Systems rejected')).toBeVisible()
   await expect(sheet.getByText('Rejected', { exact: true }).first()).toBeVisible()
   let detail = await bid(alice, key, quillfield?.id ?? '')
   expect(detail.status).toBe('rejected')
@@ -305,7 +304,7 @@ test('BD-04 a missing must-have is flagged at once; one click and a reason rejec
   expect(audit.some((entry) => JSON.stringify(entry).includes(quillfield?.id ?? '-'))).toBe(true)
   // Reinstate: received again, the rejection kept on record.
   await sheet.getByRole('button', { name: 'Reinstate' }).click()
-  await expect(toast(page, 'Quillfield Systems’s bid reinstated')).toBeVisible()
+  await expect(toast(page, 'Bid from Quillfield Systems reinstated')).toBeVisible()
   await expect(sheet.getByRole('button', { name: 'Reinstate' })).toHaveCount(0)
   detail = await bid(alice, key, quillfield?.id ?? '')
   expect(detail.status).toBe('received')
@@ -657,15 +656,14 @@ test('BD-12 “Asked to assess bids” reaches a new assessor by email: the call
   }
 })
 
-// --- BD-14 (expected failure: P10-QA-F1) -------------------------------------------------------
+// --- BD-14 (P10-QA-F1, fixed) ------------------------------------------------------------------
 test('BD-14 a manager who still owes a bid’s assessment isn’t offered “Count in the totals” for its AI assessment (TOOLS-3, alice)', async ({
   page,
   api,
 }) => {
   // Contract §9.4: a call manager who owes an assessment of the bid can't include the AI's
-  // assessment (404) until they submit. Alice owes Tessellate's Delivery; the comparison
-  // still offers her the switch, and clicking it says "This no longer exists".
-  test.fail(true, 'P10-QA-F1: the switch is offered (and can_include is true) while the PUT is 404')
+  // assessment (404) until they submit. Alice owes Tessellate's Delivery, so the list says
+  // can_include false and the comparison offers her no switch.
   const alice = await api('alice')
   const tessellate = (
     await alice.get<{ items: { id: string; bidder: string }[] }>(`/ideas/${DEMO.key}/bid-call/bids`)

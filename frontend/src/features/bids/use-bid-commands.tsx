@@ -39,7 +39,7 @@ export function useBidCommands(view: CallWithView): void {
   for (const bid of items) {
     actions.push({
       id: `bid-${bid.id}`,
-      label: `Open ${bid.bidder}’s bid`,
+      label: `Open the bid from ${bid.bidder}`,
       icon: <Gavel />,
       hint: call.title,
       keywords: ['bid', 'bidder', bid.bidder],

@@ -3146,7 +3146,7 @@
       "BidAiAssessmentList": {
         "properties": {
           "can_include": {
-            "description": "bid.manage, before the award.",
+            "description": "bid.manage, before the award, and not while the principal owes a section of this bid (set_bid_ai_inclusion is 404 then).",
             "title": "Can Include",
             "type": "boolean"
           },
@@ -3188,6 +3188,12 @@
           "finding": {
             "$ref": "#/components/schemas/AiMustHaveFinding"
           },
+          "must_have_id": {
+            "description": "The must-have the finding is about.",
+            "format": "uuid",
+            "title": "Must Have Id",
+            "type": "string"
+          },
           "rationale": {
             "description": "Untrusted agent text (rendered as plain text).",
             "title": "Rationale",
@@ -3201,6 +3207,7 @@
         },
         "required": [
           "ai_assessment_id",
+          "must_have_id",
           "agent",
           "finding",
           "rationale",

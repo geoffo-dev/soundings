@@ -81,18 +81,22 @@ async def test_the_markdown_report(crew: Crew, api: AsUser, db_session: AsyncSes
     assert "- Status: Being assessed" in text
     assert "- Bids: 3 received, 1 rejected" in text
     assert "- Assessed: 10 of 10 (complete)" in text
-    header = (
-        "| Rank | Bidder | Status | Technical (40 %) | Commercial (40 %) | Delivery (20 %) "
-        "| Price | Price score | Total | AI | Assessed |"
-    )
-    assert header in text
-    a_cells = ("86.7", "80.0", "90.0", "GBP 120,000.00", "4.00", "84.7", "-", "5 of 5")
+    assert "| Rank | Bidder | Status | Total | Price | Price score | AI | Assessed |" in text
+    a_cells = ("84.7", "GBP 120,000.00", "4.00", "-", "5 of 5")
     assert row("1", "A Ltd", "Qualified", *a_cells) in text
-    # B's first question disagrees (4 and 2): its Technical score is flagged.
-    b_cells = ("60.0 ‡", "90.0", "70.0", "GBP 96,000.00", "5.00", "74.0", "-", "5 of 5")
+    b_cells = ("74.0", "GBP 96,000.00", "5.00", "-", "5 of 5")
     assert row("2", "B Ltd", "Qualified", *b_cells) in text
-    c_cells = ("-", "-", "-", "GBP 80,000.00", "-", "-", "-", "0 of 5")
+    c_cells = ("-", "GBP 80,000.00", "-", "-", "0 of 5")
     assert row("-", "C Ltd", "Rejected", *c_cells) in text
+    # The section scores: their own table, in the ranking's order (P10-QA-V1: one table of
+    # every column was wider than A4 portrait).
+    assert "| Bidder | Technical (40 %) | Commercial (40 %) | Delivery (20 %) |" in text
+    assert row("A Ltd", "86.7", "80.0", "90.0") in text
+    # B's first question disagrees (4 and 2): its Technical score is flagged.
+    assert row("B Ltd", "60.0 ‡", "90.0", "70.0") in text
+    assert row("C Ltd", "-", "-", "-") in text
+    scores = text[text.index("| Bidder | Technical") :]
+    assert scores.index("| A Ltd |") < scores.index("| B Ltd |") < scores.index("| C Ltd |")
     # Must-haves: counts and the failing items by name.
     assert row("A Ltd", "1", "0", "0", "0", "-") in text
     assert "| C Ltd | 0 | 0 | 1 | 0 | Insurance certificate (missing) |" in text
@@ -110,7 +114,7 @@ async def test_the_markdown_report(crew: Crew, api: AsUser, db_session: AsyncSes
     )
     after = (await owner.get(report_url(crew, "markdown"))).text
     assert row("1", "A Ltd", "Awarded", *a_cells) in after
-    assert "| 2 | B Ltd | Unsuccessful | 60.0 ‡ |" in after
+    assert "| 2 | B Ltd | Unsuccessful | 74.0 |" in after
     assert "Awarded to **A Ltd** on " in after
     assert "by Kenji Owner." in after
     assert "Reason: Best value." in after
@@ -179,10 +183,14 @@ async def test_a_manager_who_owes_an_assessment_gets_no_ranks(
     rows = [line for line in text.splitlines() if line.startswith(f"| {NONE} | ")]
     assert len(rows) == 2  # no rank for any bid
     b_row = next(line for line in rows if "| B Ltd |" in line)
-    assert f"| {HIDDEN} |" in b_row  # B's Technical score and total
-    assert b_row.count(HIDDEN) == 2
+    assert b_row.count(HIDDEN) == 1  # B's total
     a_row = next(line for line in rows if "| A Ltd |" in line)
     assert HIDDEN not in a_row
+    b_scores = next(line for line in text.splitlines() if line.startswith("| B Ltd | "))
+    assert b_scores.startswith(f"| B Ltd | {HIDDEN} |")  # B's Technical score
+    assert b_scores.count(HIDDEN) == 1
+    a_scores = next(line for line in text.splitlines() if line.startswith("| A Ltd | "))
+    assert HIDDEN not in a_scores
     # The admin (not assessing) sees the ranking.
     admin_text = (await (await api(crew.admin)).get(report_url(crew, "markdown"))).text
     assert "| 1= | " in admin_text or "| 1 | " in admin_text
@@ -232,8 +240,38 @@ async def test_the_pdf_report(crew: Crew, api: AsUser, db_session: AsyncSession)
     assert reader.metadata is not None
     assert reader.metadata.title == "Data platform build"
     text = " ".join(page.extract_text() for page in reader.pages)
-    for expected in ("BID EVALUATION REPORT", "Ranking", "A Ltd", "84.7", "74.0", "No insurance."):
+    for expected in (
+        "BID EVALUATION REPORT",
+        "Ranking",
+        "Section scores",
+        "A Ltd",
+        "84.7",
+        "74.0",
+        "No insurance.",
+    ):
         assert expected in text
+    assert_fits_the_page(reader)
+
+
+def assert_fits_the_page(reader: PdfReader) -> None:
+    """Every table fits A4 portrait (P10-QA-V1: the ranking's last column started past the
+    right margin and was cut off): no text starts right of the 20 mm margin."""
+    for page in reader.pages:
+        right = float(page.mediabox.width) - 20 * 72 / 25.4
+        starts = _text_starts(page)
+        assert all(x < right for x, _ in starts), max(starts)
+
+
+def _text_starts(page: Any) -> list[tuple[float, str]]:
+    """Where each text fragment on the page starts (x in points) and what it says."""
+    starts: list[tuple[float, str]] = []
+
+    def visit(fragment: str, cm: Any, tm: Any, *_: Any) -> None:
+        if fragment.strip():
+            starts.append((tm[4] * cm[0] + tm[5] * cm[2] + cm[4], fragment.strip()))
+
+    page.extract_text(visitor_text=visit)
+    return starts
 
 
 def _max_template() -> dict[str, Any]:
@@ -297,8 +335,9 @@ async def test_the_report_at_the_maximum_size(
     assert pdf_child is not None
     pdf = pdf_child.render_document(document)
     assert time.monotonic() - started < 20  # the child's time limit
-    pages = PdfReader(io.BytesIO(pdf)).pages
-    assert len(pages) >= 2
+    reader = PdfReader(io.BytesIO(pdf))
+    assert len(reader.pages) >= 2
+    assert_fits_the_page(reader)  # eight sections: two section-score tables of four
     # Through the route too (the child process).
     response = await owner.get(report_url(crew, "pdf"))
     assert response.status_code == 200, response.text

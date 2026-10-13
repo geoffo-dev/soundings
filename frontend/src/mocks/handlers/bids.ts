@@ -1996,8 +1996,13 @@ export const bidHandlers = [
     const loaded = loadCall(ctx)
     requireManager(ctx, loaded.idea)
     const bid = findBid(ctx, loaded)
+    // A manager who owes an assessment of the bid can't include the AI's (the PUT is 404).
+    const owes = sectionsOf(ctx.db, loaded.call).some((s) =>
+      isPending(ctx.db, bid, s.id, ctx.user.id),
+    )
     const manage =
       !isFinished(loaded.call) &&
+      !owes &&
       aiBlockedReason(ctx.db, loaded.idea, loaded.call, ctx.user) !== 'not_allowed'
     return {
       items: ctx.db.bid.aiAssessments

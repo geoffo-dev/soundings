@@ -186,7 +186,8 @@ function BidDetailView({
         <SheetDescription asChild>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
             <Badge variant={status.tone}>{status.label}</Badge>
-            <span>Received {formatDateTime(bid.received_at)}</span>
+            {/* "Arrived": the status chip may already say "Received" (P10-QA-N6). */}
+            <span>Arrived {formatDateTime(bid.received_at)}</span>
             {bid.late && <Badge variant="warning">Late</Badge>}
           </div>
         </SheetDescription>
@@ -206,7 +207,7 @@ function BidDetailView({
                   onClick={() =>
                     reinstate.mutate(bid.id, {
                       onSuccess: () =>
-                        toast.success(`${bid.bidder}’s bid reinstated`, {
+                        toast.success(`Bid from ${bid.bidder} reinstated`, {
                           description: 'Its assessments count again.',
                         }),
                       onError: (error) => toast.error(describeError(error).title),
@@ -318,7 +319,11 @@ function BidDetailView({
           {bid.permissions.can_delete && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label={`More for ${bid.bidder}’s bid`}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`More for the bid from ${bid.bidder}`}
+                >
                   <MoreHorizontal />
                 </Button>
               </DropdownMenuTrigger>
@@ -446,7 +451,7 @@ function DeleteBidDialog({
     >
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle className="break-words">Delete {bid.bidder}’s bid?</DialogTitle>
+          <DialogTitle className="break-words">Delete the bid from {bid.bidder}?</DialogTitle>
           <DialogDescription>
             For a bid entered by mistake. Its documents and their text are deleted too. To turn a
             bid down, reject it instead: that keeps it on record.
@@ -469,7 +474,7 @@ function DeleteBidDialog({
             onClick={() =>
               remove.mutate(bid.id, {
                 onSuccess: () => {
-                  toast.success(`${bid.bidder}’s bid deleted`)
+                  toast.success(`Bid from ${bid.bidder} deleted`)
                   onOpenChange(false)
                   onDeleted()
                 },

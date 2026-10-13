@@ -69,9 +69,14 @@ function BidCallRow({ item }: { item: WorkBidAssessment }) {
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:shrink-0 sm:flex-nowrap">
+        {/* The section's count is assessments to submit over every call, so each row
+            leads with its share of it (P10-QA-N9). */}
         <span className="flex items-center gap-1.5 text-sm text-secondary tabular-nums">
           <Gavel aria-hidden="true" className="size-3.5 text-muted" />
-          {progress.submitted} of {progress.total} submitted
+          {owed} to submit
+          <span className="text-muted">
+            · {progress.submitted} of {progress.total} submitted
+          </span>
         </span>
         <DueDateLabel value={item.due_at} hideWhenNone />
         <Button asChild variant="outline" className="relative z-10 ml-auto max-sm:h-11 max-sm:px-5">

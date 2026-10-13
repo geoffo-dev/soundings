@@ -122,10 +122,11 @@ TENDER, PRICING, INSURANCE, TERMS = (
 BIDDERS = ("Northwind Data Ltd", "Tessellate Software", "Quillfield Systems")
 PRICES = {"Northwind Data Ltd": "120000.00", "Tessellate Software": "96000.00"}
 REJECTION = "No insurance certificate provided."
-# "Asked to assess bids" names scores once, in a fixed sentence about blind assessment.
-BLIND_LINE = (
-    "Score your sections for every bid on the idea's Bids tab. Your assessment is blind: "
-    "nobody's scores for a bid and section are shown to you until you submit yours."
+# "Asked to assess bids" names scores once, in a fixed sentence about blind assessment
+# ("section" for one, "sections" for more).
+BLIND_LINE = re.compile(
+    r"Score your sections? for every bid on the idea's Bids tab\. Your assessment is blind: "
+    r"nobody's scores for a bid and section are shown to you until you submit yours\."
 )
 # Human scores (contract section 8.1's pattern): bid -> section -> assessor -> one score
 # per score question, in order.
@@ -431,7 +432,7 @@ def mail_text(message: dict[str, Any]) -> str:
 
 def no_scores_in_mail(label: str, text: str) -> None:
     """No score numbers, no bid secrets, no score words outside the fixed blind line."""
-    plain = text.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'").replace(BLIND_LINE, "")
+    plain = BLIND_LINE.sub("", text.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'"))
     assert not SCORE_NUMBER.search(plain), (label, SCORE_NUMBER.search(plain))
     assert not re.search(r"\bscored?\b", plain, re.I), (label, plain)
     assert not bid_secrets(plain), (label, bid_secrets(plain))
@@ -704,8 +705,9 @@ async def test_ac10_api_1_a_call_for_bids_from_entry_to_award(
         status=422,
         code="assessor_not_eligible",
     )
-    # It names the person (by id: the SPA shows the message as is, P10-QA-N2).
-    assert bob.id in strings(problem)
+    # It names the person by name, never by id (the SPA shows the message: P10-QA-N2).
+    assert problem["errors"][0]["msg"] == f"{bob.name} can't assess bids on this idea"
+    assert bob.id not in strings(problem)
     await kenji.send("PUT", f"{call_path}/assessors", assessor_body())
     asked = re.compile(rf'Please assess the bids for "{re.escape(CALL_TITLE)}"')
     for person in (carol, mateo, priya, sven):

@@ -350,7 +350,9 @@ function LoadedIdeaPage({
   const primaryButton = (className?: string) =>
     action && (
       <Button
-        variant="primary"
+        // On the Bids tab the call's own button (Open the call, Award…) is the one blue
+        // button; the idea's next step stays, quieter (P10-QA-N4).
+        variant={tab === 'bids' ? 'outline' : 'primary'}
         data-primary-action=""
         aria-keyshortcuts={primaryShortcut ? ariaKeys(primaryShortcut) : undefined}
         className={className}

@@ -1091,6 +1091,7 @@ function findingsFor(db: MockDb, bid: MockBid, mustHave: MockBidMustHave): BidAi
         .filter((f) => f.must_have_id === mustHave.id)
         .map((f) => ({
           ai_assessment_id: a.id,
+          must_have_id: f.must_have_id,
           agent: aiAgentUser(db, a.agent_id),
           finding: f.finding,
           rationale: f.rationale,
@@ -1429,6 +1430,7 @@ export function aiAssessmentOut(
       .filter((f) => !mustHavesOf(db, call).find((m) => m.id === f.must_have_id)?.pricing)
       .map((f) => ({
         ai_assessment_id: assessment.id,
+        must_have_id: f.must_have_id,
         agent: aiAgentUser(db, assessment.agent_id),
         finding: f.finding,
         rationale: f.rationale,

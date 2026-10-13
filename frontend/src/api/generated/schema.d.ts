@@ -4682,7 +4682,7 @@ export interface components {
         BidAiAssessmentList: {
             /**
              * Can Include
-             * @description bid.manage, before the award.
+             * @description bid.manage, before the award, and not while the principal owes a section of this bid (set_bid_ai_inclusion is 404 then).
              */
             can_include: boolean;
             /**
@@ -4706,6 +4706,12 @@ export interface components {
             /** Evidence */
             evidence: components["schemas"]["BidEvidence"][];
             finding: components["schemas"]["AiMustHaveFinding"];
+            /**
+             * Must Have Id
+             * Format: uuid
+             * @description The must-have the finding is about.
+             */
+            must_have_id: string;
             /**
              * Rationale
              * @description Untrusted agent text (rendered as plain text).

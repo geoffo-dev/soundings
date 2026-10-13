@@ -79,7 +79,7 @@ delivery"](docs/operator-guide.md#continuous-delivery-phase-9).
 | [User guide](docs/user-guide.md) | Everything people do in the app, by task |
 | [Operator guide](docs/operator-guide.md) | Installing and running it: Helm, SSO, email, security, operations, data protection |
 | [Helm chart](deploy/helm/README.md) | Every value |
-| [MCP guide](docs/mcp.md) | Connecting Claude Code, Claude Desktop or an SDK with an API key; the ten tools |
+| [MCP guide](docs/mcp.md) | Connecting Claude Code, Claude Desktop or an SDK with an API key; the thirteen tools (three only for the AI bid assessor) |
 | [kagent integration](deploy/kagent/README.md) | AI agents: how a run flows, example manifests |
 | [Release notes](docs/RELEASE-NOTES.md) | What 0.2.0 and 0.1.0 do, known issues, upgrade notes, decisions to confirm |
 | [Decisions](docs/decisions.md), [ADRs](docs/adr/README.md) | Why it is built this way |

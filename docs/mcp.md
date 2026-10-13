@@ -130,8 +130,8 @@ client calls `search_ideas` with `awaiting_my_evaluation`, then `get_rubric` and
 
 ## 3. The tools
 
-Ten tools, always listed (a tool the key's scopes don't allow answers
-`insufficient_scope`). Ideas are referenced by key (`CUST-12`, any case) or id; projects
+Thirteen tools, always listed (a tool the key's scopes don't allow answers
+`insufficient_scope`; the last three are for Soundings' AI assessor only). Ideas are referenced by key (`CUST-12`, any case) or id; projects
 by their URL name (slug). Every tool also takes an optional `run_id`: it is for
 Soundings' AI agents only (section 5); people leave it out, and it is ignored for them.
 
@@ -147,6 +147,9 @@ Soundings' AI agents only (section 5); people leave it out, and it is ignored fo
 | `submit_evaluation` | `evaluate` | Saves your evaluation: a 1-5 score for every criterion, a recommendation (`go`, `maybe`, `no`) and a comment. Submits by default (`submit: false` saves a draft); the arguments replace what was saved. Only if you were asked to evaluate the idea and evaluation is open. |
 | `propose_proposal_section` | `write` | Suggests the whole new text of one proposal section, named by its `section_key` from `get_proposal` (a section removed from the template, or a key the project never had, is the tool error `unknown_section`). It is only a suggestion: the idea's owner sees it in the proposal editor and accepts or discards it. A newer suggestion of yours for the same section replaces the older one. |
 | `add_research_note` | `write` | Phase 6, **for Soundings' AI agents only**: saves the research note of a "Ask AI to research" run (Markdown and up to 20 cited sources) into the idea's activity feed. Anyone else's key gets `forbidden`. |
+| `get_bid_for_assessment` | `evaluate` | Phase 10, **for Soundings' AI assessor only**, in an "Ask AI to assess" run (`bid_id` must be the run's bid): the call's sections with their score questions, the 0-5 scale, the must-haves and the bid's documents with their reading state, plus the agent's own last assessment of the bid. Never other bids, people's scores, the price, pricing documents, the contact or the notes. People get `forbidden`. |
+| `get_bid_document_text` | `evaluate` | Phase 10, AI assessor only: one page of a document's extracted text (`document_id` from the tool above, `page`). A pricing document or another bid's is `not_found`. |
+| `submit_bid_assessment` | `evaluate` | Phase 10, AI assessor only: a 0-5 score, a rationale and quotes (`document_id` + a passage of at least 20 characters, exactly as it appears, no ellipses) for every score question, and a finding (`met`, `not_met`, `unclear`) with evidence for every must-have. Soundings checks every quote against the document's text (whitespace aside) and shows the ones it can't find as "Not found in the document". Replaces the agent's earlier assessment; counted in the bid's totals only once a call manager includes it (again after a changed re-submission). Refused once the bid is rejected (`bid_rejected`), the call finished (`bid_call_finished`) or no longer open or being assessed (`bid_call_not_assessable`). |
 
 **Proposal sections and statuses (Phase 8).** Each project has its own proposal template
 (1 to 12 sections, edited by its admins). A section's `key` never changes: the eight
@@ -300,6 +303,16 @@ matrix §3 rule 9):
   configured. A section a project added to its template (`carbon_impact`) is drafted like
   a built-in one; a draft still running when its section is removed gets `unknown_section`
   and ends without a result (`no_result`).
+- **Bid assessment (Phase 10).** An "Ask AI to assess" run (kind `assess_bid`, one per
+  bid) reads only its bid: `get_bid_for_assessment` and `get_bid_document_text`, each
+  naming the run's `bid_id` (another bid, existing or not: `ai_run_not_active`, checked
+  before anything is looked up), and writes only `submit_bid_assessment`; every other tool,
+  `get_idea` and `search_ideas` included, answers `ai_run_not_active`. It never sees other
+  bids, people's scores, the price or pricing documents. **Document text is written by the
+  bidder** and is untrusted: the tool descriptions and the server's instructions say so,
+  and so does the `bid-assessor` example Agent's system message (`deploy/kagent`). Its
+  must-have findings are suggestions a person confirms, and its scores stay out of the
+  totals until a call manager includes them.
 - **Never the research checklist.** An agent reads the checklist and answers in
   `get_idea` like anyone who can see the idea, but nothing lets it answer an item or move
   the idea ("Ask AI to research" writes a research note into the feed; the idea's owner

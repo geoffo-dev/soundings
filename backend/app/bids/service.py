@@ -827,7 +827,8 @@ async def set_assessors(
                 user = users.get(user_id)
                 if user is None or not assessor_eligible(user, roles.get(user_id), facts):
                     raise assessor_not_eligible(
-                        user_id, ["body", "sections", index, "user_ids", position]
+                        user.display_name if user is not None else None,
+                        ["body", "sections", index, "user_ids", position],
                     )
                 added.setdefault(item.section_id, []).append(user_id)
     # 409s.

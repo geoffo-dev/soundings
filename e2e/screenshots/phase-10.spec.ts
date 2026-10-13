@@ -165,6 +165,14 @@ const SHOTS: Shot[] = [
       await bidsTab(page, key, title)
       const sheet = await openBid(page, 'Quillfield Systems')
       await expect(sheet.getByText('This bid doesn’t meet every must-have')).toBeVisible()
+      // The flag banner is in the reject dialog's shot: scroll the missing certificate to the
+      // top so it and the bid's documents (below the drop zone) share the 1440 shot.
+      await expect(sheet.getByRole('list', { name: 'Documents' })).toBeVisible()
+      await sheet
+        .getByRole('list', { name: 'Must-haves' })
+        .getByRole('listitem')
+        .filter({ hasText: 'Insurance certificate' })
+        .evaluate((el) => el.scrollIntoView({ block: 'start' }))
     },
   },
   {
@@ -175,7 +183,7 @@ const SHOTS: Shot[] = [
       await bidsTab(page, key, title)
       const sheet = await openBid(page, 'Quillfield Systems')
       await sheet.getByRole('button', { name: 'Reject…' }).click()
-      const dialog = page.getByRole('dialog', { name: 'Reject Quillfield Systems’s bid?' })
+      const dialog = page.getByRole('dialog', { name: 'Reject the bid from Quillfield Systems?' })
       await expect(dialog.getByLabel('Reason')).toHaveValue(/Missing: Insurance certificate\./)
     },
   },

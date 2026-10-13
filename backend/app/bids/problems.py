@@ -4,7 +4,6 @@ their codes and wording. Details are shown to people: plain words, no internals.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from uuid import UUID
 
 from app.errors import ConflictProblem, ProblemError
 from app.schemas.common import FieldError
@@ -95,16 +94,24 @@ def unknown_section(loc: Sequence[str | int]) -> ProblemError:
     )
 
 
-def assessor_not_eligible(user_id: UUID, loc: Sequence[str | int]) -> ProblemError:
-    """422 ``assessor_not_eligible`` naming the person (c28): an active person who can view
-    the idea in their own right, never an AI agent or the break-glass account."""
+def assessor_not_eligible(name: str | None, loc: Sequence[str | int]) -> ProblemError:
+    """422 ``assessor_not_eligible`` naming the person by their display name (c28): an
+    active person who can view the idea in their own right, never an AI agent or the
+    break-glass account. ``errors[0].msg`` is the one line the SPA shows (P10-QA-N2)."""
+    who = name or "That person"
     detail = (
-        f"User {user_id} can't assess bids here: assessors are active people who can see "
-        "the idea themselves (in a private project, add them as members first)."
+        f"{who} can't assess bids here: assessors are active people who can see the idea "
+        "themselves (in a private project, add them as members first)."
     )
     return ProblemError(
         422,
         "assessor_not_eligible",
         detail=detail,
-        errors=[FieldError(loc=list(loc), msg=detail, type="assessor_not_eligible")],
+        errors=[
+            FieldError(
+                loc=list(loc),
+                msg=f"{who} can't assess bids on this idea",
+                type="assessor_not_eligible",
+            )
+        ],
     )

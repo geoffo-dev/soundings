@@ -110,7 +110,7 @@ const SCREENS: Screen[] = [
       const sheet = page.getByRole('dialog', { name: DEMO.tessellate })
       await sheet.getByRole('button', { name: 'Reject…' }).click()
       await expect(
-        page.getByRole('dialog', { name: 'Reject Tessellate Software’s bid?' }),
+        page.getByRole('dialog', { name: 'Reject the bid from Tessellate Software?' }),
       ).toBeVisible()
     },
   },

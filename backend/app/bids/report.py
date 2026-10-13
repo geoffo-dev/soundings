@@ -4,10 +4,11 @@ machinery (:mod:`app.proposals.export`: the shared limit, the project's branding
 Markdown writer and the PDF child with its 5,000-box bound).
 
 What it holds: the call (status, deadline, assessment due date, progress); the ranking
-with each bid's section scores, price, price score, total and whether an AI assessment is
-counted (:func:`app.bids.views.comparison`, so it is scored the same way before and after
-the award, and a manager who owes an assessment gets no ranks and "Hidden until you submit"
-for that bid's scores: role matrix 3a rule 1); each bid's must-have **counts** (met, not
+with each bid's total, price, price score, progress and whether an AI assessment is
+counted, then each bid's section scores in tables of at most four sections (so A4 portrait
+holds them) (:func:`app.bids.views.comparison`, so it is scored the same way before and
+after the award, and a manager who owes an assessment gets no ranks and "Hidden until you
+submit" for that bid's scores: role matrix 3a rule 1); each bid's must-have **counts** (met, not
 met, missing, unchecked) and the items missing or not met by name (not the whole grid:
 review S15); the rejected bids with their reasons; the assessors per section with their
 progress; the award with its reason.
@@ -44,7 +45,7 @@ from app.schemas.bids import BidComparison, BidComparisonRow
 from app.services.refs import idea_key
 from app.services.sql import any_of
 
-__all__ = ["HIDDEN", "REPORT_EYEBROW", "REPORT_KIND", "report_document"]
+__all__ = ["HIDDEN", "REPORT_EYEBROW", "REPORT_KIND", "SECTIONS_PER_TABLE", "report_document"]
 
 REPORT_EYEBROW: Final = "Bid evaluation report"
 REPORT_KIND: Final = "bid-evaluation"
@@ -143,52 +144,76 @@ def _score_cell(row: BidComparisonRow, index: int) -> str:
     return f"{cell.score:.1f}" + (" ‡" if cell.disagreement else "")
 
 
+SECTIONS_PER_TABLE: Final = 4
+"""Section score columns per table: a call may have 8 sections, and an A4 portrait page
+holds the bidder and four of them (cells never break inside a word)."""
+
+
+def _rank(row: BidComparisonRow) -> str:
+    if row.rank is None:
+        return NONE
+    return f"{row.rank}=" if row.tied else str(row.rank)
+
+
+def _bidder(row: BidComparisonRow) -> str:
+    return _text(row.bid.bidder) + (" (late)" if row.late else "")
+
+
 def _ranking(view: BidComparison) -> str:
-    sections = [f"{_text(s.title)} ({s.weight} %)" for s in view.sections]
-    header = [
-        "Rank",
-        "Bidder",
-        "Status",
-        *sections,
-        "Price",
-        "Price score",
-        "Total",
-        "AI",
-        "Assessed",
-    ]
+    """The ranking: one row per bid with its total, price and progress (the section scores
+    are their own table, :func:`_section_scores`, so the page holds both: P10-QA-V1)."""
+    if not view.rows:
+        return "_No bids were entered._"
+    header = ["Rank", "Bidder", "Status", "Total", "Price", "Price score", "AI", "Assessed"]
     rows = []
     for row in view.rows:
-        rank = NONE
-        if row.rank is not None:
-            rank = f"{row.rank}=" if row.tied else str(row.rank)
         total = (
             HIDDEN if row.total_hidden else (f"{row.total:.1f}" if row.total is not None else NONE)
         )
         rows.append(
             [
-                rank,
-                _text(row.bid.bidder) + (" (late)" if row.late else ""),
+                _rank(row),
+                _bidder(row),
                 _BID_STATUS[row.bid.status],
-                *(_score_cell(row, index) for index in range(len(view.sections))),
+                total,
                 _money(row.price, view.currency),
                 f"{row.price_score:.2f}" if row.price_score is not None else NONE,
-                total,
                 "Included" if row.ai_included else NONE,
                 f"{row.progress.submitted} of {row.progress.total}",
             ]
         )
     notes = [
-        "Section scores and totals are out of 100; the price score is out of 5 (the lowest "
-        "price of the bids that met every must-have / this price x 5). ‡ two assessors' scores "
-        'on a question differ by 2 or more. "AI": an AI assessment counted in the scores.'
+        "Totals are out of 100; the price score is out of 5 (the lowest price of the bids "
+        'that met every must-have / this price x 5). "AI": an AI assessment counted in the '
+        "scores."
     ]
     if view.ranking_hidden:
         notes.append("_No ranks while you owe assessments._")
     elif not any(row.rank is not None for row in view.rows):
         notes.append("_No bid has a total yet._")
+    return _table(header, rows) + "\n\n" + "\n\n".join(notes)
+
+
+def _section_scores(view: BidComparison) -> str:
+    """Each bid's section scores (0-100), in the ranking's order, at most
+    :data:`SECTIONS_PER_TABLE` sections a table."""
     if not view.rows:
         return "_No bids were entered._"
-    return _table(header, rows) + "\n\n" + "\n\n".join(notes)
+    if not view.sections:
+        return "_The call has no sections._"
+    tables = []
+    for start in range(0, len(view.sections), SECTIONS_PER_TABLE):
+        indexes = range(start, min(start + SECTIONS_PER_TABLE, len(view.sections)))
+        header = [
+            "Bidder",
+            *(f"{_text(view.sections[i].title)} ({view.sections[i].weight} %)" for i in indexes),
+        ]
+        rows = [[_bidder(row), *(_score_cell(row, i) for i in indexes)] for row in view.rows]
+        tables.append(_table(header, rows))
+    note = (
+        "Section scores are out of 100. ‡ two assessors' scores on a question differ by 2 or more."
+    )
+    return "\n\n".join([*tables, note])
 
 
 def _must_haves(data: CallData) -> str:
@@ -298,6 +323,7 @@ async def report_document(
     sections = (
         ExportSection("summary", "Summary", _summary(data, view, settings)),
         ExportSection("ranking", "Ranking", _ranking(view)),
+        ExportSection("section_scores", "Section scores", _section_scores(view)),
         ExportSection("must_haves", "Must-haves", _must_haves(data)),
         ExportSection("rejected", "Rejected bids", _rejected(data.bids, names, settings)),
         ExportSection("assessors", "Assessors", _assessors(data)),

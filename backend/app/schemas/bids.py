@@ -1117,6 +1117,7 @@ class BidAiFindingView(ResponseModel):
     """The AI's pre-check of one must-have: a suggestion only."""
 
     ai_assessment_id: UUID
+    must_have_id: UUID = Field(description="The must-have the finding is about.")
     agent: UserRef = Field(description="The agent's service account (show an AI badge).")
     finding: AiMustHaveFinding
     rationale: str = Field(description="Untrusted agent text (rendered as plain text).")
@@ -1466,7 +1467,12 @@ class BidAiAssessment(ResponseModel):
 
 class BidAiAssessmentList(ResponseModel):
     items: list[BidAiAssessment] = Field(description="One per agent that assessed the bid.")
-    can_include: bool = Field(description="bid.manage, before the award.")
+    can_include: bool = Field(
+        description=(
+            "bid.manage, before the award, and not while the principal owes a section of "
+            "this bid (set_bid_ai_inclusion is 404 then)."
+        )
+    )
 
 
 class BidAiInclusionUpdate(RequestModel):

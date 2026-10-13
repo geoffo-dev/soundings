@@ -156,7 +156,10 @@ export function BidDocuments({
             onCheckedChange={(value) => setPricing(value === true)}
             className="mt-0.5"
           />
-          <Label htmlFor={`pricing-${bid.id}`} className="flex flex-col gap-0.5 font-normal">
+          <Label
+            htmlFor={`pricing-${bid.id}`}
+            className="flex flex-col items-start gap-0.5 font-normal"
+          >
             <span className="text-sm text-primary">Upload as pricing documents</span>
             <span className="text-xs text-muted">
               Only {pricingAudience(call)} can open them, and the AI never reads them.

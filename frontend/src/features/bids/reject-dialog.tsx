@@ -66,7 +66,7 @@ export function RejectDialog({
               { bidId: bid.id, reason: reason.trim() },
               {
                 onSuccess: () => {
-                  toast.success(`${bid.bidder}’s bid rejected`, {
+                  toast.success(`Bid from ${bid.bidder} rejected`, {
                     description:
                       'It left the assessors’ queues. Reinstate it from the bid if needed.',
                   })
@@ -77,7 +77,7 @@ export function RejectDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Reject {bid.bidder}’s bid?</DialogTitle>
+            <DialogTitle>Reject the bid from {bid.bidder}?</DialogTitle>
             <DialogDescription>
               It leaves the assessors’ queues, the totals and the ranking. Its assessments are kept,
               and you can reinstate it until the call is awarded.

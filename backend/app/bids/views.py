@@ -630,6 +630,7 @@ async def bid_detail(
             findings[finding.must_have_id].append(
                 BidAiFindingView(
                     ai_assessment_id=assessment.id,
+                    must_have_id=finding.must_have_id,
                     agent=agents.get(assessment.agent_id)
                     or UserRef(id=assessment.agent_id, display_name="AI"),
                     finding=finding.finding,
@@ -1021,6 +1022,7 @@ async def ai_assessments_out(
         finding_views = [
             BidAiFindingView(
                 ai_assessment_id=assessment.id,
+                must_have_id=f.must_have_id,
                 agent=agent,
                 finding=f.finding,
                 rationale=f.rationale,
@@ -1049,5 +1051,9 @@ async def ai_assessments_out(
         )
     return BidAiAssessmentList(
         items=items,
-        can_include=can(principal, Rule.BID_MANAGE, resource) and data.call.status not in FINISHED,
+        # set_bid_ai_inclusion is 404 while the principal owes a section of this bid
+        # (section 3a), so the switch isn't offered then either.
+        can_include=can(principal, Rule.BID_MANAGE, resource)
+        and data.call.status not in FINISHED
+        and not hidden,
     )

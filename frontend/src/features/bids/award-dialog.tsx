@@ -110,7 +110,7 @@ export function AwardDialog({
                   <label
                     key={row.bid.id}
                     htmlFor={`award-${row.bid.id}`}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 has-[[data-state=checked]]:border-strong"
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors hover:bg-subtle has-[[data-state=checked]]:border-accent-control has-[[data-state=checked]]:bg-subtle"
                   >
                     <RadioGroupItem
                       id={`award-${row.bid.id}`}

@@ -56,7 +56,7 @@ export function BidAi({
       { bidId: bid.id, agentId: agent.id },
       {
         onSuccess: () =>
-          toast.success(`${agent.display_name} is assessing ${bid.bidder}’s bid`, {
+          toast.success(`${agent.display_name} is assessing the bid from ${bid.bidder}`, {
             description: 'Its scores stay out of the totals until you count them.',
           }),
         onError: (error) => {

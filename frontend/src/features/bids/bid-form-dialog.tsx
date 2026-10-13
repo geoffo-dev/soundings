@@ -126,7 +126,7 @@ export function BidFormDialog({
         { ...body, received_at: fromLocalInput(received) },
         {
           onSuccess: (created) => {
-            toast.success(`${created.bidder}’s bid entered`, {
+            toast.success(`Bid from ${created.bidder} entered`, {
               description: 'Upload its documents next.',
             })
             onOpenChange(false)
@@ -166,7 +166,7 @@ export function BidFormDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>{bid ? `Edit ${bid.bidder}’s bid` : 'Enter a bid'}</DialogTitle>
+            <DialogTitle>{bid ? `Edit the bid from ${bid.bidder}` : 'Enter a bid'}</DialogTitle>
             <DialogDescription>
               As it came in. Contact details are kept for the call’s managers and never emailed by
               Soundings.

@@ -21,6 +21,7 @@ const state = (
     ? [
         {
           ai_assessment_id: 'a',
+          must_have_id: text,
           agent: { id: 'x', display_name: 'Bid assessor', avatar_url: null, initials: 'BA' },
           finding: 'not_met',
           rationale: '',

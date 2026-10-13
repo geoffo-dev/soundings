@@ -91,7 +91,9 @@ the `assess_bid` kind (asked on a bid, not here; the e2e `tsc` failed on the new
 
 `docs/screenshots/phase-10/`, each at 1440 light, 1440 dark and 390 light, from the demo
 story and one call of its own ("Facilities", archived afterwards): `call-overview` (kenji),
-`bid-documents-flagged` (Quillfield without its certificate, not rejected),
+`bid-documents-flagged` (Quillfield without its certificate, not rejected; scrolled to the
+missing certificate and the three documents with their extraction state; the warning is in
+`reject-dialog`),
 `reject-dialog`, `assessment-sheet-document-text` (alice's Delivery with the Word proposal's
 text beside it), `comparison-ai-not-counted` (kenji), `award-dialog`,
 `project-bids-template` (dave), `my-work-bids-to-assess` (alice), `bids-assessor` (carol),
@@ -112,3 +114,9 @@ See the QA report for reproduction steps and owners. Marked tests pin the defect
 | P10-QA-N2 | backend + frontend | `assessor_not_eligible` names the person by id ("User 1f3e… can't assess bids here"); the assessors dialog shows that message as it is. |
 | P10-QA-N3 | lead (contract) | `BidAiAssessment.findings` don't say which must-have each finding is about (only `BidMustHaveState.ai_findings` does). |
 | P10-QA-N4 | frontend | Two blue buttons with the Bids tab open ("Open proposal" in the idea header and "Award…" in the call header); Project settings' seven tabs wrap to two rows at 390 px. |
+| P10-QA-N5 | frontend | The reject dialog asks "Reject Quillfield Systems’s bid?" (a possessive on a name ending in s; "Reject the bid from Quillfield Systems?" reads for any name). `reject-dialog-*`. |
+| P10-QA-N6 | frontend | Bid sheet wording: a confirmation must-have says "A confirmation · met per Alice Anders just now" ("confirmed by"); the header repeats "Received" (the status chip, then "Received Tuesday 13 October…"). `bid-documents-flagged-*`. |
+| P10-QA-N7 | frontend | Comparison's section cards: the price question reads "Price … Price" (its text and its type); the "Assessors" blocks don't line up across the three cards (Commercial's, with one assessor, sits lower). `comparison-ai-not-counted-1440-*`. |
+| P10-QA-N8 | frontend | Project settings → Bids: a question's weight field has no visible label or unit (the comparison shows "× 2"); at 390 px question texts are one-line inputs cut off mid-word ("How well does the proposed s"). `project-bids-template-*`. |
+| P10-QA-N9 | frontend | My work's "Bids to assess 2" counts assessments (bid × section) above a single call row that says "0 of 2 submitted"; the award dialog's chosen bid looks like the others except for its radio. |
+| P10-QA-N10 | frontend | Bid sheet → Documents: the "Upload as pricing documents" checkbox sits at the left edge while its label and help text are centred under the drop zone, far from it (`bid-documents-flagged-1440-*`). |
