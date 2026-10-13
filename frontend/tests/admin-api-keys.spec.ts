@@ -32,8 +32,9 @@ test('lists every key with its owner, scopes, projects, use, expiry and state', 
   page,
 }) => {
   await open(page)
-  await expect(page.getByText('8 keys')).toBeVisible()
-  await expect(table(page).getByRole('row')).toHaveCount(9)
+  await expect(page.getByText('9 keys')).toBeVisible()
+  // Phase 10 adds the Bid assessor agent's key.
+  await expect(table(page).getByRole('row')).toHaveCount(10)
   const agent = keyRow(page, 'kagent soundings/research-agent')
   await expect(agent).toContainText('Research agent')
   await expect(agent).toContainText('AI agent')
@@ -81,7 +82,7 @@ test('a pasted whole key is searched by its prefix only: never in the URL or a r
   await search.fill('sdg_Cl4uDeD3sk7')
   await expect(page.getByRole('heading', { name: 'No keys match' })).toBeVisible()
   await page.getByRole('button', { name: 'Clear filters' }).click()
-  await expect(page.getByText('8 keys')).toBeVisible()
+  await expect(page.getByText('9 keys')).toBeVisible()
   await search.fill('mateo')
   await expect(table(page).getByRole('row')).toHaveCount(2)
 })
@@ -112,7 +113,7 @@ test('filters by state, and by owner from their admin page', async ({ page }) =>
   await expect(page.getByText('3 keys')).toBeVisible()
   await expect(page.locator('[data-slot="filter-value-chip"]')).toContainText('Alice Anders')
   await page.getByRole('button', { name: 'Remove Owner filter' }).click()
-  await expect(page.getByText('8 keys')).toBeVisible()
+  await expect(page.getByText('9 keys')).toBeVisible()
 })
 
 test('revokes anyone’s key after a confirm that names it; focus moves to the next key', async ({
@@ -128,7 +129,7 @@ test('revokes anyone’s key after a confirm that names it; focus moves to the n
   await confirm.getByRole('button', { name: 'Revoke key' }).click()
   await expect(toast(page, 'Bob Chen’s key “Jira sync” revoked')).toBeVisible()
   await expect(keyRow(page, 'Jira sync')).toHaveCount(0)
-  await expect(page.getByText('7 keys')).toBeVisible()
+  await expect(page.getByText('8 keys')).toBeVisible()
   await expect(
     keyRow(page, 'kagent soundings/research-agent').locator('[data-row-id]'),
   ).toBeFocused()
@@ -181,7 +182,7 @@ test('shows an error with a retry when the keys can’t load', async ({ page }) 
   await expect(page.getByText('Couldn’t load API keys')).toBeVisible({ timeout: 10_000 })
   await page.evaluate(() => localStorage.removeItem('soundings-mock-fail'))
   await page.getByRole('button', { name: 'Try again' }).click()
-  await expect(page.getByText('8 keys')).toBeVisible()
+  await expect(page.getByText('9 keys')).toBeVisible()
 })
 
 test('⌘K finds the page', async ({ page }) => {

@@ -55,6 +55,7 @@ import { flushFanOut } from './notifications'
 import { proposalOf, proposalOpenFor } from './proposals'
 import { inviteBlocked } from './research'
 import { activeSection } from './templates'
+import { writeBidAssessment } from './bid-runs'
 
 /* ------------------------------------------------------------------ */
 /* Records (docs/erd.md: ai_agents, ai_agent_projects, ai_runs, …)    */
@@ -79,7 +80,7 @@ export interface MockAiAgent {
   namespace: string
   name: string
   protocol: AiAgentProtocol
-  /** Canonical order: evaluate, research, draft_section. */
+  /** Canonical order: evaluate, research, draft_section, assess_bid. */
   purposes: AiRunKind[]
   project_ids: string[]
   enabled: boolean
@@ -113,6 +114,11 @@ export interface MockAiRun {
   activity_event_id: string | null
   /** "Ask AI to evaluate" assigned the agent (undone if the run ends without its evaluation). */
   assigned_evaluator: boolean
+  /** Phase 10, assess_bid only: the bid it assesses, and whether the call's AI assessor started it. */
+  bid_id?: string | null
+  bid_call_id?: string | null
+  automatic?: boolean
+  bid_ai_assessment_id?: string | null
   /** Mock only: how the pretend worker ends it, and the step it is on. */
   outcome: MockRunOutcome
   step: number
@@ -158,6 +164,9 @@ export const AI_TOOL_MESSAGES: Record<string, string> = {
   submit_evaluation: 'Saved its evaluation',
   propose_proposal_section: 'Suggested section text',
   add_research_note: 'Wrote the research note',
+  get_bid_for_assessment: 'Read the bid',
+  get_bid_document_text: 'Read a bid document',
+  submit_bid_assessment: 'Saved its bid assessment',
 }
 
 export const AI_RUN_ERROR_MESSAGES: Record<AiRunError, string> = {
@@ -179,9 +188,15 @@ export const RESULT_MESSAGES: Record<AiRunKind, string> = {
   evaluate: 'Evaluation submitted',
   research: 'Research note saved',
   draft_section: 'Suggestion saved',
+  assess_bid: 'Bid assessment saved',
 }
 
-export const AI_KINDS: readonly AiRunKind[] = ['evaluate', 'research', 'draft_section']
+export const AI_KINDS: readonly AiRunKind[] = [
+  'evaluate',
+  'research',
+  'draft_section',
+  'assess_bid',
+]
 export const AI_PROTOCOLS: readonly AiAgentProtocol[] = ['kagent_v0_10', 'kagent_v1_0']
 export const AI_AGENTS_MAX = 50
 export const AI_RUN_EVENTS_MAX = 200
@@ -206,7 +221,7 @@ export function canonicalPurposes(purposes: readonly AiRunKind[]): AiRunKind[] {
 export function agentKeyScopes(purposes: readonly AiRunKind[]): MockApiKey['scopes'] {
   const scopes: MockApiKey['scopes'] = ['read']
   if (purposes.includes('research') || purposes.includes('draft_section')) scopes.push('write')
-  if (purposes.includes('evaluate')) scopes.push('evaluate')
+  if (purposes.includes('evaluate') || purposes.includes('assess_bid')) scopes.push('evaluate')
   scopes.push('mcp')
   return scopes
 }
@@ -334,9 +349,14 @@ export function agentPasses(
 /** Agents passing c10 for some kind on this idea (`AiRunList.agents`), by name. */
 export function agentsForIdea(db: MockDb, idea: MockIdea): MockAiAgent[] {
   if (!db.aiSettings.enabled) return []
-  return db.aiAgents
-    .filter((agent) => AI_KINDS.some((kind) => agentPasses(db, agent, idea, kind)))
-    .sort((a, b) => agentName(db, a).localeCompare(agentName(db, b)))
+  return (
+    db.aiAgents
+      // The idea's own kinds: the bid assessor is listed on the Bids tab (`BidCallView.ai_agents`).
+      .filter((agent) =>
+        AI_KINDS.some((kind) => kind !== 'assess_bid' && agentPasses(db, agent, idea, kind)),
+      )
+      .sort((a, b) => agentName(db, a).localeCompare(agentName(db, b)))
+  )
 }
 
 export function agentOut(db: MockDb, agent: MockAiAgent): AiAgent {
@@ -508,10 +528,13 @@ export function runOut(db: MockDb, run: MockAiRun, user: MockUser): AiRun {
             message: run.error_message ?? AI_RUN_ERROR_MESSAGES[run.error_code],
           }
         : null,
+    bid_id: run.bid_id ?? null,
+    automatic: run.automatic ?? false,
     result: {
       evaluation_id: run.evaluation_id,
       note_id: run.activity_event_id,
       suggestion_id: run.suggestion_id,
+      bid_ai_assessment_id: run.bid_ai_assessment_id ?? null,
     },
     event_count: events.at(-1)?.seq ?? 0,
   }
@@ -561,7 +584,9 @@ export function addRunEvent(
 }
 
 function hasResult(run: MockAiRun): boolean {
-  return Boolean(run.evaluation_id ?? run.activity_event_id ?? run.suggestion_id)
+  return Boolean(
+    run.evaluation_id ?? run.activity_event_id ?? run.suggestion_id ?? run.bid_ai_assessment_id,
+  )
 }
 
 /**
@@ -679,6 +704,7 @@ const READS: Record<AiRunKind, string[]> = {
   evaluate: ['get_rubric', 'get_idea'],
   research: ['get_idea'],
   draft_section: ['get_idea', 'get_proposal'],
+  assess_bid: ['get_bid_for_assessment', 'get_bid_document_text'],
 }
 
 function plan(run: MockAiRun): Step[] {
@@ -773,7 +799,9 @@ function step(db: MockDb, runId: string): void {
           ? 'submit_evaluation'
           : run.kind === 'research'
             ? 'add_research_note'
-            : 'propose_proposal_section'
+            : run.kind === 'assess_bid'
+              ? 'submit_bid_assessment'
+              : 'propose_proposal_section'
       const error = writeResult(db, run, idea, agent)
       addRunEvent(
         db,
@@ -812,6 +840,7 @@ function writeResult(
   if (projectOf(db, idea).archived_at !== null) return 'project_archived'
   if (run.kind === 'evaluate') return writeEvaluation(db, run, idea, agent)
   if (run.kind === 'research') return writeNote(db, run, idea, agent)
+  if (run.kind === 'assess_bid') return writeBidAssessment(db, run, idea, agent)
   return writeSuggestion(db, run, idea, agent)
 }
 

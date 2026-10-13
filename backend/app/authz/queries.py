@@ -68,10 +68,12 @@ from app.models.enums import (
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project, project_effective_roles
+from app.models.user import User
 from app.schemas.activity import RESEARCH_GUEST_ACTIVITY_TYPES
 
 __all__ = [
     "effective_role",
+    "eligible_assessor",
     "evaluation_visible",
     "guest_activity_at",
     "listed_ideas",
@@ -103,6 +105,33 @@ def effective_role(
         .where(_roles.c.project_id == project_id, _roles.c.user_id == user_id)
         .scalar_subquery()
     )
+
+
+def eligible_assessor(user_id: Any, project_id: Any = Project.id) -> ColumnElement[bool]:
+    """Phase 10, c28 in SQL (:func:`app.authz.policy.assessor_eligible`) for the assessor
+    ``user_id`` in the project ``project_id`` (the statement joins ``projects``): an active
+    person (not an agent or the break-glass account) who is a platform admin, has a role
+    there, or the project is internal. Correlated (explicitly, at both levels: an
+    uncorrelated inner EXISTS would find anyone's role anywhere): use it in a query over
+    ``bid_section_assessors`` joined with ``projects``."""
+    person = (
+        select(User.id)
+        .where(
+            User.id == user_id,
+            User.is_active,
+            User.is_service_account.is_(False),
+            User.is_break_glass.is_(False),
+            or_(
+                User.is_platform_admin,
+                Project.visibility == ProjectVisibility.INTERNAL,
+                exists()
+                .where(_roles.c.project_id == project_id, _roles.c.user_id == user_id)
+                .correlate_except(_roles),
+            ),
+        )
+        .correlate_except(User)
+    )
+    return exists(person)
 
 
 def visible_projects(principal: Principal | None) -> ColumnElement[bool]:

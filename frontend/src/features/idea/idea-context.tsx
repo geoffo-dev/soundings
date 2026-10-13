@@ -12,7 +12,7 @@ import type {
 } from '@/api/types'
 import { DEFAULT_RESOLUTION_LABELS, DEFAULT_STATUS_LABELS } from '@/lib/status'
 
-import type { IdeaTab } from './idea-search'
+import type { IdeaSearch, IdeaTab } from './idea-search'
 
 /** Pickers opened from the sidebar, the palette, shortcuts or the phone details sheet. */
 export type IdeaDialog =
@@ -58,6 +58,10 @@ export interface IdeaPageContextValue {
   setTab: (tab: IdeaTab) => void
   /** The tab in view (the proposal editor takes `c` for its own comments). */
   tab?: IdeaTab
+  /** Phase 10: the page's URL state (the Bids tab's open bid and assessment). */
+  search?: IdeaSearch
+  /** Phase 10: patch the URL state (`replace`, no scroll). */
+  setSearch?: (patch: IdeaSearch) => void
 }
 
 const IdeaPageContext = createContext<IdeaPageContextValue | null>(null)

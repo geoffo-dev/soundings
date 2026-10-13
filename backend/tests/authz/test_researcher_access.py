@@ -93,6 +93,20 @@ TABLE: dict[str, tuple[str, str]] = {
     "idea.research_override": ("403", "·"),
     "idea.assign_researcher": ("403", "·"),
     "idea.release_researcher": ("403", "+"),
+    # Phase 10: nothing of the call (role matrix table M)
+    "bid.view_call": ("404", "·"),
+    "bid.manage": ("404", "·"),
+    "bid.upload_document": ("404", "·"),
+    "bid.decide": ("404", "·"),
+    "bid.delete_call": ("404", "·"),
+    "bid.view_bids": ("404", "·"),
+    "bid.view_price": ("404", "·"),
+    "bid.view_own_assessment": ("404", "·"),
+    "bid.assess": ("404", "·"),
+    "bid.view_section_scores": ("404", "·"),
+    "bid.view_scores": ("404", "·"),
+    "bid.ai_assess": ("404", "·"),
+    "ai.assess_bid": ("404", "·"),
 }
 # Table L's route table, copied by hand (operation -> R).
 ROUTES: dict[str, str] = {
@@ -130,6 +144,23 @@ ROUTES: dict[str, str] = {
     "mcp.list_projects": "list", "mcp.add_research_note": "rule",
     "mcp.get_rubric": "hidden", "mcp.get_proposal": "hidden", "mcp.create_idea": "hidden",
     "mcp.propose_proposal_section": "hidden", "mcp.submit_evaluation": "hidden",
+    # Phase 10: every bid route and the AI assessor's tools (404 for a guest)
+    "get_bid_call": "hidden", "create_bid_call": "hidden", "update_bid_call": "hidden",
+    "delete_bid_call": "hidden", "change_bid_call_status": "hidden",
+    "cancel_bid_call": "hidden", "replace_bid_call_template": "hidden",
+    "set_bid_assessors": "hidden", "get_bid_comparison": "hidden", "award_bid_call": "hidden",
+    "export_bid_report_markdown": "hidden", "export_bid_report_pdf": "hidden",
+    "list_bids": "hidden", "create_bid": "hidden", "get_bid": "hidden", "update_bid": "hidden",
+    "delete_bid": "hidden", "reject_bid": "hidden", "reinstate_bid": "hidden",
+    "decide_must_have": "hidden", "upload_bid_document": "hidden",
+    "update_bid_document": "hidden", "delete_bid_document": "hidden",
+    "download_bid_document": "hidden", "get_bid_document_text": "hidden",
+    "get_my_bid_assessment": "hidden", "save_my_bid_assessment": "hidden",
+    "list_bid_section_assessments": "hidden", "request_ai_bid_assessment": "hidden",
+    "request_ai_bid_assessments": "hidden", "list_bid_ai_assessments": "hidden",
+    "set_bid_ai_inclusion": "hidden",
+    "mcp.get_bid_for_assessment": "hidden", "mcp.get_bid_document_text": "hidden",
+    "mcp.submit_bid_assessment": "hidden",
 }
 # fmt: on
 

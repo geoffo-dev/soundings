@@ -76,3 +76,56 @@ export async function unwrap<T>(request: Promise<{ data?: T; response: Response 
   const { data } = await request
   return data as T
 }
+
+export interface UploadOptions {
+  /** 0-1 as the body is sent (not including the server's checks). */
+  onProgress?: (fraction: number) => void
+  signal?: AbortSignal
+}
+
+/**
+ * POSTs a file as the raw request body with upload progress (Phase 10's bid documents,
+ * contract-phase10 §6.1). fetch can't report upload progress, so this one call uses
+ * XMLHttpRequest, with the same CSRF header and the same ApiError on failure as the
+ * typed client. The type is always `application/octet-stream`: the server decides the
+ * file's type from its bytes.
+ */
+export function uploadRaw<T>(url: string, file: Blob, options: UploadOptions = {}): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.withCredentials = true
+    xhr.setRequestHeader('Accept', 'application/json')
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    const token = readCsrfToken()
+    if (token) xhr.setRequestHeader(CSRF_HEADER, token)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0)
+        options.onProgress?.(event.loaded / event.total)
+    }
+    xhr.onload = () => {
+      const headers = new Headers()
+      for (const line of xhr
+        .getAllResponseHeaders()
+        .trim()
+        .split(/[\r\n]+/)) {
+        const index = line.indexOf(':')
+        if (index > 0) headers.append(line.slice(0, index).trim(), line.slice(index + 1).trim())
+      }
+      const response = new Response(xhr.status === 204 ? null : xhr.responseText, {
+        status: xhr.status,
+        statusText: xhr.statusText,
+        headers,
+      })
+      if (!response.ok) {
+        void toApiError(response).then(reject, reject)
+        return
+      }
+      response.json().then((body) => resolve(body as T), reject)
+    }
+    xhr.onerror = () => reject(networkError(new Error('Upload failed')))
+    xhr.onabort = () => reject(new DOMException('The upload was cancelled.', 'AbortError'))
+    options.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    xhr.send(file)
+  })
+}

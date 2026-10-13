@@ -15,6 +15,7 @@ import { openCreateProject } from '@/lib/dialogs'
 import { useListNavigation } from '@/lib/list-navigation'
 import { SHORTCUTS, useShortcut } from '@/lib/shortcuts'
 
+import { BidsToAssessSection } from './bids-to-assess'
 import { EvaluationsDueSection } from './evaluations-due'
 import { OwnedIdeasSection } from './owned-ideas'
 import { RecentIdeasSection } from './recent-ideas'
@@ -22,7 +23,7 @@ import { ResearchToDoSection } from './research-to-do'
 
 /**
  * My work (SPEC §5 screen 1, wireframe 01): evaluations due, research to do (Phase
- * 8b), ideas I own by status, and what changed recently. j/k or ↑/↓ move between rows, Enter
+ * 8b), bids to assess (Phase 10), ideas I own by status, and what changed recently. j/k or ↑/↓ move between rows, Enter
  * opens, E evaluates the focused (or most urgent) due idea.
  */
 export function MyWorkPage() {
@@ -44,7 +45,7 @@ export function MyWorkPage() {
   const due = work.data?.evaluations_due
   const hasDue = (due?.length ?? 0) > 0
 
-  // Sidebar links (/#evaluations, /#research, /#owned) scroll once the sections exist.
+  // Sidebar links (/#evaluations, /#research, /#bids, /#owned) scroll once the sections exist.
   useEffect(() => {
     if (hash && work.data) document.getElementById(hash)?.scrollIntoView({ block: 'start' })
   }, [hash, work.data])
@@ -165,6 +166,10 @@ export function MyWorkPage() {
             items={work.data?.research_to_do}
             total={work.data?.counts.research_to_do}
             nextCursor={work.data?.research_to_do_next_cursor}
+          />
+          <BidsToAssessSection
+            items={work.data?.bids_to_assess}
+            total={work.data?.counts.bid_assessments_due}
           />
           <OwnedIdeasSection groups={work.data?.owned} openCount={work.data?.counts.owned_open} />
           <RecentIdeasSection recent={work.data?.recent} />

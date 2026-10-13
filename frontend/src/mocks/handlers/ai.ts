@@ -94,6 +94,7 @@ import { proposalOf, proposalOpenFor } from '@/mocks/proposals'
 import { startsEvaluation } from '@/mocks/research'
 import { sessionAuthMethod } from '@/mocks/session'
 
+import { runVisible } from '@/mocks/bids'
 import { emit, ensureIdeaWritable, isUuid, uuidParam, viewIdea } from './common'
 
 const HOUR = 3_600_000
@@ -155,13 +156,13 @@ function purposesField(body: Record<string, unknown>, required: boolean): AiRunK
   if (
     !distinct ||
     distinct.length < 1 ||
-    distinct.length > 3 ||
+    distinct.length > 4 ||
     !distinct.every((kind) => AI_KINDS.includes(kind as AiRunKind))
   ) {
     failValidation([
       {
         loc: ['body', 'purposes'],
-        msg: 'Choose 1 to 3 of evaluate, research, draft_section',
+        msg: 'Choose 1 to 4 of evaluate, research, draft_section, assess_bid',
         type: 'value_error',
       },
     ])
@@ -339,7 +340,9 @@ function testAgent(db: MockDb, agent: MockAiAgent) {
       ? 'Evaluate an idea'
       : kind === 'research'
         ? 'Research an idea'
-        : 'Draft a proposal section'
+        : kind === 'assess_bid'
+          ? 'Assess a bid'
+          : 'Draft a proposal section'
   return {
     ok: true,
     url,
@@ -364,7 +367,8 @@ function testAgent(db: MockDb, agent: MockAiAgent) {
 function findRun(ctx: RouteContext, idea: MockIdea): MockAiRun {
   const id = uuidParam(ctx, 'runId')
   const run = ctx.db.aiRuns.find((r) => r.id === id && r.idea_id === idea.id)
-  if (!run) notFound('AI run not found.')
+  // Phase 10 (review S9): assess runs name bids, so only bid viewers get them.
+  if (!run || !runVisible(ctx.db, run, ctx.user)) notFound('AI run not found.')
   return run
 }
 
@@ -775,6 +779,7 @@ export const aiHandlers = [
     const { db, user } = ctx
     const runs = db.aiRuns
       .filter((run) => run.idea_id === idea.id && (kinds.length === 0 || kinds.includes(run.kind)))
+      .filter((run) => runVisible(db, run, user))
       .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
       .slice(0, limit)
     return {

@@ -19,11 +19,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import (
+    BidCallFacts,
     Decision,
     Resource,
     Rule,
     authorize,
     best_decision,
+    bid_call_flags,
     can,
     effective_roles_of,
     idea_permissions,
@@ -36,7 +38,9 @@ from app.domain.idea_keys import IdeaKey, parse_idea_ref
 from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.models.activity import ActivityEvent
+from app.models.bid import Bid, BidCall
 from app.models.enums import (
+    BidCallStatus,
     EvaluationStatus,
     EvaluatorState,
     IdeaStatus,
@@ -46,8 +50,10 @@ from app.models.enums import (
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator, IdeaTag, IdeaWatcher
 from app.models.project import Project, Tag
+from app.models.proposal import Proposal
 from app.models.public import PublicSubmission
 from app.models.user import User
+from app.schemas.bid_refs import BidCallSummary
 from app.schemas.ideas import (
     AggregateScore,
     CriterionAggregate,
@@ -256,17 +262,48 @@ async def idea_detail(
     ):
         # Phase 8: the first invite would cross the research gate (409 research_incomplete).
         permissions = permissions.model_copy(update={"invite_blocked_by_research": True})
-    fields["permissions"] = permissions
-    watching, via_public_form = (
+    # Phase 10: the call for bids' summary and whether a proposal exists (c27), in the same
+    # statement as the watch and public-form flags (no extra round trip).
+    call = select(BidCall).where(BidCall.idea_id == idea.id).subquery()
+    bid_count = (
+        select(func.count()).select_from(Bid).where(Bid.call_id == call.c.id).scalar_subquery()
+    )
+    watching, via_public_form, has_proposal, call_id, call_title, call_status, deadline, bids = (
         await db.execute(
             select(
                 exists().where(
                     IdeaWatcher.idea_id == idea.id, IdeaWatcher.user_id == principal.user_id
                 ),
                 exists().where(PublicSubmission.idea_id == idea.id),
+                exists().where(Proposal.idea_id == idea.id),
+                select(call.c.id).scalar_subquery(),
+                select(call.c.title).scalar_subquery(),
+                select(call.c.status).scalar_subquery(),
+                select(call.c.deadline_at).scalar_subquery(),
+                select(bid_count).select_from(call).scalar_subquery(),
             )
         )
     ).one()
+    bid_call = None
+    call_facts = None
+    if call_id is not None:
+        call_facts = BidCallFacts(id=call_id, status=BidCallStatus(call_status))
+        if can(principal, Rule.BID_VIEW_CALL, resource):
+            bid_call = BidCallSummary(
+                id=call_id,
+                title=call_title,
+                status=BidCallStatus(call_status),
+                deadline_at=deadline,
+                bid_count=int(bids or 0),
+            )
+    view_call, create_call = bid_call_flags(principal, resource.replace(bid_call=call_facts))
+    permissions = permissions.model_copy(
+        update={
+            "can_view_bid_call": view_call,
+            "can_create_bid_call": create_call and bool(has_proposal),
+        }
+    )
+    fields["permissions"] = permissions
     return IdeaDetail(
         **fields,
         description_md=idea.description_md,
@@ -284,6 +321,7 @@ async def idea_detail(
         watching=bool(watching),
         held_for=idea.held_for,
         via_public_form=bool(via_public_form),
+        bid_call=bid_call,
     )
 
 

@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.authz import (
+    BidCallFacts,
     Decision,
     IdeaFacts,
     ProjectFacts,
@@ -28,6 +29,7 @@ from app.authz.rules import RULE_SCOPES, SESSION_ONLY_RULES
 from app.domain.principal import ApiKeyScope, Principal
 from app.errors import ProblemError
 from app.models.enums import (
+    BidCallStatus,
     EvaluatorState,
     IdeaStatus,
     ProjectRole,
@@ -39,6 +41,7 @@ from app.models.user import User
 ME = uuid4()
 OTHER = uuid4()
 PROJECT = uuid4()
+SECTION = uuid4()
 
 Column = Literal["PA", "PA+member", "PAd", "Mem", "Vwr", "NMi", "NMp", "Pub"]
 
@@ -362,8 +365,22 @@ def _fits_everything(rule: Rule) -> Resource:
         project=ProjectFacts(
             PROJECT, ProjectVisibility.PRIVATE, research_step=ResearchStep.BEFORE_PROPOSAL
         ),
+        # Phase 10: a draft call (c30) whose section (and price section) they assess and
+        # have submitted (the +Asr overlay, c29; not blind).
+        bid_call=BidCallFacts(
+            id=uuid4(),
+            status=BidCallStatus.DRAFT,
+            my_section_ids=frozenset({SECTION}),
+            price_section_id=SECTION,
+        ),
+        bid_section_id=SECTION,
+        bid_section_submitted=True,
     )
 
+
+C22_ONLY: frozenset[Rule] = frozenset({Rule.BID_AI_ASSESS})
+"""Rules with a scope that no column or overlay grants: an agent gets them only through c22
+inside its run (the MCP layer), never through the policy (role matrix table M)."""
 
 KEY_RULES = sorted((rule for rule, spec in POLICY.items() if spec.scope.value != "public"), key=str)
 
@@ -374,7 +391,9 @@ def test_each_scope_alone(rule: Rule, scope: ApiKeyScope) -> None:
     key = principal(platform_admin=True, auth="api_key", scopes={scope})
     decision = authorize(key, rule, _fits_everything(rule).replace(evaluator_to_remove=None))
 
-    if RULE_SCOPES.get(rule) == scope:
+    if rule in C22_ONLY and RULE_SCOPES.get(rule) == scope:
+        assert (decision.status, decision.code) == (403, "forbidden")
+    elif RULE_SCOPES.get(rule) == scope:
         assert decision.allowed, decision
     else:
         assert (decision.status, decision.code) == (403, "insufficient_scope")
@@ -529,6 +548,9 @@ def test_idea_permissions_for_the_owner() -> None:
         "can_assign_outside_researcher": False,
         "can_hand_back_research": False,
         "can_view_project": True,
+        # Phase 10: no call, and not in Proposal (c27).
+        "can_view_bid_call": False,
+        "can_create_bid_call": False,
     }
     stepped = resource(owner_id=ME, status=IdeaStatus.NEW).replace(
         project=ProjectFacts(

@@ -47,6 +47,7 @@ from app.models.proposal import Proposal
 from app.models.research import ResearchChecklistItem
 from app.models.user import User
 from app.schemas.activity import EVALUATION_ACTIVITY_TYPES, RESEARCH_GUEST_ACTIVITY_TYPES
+from app.schemas.bids import DEFAULT_BID_TEMPLATE
 from app.services.scoring import recompute_aggregates
 from tests.factories import add_evaluator, add_member, make_idea, make_project, make_user
 from tests.mcp.conftest import AsAgent
@@ -278,7 +279,149 @@ ROUTES: dict[str, tuple[str, str, Any, object]] = {
     "get_ai_run": ("GET", f"/ideas/{{key}}/ai-runs/{X}", None, 404),
     "cancel_ai_run": ("POST", f"/ideas/{{key}}/ai-runs/{X}/cancel", None, 404),
     "stream_ai_run_events": ("GET", f"/ideas/{{key}}/ai-runs/{X}/events", None, 404),
+    # Phase 10, hidden: the call for bids, its bids, documents, assessments, AI and report
+    # (a guest researcher sees nothing of the call; role matrix table M)
+    "get_bid_call": ("GET", "/ideas/{key}/bid-call", None, 404),
+    "create_bid_call": ("POST", "/ideas/{key}/bid-call", {"title": "Call"}, 404),
+    "update_bid_call": (
+        "PUT",
+        "/ideas/{key}/bid-call",
+        {
+            "title": "T",
+            "description": "",
+            "currency": "GBP",
+            "deadline_at": None,
+            "ai_assessor_id": None,
+        },
+        404,
+    ),
+    "delete_bid_call": ("DELETE", "/ideas/{key}/bid-call", None, 404),
+    "change_bid_call_status": ("POST", "/ideas/{key}/bid-call/status", {"status": "open"}, 404),
+    "cancel_bid_call": ("POST", "/ideas/{key}/bid-call/cancellation", {}, 404),
+    "replace_bid_call_template": (
+        "PUT",
+        "/ideas/{key}/bid-call/template",
+        DEFAULT_BID_TEMPLATE.model_dump(mode="json"),
+        404,
+    ),
+    "set_bid_assessors": (
+        "PUT",
+        "/ideas/{key}/bid-call/assessors",
+        {"sections": [{"section_id": X, "user_ids": []}], "due_at": None},
+        404,
+    ),
+    "get_bid_comparison": ("GET", "/ideas/{key}/bid-call/comparison", None, 404),
+    "request_ai_bid_assessments": (
+        "POST",
+        "/ideas/{key}/bid-call/ai-assessments",
+        {"agent_id": X},
+        404,
+    ),
+    "award_bid_call": ("POST", "/ideas/{key}/bid-call/award", {"bid_id": X}, 404),
+    "export_bid_report_markdown": ("GET", "/ideas/{key}/bid-call/report/markdown", None, 404),
+    "export_bid_report_pdf": ("GET", "/ideas/{key}/bid-call/report/pdf", None, 404),
+    "list_bids": ("GET", "/ideas/{key}/bid-call/bids", None, 404),
+    "create_bid": ("POST", "/ideas/{key}/bid-call/bids", {"bidder": "B"}, 404),
+    "get_bid": ("GET", f"/ideas/{{key}}/bid-call/bids/{X}", None, 404),
+    "update_bid": (
+        "PUT",
+        f"/ideas/{{key}}/bid-call/bids/{X}",
+        {"bidder": "B", "received_at": "2026-10-12T09:00:00Z"},
+        404,
+    ),
+    "delete_bid": ("DELETE", f"/ideas/{{key}}/bid-call/bids/{X}", None, 404),
+    "reject_bid": ("PUT", f"/ideas/{{key}}/bid-call/bids/{X}/rejection", {"reason": "x"}, 404),
+    "reinstate_bid": ("DELETE", f"/ideas/{{key}}/bid-call/bids/{X}/rejection", None, 404),
+    "decide_must_have": (
+        "PUT",
+        f"/ideas/{{key}}/bid-call/bids/{X}/must-haves/{X}",
+        {"result": None},
+        404,
+    ),
+    "upload_bid_document": (
+        "POST",
+        f"/ideas/{{key}}/bid-call/bids/{X}/documents?filename=a.pdf",
+        None,
+        404,
+    ),
+    "update_bid_document": (
+        "PUT",
+        f"/ideas/{{key}}/bid-call/bids/{X}/documents/{X}",
+        {"must_have_id": None, "pricing": False},
+        404,
+    ),
+    "delete_bid_document": ("DELETE", f"/ideas/{{key}}/bid-call/bids/{X}/documents/{X}", None, 404),
+    "download_bid_document": (
+        "GET",
+        f"/ideas/{{key}}/bid-call/bids/{X}/documents/{X}/content",
+        None,
+        404,
+    ),
+    "get_bid_document_text": (
+        "GET",
+        f"/ideas/{{key}}/bid-call/bids/{X}/documents/{X}/text",
+        None,
+        404,
+    ),
+    "get_my_bid_assessment": (
+        "GET",
+        f"/ideas/{{key}}/bid-call/bids/{X}/sections/{X}/assessment",
+        None,
+        404,
+    ),
+    "save_my_bid_assessment": (
+        "PUT",
+        f"/ideas/{{key}}/bid-call/bids/{X}/sections/{X}/assessment",
+        {"answers": []},
+        404,
+    ),
+    "list_bid_section_assessments": (
+        "GET",
+        f"/ideas/{{key}}/bid-call/bids/{X}/sections/{X}/assessments",
+        None,
+        404,
+    ),
+    "request_ai_bid_assessment": (
+        "POST",
+        f"/ideas/{{key}}/bid-call/bids/{X}/ai-assessment",
+        {"agent_id": X},
+        404,
+    ),
+    "list_bid_ai_assessments": (
+        "GET",
+        f"/ideas/{{key}}/bid-call/bids/{X}/ai-assessments",
+        None,
+        404,
+    ),
+    "set_bid_ai_inclusion": (
+        "PUT",
+        f"/ideas/{{key}}/bid-call/bids/{X}/ai-assessments/{X}/include-in-totals",
+        {"include": True},
+        404,
+    ),
 }
+STILL_STUBS: frozenset[str] = frozenset(
+    {
+        "request_ai_bid_assessments",
+        "request_ai_bid_assessment",
+        "export_bid_report_markdown",
+        "export_bid_report_pdf",
+    }
+)
+"""Phase 10 operations still answering 501 (backend parts 2-3 build them): their 404 for a
+guest is pinned as an expected failure until then (delete each from here when it's built)."""
+
+
+def _operations() -> list[Any]:
+    return [
+        pytest.param(
+            operation,
+            marks=pytest.mark.xfail(strict=True, reason="a Phase 10 stub (501) until built"),
+        )
+        if operation in STILL_STUBS
+        else operation
+        for operation in sorted(ROUTES)
+    ]
 
 
 def test_every_idea_route_of_the_guest_table_is_covered() -> None:
@@ -313,7 +456,7 @@ async def _send(
     return await client.request(method, _url(scene, team, path), json=body)
 
 
-@pytest.mark.parametrize("operation", sorted(ROUTES))
+@pytest.mark.parametrize("operation", _operations())
 async def test_the_guest_on_every_idea_route(
     api: AsUser, team: Team, scene: Scene, operation: str
 ) -> None:
@@ -336,7 +479,7 @@ async def test_the_guest_on_every_idea_route(
             assert response.json()["code"] == "not_found"
 
 
-@pytest.mark.parametrize("operation", sorted(ROUTES))
+@pytest.mark.parametrize("operation", _operations())
 async def test_an_outsider_who_isnt_the_researcher_gets_404(
     api: AsUser, team: Team, scene: Scene, operation: str, db_session: AsyncSession
 ) -> None:

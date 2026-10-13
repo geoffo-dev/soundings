@@ -27,6 +27,14 @@ live researcher in **any** column, without a role (unlike +Own and +Evl); answer
 while the idea still awaits research (c26, lead decision D1: past Research only the owner
 and admins change the answers).
 
+Phase 10, bid evaluation (role matrix table M, ADR 0018): call managers are PA, PAd and
++Own; the overlay **+Asr** (:attr:`RuleSpec.assessor`) adds a section assessor's cells in
+any column PA to NMi while c28 holds **now** (:func:`assessor_live`: a person who views the
+idea in their own right; never column R or NMp, never an agent or the break-glass account;
+review M6), with c29 naming the section (:class:`BidCallFacts`, ``Resource.bid_section_id``).
+Its ✱ is section 3a's blind rule (:func:`bid_pending`: a pending assessor of the bid and
+section in question, whatever their role), not the idea evaluation's.
+
 Blind evaluation (✱) is part of the policy: ``evaluation.view_others`` and
 ``score.view_aggregate`` are denied with ``hidden=True`` for a pending evaluator
 (assigned, not submitted), whatever their role, and always for a service account (an AI
@@ -51,6 +59,7 @@ from app.authz.rules import RULE_SCOPES, Rule
 from app.domain.principal import Principal
 from app.errors import NotFoundProblem, ProblemError
 from app.models.enums import (
+    BidCallStatus,
     EvaluatorState,
     HoldReason,
     IdeaStatus,
@@ -60,17 +69,21 @@ from app.models.enums import (
 )
 from app.models.idea import Idea
 from app.models.project import Project
+from app.models.user import User
 from app.schemas.projects import RESERVED_SLUGS
 from app.schemas.research import awaits_research
 
 __all__ = [
+    "ASSESSOR_COLUMNS",
     "ASSIGNABLE_ROLES",
+    "BID_BLIND_RULES",
     "CONDITIONS",
     "FROZEN_WHILE_HELD",
     "ISSUING_KEYS",
     "MANAGE_USER_ACCESS",
     "PERSONS_ONLY",
     "POLICY",
+    "BidCallFacts",
     "Column",
     "Decision",
     "IdeaFacts",
@@ -79,8 +92,11 @@ __all__ = [
     "Resource",
     "RuleSpec",
     "Scope",
+    "assessor_eligible",
+    "assessor_live",
     "authorize",
     "best_decision",
+    "bid_pending",
     "can",
     "counted_by_default",
     "is_agent",
@@ -194,6 +210,23 @@ class NamedResearcher:
     role: ProjectRole | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BidCallFacts:
+    """Phase 10: the idea's call for bids, as a decision about it needs it (role matrix
+    table M).
+
+    ``my_section_ids``: the sections of the call the principal is **assigned** to assess
+    (``bid_section_assessors``). The assignment grants the +Asr overlay only while c28
+    holds now (:func:`assessor_live`: an active person who views the idea in their own
+    right, never as its guest researcher; review M6). ``price_section_id``: the section
+    holding the call's price question, if any (c29 for ``bid.view_price``)."""
+
+    id: UUID
+    status: BidCallStatus
+    my_section_ids: frozenset[UUID] = frozenset()
+    price_section_id: UUID | None = None
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Resource:
     """What a decision is about. Unset optional facts make their conditions pass or
@@ -231,6 +264,14 @@ class Resource:
     * ``researcher_named``: Phase 8b, c23 and c25 for ``idea.assign_researcher``: the
       person a request makes the idea's researcher. ``None`` = nobody new is named
       (permission flags, removing the researcher, the same researcher again).
+    * ``bid_call``: Phase 10, the idea's call for bids (the +Asr overlay, c29, c30); unset
+      = no call (the overlay grants nothing, c29 and c30 fail).
+    * ``bid_section_id``: Phase 10, the section of the call a decision is about (c29 for
+      ``bid.view_own_assessment``, ``bid.assess`` and ``bid.view_section_scores``; the
+      blind rule of section 3a for those and ``bid.view_scores``). Unset fails c29.
+    * ``bid_section_submitted``: Phase 10, the principal has **submitted** their assessment
+      of ``bid_section_id`` for the bid in question (section 3a: before that they are a
+      pending assessor of it and see none of its scores).
     """
 
     project: ProjectFacts | None = None
@@ -249,6 +290,9 @@ class Resource:
     public_submission_on: bool = False
     issuing_api_key: bool = False
     researcher_named: NamedResearcher | None = None
+    bid_call: BidCallFacts | None = None
+    bid_section_id: UUID | None = None
+    bid_section_submitted: bool = False
 
     def replace(self, **changes: object) -> Resource:
         return dataclasses.replace(self, **changes)  # type: ignore[arg-type]
@@ -347,6 +391,33 @@ def _research_not_finished(_p: Principal | None, resource: Resource, _rule: Rule
     a guest can't see, and answers aren't audited, so a researcher who isn't the owner or
     an admin stops there."""
     return awaits_research(_project(resource).research_step, _idea(resource).status)
+
+
+def _assesses_the_section(_p: Principal | None, resource: Resource, rule: Rule) -> bool:
+    """c29 (Phase 10): the principal is assigned to the section in question (for
+    ``bid.view_price``, the section holding the price question). Only on the +Asr overlay,
+    which already requires c28 now (:func:`assessor_live`)."""
+    call = resource.bid_call
+    if call is None:
+        return False
+    section = call.price_section_id if rule is Rule.BID_VIEW_PRICE else resource.bid_section_id
+    return section is not None and section in call.my_section_ids
+
+
+def _call_deletable(principal: Principal | None, resource: Resource, _rule: Rule) -> bool:
+    """c30 (Phase 10, review S14): the call is a draft or cancelled, or awarded and the
+    principal is a platform admin (the bidders' personal data shouldn't need the idea
+    deleted); never open or assessing. No call: fails (deny by default)."""
+    call = resource.bid_call
+    if call is None:
+        return False
+    if call.status in (BidCallStatus.DRAFT, BidCallStatus.CANCELLED):
+        return True
+    return (
+        call.status is BidCallStatus.AWARDED
+        and principal is not None
+        and principal.is_platform_admin
+    )
 
 
 CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
@@ -449,6 +520,9 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     "c23": (Check("c23", 422, "researcher_not_eligible", _researcher_eligible),),
     "c25": (Check("c25", 403, "outside_researcher_needs_admin", _researcher_in_private_project),),
     "c26": (Check("c26", 409, "research_finished", _research_not_finished),),
+    # Phase 10: bid evaluation (role matrix table M).
+    "c29": (Check("c29", 403, "not_section_assessor", _assesses_the_section),),
+    "c30": (Check("c30", 409, "bid_call_active", _call_deletable),),
 }
 
 _PHASE: Final = {404: 0, 401: 1, 403: 1, 422: 2, 409: 3}
@@ -510,6 +584,8 @@ class RuleSpec:
     list: project-scoped, global, public)."""
     researcher: Grant | None = None
     """Phase 8b, the +Rsr overlay (table L); ``None`` = ``·``."""
+    assessor: Grant | None = None
+    """Phase 10, the +Asr overlay (table M's twelfth column); ``None`` = ``·``."""
     blind: bool = False
     idea_write: bool = False
     """Refused with 409 ``project_archived`` in an archived project (contract section 2)."""
@@ -576,6 +652,7 @@ def _row(
     *cells: str,
     owner: str = "·",
     evaluator: str = "·",
+    assessor: str = "·",
     idea_write: bool = False,
 ) -> RuleSpec:
     if len(cells) != len(MATRIX_COLUMNS):
@@ -586,9 +663,10 @@ def _row(
         cells=dict(zip(MATRIX_COLUMNS, (_cell(cell) for cell in cells), strict=True)),
         owner=_overlay(owner),
         evaluator=_overlay(evaluator),
-        blind=any("✱" in cell for cell in (*cells, owner, evaluator)),
+        assessor=_overlay(assessor),
+        blind=any("✱" in cell for cell in (*cells, owner, evaluator, assessor)),
         idea_write=idea_write,
-        source=(*cells, owner, evaluator),
+        source=(*cells, owner, evaluator, assessor),
     )
 
 
@@ -621,6 +699,14 @@ FROZEN_WHILE_HELD: Final = frozenset(
         Rule.IDEA_RESEARCH_OVERRIDE,
         Rule.IDEA_ASSIGN_RESEARCHER,
         Rule.IDEA_RELEASE_RESEARCHER,
+        # Phase 10: every bid write (a call needs an idea in Proposal, so a held idea never
+        # has one; this keeps the rule uniform).
+        Rule.BID_MANAGE,
+        Rule.BID_UPLOAD_DOCUMENT,
+        Rule.BID_DECIDE,
+        Rule.BID_DELETE_CALL,
+        Rule.BID_ASSESS,
+        Rule.AI_ASSESS_BID,
     }
 )
 """c19 (contract-phase4 section 3.6): every idea write on an idea held for moderation
@@ -714,6 +800,23 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     _row(Rule.IDEA_RESEARCH_OVERRIDE, _I, "Y",    "Y",          "403",           "403",   "403",   "404", "401", idea_write=_W),
     _row(Rule.IDEA_ASSIGN_RESEARCHER, _I, "Y (c5, c23)", "Y (c5, c23)", "403",   "403",   "403",   "404", "401", owner="+ (c5, c23, c25)", idea_write=_W),
     _row(Rule.IDEA_RELEASE_RESEARCHER, _I, "403", "403",        "403",           "403",   "403",   "404", "401", idea_write=_W),
+    # F (Phase 10). The project's default bid evaluation template
+    _row(Rule.PROJECT_EDIT_BID_TEMPLATE, _P, "Y", "Y",          "403",           "403",   "403",   "404", "401"),
+    # M. Bid evaluation (Phase 10): +Own = a call manager (with member or admin), +Asr = a
+    # section assessor (c28 live, any column PA to NMi; assessor=)
+    _row(Rule.BID_VIEW_CALL, _I, "Y",             "Y",          "Y",             "Y",     "Y",     "404", "401"),
+    _row(Rule.BID_MANAGE, _I,    "Y (c5)",        "Y (c5)",     "403",           "403",   "403",   "404", "401", owner="+ (c5)", idea_write=_W),
+    _row(Rule.BID_UPLOAD_DOCUMENT, _I, "Y (c5)",  "Y (c5)",     "403",           "403",   "403",   "404", "401", owner="+ (c5)", idea_write=_W),
+    _row(Rule.BID_DECIDE, _I,    "Y (c5)",        "Y (c5)",     "403",           "403",   "403",   "404", "401", owner="+ (c5)", idea_write=_W),
+    _row(Rule.BID_DELETE_CALL, _I, "Y (c30)",     "Y (c30)",    "403",           "403",   "403",   "404", "401", owner="+ (c30)", idea_write=_W),
+    _row(Rule.BID_VIEW_BIDS, _I, "Y",             "Y",          "403",           "403",   "403",   "404", "401", owner="+", assessor="+"),
+    _row(Rule.BID_VIEW_PRICE, _I, "Y",            "Y",          "403",           "403",   "403",   "404", "401", owner="+", assessor="+ (c29)"),
+    _row(Rule.BID_VIEW_OWN_ASSESSMENT, _I, "403", "403",        "403",           "403",   "403",   "404", "401", assessor="+ (c29)"),
+    _row(Rule.BID_ASSESS, _I,    "403",           "403",        "403",           "403",   "403",   "404", "401", assessor="+ (c29)", idea_write=_W),
+    _row(Rule.BID_VIEW_SECTION_SCORES, _I, "Y ✱", "Y ✱",        "403",           "403",   "403",   "404", "401", owner="+ ✱", assessor="+ ✱ (c29)"),
+    _row(Rule.BID_VIEW_SCORES, _I, "Y ✱",         "Y ✱",        "403",           "403",   "403",   "404", "401", owner="+ ✱"),
+    _row(Rule.BID_AI_ASSESS, _I, "403",           "403",        "403",           "403",   "403",   "404", "401"),
+    _row(Rule.AI_ASSESS_BID, _I, "Y (c5, c10)",   "Y (c5, c10)", "403",          "403",   "403",   "404", "401", owner="+ (c5, c10)", idea_write=_W),
 )
 
 # L. Researcher access (Phase 8b): column R's cell and the +Rsr overlay of every
@@ -757,6 +860,20 @@ TABLE_L: Final[Mapping[Rule, tuple[str, str]]] = {
     Rule.IDEA_RESEARCH_OVERRIDE:         ("403",     "·"),
     Rule.IDEA_ASSIGN_RESEARCHER:         ("403",     "·"),
     Rule.IDEA_RELEASE_RESEARCHER:        ("403",     "+"),
+    # Phase 10: nothing of the call, not even that one exists (role matrix table M)
+    Rule.BID_VIEW_CALL:                  ("404",     "·"),
+    Rule.BID_MANAGE:                     ("404",     "·"),
+    Rule.BID_UPLOAD_DOCUMENT:            ("404",     "·"),
+    Rule.BID_DECIDE:                     ("404",     "·"),
+    Rule.BID_DELETE_CALL:                ("404",     "·"),
+    Rule.BID_VIEW_BIDS:                  ("404",     "·"),
+    Rule.BID_VIEW_PRICE:                 ("404",     "·"),
+    Rule.BID_VIEW_OWN_ASSESSMENT:        ("404",     "·"),
+    Rule.BID_ASSESS:                     ("404",     "·"),
+    Rule.BID_VIEW_SECTION_SCORES:        ("404",     "·"),
+    Rule.BID_VIEW_SCORES:                ("404",     "·"),
+    Rule.BID_AI_ASSESS:                  ("404",     "·"),
+    Rule.AI_ASSESS_BID:                  ("404",     "·"),
 }
 # fmt: on
 
@@ -833,6 +950,11 @@ _DETAILS: Final[Mapping[str, str]] = {
     "research_finished": (
         "The research is finished: past Research only the idea's owner or an admin can "
         "change its answers."
+    ),
+    "not_section_assessor": "You don't assess that section of this call for bids.",
+    "bid_call_active": (
+        "An open or assessing call can't be deleted (cancel it first); an awarded one only "
+        "by a platform admin."
     ),
 }
 
@@ -912,6 +1034,64 @@ def researcher_live(principal: Principal | None, resource: Resource) -> bool:
         and project.research_step is not ResearchStep.OFF
         and idea.status is not IdeaStatus.CLOSED
         and not project.archived
+    )
+
+
+ASSESSOR_COLUMNS: Final = frozenset({Column.PA, Column.PAD, Column.MEM, Column.VWR, Column.NMI})
+"""Phase 10: the columns in which a section assignment grants the +Asr overlay (c28 now:
+someone who views the idea in their own right; never R or NMp)."""
+
+BID_BLIND_RULES: Final = frozenset({Rule.BID_VIEW_SECTION_SCORES, Rule.BID_VIEW_SCORES})
+"""Phase 10: the rules whose ✱ is the bid assessment's blind rule (role matrix section 3a:
+a pending assessor of the bid and section in question), not the idea evaluation's."""
+
+
+def assessor_live(principal: Principal | None, resource: Resource, column: Column) -> bool:
+    """c28 now, for the +Asr overlay (Phase 10, review M6): the principal is assigned to a
+    section of the idea's call, is a person (never an AI agent or the break-glass account;
+    a deactivated user can't sign in) and views the idea in their own right (``column`` is
+    PA to NMi: in a private project a role there, never as its guest researcher)."""
+    call = resource.bid_call
+    return (
+        principal is not None
+        and call is not None
+        and bool(call.my_section_ids)
+        and column in ASSESSOR_COLUMNS
+        and not principal.user.is_service_account
+        and not principal.user.is_break_glass
+    )
+
+
+def assessor_eligible(user: User, role: ProjectRole | None, project: ProjectFacts) -> bool:
+    """c28 for a person named (or kept) as a section assessor (Phase 10): an active person,
+    never an AI agent or the break-glass account, who views the idea in their own right:
+    a platform admin, someone with a role in the project, or (internal project) anyone
+    signed in; never as the idea's guest researcher. The same test as :func:`assessor_live`
+    for the principal, on another user's row (read under a lock when assigning, like c25):
+    ``BidAssessor.can_assess``, progress and My work use its SQL form
+    (:func:`app.authz.queries.eligible_assessor`)."""
+    if not user.is_active or user.is_service_account or user.is_break_glass:
+        return False
+    return (
+        user.is_platform_admin
+        or role is not None
+        or project.visibility is ProjectVisibility.INTERNAL
+    )
+
+
+def bid_pending(principal: Principal | None, resource: Resource) -> bool:
+    """Role matrix section 3a: the principal is a **pending assessor** of the bid and section
+    in question (assigned to ``bid_section_id`` and hasn't submitted it for that bid), so
+    they see none of its scores, whatever their role. An AI agent sees no bid score data at
+    all (rule 6)."""
+    if principal is not None and principal.user.is_service_account:
+        return True
+    call, section = resource.bid_call, resource.bid_section_id
+    return (
+        call is not None
+        and section is not None
+        and section in call.my_section_ids
+        and not resource.bid_section_submitted
     )
 
 
@@ -1023,20 +1203,25 @@ def authorize(
     if spec.researcher is not None and researcher_live(principal, resource):
         # +Rsr counts whatever the role, or without one (Phase 8b, table L).
         grants.append(spec.researcher)
+    if spec.assessor is not None and assessor_live(principal, resource, located):
+        # +Asr (Phase 10): a section assessor in any column PA to NMi, c28 checked now.
+        grants.append(spec.assessor)
     if not grants:
         return _deny(rule, 403)
 
     decision = best_decision(_evaluate_grant(principal, spec, grant, resource) for grant in grants)
-    if (
-        decision.allowed
-        and spec.blind
-        and idea is not None
-        and (idea.pending_evaluator or principal.user.is_service_account)
-    ):
-        # ✱: no role lifts blind evaluation, and it applies to demoted evaluators too.
-        # Rule 9: an AI agent's service account is blind on every idea, before and after
-        # it submits, so nothing it writes can carry others' scores to anyone.
-        return Decision(rule, False, 403, "forbidden", condition="blind", hidden=True)
+    if decision.allowed and spec.blind and idea is not None:
+        if rule in BID_BLIND_RULES:
+            # Section 3a: a pending assessor of (bid, section) sees none of its scores,
+            # whatever their role (a call manager who assesses too); agents never do.
+            hidden = bid_pending(principal, resource)
+        else:
+            # ✱: no role lifts blind evaluation, and it applies to demoted evaluators too.
+            # Rule 9: an AI agent's service account is blind on every idea, before and
+            # after it submits, so nothing it writes can carry others' scores to anyone.
+            hidden = idea.pending_evaluator or principal.user.is_service_account
+        if hidden:
+            return Decision(rule, False, 403, "forbidden", condition="blind", hidden=True)
     return decision
 
 

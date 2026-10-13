@@ -21,6 +21,8 @@ function run(id: string, overrides: Partial<AiRun> = {}): AiRun {
     idea_id: 'i',
     kind: 'evaluate',
     section_key: null,
+    bid_id: null,
+    automatic: false,
     status: 'succeeded',
     agent: { id: 'a1', display_name: 'Idea evaluator', purposes: ['evaluate'], user_id: 'u1' },
     requested_by: null,
@@ -31,7 +33,7 @@ function run(id: string, overrides: Partial<AiRun> = {}): AiRun {
     cancel_requested: false,
     can_cancel: false,
     error: null,
-    result: { evaluation_id: 'e1', note_id: null, suggestion_id: null },
+    result: { evaluation_id: 'e1', note_id: null, suggestion_id: null, bid_ai_assessment_id: null },
     event_count: 0,
     ...overrides,
   }
@@ -118,7 +120,12 @@ describe('AI copy', () => {
       outcomeWords(
         run('c', {
           ...cancelled,
-          result: { evaluation_id: null, note_id: null, suggestion_id: null },
+          result: {
+            evaluation_id: null,
+            note_id: null,
+            suggestion_id: null,
+            bid_ai_assessment_id: null,
+          },
         }),
       ).text,
     ).toBe('Cancelled: nothing was saved.')

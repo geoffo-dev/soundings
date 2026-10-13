@@ -116,6 +116,10 @@ export function runFinished(
     void queryClient.invalidateQueries({ queryKey: queryKeys.evaluations.list(idea) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
   }
+  if (run.kind === 'assess_bid') {
+    // The AI's scores, findings and the bid's must-have suggestions (contract-phase10 §9).
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bids.idea(idea) })
+  }
   if (run.kind === 'draft_section') {
     void queryClient.invalidateQueries({ queryKey: queryKeys.proposals.suggestions(idea) })
   }

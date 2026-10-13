@@ -37,6 +37,13 @@ export const KIND_COPY: Record<
     noun: 'Draft',
     purpose: 'Draft proposal sections',
   },
+  // Phase 10 (contract-phase10 §9): one run per bid.
+  assess_bid: {
+    action: 'Ask AI to assess',
+    doing: 'Assessing',
+    noun: 'Bid assessment',
+    purpose: 'Assess bids',
+  },
 }
 
 /** The run's state in a word, for its badge. */
@@ -75,6 +82,9 @@ export const BLOCKED_COPY: Record<AiBlockedReason, string> = {
   no_agent: 'No AI agent serves this project',
   // Phase 8: "Ask AI to evaluate" is the first evaluator, which the research step guards.
   research_incomplete: 'Finish the research checklist first',
+  // Phase 10: AI assesses bids while the call is open or being assessed, never a rejected bid.
+  bid_call_state: 'The call isn’t open or being assessed',
+  bid_rejected: 'This bid is rejected',
 }
 
 /**
@@ -113,12 +123,24 @@ export function runTitle(
   return `${word}${active ? '' : ' of'} ${sectionTitle(run.section_key, titles)}`
 }
 
-export const PURPOSE_ORDER: readonly AiRunKind[] = ['evaluate', 'research', 'draft_section']
+export const PURPOSE_ORDER: readonly AiRunKind[] = [
+  'evaluate',
+  'research',
+  'draft_section',
+  'assess_bid',
+]
+
+const PURPOSE_WORDS: Record<AiRunKind, string> = {
+  evaluate: 'evaluation',
+  research: 'research',
+  draft_section: 'proposal drafts',
+  assess_bid: 'bid assessment',
+}
 
 /** "evaluation and research" (an agent's purposes, in a sentence). */
 export function purposeWords(purposes: readonly string[]): string {
-  const words = PURPOSE_ORDER.filter((kind) => purposes.includes(kind)).map((kind) =>
-    kind === 'evaluate' ? 'evaluation' : kind === 'research' ? 'research' : 'proposal drafts',
+  const words = PURPOSE_ORDER.filter((kind) => purposes.includes(kind)).map(
+    (kind) => PURPOSE_WORDS[kind],
   )
   if (words.length <= 1) return words.join('')
   return `${words.slice(0, -1).join(', ')} and ${words.at(-1) ?? ''}`

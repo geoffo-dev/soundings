@@ -46,6 +46,7 @@ import {
 } from './domain'
 import { queueSubmitterStatusEmail } from './public'
 import { isLiveResearcher, isResearchGuest, RESEARCH_GUEST_NOTIFICATION_TYPES } from './researchers'
+import { bidCallRefFor, bidNotificationVisible } from './bids'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -61,6 +62,9 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'mention',
   'researcher_assigned',
   'research_reminder',
+  'assessor_assigned',
+  'assessment_reminder',
+  'assessments_complete',
 ]
 
 /** `app.schemas.notifications.DEFAULT_MODES`. */
@@ -74,6 +78,9 @@ export const DEFAULT_MODES: Record<NotificationType, NotificationMode> = {
   mention: 'immediate',
   researcher_assigned: 'immediate',
   research_reminder: 'immediate',
+  assessor_assigned: 'immediate',
+  assessment_reminder: 'immediate',
+  assessments_complete: 'immediate',
 }
 
 /** The mock instance's schedule (`SOUNDINGS_TIMEZONE`, `_DIGEST_HOUR`, `_REMINDER_DAYS`). */
@@ -496,7 +503,10 @@ export function notificationItem(
     read_at: n.read_at,
     idea: ideaRef(db, idea),
     actor:
-      n.type === 'evaluation_reminder' || n.type === 'research_reminder'
+      n.type === 'evaluation_reminder' ||
+      n.type === 'research_reminder' ||
+      n.type === 'assessment_reminder' ||
+      n.type === 'assessments_complete'
         ? null
         : userRefById(db, n.actor_id),
   }
@@ -571,6 +581,38 @@ export function notificationItem(
         days_before: Number(p.days_before ?? 0),
         as_owner: p.as_owner === true,
       }
+    // Phase 10 (contract-phase10 §11): the call as it is now; never scores or bidders.
+    case 'assessor_assigned':
+    case 'assessment_reminder':
+    case 'assessments_complete': {
+      const call = bidCallRefFor(db, typeof p.call_id === 'string' ? p.call_id : '')
+      if (!call) return null
+      if (n.type === 'assessor_assigned') {
+        return {
+          ...base,
+          type: 'assessor_assigned',
+          call,
+          sections: Array.isArray(p.sections) ? p.sections.map(String) : [],
+          due_at: typeof p.due_at === 'string' ? p.due_at : null,
+        }
+      }
+      if (n.type === 'assessment_reminder') {
+        return {
+          ...base,
+          type: 'assessment_reminder',
+          call,
+          due_at: String(p.due_at),
+          days_before: Number(p.days_before ?? 0),
+        }
+      }
+      return {
+        ...base,
+        type: 'assessments_complete',
+        call,
+        bid_count: Number(p.bid_count ?? 1),
+        assessment_count: Number(p.assessment_count ?? 1),
+      }
+    }
   }
 }
 
@@ -586,6 +628,8 @@ function visibleInInbox(
 ): boolean {
   if (!canViewIdea(db, idea, viewer)) return false
   if (isResearchGuest(db, idea, viewer)) return RESEARCH_GUEST_NOTIFICATION_TYPES.includes(n.type)
+  // Phase 10: re-checked when shown (still an assessor of the call, still a call manager).
+  if (!bidNotificationVisible(db, n, idea, viewer)) return false
   return true
 }
 

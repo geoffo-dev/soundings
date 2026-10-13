@@ -229,6 +229,28 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   re-reads the proposal, and a section restored meanwhile is edited again with the kept text
   under `<key>#kept`), and ends with "Research and consultation" (`research-appendix.tsx`; the
   outline's last link while it shows).
+- **Phase 10, calls for bids** (contract-phase10; `features/bids/`, lazy-loaded through
+  `features/idea/bids-tab-loader.tsx`): the idea page's **Bids** tab (shown while
+  `IdeaPermissions.can_view_bid_call`; `?tab=bids&bid=<id>` opens a bid, `&assess=<section>`
+  your assessment of it, `idea-search.ts`). `bids-tab.tsx` renders the summary only for members
+  and viewers, else `CallHeader` (status-driven primary action, the menu: details, assessors,
+  template copy, reopen, "Assess all with AI", export, cancel, delete; the lock line),
+  `AssessmentQueue`, `BidList`, `Comparison` (no ranks while `ranking_hidden`, blind cells as a
+  lock, rejected bids apart with their reasons, the AI's "Count in the totals" switch),
+  `EvaluationPanel` and the two sheets: `BidSheet` (details, `MustHaves` with the AI's findings
+  and `Evidence` "Found / Not found in the document", `BidDocuments`, `BidAi`, Reject /
+  Reinstate / Delete) and `AssessmentSheet` (size `xl`: the questions with the scale as
+  `SegmentedControl` 0-5, comments, Save draft / Submit, "Leave without saving?", and on `lg`
+  the bid's documents beside it (`DocumentsPane`); others' scores (`SectionResults`) only once
+  submitted). Uploads (`use-document-uploads.tsx`) go one at a time as the raw body
+  (`uploadRaw` in `api/client.ts`: XHR for progress, `application/octet-stream`), sizes checked
+  first, refusals worded beside the file; a pending extraction makes `useBid` poll. Extracted
+  text is plain text (`document-text.tsx`), files are only downloaded (`downloadBidDocument`,
+  a warning first for `active_content`). Project settings has a **Bids** tab
+  (`bid-template-settings.tsx` over `bid-template-fields.tsx`, also the call's copy in
+  `template-copy-sheet.tsx`); My work's "Bids to assess" (`features/work/bids-to-assess.tsx`)
+  and the sidebar's "Bids" badge come from `WorkCounts.bid_assessments_due`; ⌘K's
+  `use-bid-commands.tsx` opens bids, your next assessment and the report.
 - **Untrusted text (agents):** `Markdown untrusted` keeps http/https links only (no `mailto:`),
   opens them with `rel="noopener noreferrer nofollow"` in a new tab with the host after each
   (`urlHost`: the browser's ASCII/punycode reading, isolated with `<bdi dir="ltr">` by `LinkHost`;
@@ -404,6 +426,9 @@ Conventions:
   ones — `useRemoveEvaluator(key)(user)` and `useDeleteComment(key)(commentId)` — hide the item
   immediately (queries filter it via `useHiddenItems`), send the DELETE when the toast closes
   or the page is hidden, and Undo restores it untouched. Deleting an idea has no undo: confirm.
+- **Bids** (`api/bids.ts`): every hook settles the call, its lists, the comparison, the idea and
+  My work; render what the API sends (blind cells `hidden`, `total_hidden`, `price_hidden`,
+  `restricted_document_count`), never compute scores client-side.
 - **Blind evaluation:** render what the API sends. `score_hidden: true` → "Hidden until you
   submit" (`<ScoreBadge hidden>`); never compute or cache scores client-side.
 
@@ -524,6 +549,20 @@ backend and its tests are.
   "Research to do"); **GREEN-1** has nobody assigned and a research due date (Carol, its owner,
   does it "as owner"). Knob `soundings-mock-projects` = `private` makes every project private, so
   Ivan has no projects at all (the guest's app shell).
+- **Phase 10 fixtures** (`phase10-fixtures.ts`; rules and scoring in `bids.ts`, assess runs in
+  `bid-runs.ts`, handlers `handlers/bids.ts`): **CUST-3** (owner Alice) has a call being
+  assessed with the default template: Bob and Carol on Technical (Bob still owes Northwind, so
+  it's blind for him), Dave on Commercial (the price: he opens the pricing schedules), Farid and
+  Priya on Delivery (Priya, a platform admin, owes Tessellate: her comparison has no ranks);
+  Northwind (87.3, rank 1), Tessellate (71.2, assessors disagree; the Bid assessor's AI
+  assessment left out, one quote not found) and Quillfield (rejected: "No insurance
+  certificate provided."). **TOOL-4** has an open call with the Bid assessor as its AI
+  assessor: Brightline (complete) and Kestrel (flagged: no insurance certificate, terms
+  unchecked, the AI suggests not met; a brochure with active content, an encrypted scan).
+  **TOOL-11** has a draft without a deadline, **CUST-10** an awarded call, **CUST-12** a
+  cancelled one; **GREEN-4** (Emma, no proposal) none. Uploads sniff the bytes (415
+  `unsupported_document_type`, `macro_document`), refuse duplicates and read the text 1.5 s
+  later; an agent named `*-invents` invents a quote. Hannah, Emma and Ivan see the summary only.
 - **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
   Customer Innovation (also in the user menu → Switch user → Mock data);
   `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);

@@ -49,6 +49,9 @@ SESSION_BY_DECISION = frozenset(
         # Phase 8b, review M3: an assignment can open a private idea to an account and
         # would outlive a leaked key (removing or handing back takes a write key).
         "set_research_assignment",
+        # Phase 10: an assessor assignment opens the bids and their documents to a person
+        # (as researcher assignment does; role matrix table M).
+        "set_bid_assessors",
     }
 )
 

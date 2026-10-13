@@ -20,6 +20,7 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bids.templates import insert_default_template
 from app.domain.rubric_defaults import default_rubric_criteria
 from app.domain.template_defaults import default_template_sections
 from app.models.base import utcnow
@@ -98,6 +99,8 @@ async def make_project(
     db.add_all(default_template_sections(project.id))
     for user, role in (members or {}).items():
         db.add(ProjectMember(project_id=project.id, user_id=user.id, role=role))
+    await db.commit()
+    db.add(insert_default_template(project.id))  # Phase 10: the default bid template
     await db.commit()
     return project
 

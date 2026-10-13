@@ -7,6 +7,8 @@ import { primaryAction } from './primary-action'
 const ME = 'me'
 const NONE: IdeaPermissions = {
   can_assign_owner: false,
+  can_view_bid_call: false,
+  can_create_bid_call: false,
   can_change_status: false,
   can_close_evaluation: false,
   can_comment: false,
@@ -52,6 +54,7 @@ function idea(patch: Partial<IdeaDetail> = {}): IdeaDetail {
     title: 'Idea',
     summary: 'Summary',
     description_md: '',
+    bid_call: null,
     project: { id: 'p', key: 'CUST', name: 'Customer Innovation', slug: 'customer-innovation' },
     status: 'evaluating',
     resolution: null,

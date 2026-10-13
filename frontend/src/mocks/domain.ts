@@ -10,6 +10,7 @@
 import type {
   ActivityItem,
   AggregateScore,
+  BidCallStatus,
   Board,
   CommentBody,
   CriterionAggregate,
@@ -50,6 +51,7 @@ import type {
   MockUser,
 } from './db'
 import { citationOut, researchNoteOut } from './ai'
+import { ideaBidCall, ideaBidPermissions } from './bids'
 import { canAnswer, inviteBlocked, summaryResearch } from './research'
 import {
   canAssignOutsideResearcher,
@@ -381,6 +383,8 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
     can_vote: false,
     can_answer_research: false,
     invite_blocked_by_research: false,
+    // Phase 10: the Bids tab is readable in an archived project too.
+    ...ideaBidPermissions(db, idea, user),
   }
   if (!writable) return none
   // Held for moderation: read-only but for delete (contract-phase4 §3.6).
@@ -418,6 +422,7 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
     // Phase 8 (contract-phase8 §3.6).
     can_answer_research: canAnswer(db, idea, user),
     invite_blocked_by_research: manager && open && inviteBlocked(db, idea),
+    ...ideaBidPermissions(db, idea, user),
   }
 }
 
@@ -688,6 +693,7 @@ export function ideaDetail(db: MockDb, idea: MockIdea, user: MockUser): IdeaDeta
     evaluation_closed_at: guest ? null : idea.evaluation_closed_at,
     evaluation_open: guest ? false : evaluationOpen(idea),
     research_due_at: summaryResearchDue(db, idea),
+    bid_call: ideaBidCall(db, idea, user),
     aggregate,
     watching: db.watchers.has(`${idea.id}:${user.id}`),
     permissions: ideaPermissions(db, idea, user),
@@ -858,6 +864,19 @@ export function activityItem(db: MockDb, event: MockEvent, user: MockUser): Acti
         from_due_at: str('from_due_at'),
         to_due_at: str('to_due_at'),
       }
+    case 'bid_call_changed': {
+      // Phase 10: never in a guest researcher's feed (BID_ACTIVITY_TYPES).
+      const idea = db.ideas.find((i) => i.id === event.idea_id)
+      if (!idea || isResearchGuest(db, idea, user)) return null
+      const call = db.bid.calls.find((c) => c.id === p.call_id)
+      return {
+        ...base,
+        type: 'bid_call_changed',
+        call: call ? { id: call.id, title: call.title, status: call.status } : null,
+        from_status: (p.from_status ?? null) as BidCallStatus | null,
+        to_status: p.to_status as BidCallStatus,
+      }
+    }
   }
 }
 

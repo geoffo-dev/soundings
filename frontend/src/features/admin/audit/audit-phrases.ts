@@ -154,6 +154,15 @@ const BRANDING_FIELDS: Record<string, string> = {
   favicon: 'favicon',
 }
 
+/** Call for bids fields (`bid_call.update` details.fields). */
+const BID_CALL_FIELDS: Record<string, string> = {
+  title: 'title',
+  description: 'description',
+  currency: 'currency',
+  deadline_at: 'deadline',
+  ai_assessor_id: 'AI assessor',
+}
+
 /** AI agent fields (`ai_agent.update` details.changed). */
 const AGENT_FIELDS: Record<string, string> = {
   display_name: 'name',
@@ -514,6 +523,10 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
     }
     case 'project.research_checklist_replace':
       return [actor, text(' changed the research checklist of '), project]
+    // Phase 10 (contract-phase10 §12): ids, fields and flags only; never bidder names,
+    // prices, scores, document names or reasons' text.
+    case 'project.bid_template_replace':
+      return [actor, text(' changed the bid evaluation template of '), project]
 
     /* Ideas, assignments, evaluations ------------------------------ */
     case 'idea.delete':
@@ -613,6 +626,117 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       return [actor, text(' closed evaluation of '), idea()]
     case 'evaluation.reopen':
       return [actor, text(' reopened evaluation of '), idea()]
+
+    /* Calls for bids (contract-phase10 §12): never bidders, prices, scores or reasons */
+    case 'bid_call.create':
+      return [actor, text(' started a call for bids on '), idea()]
+    case 'bid_call.update': {
+      const fields = list(details, 'fields')
+      return [
+        actor,
+        text(
+          fields.length
+            ? ` changed the ${fieldWords(fields, BID_CALL_FIELDS)} of the call for bids on `
+            : ' changed the call for bids on ',
+        ),
+        idea(),
+      ]
+    }
+    case 'bid_call.template_replace':
+      return [actor, text(' changed the evaluation template of the call for bids on '), idea()]
+    case 'bid_call.status_change': {
+      const to = str(details, 'to_status')
+      const from = str(details, 'from_status')
+      const reason = details.reason_given === true ? [text(', with a reason')] : []
+      if (to === 'cancelled')
+        return [actor, text(' cancelled the call for bids on '), idea(), ...reason]
+      if (to === 'assessing')
+        return [actor, text(' closed the call for bids on '), idea(), text(' to new bids')]
+      if (to === 'open' && from === 'assessing') {
+        return [actor, text(' reopened the call for bids on '), idea()]
+      }
+      if (to === 'open') return [actor, text(' opened the call for bids on '), idea()]
+      return [actor, text(' moved the call for bids on '), idea()]
+    }
+    case 'bid_call.award':
+      return [
+        actor,
+        text(' awarded the call for bids on '),
+        idea(),
+        ...(details.reason_given === true ? [text(', with a reason')] : []),
+      ]
+    case 'bid_call.delete': {
+      const bids = num(details, 'bid_count')
+      return [
+        actor,
+        text(' deleted the call for bids on '),
+        idea(),
+        ...(bids !== undefined ? [text(` (${plural(bids, 'bid')})`)] : []),
+      ]
+    }
+    case 'bid_call.assessors_change': {
+      const added = num(details, 'added') ?? list(details, 'added_user_ids').length
+      const removed = num(details, 'removed') ?? list(details, 'removed_user_ids').length
+      const changes = [
+        added ? `${plural(added, 'assessor')} added` : '',
+        removed ? `${plural(removed, 'assessor')} removed` : '',
+      ].filter(Boolean)
+      return [
+        actor,
+        text(' changed the assessors of the call for bids on '),
+        idea(),
+        ...(changes.length ? [text(` (${changes.join(', ')})`)] : []),
+      ]
+    }
+    case 'bid.create':
+      return [actor, text(' entered a bid on '), idea()]
+    case 'bid.update':
+      return [actor, text(' edited a bid on '), idea()]
+    case 'bid.delete':
+      return [actor, text(' deleted a bid on '), idea()]
+    case 'bid.reject':
+      return [actor, text(' rejected a bid on '), idea()]
+    case 'bid.reinstate':
+      return [actor, text(' reinstated a bid on '), idea()]
+    case 'bid.must_have_decide': {
+      const result = str(details, 'result')
+      const word = result === 'met' ? ' as met' : result === 'not_met' ? ' as not met' : ''
+      return result === undefined && 'result' in details
+        ? [actor, text(' cleared a must-have decision on a bid of '), idea()]
+        : [actor, text(` marked a bid’s must-have${word} on `), idea()]
+    }
+    case 'bid_document.upload':
+      return [
+        actor,
+        text(
+          details.pricing === true
+            ? ' uploaded a pricing document to a bid on '
+            : ' uploaded a document to a bid on ',
+        ),
+        idea(),
+      ]
+    case 'bid_document.update': {
+      const changed = list(details, 'changed')
+      const words: string[] = []
+      if (changed.includes('pricing')) {
+        words.push(details.pricing === true ? 'marked it as pricing' : 'unmarked it as pricing')
+      }
+      if (changed.includes('must_have_id')) words.push('changed its must-have')
+      return [
+        actor,
+        text(' changed a bid document on '),
+        idea(),
+        ...(words.length ? [text(`: ${joinWords(words)}`)] : []),
+      ]
+    }
+    case 'bid_document.delete':
+      return [actor, text(' deleted a bid document on '), idea()]
+    case 'bid_assessment.submit':
+      return [actor, text(' submitted a bid assessment on '), idea()]
+    case 'bid_assessment.include_ai':
+      return details.include === false
+        ? [actor, text(' left an AI bid assessment on '), idea(), text(' out of the totals')]
+        : [actor, text(' counted an AI bid assessment on '), idea(), text(' in the totals')]
 
     /* Email (contract-phase3 §3.10): never an address -------------- */
     case 'email.test_send':
@@ -738,7 +862,9 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
             ? 'to research '
             : kind === 'draft_section'
               ? `to draft ${sectionTitle(section)} of `
-              : 'to work on '
+              : kind === 'assess_bid'
+                ? 'to assess a bid on '
+                : 'to work on '
       const agentId = str(details, 'agent_id')
       return agentId
         ? [actor, text(' asked '), { type: 'agent', id: agentId }, text(` ${what}`), idea()]

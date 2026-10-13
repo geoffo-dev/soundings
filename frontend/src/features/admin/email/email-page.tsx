@@ -312,6 +312,12 @@ function Schedule({ config }: { config: EmailConfig }) {
             ? `${reminderDaysText(config.reminder_days)}, at ${scheduleTime(config)}`
             : 'Off'}
         </Row>
+        {/* Phase 10: bid assessment due dates are reminded on the same days and hour. */}
+        <Row label="Bid assessment reminders">
+          {config.reminder_days.length > 0
+            ? `${reminderDaysText(config.reminder_days)}, at ${scheduleTime(config)}`
+            : 'Off'}
+        </Row>
       </dl>
     </AdminSection>
   )

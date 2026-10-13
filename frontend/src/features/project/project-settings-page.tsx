@@ -7,6 +7,7 @@ import { Page, PageHeader } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { ProjectSettingsSkeleton } from '@/features/project/project-page-states'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { BidTemplateSettings } from '@/features/project/settings/bid-template-settings'
 import { GeneralSettings, GeneralSummary } from '@/features/project/settings/general-settings'
 import { MembersSettings } from '@/features/project/settings/members-settings'
 import {
@@ -34,6 +35,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   rubric: 'Rubric',
   research: 'Research',
   'proposal-template': 'Proposal template',
+  bids: 'Bids',
   'public-form': 'Public form',
 }
 
@@ -91,7 +93,7 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
           }
           className="flex flex-col gap-6"
         >
-          {/* Six tabs: on a phone they wrap onto two lines, all in sight. */}
+          {/* Seven tabs: on a phone they wrap onto two lines, all in sight. */}
           <TabsList wrap aria-label="Settings">
             {tabs.map((value) => (
               <TabsTrigger key={value} value={value}>
@@ -143,6 +145,9 @@ function SettingsContent({ project, tab }: { project: Project; tab: SettingsTab 
             ) : (
               <ProposalTemplateSummary project={project} />
             )}
+          </TabsContent>
+          <TabsContent value="bids" forceMount className="pt-0 data-[state=inactive]:hidden">
+            <BidTemplateSettings project={project} active={current === 'bids'} />
           </TabsContent>
           {canManage && (
             <TabsContent

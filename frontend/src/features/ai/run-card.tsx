@@ -194,7 +194,8 @@ export function RunCard({ ideaKey, run, resultAction, retry, counted, className 
       {open && (
         <div id={stepsId} className="flex flex-col gap-2 border-t border-subtle px-4 py-3 sm:pl-13">
           <p className="text-xs text-muted">
-            Asked by {requester} <RelativeTime date={current.created_at} />
+            {current.automatic ? 'Started automatically' : <>Asked by {requester}</>}{' '}
+            <RelativeTime date={current.created_at} />
             {active && current.deadline_at && <> · stops by {formatTime(current.deadline_at)}</>}
           </p>
           <RunSteps events={detail.events} active={active} />

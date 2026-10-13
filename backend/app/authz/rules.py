@@ -89,6 +89,22 @@ class Rule(StrEnum):
     # K (Phase 8b). Who does the research
     IDEA_ASSIGN_RESEARCHER = "idea.assign_researcher"
     IDEA_RELEASE_RESEARCHER = "idea.release_researcher"
+    # F (Phase 10). The project's default bid evaluation template
+    PROJECT_EDIT_BID_TEMPLATE = "project.edit_bid_template"
+    # M. Bid evaluation (Phase 10)
+    BID_VIEW_CALL = "bid.view_call"
+    BID_MANAGE = "bid.manage"
+    BID_UPLOAD_DOCUMENT = "bid.upload_document"
+    BID_DECIDE = "bid.decide"
+    BID_DELETE_CALL = "bid.delete_call"
+    BID_VIEW_BIDS = "bid.view_bids"
+    BID_VIEW_PRICE = "bid.view_price"
+    BID_VIEW_OWN_ASSESSMENT = "bid.view_own_assessment"
+    BID_ASSESS = "bid.assess"
+    BID_VIEW_SECTION_SCORES = "bid.view_section_scores"
+    BID_VIEW_SCORES = "bid.view_scores"
+    BID_AI_ASSESS = "bid.ai_assess"
+    AI_ASSESS_BID = "ai.assess_bid"
 
 
 _READ: Final = frozenset(
@@ -101,6 +117,14 @@ _READ: Final = frozenset(
         Rule.SCORE_VIEW_AGGREGATE,
         Rule.PROPOSAL_VIEW,
         Rule.PROPOSAL_EXPORT,
+        # Phase 10 (role matrix section 5): reading the call, its bids, prices, your own
+        # assessment and the scores.
+        Rule.BID_VIEW_CALL,
+        Rule.BID_VIEW_BIDS,
+        Rule.BID_VIEW_PRICE,
+        Rule.BID_VIEW_OWN_ASSESSMENT,
+        Rule.BID_VIEW_SECTION_SCORES,
+        Rule.BID_VIEW_SCORES,
     }
 )
 _WRITE: Final = frozenset(
@@ -134,6 +158,10 @@ _WRITE: Final = frozenset(
         # route (app.authz.keys.ROUTE_KEY_ACCESS, review M3): a key removes or hands back.
         Rule.IDEA_ASSIGN_RESEARCHER,
         Rule.IDEA_RELEASE_RESEARCHER,
+        # Phase 10: managing the call (but assigning assessors, set_bid_assessors, is a
+        # session-only route by decision) and asking the AI to assess.
+        Rule.BID_MANAGE,
+        Rule.AI_ASSESS_BID,
     }
 )
 
@@ -141,6 +169,10 @@ RULE_SCOPES: Final[dict[Rule, ApiKeyScope]] = {
     **dict.fromkeys(_READ, "read"),
     **dict.fromkeys(_WRITE, "write"),
     Rule.EVALUATION_SUBMIT_OWN: "evaluate",
+    # Phase 10: assessing bids (a person's assessment; the AI assessor's MCP tools, granted
+    # only through c22).
+    Rule.BID_ASSESS: "evaluate",
+    Rule.BID_AI_ASSESS: "evaluate",
     Rule.MCP_CONNECT: "mcp",
 }
 """Role matrix section 5: the API-key scope that grants each rule. ``idea.delete`` and
@@ -154,5 +186,6 @@ SESSION_ONLY_RULES: Final = frozenset(set(Rule) - set(RULE_SCOPES) - PUBLIC_RULE
 """Never available through an API key, whatever its scopes (role matrix section 5):
 project.create, project administration, public.erase_submitter, idea.delete,
 idea.moderate, platform.*, api_key.* and self.manage_profile (Phase 8: also the
-proposal template, the research settings and idea.research_override). Routes without a rule of
+proposal template, the research settings and idea.research_override; Phase 10: the bid
+template, bid documents, the bid decisions and deleting a call). Routes without a rule of
 their own are classified in :data:`app.authz.keys.ROUTE_KEY_ACCESS`."""

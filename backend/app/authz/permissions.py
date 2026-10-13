@@ -13,11 +13,12 @@ from uuid import UUID
 from app.authz.policy import NamedResearcher, Resource, can
 from app.authz.rules import Rule
 from app.domain.principal import Principal
-from app.models.enums import ResearchStep
+from app.models.enums import IdeaStatus, ResearchStep
 from app.schemas.ideas import IdeaPermissions, IdeaSummaryPermissions
 from app.schemas.projects import ProjectPermissions
 
 __all__ = [
+    "bid_call_flags",
     "idea_permissions",
     "idea_summary_permissions",
     "project_permissions",
@@ -68,6 +69,24 @@ def research_assignment_flags(
     return assign, outside, hand_back
 
 
+def bid_call_flags(principal: Principal | None, resource: Resource) -> tuple[bool, bool]:
+    """Phase 10: (show the Bids tab, offer "Start a call for bids") from the facts a
+    decision has: ``resource.bid_call`` is the idea's call (``None``: none yet). Creating
+    needs ``bid.manage`` and c27's status part (Proposal, no call); the idea service adds
+    c27's "has a proposal" (a row, not a fact of the policy)."""
+    idea = resource.idea
+    create = (
+        idea is not None
+        and idea.status is IdeaStatus.PROPOSAL
+        and resource.bid_call is None
+        and can(principal, Rule.BID_MANAGE, resource)
+    )
+    view = can(principal, Rule.BID_VIEW_CALL, resource) and (
+        resource.bid_call is not None or create
+    )
+    return view, create
+
+
 def idea_permissions(principal: Principal | None, resource: Resource) -> IdeaPermissions:
     """The idea page's flags. ``resource`` must have the idea's facts."""
     idea = resource.idea
@@ -76,6 +95,7 @@ def idea_permissions(principal: Principal | None, resource: Resource) -> IdeaPer
     is_owner = principal is not None and idea.owner_id == principal.user_id
     removing_someone_else = resource.replace(evaluator_to_remove=_SOMEONE_ELSE)
     assign, outside, hand_back = research_assignment_flags(principal, resource)
+    view_bids, create_call = bid_call_flags(principal, resource)
     return IdeaPermissions(
         can_change_status=can(principal, Rule.IDEA_CHANGE_STATUS, resource),
         can_edit=can(principal, Rule.IDEA_EDIT_OWN, resource)
@@ -103,4 +123,8 @@ def idea_permissions(principal: Principal | None, resource: Resource) -> IdeaPer
         can_assign_outside_researcher=outside,
         can_hand_back_research=hand_back,
         can_view_project=can(principal, Rule.PROJECT_VIEW, resource),
+        # Phase 10: the Bids tab and "Start a call for bids" (c27's proposal part: the
+        # idea service).
+        can_view_bid_call=view_bids,
+        can_create_bid_call=create_call,
     )

@@ -50,6 +50,9 @@ PAYLOAD_KEYS: Final[Mapping[str, frozenset[str]]] = {
     # Phase 8b: who does the research and by when (contract-phase8b section 3.6).
     "researcher_changed": frozenset({"from_researcher_id", "to_researcher_id", "handed_back"}),
     "research_due_date_changed": frozenset({"from_due_at", "to_due_at"}),
+    # Phase 10: the call for bids was started or moved (contract-phase10 section 12): ids
+    # and statuses only, never a bidder, price, score or reason.
+    "bid_call_changed": frozenset({"call_id", "from_status", "to_status"}),
 }
 """The stored payload keys per event type (ids are resolved to users by the API)."""
 

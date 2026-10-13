@@ -4,6 +4,7 @@ import {
   CircleCheck,
   CloudOff,
   Eye,
+  Gavel,
   Lock,
   LockOpen,
   MessageSquare,
@@ -242,6 +243,7 @@ const EVENT_ICONS: Record<Exclude<ActivityItem['type'], 'comment'>, ReactNode> =
   ai_research_note: <Sparkles />,
   researcher_changed: <UserSearch />,
   research_due_date_changed: <CalendarClock />,
+  bid_call_changed: <Gavel />,
 }
 
 /**

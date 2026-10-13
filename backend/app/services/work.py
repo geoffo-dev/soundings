@@ -34,6 +34,7 @@ from app.authz import (
     viewable_ideas,
     visible_projects,
 )
+from app.bids.work import bid_assessment_counts, bids_to_assess
 from app.domain.principal import Principal
 from app.models.base import utcnow
 from app.models.enums import EvaluationStatus, IdeaStatus, ResearchStep
@@ -536,6 +537,7 @@ def _counts(
     overdue: int,
     owned_counts: dict[IdeaStatus, int],
     research: tuple[int, int] = (0, 0),
+    bids: tuple[int, int] = (0, 0),
 ) -> WorkCounts:
     return WorkCounts(
         evaluations_due=due,
@@ -543,15 +545,19 @@ def _counts(
         owned_open=sum(n for status, n in owned_counts.items() if status is not IdeaStatus.CLOSED),
         research_to_do=research[0],
         research_overdue=research[1],
+        bid_assessments_due=bids[0],
+        bid_assessments_overdue=bids[1],
     )
 
 
 async def get_work_counts(db: AsyncSession, principal: Principal) -> WorkCounts:
-    """The sidebar badges alone (``GET /me/work/counts``): three aggregate queries."""
+    """The sidebar badges alone (``GET /me/work/counts``): four aggregate queries (Phase
+    10: the bid assessments owed)."""
     return _counts(
         *await _due_counts(db, principal),
         await _owned_counts(db, principal),
         await _research_counts(db, principal),
+        await bid_assessment_counts(db, principal),
     )
 
 
@@ -574,6 +580,8 @@ async def get_my_work(db: AsyncSession, principal: Principal) -> Work:
     research = await _research_page(
         db, principal, cursor=None, limit=RESEARCH_TO_DO_PAGE, with_counts=True
     )
+    # Phase 10: "Bids to assess", the first 50 calls and both counts in one statement.
+    bids, bid_counts = await bids_to_assess(db, principal)
 
     owned_counts = await _owned_counts(db, principal)
     groups: list[tuple[IdeaStatus, list[IdeaRow], str | None]] = []
@@ -619,11 +627,12 @@ async def get_my_work(db: AsyncSession, principal: Principal) -> Work:
         labels_for=lambda idea_id: context.projects[recent[idea_id].idea.project_id].status_labels,
     )
     return Work(
-        counts=_counts(*due.counts, owned_counts, research.counts),
+        counts=_counts(*due.counts, owned_counts, research.counts, bid_counts),
         evaluations_due=due.items(context.users),
         evaluations_due_next_cursor=due.next_cursor,
         research_to_do=research.items(context.users),
         research_to_do_next_cursor=research.next_cursor,
+        bids_to_assess=bids,
         owned=[
             WorkOwnedGroup(
                 status=status,

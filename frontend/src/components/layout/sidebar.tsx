@@ -199,6 +199,10 @@ function MyWorkNav({ onNavigate }: { onNavigate?: () => void }) {
   const research = counts?.research_to_do ?? 0
   const researchOverdue = counts?.research_overdue ?? 0
   const researchLabel = `${research} to do${researchOverdue > 0 ? `, ${researchOverdue} overdue` : ''}`
+  // Phase 10: bid assessments you owe, shown only while there are some.
+  const bids = counts?.bid_assessments_due ?? 0
+  const bidsOverdue = counts?.bid_assessments_overdue ?? 0
+  const bidsLabel = `${bids} to assess${bidsOverdue > 0 ? `, ${bidsOverdue} overdue` : ''}`
   return (
     <ul className="flex flex-col gap-px">
       <li>
@@ -236,6 +240,23 @@ function MyWorkNav({ onNavigate }: { onNavigate?: () => void }) {
               <span aria-hidden="true" className="size-1.5 rounded-full bg-danger" />
             )}
             <CountBadge aria-hidden="true">{research}</CountBadge>
+          </Link>
+        </li>
+      )}
+      {bids > 0 && (
+        <li>
+          <Link
+            to="/"
+            hash="bids"
+            onClick={onNavigate}
+            className={subItem}
+            aria-label={`Bids, ${bidsLabel}`}
+          >
+            <span className="flex-1 truncate">Bids</span>
+            {bidsOverdue > 0 && (
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-danger" />
+            )}
+            <CountBadge aria-hidden="true">{bids}</CountBadge>
           </Link>
         </li>
       )}

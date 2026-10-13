@@ -49,6 +49,8 @@ const PURPOSE_HELP: Record<AiRunKind, string> = {
   evaluate: '“Ask AI to evaluate”: scores the rubric with a rationale and sources per criterion.',
   research: '“Ask AI to research”: writes a cited research note in the idea’s activity.',
   draft_section: '“Draft with AI”: suggests text for one proposal section.',
+  assess_bid:
+    '“Ask AI to assess”: scores a bid’s questions with quotes from its documents and checks its must-haves.',
 }
 
 /**

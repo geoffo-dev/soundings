@@ -25,8 +25,11 @@ manager; a pricing document without ``bid.view_price``) -> 403 (c29, ``cannot_re
 ``awaiting_moderation``, c5 ``idea_closed``, then the call's state, then the rest). Writes
 lock project (``FOR KEY SHARE``) -> idea -> call (``FOR UPDATE``) -> bid -> AI run.
 
-Every route here answers 501 until backend builds it (``tests/test_contract_routes.py``
-``STUBS``).
+The services are :mod:`app.bids` (``access`` for the order of checks and the locks,
+``service`` for the commands, ``views`` for what each principal may see, ``scoring`` and
+``data`` for the numbers). Still 501 until the later backend parts build them
+(``tests/test_contract_routes.py`` ``STUBS``): the document routes, the two AI requests and
+the evaluation report.
 """
 
 from __future__ import annotations
@@ -36,13 +39,27 @@ from uuid import UUID
 
 from fastapi import APIRouter, Path, Query, Request, status
 from fastapi.responses import Response
+from sqlalchemy import exists, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.ideas import IdeaParam
 from app.api.v1.principal import PrincipalDep
 from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import binary, binary_body, problems
+from app.authz import Rule, can, load_project, not_found, require
+from app.bids import access, documents, service, templates, views
+from app.bids.data import load_call_data
+from app.bids.problems import conflict
+from app.config import Settings
 from app.db import SessionDep
+from app.domain.principal import Principal
 from app.errors import NotImplementedProblem
+from app.models.bid import Bid as BidRow
+from app.models.bid import BidCall as BidCallRow
+from app.models.bid import BidCallMustHave as BidCallMustHaveRow
+from app.models.bid import BidDocument as BidDocumentRow
+from app.models.enums import BidCallStatus, BidStatus
+from app.models.proposal import Proposal
 from app.schemas.ai import AiRun, AiRunRequest
 from app.schemas.bids import (
     BID_DOCUMENT_TYPES,
@@ -79,6 +96,8 @@ from app.schemas.bids import (
     MyBidAssessmentIn,
 )
 from app.schemas.bids import Bid as BidOut
+from app.services.ideas import LoadedIdea
+from app.services.summaries import user_refs
 
 router = APIRouter(tags=["bids"])
 
@@ -140,7 +159,11 @@ _TIMEOUT: dict[int | str, dict[str, Any]] = {
 async def get_bid_template(
     principal: PrincipalDep, session: SessionDep, slug: ProjectSlug
 ) -> BidTemplate:
-    raise NotImplementedProblem
+    project, resource = await load_project(session, principal, slug)
+    can_edit = principal.auth == "session" and can(
+        principal, Rule.PROJECT_EDIT_BID_TEMPLATE, resource
+    )
+    return await templates.get_project_template(session, project, can_edit=can_edit)
 
 
 @router.put(
@@ -160,7 +183,11 @@ async def get_bid_template(
 async def replace_bid_template(
     principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, body: BidTemplateIn
 ) -> BidTemplate:
-    raise NotImplementedProblem
+    project, _ = await load_project(
+        session, principal, slug, Rule.PROJECT_EDIT_BID_TEMPLATE, for_update=True
+    )
+    await templates.replace_project_template(session, principal, project, body)
+    return await templates.get_project_template(session, project, can_edit=True)
 
 
 # --- The call ----------------------------------------------------------------------------
@@ -177,9 +204,11 @@ async def replace_bid_template(
     responses=problems(401, 404),
 )
 async def get_bid_call(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+    request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_idea_for_call(session, principal, idea)
+    call = await access.call_of(session, loaded.idea.id)
+    return await _view(request, session, principal, loaded, call)
 
 
 @router.post(
@@ -196,9 +225,16 @@ async def get_bid_call(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def create_bid_call(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallCreate
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: BidCallCreate,
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_idea_for_call(session, principal, idea, write=True)
+    require(principal, Rule.BID_MANAGE, loaded.resource)
+    call = await service.create_call(session, principal, loaded, body)
+    return await _view(request, session, principal, loaded, call)
 
 
 @router.put(
@@ -216,9 +252,15 @@ async def create_bid_call(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def update_bid_call(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallUpdate
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: BidCallUpdate,
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    await service.update_call(session, principal, _settings(request), loaded, body)
+    return await _call_view(request, session, principal, loaded)
 
 
 @router.delete(
@@ -236,7 +278,8 @@ async def update_bid_call(
     responses=problems(401, 403, 404, 409),
 )
 async def delete_bid_call(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> None:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_DELETE_CALL, write=True)
+    await service.delete_call(session, principal, loaded)
 
 
 @router.post(
@@ -253,9 +296,15 @@ async def delete_bid_call(principal: PrincipalDep, session: SessionDep, idea: Id
     responses=problems(401, 403, 404, 409, 422),
 )
 async def change_bid_call_status(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallStatusChange
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: BidCallStatusChange,
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    await service.change_status(session, principal, loaded, body.status)
+    return await _call_view(request, session, principal, loaded)
 
 
 @router.post(
@@ -271,9 +320,15 @@ async def change_bid_call_status(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def cancel_bid_call(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallCancelIn
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: BidCallCancelIn,
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_DECIDE, write=True)
+    await service.cancel_call(session, principal, loaded, body)
+    return await _call_view(request, session, principal, loaded)
 
 
 @router.put(
@@ -293,7 +348,17 @@ async def cancel_bid_call(
 async def replace_bid_call_template(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidCallTemplateIn
 ) -> BidCallTemplate:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    data = await load_call_data(session, loaded.call)
+    changed = await templates.validate_call_template(session, data, body)
+    loaded.require_not_finished()
+    if data.human_submitted:
+        raise conflict("bid_call_template_locked")
+    if changed:
+        await templates.replace_call_template(
+            session, principal, loaded.idea.project_id, data, body
+        )
+    return views.template_out(await load_call_data(session, loaded.call))
 
 
 @router.put(
@@ -316,9 +381,16 @@ async def replace_bid_call_template(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def set_bid_assessors(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidAssessorsUpdate
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: BidAssessorsUpdate,
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    data = await load_call_data(session, loaded.call)
+    await service.set_assessors(session, principal, loaded, data, body)
+    return await _call_view(request, session, principal, loaded)
 
 
 @router.get(
@@ -337,7 +409,9 @@ async def set_bid_assessors(
 async def get_bid_comparison(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam
 ) -> BidComparison:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_SCORES)
+    data = await load_call_data(session, loaded.call, answers=True, results=True, ai=True)
+    return views.comparison(principal, loaded.resource, data)
 
 
 @router.post(
@@ -375,9 +449,15 @@ async def request_ai_bid_assessments(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def award_bid_call(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidAwardIn
+    request: Request,
+    principal: PrincipalDep,
+    session: SessionDep,
+    idea: IdeaParam,
+    body: BidAwardIn,
 ) -> BidCallView:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_DECIDE, write=True)
+    await service.award_call(session, principal, loaded, body)
+    return await _call_view(request, session, principal, loaded)
 
 
 @router.get(
@@ -437,7 +517,8 @@ async def export_bid_report_pdf(
     responses=problems(401, 403, 404),
 )
 async def list_bids(principal: PrincipalDep, session: SessionDep, idea: IdeaParam) -> BidList:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS)
+    return await views.bid_list(session, principal, loaded.resource, loaded.call)
 
 
 @router.post(
@@ -456,7 +537,9 @@ async def list_bids(principal: PrincipalDep, session: SessionDep, idea: IdeaPara
 async def create_bid(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, body: BidIn
 ) -> BidOut:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    bid = await service.create_bid(session, principal, loaded, body)
+    return await _bid(session, principal, loaded, bid)
 
 
 @router.get(
@@ -471,9 +554,19 @@ async def create_bid(
     responses=problems(401, 403, 404),
 )
 async def get_bid(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId
+    request: Request, principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId
 ) -> BidDetail:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    return await views.bid_detail(
+        session,
+        principal,
+        loaded.resource,
+        _settings(request),
+        loaded.call,
+        bid,
+        project_id=loaded.idea.project_id,
+    )
 
 
 @router.put(
@@ -491,7 +584,10 @@ async def get_bid(
 async def update_bid(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId, body: BidUpdate
 ) -> BidOut:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    await service.update_bid(session, principal, loaded, bid, body)
+    return await _bid(session, principal, loaded, bid)
 
 
 @router.delete(
@@ -508,7 +604,9 @@ async def update_bid(
 async def delete_bid(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId
 ) -> None:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_DECIDE, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    await service.delete_bid(session, principal, loaded, bid)
 
 
 @router.put(
@@ -530,7 +628,10 @@ async def reject_bid(
     bid_id: BidId,
     body: BidRejectionIn,
 ) -> BidOut:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_DECIDE, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    await service.reject_bid(session, principal, loaded, bid, body.reason)
+    return await _bid(session, principal, loaded, bid)
 
 
 @router.delete(
@@ -547,7 +648,10 @@ async def reject_bid(
 async def reinstate_bid(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId
 ) -> BidOut:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_DECIDE, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    await service.reinstate_bid(session, principal, loaded, bid)
+    return await _bid(session, principal, loaded, bid)
 
 
 @router.put(
@@ -563,6 +667,7 @@ async def reinstate_bid(
     responses=problems(401, 403, 404, 409, 422),
 )
 async def decide_must_have(
+    request: Request,
     principal: PrincipalDep,
     session: SessionDep,
     idea: IdeaParam,
@@ -570,7 +675,28 @@ async def decide_must_have(
     must_have_id: MustHaveId,
     body: MustHaveDecisionIn,
 ) -> BidMustHaveState:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    must_have = await session.scalar(
+        select(BidCallMustHaveRow).where(
+            BidCallMustHaveRow.id == must_have_id, BidCallMustHaveRow.call_id == loaded.call.id
+        )
+    )
+    if must_have is None or (
+        must_have.pricing and not access.sees_price(principal, loaded.resource)
+    ):
+        raise not_found()
+    await service.decide_must_have(session, principal, loaded, bid, must_have, body)
+    detail = await views.bid_detail(
+        session,
+        principal,
+        loaded.resource,
+        _settings(request),
+        loaded.call,
+        bid,
+        project_id=loaded.idea.project_id,
+    )
+    return next(s for s in detail.must_have_results if s.must_have.id == must_have.id)
 
 
 # --- Documents -------------------------------------------------------------------------------
@@ -622,7 +748,32 @@ async def upload_bid_document(
         ),
     ] = None,
 ) -> BidDocument:
-    raise NotImplementedProblem
+    # Before the body: 401 (the principal), the 404s and 403s, then an upload slot.
+    loaded = await access.load_call(session, principal, idea, Rule.BID_UPLOAD_DOCUMENT)
+    await access.load_bid(session, principal, loaded, bid_id)
+    # The body is read with no transaction open (review S5): end the checks' read-only
+    # one (a commit, which keeps the principal's objects loaded; nothing was written).
+    await session.commit()
+    with documents.upload_slots(request).take():
+        data = await documents.read_body(request)
+        inspected = await documents.inspect(data, filename)
+        # One short transaction: the locks again, the 422s and 409s, the rows.
+        loaded = await access.load_call(
+            session, principal, idea, Rule.BID_UPLOAD_DOCUMENT, write=True
+        )
+        bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+        document = await documents.add_document(
+            session,
+            principal,
+            loaded,
+            bid,
+            data=data,
+            inspected=inspected,
+            filename=filename,
+            must_have_id=must_have_id,
+            pricing=pricing,
+        )
+    return await _document(session, document)
 
 
 @router.put(
@@ -647,7 +798,13 @@ async def update_bid_document(
     document_id: DocumentId,
     body: BidDocumentUpdate,
 ) -> BidDocument:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_UPLOAD_DOCUMENT, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    document = await documents.load_document(
+        session, principal, loaded, bid, document_id, for_update=True
+    )
+    await documents.update_document(session, principal, loaded, bid, document, body)
+    return await _document(session, document)
 
 
 @router.delete(
@@ -669,7 +826,12 @@ async def delete_bid_document(
     bid_id: BidId,
     document_id: DocumentId,
 ) -> None:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_UPLOAD_DOCUMENT, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    document = await documents.load_document(
+        session, principal, loaded, bid, document_id, for_update=True
+    )
+    await documents.delete_document(session, principal, loaded, bid, document)
 
 
 @router.get(
@@ -694,13 +856,17 @@ async def delete_bid_document(
     },
 )
 async def download_bid_document(
+    request: Request,
     principal: PrincipalDep,
     session: SessionDep,
     idea: IdeaParam,
     bid_id: BidId,
     document_id: DocumentId,
 ) -> Response:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    document = await documents.load_document(session, principal, loaded, bid, document_id)
+    return documents.download_response(request.app.state.sessionmaker, document)
 
 
 @router.get(
@@ -723,7 +889,10 @@ async def get_bid_document_text(
     document_id: DocumentId,
     page: Annotated[int, Query(ge=1, le=100, description="1-based.")] = 1,
 ) -> BidDocumentText:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    document = await documents.load_document(session, principal, loaded, bid, document_id)
+    return await documents.document_text(session, document, page)
 
 
 # --- Assessments ---------------------------------------------------------------------------
@@ -745,7 +914,18 @@ async def get_my_bid_assessment(
     bid_id: BidId,
     section_id: SectionId,
 ) -> MyBidAssessment:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    section = await access.load_section(session, loaded, section_id)
+    access.require_section_rule(principal, loaded, Rule.BID_VIEW_OWN_ASSESSMENT, section.id)
+    return await views.my_assessment(
+        session,
+        loaded.call,
+        bid,
+        section,
+        principal,
+        can_edit=_can_assess(principal, loaded, bid, section.id),
+    )
 
 
 @router.put(
@@ -770,7 +950,19 @@ async def save_my_bid_assessment(
     section_id: SectionId,
     body: MyBidAssessmentIn,
 ) -> MyBidAssessment:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    section = await access.load_section(session, loaded, section_id)
+    access.require_section_rule(principal, loaded, Rule.BID_ASSESS, section.id)
+    await service.save_my_assessment(session, principal, loaded, bid, section.id, body)
+    return await views.my_assessment(
+        session,
+        loaded.call,
+        bid,
+        section,
+        principal,
+        can_edit=_can_assess(principal, loaded, bid, section.id),
+    )
 
 
 @router.get(
@@ -792,7 +984,21 @@ async def list_bid_section_assessments(
     bid_id: BidId,
     section_id: SectionId,
 ) -> BidSectionAssessments:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_BIDS)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    section = await access.load_section(session, loaded, section_id)
+    submitted = await service.has_submitted(session, bid.id, section.id, principal.user_id)
+    decision = access.require_section_rule(
+        principal, loaded, Rule.BID_VIEW_SECTION_SCORES, section.id, submitted=submitted
+    )
+    return await views.section_assessments(
+        session,
+        loaded.call,
+        bid,
+        section,
+        hidden=decision.hidden,
+        price_visible=access.sees_price(principal, loaded.resource),
+    )
 
 
 # --- The AI assessor -----------------------------------------------------------------------
@@ -842,7 +1048,10 @@ async def request_ai_bid_assessment(
 async def list_bid_ai_assessments(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, bid_id: BidId
 ) -> BidAiAssessmentList:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_VIEW_SCORES)
+    bid = await access.load_bid(session, principal, loaded, bid_id)
+    data = await load_call_data(session, loaded.call, ai=True)
+    return await views.ai_assessments_out(session, principal, loaded.resource, data, bid)
 
 
 @router.put(
@@ -864,4 +1073,85 @@ async def set_bid_ai_inclusion(
     ai_assessment_id: AiAssessmentId,
     body: BidAiInclusionUpdate,
 ) -> BidAiAssessment:
-    raise NotImplementedProblem
+    loaded = await access.load_call(session, principal, idea, Rule.BID_MANAGE, write=True)
+    bid = await access.load_bid(session, principal, loaded, bid_id, for_update=True)
+    data = await load_call_data(session, loaded.call, ai=True)
+    await service.set_ai_inclusion(session, principal, loaded, data, bid, ai_assessment_id, body)
+    data = await load_call_data(session, loaded.call, ai=True)
+    listed = await views.ai_assessments_out(session, principal, loaded.resource, data, bid)
+    return next(item for item in listed.items if item.id == ai_assessment_id)
+
+
+# --- Helpers ---------------------------------------------------------------------------------
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
+
+
+async def _view(
+    request: Request,
+    session: AsyncSession,
+    principal: Principal,
+    loaded: LoadedIdea,
+    call: BidCallRow | None,
+) -> BidCallView:
+    """The Bids tab for an idea (its call, or none), with the principal's facts."""
+    resource = loaded.resource
+    if call is not None:
+        resource = resource.replace(bid_call=await access.call_facts(session, principal, call))
+    has_proposal = bool(
+        await session.scalar(select(exists().where(Proposal.idea_id == loaded.idea.id)))
+    )
+    return await views.call_view(
+        session,
+        principal,
+        _settings(request),
+        resource,
+        call,
+        project_id=loaded.idea.project_id,
+        has_proposal=has_proposal,
+    )
+
+
+async def _call_view(
+    request: Request, session: AsyncSession, principal: Principal, loaded: access.LoadedCall
+) -> BidCallView:
+    resource = loaded.resource.replace(
+        bid_call=await access.call_facts(session, principal, loaded.call)
+    )
+    return await views.call_view(
+        session,
+        principal,
+        _settings(request),
+        resource,
+        loaded.call,
+        project_id=loaded.idea.project_id,
+        has_proposal=True,
+    )
+
+
+async def _document(session: AsyncSession, document: BidDocumentRow) -> BidDocument:
+    users = await user_refs(session, [document.uploaded_by_id])
+    return views.document_out(document, users)
+
+
+async def _bid(
+    session: AsyncSession, principal: Principal, loaded: access.LoadedCall, bid: BidRow
+) -> BidOut:
+    """One bid as ``list_bids`` shows it."""
+    listed = await views.bid_list(session, principal, loaded.resource, loaded.call)
+    return next(item for item in listed.items if item.id == bid.id)
+
+
+def _can_assess(
+    principal: Principal, loaded: access.LoadedCall, bid: BidRow, section_id: UUID
+) -> bool:
+    """``MyBidAssessment.can_edit``: the call being assessed, the bid not rejected, and
+    ``bid.assess`` on the section now (c5, archived, a key's scope)."""
+    from app.authz import can as allowed
+
+    return (
+        loaded.call.status is BidCallStatus.ASSESSING
+        and bid.status is not BidStatus.REJECTED
+        and allowed(principal, Rule.BID_ASSESS, loaded.resource.replace(bid_section_id=section_id))
+    )

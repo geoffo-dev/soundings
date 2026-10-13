@@ -215,6 +215,9 @@ describe('email preferences', () => {
       'mention',
       'researcher_assigned',
       'research_reminder',
+      'assessor_assigned',
+      'assessment_reminder',
+      'assessments_complete',
     ])
     expect(data?.items.find((item) => item.type === 'researcher_assigned')?.default_mode).toBe(
       'immediate',
@@ -265,7 +268,7 @@ describe('unsubscribe links', () => {
       params: { query: { token: unsubscribeToken(USERS.alice, 'all') } },
     })
     expect(all).toMatchObject({ scope: 'all', unsubscribed: true })
-    expect(all?.types).toHaveLength(9)
+    expect(all?.types).toHaveLength(12)
   })
 
   it('answers 404 for forged, truncated or inactive users’ tokens, 422 for junk', async () => {

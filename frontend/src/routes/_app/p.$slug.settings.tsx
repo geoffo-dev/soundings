@@ -14,6 +14,7 @@ const TAB_TITLES: Record<SettingsTab, string> = {
   rubric: 'Rubric',
   research: 'Research',
   'proposal-template': 'Proposal template',
+  bids: 'Bids',
   'public-form': 'Public form',
 }
 
@@ -22,7 +23,7 @@ const MOVED_TABS = Object.keys(MOVED_SETTINGS_TABS) as MovedTab[]
 const isMoved = (tab: string | undefined): tab is MovedTab =>
   tab !== undefined && (MOVED_TABS as string[]).includes(tab)
 
-/** /p/$slug/settings?tab=members|rubric|research|proposal-template|public-form (General is the default). */
+/** /p/$slug/settings?tab=members|rubric|research|proposal-template|bids|public-form (General is the default). */
 export const Route = createFileRoute('/_app/p/$slug/settings')({
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab | MovedTab } => ({
     tab: searchEnum(search.tab, [...SETTINGS_TABS, ...MOVED_TABS]),

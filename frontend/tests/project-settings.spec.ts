@@ -228,13 +228,14 @@ test('members of a project see its settings read-only', async ({ page }) => {
     page.getByText('Only project admins can change these settings.').first(),
   ).toBeVisible()
   await expect(page.getByRole('textbox')).toHaveCount(0)
-  // Research and Proposal are read-only summaries for members (Phase 8).
+  // Research and Proposal (Phase 8) and Bids (Phase 10) are read-only summaries for members.
   await expect(page.getByRole('tab')).toHaveText([
     'General',
     'Members',
     'Rubric',
     'Research',
     'Proposal template',
+    'Bids',
   ])
   await page.getByRole('tab', { name: 'Rubric' }).click()
   await expect(page).toHaveURL(/tab=rubric/)

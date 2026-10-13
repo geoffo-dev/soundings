@@ -88,6 +88,8 @@ async def test_member_submits_an_idea(api: AsUser, team: Team, db_session: Async
         "can_assign_outside_researcher": False,
         "can_hand_back_research": False,
         "can_view_project": True,
+        "can_view_bid_call": False,  # Phase 10: no call, not in Proposal
+        "can_create_bid_call": False,
     }
     assert await events(db_session, idea["id"]) == [("idea_created", {})]
 
@@ -117,6 +119,8 @@ async def test_admin_permissions_on_a_new_idea(api: AsUser, team: Team) -> None:
         "can_assign_outside_researcher": False,
         "can_hand_back_research": False,
         "can_view_project": True,
+        "can_view_bid_call": False,  # Phase 10: no call, not in Proposal
+        "can_create_bid_call": False,
     }
 
 

@@ -439,14 +439,16 @@ describe('Admin settings → AI agents', () => {
     expect(
       data?.items.map((agent) => [agent.display_name, agent.enabled, agent.key?.prefix]),
     ).toEqual([
+      // Phase 10: the AI assessor.
+      ['Bid assessor', true, 'sdg_B1dAss3ss0rK'],
       ['Idea evaluator', true, 'sdg_Id3aEva1uat0'],
       ['Market scout', false, undefined],
       ['Research agent', true, 'sdg_R3s3archAg3n'],
     ])
-    expect(data?.items[0]?.a2a_url).toBe(
+    expect(data?.items[1]?.a2a_url).toBe(
       'http://kagent-controller.kagent:8083/api/a2a/soundings/idea-evaluator/',
     )
-    expect(data?.items[1]?.projects).toEqual([
+    expect(data?.items[2]?.projects).toEqual([
       expect.objectContaining({ name: 'Internal Tools', role: 'viewer' }),
     ])
     expect(data?.settings).toMatchObject({ enabled: true, kagent_token_set: false })

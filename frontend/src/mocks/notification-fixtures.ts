@@ -30,6 +30,9 @@ const DEFAULTS: Record<NotificationType, NotificationMode> = {
   mention: 'immediate',
   researcher_assigned: 'immediate',
   research_reminder: 'immediate',
+  assessor_assigned: 'immediate',
+  assessment_reminder: 'immediate',
+  assessments_complete: 'immediate',
 }
 
 interface NotificationSpec {

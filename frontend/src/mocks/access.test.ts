@@ -163,8 +163,9 @@ describe('roles through groups (§3.7)', () => {
     const { data } = await api.GET('/api/v1/projects/{slug}', {
       params: { path: { slug: 'internal-tools' } },
     })
-    // Five direct, Kofi and Lena through Tools members, and Phase 6's Market scout (a viewer).
-    expect(data?.member_count).toBe(8)
+    // Five direct, Kofi and Lena through Tools members, Phase 6's Market scout (a viewer)
+    // and Phase 10's Bid assessor (a member).
+    expect(data?.member_count).toBe(9)
   })
 })
 
@@ -263,6 +264,8 @@ describe('admin (§3.4, §3.5, §3.11)', () => {
       params: { query: { has_identity: false } },
     })
     expect(pending.data?.items.map((u) => u.display_name)).toEqual([
+      // Phase 10: the AI assessor's service account.
+      'Bid assessor',
       'Break-glass admin',
       // Phase 6: AI agents' service accounts never sign in.
       'Idea evaluator',

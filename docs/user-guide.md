@@ -59,12 +59,17 @@ development installs a **development login** that lists everyone ("who are you?"
     open") and **Answer** opens the checklist. "As owner" marks the ones you do as owner.
     With nothing to evaluate, this section comes first and the empty **Evaluations due**
     box isn't shown.
+  - **Bids to assess** [Phase 10] (only when you have some): calls for bids being
+    assessed where you still owe assessments, overdue first, with your sections, how
+    many you've submitted ("1 of 2 submitted") and the due date; **Assess** opens the
+    idea's Bids tab. It never shows scores, prices or bidders.
   - **Ideas I own**, grouped by status (Closed is folded away). Each group shows its
     first 10 ideas; **Show more** adds 50 at a time. Viewers, who can't own ideas, don't
     see this section.
   - **Recently updated in my projects**: the ten ideas with the latest activity.
   The sidebar repeats the counts and shows a red dot when an evaluation (or research)
-  is overdue; **Research** appears under My work only while you have research to do.
+  is overdue; **Research** and **Bids** appear under My work only while you have research
+  to do or bids to assess.
   Project admins see how many public-form ideas wait for review in the sidebar, next to
   the project, and in a notice above its board. On a brand-new install, or before anyone
   has added you to a project, My work says how to start instead: platform admins get
@@ -491,6 +496,155 @@ time, and printing stops after 20 seconds (only a huge proposal, such as one ful
 long tables, gets near that): the app then says "The PDF export is busy", so try again a
 few seconds later.
 
+## Calls for bids [Phase 10]
+
+Once an idea's proposal is agreed, its **Bids** tab runs a call for bids: the team enters
+the bids that come in with their documents, checks each bid's **must-haves**, and
+**assessors** score the bids section by section against a weighted template. Soundings
+works out the scores, ranks the bids and keeps the evaluation **blind**: nobody sees
+anyone else's scores for a bid and section until they have submitted their own. One idea
+has at most one call.
+
+**Who sees what.** The idea's owner and the project's and platform admins run the call
+(call managers). Assessors see the call, its template and the bids that aren't rejected,
+with their documents and must-have results, but never contacts, notes, rejection reasons,
+totals or ranks, and prices only if they assess the section with the price. Everyone else
+who can see the idea sees only that a call exists: its title, status, deadline and number
+of bids. Someone who researches the idea from outside a private project sees nothing of it.
+
+### Starting a call
+
+The owner or an admin starts a call from the **Bids** tab once the idea is in Proposal
+and has a proposal (**Start a call for bids**: a title, what is being bought, and the
+currency, which is only a label). The call copies the project's **bid evaluation
+template** (see "For project admins") and starts as a **draft**. A call moves through:
+
+- **Draft**: set it up. **Call details…** (in the call's menu) sets the deadline for bids,
+  the currency and the **AI assessor**; **Assessors and due date…** names who assesses
+  each section; **Evaluation template…** edits this call's own copy of the template.
+  **Open the call** asks for a deadline first.
+- **Open**: bids are entered. A bid received after the end of the deadline's day is
+  marked **Late**, never refused. **Close to new bids** fixes the deadline and lets the
+  assessors start.
+- **Assessing**: the assessors score their sections. **Reopen to new bids…** works only
+  until someone has submitted an assessment.
+- **Awarded** or **Cancelled**: read-only. **Cancel the call…** takes an optional reason.
+
+The call's copy of the template can change until the first assessment is submitted;
+after that the tab says "The evaluation template is locked: assessments have been
+submitted." Changing the project's template later never changes a call. A draft or
+cancelled call can be deleted (an awarded one only by a platform admin), with everything
+in it.
+
+### Entering bids and their documents
+
+While the call is open, **Enter a bid** records a bid as it came in: the bidder, a contact
+(kept for the call's managers and never emailed by Soundings), when it was received, the
+price (only when the template has a price question) and notes. Each bid opens in a side
+panel with its details, must-haves and documents; **Edit details** changes them until the
+award. **Delete the bid** is for a bid entered by mistake (while the call is a draft or
+open); to turn a bid down, reject it instead.
+
+Under **Documents**, drop files onto the box or use **Choose files**: PDF, Word, Excel,
+PowerPoint, OpenDocument, text, CSV, PNG or JPEG, up to 25 MB each and 30 per bid. Each
+file shows its progress while it uploads, and if it is refused, why, beside the file (the
+type isn't allowed, it has macros, it is already on the bid, the call's storage is full…),
+with **Try again** where that could help. Soundings decides a file's type from its
+contents, not its name. A moment after the upload it reads the file's text ("Reading the
+text…", then "12,345 characters of text"); **Read** shows that text, page by page, as
+plain text. Files are never opened in the browser: the download button saves the file,
+and a file with **Active content** (scripts or attached files in a PDF, links that fetch
+data in an Office file) asks before it downloads. A document's **…** menu links it to a
+must-have, marks it as a pricing document or not, and deletes it.
+
+**Pricing documents** (the default template's "Pricing schedule", or any file you mark
+with **Upload as pricing documents** or **Mark as pricing…**) can be opened only by the
+call's managers and the assessors of the section with the price; everyone else sees
+"present (restricted)" and no file name. The AI never reads them. Marking a file as
+pricing removes the AI's assessments of that bid (it may have read the file): ask the AI
+again afterwards.
+
+### Must-haves and rejecting a bid
+
+Each bid lists the template's **must-haves** with a result: **Met**, **Not met**,
+**Missing** (a required document with no file yet) or **To check** (a confirmation nobody
+has checked). A required document is met as soon as a file answers it (**Upload** on the
+must-have, or link a file from its menu); a confirmation is met when a call manager
+chooses **Met**. **Not met…** records that a must-have isn't satisfied, with an optional
+note; **Clear** takes a decision back. Only a bid that meets every must-have is
+**Qualified**: the others get no total and can't be awarded. The bids list flags
+missing and unmet must-haves in red.
+
+When the call has an AI assessor, each must-have also shows the AI's **suggestion**
+("Suggests met", "Suggests not met", "Couldn't tell") with its reasons and the passages
+it quoted from the documents, each marked **Found in the document** or **Not found in
+the document**. A suggestion never changes the result: a person decides.
+
+When a must-have is missing or not met, or the AI suggests one isn't, the bid's panel says
+"This bid doesn't meet every must-have" with **Reject…**, the reason already filled in
+("Missing: Insurance certificate."). Any bid can be rejected from its panel until the
+award. A rejected bid leaves the assessors' queues, the totals and the ranking (its
+assessments are kept) and is listed apart with its reason; **Reinstate** brings it back.
+
+### Assessing bids
+
+The call's managers name **assessors** for each section (**Assessors and due date…**) and
+one assessment due date for the call. Assessors are people who can see the idea in their
+own right: in a private project, people with a role there. Each new assessor is told
+("Asked to assess bids") and reminded 2 days before the due date and on the day. You
+can't remove yourself from a section while you still owe an assessment of it ("submit
+them, or ask another call manager"), and someone who has submitted keeps their section.
+
+As an assessor, the Bids tab starts with **Your assessments**: every bid and section you
+assess, with **Assess**, **Continue** (a draft) or **View** (submitted). The assessment
+panel shows each question with its guidance and the 0-5 scale (hover or focus a score to
+read what it means, or type 0-5), a comment for each, and the bid's documents and their
+text beside the questions on a wide screen (on a phone, **Read** opens them over the
+panel). The price question is scored automatically: the lowest qualified price ÷ this
+bid's price × 5. **Save draft** keeps it for you only; **Submit** needs every question
+scored. Closing with unsaved changes asks first.
+
+**Blind until you submit:** while you owe a section for a bid, you see nobody else's
+scores, comments or the AI's scores for it, and no ranking at all. Once you submit,
+**Everyone's scores** shows the others' submitted scores, the spread ("Disagree" when two
+scores differ by 2 or more) and the AI's scores; **Next** moves to your next assessment.
+You can change a submitted assessment until the award (**Save changes**). Totals and the
+ranking stay with the call's managers.
+
+### The AI assessor
+
+A platform admin can register an AI agent that **assesses bids** (Admin → AI agents).
+Choose it as the call's **AI assessor** in **Call details…** and it assesses each bid by
+itself once the bid's documents are read and nothing has been uploaded for 5 minutes
+("Started automatically", once per bid). Call managers can also **Ask AI to assess** one
+bid from its panel, or **Assess all with AI** from the call's menu (each counts toward
+your 20 AI requests an hour). The AI reads the documents except pricing ones, scores each
+question with its reasons and quotes, and checks the must-haves. Its scores are **left
+out of the totals** until a call manager switches on **Count in the totals** for that bid
+(in the bid's panel or the comparison); a quote Soundings couldn't find in the documents
+is flagged, so check it before counting the assessment.
+
+### Comparing bids and awarding the call
+
+Call managers see the **Comparison** once bids are in: each bid's rank, price and price
+score, a score from 0 to 100 for each section, the total and the AI's assessment. Each
+section's score is the weighted mean of its questions (0-5) × 20; the total weights the
+sections. A warning sign marks a section where assessors disagree. Bids that don't meet
+every must-have get no total; rejected bids are listed apart with their reasons. If you
+also assess the call and still owe an assessment, the cells you owe stay hidden and there
+is no ranking for you until you submit ("The ranking shows once you have submitted your
+assessments").
+
+**Award…** (while the call is being assessed) chooses the winning bid among those that
+meet every must-have, with an optional reason. It says how many assessments are still
+outstanding (you can award anyway; their scores won't count) and never breaks a tie for
+you. The other bids become unsuccessful and the call read-only. **Export the report**
+(PDF or Markdown, in the call's menu or ⌘K) writes the evaluation for the record: the
+ranking, each bid's section scores, total and price score, its must-haves (with what is
+missing or not met), the rejected bids with their reasons, the assessors and their
+progress, whether the AI was counted, and the award with its reason. If you still owe an
+assessment, the report leaves that bid's scores and every rank out, as the comparison does.
+
 ## Public submission and tracking links [Phase 4]
 
 A project can accept ideas from anyone, without an account, through its **public form**
@@ -556,6 +710,9 @@ what on which idea, in one sentence:
 | your **evaluation is due**: 2 days before the due date and on the day, while you haven't submitted | the evaluate sheet |
 | someone **asks you to research** an idea (with the due date) [Phase 8b] | the idea's research checklist |
 | your **research is due**: 2 days before the research due date and on the day, while a required item is open [Phase 8b] | the research checklist |
+| someone **asks you to assess bids** in a call (your sections, the due date) [Phase 10] | the idea's Bids tab |
+| your **bid assessments are due**: 2 days before the assessment due date and on the day, while you owe any [Phase 10] | the Bids tab |
+| **every bid is assessed** in a call on an idea you own or a call you started [Phase 10] | the Bids tab |
 | **all evaluations are in** on an idea you own | the idea |
 | an idea you own, evaluate or watch **changes status** | the idea |
 | someone **comments** on an idea you watch | the comment |
@@ -568,7 +725,8 @@ inbox.
 
 **Blind evaluation holds here too:** no notification or email ever contains scores,
 recommendations, the aggregate or anyone's evaluation comments. "All evaluations are
-in" only says how many came in; open the idea to see the results.
+in" only says how many came in; open the idea to see the results. Bid notifications
+never name a bidder or carry a score, price or document text.
 
 ### Immediate, daily digest or off
 
@@ -817,6 +975,18 @@ the exports, under **Removed sections** ("Text in 3 proposals"), and **Restore**
 it back with its text, comments and suggestions, to where it was (at the end if the
 template is shorter now). Saving changes every proposal in the project at once.
 
+### Bid evaluation template [Phase 10]
+
+Project settings → **Bids** is the template every new call for bids in the project
+copies: up to 8 **sections** whose weights add up to 100% (the page says what they add up
+to as you type), each with up to 15 **questions** (**Score 0-5**, assessors score it;
+**Price**, scored from each bid's price, at most one in the template; **Comment**, an
+answer that isn't scored) with a weight within the section and guidance for assessors;
+up to 20 **must-haves** (a required **document**, optionally a **pricing document**, or a
+**confirmation** someone checks); and what each score from 0 to 5 means. Reorder sections,
+questions and must-haves by dragging, Alt+↑/↓ or **Move**. Calls already started keep
+their own copy.
+
 ### Renaming status labels
 
 On the General tab, rename any status or resolution (for example "Shortlisted" → "Next up"); the board,
@@ -1033,7 +1203,7 @@ run in and the MCP address agents use). **Register agent** asks for a name peopl
 ("Idea evaluator"), an optional description, the kagent Agent's **namespace** (one of
 those in effect) and **name** (as in Kubernetes, lower case: mistakes show as you type), the
 protocol (kagent 0.10 or 1.0), **what it does** (evaluate, research, draft proposal
-sections) and **which projects** it serves. Under the fields, "Soundings will call …"
+sections, assess bids [Phase 10]) and **which projects** it serves. Under the fields, "Soundings will call …"
 shows the one address runs go to: it is built from the controller address in effect and
 the namespace and name, never typed.
 
@@ -1091,7 +1261,10 @@ through a group); **platform admins** act as an admin of every project. Being an
 | Ask someone to research, change the research due date | | | yes (in a private project: only people with a role there) | hand it back | yes | yes |
 | **Move anyway** past Research with items open | | | | | yes | yes |
 | Write the proposal, accept suggestions | | suggest text | yes | | yes | yes |
-| Project settings: members, rubric, research step, proposal template, public form | | | | | yes | yes |
+| Run a call for bids: enter bids and documents, check must-haves, reject, name assessors, compare, award [Phase 10] | | | yes | | yes | yes |
+| Assess bids (a section of a call; private projects: people with a role there) [Phase 10] | when named | when named | when named | | when named | when named |
+| See a call's bids, prices and scores | that a call exists | that a call exists | yes | | yes | yes |
+| Project settings: members, rubric, research step, proposal template, bid template, public form | | | | | yes | yes |
 | Create projects; Admin (users, groups, sign-in, branding, email, API keys, AI agents, audit log) | | | | | | yes |
 
-Pending evaluators never see anyone's scores, anywhere, until they submit their own.
+Pending evaluators never see anyone's scores, anywhere, until they submit their own. The same holds for bid assessors, section by section and bid by bid; assessors see prices only when they assess the section with the price.

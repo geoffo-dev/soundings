@@ -6,6 +6,7 @@ import { adminEmailHandlers } from './admin-email'
 import { aiHandlers } from './ai'
 import { apiKeyHandlers } from './api-keys'
 import { authHandlers } from './auth'
+import { bidHandlers } from './bids'
 import { brandingHandlers } from './branding'
 import { evaluationHandlers } from './evaluations'
 import { groupHandlers } from './groups'
@@ -49,4 +50,6 @@ export const handlers: RequestHandler[] = [
   ...aiHandlers,
   // Phase 8 (contract-phase8)
   ...researchHandlers,
+  // Phase 10 (contract-phase10)
+  ...bidHandlers,
 ]

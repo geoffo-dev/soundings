@@ -84,8 +84,10 @@ STATEMENT_BUDGET: dict[str, int] = {
     # review: the page's people and the projects with roles in one statement each (12 -> 9).
     # Phase 8b: "Research to do" is one more statement (its first 50 with both counts) and
     # its checklist progress one more when the page isn't empty (contract-phase8b §7).
-    "me.work": 11,
-    "me.work.counts": 4,  # Phase 7 C1: the sidebar's badges; Phase 8b: + research to do
+    # Phase 10: "Bids to assess" is one more (its first 50 calls with both counts).
+    "me.work": 12,
+    # Phase 7 C1: the sidebar's badges; Phase 8b: + research to do; Phase 10: + bids owed
+    "me.work.counts": 5,
     "me.evaluations_due": 3,  # Phase 7 C1: a page of 50 and its owners
     "me.owned_ideas": 7,
     "notifications.list": 3,

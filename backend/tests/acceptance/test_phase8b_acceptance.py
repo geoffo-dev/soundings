@@ -92,6 +92,8 @@ from tests.acceptance.test_phase5_acceptance import (
 )
 from tests.ai.helpers import make_agent, open_run
 from tests.factories import add_evaluator
+from tests.research.test_guest_access import ROUTES as GUEST_ROUTES
+from tests.research.test_guest_access import STILL_STUBS
 
 API = "/api/v1"
 ZONE = "Europe/London"
@@ -865,6 +867,13 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
         ("get_ai_run", "GET", f"/ideas/{key}/ai-runs/{run}", None, {404}),
         ("cancel_ai_run", "POST", f"/ideas/{key}/ai-runs/{run}/cancel", None, {404}),
         ("stream_ai_run_events", "GET", f"/ideas/{key}/ai-runs/{run}/events", None, {404}),
+    ]
+    # hidden: the call for bids (Phase 10, table L), with the guest table's requests; a
+    # route still answering 501 is pinned there (STILL_STUBS) until it's built.
+    probes += [
+        (operation, method, path.format(key=key), body, {501 if operation in STILL_STUBS else 404})
+        for operation, (method, path, body, _) in GUEST_ROUTES.items()
+        if path.startswith("/ideas/{key}/bid-call")
     ]
     outcomes = {}
     for operation, method, path, body, wanted in probes:

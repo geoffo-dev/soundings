@@ -43,7 +43,8 @@ test('shows who has access and why', async ({ page }) => {
   await expect(access(page)).toHaveCount(0)
   await showAccess(page)
   await expect(groupRow(page, 'Tools members')).toContainText('Group · 6 people')
-  await expect(page.getByText('8 people, each with the highest of their roles')).toBeVisible()
+  // Phase 10's Bid assessor agent is a member too.
+  await expect(page.getByText('9 people, each with the highest of their roles')).toBeVisible()
   await expect(accessRow(page, 'Kofi Boateng')).toContainText('Member')
   await expect(accessRow(page, 'Kofi Boateng')).toContainText('via Tools members')
   await expect(accessRow(page, 'Alice Anders')).toContainText('Direct · via Tools members (member)')

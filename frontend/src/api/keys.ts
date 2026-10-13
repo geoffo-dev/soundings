@@ -99,6 +99,29 @@ export const queryKeys = {
     /** Phase 8: the project's proposal template and research settings (`api/research.ts`). */
     proposalTemplate: (slug: string) => ['projects', 'detail', slug, 'proposal-template'] as const,
     research: (slug: string) => ['projects', 'detail', slug, 'research'] as const,
+    /** Phase 10: the project's default bid evaluation template (`api/bids.ts`). */
+    bidTemplate: (slug: string) => ['projects', 'detail', slug, 'bid-template'] as const,
+  },
+  /**
+   * Phase 10: an idea's call for bids (`api/bids.ts`): ['bids', KEY, 'call' | 'bids' |
+   * 'comparison'] · ['bids', KEY, 'bid', bidId] · ['bids', KEY, 'bid', bidId, 'mine' |
+   * 'section' | 'ai', …] · ['bids', KEY, 'bid', bidId, 'text', documentId, page]; the
+   * project's template is ['projects', 'detail', slug, 'bid-template'].
+   */
+  bids: {
+    all: ['bids'] as const,
+    idea: (idea: string) => ['bids', ideaCacheId(idea)] as const,
+    call: (idea: string) => ['bids', ideaCacheId(idea), 'call'] as const,
+    list: (idea: string) => ['bids', ideaCacheId(idea), 'bids'] as const,
+    comparison: (idea: string) => ['bids', ideaCacheId(idea), 'comparison'] as const,
+    bid: (idea: string, bidId: string) => ['bids', ideaCacheId(idea), 'bid', bidId] as const,
+    mine: (idea: string, bidId: string, sectionId: string) =>
+      ['bids', ideaCacheId(idea), 'bid', bidId, 'mine', sectionId] as const,
+    section: (idea: string, bidId: string, sectionId: string) =>
+      ['bids', ideaCacheId(idea), 'bid', bidId, 'section', sectionId] as const,
+    ai: (idea: string, bidId: string) => ['bids', ideaCacheId(idea), 'bid', bidId, 'ai'] as const,
+    text: (idea: string, bidId: string, documentId: string, page: number) =>
+      ['bids', ideaCacheId(idea), 'bid', bidId, 'text', documentId, page] as const,
   },
   /** Phase 8: an idea's research checklist and "Similar ideas" (`api/research.ts`). */
   research: {

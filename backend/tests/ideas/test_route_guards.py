@@ -86,6 +86,8 @@ def test_every_route_of_the_area_is_covered() -> None:
         and "/ai-runs" not in path
         and "/include-in-aggregate" not in path
         and "/research-notes" not in path
+        # Phase 10: the call for bids (tests/bids/test_route_guards.py).
+        and "/bid-call" not in path
     }
     assert mine == set(ROUTES)
 

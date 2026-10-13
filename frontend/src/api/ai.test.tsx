@@ -105,6 +105,8 @@ describe('RunCard', () => {
     idea_id: 'i-1',
     kind: 'evaluate',
     section_key: null,
+    bid_id: null,
+    automatic: false,
     status: 'timed_out',
     agent: { id: 'a', display_name: 'Idea evaluator', purposes: ['evaluate'], user_id: 'u' },
     requested_by: { id: 'u-a', display_name: 'Alice Anders', avatar_url: null, initials: 'AA' },
@@ -115,7 +117,7 @@ describe('RunCard', () => {
     cancel_requested: false,
     can_cancel: false,
     error: { code: 'timed_out', message: 'The agent didn’t finish in time.' },
-    result: { evaluation_id: null, note_id: null, suggestion_id: null },
+    result: { evaluation_id: null, note_id: null, suggestion_id: null, bid_ai_assessment_id: null },
     event_count: 0,
     ...overrides,
   })

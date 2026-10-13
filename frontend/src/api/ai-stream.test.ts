@@ -22,6 +22,8 @@ const run: AiRunDetail = {
   idea_id: 'idea-1',
   kind: 'evaluate',
   section_key: null,
+  bid_id: null,
+  automatic: false,
   status: 'queued',
   agent: { id: 'agent-1', display_name: 'Idea evaluator', purposes: ['evaluate'], user_id: 'u-1' },
   requested_by: null,
@@ -32,7 +34,7 @@ const run: AiRunDetail = {
   cancel_requested: false,
   can_cancel: true,
   error: null,
-  result: { evaluation_id: null, note_id: null, suggestion_id: null },
+  result: { evaluation_id: null, note_id: null, suggestion_id: null, bid_ai_assessment_id: null },
   event_count: 0,
   events: [],
 }

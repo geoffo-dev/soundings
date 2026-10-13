@@ -27,12 +27,14 @@ const sheet = cva('fixed z-50 flex flex-col bg-elevated text-primary shadow-dial
         'data-[state=closed]:animate-sheet-out-left data-[state=open]:animate-sheet-in-left',
       ],
     },
-    size: { sm: '', md: '', lg: '' },
+    size: { sm: '', md: '', lg: '', xl: '' },
   },
   compoundVariants: [
     { side: 'right', size: 'sm', className: 'sm:max-w-sm' },
     { side: 'right', size: 'md', className: 'sm:max-w-lg' },
     { side: 'right', size: 'lg', className: 'sm:max-w-2xl' },
+    // Phase 10: an assessment beside the bid's documents (two columns from `lg`).
+    { side: 'right', size: 'xl', className: 'sm:max-w-2xl lg:max-w-5xl' },
   ],
   defaultVariants: { side: 'right', size: 'md' },
 })
@@ -75,7 +77,7 @@ function SideSheetPresence() {
 
 export interface SheetContentProps extends ComponentProps<typeof SheetPrimitive.Content> {
   side?: 'right' | 'left'
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   hideClose?: boolean
 }
 

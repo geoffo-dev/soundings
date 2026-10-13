@@ -62,6 +62,7 @@ import { IdeaProperties } from './idea-sidebar'
 import { InviteDialog } from './invite-dialog'
 import { OwnerDialog } from './owner-dialog'
 import { primaryAction, type PrimaryAction } from './primary-action'
+import { BidsTabLoader } from './bids-tab-loader'
 import { ProposalTab } from './proposal-tab'
 import { StatusDialog } from './status-dialog'
 
@@ -166,9 +167,14 @@ function LoadedIdeaPage({
   const researchStep = project?.research_step ?? guestResearch.data?.step ?? 'off'
   const archived = Boolean(project?.archived_at)
   // A guest has the Overview only (no Evaluations or Proposal: no dead tabs).
-  const tab: IdeaTab = guest ? 'overview' : (search.tab ?? 'overview')
-  // The Proposal tab spans the page; the details fold into the summary line and sheet.
-  const wide = tab === 'proposal'
+  const requestedTab = search.tab ?? 'overview'
+  const tab: IdeaTab = guest
+    ? 'overview'
+    : requestedTab === 'bids' && !idea.permissions.can_view_bid_call
+      ? 'overview'
+      : requestedTab
+  // The Proposal and Bids tabs span the page; the details fold into the summary line and sheet.
+  const wide = tab === 'proposal' || tab === 'bids'
   const [dialog, setDialog] = useState<IdeaDialog | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const handingOff = useRef(false)
@@ -192,7 +198,12 @@ function LoadedIdeaPage({
   )
 
   const setTab = useCallback(
-    (next: IdeaTab) => setSearch({ tab: next === 'overview' ? undefined : next }),
+    (next: IdeaTab) =>
+      setSearch({
+        tab: next === 'overview' ? undefined : next,
+        // A bid and an assessment belong to the Bids tab.
+        ...(next === 'bids' ? {} : { bid: undefined, assess: undefined }),
+      }),
     [setSearch],
   )
 
@@ -258,6 +269,8 @@ function LoadedIdeaPage({
     commentFocusRequest,
     setTab,
     tab,
+    search,
+    setSearch,
   }
 
   useIdeaCommands(page)
@@ -433,6 +446,20 @@ function LoadedIdeaPage({
                       </>
                     )}
                   </TabsTrigger>
+                  {idea.permissions.can_view_bid_call && (
+                    <TabsTrigger value="bids">
+                      Bids
+                      {idea.bid_call && idea.bid_call.bid_count > 0 && (
+                        <>
+                          <CountBadge aria-hidden="true">{idea.bid_call.bid_count}</CountBadge>
+                          <span className="sr-only">
+                            , {idea.bid_call.bid_count}{' '}
+                            {idea.bid_call.bid_count === 1 ? 'bid' : 'bids'}
+                          </span>
+                        </>
+                      )}
+                    </TabsTrigger>
+                  )}
                 </TabsList>
                 <TabsContent value="overview" className="flex flex-col gap-10">
                   <DescriptionSection />
@@ -446,6 +473,11 @@ function LoadedIdeaPage({
                 <TabsContent value="proposal">
                   <ProposalTab />
                 </TabsContent>
+                {idea.permissions.can_view_bid_call && (
+                  <TabsContent value="bids">
+                    <BidsTabLoader />
+                  </TabsContent>
+                )}
               </Tabs>
             )}
           </div>

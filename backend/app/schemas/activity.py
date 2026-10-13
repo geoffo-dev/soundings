@@ -247,17 +247,18 @@ ACTIVITY_TYPES: tuple[str, ...] = (
     AI_RESEARCH_NOTE,
     "researcher_changed",
     "research_due_date_changed",
+    "bid_call_changed",
 )
-"""Every ``activity_events.type`` value (Phase 1, Phase 6's research notes and Phase 8b's
-research assignment; ``app.services.activity.PAYLOAD_KEYS`` covers exactly these)."""
+"""Every ``activity_events.type`` value (Phase 1, Phase 6's research notes, Phase 8b's
+research assignment and Phase 10's call for bids; ``app.services.activity.PAYLOAD_KEYS``
+covers exactly these)."""
 
 PHASE8B_ACTIVITY_TYPES: tuple[str, ...] = ("researcher_changed", "research_due_date_changed")
 """Phase 8b's two feed events (the research assignment), part of :data:`ACTIVITY_TYPES`."""
 
 PHASE10_ACTIVITY_TYPES: tuple[str, ...] = ("bid_call_changed",)
-"""Phase 10's feed event (the call for bids). It joins :data:`ACTIVITY_TYPES` together with
-its ``app.services.activity.PAYLOAD_KEYS`` row when backend emits it (an import-time guard ties
-the two)."""
+"""Phase 10's feed event (the call for bids), part of :data:`ACTIVITY_TYPES` (with its
+``app.services.activity.PAYLOAD_KEYS`` row; an import-time guard ties the two)."""
 
 BID_ACTIVITY_TYPES: frozenset[str] = frozenset(PHASE10_ACTIVITY_TYPES)
 """Phase 10: the call for bids' feed events. Shown to every caller who passes

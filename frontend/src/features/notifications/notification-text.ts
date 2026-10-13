@@ -28,6 +28,9 @@ export const KNOWN_TYPES = new Set<string>([
   'mention',
   'researcher_assigned',
   'research_reminder',
+  'assessor_assigned',
+  'assessment_reminder',
+  'assessments_complete',
 ])
 
 export function isKnownNotification(item: { type: string }): item is NotificationItem {
@@ -105,7 +108,37 @@ export function describeNotification(
         quote: null,
         keepTogether: formatDate(item.due_at, { now }),
       }
+    // Phase 10 (contract-phase10 §11): the call, your sections, a date and counts; never
+    // scores, prices or bidders.
+    case 'assessor_assigned': {
+      const sections = item.sections.length ? ` (${joinWords(item.sections)})` : ''
+      return {
+        actor,
+        text: `${someone}asked you to assess the bids for “${item.call.title}”${sections}${item.due_at ? `, ${dueOn(item.due_at, now)}` : ''}`,
+        quote: null,
+        ...(item.due_at ? { keepTogether: formatDate(item.due_at, { now }) } : {}),
+      }
+    }
+    case 'assessment_reminder':
+      return {
+        actor: null,
+        text: `Your bid assessments for “${item.call.title}” are ${dueOn(item.due_at, now)}`,
+        quote: null,
+        keepTogether: formatDate(item.due_at, { now }),
+      }
+    case 'assessments_complete':
+      return {
+        actor: null,
+        text: `Every bid for “${item.call.title}” is assessed: ${plural(item.assessment_count, 'assessment')} of ${plural(item.bid_count, 'bid')}`,
+        quote: null,
+      }
   }
+}
+
+/** "a, b and c". */
+function joinWords(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('')
+  return `${words.slice(0, -1).join(', ')} and ${words.at(-1) ?? ''}`
 }
 
 /** The sentence as one line of text (accessible names, tests). */
@@ -120,6 +153,8 @@ export interface NotificationLink {
   evaluate: boolean
   /** `?research=1` opens the idea at its Research panel (Phase 8b). */
   research?: boolean
+  /** `?tab=bids`: the idea's call for bids (Phase 10). */
+  bids?: boolean
   /** `#comment-<id>` for comments and mentions that still exist. */
   hash?: string
 }
@@ -138,6 +173,10 @@ export function notificationLink(item: NotificationItem): NotificationLink {
     case 'researcher_assigned':
     case 'research_reminder':
       return { ideaKey, evaluate: false, research: true }
+    case 'assessor_assigned':
+    case 'assessment_reminder':
+    case 'assessments_complete':
+      return { ideaKey, evaluate: false, bids: true }
     default:
       return { ideaKey, evaluate: false }
   }
@@ -274,6 +313,29 @@ export const TYPE_COPY: Record<
     description:
       'Before research you’re doing is due, and on the day, while a required checklist item is open.',
   },
+  // Phase 10 (contract-phase10 §11): never scores, prices or bidders.
+  assessor_assigned: {
+    label: 'Asked to assess bids',
+    one: 'Asked to assess bids',
+    phrase: 'bid assessment requests',
+    when: 'someone asks you to assess sections of a call for bids',
+    description:
+      'Someone asks you to assess sections of a call for bids: the call, your sections and the due date.',
+  },
+  assessment_reminder: {
+    label: 'Bid assessment reminders',
+    one: 'Bid assessment reminder',
+    phrase: 'bid assessment reminders',
+    when: 'bid assessments you still owe are nearly due',
+    description: 'Before bid assessments you still owe are due, and on the day.',
+  },
+  assessments_complete: {
+    label: 'Bid assessments complete',
+    one: 'Bid assessments complete',
+    phrase: '“bid assessments complete” emails',
+    when: 'every assessor of a call for bids you run has submitted',
+    description: 'Every assessor of a call for bids on your idea has submitted every bid.',
+  },
 }
 
 /**
@@ -288,6 +350,9 @@ const PREFERENCE_ORDER: readonly NotificationType[] = [
   'researcher_assigned',
   'research_reminder',
   'evaluations_complete',
+  'assessor_assigned',
+  'assessment_reminder',
+  'assessments_complete',
   'status_changed',
   'comment',
   'mention',

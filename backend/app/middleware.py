@@ -341,17 +341,38 @@ MAX_REQUEST_BODY_BYTES: Final = 1024 * 1024
 """1 MiB: the largest valid body (an idea with a 50,000-character description, JSON
 escaped) is well under it. Phase 1 has no uploads."""
 
-_TOO_LARGE_DETAIL: Final = "The request body is larger than 1 MiB."
+UPLOAD_BODY_BYTES: Final = 25 * 1024 * 1024
+"""Phase 10: a bid document upload's own limit (``app.models.bid.BID_DOCUMENT_MAX_BYTES``,
+the most a stored file may be; ``tests/bids/test_documents.py`` keeps them equal)."""
+
+BODY_LIMIT_EXCEPTIONS: Final[tuple[tuple[str, re.Pattern[str], int], ...]] = (
+    (
+        "POST",
+        re.compile(r"^/api/v1/ideas/[^/]+/bid-call/bids/[^/]+/documents$"),
+        UPLOAD_BODY_BYTES,
+    ),
+)
+"""``(method, path, limit)``: the only routes with a body limit of their own (Phase 10's
+``upload_bid_document``, contract-phase10 section 6.1); every other route keeps
+:data:`MAX_REQUEST_BODY_BYTES`."""
+
+
+def _mib(size: int) -> str:
+    return f"{size // (1024 * 1024)} MiB"
 
 
 class _BodyTooLarge(HTTPException):
     """Raised from ``receive`` once a streamed body passes the limit. An
-    ``HTTPException``, so FastAPI's body reading re-raises it and the app's handler
-    answers 413 problem+json."""
+    ``HTTPException``, so FastAPI's body reading (and the upload route's own reading)
+    re-raises it and the app's handler answers 413 problem+json."""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: int = MAX_REQUEST_BODY_BYTES) -> None:
         # The rest of the body is never read: the server closes the connection.
-        super().__init__(413, _TOO_LARGE_DETAIL, headers={"Connection": "close"})
+        super().__init__(
+            413,
+            f"The request body is larger than {_mib(limit)}.",
+            headers={"Connection": "close"},
+        )
 
 
 def _declared_length(scope: Scope) -> int | None:
@@ -367,22 +388,40 @@ class BodySizeLimitMiddleware:
     FastAPI reads the whole body before any dependency runs, so without this one
     anonymous request could hold hundreds of MB in the API process (its pod has a
     512Mi limit). A ``Content-Length`` over the limit is answered at once, without
-    reading the body; a body without one (chunked) is counted as it streams in and
-    cut off just past the limit. Ingress body limits (docs in deploy/helm/README.md)
-    are a second line, not the only one.
+    reading the body; a body without one (chunked), or longer than it says, is counted
+    as it streams in and cut off just past the limit. Ingress body limits (docs in
+    deploy/helm/README.md) are a second line, not the only one.
+
+    The routes in ``exceptions`` (:data:`BODY_LIMIT_EXCEPTIONS`: the bid document upload)
+    have a limit of their own, counted the same way; nothing else is raised.
     """
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int = MAX_REQUEST_BODY_BYTES,
+        exceptions: Sequence[tuple[str, re.Pattern[str], int]] = BODY_LIMIT_EXCEPTIONS,
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.exceptions = tuple(exceptions)
+
+    def limit_for(self, scope: Scope) -> int:
+        method, path = scope.get("method", ""), scope.get("path", "")
+        for wanted, pattern, limit in self.exceptions:
+            if method == wanted and pattern.match(path):
+                return limit
+        return self.max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        limit = self.limit_for(scope)
         declared = _declared_length(scope)
-        if declared is not None and declared > self.max_bytes:
-            await self._too_large(scope, receive, send)
+        if declared is not None and declared > limit:
+            await self._too_large(scope, receive, send, limit)
             return
 
         received = 0
@@ -393,8 +432,8 @@ class BodySizeLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
-                    raise _BodyTooLarge
+                if received > limit:
+                    raise _BodyTooLarge(limit)
             return message
 
         async def tracking_send(message: Message) -> None:
@@ -409,15 +448,15 @@ class BodySizeLimitMiddleware:
             # Read outside FastAPI's handlers (none today): still a 413, not a 500.
             if response_started:
                 raise
-            await self._too_large(scope, receive, send)
+            await self._too_large(scope, receive, send, limit)
 
     @staticmethod
-    async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
+    async def _too_large(scope: Scope, receive: Receive, send: Send, limit: int) -> None:
         response = problem_response(
             Request(scope),
             status=413,
             code="content_too_large",
-            detail=_TOO_LARGE_DETAIL,
+            detail=f"The request body is larger than {_mib(limit)}.",
             headers={"Connection": "close"},  # the unread body is never drained
         )
         await response(scope, receive, send)

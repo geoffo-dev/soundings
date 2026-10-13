@@ -35,11 +35,14 @@ async def test_empty_work(api: AsUser, team: Team) -> None:
             "owned_open": 0,
             "research_to_do": 0,  # Phase 8b
             "research_overdue": 0,
+            "bid_assessments_due": 0,  # Phase 10
+            "bid_assessments_overdue": 0,
         },
         "evaluations_due": [],
         "evaluations_due_next_cursor": None,
         "research_to_do": [],
         "research_to_do_next_cursor": None,
+        "bids_to_assess": [],  # Phase 10
         "owned": [],
         "recent": [],
     }
@@ -303,6 +306,8 @@ async def test_work_counts_match_my_work(api: AsUser, team: Team, db_session: As
         "owned_open": 2,
         "research_to_do": 0,
         "research_overdue": 0,
+        "bid_assessments_due": 0,
+        "bid_assessments_overdue": 0,
     }
     assert work["counts"] == counts
     assert work["evaluations_due_next_cursor"] is None
@@ -312,6 +317,8 @@ async def test_work_counts_match_my_work(api: AsUser, team: Team, db_session: As
         "owned_open": 0,
         "research_to_do": 0,
         "research_overdue": 0,
+        "bid_assessments_due": 0,
+        "bid_assessments_overdue": 0,
     }
 
 

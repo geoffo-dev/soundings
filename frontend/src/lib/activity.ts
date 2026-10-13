@@ -90,6 +90,28 @@ export function describeActivity(item: ActivityItem, labels?: StatusLabelLookup)
       return item.to_due_at
         ? `set the research due date to ${formatDate(item.to_due_at)}`
         : 'removed the research due date'
+    // Phase 10 (contract-phase10 §12): the call only, never a bid, price, score or reason.
+    case 'bid_call_changed':
+      return bidCallChange(item.from_status, item.to_status)
+  }
+}
+
+type BidCallStatusValue = Extract<ActivityItem, { type: 'bid_call_changed' }>['to_status']
+
+/** "started a call for bids", "opened the call for bids", … (BidCallChangedActivity). */
+export function bidCallChange(from: BidCallStatusValue | null, to: BidCallStatusValue): string {
+  if (from === null) return 'started a call for bids'
+  switch (to) {
+    case 'open':
+      return from === 'assessing' ? 'reopened the call for bids' : 'opened the call for bids'
+    case 'assessing':
+      return 'closed the call to new bids'
+    case 'awarded':
+      return 'awarded the call for bids'
+    case 'cancelled':
+      return 'cancelled the call for bids'
+    case 'draft':
+      return 'started a call for bids'
   }
 }
 

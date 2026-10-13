@@ -12,6 +12,7 @@ import {
 import type { MockDb, MockUser } from '@/mocks/db'
 import { failValidation, queryEnum, queryLimit, route } from '@/mocks/http'
 import { researchToDo } from '@/mocks/researchers'
+import { bidAssessmentCounts, bidsToAssess } from '@/mocks/bids'
 
 /** My work lists the first 50 evaluations due; "Show more" pages on (contract-phase7 C1). */
 const WORK_DUE_SHOWN = 50
@@ -21,6 +22,7 @@ const RESEARCH_SHOWN = 50
 function workCounts(db: MockDb, user: MockUser) {
   const due = evaluationsDue(db, user)
   const research = researchToDo(db, user)
+  const bids = bidAssessmentCounts(db, user)
   return {
     evaluations_due: due.length,
     evaluations_overdue: due.filter((row) => row.overdue).length,
@@ -29,6 +31,9 @@ function workCounts(db: MockDb, user: MockUser) {
       .reduce((sum, group) => sum + group.count, 0),
     research_to_do: research.length,
     research_overdue: research.filter((row) => row.overdue).length,
+    // Phase 10: bid assessments you owe in calls being assessed.
+    bid_assessments_due: bids.due,
+    bid_assessments_overdue: bids.overdue,
   }
 }
 
@@ -42,6 +47,7 @@ export const workHandlers = [
       evaluations_due_next_cursor: next_cursor,
       research_to_do: research.page,
       research_to_do_next_cursor: research.next_cursor,
+      bids_to_assess: bidsToAssess(db, user),
       owned: ownedGroups(db, user),
       recent: recentIdeas(db, user),
       counts: workCounts(db, user),

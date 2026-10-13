@@ -4,7 +4,8 @@
  * form (it only changes how the project faces outward). The old `?tab=statuses` and
  * `?tab=branding` still open the tab that holds them, scrolled to the section.
  * Phase 8 adds Research (the step and its checklist) and Proposal (the template):
- * six tabs, the most the settings take.
+ * six tabs. Phase 10 adds Bids (the default bid evaluation template): seven, which
+ * wrap onto two lines on phones.
  */
 export const SETTINGS_TABS = [
   'general',
@@ -12,6 +13,7 @@ export const SETTINGS_TABS = [
   'rubric',
   'research',
   'proposal-template',
+  'bids',
   'public-form',
 ] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]

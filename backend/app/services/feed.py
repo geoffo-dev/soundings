@@ -28,6 +28,7 @@ from app.authz import Resource, Rule, can
 from app.domain.labels import status_label
 from app.domain.principal import Principal
 from app.models.activity import ActivityEvent, Comment
+from app.models.bid import BidCall
 from app.models.enums import IdeaStatus, Resolution
 from app.pagination import InvalidCursorProblem, decode_cursor, encode_cursor
 from app.schemas.activity import (
@@ -36,6 +37,7 @@ from app.schemas.activity import (
     ActivityItem,
     ActivityPage,
     AiResearchNoteActivity,
+    BidCallChangedActivity,
     CommentActivity,
     CommentBody,
     DueDateChangedActivity,
@@ -52,6 +54,7 @@ from app.schemas.activity import (
     StatusChangedActivity,
 )
 from app.schemas.ai import ResearchNote
+from app.schemas.bid_refs import BidCallRef
 from app.schemas.users import UserRef
 from app.services.sql import any_of
 from app.services.summaries import user_refs
@@ -107,6 +110,7 @@ def _item(
     comment: CommentBody | None,
     note: ResearchNote | None = None,
     labels: Labels | None = None,
+    calls: Mapping[UUID, BidCallRef] | None = None,
 ) -> ActivityItem | None:
     payload = event.payload
     base: dict[str, Any] = {
@@ -195,6 +199,15 @@ def _item(
                 to_due_at=_datetime(payload["to_due_at"]),
                 **base,
             )
+        case "bid_call_changed":
+            call_id = _uuid(payload.get("call_id"))
+            return BidCallChangedActivity(
+                type="bid_call_changed",
+                call=(calls or {}).get(call_id) if call_id else None,
+                from_status=payload["from_status"],
+                to_status=payload["to_status"],
+                **base,
+            )
     return None  # a type from a later phase: clients skip it too
 
 
@@ -232,6 +245,7 @@ async def activity_items(
         if any(event.type == AI_RESEARCH_NOTE for event in events)
         else {}
     )
+    calls = await _call_refs(db, events)
     items = []
     for event in events:
         comment = comments.get(event.comment_id) if event.comment_id else None
@@ -246,10 +260,30 @@ async def activity_items(
             else None
         )
         labels = labels_for(event.idea_id) if labels_for and event.idea_id else None
-        item = _item(event, users, body, note, labels)
+        item = _item(event, users, body, note, labels, calls)
         if item is not None:
             items.append(item)
     return items
+
+
+async def _call_refs(db: AsyncSession, events: Sequence[ActivityEvent]) -> dict[UUID, BidCallRef]:
+    """Phase 10: the calls ``bid_call_changed`` events name, as they are now (a deleted
+    call reads as null). Only title and status: what every ``bid.view_call`` reader sees."""
+    ids = {
+        call_id
+        for event in events
+        if event.type == "bid_call_changed"
+        and (call_id := _uuid(event.payload.get("call_id"))) is not None
+    }
+    if not ids:
+        return {}
+    rows = await db.execute(
+        select(BidCall.id, BidCall.title, BidCall.status).where(any_of(BidCall.id, ids))
+    )
+    return {
+        call_id: BidCallRef(id=call_id, title=title, status=status)
+        for call_id, title, status in rows
+    }
 
 
 async def list_activity(

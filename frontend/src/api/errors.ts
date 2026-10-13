@@ -308,6 +308,105 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'That image can’t be used here',
     description: 'Upload it again, then save.',
   },
+  // Phase 10: calls for bids (contract-phase10 §15)
+  bid_call_exists: { title: 'This idea already has a call for bids' },
+  bid_call_not_available: {
+    title: 'A call for bids needs a proposal',
+    description: 'Start the proposal and move the idea to Proposal first.',
+  },
+  bid_call_finished: {
+    title: 'This call for bids is finished',
+    description: 'Awarded and cancelled calls are read-only.',
+  },
+  bid_call_not_open: {
+    title: 'The call isn’t open',
+    description: 'Bids are entered, and the deadline changed, while the call is open.',
+  },
+  bid_call_not_assessing: {
+    title: 'The call isn’t being assessed',
+    description: 'Close it to new bids first.',
+  },
+  bid_call_not_assessable: {
+    title: 'AI can’t assess bids now',
+    description: 'AI assesses bids while the call is open or being assessed.',
+  },
+  invalid_bid_call_transition: { title: 'The call can’t move there from where it is' },
+  bid_call_template_locked: {
+    title: 'The evaluation template is locked',
+    description: 'An assessment has been submitted, so the questions can’t change any more.',
+  },
+  assessments_submitted: {
+    title: 'Assessments have been submitted',
+    description: 'The call can’t be reopened to new bids once someone has assessed a bid.',
+  },
+  bid_call_deadline_required: {
+    title: 'Set a deadline first',
+    description: 'An open call needs a deadline for bids.',
+  },
+  bid_call_active: {
+    title: 'This call can’t be deleted now',
+    description: 'Cancel it first. Only platform admins can delete an awarded call.',
+  },
+  bid_rejected: { title: 'This bid is rejected', description: 'Reinstate it first.' },
+  bid_not_qualified: {
+    title: 'This bid doesn’t meet every must-have',
+    description: 'Only a bid that meets them all can be awarded.',
+  },
+  document_missing: {
+    title: 'Upload the document first',
+    description: 'A required document is met once a file is linked to it.',
+  },
+  price_not_asked: { title: 'This call has no price question' },
+  too_many_bids: { title: 'A call takes at most 50 bids' },
+  unsupported_document_type: {
+    title: 'That file type can’t be uploaded',
+    description:
+      'Upload a PDF, Word, Excel, PowerPoint, OpenDocument, text, CSV, PNG or JPEG file.',
+  },
+  macro_document: {
+    title: 'Files with macros can’t be uploaded',
+    description: 'Save it without macros (as .docx, .xlsx or .pptx, or as a PDF) and try again.',
+  },
+  upload_timeout: {
+    title: 'The upload took too long',
+    description: 'Check your connection and try again.',
+  },
+  upload_busy: {
+    title: 'Soundings is busy with other uploads',
+    description: 'Try again in a few seconds.',
+  },
+  too_many_documents: { title: 'A bid takes at most 30 documents' },
+  call_storage_full: {
+    title: 'This call’s documents are full',
+    description: 'Its documents and their text take 500 MB already. Delete some first.',
+  },
+  project_storage_full: {
+    title: 'This project’s bid documents are full',
+    description: 'They take 5 GB already. Ask a platform admin.',
+  },
+  duplicate_document: { title: 'That file is already on this bid' },
+  invalid_must_have: { title: 'That must-have can’t take this file' },
+  assessment_incomplete: {
+    title: 'Some scores are missing',
+    description: 'Score every question to submit.',
+  },
+  unknown_question: { title: 'That question isn’t in this section any more' },
+  not_assessable: { title: 'The price is scored automatically' },
+  unknown_template_item: {
+    title: 'The template changed meanwhile',
+    description: 'Reload the page and make your changes again.',
+  },
+  assessor_not_eligible: {
+    title: 'That person can’t assess bids here',
+    description:
+      'Assessors need to see the idea in their own right: in a private project, a role there.',
+  },
+  not_section_assessor: { title: 'You don’t assess this section' },
+  assessor_has_submitted: {
+    title: 'This assessor has submitted',
+    description: 'Submitted assessments are kept, so they stay on the section.',
+  },
+  unknown_section: { title: 'That section isn’t in the template any more' },
   // Phase 5: API keys and proposal suggestions (contract-phase5 §5)
   insufficient_scope: {
     title: 'An API key can’t do that',

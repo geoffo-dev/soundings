@@ -46,6 +46,8 @@ import type { MockAiAgent, MockAiRun, MockAiRunEvent, MockAiSettings, MockCitati
 import { seedPhase6 } from './phase6-fixtures'
 import { seedPhase8 } from './phase8-fixtures'
 import { seedPhase8b } from './phase8b-fixtures'
+import { emptyBidStore, type MockBidStore } from './bids'
+import { seedPhase10 } from './phase10-fixtures'
 import type { MockResearchAnswer, MockResearchItem } from './research'
 import { defaultTemplate, type MockTemplateSection } from './templates'
 
@@ -247,6 +249,8 @@ export type MockEventType =
   | 'researcher_changed'
   /** Phase 8b: payload from_due_at, to_due_at. */
   | 'research_due_date_changed'
+  /** Phase 10: payload call_id, from_status, to_status (never bid data). */
+  | 'bid_call_changed'
 
 export interface MockEvent {
   id: string
@@ -372,6 +376,8 @@ export interface MockDb {
   templateSections: MockTemplateSection[]
   researchItems: MockResearchItem[]
   researchAnswers: MockResearchAnswer[]
+  /** Phase 10: calls for bids and everything in them (`mocks/bids.ts`). */
+  bid: MockBidStore
   /** Monotonic counter for new ids. */
   seq: number
 }
@@ -1302,6 +1308,7 @@ export function createDb({
     templateSections: [],
     researchItems: [],
     researchAnswers: [],
+    bid: emptyBidStore(),
     seq: 1_000_000,
   }
 
@@ -1594,6 +1601,7 @@ export function createDb({
   seedPhase6(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase8(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase8b(db, { users: USERS, projects: PROJECTS, nextId })
+  seedPhase10(db, { users: USERS, projects: PROJECTS, nextId })
   if (projects === 'private') for (const project of db.projects) project.visibility = 'private'
   return db
 }

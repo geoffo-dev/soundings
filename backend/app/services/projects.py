@@ -26,6 +26,7 @@ from app.authz import (
     visible_projects,
 )
 from app.authz.policy import ProjectFacts
+from app.bids.templates import insert_default_template
 from app.domain.labels import apply_label_changes, resolved_labels
 from app.domain.principal import Principal
 from app.domain.rubric_defaults import default_rubric_criteria
@@ -248,6 +249,8 @@ async def create_project(db: AsyncSession, principal: Principal, body: ProjectCr
         constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", "") or ""
         code = "key_taken" if "key" in constraint else "slug_taken"
         raise ConflictProblem("That project already exists.", code=code) from exc
+    db.add(insert_default_template(project.id))  # Phase 10: the default bid template
+    await db.flush()
     await db.refresh(project)
     await audit.record(
         db,

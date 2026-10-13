@@ -180,8 +180,16 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "score.view_aggregate",
         "proposal.view",
         "proposal.export",
+        # Phase 10
+        "bid.view_call",
+        "bid.view_bids",
+        "bid.view_price",
+        "bid.view_own_assessment",
+        "bid.view_section_scores",
+        "bid.view_scores",
     }
-    assert by_scope["evaluate"] == {"evaluation.submit_own"}
+    # Phase 10: assessing bids (bid.ai_assess only through c22, for agents).
+    assert by_scope["evaluate"] == {"evaluation.submit_own", "bid.assess", "bid.ai_assess"}
     assert by_scope["mcp"] == {"mcp.connect"}
     assert by_scope["write"] == {
         "idea.create",
@@ -211,6 +219,8 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "idea.answer_research",  # Phase 8
         "idea.assign_researcher",  # Phase 8b: removing only (assigning is a session route)
         "idea.release_researcher",  # Phase 8b
+        "bid.manage",  # Phase 10 (assigning assessors is a session route)
+        "ai.assess_bid",  # Phase 10
     }
     assert {str(rule) for rule in SESSION_ONLY_RULES} == {
         "project.create",
@@ -235,6 +245,11 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "project.edit_proposal_template",
         "project.edit_research",
         "idea.research_override",
+        # Phase 10: the bid template, documents, the decisions and deleting a call
+        "project.edit_bid_template",
+        "bid.upload_document",
+        "bid.decide",
+        "bid.delete_call",
     }
 
 

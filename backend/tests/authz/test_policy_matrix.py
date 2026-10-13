@@ -20,6 +20,7 @@ import pytest
 
 from app.authz import (
     POLICY,
+    BidCallFacts,
     Decision,
     IdeaFacts,
     NamedResearcher,
@@ -30,6 +31,7 @@ from app.authz import (
 )
 from app.domain.principal import Principal
 from app.models.enums import (
+    BidCallStatus,
     EvaluatorState,
     HoldReason,
     IdeaStatus,
@@ -40,11 +42,11 @@ from app.models.user import User
 
 ROLE_MATRIX = Path(__file__).resolve().parents[3] / "docs" / "role-matrix.md"
 
-COLUMNS = ("PA", "PAd", "Mem", "Vwr", "NMi", "NMp", "Pub", "+Own", "+Evl")
+COLUMNS = ("PA", "PAd", "Mem", "Vwr", "NMi", "NMp", "Pub", "+Own", "+Evl", "+Asr")
 
 # fmt: off
-MATRIX: dict[str, tuple[str, ...]] = {
-    # rule: PA, PAd, Mem, Vwr, NMi, NMp, Pub, +Own, +Evl
+_ROWS: dict[str, tuple[str, ...]] = {
+    # rule: PA, PAd, Mem, Vwr, NMi, NMp, Pub, +Own, +Evl (+Asr: table M only, "·" elsewhere)
     # A. Projects and ideas
     "project.view": ("Y", "Y", "Y", "Y", "Y", "404", "401", "·", "·"),
     "project.create": ("Y", "403", "403", "403", "403", "403", "401", "·", "·"),
@@ -119,6 +121,25 @@ MATRIX: dict[str, tuple[str, ...]] = {
     # K (Phase 8b). Who does the research
     "idea.assign_researcher": ("Y (c5, c23)", "Y (c5, c23)", "403", "403", "403", "404", "401", "+ (c5, c23, c25)", "·"),
     "idea.release_researcher": ("403", "403", "403", "403", "403", "404", "401", "·", "·"),
+    # F (Phase 10). The bid evaluation template
+    "project.edit_bid_template": ("Y", "Y", "403", "403", "403", "404", "401", "·", "·"),
+    # M. Bid evaluation (Phase 10): PA, PAd, Mem, Vwr, NMi, NMp, Pub, +Own, +Evl, +Asr
+    "bid.view_call": ("Y", "Y", "Y", "Y", "Y", "404", "401", "·", "·", "·"),
+    "bid.manage": ("Y (c5)", "Y (c5)", "403", "403", "403", "404", "401", "+ (c5)", "·", "·"),
+    "bid.upload_document": ("Y (c5)", "Y (c5)", "403", "403", "403", "404", "401", "+ (c5)", "·", "·"),
+    "bid.decide": ("Y (c5)", "Y (c5)", "403", "403", "403", "404", "401", "+ (c5)", "·", "·"),
+    "bid.delete_call": ("Y (c30)", "Y (c30)", "403", "403", "403", "404", "401", "+ (c30)", "·", "·"),
+    "bid.view_bids": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·", "+"),
+    "bid.view_price": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·", "+ (c29)"),
+    "bid.view_own_assessment": ("403", "403", "403", "403", "403", "404", "401", "·", "·", "+ (c29)"),
+    "bid.assess": ("403", "403", "403", "403", "403", "404", "401", "·", "·", "+ (c29)"),
+    "bid.view_section_scores": ("Y ✱", "Y ✱", "403", "403", "403", "404", "401", "+ ✱", "·", "+ ✱ (c29)"),
+    "bid.view_scores": ("Y ✱", "Y ✱", "403", "403", "403", "404", "401", "+ ✱", "·", "·"),
+    "bid.ai_assess": ("403", "403", "403", "403", "403", "404", "401", "·", "·", "·"),
+    "ai.assess_bid": ("Y (c5, c10)", "Y (c5, c10)", "403", "403", "403", "404", "401", "+ (c5, c10)", "·", "·"),
+}
+MATRIX: dict[str, tuple[str, ...]] = {
+    rule: cells if len(cells) == len(COLUMNS) else (*cells, "·") for rule, cells in _ROWS.items()
 }
 
 # Role matrix section 4: the response when each condition fails (c1, c14 and c15 have two
@@ -149,6 +170,8 @@ CONDITION_RESPONSES: dict[str, dict[str, tuple[int, str]]] = {
         "deactivated": (422, "researcher_not_eligible"),
     },
     "c25": {"outsider": (403, "outside_researcher_needs_admin")},
+    "c29": {"other_section": (403, "not_section_assessor")},
+    "c30": {"open": (409, "bid_call_active"), "assessing": (409, "bid_call_active")},
 }
 
 # Contract section 2: in an archived project every idea-level write is 409.
@@ -161,6 +184,9 @@ IDEA_WRITES = {
     "proposal.suggest_section", "ai.request_evaluation", "ai.research", "ai.draft_section",
     "ai.delete_note", "idea.answer_research", "idea.research_override",
     "idea.assign_researcher", "idea.release_researcher",
+    # Phase 10
+    "bid.manage", "bid.upload_document", "bid.decide", "bid.delete_call", "bid.assess",
+    "ai.assess_bid",
 }
 # fmt: on
 
@@ -174,6 +200,8 @@ PROJECT_RULES = {"project.view", "idea.create"} | {
 
 ME = uuid4()
 OTHER = uuid4()
+SECTION = uuid4()
+OTHER_SECTION = uuid4()
 
 
 # --- The markdown ---------------------------------------------------------------------------
@@ -186,6 +214,8 @@ def _matrix_rows_in_docs() -> Iterator[tuple[str, tuple[str, ...]]]:
         values = tuple(cells[2:])
         if len(values) == 7:  # tables H and I have no overlay columns
             values = (*values, "·", "·")
+        if len(values) == 9:  # only table M has the +Asr column
+            values = (*values, "·")
         yield match.group(1), values
 
 
@@ -248,6 +278,12 @@ class State:
     token_valid: bool = True
     token_covers_request: bool = True
     researcher_named: NamedResearcher | None = None
+    # Phase 10: the idea's call for bids and the principal's section assignments.
+    call_status: BidCallStatus = BidCallStatus.ASSESSING
+    my_sections: frozenset[UUID] = frozenset()
+    price_section: UUID | None = None
+    section: UUID | None = None
+    submitted: bool = False
 
     def build(self) -> tuple[Principal | None, Resource]:
         principal = None
@@ -284,6 +320,14 @@ class State:
             token_covers_request=self.token_covers_request,
             public_submission_on=self.public_submission_on,
             researcher_named=self.researcher_named,
+            bid_call=BidCallFacts(
+                id=uuid4(),
+                status=self.call_status,
+                my_section_ids=self.my_sections,
+                price_section_id=self.price_section,
+            ),
+            bid_section_id=self.section,
+            bid_section_submitted=self.submitted,
         )
 
 
@@ -308,6 +352,17 @@ def state_for(column: str) -> State:
             return State(column, role=ProjectRole.MEMBER, owner_id=ME)
         case "+Evl":
             return State(column, role=ProjectRole.MEMBER, my_evaluation=EvaluatorState.INVITED)
+        case "+Asr":
+            # A member who assesses the section in question (and the price section) and
+            # has submitted it (section 3a's blind rule has its own tests).
+            return State(
+                column,
+                role=ProjectRole.MEMBER,
+                my_sections=frozenset({SECTION}),
+                section=SECTION,
+                price_section=SECTION,
+                submitted=True,
+            )
     raise AssertionError(column)
 
 
@@ -329,6 +384,8 @@ def satisfy(state: State, condition: str, rule: str) -> State:
             return replace(state, admins_after_change=1)
         case "c15":
             return replace(state, auth="api_key", scopes=frozenset({"mcp"}))
+        case "c30":
+            return replace(state, call_status=BidCallStatus.DRAFT)
         case "c23" | "c25":
             # A person outside the project (c25 holds for the column's grants; the
             # owner's breaks it below), or with a role there for the owner.
@@ -396,6 +453,15 @@ BREAKS: dict[str, dict[str, Callable[[State, str], State]]] = {
     },
     # c25: the owner names someone without a role in a private project.
     "c25": {"outsider": lambda s, _: replace(s, researcher_named=NamedResearcher(eligible=True))},
+    # c29: the assessor assesses another section (and the price is in another one).
+    "c29": {
+        "other_section": lambda s, _: replace(s, section=OTHER_SECTION, price_section=OTHER_SECTION)
+    },
+    # c30: the call is still open or being assessed.
+    "c30": {
+        "open": lambda s, _: replace(s, call_status=BidCallStatus.OPEN),
+        "assessing": lambda s, _: replace(s, call_status=BidCallStatus.ASSESSING),
+    },
 }
 
 
@@ -438,6 +504,8 @@ def test_cell(rule: str, column: str) -> None:
         plain = decide(rule, replace(happy_state(rule, column), column="Mem", my_evaluation=None))
         if column == "+Own":
             plain = decide(rule, replace(happy_state(rule, column), owner_id=OTHER))
+        if column == "+Asr":
+            plain = decide(rule, replace(happy_state(rule, column), my_sections=frozenset()))
         assert (decision.allowed, decision.status, decision.code) == (
             plain.allowed,
             plain.status,
