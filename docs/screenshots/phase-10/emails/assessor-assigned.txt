@@ -5,23 +5,23 @@ Please assess the bids
 
 Alice Anders asked you to assess the bids in the call for bids “Bike shed build” on:
 
-E5EATI-1 · Facilities E5EATI
+E792HD-1 · Facilities E792HD
 Covered bike shed by the car park
 Status: Proposal
-http://localhost:8100/ideas/E5EATI-1
+http://localhost:8100/ideas/E792HD-1
 
 Your section: Delivery
 
 Due Mon 19 Oct, 18:00 (Europe/London)
 
-Score your sections for every bid on the idea's Bids tab. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours.
+Score your section for every bid on the idea's Bids tab. Your assessment is blind: nobody's scores for a bid and section are shown to you until you submit yours.
 
-Open the bids: http://localhost:8100/ideas/E5EATI-1?tab=bids
+Open the bids: http://localhost:8100/ideas/E792HD-1?tab=bids
 
 -- 
-You're assessing bids for E5EATI-1.
+You're assessing bids for E792HD-1.
 Email preferences: http://localhost:8100/settings/notifications
-Unsubscribe from bid assessment requests: http://localhost:8100/unsubscribe?token=eyJ2IjoxLCJ1IjoiMzA3ODkyZjYtOTA3Ni00ZGIyLThlYTAtNzc3ZGNjZDVlZjYzIiwicyI6ImFzc2Vzc29yX2Fzc2lnbmVkIn0.TCo7XkTf93JywphM-mub_nzLG90HjHGK7G2_auIJ4Rg
-Unsubscribe from all email: http://localhost:8100/unsubscribe?token=eyJ2IjoxLCJ1IjoiMzA3ODkyZjYtOTA3Ni00ZGIyLThlYTAtNzc3ZGNjZDVlZjYzIiwicyI6ImFsbCJ9.Lb0w23xABgj2SjTD6ccZU-RGBFjjQ1cvciEaqK9WSBc
+Unsubscribe from bid assessment requests: http://localhost:8100/unsubscribe?token=eyJ2IjoxLCJ1IjoiZTdiMjU1YTYtODdmNy00MTcyLThkNmUtNDAyYmUyZWUyNGI3IiwicyI6ImFzc2Vzc29yX2Fzc2lnbmVkIn0.i3z_G9JV1vdQqKKwC-Z2vCqTLe-YC-CbHNtBf9v4vVQ
+Unsubscribe from all email: http://localhost:8100/unsubscribe?token=eyJ2IjoxLCJ1IjoiZTdiMjU1YTYtODdmNy00MTcyLThkNmUtNDAyYmUyZWUyNGI3IiwicyI6ImFsbCJ9.x8FYAgU_EmsvIlkyMl4tZc69R9HyqSsFKkWxaJTBbm0
 Soundings demo · Example Retail Ltd
 1 Example Street, London EC1A 1AA

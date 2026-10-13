@@ -13,11 +13,14 @@ import { renderPdfPages } from '../tests/support/pdf'
 import { fillPublicForm, humanCheckDone } from '../tests/support/public'
 
 /**
- * The product tour: seventeen hero screenshots that tell Soundings' story in order, from the
+ * The product tour: twenty hero screenshots that tell Soundings' story in order, from the
  * real app with the demo data (for the root README and the release notes). Not a
  * regression test. 07-08 show Internal Tools' own proposal template (TOOLS-3), 13-16 its
  * research step: the Research column, the checklist with similar ideas, the gate and an
- * outside researcher (bob on TOOLS-12, who has no role in the private project).
+ * outside researcher (bob on TOOLS-12, who has no role in the private project), 18-20
+ * TOOLS-3's call for bids (Phase 10): the comparison as kenji (its owner), the rejected
+ * bid without its insurance certificate, and alice's blind assessment beside the bid's
+ * documents.
  *
  * `npm run screenshots:tour` (E2E_SSO=1 E2E_AI=1: the sign-in page with single sign-on,
  * and the fake kagent agent for the AI evaluation) → docs/screenshots/tour/
@@ -364,6 +367,75 @@ const SHOTS: Shot[] = [
     },
   },
 ]
+
+// Phase 10: TOOLS-3's call for bids "Data platform build", being assessed.
+const BID_CALL = 'Data platform build'
+
+async function bidsTab(page: Page) {
+  await page.goto(`/ideas/${PROPOSAL}?tab=bids`)
+  await expect(page.getByRole('heading', { level: 2, name: BID_CALL })).toBeVisible({
+    timeout: 15_000,
+  })
+}
+
+SHOTS.push(
+  {
+    // The comparison: ranks, section scores, the disagreement on Tessellate's Technical
+    // score, the AI's assessment left out of the totals, the rejected bid apart.
+    name: '18-bid-comparison',
+    as: 'kenji',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page, phone) => {
+      await bidsTab(page)
+      const comparison = page.getByRole('region', { name: 'Comparison' })
+      await expect(comparison.getByText('Northwind Data Ltd').first()).toBeVisible()
+      await scrollTo(comparison, phone ? 64 : 24)
+    },
+  },
+  {
+    // Quillfield Systems sent no insurance certificate: flagged at once, rejected in one
+    // click with a reason (and reversible until the award).
+    name: '19-bid-must-haves',
+    as: 'kenji',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page) => {
+      await bidsTab(page)
+      await page
+        .getByRole('region', { name: 'Bids', exact: true })
+        .getByRole('button', { name: 'Quillfield Systems', exact: true })
+        .click()
+      const sheet = page.getByRole('dialog', { name: 'Quillfield Systems' })
+      await expect(sheet.getByRole('heading', { name: 'Documents' })).toBeVisible()
+      await expect(sheet.getByText('No insurance certificate provided.')).toBeVisible()
+    },
+  },
+  {
+    // Alice assesses Delivery: blind (nobody's scores in sight), the bid's documents
+    // beside the questions on a wide screen.
+    name: '20-bid-assessment',
+    as: 'alice',
+    variants: ['1440-light', '390-light'],
+    open: async (page, phone) => {
+      await bidsTab(page)
+      await page
+        .getByRole('region', { name: 'Your assessments' })
+        .getByRole('button', { name: 'Assess: Northwind Data Ltd, Delivery' })
+        .click()
+      const sheet = page.getByRole('dialog', { name: /Delivery · Northwind/ })
+      await expect(sheet.getByRole('radiogroup').first()).toBeVisible()
+      if (!phone) {
+        const beside = sheet.getByRole('complementary', { name: 'The bid’s documents' })
+        await expect(beside).toBeVisible()
+        const pick = beside.getByRole('combobox', { name: 'Document to read' })
+        if (await pick.isVisible()) {
+          await pick.click()
+          await page.getByRole('option', { name: /technical-proposal/ }).click()
+        }
+        await expect(beside).toContainText(/Northwind/)
+      }
+    },
+  },
+)
 
 const VARIANTS = {
   '1440-light': { viewport: { width: 1440, height: 900 }, colorScheme: 'light', phone: false },

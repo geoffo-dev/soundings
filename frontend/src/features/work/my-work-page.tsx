@@ -73,7 +73,7 @@ export function MyWorkPage() {
         description={
           guestOnly
             ? 'Research you’ve been asked to do.'
-            : 'Evaluations and research waiting for you, ideas you own and what changed recently.'
+            : 'Evaluations, research and bids waiting for you, ideas you own and what changed recently.'
         }
         actions={
           // The most urgent "Evaluate" is the primary action while evaluations are due.

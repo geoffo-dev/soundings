@@ -1002,4 +1002,26 @@ confirm.
 
 ## 21. Changes after the contract
 
-None yet. Builders record additive changes here (date, owner, what and why).
+Builders record additive changes here (date, owner, what and why).
+
+- **2026-10-13, backend (core):** `bid_call_changed` joins `ACTIVITY_TYPES`
+  (`app/schemas/activity.py`), as section 12 planned.
+- **2026-10-13, backend (documents and AI):** the three bid tools join `MCP_TOOLS` and
+  their bullet `MCP_INSTRUCTIONS` (section 10, as planned); `normalise_quote_text` is
+  `" ".join(text.split())` (the same result for every code point, about 4x faster). No
+  field, type or route changed.
+- **2026-10-13, integration (QA P10-QA-F1):** `BidAiAssessmentList.can_include` is false
+  while the principal owes a section of the bid, as well as after the award: the inclusion
+  PUT is 404 then (section 9.4), so the switch isn't offered. Description only; the field
+  is unchanged.
+- **2026-10-13, integration (QA P10-QA-N3):** `BidAiFindingView.must_have_id` (additive,
+  required): which must-have a finding is about, in `BidAiAssessment.findings` and
+  `BidMustHaveState.ai_findings` alike.
+- **2026-10-13, integration (QA P10-QA-N2):** 422 `assessor_not_eligible` names the
+  person by display name ("That person" for an unknown id), never by id:
+  `errors[0].msg` is "<name> can't assess bids on this idea" (what the SPA shows),
+  `detail` adds why. Wording only.
+- **2026-10-13, integration (QA P10-QA-V1):** the evaluation report's ranking table no
+  longer carries the section scores: a "Section scores" section follows "Ranking", at most
+  four sections a table, so A4 portrait holds every column (section 13's contents are
+  unchanged).

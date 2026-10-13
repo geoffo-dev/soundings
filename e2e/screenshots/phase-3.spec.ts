@@ -163,7 +163,7 @@ const SHOTS: Shot[] = [
       await expect(
         page.getByRole('heading', { level: 2, name: 'Email notifications' }),
       ).toBeVisible()
-      await expect(page.getByRole('radiogroup')).toHaveCount(9)
+      await expect(page.getByRole('radiogroup')).toHaveCount(12) // twelve types since Phase 10
     },
   },
   {

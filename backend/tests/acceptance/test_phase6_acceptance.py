@@ -1116,6 +1116,9 @@ async def test_ac6_api_2_runs_end_cleanly_and_agents_stay_in_their_run(
         "get_idea_next": "ai_run_not_active",
         "propose_other_section": "ai_run_not_active",
         "add_research_note": "ai_run_not_active",
+        # Phase 10 (c22): the bid tools are another kind's (the fake agent tries them too).
+        "get_bid_other": "ai_run_not_active",
+        "submit_bid_assessment": "ai_run_not_active",
         "list_projects": world.slug,
         "search_ideas": idea,
     }, tried

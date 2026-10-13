@@ -622,7 +622,9 @@ your 20 AI requests an hour). The AI reads the documents except pricing ones, sc
 question with its reasons and quotes, and checks the must-haves. Its scores are **left
 out of the totals** until a call manager switches on **Count in the totals** for that bid
 (in the bid's panel or the comparison); a quote Soundings couldn't find in the documents
-is flagged, so check it before counting the assessment.
+is flagged, so check it before counting the assessment. A call manager who also assesses
+the call gets the switch for a bid only once they have submitted their own sections of it
+(until then its scores are hidden from them).
 
 ### Comparing bids and awarding the call
 

@@ -114,7 +114,7 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make seed` | Migrate + load the demo data into `SOUNDINGS_DATABASE_URL` (default: the dev compose DB); a no-op once there are projects, `RESET=1` wipes app data first. Who's who: `dev/README.md` |
 | `make image` | Build `soundings:dev` (`IMAGE=`, `IMAGE_BUILD_ARGS=`, `BUILD_CA=`): Ubuntu 24.04 base with Ubuntu's Python 3.12 and Pango, so PDF export works (the build fails if WeasyPrint can't render). Internal mirror: `IMAGE_BUILD_ARGS="--build-arg UBUNTU_MIRROR=http://…/ubuntu"`; `RUNTIME_APT_PACKAGES` only adds packages |
 | `make demo` / `demo-down` | Build the image and run it with Postgres, the worker, Mailpit (inbox http://localhost:8026), dev login and demo data on http://localhost:8000 (`DEMO_PORT=`, `DEMO_MAILPIT_PORT=`, `DEMO_NAME=` container prefix, `DEMO_RESET=1`, `DEMO_SMTP=0` in-app only, `DEMO_TIMEZONE=`, `DEMO_PUBLIC_PER_IP=` public submissions per address and hour; `DEMO_AI=1` also builds and runs the fake agent on :8027 with AI on, keys in `dev/.fake-agent-keys`; containers run read-only with a `/tmp` tmpfs and no capabilities; `scripts/demo.sh`) / remove it all |
-| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work, a break-glass sign-in when available, and `public-smoke`) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`). `k3s-up.sh` lowers the kubelet's disk eviction to 1 GiB free (`K3S_EVICTION_HARD`; the percentage defaults evicted every pod here); `dev/k3s/public-ratelimit.yaml` puts a Traefik rate limit in front of `/api/v1/public` |
+| `make k3s-up` / `k3s-load` / `k3s-install` / `k3s-smoke` / `k3s-down` | Local k3s in Docker (`K3S_NAME`, default `soundings-k3s`), import image, `helm upgrade --install` with `dev/k3s-values.yaml` (dev login + demo seed Job), smoke test through the ingress (incl. dev login + CSRF + My work, a break-glass sign-in when available, and `public-smoke`) and `helm test`. `make k3s-install IMAGE=soundings:<tag>` loads and deploys that image (the values file alone says `soundings:dev`). `k3s-up.sh` lowers the kubelet's disk eviction to 1 GiB free (`K3S_EVICTION_HARD`; the percentage defaults evicted every pod here) and raises Traefik's entryPoint `readTimeout` to 180 s (`K3S_TRAEFIK_READ_TIMEOUT`: Traefik 2.11 cuts any request body after 60 s, a slow 25 MiB bid upload too); `dev/k3s/public-ratelimit.yaml` puts a Traefik rate limit in front of `/api/v1/public`, `dev/k3s/uploads-route.yaml` gives the bid upload path a router of its own (a response header the bid smoke checks); `k3s-smoke` also runs `bid-smoke` |
 | `make k3s-mailpit` · `k3s-install SMTP=1` · `k3s-smoke SMTP=1` | Mailpit in the cluster (`scripts/k3s-mailpit.sh up\|scale 0\|1\|down`; SMTP `mailpit.mailpit.svc.cluster.local:1025`, inbox http://mailpit.localhost:18081), install with `dev/k3s-smtp-values.yaml` (SMTP, time zone, egress policies), then `scripts/email-smoke.sh` through the ingress (invite → email with the evaluate link; Mailpit scaled to 0 → queued → delivered once). `SSO=1 SMTP=1` combines both (CI) |
 | `make k3s-keycloak` · `k3s-install SSO=1` · `k3s-smoke SSO=1` | Keycloak with the dev realm in the cluster (`scripts/k3s-keycloak.sh up\|down`; issuer `http://keycloak.localhost:18081/realms/soundings` for browser and pods; creates Secret `soundings-oidc`), then install with `dev/k3s-sso-values.yaml` and run `scripts/sso-smoke.sh` through the ingress |
 | `make sso-smoke` | `scripts/sso-smoke.sh $(SSO_BASE_URL)` (default :8000, the `make dev` API with `dev/.env`): alice signs in through Keycloak with curl, then the Phase 2 acceptance (managed group → private project; removed in Keycloak → 404 at next sign-in); needs `jq`, cleans up |
@@ -181,6 +181,21 @@ without a `RESEARCH_GUEST_ACCESS` row); `test_role_loss.py` (S1 b on every role 
 example, DST, every stop condition). `test_phase8b_acceptance.py` (about 75 s, Mailpit like
 Phase 3's) probes every `{idea}` operation of the OpenAPI document as a guest and drives the
 reminders with a moved clock.
+Bid tests (Phase 10, `tests/bids/conftest.py`): the `crew` fixture (a private project with
+an idea in Proposal and its proposal: `owner`, `admin`, `member`, `viewer`, `outsider`,
+`platform`, assessors `tech1`/`tech2`, `commercial`, `delivery`, `delivery_viewer`), `start`, `open_call`, `add_bid`,
+`assign(owner, crew, view, {"Technical": [...]})`, `to_assessing`, `submit(who, crew, bid,
+section, score)`, `qualify(db, bid_id)` (every must-have met, straight in the database),
+`upload`/`attach` (documents, raw body), `bid_detail`, `result_of`;
+`tests/bids/test_scoring.py` `worked_example` (contract §8.1: A 84.7, B 74.0, C rejected)
+and `ai_assessment`; `tests/bids/files.py` builds PDFs, DOCX/XLSX/ODT and hostile archives.
+The access table over principal kinds is `tests/bids/test_access_table.py` and
+`tests/authz/test_bid_access.py`; the report's PDF is checked to fit A4 portrait
+(`assert_fits_the_page`: no text starts past the right margin). Seed documents are
+regenerated with `uv run python -m tests.bids.seed_documents` (`test_seed_documents.py`
+fails when the committed copies drift). `test_phase10_acceptance.py` (about 70 s, Mailpit
+and the real fake agent like Phase 3's and 6's) plays the whole call (AC10-API-1) and the
+demo story with keys per scope (AC10-API-2).
 API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
 layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
 `make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
@@ -234,6 +249,13 @@ connection. Phase 6 mock screenshots: `SCREENSHOTS=1 npx playwright test ai-scre
 `frontend/README.md`): Ivan (no role anywhere) researches TOOL-7 as its guest, Kofi TOOL-10,
 Alice's GREEN-3 is overdue, GREEN-1 has nobody assigned but a due date;
 `soundings-mock-projects=private` makes every project private, so Ivan has no projects.
+Phase 10 mock (`src/mocks/phase10-fixtures.ts`, rules in `bids.ts`, `handlers/bids.ts`,
+`frontend/README.md`): CUST-3's call being assessed (Bob owes Northwind's Technical, Dave has
+the price, Priya owes Tessellate: no ranks for her), TOOL-4 open with an AI assessor
+(Kestrel flagged), TOOL-11 a draft, CUST-10 awarded, CUST-12 cancelled; an agent named
+`*-invents` invents a quote. Phase 10 mock screenshots: `SCREENSHOTS=1 npx playwright test
+bids-screenshots` → `docs/screenshots/phase-10/mock/`. Uploads go through
+`api/client.ts` `uploadRaw` (the raw file, the name in the query, progress).
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -321,7 +343,7 @@ The fake's behaviour follows the agent name's suffix (`-slow -fails -silent -ask
 -blind-probe -strays -late -no-cancel -unavailable -drops -lingers`; `dev/fake-agent/README.md`).
 `screenshots:phase6` (E2E_AI=1) writes `docs/screenshots/phase-6/` (11 screens × 1440
 light/dark and 390 light). `screenshots:tour` (E2E_SSO=1 E2E_AI=1) writes the README's
-product tour, `docs/screenshots/tour/` (`NN-<screen>-<variant>.png`: 17 screens at 1440
+product tour, `docs/screenshots/tour/` (`NN-<screen>-<variant>.png`: 20 screens at 1440
 light, most also dark or 390, the PDF's first page and an email). Contract rules not built yet are pinned as
 expected failures (`test.fail(true, …)` in Playwright, `@pytest.mark.xfail(strict=True)`
 in pytest), which fail loudly once fixed: then delete the mark.
@@ -345,8 +367,21 @@ pick a new person's picker row by their unique email. RA-03/06/07 read the seede
 (bob, TOOLS-12; alice's GREEN-5 overdue) without changing it. `screenshots:phase8b` writes
 `docs/screenshots/phase-8b/` (8 screens × 1440 light/dark and 390 light: the seeded story,
 then three follow-ups on a project and people of their own, removed afterwards) and `emails/`.
+**Calls for bids (Phase 10):** specs use `tests/support/bids.ts` (`DEMO`: TOOLS-3's "Data
+platform build" with Northwind, Tessellate and Quillfield; `MUST_HAVES`, `SECTIONS`,
+`seedDocument(name)` from `backend/app/seed/bids/`, `MACRO_DOCM`, `EXECUTABLE`,
+`textDocument`; `bidTeam`, `startCall`, `openCall`, `closeToBids`, `enterBid`,
+`uploadDocument` (raw body), `waitExtracted`, `decideMustHave`, `rejectBid`, `completeBid`,
+`setAssessors`, `assess`, `comparison`, `assessingCall`): BD-01…BD-14 (`bids.spec.ts`),
+BD-13 `@ai` (`bids-ai.spec.ts`), A11Y10/MO10/K10 (`a11y-phase10.spec.ts`). BD-06/08/10 read
+the seeded story without changing it (alice owes both Delivery assessments; zanele, a
+TOOLS viewer, sees only the summary); specs that change a call make their own private
+project. The fake agent's assess suffixes: `-invents` (a quote in no document) and
+`-not-met` (the first must-have not met). `screenshots:phase10` writes
+`docs/screenshots/phase-10/` (11 screens × 1440 light/dark and 390 light), `emails/` and
+`pdf/` (TOOLS-3's report and its pages).
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
-`docs/test-plans/phase-1.md` … `phase-8.md` (Phase 7: `performance.md`).
+`docs/test-plans/phase-1.md` … `phase-10.md` (Phase 7: `performance.md`).
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
@@ -714,6 +749,55 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   client-only `toastDescription` (`api/ideas.ts`), research-panel focus requests expire after
   15 s (`features/research/research-focus.ts`), and the feed folds one change's
   `researcher_changed` + `research_due_date_changed` into one line (`lib/activity.ts`).
+- **Calls for bids** (contract-phase10, ADR 0018, role matrix table M, section 3a,
+  c27-c30, `app/bids/`): one call per idea in Proposal with a proposal, copying the
+  project's bid template (`BidTemplate`, one JSON document per project) into rows with ids;
+  the copy is editable until a person's first assessment (409 `bid_call_template_locked`).
+  **Call managers** = the idea's owner (member or admin), project admins, platform admins
+  (`bid.view_scores` without a section in question); **section assessors** are the +Asr
+  overlay from `BidCallFacts` (c28 checked live: an active person who can view the idea in
+  their own right, a role in a private project, never through guest column R; c29
+  `not_section_assessor`); everyone else who sees the idea gets the call's summary only, a
+  guest researcher nothing (`RESEARCH_GUEST_ACCESS` rows deny every bid route and tool).
+  **Blind per (bid, section)** (`authz.bid_pending`): until you submit a section for a bid
+  you see nobody's scores (human or AI) for it, nor that bid's total, and no ranks at all
+  while you owe any (`ranking_hidden`); agents are always pending (rule 6). Prices and
+  **pricing documents** (`BidDocument.pricing`) need `bid.view_price` (managers and the
+  price section's assessors); everyone else sees "present (restricted)". Order of checks
+  (`app/bids/access.py`): 401, 404 idea → `bid.view_call` → call, 403 call-level rule
+  before any bid/section/document is looked up, 404 for another call's rows or a rejected
+  bid for an assessor, 403 c29, 422, 409. Writes lock project (`FOR KEY SHARE`) → idea →
+  call (`FOR UPDATE`) → bid → AI run; insert rows with composite foreign keys after an
+  explicit `flush()`, and re-read with `populate_existing` after a Core `UPDATE`.
+  **Scoring** (`app/bids/scoring.py`) in exact fractions, rounded half up only for display
+  (scores 2 decimals, section scores and totals 1); scored bids follow the facts (not
+  rejected, every must-have met), not the award; equal rounded totals share a rank
+  ("1="). **Uploads** are the raw body (name in the query; `BodySizeLimitMiddleware`
+  gives that route alone 25 MiB and answers 413 before the body is read, so clients
+  check the size first), type from the bytes (`app/bids/sniff.py`: macro, OLE and
+  encrypted Office files 415), two at a time per API process (503 `upload_busy`), 120 s
+  (408), caps 30 a bid, 500 MiB a call and 5 GiB a project counting extracted text.
+  **Extraction** only on the worker's own `bid_documents` pool, one child at a time
+  (`app/bids/extraction.py` → `extract_child.py`: `python -I`, allow-listed environment,
+  stdin/stdout, 30 s, 512 MiB, 2 M characters, three crashes then `internal_error`; the
+  child calls `logging.disable()` only in its own entry point, never on import); stored
+  text is `visible_text`; bid text is untrusted everywhere (agents, the SPA shows it as
+  plain text, never renders a document). Deleting a call or idea unlinks documents from
+  must-haves first (`documents.unlink_documents`: the composite foreign key). **The AI
+  assessor** (`assess_bid` runs, `app/bids/assess.py`, `app/mcp/bid_tools.py`): c22 binds
+  every call to its run's bid before any lookup; it reads no other bid, no people's
+  scores, no price or pricing document; quotes (≥ 20 characters) are checked
+  whitespace-normalised, off the event loop; its scores count only once a manager includes
+  them (`can_include` false while the manager owes a section); a call's AI assessor runs
+  once per bid automatically (documents read, 5 minutes without uploads), outside the 20 an
+  hour. **Notifications** (`app/notifications/bids.py`) are queued by the bid services, not
+  by feed events, and written by a before-commit hook through the usual writer; never
+  scores, prices, bidders or document text. The **report** (`app/bids/report.py`) goes
+  through the proposal export path (shared limit, PDF child) with the cover eyebrow "Bid
+  evaluation report"; tables wider than A4 portrait are split ("Section scores", four
+  sections a table). SPA: `features/bids/` (the Bids tab loads lazily), "the bid from X"
+  (never a possessive on a bidder's name), the idea header's next step is an outline
+  button on the Bids tab (the call's own button is the blue one).
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -785,6 +869,10 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   pod's address is admitted a moment after it starts, so in-cluster clients started
   fresh (the `helm test` pod) retry. Through Traefik an oversized *chunked* POST may get
   502 instead of the app's 413 (the smoke accepts that and checks 413 in the pod).
+- **Bid uploads over the limit:** the app answers 413 as soon as a declared
+  `Content-Length` (or the counted bytes) passes 25 MiB and closes the connection, so a
+  client still sending may see a reset rather than the 413 (as with the 1 MiB limit); the
+  SPA checks the size before it sends.
 - **SSO e2e data:** an identity links to an account once, so some `@sso` specs need a
   fresh seed and realm (the local stack resets both on start; reseeding uses
   `seed --reset --force` and fails loudly). Use run-unique group names
@@ -1160,3 +1248,24 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   Premium's environments and approvals, the Kubernetes executor, cosign, GitHub's
   runners/GHCR/ARC/environments, a real kagent; `scripts/ci-local/` not re-run (it needs
   about 12 GB free). Stop for the human's review.
+- **Phase 10** (bid evaluation, product owner 2026-10-13; `docs/decisions.md` "Phase 10
+  (product owner, 2026-10-13)" and "Phase 10 build and integration", contract-phase10, ADR
+  0018, role matrix table M / section 3a, `docs/test-plans/phase-10.md`): a **call for bids**
+  per idea with a proposal (draft → open → assessing → awarded | cancelled), the project's
+  bid template copied into the call (weighted sections, score / price / comment questions,
+  document and confirmation must-haves); bids entered by the team with their documents (raw
+  uploads up to 25 MiB, type from the bytes, macro and OLE files refused, pricing documents
+  for the price section only, text read on the worker in a child process); must-haves
+  flagged automatically, rejected in one click with a reason and reinstated; assessors per
+  section, blind per bid and section; scores in exact fractions, ranks, disagreement, the
+  award and the evaluation report (Markdown and PDF); the AI assessor (`assess_bid` runs,
+  three MCP tools, quotes checked, left out of the totals until included); three
+  notification types, My work's "Bids to assess"; migration 0016 (head 0016). Demo:
+  TOOLS-3's "Data platform build" (dev/README). Integration (2026-10-13): QA's P10-QA-F1
+  (no AI inclusion switch while a manager owes the bid), V1 (the report's ranking split so
+  A4 holds it), N1-N10, and from the real-stack walkthrough the seeded forms of tender
+  without the price; the fake agent's assess strays in AC6-API-2. Checks: backend (10,197
+  tests + `test-slow`), frontend check (688 vitest) + test:pw (463), e2e default 353,
+  `E2E_SSO=1` 374, `E2E_AI=1` 394 and against `make demo` 392 passed (none failed), mcp-,
+  ai- and bid-smoke on the image, e2e check, Helm, scripts (shellcheck 0.9 too), workflows,
+  migrations, fake agent, `make gen-api`, `make image` (533 MB). Release 0.3.0 not cut yet.

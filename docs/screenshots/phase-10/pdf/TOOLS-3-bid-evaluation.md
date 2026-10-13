@@ -26,13 +26,23 @@ exported_by: "Kenji Watanabe"
 
 ## Ranking
 
-| Rank | Bidder | Status | Technical (40 %) | Commercial (40 %) | Delivery (20 %) | Price | Price score | Total | AI | Assessed |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Northwind Data Ltd | Qualified | 86.7 | 80.0 | 86.7 | GBP 120,000.00 | 4.00 | 84.0 | – | 4 of 5 |
-| 2 | Tessellate Software | Qualified | 60.0 ‡ | 88.0 | 60.0 | GBP 96,000.00 | 5.00 | 71.2 | – | 4 of 5 |
-| – | Quillfield Systems | Rejected | – | – | – | GBP 84,000.00 | – | – | – | 0 of 5 |
+| Rank | Bidder | Status | Total | Price | Price score | AI | Assessed |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | Northwind Data Ltd | Qualified | 84.0 | GBP 120,000.00 | 4.00 | – | 4 of 5 |
+| 2 | Tessellate Software | Qualified | 71.2 | GBP 96,000.00 | 5.00 | – | 4 of 5 |
+| – | Quillfield Systems | Rejected | – | GBP 84,000.00 | – | – | 0 of 5 |
 
-Section scores and totals are out of 100; the price score is out of 5 (the lowest price of the bids that met every must-have / this price x 5). ‡ two assessors' scores on a question differ by 2 or more. "AI": an AI assessment counted in the scores.
+Totals are out of 100; the price score is out of 5 (the lowest price of the bids that met every must-have / this price x 5). "AI": an AI assessment counted in the scores.
+
+## Section scores
+
+| Bidder | Technical (40 %) | Commercial (40 %) | Delivery (20 %) |
+| --- | --- | --- | --- |
+| Northwind Data Ltd | 86.7 | 80.0 | 86.7 |
+| Tessellate Software | 60.0 ‡ | 88.0 | 60.0 |
+| Quillfield Systems | – | – | – |
+
+Section scores are out of 100. ‡ two assessors' scores on a question differ by 2 or more.
 
 ## Must-haves
 

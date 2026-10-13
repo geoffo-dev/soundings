@@ -21,7 +21,9 @@ __all__ = ["DOCUMENTS", "SEED_DIR", "build", "write"]
 SEED_DIR: Final = Path(__file__).resolve().parents[2] / "app" / "seed" / "bids"
 
 
-def _tender(supplier: str, signatory: str, total: str, start: str) -> bytes:
+def _tender(supplier: str, signatory: str, start: str) -> bytes:
+    # No amount here: the price is in the pricing schedule alone (a pricing document), so
+    # assessors outside the price section and the AI never read it (role matrix 3a).
     return pdf(
         "FORM OF TENDER",
         "Call for bids: Data platform build (Internal Tools, TOOLS-3)",
@@ -30,7 +32,7 @@ def _tender(supplier: str, signatory: str, total: str, start: str) -> bytes:
         "",
         "We offer to design, build and hand over the self-service test data generator",
         "described in the invitation to tender, for the total price set out in our",
-        f"pricing schedule ({total}, fixed for the contract term).",
+        "pricing schedule, which is fixed for the contract term.",
         "",
         "We accept the buyer's standard terms and conditions without amendment.",
         f"We can start on {start} and will hold this offer open for 90 days.",
@@ -71,7 +73,7 @@ def _insurance(supplier: str, insurer: str, cover: str) -> bytes:
 DOCUMENTS: Final[Mapping[str, bytes]] = {
     # --- Northwind Data Ltd: complete and strong ----------------------------------------
     "northwind-form-of-tender.pdf": _tender(
-        "Northwind Data Ltd", "Hannah Wright, Managing Director", "120,000 GBP", "2 November 2026"
+        "Northwind Data Ltd", "Hannah Wright, Managing Director", "2 November 2026"
     ),
     "northwind-pricing-schedule.pdf": _pricing(
         "Northwind Data Ltd",
@@ -101,7 +103,7 @@ DOCUMENTS: Final[Mapping[str, bytes]] = {
     ),
     # --- Tessellate Software: complete, cheaper, weaker technically ---------------------
     "tessellate-form-of-tender.pdf": _tender(
-        "Tessellate Software", "Ravi Mehta, Director", "96,000 GBP", "16 November 2026"
+        "Tessellate Software", "Ravi Mehta, Director", "16 November 2026"
     ),
     "tessellate-pricing-schedule.pdf": _pricing(
         "Tessellate Software",
@@ -128,7 +130,7 @@ DOCUMENTS: Final[Mapping[str, bytes]] = {
     ),
     # --- Quillfield Systems: no insurance certificate ----------------------------------
     "quillfield-form-of-tender.pdf": _tender(
-        "Quillfield Systems", "Owen Price, Partner", "84,000 GBP", "9 November 2026"
+        "Quillfield Systems", "Owen Price, Partner", "9 November 2026"
     ),
     "quillfield-pricing-schedule.pdf": _pricing(
         "Quillfield Systems",

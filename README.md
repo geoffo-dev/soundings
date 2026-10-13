@@ -7,9 +7,11 @@ up into a weighted aggregate with a "high disagreement" flag. Strong ideas becom
 commercial proposal over the project's own template, exported as a branded PDF or as
 Markdown. A project can add a research step: before the team invests, the owner (or
 someone they ask, from another team too) checks the idea isn't already being done
-elsewhere and records which teams were consulted. AI agents in
-[kagent](https://kagent.dev) can act as an extra evaluator or research assistant
-through Soundings' own MCP server.
+elsewhere and records which teams were consulted. Once a proposal is agreed, a **call
+for bids** collects the bids that come in with their documents, flags the ones missing a
+must-have, and has assessors score them section by section, blind, with a ranking and a
+report. AI agents in [kagent](https://kagent.dev) can act as an extra evaluator, research
+assistant or bid assessor through Soundings' own MCP server.
 
 It is one container image and one Helm chart. PostgreSQL is its only stateful
 dependency, it sends mail through any SMTP server and it runs air-gapped. Guiding rule:
@@ -33,7 +35,8 @@ and GitHub).
 | ![Admin](docs/screenshots/tour/11-admin-1440-light.png) **11. Admin**: users, groups and IdP mappings, single sign-on, branding, email, API keys, AI agents and the audit log. | ![An AI evaluation](docs/screenshots/tour/12-ai-evaluation-1440-light.png) **12. AI evaluation** by a kagent agent: a rationale and cited sources per criterion. It stays out of the score until the owner includes it. (Here Soundings' deterministic stand-in agent wrote it.) |
 | ![The Research column](docs/screenshots/tour/13-research-column-1440-light.png) **13. A research step** (optional, per project): before evaluation or before the proposal, ideas wait in a Research column; each card shows what is left and who is researching it. | ![The research checklist](docs/screenshots/tour/14-research-checklist-1440-light.png) **14. The checklist**: "Not already being done elsewhere", "Departments or teams consulted", answered in plain words, with similar ideas from every project you can see. |
 | ![The research gate](docs/screenshots/tour/15-research-gate-1440-light.png) **15. The gate**: an idea can't move on while a required item is open. Project admins may move it anyway, with a reason, in the audit log. | ![An outside researcher](docs/screenshots/tour/16-outside-researcher-1440-light.png) **16. Ask someone outside the project**: the researcher, with a due date and reminders, sees that one idea and nothing else of a private project, never its scores. |
-| ![A project's proposal template](docs/screenshots/tour/17-proposal-template-1440-light.png) **17. Your own proposal template**: project admins rename, reorder, add and remove sections; removed text is kept and comes back on restore. | |
+| ![A project's proposal template](docs/screenshots/tour/17-proposal-template-1440-light.png) **17. Your own proposal template**: project admins rename, reorder, add and remove sections; removed text is kept and comes back on restore. | ![Comparing bids](docs/screenshots/tour/18-bid-comparison-1440-light.png) **18. A call for bids** once the proposal is agreed: assessors score their own sections (technical, commercial, delivery), blind; the comparison ranks the bids, prices them and flags disagreement. |
+| ![A bid without a must-have](docs/screenshots/tour/19-bid-must-haves-1440-light.png) **19. Must-haves**: a required document that wasn't uploaded is flagged at once; reject the bid in one click with a reason (reversible until the award). | ![Assessing a bid](docs/screenshots/tour/20-bid-assessment-1440-light.png) **20. Assess beside the documents**: their text, read on the server, next to the questions. An AI assessor can score too, quoting the documents; its scores count only once a person includes them. |
 
 Dark mode and phone layouts: [docs/screenshots/tour/](docs/screenshots/tour/). Every
 screen at 1440 px light and dark, and at 390 px:

@@ -139,7 +139,8 @@ Phase 10, bid evaluation: `TOOLS-3`'s Bids tab has the call **"Data platform bui
 assessed (its deadline passed 4 days ago; assessments due in 4 days; no AI assessor named),
 on Internal Tools' default template: Technical (carol, mateo), Commercial with the price
 (priya), Delivery (sven, alice). Three fictional bids, each with a form of tender and a
-pricing schedule (PDF; the schedule is a **pricing document**) and a technical proposal
+pricing schedule (PDF; the schedule is a **pricing document** and the only one with the
+price, so carol, mateo, sven and alice never read an amount) and a technical proposal
 (Word), extracted at seed time: **Northwind Data Ltd** (complete and strong, 120,000 GBP,
 ranked 1st), **Tessellate Software** (complete and cheaper at 96,000 GBP, weaker
 technically, 2nd; carol and mateo disagree on its first question; an AI assessment by the

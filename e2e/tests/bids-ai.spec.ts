@@ -82,7 +82,9 @@ test('BD-13 @ai “Ask AI to assess” scores every question with quotes checked
     const panel = sheet.getByRole('region', { name: /AI assessment/ })
     await panel.getByRole('button', { name: 'Ask AI to assess' }).click()
     await page.getByRole('menuitem', { name: 'Bid assessor', exact: true }).click()
-    await expect(toast(page, 'Bid assessor is assessing the bid from Northwind Data Ltd')).toBeVisible()
+    await expect(
+      toast(page, 'Bid assessor is assessing the bid from Northwind Data Ltd'),
+    ).toBeVisible()
     const runs = await owner.get<{ items: { id: string; kind: string; bid_id: string | null }[] }>(
       `/ideas/${key}/ai-runs`,
     )

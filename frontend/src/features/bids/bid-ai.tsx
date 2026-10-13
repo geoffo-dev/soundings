@@ -244,9 +244,8 @@ function AssessmentCard({
         <p className="flex items-start gap-2 text-sm text-warning">
           <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
           {assessment.quotes_not_found === 1
-            ? 'One quote wasn’t found in the documents.'
-            : `${assessment.quotes_not_found} quotes weren’t found in the documents.`}{' '}
-          Check them before counting this assessment.
+            ? 'One quote wasn’t found in the documents. Check it before counting this assessment.'
+            : `${assessment.quotes_not_found} quotes weren’t found in the documents. Check them before counting this assessment.`}
         </p>
       )}
       {call.template.sections.map((section) => {
