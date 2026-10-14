@@ -17,15 +17,22 @@ export interface DueDateLabelProps {
   className?: string
   /** Hide the "No due date" text (show nothing instead). */
   hideWhenNone?: boolean
+  /** Count days in this IANA zone (Phase 10: the instance's), not the browser's. */
+  timeZone?: string
 }
 
 /**
  * "Due tomorrow" / "Due Fri 3 Oct" / "Overdue 2 days" with an icon, so the
  * state is never colour alone. The full date and time is in a tooltip.
  */
-export function DueDateLabel({ value, className, hideWhenNone = false }: DueDateLabelProps) {
+export function DueDateLabel({
+  value,
+  className,
+  hideWhenNone = false,
+  timeZone,
+}: DueDateLabelProps) {
   const now = useNow()
-  const due = dueDate(value, { now })
+  const due = dueDate(value, { now, timeZone })
   if (due.tone === 'none' && hideWhenNone) return null
   const { className: tone, Icon } = TONE[due.tone]
   const label = (

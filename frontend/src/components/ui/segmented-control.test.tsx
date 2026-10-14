@@ -83,6 +83,26 @@ describe('SegmentedControl', () => {
     expect(document.body).toHaveFocus()
   })
 
+  it('selects with the first arrow press when nothing is chosen yet (UX review m11)', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(<ScoreHarness onChange={onChange} />)
+
+    await user.tab()
+    expect(radio('1')).toHaveFocus()
+    expect(screen.queryByRole('radio', { checked: true })).toBeNull()
+
+    await press(user, 'ArrowRight')
+    expect(radio('2')).toHaveFocus()
+    expect(radio('2')).toBeChecked()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenLastCalledWith('2')
+
+    // Then Radix's own roving selection as before.
+    await press(user, 'ArrowRight')
+    expect(radio('3')).toBeChecked()
+  })
+
   it('jumps with End/Home and selects a score by typing its number', async () => {
     const user = userEvent.setup()
     render(<ScoreHarness initial="3" />)

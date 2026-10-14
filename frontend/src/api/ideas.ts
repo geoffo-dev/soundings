@@ -192,6 +192,9 @@ function settleIdea(queryClient: QueryClient, key: string, idea?: IdeaDetail) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.lists() })
   void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.boards() })
   void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
+  // Phase 10: the Bids tab follows the idea's status (a call starts in Proposal; closing
+  // the idea makes it read-only), so it is read again after any change (UX review M5).
+  void queryClient.invalidateQueries({ queryKey: queryKeys.bids.call(key) })
 }
 
 /** The IdeaSummary fields of an IdeaDetail (lists must not receive detail-only fields). */

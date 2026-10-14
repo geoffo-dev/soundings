@@ -538,6 +538,8 @@ class _Story:
             )
         await assess.record_assessment(
             self.db,
+            idea=loaded.idea,
+            project=loaded.project,
             call=loaded.call,
             bid=bid,
             agent_id=agent.id,

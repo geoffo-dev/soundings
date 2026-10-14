@@ -26,7 +26,10 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
-import { fromDateInput, latestDueInput, pickerMin, toDateInput } from '@/features/idea/due-date'
+import { focusWhenRendered } from '@/lib/focus'
+import { latestDueInput } from '@/features/idea/due-date'
+
+import { useCallZone } from './call-dates'
 
 const NO_AGENT = 'none'
 
@@ -96,6 +99,13 @@ export function CreateCallDialog({
                   })
                   reset()
                   onOpenChange(false)
+                  // The "Start" button went with the empty state: to the call's next step.
+                  focusWhenRendered(
+                    () =>
+                      document.getElementById('bid-call-primary') ??
+                      document.getElementById('bid-call-title'),
+                    { force: true },
+                  )
                 },
               },
             )
@@ -173,6 +183,7 @@ export function CallSettingsDialog({
   open,
   onOpenChange,
   reason,
+  onSaved,
 }: {
   ideaKey: string
   call: BidCall
@@ -181,12 +192,15 @@ export function CallSettingsDialog({
   onOpenChange: (open: boolean) => void
   /** Why it opened ("Set a deadline to open the call"). */
   reason?: string
+  /** Runs after a save (opened by "Open the call": then it opens the call, "Save and open"). */
+  onSaved?: () => void
 }) {
   const update = useUpdateBidCall(ideaKey)
+  const zone = useCallZone()
   const [title, setTitle] = useState(call.title)
   const [description, setDescription] = useState(call.description)
   const [currency, setCurrency] = useState(call.currency)
-  const [deadline, setDeadline] = useState(toDateInput(call.deadline_at))
+  const [deadline, setDeadline] = useState(zone.toInput(call.deadline_at))
   const [assessor, setAssessor] = useState(call.ai_assessor?.id ?? NO_AGENT)
   const [submitted, setSubmitted] = useState(false)
   const fields = isApiError(update.error) ? update.error.fieldErrors : {}
@@ -215,19 +229,24 @@ export function CallSettingsDialog({
           onSubmit={(event) => {
             event.preventDefault()
             setSubmitted(true)
-            if (!title.trim() || update.isPending) return
+            if (!title.trim() || (onSaved && !deadline) || update.isPending) return
             update.mutate(
               {
                 title: title.trim(),
                 description: description.trim(),
                 currency: currency.trim(),
-                deadline_at: deadline ? fromDateInput(deadline) : null,
+                // Unchanged: the stored moment as it is (a frozen deadline must not move).
+                deadline_at:
+                  deadline === zone.toInput(call.deadline_at)
+                    ? call.deadline_at
+                    : zone.fromInput(deadline),
                 ai_assessor_id: assessor === NO_AGENT ? null : assessor,
               },
               {
                 onSuccess: () => {
-                  toast.success('Call saved')
                   onOpenChange(false)
+                  if (onSaved) onSaved()
+                  else toast.success('Call saved')
                 },
               },
             )
@@ -263,14 +282,17 @@ export function CallSettingsDialog({
                 description={
                   frozen
                     ? 'Fixed once the call is closed to new bids.'
-                    : 'Bids entered after the end of this day are marked late, not refused.'
+                    : `Bids received after the end of this day${zone.differs ? ` (${zone.timeZone} time)` : ''} are marked late, not refused.`
                 }
-                error={fields.deadline_at}
+                error={
+                  fields.deadline_at ??
+                  (submitted && onSaved && !deadline ? 'Pick the last day for bids.' : undefined)
+                }
               >
                 <DatePicker
                   value={deadline}
                   onValueChange={setDeadline}
-                  min={pickerMin(deadline)}
+                  min={zone.pickerMin(deadline)}
                   max={latestDueInput()}
                   disabled={frozen}
                 />
@@ -314,7 +336,7 @@ export function CallSettingsDialog({
               Cancel
             </Button>
             <Button variant="primary" type="submit" loading={update.isPending}>
-              Save
+              {onSaved ? 'Save and open' : 'Save'}
             </Button>
           </DialogFooter>
         </form>

@@ -131,10 +131,8 @@ test('BD-01 the owner starts a call from the project’s template, sets a deadli
   await expect(details.getByText('Set a deadline for bids to open the call.')).toBeVisible()
   const date = daysFromNow(10).slice(0, 10)
   await details.getByLabel('Deadline for bids').fill(date)
-  await details.getByRole('button', { name: 'Save' }).click()
-  await expect(toast(page, 'Call saved')).toBeVisible()
-  await page.getByRole('button', { name: 'Open the call' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Open the call' }).click()
+  // Saving the deadline opens the call in the same step (UX review m4).
+  await details.getByRole('button', { name: 'Save and open' }).click()
   await expect(toast(page, 'The call is open to bids')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Enter a bid' })).toBeVisible()
   expect((await bidCall(alice, idea.key)).call?.status).toBe('open')
@@ -172,6 +170,18 @@ test('BD-02 a bid is entered and its documents uploaded by drag-and-drop and by 
   ])
   await expect(documentRow(sheet, 'Form of tender.pdf')).toBeVisible()
   await expect(documentRow(sheet, 'Technical proposal.docx')).toBeVisible()
+  // A file named after a must-have answers it as it lands (UX review M2); one that answers
+  // none, in a call with a price question, stays a pricing document until someone says it
+  // isn't (M3).
+  await expect(
+    documentRow(sheet, 'Form of tender.pdf').getByRole('combobox', {
+      name: 'Must-have that Form of tender.pdf answers',
+    }),
+  ).toHaveText(MUST_HAVES.tender)
+  const proposal = documentRow(sheet, 'Technical proposal.docx')
+  await expect(proposal.getByRole('group', { name: /pricing document/ })).toBeVisible()
+  await proposal.getByRole('button', { name: 'Not pricing' }).click()
+  await expect(proposal.getByRole('group', { name: /pricing document/ })).toHaveCount(0)
 
   // Keyboard: Tab to "Choose files", Enter opens the file chooser.
   const choose = sheet.getByRole('button', { name: 'Choose files' })
@@ -211,6 +221,16 @@ test('BD-02 a bid is entered and its documents uploaded by drag-and-drop and by 
     ['Form of tender.pdf', 'pdf', 'done'],
     ['Insurance certificate.pdf', 'pdf', 'done'],
     ['Technical proposal.docx', 'docx', 'done'],
+  ])
+  const mustHaveText = new Map(view.call?.template.must_haves.map((m) => [m.id, m.text]))
+  expect(
+    detail.documents
+      .map((d) => [d.filename, d.must_have_id ? mustHaveText.get(d.must_have_id) : null, d.pricing])
+      .sort(),
+  ).toEqual([
+    ['Form of tender.pdf', MUST_HAVES.tender, false],
+    ['Insurance certificate.pdf', MUST_HAVES.insurance, false],
+    ['Technical proposal.docx', null, false],
   ])
   expect(view.call?.bid_count).toBe(1)
 })
@@ -453,7 +473,10 @@ test('BD-07 the comparison ranks the qualified bids by the contract’s math, an
   await expect(northwindRow).toContainText('86.7')
   await expect(northwindRow).toContainText('84.0')
   const tessellateRow = table.getByRole('row', { name: /Tessellate/ })
-  await expect(tessellateRow.getByRole('img', { name: 'Assessors disagree' })).toBeVisible()
+  // A section's score opens its assessments; the disagreement is in its name.
+  await expect(
+    tessellateRow.getByRole('button', { name: /^Technical for Tessellate.*assessors disagree/ }),
+  ).toBeVisible()
   await expect(tessellateRow).toContainText('70.9')
   await expect(comparisonRegion(page)).toContainText(`${submitted} of ${expected} assessed`)
 
@@ -493,7 +516,7 @@ test('BD-08 My work lists “Bids to assess” and the sidebar counts them (alic
   await page.goto('/')
   const section = page.getByRole('region', { name: /Bids to assess/ })
   await expect(section.getByRole('link', { name: DEMO.title, exact: true })).toBeVisible()
-  await expect(section).toContainText('0 of 2 submitted')
+  await expect(section).toContainText('2 to submit')
   await expect(section).toContainText('Delivery')
   await expect(section).not.toContainText(DEMO.northwind)
   await expect(section).not.toContainText('£')

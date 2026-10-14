@@ -202,7 +202,7 @@ function LoadedIdeaPage({
       setSearch({
         tab: next === 'overview' ? undefined : next,
         // A bid and an assessment belong to the Bids tab.
-        ...(next === 'bids' ? {} : { bid: undefined, assess: undefined }),
+        ...(next === 'bids' ? {} : { bid: undefined, assess: undefined, section: undefined }),
       }),
     [setSearch],
   )
@@ -267,7 +267,11 @@ function LoadedIdeaPage({
     focusComment,
     takeCommentFocus,
     commentFocusRequest,
-    setTab,
+    // From the phone details sheet (its Bids row): close it on the way.
+    setTab: (next: IdeaTab) => {
+      if (detailsOpen) setDetailsOpen(false)
+      setTab(next)
+    },
     tab,
     search,
     setSearch,

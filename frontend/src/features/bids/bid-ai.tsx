@@ -1,4 +1,5 @@
 import { CloudOff, Lock, Sparkles, TriangleAlert } from 'lucide-react'
+import { useRef } from 'react'
 
 import { useIdeaAiRuns } from '@/api/ai'
 import { useBidAiAssessments, useRequestAiBidAssessment, useSetBidAiInclusion } from '@/api/bids'
@@ -19,6 +20,7 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/toaster'
 import { BLOCKED_COPY, isActiveRun } from '@/features/ai/ai-copy'
 import { RunCard } from '@/features/ai/run-card'
+import { focusWhenRendered } from '@/lib/focus'
 import { visibleText } from '@/lib/visible-text'
 
 import { Evidence } from './must-haves'
@@ -33,10 +35,12 @@ export function BidAi({
   ideaKey,
   view,
   bid,
+  onOpenQuote,
 }: {
   ideaKey: string
   view: BidCallView & { call: BidCall }
   bid: BidDetail
+  onOpenQuote?: (documentId: string, quote: string) => void
 }) {
   const runs = useIdeaAiRuns(ideaKey)
   const assessments = useBidAiAssessments(ideaKey, bid.id)
@@ -50,15 +54,32 @@ export function BidAi({
   const blocked = view.permissions.request_ai_blocked_by
   const canAsk = bid.permissions.can_request_ai && agents.length > 0 && !active
   const documents = new Map(bid.documents.map((d) => [d.id, d]))
+  // No agent serves this project and the AI never saw the bid: no section (polish p7).
+  const nothing =
+    agents.length === 0 &&
+    !view.call.ai_assessor &&
+    !latest &&
+    (assessments.data?.items.length ?? 0) === 0 &&
+    !assessments.isError
 
   const ask = (agent: AiAgentRef) =>
     request.mutate(
       { bidId: bid.id, agentId: agent.id },
       {
-        onSuccess: () =>
+        onSuccess: () => {
           toast.success(`${agent.display_name} is assessing the bid from ${bid.bidder}`, {
             description: 'Its scores stay out of the totals until you count them.',
-          }),
+          })
+          // "Ask AI to assess" is disabled while the run goes: to the run's own controls (m1).
+          focusWhenRendered(
+            () =>
+              document
+                .getElementById(`ai-${bid.id}`)
+                ?.closest('section')
+                ?.querySelector<HTMLElement>('.rounded-lg.border button:not([disabled])'),
+            { force: true },
+          )
+        },
         onError: (error) => {
           const { title, description } = describeError(error)
           toast.error(title, { description })
@@ -66,6 +87,7 @@ export function BidAi({
       },
     )
 
+  if (nothing) return null
   return (
     <section aria-labelledby={`ai-${bid.id}`} className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -121,6 +143,7 @@ export function BidAi({
             assessment={assessment}
             canInclude={assessments.data.can_include}
             documents={documents}
+            onOpenQuote={onOpenQuote}
           />
         ))
       )}
@@ -187,6 +210,7 @@ function AssessmentCard({
   assessment,
   canInclude,
   documents,
+  onOpenQuote,
 }: {
   ideaKey: string
   call: BidCall
@@ -194,14 +218,23 @@ function AssessmentCard({
   assessment: BidAiAssessment
   canInclude: boolean
   documents: Map<string, { filename: string }>
+  onOpenQuote?: (documentId: string, quote: string) => void
 }) {
   const inclusion = useSetBidAiInclusion(ideaKey, bid.id)
   const scores = new Map(assessment.scores.map((s) => [s.question_id, s]))
   const hidden = new Set(assessment.hidden_section_ids)
   const switchId = `ai-include-${assessment.id}`
+  const article = useRef<HTMLElement>(null)
+  /** The warning's "Show it": to the first quote that wasn't found (m13). */
+  const showMissing = () => {
+    const item = article.current?.querySelector<HTMLElement>('[data-quote-found="false"]')
+    if (item && typeof item.scrollIntoView === 'function') item.scrollIntoView({ block: 'center' })
+    item?.focus({ preventScroll: true })
+  }
 
   return (
     <article
+      ref={article}
       className="flex flex-col gap-4 rounded-lg border p-4"
       aria-label={`${assessment.agent.display_name}’s assessment`}
     >
@@ -243,9 +276,19 @@ function AssessmentCard({
       {assessment.quotes_not_found > 0 && (
         <p className="flex items-start gap-2 text-sm text-warning">
           <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          {assessment.quotes_not_found === 1
-            ? 'One quote wasn’t found in the documents. Check it before counting this assessment.'
-            : `${assessment.quotes_not_found} quotes weren’t found in the documents. Check them before counting this assessment.`}
+          <span>
+            {assessment.quotes_not_found === 1
+              ? 'One quote wasn’t found in the documents. Check it before counting this assessment.'
+              : `${assessment.quotes_not_found} quotes weren’t found in the documents. Check them before counting this assessment.`}{' '}
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 align-baseline text-sm"
+              onClick={showMissing}
+            >
+              {assessment.quotes_not_found === 1 ? 'Show it' : 'Show the first'}
+            </Button>
+          </span>
         </p>
       )}
       {call.template.sections.map((section) => {
@@ -283,7 +326,11 @@ function AssessmentCard({
                         {visibleText(score.rationale)}
                       </p>
                     )}
-                    <Evidence evidence={score.evidence} documents={documents} />
+                    <Evidence
+                      evidence={score.evidence}
+                      documents={documents}
+                      onOpenQuote={onOpenQuote}
+                    />
                   </li>
                 )
               })}

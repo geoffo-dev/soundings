@@ -50,7 +50,8 @@ export function useBidCommands(view: CallWithView): void {
     for (const format of ['pdf', 'markdown'] as const) {
       actions.push({
         id: `bid-report-${format}`,
-        label: `Export the bid evaluation (${format === 'pdf' ? 'PDF' : 'Markdown'})`,
+        label: `Export the report (${format === 'pdf' ? 'PDF' : 'Markdown'})`,
+        hint: call.title,
         icon: format === 'pdf' ? <Download /> : <FileSpreadsheet />,
         keywords: ['report', 'export', 'bids', 'comparison'],
         onSelect: () =>

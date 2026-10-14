@@ -1,4 +1,4 @@
-import { CloudOff, FileStack, Gavel, Lock } from 'lucide-react'
+import { CloudOff, FileText, Gavel, Lock } from 'lucide-react'
 import { useState } from 'react'
 
 import { useBidCall } from '@/api/bids'
@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useIdeaPage } from '@/features/idea/idea-context'
-import { formatDate } from '@/lib/dates'
 
 import { AssessmentQueue } from './assessment-queue'
 import { AssessmentSheet } from './assessment-sheet'
@@ -15,6 +14,7 @@ import { BidList } from './bid-list'
 import { BidSheet } from './bid-sheet'
 import { CALL_STATUS } from './bid-copy'
 import { BidsTabSkeleton } from './bids-tab-skeleton'
+import { useCallZone } from './call-dates'
 import { CallHeader } from './call-header'
 import { CreateCallDialog } from './call-dialogs'
 import { Comparison } from './comparison'
@@ -47,25 +47,34 @@ export function BidsTab() {
 }
 
 function BidsView({ view }: { view: BidCallView }) {
-  const { ideaKey, idea } = useIdeaPage()
+  const { ideaKey, idea, archived, setTab } = useIdeaPage()
   const [creating, setCreating] = useState(false)
   if (!view.summary) {
+    // The tab shows without a call only to call managers of an idea in Proposal: what
+    // is missing is the proposal itself (or the project is archived: UX review M5).
+    const needsProposal = !view.permissions.can_create && idea.status === 'proposal' && !archived
     return (
       <>
         <EmptyState
           size="compact"
           headingLevel={2}
-          icon={<Gavel />}
-          title="No call for bids yet"
+          icon={needsProposal ? <FileText /> : <Gavel />}
+          title={needsProposal ? 'Start the proposal first' : 'No call for bids yet'}
           description={
             view.permissions.can_create
               ? 'Once the proposal is agreed, run a call for bids: enter the bids that come in with their documents, check their must-haves, and have assessors score them section by section.'
-              : 'The idea’s owner or an admin can start one once the idea is in Proposal, with a proposal.'
+              : needsProposal
+                ? 'A call for bids follows the proposal: start it on the Proposal tab, then come back here to run the call.'
+                : 'The idea’s owner or an admin can start one once the idea is in Proposal, with a proposal.'
           }
           action={
             view.permissions.can_create ? (
               <Button variant="primary" onClick={() => setCreating(true)}>
                 Start a call for bids
+              </Button>
+            ) : needsProposal ? (
+              <Button variant="primary" onClick={() => setTab('proposal')}>
+                Go to the proposal
               </Button>
             ) : undefined
           }
@@ -86,6 +95,7 @@ function BidsView({ view }: { view: BidCallView }) {
 /** Members, viewers and internal non-members: that a call exists, nothing about its bids. */
 function SummaryOnly({ summary }: { summary: BidCallSummary }) {
   const status = CALL_STATUS[summary.status]
+  const zone = useCallZone()
   return (
     <section
       aria-labelledby="bid-call-title"
@@ -99,9 +109,15 @@ function SummaryOnly({ summary }: { summary: BidCallSummary }) {
       </div>
       <p className="text-sm text-secondary">
         {[
-          summary.deadline_at ? `Deadline ${formatDate(summary.deadline_at)}` : 'No deadline yet',
+          summary.status === 'awarded' || summary.status === 'cancelled'
+            ? null
+            : summary.deadline_at
+              ? `Deadline ${zone.format(summary.deadline_at)}${zone.suffix}`
+              : 'No deadline yet',
           `${summary.bid_count} ${summary.bid_count === 1 ? 'bid' : 'bids'}`,
-        ].join(' · ')}
+        ]
+          .filter(Boolean)
+          .join(' · ')}
       </p>
       <p className="flex items-center gap-2 text-sm text-muted">
         <Lock aria-hidden="true" className="size-4 shrink-0" />
@@ -115,8 +131,8 @@ function CallView({ view }: { view: BidCallView & { call: NonNullable<BidCallVie
   const { ideaKey, search, setSearch } = useIdeaPage()
   const { call, permissions } = view
   useBidCommands(view)
-  const openBid = (bidId: string | undefined, assess?: string) =>
-    setSearch?.({ tab: 'bids', bid: bidId, assess })
+  const openBid = (bidId: string | undefined, assess?: string, section?: string) =>
+    setSearch?.({ tab: 'bids', bid: bidId, assess, section })
   const assessing = permissions.can_assess || permissions.assess_section_ids.length > 0
 
   return (
@@ -131,19 +147,17 @@ function CallView({ view }: { view: BidCallView & { call: NonNullable<BidCallVie
         />
       )}
       <BidList view={view} onOpen={(bidId) => openBid(bidId)} />
-      {permissions.can_view_scores && call.bid_count > 0 && call.status !== 'draft' && (
-        <Comparison view={view} onOpen={(bidId) => openBid(bidId)} />
-      )}
+      {/* The comparison once there is something to compare (UX review m9). */}
+      {permissions.can_view_scores &&
+        call.bid_count > 0 &&
+        (call.status === 'assessing' || call.status === 'awarded') && (
+          <Comparison onOpen={(bidId, sectionId) => openBid(bidId, undefined, sectionId)} />
+        )}
       <EvaluationPanel view={view} />
-      {call.bid_count === 0 && call.status === 'draft' && (
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <FileStack aria-hidden="true" className="size-4 shrink-0" />
-          Next: check the evaluation template and the assessors, set a deadline, then open the call.
-        </p>
-      )}
       <BidSheet
         view={view}
         bidId={search?.assess ? undefined : search?.bid}
+        focusSection={search?.section}
         onOpenChange={(open) => !open && openBid(undefined)}
         onAssess={(bidId, sectionId) => openBid(bidId, sectionId)}
       />

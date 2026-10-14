@@ -19,7 +19,7 @@ import { useIdeaPage } from '@/features/idea/idea-context'
 import { formatDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
-import { BID_STATUS, formatPrice, mustHaveSummary, progressText } from './bid-copy'
+import { BID_STATUS, formatPrice, mustHaveSummary } from './bid-copy'
 import { BidFormDialog } from './bid-form-dialog'
 
 type CallWithView = BidCallView & { call: NonNullable<BidCallView['call']> }
@@ -103,7 +103,7 @@ export function BidList({ view, onOpen }: { view: CallWithView; onOpen: (bidId: 
                 <TableHead>Received</TableHead>
                 {permissions.can_see_prices && <TableHead className="text-right">Price</TableHead>}
                 <TableHead>Must-haves</TableHead>
-                <TableHead>{manager ? 'Assessed' : 'Your sections'}</TableHead>
+                <TableHead>{manager ? 'Assessed' : 'Your sections submitted'}</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -190,15 +190,17 @@ function BidRow({
           {musts.text}
         </span>
       </TableCell>
-      <TableCell label={manager ? 'Assessed' : 'Your sections'}>
+      <TableCell label={manager ? 'Assessed' : 'Your sections submitted'}>
         <span className="text-sm text-secondary tabular-nums">
           {rejected
             ? '—'
             : manager
-              ? progressText(bid.progress)
+              ? bid.progress.total === 0
+                ? '—'
+                : `${bid.progress.submitted} of ${bid.progress.total}`
               : mine.length === 0
                 ? '—'
-                : `${ownDone} of ${mine.length} submitted`}
+                : `${ownDone} of ${mine.length}`}
         </span>
       </TableCell>
       <TableCell label="Status">

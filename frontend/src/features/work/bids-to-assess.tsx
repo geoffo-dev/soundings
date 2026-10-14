@@ -6,6 +6,7 @@ import { PageSection } from '@/components/layout/page'
 import { CountBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DueDateLabel } from '@/components/ui/due-date'
+import { useCallZone } from '@/features/bids/call-dates'
 import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +46,8 @@ export function BidsToAssessSection({
 function BidCallRow({ item }: { item: WorkBidAssessment }) {
   const { idea, call, progress } = item
   const owed = Math.max(0, progress.total - progress.submitted)
+  // The due date is a day in the instance's zone (UX review M6).
+  const zone = useCallZone()
   return (
     <li className="relative flex flex-col gap-2.5 px-4 py-3 transition-colors duration-100 hover:bg-subtle sm:flex-row sm:items-center sm:gap-4">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -74,11 +77,11 @@ function BidCallRow({ item }: { item: WorkBidAssessment }) {
         <span className="flex items-center gap-1.5 text-sm text-secondary tabular-nums">
           <Gavel aria-hidden="true" className="size-3.5 text-muted" />
           {owed} to submit
-          <span className="text-muted">
-            · {progress.submitted} of {progress.total} submitted
-          </span>
+          {progress.submitted > 0 && (
+            <span className="text-muted"> · {progress.submitted} done</span>
+          )}
         </span>
-        <DueDateLabel value={item.due_at} hideWhenNone />
+        <DueDateLabel value={item.due_at} hideWhenNone timeZone={zone.timeZone} />
         <Button asChild variant="outline" className="relative z-10 ml-auto max-sm:h-11 max-sm:px-5">
           <Link
             to="/ideas/$ideaKey"

@@ -1,21 +1,7 @@
-import {
-  ArrowRight,
-  CircleAlert,
-  CircleCheck,
-  CloudOff,
-  FileText,
-  Lock,
-  TriangleAlert,
-} from 'lucide-react'
+import { ArrowRight, CircleAlert, CircleCheck, CloudOff, FileText, Lock } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import {
-  useBid,
-  useBids,
-  useMyBidAssessment,
-  useSaveMyBidAssessment,
-  useSectionAssessments,
-} from '@/api/bids'
+import { useBid, useBids, useMyBidAssessment, useSaveMyBidAssessment } from '@/api/bids'
 import { describeError, hasErrorCode, isApiError } from '@/api/errors'
 import type {
   BidCall,
@@ -26,8 +12,6 @@ import type {
   BidDocument,
   MyBidAssessment,
 } from '@/api/types'
-import { AiBadge } from '@/components/ui/ai-badge'
-import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
@@ -63,14 +47,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
 import { useIdeaPage } from '@/features/idea/idea-context'
 import { LiveRegion, useLiveRegion } from '@/features/idea/live-region'
+import { focusWhenRendered } from '@/lib/focus'
 import { useMediaQuery } from '@/lib/media'
-import { visibleText } from '@/lib/visible-text'
 import { cn } from '@/lib/utils'
 
-import { formatPoints, formatPrice } from './bid-copy'
+import { formatPrice } from './bid-copy'
 import { pricingAudience } from './bid-documents'
 import { DocumentText, DocumentTextDialog } from './document-text'
-import { Evidence } from './must-haves'
+import { SectionResults } from './section-results'
 
 type CallWithView = BidCallView & { call: NonNullable<BidCallView['call']> }
 
@@ -218,7 +202,7 @@ export function AssessmentSheet({
         )}
       </SheetContent>
       <Dialog open={leaving !== null} onOpenChange={(next) => !next && setLeaving(null)}>
-        <DialogContent size="sm">
+        <DialogContent size="sm" role="alertdialog">
           <DialogHeader>
             <DialogTitle>Leave without saving?</DialogTitle>
             <DialogDescription>
@@ -271,7 +255,11 @@ function AssessmentForm({
   const [baseline, setBaseline] = useState(() => answersOf(section, mine))
   const [answers, setAnswers] = useState(baseline)
   const [tried, setTried] = useState(false)
-  const [reading, setReading] = useState<BidDocument | null>(null)
+  const [reading, setReading] = useState<{ document: BidDocument; quote?: string } | null>(null)
+  const openQuote = (documentId: string, quote: string) => {
+    const document = bid.documents.find((d) => d.id === documentId)
+    if (document) setReading({ document, quote })
+  }
   const formRef = useRef<HTMLDivElement>(null)
   const dirty = !sameAnswers(answers, baseline)
   const submitted = mine.state === 'submitted'
@@ -334,6 +322,14 @@ function AssessmentForm({
               description: 'You can now see the other assessors’ scores for it.',
             })
             announce('Submitted. The other assessors’ scores are shown below.')
+            // Submit became "Save changes" (disabled): to your next assessment, else the
+            // scores you can now see (m1).
+            focusWhenRendered(
+              () =>
+                document.getElementById('assess-next') ??
+                document.getElementById(`results-${section.id}`),
+              { force: true },
+            )
           } else {
             toast.success('Draft saved', { description: 'Only you can see it.' })
           }
@@ -416,14 +412,27 @@ function AssessmentForm({
             ))}
           </ol>
           {submitted ? (
-            <SectionResults bidId={bid.id} section={section} call={call} bid={bid} />
+            <section
+              aria-labelledby={`results-${section.id}`}
+              className="flex flex-col gap-4 border-t border-subtle pt-6"
+            >
+              <SectionResults
+                bid={bid}
+                section={section}
+                call={call}
+                headingId={`results-${section.id}`}
+                onOpenQuote={openQuote}
+              />
+            </section>
           ) : (
             <p className="flex items-start gap-2 text-sm text-muted">
               <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
               The other assessors’ scores for this section stay hidden from you until you submit.
             </p>
           )}
-          {!wide && <DocumentList call={call} bid={bid} onRead={setReading} />}
+          {!wide && (
+            <DocumentList call={call} bid={bid} onRead={(document) => setReading({ document })} />
+          )}
         </div>
         {wide && <DocumentsPane ideaKey={ideaKey} call={call} bid={bid} />}
       </SheetBody>
@@ -431,6 +440,7 @@ function AssessmentForm({
         <div className="min-w-0">
           {submitted && next && !dirty && (
             <Button
+              id="assess-next"
               variant="ghost"
               onClick={() => onSwitch(next.bid.id, next.section.section.id)}
               aria-label={`Next: ${next.bid.bidder}, ${next.section.section.title}`}
@@ -476,7 +486,8 @@ function AssessmentForm({
       <DocumentTextDialog
         ideaKey={ideaKey}
         bidId={bid.id}
-        document={reading}
+        document={reading?.document ?? null}
+        quote={reading?.quote}
         onOpenChange={(open) => !open && setReading(null)}
       />
     </>
@@ -595,175 +606,6 @@ function QuestionField({
   )
 }
 
-/** After you submit: everyone's submitted scores for the section, the spread and the AI's. */
-function SectionResults({
-  bidId,
-  section,
-  call,
-  bid,
-}: {
-  bidId: string
-  section: BidCallSection
-  call: BidCall
-  bid: BidDetail
-}) {
-  const { ideaKey } = useIdeaPage()
-  const results = useSectionAssessments(ideaKey, bidId, section.id)
-  const questions = new Map(section.questions.map((q) => [q.id, q]))
-  const documents = new Map(bid.documents.map((d) => [d.id, d]))
-
-  return (
-    <section
-      aria-labelledby={`results-${section.id}`}
-      className="flex flex-col gap-4 border-t border-subtle pt-6"
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 id={`results-${section.id}`} className="text-base font-semibold text-primary">
-          Everyone’s scores
-        </h3>
-        {results.data?.section_score != null && (
-          <span className="text-sm text-secondary">
-            Section score{' '}
-            <span className="font-semibold text-primary tabular-nums">
-              {formatPoints(results.data.section_score)}
-            </span>
-            <span className="text-muted"> / 100</span>
-          </span>
-        )}
-      </div>
-      {results.isPending ? (
-        <SkeletonGroup label="Loading the scores" className="flex flex-col gap-2">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </SkeletonGroup>
-      ) : results.isError ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-secondary">
-          We couldn’t load the scores.
-          <Button size="sm" variant="outline" onClick={() => void results.refetch()}>
-            Try again
-          </Button>
-        </div>
-      ) : results.data.hidden ? (
-        <p className="text-sm text-muted">Hidden until you submit.</p>
-      ) : (
-        <>
-          <ul className="flex flex-col gap-2">
-            {results.data.questions.map((stats) => {
-              const question = questions.get(stats.question_id)
-              if (!question) return null
-              return (
-                <li
-                  key={stats.question_id}
-                  className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm"
-                >
-                  <span className="min-w-0 text-secondary">{question.text}</span>
-                  <span className="flex items-center gap-2 tabular-nums">
-                    {stats.disagreement && (
-                      <Badge variant="warning">
-                        <TriangleAlert aria-hidden="true" /> Disagree
-                      </Badge>
-                    )}
-                    <span className="font-semibold text-primary">
-                      {stats.mean?.toFixed(2) ?? '—'}
-                    </span>
-                    {stats.min !== null && stats.max !== null && stats.min !== stats.max && (
-                      <span className="text-muted">
-                        ({stats.min}-{stats.max})
-                      </span>
-                    )}
-                    <span className="text-xs text-muted">
-                      {stats.count} {stats.count === 1 ? 'score' : 'scores'}
-                    </span>
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-          <ul
-            className="flex flex-col divide-y divide-subtle rounded-lg border"
-            aria-label="Assessments"
-          >
-            {results.data.assessments.map((assessment) => (
-              <li key={assessment.assessor.id} className="flex flex-col gap-2 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <Avatar
-                    name={assessment.assessor.display_name}
-                    src={assessment.assessor.avatar_url}
-                    size="xs"
-                    decorative
-                  />
-                  <span className="font-medium text-primary">
-                    {assessment.assessor.display_name}
-                  </span>
-                  <span className="text-xs text-muted">
-                    <RelativeTime date={assessment.edited_at ?? assessment.submitted_at} />
-                  </span>
-                </div>
-                <ul className="flex flex-col gap-1.5 text-sm">
-                  {assessment.answers.map((answer) => {
-                    const question = questions.get(answer.question_id)
-                    if (!question || (answer.score === null && !answer.comment)) return null
-                    return (
-                      <li key={answer.question_id} className="flex flex-col">
-                        <span className="flex items-baseline justify-between gap-3">
-                          <span className="text-muted">{question.text}</span>
-                          {answer.score !== null && (
-                            <span className="font-medium text-primary tabular-nums">
-                              {answer.score}
-                            </span>
-                          )}
-                        </span>
-                        {answer.comment && (
-                          <span className="whitespace-pre-wrap text-secondary">
-                            {answer.comment}
-                          </span>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </li>
-            ))}
-            {results.data.ai.map((ai) => (
-              <li key={ai.ai_assessment_id} className="flex flex-col gap-2 px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Avatar name={ai.agent.display_name} isAgent size="xs" decorative />
-                  <span className="font-medium text-primary">{ai.agent.display_name}</span>
-                  <AiBadge />
-                  <span className="text-xs text-muted">
-                    {ai.included ? 'Counted in the totals' : 'Not counted in the totals'}
-                  </span>
-                </div>
-                <ul className="flex flex-col gap-2 text-sm">
-                  {ai.scores.map((score) => (
-                    <li key={score.question_id} className="flex flex-col gap-1">
-                      <span className="flex items-baseline justify-between gap-3">
-                        <span className="text-muted">{questions.get(score.question_id)?.text}</span>
-                        <span className="font-medium text-primary tabular-nums">{score.score}</span>
-                      </span>
-                      {score.rationale && (
-                        <span className="whitespace-pre-wrap text-secondary">
-                          {visibleText(score.rationale)}
-                        </span>
-                      )}
-                      <Evidence evidence={score.evidence} documents={documents} />
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-          {call.status === 'assessing' && (
-            <p className="text-xs text-muted">
-              Totals and the ranking are for the call’s managers.
-            </p>
-          )}
-        </>
-      )}
-    </section>
-  )
-}
-
 /** Phones and narrow windows: the bid's documents, each opening its text over the sheet. */
 function DocumentList({
   call,
@@ -816,9 +658,25 @@ function DocumentList({
 }
 
 /** Wide screens: the bid's documents beside the questions, one at a time. */
+/** The document each bid's pane last showed (this visit), so moving on keeps your place. */
+const lastShown = new Map<string, string>()
+
 function DocumentsPane({ ideaKey, call, bid }: { ideaKey: string; call: BidCall; bid: BidDetail }) {
   const readable = bid.documents
-  const [chosen, setChosen] = useState<string | null>(readable[0]?.id ?? null)
+  // The one you last read on this bid, else the one with the most text (the proposal
+  // itself, not the one-page form of tender: polish p6).
+  const [chosen, setChosenState] = useState<string | null>(() => {
+    const last = lastShown.get(bid.id)
+    if (last && readable.some((d) => d.id === last)) return last
+    const longest = [...readable].sort(
+      (a, b) => (b.extraction.chars ?? 0) - (a.extraction.chars ?? 0),
+    )[0]
+    return longest?.id ?? null
+  })
+  const setChosen = (id: string) => {
+    lastShown.set(bid.id, id)
+    setChosenState(id)
+  }
   const document = readable.find((d) => d.id === chosen) ?? readable[0]
   return (
     <aside

@@ -124,6 +124,26 @@ export function SegmentedControl<T extends string>({
       : guidancePlaceholder
   const guidance = shown?.description ?? placeholder
 
+  // With nothing chosen yet, Radix's first arrow press only moves focus (the second
+  // selects): arrows select at once here, as they do once a value is set (UX review m11).
+  const onKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (value !== null && value !== undefined && value !== '') return
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+    if (!step) return
+    const enabled = options.filter((option) => !option.disabled)
+    const at = enabled.findIndex(
+      (option) => itemRefs.current.get(option.value) === document.activeElement,
+    )
+    if (at === -1) return
+    const target = enabled[Math.min(enabled.length - 1, Math.max(0, at + step))]
+    if (!target) return
+    event.preventDefault()
+    event.stopPropagation()
+    onValueChange(target.value)
+    itemRefs.current.get(target.value)?.focus()
+  }
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return
     const match = options.find((option) => option.value === event.key && !option.disabled)
@@ -154,6 +174,7 @@ export function SegmentedControl<T extends string>({
           [field?.describedBy, aria['aria-describedby']].filter(Boolean).join(' ') || undefined
         }
         onKeyDown={onKeyDown}
+        onKeyDownCapture={onKeyDownCapture}
         className={cn(
           'flex gap-0.5 rounded-md bg-subtle p-0.5',
           fullWidth ? 'w-full' : 'scrollbar-none w-fit max-w-full overflow-x-auto',

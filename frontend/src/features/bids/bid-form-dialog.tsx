@@ -44,6 +44,63 @@ export function normalisePrice(value: string): string | null {
   return Number(plain).toFixed(2)
 }
 
+export interface BidFormProblems {
+  bidder?: string
+  contact_name?: string
+  contact_email?: string
+  price?: string
+  notes?: string
+}
+
+const EMAIL = /^[^@\s]+@[^@\s]+$/
+// One line, no control characters (the API's SingleLine).
+// eslint-disable-next-line no-control-regex
+const NOT_ONE_LINE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/
+
+/** What the form can say before sending, from the current values (never stale). */
+export function bidFormProblems(values: {
+  bidder: string
+  contactName: string
+  contactEmail: string
+  price: string
+  notes: string
+  hasPrice: boolean
+}): BidFormProblems {
+  const bidder = values.bidder.trim()
+  const email = values.contactEmail.trim()
+  const out: BidFormProblems = {}
+  if (!bidder) out.bidder = 'Enter who sent the bid.'
+  else if (bidder.length > 120) out.bidder = 'At most 120 characters.'
+  else if (NOT_ONE_LINE.test(bidder)) out.bidder = 'One line of plain text.'
+  if (values.contactName.trim().length > 120) out.contact_name = 'At most 120 characters.'
+  else if (NOT_ONE_LINE.test(values.contactName)) out.contact_name = 'One line of plain text.'
+  if (email && (!EMAIL.test(email) || email.length > 254))
+    out.contact_email = 'An email address, like name@example.com.'
+  if (values.hasPrice && values.price.trim() && !normalisePrice(values.price))
+    out.price = 'A price above 0, like 120000 or 120000.50.'
+  if (values.notes.trim().length > 2000) out.notes = 'At most 2,000 characters.'
+  return out
+}
+
+/** The server's words for a field are a validator's ("String should match…"): ours instead. */
+const FIELD_WORDS: Record<string, string> = {
+  bidder: 'The bidder’s name: one line, at most 120 characters.',
+  contact_name: 'A name: one line, at most 120 characters.',
+  contact_email: 'An email address, like name@example.com.',
+  received_at: 'A date and time in the past year, not in the future.',
+  price: 'A price above 0, like 120000 or 120000.50.',
+  notes: 'At most 2,000 characters of plain text.',
+}
+
+export function plainFieldErrors(fields: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const field of Object.keys(fields)) {
+    const words = FIELD_WORDS[field]
+    if (words) out[field] = words
+  }
+  return out
+}
+
 /**
  * Enter a bid as it came in (the team enters bids: P1), or edit one. Contact details are
  * stored as given and never emailed by Soundings. The price is asked only when the call's
@@ -76,26 +133,30 @@ export function BidFormDialog({
   const [price, setPrice] = useState(bid?.price ?? '')
   const [notes, setNotes] = useState(bid?.notes ?? '')
   const [submitted, setSubmitted] = useState(false)
-  const fields = isApiError(mutation.error) ? mutation.error.fieldErrors : {}
-
-  const bidderError =
-    fields.bidder ?? (submitted && !bidder.trim() ? 'Enter who sent the bid.' : undefined)
-  const priceValue = price.trim() ? normalisePrice(price) : null
-  const priceError =
-    fields.price ??
-    (submitted && hasPrice && price.trim() && !priceValue
-      ? 'A price above 0, like 120000 or 120000.50.'
-      : undefined)
-  const emailError =
-    fields.contact_email ??
-    (submitted && contactEmail.trim() && !/^[^@\s]+@[^@\s]+$/.test(contactEmail.trim())
-      ? 'An email address, like name@example.com.'
-      : undefined)
+  // The server's field errors in plain words; a field's own goes once it is changed, so a
+  // corrected form can always be sent again (UX review M1).
+  const [serverFields, setServerFields] = useState<Record<string, string>>({})
+  const problems = bidFormProblems({ bidder, contactName, contactEmail, price, notes, hasPrice })
+  const shown = (field: keyof BidFormProblems): string | undefined =>
+    serverFields[field] ?? (submitted ? problems[field] : undefined)
+  const edit = (field: string, set: (value: string) => void) => (value: string) => {
+    set(value)
+    if (mutation.error) mutation.reset()
+    if (field in serverFields) {
+      setServerFields((current) =>
+        Object.fromEntries(Object.entries(current).filter(([key]) => key !== field)),
+      )
+    }
+  }
+  const onError = (error: unknown) => {
+    if (isApiError(error)) setServerFields(plainFieldErrors(error.fieldErrors))
+  }
+  const general = mutation.error && Object.keys(serverFields).length === 0 ? mutation.error : null
 
   const save = () => {
     setSubmitted(true)
-    if (!bidder.trim() || priceError || emailError || mutation.isPending) return
-    if (hasPrice && price.trim() && !priceValue) return
+    if (mutation.isPending || Object.values(problems).some(Boolean)) return
+    const priceValue = hasPrice && price.trim() ? normalisePrice(price) : null
     const body = {
       bidder: bidder.trim(),
       contact_name: contactName.trim(),
@@ -119,6 +180,7 @@ export function BidFormDialog({
             toast.success('Bid saved')
             onOpenChange(false)
           },
+          onError,
         },
       )
     } else {
@@ -132,6 +194,7 @@ export function BidFormDialog({
             onOpenChange(false)
             onCreated?.(created)
           },
+          onError,
         },
       )
     }
@@ -144,6 +207,7 @@ export function BidFormDialog({
         if (!next) {
           mutation.reset()
           setSubmitted(false)
+          setServerFields({})
           if (!bid) {
             setBidder('')
             setContactName('')
@@ -173,12 +237,12 @@ export function BidFormDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-4">
-            {mutation.error && Object.keys(fields).length === 0 && (
+            {general && (
               <Callout
                 tone="danger"
                 role="alert"
                 title={(() => {
-                  const { title, description } = describeError(mutation.error)
+                  const { title, description } = describeError(general)
                   return description ? `${title}. ${description}` : title
                 })()}
               />
@@ -187,32 +251,32 @@ export function BidFormDialog({
               label="Bidder"
               required
               description="The organisation that sent it."
-              error={bidderError}
+              error={shown('bidder')}
             >
               <Input
                 value={bidder}
                 maxLength={130}
                 autoComplete="off"
                 placeholder="e.g. Northwind Fulfilment Ltd"
-                onChange={(event) => setBidder(event.target.value)}
+                onChange={(event) => edit('bidder', setBidder)(event.target.value)}
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Contact name" error={fields.contact_name}>
+              <Field label="Contact name" error={shown('contact_name')}>
                 <Input
                   value={contactName}
                   maxLength={130}
                   autoComplete="off"
-                  onChange={(event) => setContactName(event.target.value)}
+                  onChange={(event) => edit('contact_name', setContactName)(event.target.value)}
                 />
               </Field>
-              <Field label="Contact email" error={emailError}>
+              <Field label="Contact email" error={shown('contact_email')}>
                 <Input
                   type="email"
                   value={contactEmail}
                   maxLength={260}
                   autoComplete="off"
-                  onChange={(event) => setContactEmail(event.target.value)}
+                  onChange={(event) => edit('contact_email', setContactEmail)(event.target.value)}
                 />
               </Field>
             </div>
@@ -220,21 +284,21 @@ export function BidFormDialog({
               <Field
                 label="Received"
                 description={
-                  bid ? 'Correct it only if it was entered wrongly.' : 'Leave empty for now.'
+                  bid ? 'Correct it only if it was entered wrongly.' : 'Empty means now.'
                 }
-                error={fields.received_at}
+                error={serverFields.received_at}
               >
                 <Input
                   type="datetime-local"
                   value={received}
-                  onChange={(event) => setReceived(event.target.value)}
+                  onChange={(event) => edit('received_at', setReceived)(event.target.value)}
                 />
               </Field>
               {hasPrice && (
                 <Field
                   label={`Price (${call.currency})`}
                   description="The total from the pricing schedule. Scored automatically."
-                  error={priceError}
+                  error={shown('price')}
                 >
                   <Input
                     value={price}
@@ -242,17 +306,17 @@ export function BidFormDialog({
                     autoComplete="off"
                     className="tabular-nums"
                     placeholder="120000.00"
-                    onChange={(event) => setPrice(event.target.value)}
+                    onChange={(event) => edit('price', setPrice)(event.target.value)}
                   />
                 </Field>
               )}
             </div>
-            <Field label="Notes" description="For the call’s managers only." error={fields.notes}>
+            <Field label="Notes" description="For the call’s managers only." error={shown('notes')}>
               <Textarea
                 value={notes}
                 maxLength={2010}
                 minRows={2}
-                onChange={(event) => setNotes(event.target.value)}
+                onChange={(event) => edit('notes', setNotes)(event.target.value)}
               />
             </Field>
           </DialogBody>

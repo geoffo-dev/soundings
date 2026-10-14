@@ -18,6 +18,7 @@ caller's job (role matrix section 3a).
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
@@ -37,7 +38,15 @@ from app.schemas.bids import (
     section_score,
 )
 
-__all__ = ["BidScores", "QuestionScore", "SectionScore", "lowest_scored_price", "score_call"]
+__all__ = [
+    "BidScores",
+    "QuestionScore",
+    "SectionScore",
+    "counted_scores",
+    "lowest_scored_price",
+    "score_bid",
+    "score_call",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,30 +95,48 @@ def _scored(data: CallData, bid: Bid) -> bool:
     return is_scored(rejected=bid.status is BidStatus.REJECTED, results=data.results_of(bid.id))
 
 
-def _counted(data: CallData, bid: Bid, section: BidCallSection) -> dict[UUID, list[int]]:
-    """Question -> the scores that count for ``bid`` (needs ``answers`` and ``ai``)."""
-    counted: dict[UUID, list[int]] = {}
-    for (bid_id, section_id, _), answers in data.answers.items():
-        if bid_id != bid.id or section_id != section.id:
+Counted = dict[tuple[UUID, UUID], dict[UUID, list[int]]]
+"""(bid id, section id) -> question id -> the scores that count."""
+
+
+def counted_scores(data: CallData, *, bid_id: UUID | None = None) -> Counted:
+    """Every counted score (needs ``answers`` and ``ai``), indexed once by bid and section
+    (review M2: one pass over the call's answers, never one per bid and section), for one
+    bid only when ``bid_id`` is given."""
+    counted: Counted = defaultdict(lambda: defaultdict(list))
+    for (answer_bid, section_id, _), answers in data.answers.items():
+        if bid_id is not None and answer_bid != bid_id:
             continue
+        bucket = counted[(answer_bid, section_id)]
         for question_id, answer in answers.items():
             if answer.score is not None:
-                counted.setdefault(question_id, []).append(answer.score)
-    for assessment in data.ai.get(bid.id, []):
-        if not assessment.included:
+                bucket[question_id].append(answer.score)
+    section_of = {q.id: sid for sid, questions in data.questions.items() for q in questions}
+    for assessment_bid, assessments in data.ai.items():
+        if bid_id is not None and assessment_bid != bid_id:
             continue
-        for question_id, ai_score in data.ai_scores.get(assessment.id, {}).items():
-            counted.setdefault(question_id, []).append(ai_score.score)
+        for assessment in assessments:
+            if not assessment.included:
+                continue
+            for question_id, ai_score in data.ai_scores.get(assessment.id, {}).items():
+                section_id = section_of.get(question_id)
+                if section_id is not None:
+                    counted[(assessment_bid, section_id)][question_id].append(ai_score.score)
     return counted
 
 
-def score_bid(data: CallData, bid: Bid, lowest: Decimal | None) -> BidScores:
-    """One bid's scores (see the module docstring)."""
+def score_bid(
+    data: CallData, bid: Bid, lowest: Decimal | None, counted: Counted | None = None
+) -> BidScores:
+    """One bid's scores (see the module docstring); ``counted`` from
+    :func:`counted_scores` (read for this bid alone when not given)."""
+    if counted is None:
+        counted = counted_scores(data, bid_id=bid.id)
     scored = _scored(data, bid)
     price = price_score(bid.price, lowest) if scored else None
     sections: dict[UUID, SectionScore] = {}
     for section in data.sections:
-        counted = _counted(data, bid, section)
+        mine = counted.get((bid.id, section.id), {})
         questions: list[QuestionScore] = []
         pairs: list[tuple[int, Fraction | None]] = []
         for question in data.questions.get(section.id, []):
@@ -118,7 +145,7 @@ def score_bid(data: CallData, bid: Bid, lowest: Decimal | None) -> BidScores:
             if question.type is BidQuestionType.PRICE:
                 item = QuestionScore(question, (), price)
             else:
-                values = tuple(counted.get(question.id, ()))
+                values = tuple(mine.get(question.id, ()))
                 item = QuestionScore(question, values, question_mean(values))
             questions.append(item)
             pairs.append((question.weight, item.score))
@@ -133,7 +160,8 @@ def score_call(data: CallData) -> tuple[dict[UUID, BidScores], list[RankedBid]]:
     """Every bid's scores and the ranking of scored bids with a total (best first; equal
     rounded totals share a rank)."""
     lowest = lowest_scored_price(data)
-    scores = {bid.id: score_bid(data, bid, lowest) for bid in data.bids}
+    counted = counted_scores(data)
+    scores = {bid.id: score_bid(data, bid, lowest, counted) for bid in data.bids}
     ranking = rank_bids(
         (bid_id, item.total, item.bid.price, item.bid.received_at)
         for bid_id, item in scores.items()

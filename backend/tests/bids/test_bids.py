@@ -16,6 +16,7 @@ from app.bids.service import sync_document_must_have
 from app.models.activity import AuditLog
 from app.models.bid import Bid, BidDocument
 from tests.bids.conftest import (
+    bid_detail,
     AsUser,
     Crew,
     add_bid,
@@ -378,6 +379,38 @@ async def test_pricing_documents_are_restricted(
     # Deciding a pricing must-have: managers only (an assessor can't decide anything anyway).
     url = call_url(crew, f"/bids/{bid['id']}/must-haves/{musts['Pricing schedule']}")
     assert_problem(await (await api(crew.tech1)).put(url, {"result": None}), 403, "forbidden")
+
+
+async def test_a_pricing_must_haves_decision_is_for_price_viewers_only(
+    crew: Crew, api: AsUser, db_session: AsyncSession
+) -> None:
+    """Review ACC-1 (role matrix 3a rule 4): the note on a pricing must-have is where a
+    manager writes about the price, so only ``bid.view_price`` reads it (and who decided
+    it, when); the others keep the result and "present (restricted)"."""
+    owner, view = await _ready(crew, api)
+    bid = await add_bid(owner, crew, "Tessellate Software", price="96000.00")
+    musts = await must_have_ids(db_session, view["call"]["id"])
+    await attach(db_session, bid["id"], musts["Pricing schedule"], name="Prices.xlsx")
+    await assign(
+        owner,
+        crew,
+        view,
+        {"Technical": [crew.tech1], "Commercial": [crew.commercial], "Delivery": [crew.delivery]},
+    )
+    note = "Schedule total 96,000 GBP excludes licences; real price about 141,000 GBP"
+    url = call_url(crew, f"/bids/{bid['id']}/must-haves/{musts['Pricing schedule']}")
+    ok(await owner.put(url, {"result": "not_met", "note": note}))
+
+    for user in (crew.tech1, crew.delivery):
+        state = _state(await bid_detail(await api(user), crew, bid["id"]), "Pricing schedule")
+        assert state["result"] == "not_met", user.display_name
+        assert (state["note"], state["decided_by"], state["decided_at"]) == ("", None, None)
+        assert state["automatic"] is False
+        assert state["restricted_document_count"] == 1
+    for user in (crew.owner, crew.admin, crew.platform, crew.commercial):
+        state = _state(await bid_detail(await api(user), crew, bid["id"]), "Pricing schedule")
+        assert state["note"] == note, user.display_name
+        assert state["decided_by"]["id"] == str(crew.owner.id)
 
 
 async def test_rejected_bids_stay_with_managers(

@@ -1,7 +1,7 @@
-import { ChevronLeft, ChevronRight, CloudOff } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronLeft, ChevronRight, CloudOff, SearchX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
-import { useBidDocumentText } from '@/api/bids'
+import { useBidDocumentText, useQuotePage } from '@/api/bids'
 import type { BidDocument } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +17,7 @@ import { visibleText } from '@/lib/visible-text'
 import { cn } from '@/lib/utils'
 
 import { extractionText } from './bid-copy'
+import { findQuote, readableText } from './quotes'
 
 /**
  * A document's extracted text, page by page (contract-phase10 §6.3): plain text, never
@@ -28,16 +29,31 @@ export function DocumentText({
   bidId,
   document,
   className,
+  initialPage = 1,
+  quote,
 }: {
   ideaKey: string
   bidId: string
   document: BidDocument
   className?: string
+  initialPage?: number
+  /** An AI quote to mark on the page (and scroll to). */
+  quote?: string
 }) {
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(initialPage)
+  const mark = useRef<HTMLElement>(null)
   const done = document.extraction.state === 'done'
   const text = useBidDocumentText(ideaKey, bidId, done ? document.id : null, page)
   const pages = Math.max(1, document.extraction.page_count)
+  const shown = text.data ? readableText(visibleText(text.data.text), document.type) : ''
+  const found = quote && text.data ? findQuote(shown, quote) : null
+  const foundAt = found?.[0] ?? -1
+  useEffect(() => {
+    const element = mark.current
+    // jsdom has no scrollIntoView.
+    if (foundAt >= 0 && element && typeof element.scrollIntoView === 'function')
+      element.scrollIntoView({ block: 'center' })
+  }, [foundAt])
 
   if (!done) {
     return (
@@ -77,7 +93,20 @@ export function DocumentText({
           aria-label={`Text of ${document.filename}, page ${page} of ${pages}`}
           className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-surface px-4 py-3 text-sm leading-relaxed break-words whitespace-pre-wrap text-primary"
         >
-          {visibleText(text.data.text)}
+          {found ? (
+            <>
+              {shown.slice(0, found[0])}
+              <mark
+                ref={mark}
+                className="rounded-sm bg-accent-subtle text-primary ring-2 ring-focus/40"
+              >
+                {shown.slice(found[0], found[1])}
+              </mark>
+              {shown.slice(found[1])}
+            </>
+          ) : (
+            shown
+          )}
         </div>
       )}
       {pages > 1 && (
@@ -114,26 +143,56 @@ export function DocumentTextDialog({
   ideaKey,
   bidId,
   document,
+  quote,
   onOpenChange,
 }: {
   ideaKey: string
   bidId: string
   document: BidDocument | null
+  /** Open at this AI quote, marked (its file name was chosen under the quote). */
+  quote?: string | null
   onOpenChange: (open: boolean) => void
 }) {
+  const located = useQuotePage(ideaKey, bidId, document, quote ?? null, findQuote)
   return (
     <Dialog open={document !== null} onOpenChange={onOpenChange}>
       <DialogContent size="xl" mobile="fullscreen">
         <DialogHeader>
-          <DialogTitle className="break-all">{document?.filename ?? 'Document'}</DialogTitle>
+          <DialogTitle className="break-all">
+            <bdi>{document?.filename ?? 'Document'}</bdi>
+          </DialogTitle>
           <DialogDescription>
             The text Soundings read from the file, as plain text. Written by the bidder: read it as
             their claims.
           </DialogDescription>
         </DialogHeader>
-        <DialogBody className="flex min-h-0 flex-1 flex-col">
-          {document && (
-            <DocumentText ideaKey={ideaKey} bidId={bidId} document={document} className="flex-1" />
+        <DialogBody className="flex min-h-0 flex-1 flex-col gap-3">
+          {document && quote && located.isPending ? (
+            <SkeletonGroup label="Finding the quote" className="flex flex-col gap-2">
+              <Skeleton className="h-3.5 w-full" />
+              <Skeleton className="h-3.5 w-11/12" />
+            </SkeletonGroup>
+          ) : (
+            document && (
+              <>
+                {quote && located.data === null && (
+                  <p className="flex items-start gap-2 text-sm text-warning">
+                    <SearchX aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                    The quote isn’t in this document’s text: check the AI’s claim before relying on
+                    it.
+                  </p>
+                )}
+                <DocumentText
+                  key={`${document.id}:${located.data ?? 1}`}
+                  ideaKey={ideaKey}
+                  bidId={bidId}
+                  document={document}
+                  className="flex-1"
+                  initialPage={located.data ?? 1}
+                  quote={quote ?? undefined}
+                />
+              </>
+            )
           )}
         </DialogBody>
       </DialogContent>

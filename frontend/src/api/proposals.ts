@@ -134,6 +134,8 @@ export function useCreateProposal(idea: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.ideas.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.activity.idea(idea) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.work.all })
+      // Phase 10: with a proposal, a call for bids can start (UX review M5).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bids.call(idea) })
     },
     onError: (error) =>
       openResearchGate(error, {

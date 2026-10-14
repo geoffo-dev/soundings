@@ -48,14 +48,16 @@ import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/toaster'
 import { useIdeaPage } from '@/features/idea/idea-context'
 import { formatDateTime } from '@/lib/dates'
+import { byId, focusWhenRendered } from '@/lib/focus'
 
 import { BidAi } from './bid-ai'
 import { BID_STATUS, formatPrice } from './bid-copy'
 import { BidDocuments, pricingAudience } from './bid-documents'
 import { BidFormDialog } from './bid-form-dialog'
 import { DocumentTextDialog } from './document-text'
-import { MustHaves, rejectionSuggestion } from './must-haves'
+import { MustHaves, rejectionSuggestion, unlinkedFiles } from './must-haves'
 import { RejectDialog } from './reject-dialog'
+import { BidAssessments } from './section-results'
 import { useDocumentUploads } from './use-document-uploads'
 
 type CallWithView = BidCallView & { call: NonNullable<BidCallView['call']> }
@@ -78,11 +80,14 @@ const SECTION_STATE: Record<
 export function BidSheet({
   view,
   bidId,
+  focusSection,
   onOpenChange,
   onAssess,
 }: {
   view: CallWithView
   bidId: string | undefined
+  /** Open this section's assessments (from a comparison cell). */
+  focusSection?: string
   onOpenChange: (open: boolean) => void
   onAssess: (bidId: string, sectionId: string) => void
 }) {
@@ -98,6 +103,7 @@ export function BidSheet({
             key={query.data.id}
             view={view}
             bid={query.data}
+            focusSection={focusSection}
             onClose={() => onOpenChange(false)}
             onAssess={onAssess}
           />
@@ -159,25 +165,39 @@ export function BidSheet({
 function BidDetailView({
   view,
   bid,
+  focusSection,
   onClose,
   onAssess,
 }: {
   view: CallWithView
   bid: BidDetail
+  focusSection?: string
   onClose: () => void
   onAssess: (bidId: string, sectionId: string) => void
 }) {
   const { ideaKey } = useIdeaPage()
   const { call } = view
-  const uploads = useDocumentUploads(ideaKey, bid.id, bid.documents.length)
+  const uploads = useDocumentUploads(ideaKey, bid, call)
   const [dialog, setDialog] = useState<'edit' | 'reject' | 'delete' | null>(null)
-  const [reading, setReading] = useState<BidDocument | null>(null)
+  const [reading, setReading] = useState<{ document: BidDocument; quote?: string } | null>(null)
+  const read = (document: BidDocument) => setReading({ document })
+  // An AI quote's file name opens that file's text at the quote, marked (m13).
+  const openQuote = (documentId: string, quote: string) => {
+    const document = bid.documents.find((d) => d.id === documentId)
+    if (document) setReading({ document, quote })
+  }
   const reinstate = useReinstateBid(ideaKey)
   const status = BID_STATUS[bid.status]
   const manager = view.permissions.can_view_scores
   const rejected = bid.status === 'rejected'
   const suggestion = rejectionSuggestion(bid)
-  const showSuggest = bid.permissions.reject_suggested && bid.permissions.can_reject
+  // The reject suggestion waits while files are going up or being read (UX review M2: no
+  // wrongful rejection seconds after an upload). Files that answer no must-have are
+  // normal (a technical proposal), so they don't hold it: it says to check them first.
+  const unlinked = unlinkedFiles(bid)
+  const extracting = bid.documents.some((d) => d.extraction.state === 'pending')
+  const showSuggest =
+    bid.permissions.reject_suggested && bid.permissions.can_reject && !uploads.busy && !extracting
 
   return (
     <>
@@ -201,15 +221,19 @@ function BidDetailView({
             action={
               bid.permissions.can_reinstate ? (
                 <Button
+                  id={`bid-reinstate-${bid.id}`}
                   size="sm"
                   variant="outline"
                   loading={reinstate.isPending}
                   onClick={() =>
                     reinstate.mutate(bid.id, {
-                      onSuccess: () =>
+                      onSuccess: () => {
                         toast.success(`Bid from ${bid.bidder} reinstated`, {
                           description: 'Its assessments count again.',
-                        }),
+                        })
+                        // Reinstate is gone: to Reject (in the callout or the footer), m1.
+                        focusWhenRendered(byId(`bid-reject-${bid.id}`), { force: true })
+                      },
                       onError: (error) => toast.error(describeError(error).title),
                     })
                   }
@@ -233,12 +257,26 @@ function BidDetailView({
             icon={<TriangleAlert />}
             title="This bid doesn’t meet every must-have"
             action={
-              <Button size="sm" variant="destructive" onClick={() => setDialog('reject')}>
+              <Button
+                id={`bid-reject-${bid.id}`}
+                size="sm"
+                variant="destructive"
+                onClick={() => setDialog('reject')}
+              >
                 Reject…
               </Button>
             }
           >
             {suggestion || 'Check the must-haves below.'} It gets no total while that holds.
+            {unlinked.waiting && (
+              <>
+                {' '}
+                First check the files:{' '}
+                {unlinked.count === 1
+                  ? 'one answers no must-have.'
+                  : `${unlinked.count} answer no must-have.`}
+              </>
+            )}
           </Callout>
         )}
 
@@ -292,15 +330,26 @@ function BidDetailView({
           </section>
         )}
 
-        <MustHaves ideaKey={ideaKey} call={call} bid={bid} uploads={uploads} onRead={setReading} />
-        <BidDocuments
+        <MustHaves
           ideaKey={ideaKey}
           call={call}
           bid={bid}
           uploads={uploads}
-          onRead={setReading}
+          onRead={read}
+          onOpenQuote={openQuote}
         />
-        {bid.permissions.can_view_ai && <BidAi ideaKey={ideaKey} view={view} bid={bid} />}
+        {manager && (call.status === 'assessing' || call.status === 'awarded') && (
+          <BidAssessments
+            view={view}
+            bid={bid}
+            focusSection={focusSection}
+            onOpenQuote={openQuote}
+          />
+        )}
+        <BidDocuments ideaKey={ideaKey} call={call} bid={bid} uploads={uploads} onRead={read} />
+        {bid.permissions.can_view_ai && (
+          <BidAi ideaKey={ideaKey} view={view} bid={bid} onOpenQuote={openQuote} />
+        )}
       </SheetBody>
       {(bid.permissions.can_edit || bid.permissions.can_reject || bid.permissions.can_delete) && (
         <SheetFooter className="justify-between">
@@ -311,7 +360,11 @@ function BidDetailView({
               </Button>
             )}
             {bid.permissions.can_reject && !showSuggest && (
-              <Button variant="ghost" onClick={() => setDialog('reject')}>
+              <Button
+                id={`bid-reject-${bid.id}`}
+                variant="ghost"
+                onClick={() => setDialog('reject')}
+              >
                 <XCircle /> Reject…
               </Button>
             )}
@@ -364,7 +417,8 @@ function BidDetailView({
       <DocumentTextDialog
         ideaKey={ideaKey}
         bidId={bid.id}
-        document={reading}
+        document={reading?.document ?? null}
+        quote={reading?.quote}
         onOpenChange={(open) => !open && setReading(null)}
       />
     </>

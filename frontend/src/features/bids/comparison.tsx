@@ -4,13 +4,7 @@ import { CloudOff, Lock, TriangleAlert } from 'lucide-react'
 import { api, unwrap } from '@/api/client'
 import { useBidComparison, useBids, useSetBidAiInclusion } from '@/api/bids'
 import { queryKeys } from '@/api/keys'
-import type {
-  BidAiAssessment,
-  BidCallView,
-  BidComparison,
-  BidComparisonRow,
-  BidSectionScore,
-} from '@/api/types'
+import type { BidAiAssessment, BidComparison, BidComparisonRow, BidSectionScore } from '@/api/types'
 import { AiBadge } from '@/components/ui/ai-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,8 +26,7 @@ import { useIdeaPage } from '@/features/idea/idea-context'
 import { cn } from '@/lib/utils'
 
 import { BID_STATUS, formatPoints, formatPrice, progressText } from './bid-copy'
-
-type CallWithView = BidCallView & { call: NonNullable<BidCallView['call']> }
+import { DISAGREEMENT_NOTE } from './section-results'
 
 /**
  * Every bid side by side (contract-phase10 §8, `bid.view_scores`): section scores (0-100),
@@ -42,11 +35,10 @@ type CallWithView = BidCallView & { call: NonNullable<BidCallView['call']> }
  * assessment there is no ranking at all (`ranking_hidden`).
  */
 export function Comparison({
-  view,
   onOpen,
 }: {
-  view: CallWithView
-  onOpen: (bidId: string) => void
+  /** Opens the bid; with a section, that section's assessments in its sheet (M4). */
+  onOpen: (bidId: string, sectionId?: string) => void
 }) {
   const { ideaKey } = useIdeaPage()
   const comparison = useBidComparison(ideaKey)
@@ -84,7 +76,7 @@ export function Comparison({
           className="rounded-lg border"
         />
       ) : (
-        <ComparisonTable comparison={comparison.data} view={view} onOpen={onOpen} />
+        <ComparisonTable comparison={comparison.data} onOpen={onOpen} />
       )}
     </section>
   )
@@ -92,12 +84,10 @@ export function Comparison({
 
 function ComparisonTable({
   comparison,
-  view,
   onOpen,
 }: {
   comparison: BidComparison
-  view: CallWithView
-  onOpen: (bidId: string) => void
+  onOpen: (bidId: string, sectionId?: string) => void
 }) {
   const { ideaKey } = useIdeaPage()
   const bids = useBids(ideaKey)
@@ -121,6 +111,9 @@ function ComparisonTable({
     return ai[index]?.data
   }
   const showPrice = comparison.price_section_id !== null
+  const disagreement = active.some((row) =>
+    row.sections.some((cell) => cell.disagreement && !cell.hidden),
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -141,7 +134,7 @@ function ComparisonTable({
           <Table mobile="container-cards" aria-label="Bids compared">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">Rank</TableHead>
+                <TableHead className="w-12 @max-3xl:hidden">Rank</TableHead>
                 <TableHead>Bidder</TableHead>
                 {showPrice && <TableHead className="text-right">Price</TableHead>}
                 {comparison.sections.map((section) => (
@@ -150,7 +143,7 @@ function ComparisonTable({
                     <span className="font-normal text-muted">{section.weight}%</span>
                   </TableHead>
                 ))}
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right @max-3xl:hidden">Total</TableHead>
                 <TableHead>AI</TableHead>
               </TableRow>
             </TableHeader>
@@ -163,7 +156,7 @@ function ComparisonTable({
                   currency={comparison.currency}
                   showPrice={showPrice}
                   ai={aiOf(row.bid.id)}
-                  onOpen={() => onOpen(row.bid.id)}
+                  onOpen={(sectionId) => onOpen(row.bid.id, sectionId)}
                 />
               ))}
             </TableBody>
@@ -173,7 +166,15 @@ function ComparisonTable({
       <p className="text-sm text-muted">
         Scores are 0-100: each section’s questions on 0-5, weighted, × 20; the total weights the
         sections. {showPrice && 'The price scores lowest qualified price ÷ this price × 5. '}
-        Bids that don’t meet every must-have get no total.
+        Bids that don’t meet every must-have get no total. Open a section’s score to read the
+        assessments.
+        {disagreement && (
+          <>
+            {' '}
+            <TriangleAlert aria-hidden="true" className="inline size-3.5 text-warning" />{' '}
+            {DISAGREEMENT_NOTE}
+          </>
+        )}
       </p>
       {rejected.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -197,18 +198,21 @@ function ComparisonTable({
           </ul>
         </div>
       )}
-      {view.call.status === 'awarded' && view.call.awarded_bid && (
-        <p className="text-sm text-secondary">
-          Awarded to{' '}
-          <span className="font-medium text-primary">{view.call.awarded_bid.bidder}</span>
-          {view.call.award_reason && `: ${view.call.award_reason}`}
-        </p>
-      )}
     </div>
   )
 }
 
-function SectionCell({ cell, label }: { cell: BidSectionScore; label: string }) {
+function SectionCell({
+  cell,
+  label,
+  bidder,
+  onOpen,
+}: {
+  cell: BidSectionScore
+  label: string
+  bidder: string
+  onOpen: () => void
+}) {
   if (cell.hidden) {
     return (
       <TableCell label={label} className="text-right @max-3xl:text-left">
@@ -224,12 +228,26 @@ function SectionCell({ cell, label }: { cell: BidSectionScore; label: string }) 
       </TableCell>
     )
   }
+  const words = [
+    cell.score === null ? 'no score yet' : `${formatPoints(cell.score)} out of 100`,
+    cell.score === null && cell.progress.total > 0
+      ? `${cell.progress.submitted} of ${cell.progress.total} assessed`
+      : null,
+    cell.disagreement ? 'assessors disagree' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
   return (
     <TableCell label={label} className="text-right tabular-nums @max-3xl:text-left">
-      <span className="inline-flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${label} for ${bidder}: ${words}. Read the assessments`}
+        className="inline-flex items-center gap-1.5 rounded-sm underline-offset-4 hover:underline"
+      >
         {cell.disagreement && (
-          <HoverTooltip content="Assessors’ scores differ by 2 or more on a question">
-            <span role="img" aria-label="Assessors disagree" className="text-warning">
+          <HoverTooltip content="Assessors’ scores on a question differ by 2 or more">
+            <span className="text-warning">
               <TriangleAlert aria-hidden="true" className="size-3.5" />
             </span>
           </HoverTooltip>
@@ -240,7 +258,7 @@ function SectionCell({ cell, label }: { cell: BidSectionScore; label: string }) 
             {cell.progress.submitted}/{cell.progress.total}
           </span>
         )}
-      </span>
+      </button>
     </TableCell>
   )
 }
@@ -258,12 +276,12 @@ function ComparisonRow({
   currency: string
   showPrice: boolean
   ai: { items: BidAiAssessment[]; can_include: boolean } | undefined
-  onOpen: () => void
+  onOpen: (sectionId?: string) => void
 }) {
   const status = BID_STATUS[row.bid.status]
   return (
     <TableRow>
-      <TableCell label="Rank" className="tabular-nums">
+      <TableCell label="Rank" className="tabular-nums @max-3xl:hidden">
         {row.rank === null ? (
           <span className="text-muted">—</span>
         ) : (
@@ -275,15 +293,38 @@ function ComparisonRow({
       </TableCell>
       <TableCell primary>
         <span className="flex flex-wrap items-center gap-2">
+          {/* Phone cards lead with the rank and end with the total (UX review m10). */}
+          {row.rank !== null && (
+            <span className="font-semibold text-primary tabular-nums @3xl:hidden">
+              {row.rank}
+              {row.tied && <span className="font-normal text-muted"> tied</span>}
+              <span aria-hidden="true" className="font-normal text-muted">
+                {' '}
+                ·
+              </span>
+            </span>
+          )}
           <button
             type="button"
-            onClick={onOpen}
+            onClick={() => onOpen()}
             className="text-left font-medium text-primary underline-offset-4 hover:underline"
           >
             {row.bid.bidder}
           </button>
           {row.bid.status !== 'qualified' && <Badge variant={status.tone}>{status.label}</Badge>}
           {row.late && <Badge variant="warning">Late</Badge>}
+          <span className="ml-auto font-semibold text-primary tabular-nums @3xl:hidden">
+            {row.total_hidden ? (
+              <span role="img" aria-label="Total hidden until you submit" className="text-muted">
+                <Lock aria-hidden="true" className="inline size-3.5" />
+              </span>
+            ) : (
+              <>
+                <span className="sr-only">Total </span>
+                {formatPoints(row.total)}
+              </>
+            )}
+          </span>
         </span>
       </TableCell>
       {showPrice && (
@@ -291,7 +332,7 @@ function ComparisonRow({
           <span className="flex flex-col items-end @max-3xl:items-start">
             <span>{formatPrice(row.price, currency)}</span>
             {row.price_score !== null && (
-              <span className="text-xs text-muted">{row.price_score.toFixed(2)} / 5</span>
+              <span className="text-xs text-muted">Scores {row.price_score.toFixed(2)} / 5</span>
             )}
           </span>
         </TableCell>
@@ -301,9 +342,11 @@ function ComparisonRow({
           key={cell.section_id}
           cell={cell}
           label={comparison.sections.find((s) => s.id === cell.section_id)?.title ?? 'Section'}
+          bidder={row.bid.bidder}
+          onOpen={() => onOpen(cell.section_id)}
         />
       ))}
-      <TableCell label="Total" className="text-right tabular-nums @max-3xl:text-left">
+      <TableCell label="Total" className="text-right tabular-nums @max-3xl:hidden">
         {row.total_hidden ? (
           <span role="img" aria-label="Hidden until you submit" className="text-muted">
             <Lock aria-hidden="true" className="inline size-3.5" />

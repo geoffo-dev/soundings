@@ -51,7 +51,10 @@ test.describe('a call manager (Alice owns CUST-3)', () => {
     await expect(northwind.getByRole('cell').first()).toHaveText(/1$/)
     const tessellate = table.getByRole('row', { name: /Tessellate/ })
     await expect(tessellate).toContainText('71.2')
-    await expect(tessellate.getByRole('img', { name: 'Assessors disagree' })).toBeVisible()
+    // Section scores open that section's assessments; the disagreement mark is in the name.
+    await expect(
+      tessellate.getByRole('button', { name: /^Technical for Tessellate.*assessors disagree/ }),
+    ).toBeVisible()
     await expect(comparison(page).getByText('No insurance certificate provided.')).toBeVisible()
     // Prices for a call manager; the template is locked once someone has submitted.
     await expect(bidsRegion(page).getByRole('row', { name: /Northwind/ })).toContainText(
@@ -193,7 +196,7 @@ test.describe('must-haves, rejecting and documents (TOOL-4, open)', () => {
     const sheet = await openBid(page, 'Kestrel Code Co')
     await expect(sheet.getByText('Active content')).toBeVisible()
     await sheet.getByRole('button', { name: 'Download Brochure.pdf' }).click()
-    const dialog = page.getByRole('dialog', {
+    const dialog = page.getByRole('alertdialog', {
       name: 'This file has content that can run when it’s opened',
     })
     await expect(dialog).toBeVisible()
@@ -259,7 +262,7 @@ test.describe('an assessor (Bob, Technical on CUST-3)', () => {
       )
       .fill('Strong.')
     await page.keyboard.press('Escape')
-    const ask = page.getByRole('dialog', { name: 'Leave without saving?' })
+    const ask = page.getByRole('alertdialog', { name: 'Leave without saving?' })
     await expect(ask).toBeVisible()
     await ask.getByRole('button', { name: 'Keep editing' }).click()
     await sheet.getByRole('button', { name: 'Save draft' }).click()
@@ -274,7 +277,7 @@ test.describe('an assessor (Bob, Technical on CUST-3)', () => {
     await expect(
       section.getByRole('link', { name: 'Fulfilment partner for subscription boxes', exact: true }),
     ).toBeVisible()
-    await expect(section).toContainText('1 of 2 submitted')
+    await expect(section).toContainText('1 to submit · 1 done')
     await expect(page.getByRole('link', { name: /^Bids, 1 to assess/ })).toBeVisible()
     await section.getByRole('link', { name: /^Assess 1 bid section/ }).click()
     await expect(page.getByRole('heading', { name: 'Your assessments' })).toBeVisible({
@@ -342,13 +345,13 @@ test.describe('starting a call (Emma owns GREEN-4)', () => {
   test.use({ signedInAs: EMMA })
 
   test('the owner starts a call once the proposal exists (Emma, GREEN-4)', async ({ page }) => {
-    // No proposal yet: no Bids tab at all.
-    await page.goto('/ideas/GREEN-4')
-    await expect(page.getByRole('tab', { name: /^Overview/ })).toBeVisible()
-    await expect(page.getByRole('tab', { name: /^Bids/ })).toHaveCount(0)
-    await page.getByRole('tab', { name: /^Proposal/ }).click()
+    // In Proposal with no proposal yet: the Bids tab says what comes first (UX review M5).
+    await openBids(page, 'GREEN-4')
+    await expect(page.getByRole('heading', { name: 'Start the proposal first' })).toBeVisible()
+    await page.getByRole('button', { name: 'Go to the proposal' }).click()
+    await expect(page.getByRole('tab', { name: /^Proposal/, selected: true })).toBeVisible()
     await page.getByRole('button', { name: 'Start proposal' }).first().click()
-    await expect(page.getByRole('tab', { name: /^Bids/ })).toBeVisible()
+    // Back on the Bids tab without a reload: the call can start now.
     await page.getByRole('tab', { name: /^Bids/ }).click()
     await page.getByRole('button', { name: 'Start a call for bids' }).click()
     const dialog = page.getByRole('dialog', { name: 'Start a call for bids' })
@@ -357,6 +360,11 @@ test.describe('starting a call (Emma owns GREEN-4)', () => {
     await expect(toast(page, 'Call for bids started')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Solar canopy installer' })).toBeVisible()
     await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible()
+    // Focus goes to the call's next step, and the setup is listed under the header (m1, m3).
+    await expect(page.getByRole('button', { name: 'Open the call' })).toBeFocused()
+    await expect(page.getByRole('list', { name: 'Before you open the call' })).toContainText(
+      'No deadline yet',
+    )
   })
 })
 
@@ -368,11 +376,10 @@ test.describe('opening a call', () => {
     await expect(details.getByText('Set a deadline for bids to open the call.')).toBeVisible()
     const date = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
     await details.getByLabel('Deadline for bids').fill(date)
-    await details.getByRole('button', { name: 'Save' }).click()
-    await expect(toast(page, 'Call saved')).toBeVisible()
-    await page.getByRole('button', { name: 'Open the call' }).click()
-    await page.getByRole('alertdialog').getByRole('button', { name: 'Open the call' }).click()
+    // Saving the deadline opens the call too (UX review m4), and focus goes to the next step.
+    await details.getByRole('button', { name: 'Save and open' }).click()
     await expect(toast(page, 'The call is open to bids')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Close to new bids' })).toBeFocused()
     await expect(page.getByRole('button', { name: 'Enter a bid' })).toBeVisible()
   })
 })

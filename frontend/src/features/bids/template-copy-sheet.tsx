@@ -108,7 +108,8 @@ export function TemplateCopySheet({
         onOpenChange(next)
       }}
     >
-      <SheetContent size="lg">
+      {/* Wide enough for a question's text beside its type and weight (polish p4). */}
+      <SheetContent size="xl">
         <SheetHeader>
           <SheetTitle>Evaluation template</SheetTitle>
           <SheetDescription>

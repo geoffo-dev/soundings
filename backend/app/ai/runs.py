@@ -186,21 +186,12 @@ async def _load_run(
     run = await db.scalar(statement.execution_options(populate_existing=True))
     if run is None:
         raise _run_not_found()
-    if (
-        principal is not None
-        and run.kind is AiRunKind.ASSESS_BID
-        and not await sees_bids(db, principal, loaded)
-    ):
-        raise _run_not_found()
+    if principal is not None and run.kind is AiRunKind.ASSESS_BID:
+        from app.bids.access import may_view_assess_run
+
+        if not await may_view_assess_run(db, principal, loaded, run.bid_id):
+            raise _run_not_found()
     return run
-
-
-async def sees_bids(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> bool:
-    """``bid.view_bids`` on the idea's call (call managers and its section assessors):
-    who may see its assess runs (Phase 10)."""
-    from app.bids.access import may_view_bids
-
-    return await may_view_bids(db, principal, loaded)
 
 
 # --- Permissions -------------------------------------------------------------------------------
@@ -288,9 +279,15 @@ async def list_runs(
     statement = select(AiRun).where(AiRun.idea_id == loaded.idea.id)
     if kind is not None:
         statement = statement.where(AiRun.kind == kind)
-    if not await sees_bids(db, principal, loaded):
-        # Phase 10: assess runs name bids (left out, as if they didn't exist).
-        statement = statement.where(AiRun.kind != AiRunKind.ASSESS_BID)
+    from app.bids.access import assess_run_access
+
+    # Phase 10: assess runs name bids, so they are left out (as if they didn't exist) for
+    # whoever doesn't see the call's bids, and a rejected bid's for its assessors (ACC-3).
+    condition = (await assess_run_access(db, principal, loaded)).condition(
+        AiRun.kind, AiRun.bid_id
+    )
+    if condition is not None:
+        statement = statement.where(condition)
     runs = list(
         await db.scalars(statement.order_by(AiRun.created_at.desc(), AiRun.id.desc()).limit(limit))
     )

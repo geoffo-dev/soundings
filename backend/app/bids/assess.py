@@ -48,7 +48,7 @@ from app.config import Settings
 from app.db import SessionMaker, session_scope
 from app.domain.principal import Principal
 from app.email.outbox import psycopg_connection
-from app.errors import ProblemError
+from app.errors import ConflictProblem, ProblemError
 from app.models.ai import AiRun
 from app.models.base import utcnow
 from app.models.bid import (
@@ -578,6 +578,8 @@ async def score_questions(db: AsyncSession, call_id: UUID) -> list[BidCallQuesti
 async def record_assessment(
     db: AsyncSession,
     *,
+    idea: Idea,
+    project: Project,
     call: BidCall,
     bid: Bid,
     agent_id: UUID,
@@ -588,13 +590,19 @@ async def record_assessment(
     the run, and checked c22): every score question once, every must-have it was shown
     once, quotes from its documents only; then every quote checked against its document's
     text, off the event loop. Replaces the agent's earlier one; a changed score sets
-    ``included`` false again (a re-submission is judged again by a person)."""
-    if bid.status is BidStatus.REJECTED:
-        raise conflict("bid_rejected")
+    ``included`` false again (a re-submission is judged again by a person). An archived
+    project or a closed idea is read-only for the agent too (409 ``project_archived`` /
+    ``idea_closed``, contract section 3.1; review M1)."""
+    if project.archived_at is not None:
+        raise ConflictProblem("The project is archived.", code="project_archived")
+    if idea.status is IdeaStatus.CLOSED:
+        raise ConflictProblem("The idea is closed.", code="idea_closed")
     if call.status in (BidCallStatus.AWARDED, BidCallStatus.CANCELLED):
         raise conflict("bid_call_finished")
     if call.status not in _ASSESSABLE:
         raise conflict("bid_call_not_assessable")
+    if bid.status is BidStatus.REJECTED:
+        raise conflict("bid_rejected")
     questions = {q.id for q in await score_questions(db, call.id)}
     must_haves = {m.id for m in await assessable_must_haves(db, call.id)}
     documents = {d.id: d for d in await assessable_documents(db, bid)}

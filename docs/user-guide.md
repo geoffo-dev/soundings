@@ -519,16 +519,26 @@ and has a proposal (**Start a call for bids**: a title, what is being bought, an
 currency, which is only a label). The call copies the project's **bid evaluation
 template** (see "For project admins") and starts as a **draft**. A call moves through:
 
-- **Draft**: set it up. **Call details…** (in the call's menu) sets the deadline for bids,
-  the currency and the **AI assessor**; **Assessors and due date…** names who assesses
-  each section; **Evaluation template…** edits this call's own copy of the template.
-  **Open the call** asks for a deadline first.
+- **Draft**: set it up. A short list under the call's title shows what is left: the
+  evaluation template to review, assessors for each section, and the deadline, each with
+  its button. **Call details…** (in the call's menu) sets the deadline for bids, the
+  currency and the **AI assessor**; **Assessors and due date…** names who assesses each
+  section; **Evaluation template…** edits this call's own copy of the template. **Open the
+  call** asks for a deadline first, and **Save and open** then opens it in the same step.
 - **Open**: bids are entered. A bid received after the end of the deadline's day is
   marked **Late**, never refused. **Close to new bids** fixes the deadline and lets the
   assessors start.
 - **Assessing**: the assessors score their sections. **Reopen to new bids…** works only
   until someone has submitted an assessment.
 - **Awarded** or **Cancelled**: read-only. **Cancel the call…** takes an optional reason.
+  Once awarded, **Export the report** is the call's next step, and the idea's owner is
+  reminded to close the idea as accepted when the work is under way.
+
+The deadline and the assessment due date are **days in your organisation's time zone**
+(the one emails and reminders use), by the end of that day. If your browser is in another
+time zone, the dates say which zone they mean ("Deadline Sat 24 Oct (Europe/London)").
+The idea's details show the call too ("Bids: Assessing · 3 bids"), one click from the tab;
+before the proposal exists, the tab says to **Start the proposal first**.
 
 The call's copy of the template can change until the first assessment is submitted;
 after that the tab says "The evaluation template is locked: assessments have been
@@ -554,15 +564,25 @@ contents, not its name. A moment after the upload it reads the file's text ("Rea
 text…", then "12,345 characters of text"); **Read** shows that text, page by page, as
 plain text. Files are never opened in the browser: the download button saves the file,
 and a file with **Active content** (scripts or attached files in a PDF, links that fetch
-data in an Office file) asks before it downloads. A document's **…** menu links it to a
-must-have, marks it as a pricing document or not, and deletes it.
+data in an Office file) asks before it downloads. A file whose name has invisible or
+direction-changing characters, or a folder in it, is uploaded under its plain name.
 
-**Pricing documents** (the default template's "Pricing schedule", or any file you mark
-with **Upload as pricing documents** or **Mark as pricing…**) can be opened only by the
-call's managers and the assessors of the section with the price; everyone else sees
-"present (restricted)" and no file name. The AI never reads them. Marking a file as
-pricing removes the AI's assessments of that bid (it may have read the file): ask the AI
-again afterwards.
+**Which must-have a file answers.** A file dropped or chosen for the bid is matched to the
+required document its name points to ("Insurance certificate 2026.pdf" answers
+"Insurance certificate"; its row says "Matched from its name"). Each file's row has an
+**Answers** choice to change that in one step, and while a required document is missing
+the must-haves say how many files answer none ("If one is the Insurance certificate,
+choose it on the file's row"). A document's **…** menu marks it as a pricing document or
+not, and deletes it.
+
+**Pricing documents** (the files that answer a pricing must-have, such as the default
+template's "Pricing schedule", or any file marked with **Mark as pricing…**) can be opened
+only by the call's managers and the assessors of the section with the price; everyone
+else sees "present (restricted)" and no file name. The AI never reads them. When the call
+has a price question, a file that answers no must-have is uploaded as a pricing document
+until you say it isn't: its row asks **Is it a pricing document?** (**Not pricing** lets
+every assessor and the AI read it). Marking a file as pricing later removes the AI's
+assessments of that bid (it may have read the file): ask the AI again afterwards.
 
 ### Must-haves and rejecting a bid
 
@@ -582,7 +602,9 @@ the document**. A suggestion never changes the result: a person decides.
 
 When a must-have is missing or not met, or the AI suggests one isn't, the bid's panel says
 "This bid doesn't meet every must-have" with **Reject…**, the reason already filled in
-("Missing: Insurance certificate."). Any bid can be rejected from its panel until the
+("Missing: Insurance certificate."). It waits while files are uploading or being read, and
+asks you to check the files first when some answer no must-have. Each AI quote's file
+name opens that file's text at the quote, marked. Any bid can be rejected from its panel until the
 award. A rejected bid leaves the assessors' queues, the totals and the ranking (its
 assessments are kept) and is listed apart with its reason; **Reinstate** brings it back.
 
@@ -601,7 +623,8 @@ panel shows each question with its guidance and the 0-5 scale (hover or focus a 
 read what it means, or type 0-5), a comment for each, and the bid's documents and their
 text beside the questions on a wide screen (on a phone, **Read** opens them over the
 panel). The price question is scored automatically: the lowest qualified price ÷ this
-bid's price × 5. **Save draft** keeps it for you only; **Submit** needs every question
+bid's price × 5. A call manager who also assesses gets **Assess (n)** as the call's next
+step until they have submitted (**Award…** waits in the call's menu). **Save draft** keeps it for you only; **Submit** needs every question
 scored. Closing with unsaved changes asks first.
 
 **Blind until you submit:** while you owe a section for a bid, you see nobody else's
@@ -628,10 +651,15 @@ the call gets the switch for a bid only once they have submitted their own secti
 
 ### Comparing bids and awarding the call
 
-Call managers see the **Comparison** once bids are in: each bid's rank, price and price
-score, a score from 0 to 100 for each section, the total and the AI's assessment. Each
+Call managers see the **Comparison** once the call is closed to new bids: each bid's rank,
+price and price score, a score from 0 to 100 for each section, the total and the AI's
+assessment. A section's score opens the bid at that section's **Assessments**: each
+assessor's scores and comments, the answers to the comment questions, the spread and
+the AI's scores, so the award is decided on what the assessors wrote, not the numbers
+alone. Every bid's panel has the same **Assessments** list, a section per row. Each
 section's score is the weighted mean of its questions (0-5) × 20; the total weights the
-sections. A warning sign marks a section where assessors disagree. Bids that don't meet
+sections. A warning sign marks a section where two assessors' scores on a question differ
+by 2 or more (the note under the table says so). Bids that don't meet
 every must-have get no total; rejected bids are listed apart with their reasons. If you
 also assess the call and still owe an assessment, the cells you owe stay hidden and there
 is no ranking for you until you submit ("The ranking shows once you have submitted your
@@ -641,7 +669,7 @@ assessments").
 meet every must-have, with an optional reason. It says how many assessments are still
 outstanding (you can award anyway; their scores won't count) and never breaks a tie for
 you. The other bids become unsuccessful and the call read-only. **Export the report**
-(PDF or Markdown, in the call's menu or ⌘K) writes the evaluation for the record: the
+(PDF or Markdown, in the call's menu or ⌘K, and the call's button once awarded) writes the evaluation for the record: the
 ranking, each bid's section scores, total and price score, its must-haves (with what is
 missing or not met), the rejected bids with their reasons, the assessors and their
 progress, whether the AI was counted, and the award with its reason. If you still owe an

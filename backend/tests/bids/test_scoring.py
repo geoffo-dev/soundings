@@ -332,3 +332,92 @@ async def test_equal_rounded_totals_share_a_rank(
         ("Three", 2, True),
         ("Four", 4, False),
     ]
+
+
+# --- Review M2: scoring is linear in the call's answers ---------------------------------------
+class _CountedItems(dict):  # type: ignore[type-arg]
+    """``data.answers`` that counts its full scans."""
+
+    scans = 0
+
+    def items(self):  # type: ignore[no-untyped-def]
+        type(self).scans += 1
+        return super().items()
+
+
+def _largest_call() -> Any:
+    """The contract's largest call: 50 bids, 8 sections, 10 assessors a section, 15 score
+    questions a section, every assessment submitted with a 3 (and one AI assessment of each
+    bid included, scoring 5)."""
+    import time  # noqa: F401 - used by the caller
+    from decimal import Decimal
+    from types import SimpleNamespace as NS
+
+    from app.bids.data import CallData
+    from app.models.enums import BidQuestionType, BidStatus, EvaluationStatus
+
+    sections = [NS(id=uuid4(), weight=w, title=f"S{i}") for i, w in enumerate([13] * 7 + [9])]
+    questions = {
+        s.id: [
+            NS(id=uuid4(), section_id=s.id, type=BidQuestionType.SCORE, weight=1)
+            for _ in range(15)
+        ]
+        for s in sections
+    }
+    bids = [
+        NS(id=uuid4(), status=BidStatus.QUALIFIED, price=Decimal(1000 + i), received_at=i)
+        for i in range(50)
+    ]
+    answers: dict[Any, Any] = _CountedItems()
+    states = {}
+    for bid in bids:
+        for section in sections:
+            for _ in range(10):
+                key = (bid.id, section.id, uuid4())
+                answers[key] = {q.id: NS(score=3) for q in questions[section.id]}
+                states[key] = EvaluationStatus.SUBMITTED
+    data = CallData(
+        call=NS(),
+        sections=sections,  # type: ignore[arg-type]
+        questions=questions,  # type: ignore[arg-type]
+        must_haves=[],
+        assignments=[],
+        bids=bids,  # type: ignore[arg-type]
+        states=states,
+    )
+    data.answers = answers
+    for bid in bids:
+        ai = NS(id=uuid4(), included=True)
+        data.ai[bid.id] = [ai]  # type: ignore[list-item]
+        data.ai_scores[ai.id] = {  # type: ignore[assignment]
+            q.id: NS(score=5) for qs in questions.values() for q in qs
+        }
+    return data
+
+
+def test_scoring_the_largest_call_reads_its_answers_once() -> None:
+    """Review M2: 4,000 submitted assessments (60,000 scores) are indexed by bid and section
+    in one pass, not once per bid and section (1.6 M comparisons, 320 ms on the event loop
+    before; about 40 ms after on the shared build machine)."""
+    import time
+    from fractions import Fraction
+
+    from app.bids.scoring import score_bid, score_call
+
+    data = _largest_call()
+    _CountedItems.scans = 0
+    started = time.perf_counter()
+    scores, ranking = score_call(data)
+    elapsed = time.perf_counter() - started
+
+    assert _CountedItems.scans == 1
+    assert elapsed < 0.3, f"score_call took {elapsed * 1000:.0f} ms"
+    first = data.bids[0]
+    section = data.sections[0]
+    question = scores[first.id].sections[section.id].questions[0]
+    assert question.counted == (3,) * 10 + (5,)  # ten people, then the included AI
+    assert question.score == Fraction(35, 11)
+    assert [item.rank for item in ranking][:2] == [1, 2]
+    # One bid alone (list_bid_section_assessments) scores the same.
+    alone = score_bid(data, first, min(b.price for b in data.bids))
+    assert alone.total == scores[first.id].total

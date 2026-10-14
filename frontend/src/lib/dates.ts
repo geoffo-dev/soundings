@@ -9,9 +9,14 @@
  *   formatTime(iso)          "15:20" today, else "12 Sept" (e.g. "Draft saved 15:20")
  *   dueDate(iso)             { label: "Due tomorrow" | "Overdue 2 days" | …, tone }
  *
+ * `timeZone` (formatDate, formatDateTime, dueDate) counts days in that IANA zone instead
+ * of the browser's: Phase 10's call dates are days in the instance's zone (time-zones.ts).
+ *
  * UI code renders times with <RelativeTime> (components/ui/relative-time.tsx),
  * which adds the absolute date as a tooltip and keeps itself up to date.
  */
+
+import { zonedParts } from '@/lib/time-zones'
 
 export type DateInput = string | number | Date
 
@@ -47,32 +52,43 @@ function toDate(value: DateInput): Date {
   return value instanceof Date ? value : new Date(value)
 }
 
-/** Whole calendar days from `from` to `to` in local time (DST-safe). */
-export function calendarDaysBetween(from: DateInput, to: DateInput): number {
-  const a = toDate(from)
-  const b = toDate(to)
-  const startA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())
-  const startB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())
-  return Math.round((startB - startA) / DAY)
+/** The calendar day of a moment, local or in `timeZone`, as a UTC midnight. */
+function dayStart(value: Date, timeZone?: string): number {
+  if (timeZone) {
+    const p = zonedParts(value, timeZone)
+    return Date.UTC(p.year, p.month - 1, p.day)
+  }
+  return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())
+}
+
+/** Whole calendar days from `from` to `to` in local time, or in `timeZone` (DST-safe). */
+export function calendarDaysBetween(from: DateInput, to: DateInput, timeZone?: string): number {
+  return Math.round((dayStart(toDate(to), timeZone) - dayStart(toDate(from), timeZone)) / DAY)
 }
 
 export interface FormatOptions {
   now?: DateInput
   locale?: string
+  /** An IANA zone to read the day in (default: the browser's). */
+  timeZone?: string
 }
+
+const yearOf = (value: Date, timeZone?: string) =>
+  timeZone ? zonedParts(value, timeZone).year : value.getFullYear()
 
 /** "Fri 3 Oct" — with the year when it isn't the current year. */
 export function formatDate(
   value: DateInput,
-  { now = Date.now(), locale = currentLocale() }: FormatOptions = {},
+  { now = Date.now(), locale = currentLocale(), timeZone }: FormatOptions = {},
 ) {
   const date = toDate(value)
-  const sameYear = date.getFullYear() === toDate(now).getFullYear()
+  const sameYear = yearOf(date, timeZone) === yearOf(toDate(now), timeZone)
   return new Intl.DateTimeFormat(locale, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     ...(sameYear ? {} : { year: 'numeric' }),
+    ...(timeZone ? { timeZone } : {}),
   }).format(date)
 }
 
@@ -93,11 +109,13 @@ export function formatShortDate(
 /** Full date and time for tooltips and `title` attributes. */
 export function formatDateTime(
   value: DateInput,
-  { locale = currentLocale() }: Pick<FormatOptions, 'locale'> = {},
+  { locale = currentLocale(), timeZone }: Pick<FormatOptions, 'locale' | 'timeZone'> = {},
 ) {
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short' }).format(
-    toDate(value),
-  )
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'full',
+    timeStyle: 'short',
+    ...(timeZone ? { timeZone } : {}),
+  }).format(toDate(value))
 }
 
 /**
@@ -162,27 +180,30 @@ export interface DueDate {
 /** Due-date wording for evaluations (My work, idea sidebar, evaluate sheet). */
 export function dueDate(
   value: DateInput | null | undefined,
-  { now = Date.now(), locale = currentLocale() }: FormatOptions = {},
+  { now = Date.now(), locale = currentLocale(), timeZone }: FormatOptions = {},
 ): DueDate {
   if (value === null || value === undefined) {
     return { label: 'No due date', tone: 'none', overdue: false, full: null }
   }
   const date = toDate(value)
   const nowDate = toDate(now)
-  const full = formatDateTime(date, { locale })
-  const days = calendarDaysBetween(nowDate, date)
+  const full = formatDateTime(date, { locale, timeZone })
+  const days = calendarDaysBetween(nowDate, date, timeZone)
   if (date.getTime() < nowDate.getTime()) {
     const late = -days
     const label =
       late <= 0
-        ? `Overdue since ${new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(date)}`
+        ? `Overdue since ${new Intl.DateTimeFormat(locale, {
+            timeStyle: 'short',
+            ...(timeZone ? { timeZone } : {}),
+          }).format(date)}`
         : `Overdue ${late} ${late === 1 ? 'day' : 'days'}`
     return { label, tone: 'overdue', overdue: true, full }
   }
   if (days === 0) return { label: 'Due today', tone: 'soon', overdue: false, full }
   if (days === 1) return { label: 'Due tomorrow', tone: 'soon', overdue: false, full }
   return {
-    label: `Due ${formatDate(date, { now: nowDate, locale })}`,
+    label: `Due ${formatDate(date, { now: nowDate, locale, timeZone })}`,
     tone: 'later',
     overdue: false,
     full,

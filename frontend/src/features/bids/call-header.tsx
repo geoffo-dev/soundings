@@ -1,7 +1,10 @@
 import {
   CalendarClock,
+  CheckCircle2,
+  CircleDashed,
   Download,
   FileText,
+  Gavel,
   Lock,
   MoreHorizontal,
   Pencil,
@@ -13,7 +16,12 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-import { useChangeBidCallStatus, useExportBidReport, useRequestAiBidAssessments } from '@/api/bids'
+import {
+  useBids,
+  useChangeBidCallStatus,
+  useExportBidReport,
+  useRequestAiBidAssessments,
+} from '@/api/bids'
 import { describeError } from '@/api/errors'
 import type { BidCallView } from '@/api/types'
 import { AiBadge } from '@/components/ui/ai-badge'
@@ -34,10 +42,12 @@ import { toast } from '@/components/ui/toaster'
 import { BLOCKED_COPY } from '@/features/ai/ai-copy'
 import { useIdeaPage } from '@/features/idea/idea-context'
 import { formatDate } from '@/lib/dates'
+import { focusWhenRendered } from '@/lib/focus'
 
 import { AwardDialog } from './award-dialog'
 import { AssessorsDialog } from './assessors-dialog'
 import { CALL_STATUS, progressText } from './bid-copy'
+import { useCallZone } from './call-dates'
 import {
   CallSettingsDialog,
   CancelCallDialog,
@@ -64,8 +74,17 @@ export type HeaderDialog =
  * the AI assessor), the one next step for call managers (Open the call, Close to new
  * bids, Award) and the rest in a menu.
  */
+/** The header's one next step (focus goes there after the call moves: UX review m1). */
+export const CALL_PRIMARY_ID = 'bid-call-primary'
+
+const focusPrimary = () =>
+  focusWhenRendered(
+    () => document.getElementById(CALL_PRIMARY_ID) ?? document.getElementById('bid-call-title'),
+    { force: true },
+  )
+
 export function CallHeader({ view }: { view: CallWithView }) {
-  const { ideaKey, idea, project, me } = useIdeaPage()
+  const { ideaKey, idea, project, me, openDialog, setSearch } = useIdeaPage()
   const { call, permissions } = view
   const status = CALL_STATUS[call.status]
   const [dialog, setDialog] = useState<HeaderDialog | null>(null)
@@ -75,7 +94,19 @@ export function CallHeader({ view }: { view: CallWithView }) {
   const assessAll = useRequestAiBidAssessments(ideaKey)
   const manage = permissions.can_manage_call
   const locked = call.template.locked
+  // Assessments you still owe here (a manager who assesses too: UX review m2).
+  const owed = call.template.sections.reduce((sum, section) => {
+    const mine = section.assessors.find((a) => a.user.id === me.id)
+    return mine ? sum + Math.max(0, mine.progress.total - mine.progress.submitted) : sum
+  }, 0)
+  const bids = useBids(ideaKey, { enabled: permissions.can_assess && owed > 0 })
+  const nextAssessment = (bids.data?.items ?? [])
+    .filter((bid) => bid.status !== 'rejected')
+    .flatMap((bid) => bid.my_sections.map((section) => ({ bid, section })))
+    .find((row) => row.section.state !== 'submitted')
+  const assessFirst = call.status === 'assessing' && permissions.can_assess && owed > 0
   const close = (open: boolean) => !open && setDialog(null)
+  const zone = useCallZone()
 
   const runMove = (to: 'open' | 'assessing') =>
     move.mutate(to, {
@@ -88,6 +119,7 @@ export function CallHeader({ view }: { view: CallWithView }) {
               ? 'Reopened to new bids'
               : 'The call is open to bids',
         )
+        focusPrimary()
       },
       onError: () => setDialog(null),
     })
@@ -104,10 +136,29 @@ export function CallHeader({ view }: { view: CallWithView }) {
     })
 
   const primary = (() => {
-    if (!manage) return null
-    if (call.status === 'draft') {
+    if (assessFirst && nextAssessment) {
+      // You owe assessments: your next one comes first; Award waits in the menu.
       return (
         <Button
+          id={CALL_PRIMARY_ID}
+          variant="primary"
+          onClick={() =>
+            setSearch?.({
+              tab: 'bids',
+              bid: nextAssessment.bid.id,
+              assess: nextAssessment.section.section.id,
+            })
+          }
+        >
+          Assess ({owed})
+        </Button>
+      )
+    }
+    if (!manage && !permissions.can_view_scores) return null
+    if (manage && call.status === 'draft') {
+      return (
+        <Button
+          id={CALL_PRIMARY_ID}
           variant="primary"
           onClick={() => {
             if (!call.deadline_at) {
@@ -120,29 +171,47 @@ export function CallHeader({ view }: { view: CallWithView }) {
         </Button>
       )
     }
-    if (call.status === 'open') {
+    if (manage && call.status === 'open') {
       return (
-        <Button variant="primary" onClick={() => setDialog('assessing')}>
+        <Button id={CALL_PRIMARY_ID} variant="primary" onClick={() => setDialog('assessing')}>
           Close to new bids
         </Button>
       )
     }
     if (call.status === 'assessing' && permissions.can_decide) {
       return (
-        <Button variant="primary" onClick={() => setDialog('award')}>
+        <Button id={CALL_PRIMARY_ID} variant="primary" onClick={() => setDialog('award')}>
           Award…
         </Button>
+      )
+    }
+    if (call.status === 'awarded' && permissions.can_view_scores && call.bid_count > 0) {
+      // Awarded: the report is what is left to do (UX review m7).
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button id={CALL_PRIMARY_ID} variant="outline" loading={exportReport.isPending}>
+              <Download /> Export the report
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => download('pdf')}>PDF</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => download('markdown')}>Markdown</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )
     }
     return null
   })()
 
   const facts = [
-    call.deadline_at ? `Deadline ${formatDate(call.deadline_at)}` : 'No deadline yet',
+    call.deadline_at
+      ? `Deadline ${zone.format(call.deadline_at)}${zone.suffix}`
+      : 'No deadline yet',
     `${call.bid_count} ${call.bid_count === 1 ? 'bid' : 'bids'}`,
     call.status === 'assessing' || call.status === 'awarded' ? progressText(call.progress) : null,
     call.assessment_due_at && call.status !== 'awarded' && call.status !== 'cancelled'
-      ? `Assessments due ${formatDate(call.assessment_due_at)}`
+      ? `Assessments due ${zone.format(call.assessment_due_at)}${zone.suffix}`
       : null,
   ].filter(Boolean)
 
@@ -151,7 +220,11 @@ export function CallHeader({ view }: { view: CallWithView }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 id="bid-call-title" className="text-xl font-semibold text-pretty text-primary">
+            <h2
+              id="bid-call-title"
+              tabIndex={-1}
+              className="text-xl font-semibold text-pretty text-primary outline-none"
+            >
               {call.title}
             </h2>
             <Badge variant={status.tone}>{status.label}</Badge>
@@ -217,7 +290,12 @@ export function CallHeader({ view }: { view: CallWithView }) {
                     )}
                   </DropdownMenuItem>
                 )}
-                {permissions.can_view_scores && call.bid_count > 0 && (
+                {assessFirst && nextAssessment && permissions.can_decide && (
+                  <DropdownMenuItem onSelect={() => setDialog('award')}>
+                    <Gavel /> Award…
+                  </DropdownMenuItem>
+                )}
+                {permissions.can_view_scores && call.bid_count > 0 && call.status !== 'awarded' && (
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                       <Download /> Export the report
@@ -259,13 +337,22 @@ export function CallHeader({ view }: { view: CallWithView }) {
       {call.description && (
         <p className="max-w-3xl text-sm whitespace-pre-line text-secondary">{call.description}</p>
       )}
+      {manage && call.status === 'draft' && (
+        <DraftChecklist
+          view={view}
+          deadline={call.deadline_at ? `${zone.format(call.deadline_at)}${zone.suffix}` : null}
+          onTemplate={() => setDialog('template')}
+          onAssessors={() => setDialog('assessors')}
+          onDeadline={() => setDialog('settings')}
+        />
+      )}
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted">
         {call.ai_assessor && (
           <span className="flex items-center gap-1.5">
             <AiBadge /> {call.ai_assessor.display_name} pre-checks each bid
           </span>
         )}
-        {locked && call.status !== 'awarded' && call.status !== 'cancelled' && (
+        {locked && manage && (
           <span className="flex items-center gap-1.5">
             <Lock aria-hidden="true" className="size-3.5 shrink-0" />
             The evaluation template is locked: assessments have been submitted.
@@ -279,6 +366,21 @@ export function CallHeader({ view }: { view: CallWithView }) {
             {call.award_reason && `: ${call.award_reason}`}
           </span>
         )}
+        {call.status === 'awarded' &&
+          idea.status === 'proposal' &&
+          idea.permissions.can_change_status && (
+            <span className="flex items-center gap-1.5">
+              Next: when the work is under way, close the idea as accepted.
+              <Button
+                size="sm"
+                variant="link"
+                className="h-auto p-0"
+                onClick={() => openDialog('status')}
+              >
+                Change status…
+              </Button>
+            </span>
+          )}
         {call.status === 'cancelled' && (
           <span className="flex items-center gap-1.5">
             Cancelled{call.cancelled_at && ` on ${formatDate(call.cancelled_at)}`}
@@ -294,6 +396,8 @@ export function CallHeader({ view }: { view: CallWithView }) {
         agents={view.ai_agents}
         open={dialog === 'settings'}
         reason={settingsReason}
+        // Opened by "Open the call" for its deadline: saving opens it too (UX review m4).
+        onSaved={settingsReason ? () => runMove('open') : undefined}
         onOpenChange={(open) => {
           if (!open) setSettingsReason(undefined)
           close(open)
@@ -323,7 +427,12 @@ export function CallHeader({ view }: { view: CallWithView }) {
           onConfirm={() => runMove(dialog === 'assessing' ? 'assessing' : 'open')}
         />
       )}
-      <AwardDialog view={view} open={dialog === 'award'} onOpenChange={close} />
+      <AwardDialog
+        view={view}
+        open={dialog === 'award'}
+        onOpenChange={close}
+        onAwarded={focusPrimary}
+      />
       <CancelCallDialog ideaKey={ideaKey} open={dialog === 'cancel'} onOpenChange={close} />
       <DeleteCallDialog
         ideaKey={ideaKey}
@@ -332,5 +441,79 @@ export function CallHeader({ view }: { view: CallWithView }) {
         onOpenChange={close}
       />
     </header>
+  )
+}
+
+/**
+ * A draft's setup at a glance, right under the header (UX review m3): the template to
+ * review, who assesses each section, the deadline; then the header's "Open the call".
+ */
+function DraftChecklist({
+  view,
+  deadline,
+  onTemplate,
+  onAssessors,
+  onDeadline,
+}: {
+  view: CallWithView
+  deadline: string | null
+  onTemplate: () => void
+  onAssessors: () => void
+  onDeadline: () => void
+}) {
+  const sections = view.call.template.sections
+  const staffed = sections.filter((s) => s.assessors.length > 0).length
+  const steps = [
+    {
+      key: 'template',
+      done: null,
+      text: `Evaluation template: ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}, ${view.call.template.must_haves.length} ${view.call.template.must_haves.length === 1 ? 'must-have' : 'must-haves'}`,
+      action: view.permissions.can_edit_template ? 'Review…' : null,
+      onClick: onTemplate,
+    },
+    {
+      key: 'assessors',
+      done: staffed === sections.length,
+      text:
+        staffed === sections.length
+          ? 'Assessors for every section'
+          : `Assessors for ${staffed} of ${sections.length} sections`,
+      action: 'Assessors…',
+      onClick: onAssessors,
+    },
+    {
+      key: 'deadline',
+      done: deadline !== null,
+      text: deadline ? `Deadline ${deadline}` : 'No deadline yet: needed to open the call',
+      action: deadline ? 'Change…' : 'Set the deadline…',
+      onClick: onDeadline,
+    },
+  ]
+  return (
+    <ol
+      aria-label="Before you open the call"
+      className="flex flex-col divide-y divide-subtle rounded-lg border bg-surface text-sm sm:max-w-2xl"
+    >
+      {steps.map((step) => (
+        <li key={step.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
+          {step.done === true ? (
+            <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-success" />
+          ) : step.done === false ? (
+            <CircleDashed aria-hidden="true" className="size-4 shrink-0 text-muted" />
+          ) : (
+            <FileText aria-hidden="true" className="size-4 shrink-0 text-muted" />
+          )}
+          <span className="min-w-0 flex-1 text-secondary">
+            {step.text}
+            {step.done === true && <span className="sr-only"> (done)</span>}
+          </span>
+          {step.action && (
+            <Button size="sm" variant="ghost" onClick={step.onClick}>
+              {step.action}
+            </Button>
+          )}
+        </li>
+      ))}
+    </ol>
   )
 }

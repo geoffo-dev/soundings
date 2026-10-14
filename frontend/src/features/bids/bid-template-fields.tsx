@@ -409,6 +409,7 @@ function QuestionList({
   return (
     <div className="flex flex-col gap-2 border-t border-subtle pt-3">
       <h4 className="text-sm font-medium text-secondary">Questions in {sectionLabel}</h4>
+      <p className="-mt-1 text-xs text-muted">{QUESTION_TYPE_HELP.score}</p>
       {sectionError && (
         <p role="alert" className="text-sm text-danger">
           {sectionError}
@@ -524,7 +525,11 @@ function QuestionList({
                   className="pt-1"
                 />
               </div>
-              <p className="text-xs text-muted">{QUESTION_TYPE_HELP[question.type]}</p>
+              {/* Scores need no line under every question (the scale says it): only the
+                  types that work differently say how (polish p4). */}
+              {question.type !== 'score' && (
+                <p className="text-xs text-muted">{QUESTION_TYPE_HELP[question.type]}</p>
+              )}
               <Field
                 label={`Guidance for ${label}`}
                 hideLabel

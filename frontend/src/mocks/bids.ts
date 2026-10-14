@@ -801,11 +801,20 @@ export function canCreateCall(db: MockDb, idea: MockIdea, user: MockUser): boole
   )
 }
 
-/** The two `IdeaPermissions` flags. */
+/**
+ * The two `IdeaPermissions` flags. As the API (`bid_call_flags`): the tab shows to a call
+ * manager of an idea in Proposal with no call yet even before the proposal exists (its
+ * Bids tab then says "Start the proposal first"); only creating needs the proposal.
+ */
 export function ideaBidPermissions(db: MockDb, idea: MockIdea, user: MockUser) {
   const create = canCreateCall(db, idea, user)
+  const soon =
+    isCallManager(db, idea, user) &&
+    !callOf(db, idea) &&
+    idea.status === 'proposal' &&
+    ideaWritable(db, idea)
   return {
-    can_view_bid_call: canViewCall(db, idea, user) && (Boolean(callOf(db, idea)) || create),
+    can_view_bid_call: canViewCall(db, idea, user) && (Boolean(callOf(db, idea)) || soon),
     can_create_bid_call: create,
   }
 }

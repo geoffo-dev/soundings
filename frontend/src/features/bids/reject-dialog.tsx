@@ -17,6 +17,7 @@ import {
 import { Field } from '@/components/ui/field'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
+import { byId, focusWhenRendered } from '@/lib/focus'
 
 /**
  * Reject a bid in one step with a reason (P2; session only). Reversible ("Reinstate")
@@ -71,6 +72,8 @@ export function RejectDialog({
                       'It left the assessors’ queues. Reinstate it from the bid if needed.',
                   })
                   onOpenChange(false)
+                  // The Reject button went: to "Reinstate" (m1).
+                  focusWhenRendered(byId(`bid-reinstate-${bid.id}`), { force: true })
                 },
               },
             )

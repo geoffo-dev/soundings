@@ -37,10 +37,13 @@ export function isKnownNotification(item: { type: string }): item is Notificatio
   return KNOWN_TYPES.has(item.type)
 }
 
-/** "due Fri 9 Oct", or "due today, Fri 9 Oct" on that day; always a date, never a countdown. */
-export function dueOn(value: DateInput, now: DateInput = Date.now()): string {
-  const date = formatDate(value, { now })
-  return calendarDaysBetween(now, value) === 0 ? `due today, ${date}` : `due ${date}`
+/**
+ * "due Fri 9 Oct", or "due today, Fri 9 Oct" on that day; always a date, never a countdown.
+ * `timeZone`: count the day there (Phase 10's call dates are days in the instance's zone).
+ */
+export function dueOn(value: DateInput, now: DateInput = Date.now(), timeZone?: string): string {
+  const date = formatDate(value, { now, timeZone })
+  return calendarDaysBetween(now, value, timeZone) === 0 ? `due today, ${date}` : `due ${date}`
 }
 
 function plural(count: number, one: string, many = `${one}s`) {
@@ -50,6 +53,8 @@ function plural(count: number, one: string, many = `${one}s`) {
 export function describeNotification(
   item: NotificationItem,
   now: DateInput = Date.now(),
+  /** The instance's time zone, for Phase 10's due dates (days there: UX review M6). */
+  timeZone?: string,
 ): NotificationSentence {
   const actor = item.actor?.display_name ?? null
   const someone = actor ? '' : 'Someone '
@@ -114,22 +119,23 @@ export function describeNotification(
       const sections = item.sections.length ? ` (${joinWords(item.sections)})` : ''
       return {
         actor,
-        text: `${someone}asked you to assess the bids for “${item.call.title}”${sections}${item.due_at ? `, ${dueOn(item.due_at, now)}` : ''}`,
+        text: `${someone}asked you to assess the bids for “${item.call.title}”${sections}${item.due_at ? `, ${dueOn(item.due_at, now, timeZone)}` : ''}`,
         quote: null,
-        ...(item.due_at ? { keepTogether: formatDate(item.due_at, { now }) } : {}),
+        ...(item.due_at ? { keepTogether: formatDate(item.due_at, { now, timeZone }) } : {}),
       }
     }
     case 'assessment_reminder':
       return {
         actor: null,
-        text: `Your bid assessments for “${item.call.title}” are ${dueOn(item.due_at, now)}`,
+        text: `Your bid assessments for “${item.call.title}” are ${dueOn(item.due_at, now, timeZone)}`,
         quote: null,
-        keepTogether: formatDate(item.due_at, { now }),
+        keepTogether: formatDate(item.due_at, { now, timeZone }),
       }
     case 'assessments_complete':
       return {
         actor: null,
-        text: `Every bid for “${item.call.title}” is assessed: ${plural(item.assessment_count, 'assessment')} of ${plural(item.bid_count, 'bid')}`,
+        // Polish p5: what it means for you, not a count of rows.
+        text: `All the assessments for “${item.call.title}” are in (${plural(item.bid_count, 'bid')}): you can compare the bids and award the call`,
         quote: null,
       }
   }
@@ -142,8 +148,12 @@ function joinWords(words: readonly string[]): string {
 }
 
 /** The sentence as one line of text (accessible names, tests). */
-export function notificationText(item: NotificationItem, now: DateInput = Date.now()): string {
-  const { actor, text, quote } = describeNotification(item, now)
+export function notificationText(
+  item: NotificationItem,
+  now: DateInput = Date.now(),
+  timeZone?: string,
+): string {
+  const { actor, text, quote } = describeNotification(item, now, timeZone)
   return `${actor ? `${actor} ` : ''}${text}${quote ? `: “${quote}”` : ''}`
 }
 

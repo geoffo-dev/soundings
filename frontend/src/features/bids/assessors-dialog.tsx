@@ -20,8 +20,10 @@ import {
 import { Field } from '@/components/ui/field'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from '@/components/ui/toaster'
-import { fromDateInput, latestDueInput, pickerMin, toDateInput } from '@/features/idea/due-date'
+import { latestDueInput } from '@/features/idea/due-date'
 import { PeopleList } from '@/features/idea/people-list'
+
+import { useCallZone } from './call-dates'
 
 const MAX_PER_SECTION = 10
 
@@ -53,7 +55,8 @@ export function AssessorsDialog({
   const initial = () =>
     new Map(call.template.sections.map((s) => [s.id, s.assessors.map((a) => a.user)]))
   const [people, setPeople] = useState<Map<string, UserRef[]>>(initial)
-  const [due, setDue] = useState(toDateInput(call.assessment_due_at))
+  const zone = useCallZone()
+  const [due, setDue] = useState(zone.toInput(call.assessment_due_at))
   const [adding, setAdding] = useState<string | null>(null)
   const privateProject = visibility === 'private'
 
@@ -110,7 +113,7 @@ export function AssessorsDialog({
       onOpenChange={(next) => {
         if (next) {
           setPeople(initial())
-          setDue(toDateInput(call.assessment_due_at))
+          setDue(zone.toInput(call.assessment_due_at))
         } else save.reset()
         onOpenChange(next)
       }}
@@ -225,12 +228,12 @@ export function AssessorsDialog({
           </ul>
           <Field
             label="Assessments due"
-            description="Optional. Assessors are reminded 2 days before and on the day."
+            description={`Optional. By the end of that day${zone.differs ? ` (${zone.timeZone} time)` : ''}; assessors are reminded 2 days before and on the day.`}
           >
             <DatePicker
               value={due}
               onValueChange={setDue}
-              min={pickerMin(due)}
+              min={zone.pickerMin(due)}
               max={latestDueInput()}
             />
           </Field>
@@ -249,7 +252,10 @@ export function AssessorsDialog({
                     section_id: s.id,
                     user_ids: (people.get(s.id) ?? []).map((u) => u.id),
                   })),
-                  due_at: due ? fromDateInput(due) : null,
+                  due_at:
+                    due === zone.toInput(call.assessment_due_at)
+                      ? call.assessment_due_at
+                      : zone.fromInput(due),
                 },
                 {
                   onSuccess: () => {

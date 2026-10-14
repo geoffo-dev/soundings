@@ -68,7 +68,7 @@ export function EvaluationPanel({ view }: { view: CallWithView }) {
                     {q.type === 'score'
                       ? `× ${q.weight}`
                       : q.type === 'price'
-                        ? 'From the price'
+                        ? 'Scored from the price'
                         : QUESTION_TYPE_LABELS[q.type]}
                   </span>
                 </li>

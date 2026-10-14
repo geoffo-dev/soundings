@@ -361,16 +361,18 @@ export interface UploadTarget {
   idea: string
   bidId: string
   file: File
+  /** The name to send (default: the file's own). */
+  filename?: string
   mustHaveId?: string | null
   pricing?: boolean
 }
 
 /** Uploads one file as the raw body (`application/octet-stream`), reporting progress. */
 export function uploadBidDocument(
-  { idea, bidId, file, mustHaveId, pricing }: UploadTarget,
+  { idea, bidId, file, filename, mustHaveId, pricing }: UploadTarget,
   options: UploadOptions = {},
 ): Promise<BidDocument> {
-  const query = new URLSearchParams({ filename: file.name })
+  const query = new URLSearchParams({ filename: filename ?? file.name })
   if (mustHaveId) query.set('must_have_id', mustHaveId)
   if (pricing !== undefined) query.set('pricing', String(pricing))
   const url = `/api/v1/ideas/${encodeURIComponent(idea)}/bid-call/bids/${encodeURIComponent(bidId)}/documents?${query.toString()}`
@@ -411,6 +413,26 @@ export function useDeleteBidDocument(idea: string, bidId: string) {
   })
 }
 
+export const bidDocumentTextQueryOptions = (
+  idea: string,
+  bidId: string,
+  documentId: string,
+  page: number,
+) =>
+  queryOptions({
+    queryKey: queryKeys.bids.text(idea, bidId, documentId, page),
+    queryFn: ({ signal }) =>
+      unwrap(
+        api.GET('/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/text', {
+          params: {
+            path: { idea, bid_id: bidId, document_id: documentId },
+            query: { page },
+          },
+          signal,
+        }),
+      ),
+  })
+
 /** One page of a document's extracted text (untrusted: shown as plain text). */
 export function useBidDocumentText(
   idea: string,
@@ -419,18 +441,39 @@ export function useBidDocumentText(
   page: number,
 ) {
   return useQuery({
-    queryKey: queryKeys.bids.text(idea, bidId, documentId ?? '', page),
-    queryFn: ({ signal }) =>
-      unwrap(
-        api.GET('/api/v1/ideas/{idea}/bid-call/bids/{bid_id}/documents/{document_id}/text', {
-          params: {
-            path: { idea, bid_id: bidId, document_id: documentId ?? '' },
-            query: { page },
-          },
-          signal,
-        }),
-      ),
+    ...bidDocumentTextQueryOptions(idea, bidId, documentId ?? '', page),
     enabled: Boolean(documentId),
+  })
+}
+
+/**
+ * The page of a document's text that holds an AI quote (UX review m13): its pages are
+ * read in order until one has it (whitespace and case aside, as the server checks
+ * quotes); null when none does. Each page read is cached for the reader.
+ */
+export function useQuotePage(
+  idea: string,
+  bidId: string,
+  document: Pick<BidDocument, 'id' | 'extraction'> | null,
+  quote: string | null,
+  find: (text: string, quote: string) => unknown,
+) {
+  const queryClient = useQueryClient()
+  const pages = Math.max(1, document?.extraction.page_count ?? 1)
+  return useQuery({
+    queryKey: [...queryKeys.bids.bid(idea, bidId), 'quote', document?.id ?? '', quote ?? ''],
+    queryFn: async () => {
+      if (!document || !quote) return null
+      for (let page = 1; page <= pages; page++) {
+        const text = await queryClient.query(
+          bidDocumentTextQueryOptions(idea, bidId, document.id, page),
+        )
+        if (find(text.text, quote)) return page
+      }
+      return null
+    },
+    enabled: Boolean(document && quote && document.extraction.state === 'done'),
+    staleTime: Infinity,
   })
 }
 

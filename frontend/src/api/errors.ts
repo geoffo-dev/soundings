@@ -384,7 +384,10 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'This project’s bid documents are full',
     description: 'They take 5 GB already. Ask a platform admin.',
   },
-  duplicate_document: { title: 'That file is already on this bid' },
+  duplicate_document: {
+    title: 'That file is already on this bid',
+    description: 'The same file was uploaded before, perhaps under another name.',
+  },
   invalid_must_have: { title: 'That must-have can’t take this file' },
   assessment_incomplete: {
     title: 'Some scores are missing',

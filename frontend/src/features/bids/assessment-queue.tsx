@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { DueDateLabel } from '@/components/ui/due-date'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 
+import { useCallZone } from './call-dates'
+
 const STATE: Record<EvaluatorState, { label: string; action: string; Icon: typeof CircleDashed }> =
   {
     invited: { label: 'Not started', action: 'Assess', Icon: CircleDashed },
@@ -31,6 +33,7 @@ export function AssessmentQueue({
   onAssess: (bidId: string, sectionId: string) => void
 }) {
   const bids = useBids(ideaKey)
+  const zone = useCallZone()
   const rows = (bids.data?.items ?? [])
     .filter((bid) => bid.status !== 'rejected')
     .flatMap((bid) => bid.my_sections.map((section) => ({ bid, section })))
@@ -49,7 +52,7 @@ export function AssessmentQueue({
             </span>
           )}
           {call.assessment_due_at && done < rows.length && call.status === 'assessing' && (
-            <DueDateLabel value={call.assessment_due_at} />
+            <DueDateLabel value={call.assessment_due_at} timeZone={zone.timeZone} />
           )}
         </span>
       </div>

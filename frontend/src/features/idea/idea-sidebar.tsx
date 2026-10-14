@@ -50,6 +50,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { TagInput } from '@/components/ui/tag-input'
 import { WithTooltip } from '@/components/ui/tooltip'
 import { isActiveRun } from '@/features/ai/ai-copy'
+import { CALL_STATUS } from '@/features/bids/bid-copy'
 import { showRun } from '@/features/ai/idea-ai'
 import { SubmissionPanel } from '@/features/moderation/idea-submission'
 import { formatDateTime } from '@/lib/dates'
@@ -86,6 +87,12 @@ export function IdeaProperties({ className }: { className?: string }) {
             <ResearcherField />
           </PropertyRow>
         )}
+        {/* Phase 10: the call for bids, one step from the Bids tab (UX review m6). */}
+        {idea.permissions.can_view_bid_call && (
+          <PropertyRow label="Bids">
+            <BidCallField />
+          </PropertyRow>
+        )}
       </dl>
       {/* A guest researcher sees no evaluation area or score (role matrix column R). */}
       {!guest && <EvaluatorsSection />}
@@ -93,6 +100,31 @@ export function IdeaProperties({ className }: { className?: string }) {
       <TagsSection />
       {!guest && <SubmissionPanel idea={idea} ideaKey={ideaKey} />}
     </div>
+  )
+}
+
+function BidCallField() {
+  const { idea, setTab } = useIdeaPage()
+  const call = idea.bid_call
+  const text = call
+    ? `${CALL_STATUS[call.status].label} · ${call.bid_count} ${call.bid_count === 1 ? 'bid' : 'bids'}`
+    : idea.permissions.can_create_bid_call
+      ? 'Start a call for bids'
+      : 'No call yet'
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2 max-w-full"
+      aria-label={
+        call
+          ? `Call for bids: ${call.title}, ${text}. Open the Bids tab`
+          : `${text}: open the Bids tab`
+      }
+      onClick={() => setTab('bids')}
+    >
+      <span className="truncate">{text}</span>
+    </Button>
   )
 }
 

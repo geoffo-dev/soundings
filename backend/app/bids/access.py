@@ -26,9 +26,10 @@ from :class:`~app.authz.BidCallFacts`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import (
@@ -42,16 +43,18 @@ from app.authz import (
 )
 from app.bids.problems import forbidden
 from app.domain.principal import Principal
-from app.errors import ProblemError
+from app.errors import ConflictProblem, ProblemError
 from app.models.bid import Bid, BidCall, BidCallQuestion, BidCallSection, BidSectionAssessor
-from app.models.enums import BidCallStatus, BidQuestionType, BidStatus
+from app.models.enums import BidCallStatus, BidQuestionType, BidStatus, IdeaStatus
 from app.models.idea import Idea
 from app.models.project import Project
 from app.services.ideas import LoadedIdea, load_idea
 
 __all__ = [
     "FINISHED",
+    "AssessRunAccess",
     "LoadedCall",
+    "assess_run_access",
     "call_facts",
     "call_of",
     "load_bid",
@@ -59,7 +62,7 @@ __all__ = [
     "load_idea_for_call",
     "load_section",
     "manages",
-    "may_view_bids",
+    "may_view_assess_run",
     "require_section_rule",
     "sees_price",
 ]
@@ -86,10 +89,15 @@ class LoadedCall:
             raise self.deferred
 
     def require_not_finished(self) -> None:
-        """:meth:`check`, then 409 ``bid_call_finished`` for an awarded or cancelled call."""
+        """:meth:`check`, then 409 ``idea_closed`` (contract section 3.1: closing the idea
+        makes the whole call read-only, for its assessors too, whose ``bid.assess`` carries
+        no c5 of its own; review M1), then 409 ``bid_call_finished`` for an awarded or
+        cancelled call. Every bid write but deleting the call comes through here."""
         from app.bids.problems import conflict
 
         self.check()
+        if self.idea.status is IdeaStatus.CLOSED:
+            raise ConflictProblem("The idea is closed.", code="idea_closed")
         if self.call.status in FINISHED:
             raise conflict("bid_call_finished")
 
@@ -176,15 +184,51 @@ async def load_call(
     return LoadedCall(loaded.idea, loaded.project, call, resource, deferred)
 
 
-async def may_view_bids(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> bool:
-    """``bid.view_bids`` on the idea's call now (call managers, and its section assessors
-    while c28 holds), ``False`` without a call: who may see the call's assess runs
-    (Phase 10 review S9: they name bids)."""
+@dataclass(frozen=True, slots=True)
+class AssessRunAccess:
+    """Which of an idea's assess runs a principal may see (they name bids): none without
+    ``bid.view_bids``; a call manager every one; a section assessor those of bids that
+    aren't rejected (a rejected bid is 404 to them, review ACC-3)."""
+
+    view_bids: bool
+    manager: bool
+
+    def allows(self, bid_status: BidStatus | None) -> bool:
+        return self.view_bids and (self.manager or bid_status is not BidStatus.REJECTED)
+
+    def condition(self, run_kind: Any, run_bid_id: Any) -> ColumnElement[bool] | None:
+        """A filter over ``ai_runs`` (``None``: every run)."""
+        from app.models.enums import AiRunKind
+
+        if self.view_bids and self.manager:
+            return None
+        if not self.view_bids:
+            return run_kind != AiRunKind.ASSESS_BID
+        rejected = select(Bid.id).where(Bid.status == BidStatus.REJECTED)
+        return or_(run_kind != AiRunKind.ASSESS_BID, run_bid_id.not_in(rejected))
+
+
+async def assess_run_access(
+    db: AsyncSession, principal: Principal, loaded: LoadedIdea
+) -> AssessRunAccess:
+    """:class:`AssessRunAccess` on the idea's call now (no call: no assess run is seen)."""
     call = await call_of(db, loaded.idea.id)
     if call is None:
-        return False
+        return AssessRunAccess(view_bids=False, manager=False)
     resource = loaded.resource.replace(bid_call=await call_facts(db, principal, call))
-    return authorize(principal, Rule.BID_VIEW_BIDS, resource).allowed
+    view = authorize(principal, Rule.BID_VIEW_BIDS, resource).allowed
+    return AssessRunAccess(view_bids=view, manager=view and manages(principal, resource))
+
+
+async def may_view_assess_run(
+    db: AsyncSession, principal: Principal, loaded: LoadedIdea, bid_id: UUID | None
+) -> bool:
+    """One assess run of ``bid_id``: :meth:`AssessRunAccess.allows` for that bid now."""
+    access = await assess_run_access(db, principal, loaded)
+    if not access.view_bids:
+        return False
+    status = await db.scalar(select(Bid.status).where(Bid.id == bid_id)) if bid_id else None
+    return access.allows(status)
 
 
 def manages(principal: Principal, resource: Resource) -> bool:

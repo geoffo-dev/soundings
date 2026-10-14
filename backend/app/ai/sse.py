@@ -247,16 +247,21 @@ async def still_allowed(
             loaded = await load_idea(db, live, str(idea_id))
         except ProblemError:
             return False
-        kind = await db.scalar(
-            select(AiRun.kind).where(AiRun.id == run_id, AiRun.idea_id == idea_id)
-        )
-        if kind is None:
+        row = (
+            await db.execute(
+                select(AiRun.kind, AiRun.bid_id).where(
+                    AiRun.id == run_id, AiRun.idea_id == idea_id
+                )
+            )
+        ).first()
+        if row is None:
             return False
-        if kind is AiRunKind.ASSESS_BID:
-            # Phase 10: an assess run's stream stays open only while they see the bids.
-            from app.bids.access import may_view_bids
+        if row.kind is AiRunKind.ASSESS_BID:
+            # Phase 10: an assess run's stream stays open only while they see its bid (a
+            # rejected one leaves its assessors, review ACC-3).
+            from app.bids.access import may_view_assess_run
 
-            return await may_view_bids(db, live, loaded)
+            return await may_view_assess_run(db, live, loaded, row.bid_id)
         return True
 
 

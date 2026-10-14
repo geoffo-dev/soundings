@@ -26,10 +26,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.agents import agent_ref, candidates
-from app.authz import Resource, Rule, authorize, can
+from app.authz import Resource, Rule, authorize, bid_pending, can
 from app.bids.access import FINISHED, manages, sees_price
 from app.bids.data import CallData, load_call_data
-from app.bids.scoring import BidScores, lowest_scored_price, score_call
+from app.bids.scoring import BidScores, lowest_scored_price, score_bid, score_call
 from app.bids.templates import must_have_out, question_out
 from app.config import Settings
 from app.domain.principal import Principal
@@ -161,6 +161,42 @@ def _owes(
     principal: Principal, data: CallData, bid: Bid, sections: Iterable[BidCallSection]
 ) -> list[UUID]:
     return [s.id for s in sections if not data.submitted(bid.id, s.id, principal.user_id)]
+
+
+def owes_bid(principal: Principal, resource: Resource, data: CallData, bid: Bid) -> bool:
+    """The principal is a pending assessor (section 3a) of some section of ``bid``."""
+    return any(
+        bid_pending(
+            principal,
+            resource.replace(
+                bid_section_id=section.id,
+                bid_section_submitted=data.submitted(bid.id, section.id, principal.user_id),
+            ),
+        )
+        for section in data.sections
+    )
+
+
+def _finding_view(
+    assessment: BidAiAssessment,
+    finding: BidAiFinding,
+    agent: UserRef,
+    visible: set[UUID],
+    *,
+    verdict_only: bool,
+) -> BidAiFindingView:
+    """An AI must-have finding. ``verdict_only`` (review ACC-2 / L8): its rationale and
+    quotes are the agent's free text, where scores can travel, so someone who still owes a
+    section of the bid reads met / not met / unclear alone until they have submitted."""
+    return BidAiFindingView(
+        ai_assessment_id=assessment.id,
+        must_have_id=finding.must_have_id,
+        agent=agent,
+        finding=finding.finding,
+        rationale="" if verdict_only else finding.rationale,
+        evidence=[] if verdict_only else _evidence(finding.evidence, visible),
+        submitted_at=assessment.submitted_at,
+    )
 
 
 # --- The call ------------------------------------------------------------------------------------
@@ -581,15 +617,20 @@ def must_have_state(
 ) -> BidMustHaveState:
     linked = [d for d in documents if d.must_have_id == must_have.id]
     shown = [d.id for d in linked if price_visible or not d.pricing]
+    # Review ACC-1 (role matrix 3a rule 4): a pricing must-have's note is where a manager
+    # writes about the price, so it (and who decided, when) is for bid.view_price only.
+    decision = result if result is not None and (price_visible or not must_have.pricing) else None
     return BidMustHaveState(
         must_have=must_have_out(must_have),
         result=result.result if result is not None else MustHaveResult.MISSING,
         automatic=result is None or result.decided_at is None,
         decided_by=(
-            users.get(result.decided_by_id) if result is not None and result.decided_by_id else None
+            users.get(decision.decided_by_id)
+            if decision is not None and decision.decided_by_id
+            else None
         ),
-        decided_at=result.decided_at if result is not None else None,
-        note=result.note if result is not None else "",
+        decided_at=decision.decided_at if decision is not None else None,
+        note=decision.note if decision is not None else "",
         document_ids=shown,
         restricted_document_count=len(linked) - len(shown),
         ai_findings=[] if must_have.pricing else findings,
@@ -623,20 +664,19 @@ async def bid_detail(
     findings: dict[UUID, list[BidAiFindingView]] = defaultdict(list)
     if ai:
         by_id = {a.id: a for a in ai}
+        verdict_only = owes_bid(principal, resource, data, bid)
         for finding in await db.scalars(
             select(BidAiFinding).where(BidAiFinding.ai_assessment_id.in_(list(by_id)))
         ):
             assessment = by_id[finding.ai_assessment_id]
             findings[finding.must_have_id].append(
-                BidAiFindingView(
-                    ai_assessment_id=assessment.id,
-                    must_have_id=finding.must_have_id,
-                    agent=agents.get(assessment.agent_id)
+                _finding_view(
+                    assessment,
+                    finding,
+                    agents.get(assessment.agent_id)
                     or UserRef(id=assessment.agent_id, display_name="AI"),
-                    finding=finding.finding,
-                    rationale=finding.rationale,
-                    evidence=_evidence(finding.evidence, visible_ids),
-                    submitted_at=assessment.submitted_at,
+                    visible_ids,
+                    verdict_only=verdict_only,
                 )
             )
     results = data.results.get(bid.id, {})
@@ -806,8 +846,8 @@ async def section_assessments(
             section_score=None,
         )
     data = await load_call_data(db, call, answers=True, results=True, ai=True)
-    scores, _ = score_call(data)
-    mine = scores[bid.id].sections[section.id]
+    # One bid's scores (the price formula still reads every bid's price): review M2.
+    mine = score_bid(data, bid, lowest_scored_price(data)).sections[section.id]
     order = [q.id for q in data.questions.get(section.id, [])]
     rows = await db.execute(
         select(BidAssessment, User)
@@ -1020,15 +1060,7 @@ async def ai_assessments_out(
             if qid not in hidden_questions
         ]
         finding_views = [
-            BidAiFindingView(
-                ai_assessment_id=assessment.id,
-                must_have_id=f.must_have_id,
-                agent=agent,
-                finding=f.finding,
-                rationale=f.rationale,
-                evidence=_evidence(f.evidence, visible),
-                submitted_at=assessment.submitted_at,
-            )
+            _finding_view(assessment, f, agent, visible, verdict_only=bool(hidden))
             for f in sorted(
                 findings.get(assessment.id, []), key=lambda f: must_order.get(f.must_have_id, 0)
             )

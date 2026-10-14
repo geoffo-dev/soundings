@@ -34,10 +34,13 @@ export function AwardDialog({
   view,
   open,
   onOpenChange,
+  onAwarded,
 }: {
   view: CallWithView
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** After the award (the Award button is gone: focus goes to the header's next step). */
+  onAwarded?: () => void
 }) {
   const { ideaKey } = useIdeaPage()
   const comparison = useBidComparison(ideaKey, { enabled: open })
@@ -166,6 +169,7 @@ export function AwardDialog({
                   onSuccess: () => {
                     toast.success(`Awarded to ${chosen.bid.bidder}`)
                     onOpenChange(false)
+                    onAwarded?.()
                   },
                 },
               )

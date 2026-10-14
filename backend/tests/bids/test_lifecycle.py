@@ -306,6 +306,40 @@ async def test_cancel_makes_it_read_only(crew: Crew, api: AsUser, db_session: As
     assert (await _feed(db_session, crew.idea))[-1]["to_status"] == "cancelled"
 
 
+async def test_closing_the_idea_makes_the_call_read_only_for_everyone(
+    crew: Crew, api: AsUser, db_session: AsyncSession
+) -> None:
+    """Review M1 (contract section 3.1): closing the idea makes everything read-only, the
+    assessors' writes too (409 ``idea_closed``, before the call's own state); reopening the
+    idea lets the call go on where it stood."""
+    owner = await api(crew.owner)
+    view = await start(owner, crew)
+    view = await open_call(owner, crew, view)
+    bid = await add_bid(owner, crew, "Alpha Ltd")
+    await qualify(db_session, bid["id"], crew.owner)
+    view = await assign(owner, crew, view, {"Technical": [crew.tech1, crew.tech2]})
+    await to_assessing(owner, crew)
+    tech = sections_by_title(view)["Technical"]
+    assessment = call_url(crew, f"/bids/{bid['id']}/sections/{tech['id']}/assessment")
+    answers = [{"question_id": q["id"], "score": 4} for q in tech["questions"] if q["type"] == "score"]
+    closed = {"status": "closed", "resolution": "parked"}
+    ok(await owner.post(f"/ideas/{crew.key}/status", closed))
+
+    tech1 = await api(crew.tech1)
+    for submit_it in (True, False):
+        response = await tech1.put(assessment, {"answers": answers, "submit": submit_it})
+        assert_problem(response, 409, "idea_closed")
+    for path, body in (
+        ("/cancellation", {}),
+        ("/award", {"bid_id": bid["id"]}),
+        ("/status", {"status": "open"}),
+    ):
+        assert_problem(await owner.post(call_url(crew, path), body), 409, "idea_closed")
+
+    ok(await owner.post(f"/ideas/{crew.key}/status", {"status": "proposal"}))
+    ok(await tech1.put(assessment, {"answers": answers, "submit": True}))
+
+
 async def test_deleting_a_call(crew: Crew, api: AsUser, db_session: AsyncSession) -> None:
     owner = await api(crew.owner)
     await start(owner, crew)

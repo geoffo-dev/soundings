@@ -29,7 +29,6 @@ from app.ai import results as ai_results
 from app.ai import scope as ai_scope
 from app.authz import Decision, Rule, not_found
 from app.bids import assess, documents
-from app.bids.access import FINISHED
 from app.domain.principal import Principal
 from app.mcp.tools import ToolContext, _idea
 from app.models.bid import (
@@ -273,16 +272,14 @@ async def submit_bid_assessment(
     named = await _run(ctx, args.run_id, args.bid_id, "submit_bid_assessment")
     ai_scope.check_write(ctx.principal, "submit_bid_assessment", named)
     # Lock order: project (KEY SHARE) -> idea -> call -> bid -> run.
-    await _idea(ctx, str(named.idea_id), for_update=True)
+    loaded = await _idea(ctx, str(named.idea_id), for_update=True)
     call, bid = await _bid(ctx, named, for_update=True)
     run = await ai_scope.lock_run(ctx.db, ctx.principal, named)
     assert run is not None  # noqa: S101 - an agent's run (lock_run raises otherwise)
-    if call.status in FINISHED:
-        from app.bids.problems import conflict
-
-        raise conflict("bid_call_finished")
     recorded = await assess.record_assessment(
         ctx.db,
+        idea=loaded.idea,
+        project=loaded.project,
         call=call,
         bid=bid,
         agent_id=run.agent_id,

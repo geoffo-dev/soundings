@@ -5,6 +5,7 @@ import type { KeyboardEvent, MouseEvent } from 'react'
 import type { NotificationItem } from '@/api/types'
 import { Avatar } from '@/components/ui/avatar'
 import { RelativeTime, useNow } from '@/components/ui/relative-time'
+import { useCallZone } from '@/features/bids/call-dates'
 import { NAV_ITEM_ATTRIBUTE } from '@/lib/list-navigation'
 import { ROW_ID_ATTRIBUTE } from '@/lib/return-to-row'
 import { cn } from '@/lib/utils'
@@ -115,9 +116,10 @@ function InboxRow({
   sameIdea: boolean
 }) {
   const unread = item.read_at === null
-  const sentence = describeNotification(item, now)
+  const zone = useCallZone()
+  const sentence = describeNotification(item, now, zone.timeZone)
   const link = notificationLink(item)
-  const label = `${unread ? 'Unread: ' : ''}${notificationText(item, now)}. ${item.idea.key} ${item.idea.title}`
+  const label = `${unread ? 'Unread: ' : ''}${notificationText(item, now, zone.timeZone)}. ${item.idea.key} ${item.idea.title}`
   // Always on the first line, so a short sentence never wraps around it.
   const time = (
     <RelativeTime
@@ -167,7 +169,9 @@ function InboxRow({
       <span className="-mx-1.5 flex w-2 shrink-0 justify-center self-center">
         {unread && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
       </span>
-      {item.actor ? (
+      {/* Someone's face only where the sentence is theirs ("All the assessments are in"
+          isn't the last assessor's doing: polish p5). */}
+      {item.actor && sentence.actor ? (
         <Avatar name={item.actor.display_name} src={item.actor.avatar_url} size="md" decorative />
       ) : (
         <span

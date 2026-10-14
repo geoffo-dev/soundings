@@ -379,6 +379,41 @@ async def test_assess_runs_are_only_for_people_who_see_the_bids(
     assert cancelled["status"] == "cancelled"
 
 
+async def test_a_rejected_bids_runs_leave_with_the_bid(
+    scene: Scene, crew: Crew, api: AsUser
+) -> None:
+    """Review ACC-3 / L9: a rejected bid is 404 to its assessors, and so are its assess
+    runs (listed, read, cancelled or watched): they name the bid, who asked and when.
+    Call managers keep seeing them."""
+    run = ok(
+        await scene.owner.post(ask_url(crew, scene.other["id"]), {"agent_id": str(scene.agent.id)}),
+        201,
+    )
+    kept = ok(
+        await scene.owner.post(ask_url(crew, scene.bid["id"]), {"agent_id": str(scene.agent.id)}),
+        201,
+    )
+    reject = call_url(crew, f"/bids/{scene.other['id']}/rejection")
+    ok(await scene.owner.put(reject, {"reason": "No insurance certificate."}))
+    runs = f"/ideas/{crew.key}/ai-runs"
+    technical = await api(crew.tech1)
+
+    assert [r["id"] for r in ok(await technical.get(runs))["items"]] == [kept["id"]]
+    listed = ok(await technical.get(runs, kind="assess_bid"))["items"]
+    assert [r["id"] for r in listed] == [kept["id"]]
+    assert_problem(await technical.get(f"{runs}/{run['id']}"), 404, "not_found")
+    assert_problem(await technical.post(f"{runs}/{run['id']}/cancel"), 404, "not_found")
+    stream = await technical.http.get(API + f"{runs}/{run['id']}/events")
+    assert_problem(stream, 404, "not_found")
+    assert ok(await technical.get(f"{runs}/{kept['id']}"))["bid_id"] == scene.bid["id"]
+    managed = {r["id"] for r in ok(await scene.owner.get(runs))["items"]}
+    assert managed == {run["id"], kept["id"]}
+    assert ok(await scene.owner.get(f"{runs}/{run['id']}"))["bid_id"] == scene.other["id"]
+    # Reinstated: back in their queue, its runs too.
+    ok(await scene.owner.delete(reject))
+    assert ok(await technical.get(f"{runs}/{run['id']}"))["bid_id"] == scene.other["id"]
+
+
 # --- MCP: c22 -----------------------------------------------------------------------------------
 async def test_the_bid_tools_need_the_runs_bid(
     scene: Scene, crew: Crew, db_session: AsyncSession, agent_mcp: McpIdentity
@@ -549,6 +584,51 @@ async def test_submit_refuses_what_it_wasnt_given(
     assert await db_session.scalar(select(func.count()).select_from(BidAiAssessment)) == 0
 
 
+async def test_pending_assessors_read_the_ai_findings_verdicts_only(
+    scene: Scene, crew: Crew, api: AsUser, db_session: AsyncSession, agent_mcp: McpIdentity
+) -> None:
+    """Review ACC-2 / L8: a must-have finding's rationale and quotes are the agent's free
+    text, where scores (or a bidder's steering) can travel, so whoever still owes a section
+    of the bid (an assessor, or a call manager who assesses too) reads the verdict only
+    until they have submitted every section they assess for it."""
+    run = agent_mcp.for_run(await assess_run(db_session, scene, crew))
+    args = submission(scene)
+    args["findings"][0]["rationale"] = "AI-SCORE-LEAK: I scored Technical 5/5."
+    args["findings"][0]["evidence"] = [{"document_id": scene.documents["technical"], "quote": SECURITY}]
+    await run.ok("submit_bid_assessment", **args)
+    # The owner assesses Delivery too, so they owe a section of this bid as well.
+    await assign(
+        scene.owner,
+        crew,
+        scene.view,
+        {"Technical": [crew.tech1], "Commercial": [crew.commercial], "Delivery": [crew.owner]},
+    )
+
+    def findings(detail: dict[str, Any]) -> list[dict[str, Any]]:
+        return [f for state in detail["must_have_results"] for f in state["ai_findings"]]
+
+    tech1 = await api(crew.tech1)
+    for who in (tech1, await api(crew.commercial), scene.owner):
+        seen = findings(await bid_detail(who, crew, scene.bid["id"]))
+        assert seen and {f["finding"] for f in seen} == {"unclear"}
+        assert all(f["rationale"] == "" and f["evidence"] == [] for f in seen)
+    listed = ok(await scene.owner.get(call_url(crew, f"/bids/{scene.bid['id']}/ai-assessments")))
+    [assessment] = listed["items"]
+    assert all(f["rationale"] == "" and f["evidence"] == [] for f in assessment["findings"])
+    # A manager who owes nothing reads them in full.
+    admin = findings(await bid_detail(await api(crew.admin), crew, scene.bid["id"]))
+    assert any("AI-SCORE-LEAK" in f["rationale"] for f in admin)
+    assert any(f["evidence"] for f in admin)
+    # Once tech1 has submitted Technical (all they assess) for the bid, they read them too.
+    ok(await scene.owner.post(call_url(crew, "/status"), {"status": "assessing"}))
+    technical = next(s for s in scene.view["call"]["template"]["sections"] if s["title"] == "Technical")
+    answers = [{"question_id": q["id"], "score": 3} for q in technical["questions"] if q["type"] == "score"]
+    url = call_url(crew, f"/bids/{scene.bid['id']}/sections/{technical['id']}/assessment")
+    ok(await tech1.put(url, {"answers": answers, "submit": True}))
+    after = findings(await bid_detail(tech1, crew, scene.bid["id"]))
+    assert any("AI-SCORE-LEAK" in f["rationale"] for f in after)
+
+
 async def test_inclusion_and_a_changed_resubmission(
     scene: Scene, crew: Crew, db_session: AsyncSession, agent_mcp: McpIdentity
 ) -> None:
@@ -591,6 +671,18 @@ async def test_a_rejected_bids_run_can_no_longer_submit(
     assert stored.cancel_requested_at is not None  # the rejection cancelled it
     result = await agent_mcp.for_run(run).fails("submit_bid_assessment", **submission(scene))
     assert result == "ai_run_not_active"
+
+
+async def test_a_closed_ideas_run_can_no_longer_submit(
+    scene: Scene, crew: Crew, db_session: AsyncSession, agent_mcp: McpIdentity
+) -> None:
+    """Review M1: closing the idea makes the call read-only for its AI assessor too."""
+    run = await assess_run(db_session, scene, crew)
+    closed = {"status": "closed", "resolution": "parked"}
+    ok(await scene.owner.post(f"/ideas/{crew.key}/status", closed))
+    result = await agent_mcp.for_run(run).fails("submit_bid_assessment", **submission(scene))
+    assert result == "idea_closed"
+    assert await db_session.scalar(select(func.count()).select_from(BidAiAssessment)) == 0
 
 
 def test_quote_checks_at_the_largest_bid() -> None:

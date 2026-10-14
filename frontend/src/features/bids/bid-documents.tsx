@@ -18,7 +18,6 @@ import { describeError } from '@/api/errors'
 import type { BidCall, BidDetail, BidDocument } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogBody,
@@ -32,17 +31,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Label } from '@/components/ui/label'
 import { RelativeTime } from '@/components/ui/relative-time'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from '@/components/ui/toaster'
+import { focusWhenRendered } from '@/lib/focus'
 import { cn } from '@/lib/utils'
 
 import { DOCUMENT_TYPE_LABEL, extractionText, formatSize, UPLOAD_TYPES_TEXT } from './bid-copy'
@@ -74,14 +75,12 @@ export function BidDocuments({
   onRead: (document: BidDocument) => void
 }) {
   const canUpload = bid.permissions.can_upload
-  const [pricing, setPricing] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [downloading, setDownloading] = useState<BidDocument | null>(null)
   const [confirm, setConfirm] = useState<{
     kind: 'delete' | 'pricing' | 'active'
     document: BidDocument
   } | null>(null)
-  const hasPricingQuestion = call.template.sections.some((s) => s.has_price)
   const mustHaves = new Map(call.template.must_haves.map((m) => [m.id, m]))
 
   const startDownload = (document: BidDocument) => {
@@ -98,7 +97,8 @@ export function BidDocuments({
     event.preventDefault()
     setDragging(false)
     const files = Array.from(event.dataTransfer.files)
-    if (files.length > 0) uploads.start(files, { pricing: pricing || undefined })
+    // Each file's must-have is guessed from its name; pricing follows it (M2, M3).
+    if (files.length > 0) uploads.start(files)
   }
 
   return (
@@ -130,41 +130,22 @@ export function BidDocuments({
           data-dragging={dragging || undefined}
           className={cn(
             'flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-5 text-center transition-colors',
-            dragging ? 'border-strong bg-subtle' : 'bg-surface',
+            dragging ? 'border-focus bg-accent-subtle ring-3 ring-focus/20' : 'bg-surface',
           )}
         >
           <Upload aria-hidden="true" className="size-5 text-muted" />
           <p className="text-sm text-secondary">
             Drop files here, or{' '}
-            <Button
-              size="sm"
-              variant="outline"
-              className="mx-1"
-              onClick={() => uploads.pick({ pricing: pricing || undefined })}
-            >
+            <Button size="sm" variant="outline" className="mx-1" onClick={() => uploads.pick()}>
               Choose files
             </Button>
           </p>
           <p className="text-xs text-muted">{UPLOAD_TYPES_TEXT}. Files with macros are refused.</p>
-        </div>
-      )}
-      {canUpload && hasPricingQuestion && (
-        <div className="flex items-start gap-2">
-          <Checkbox
-            id={`pricing-${bid.id}`}
-            checked={pricing}
-            onCheckedChange={(value) => setPricing(value === true)}
-            className="mt-0.5"
-          />
-          <Label
-            htmlFor={`pricing-${bid.id}`}
-            className="flex flex-col items-start gap-0.5 font-normal"
-          >
-            <span className="text-sm text-primary">Upload as pricing documents</span>
-            <span className="text-xs text-muted">
-              Only {pricingAudience(call)} can open them, and the AI never reads them.
-            </span>
-          </Label>
+          {call.template.must_haves.some((m) => m.kind === 'document') && (
+            <p className="text-xs text-muted">
+              Each file is matched to the must-have its name points to; change it on its row.
+            </p>
+          )}
         </div>
       )}
       {uploads.input}
@@ -210,6 +191,7 @@ export function BidDocuments({
                 onMarkPricing={() => setConfirm({ kind: 'pricing', document })}
                 ideaKey={ideaKey}
                 bidId={bid.id}
+                uploads={uploads}
               />
             ))}
           </ul>
@@ -236,6 +218,19 @@ export function BidDocuments({
             : undefined
         }
         onDownload={startDownload}
+        onDeleted={(id) => {
+          const at = bid.documents.findIndex((d) => d.id === id)
+          const next = bid.documents[at + 1] ?? bid.documents[at - 1]
+          focusWhenRendered(
+            () =>
+              (next &&
+                document.querySelector<HTMLElement>(
+                  `[data-document="${CSS.escape(next.id)}"] button[aria-label^="Download"]`,
+                )) ??
+              document.getElementById(`choose-files-${bid.id}`),
+            { force: true },
+          )
+        }}
         onClose={() => setConfirm(null)}
       />
     </section>
@@ -254,7 +249,7 @@ function UploadRow({ item, uploads }: { item: UploadItem; uploads: DocumentUploa
       <div className="flex items-center gap-2">
         <FileText aria-hidden="true" className="size-4 shrink-0 text-muted" />
         <span className="min-w-0 flex-1 text-sm font-medium break-all text-primary">
-          {item.name}
+          <bdi>{item.name}</bdi>
         </span>
         <span className="shrink-0 text-xs text-muted tabular-nums">{formatSize(item.size)}</span>
         {item.state === 'error' ? (
@@ -321,6 +316,20 @@ function UploadRow({ item, uploads }: { item: UploadItem; uploads: DocumentUploa
   )
 }
 
+const NO_MUST_HAVE = 'none'
+
+/** A document's row after a change on it: its "More" button (the question's buttons go). */
+function focusDocumentRow(id: string) {
+  focusWhenRendered(
+    () =>
+      document.querySelector<HTMLElement>(
+        `[data-document="${CSS.escape(id)}"] button[aria-label^="More for"]`,
+      ),
+    // The sheet's focus trap took focus to the sheet when the question went (m1).
+    { force: true },
+  )
+}
+
 function DocumentRow({
   ideaKey,
   bidId,
@@ -329,6 +338,7 @@ function DocumentRow({
   mustHave,
   canUpload,
   downloading,
+  uploads,
   onRead,
   onDownload,
   onDelete,
@@ -341,6 +351,7 @@ function DocumentRow({
   mustHave: BidCall['template']['must_haves'][number] | undefined
   canUpload: boolean
   downloading: boolean
+  uploads: DocumentUploads
   onRead: () => void
   onDownload: () => void
   onDelete: () => void
@@ -351,12 +362,20 @@ function DocumentRow({
   const linkedToPricing = mustHave?.pricing === true
   const done = document.extraction.state === 'done'
   const failed = document.extraction.state === 'failed'
+  // Uploaded here as pricing because nothing said otherwise (M3): ask, on the row.
+  const asking = uploads.askPricing.has(document.id) && document.pricing && !linkedToPricing
+  const guessed = uploads.guessed.has(document.id) && mustHave !== undefined
+  const selectId = `answers-${document.id}`
 
   const save = (body: { must_have_id: string | null; pricing: boolean }, success: string) =>
     update.mutate(
       { documentId: document.id, body },
       {
-        onSuccess: () => toast.success(success),
+        onSuccess: () => {
+          uploads.answered(document.id)
+          toast.success(success)
+          focusDocumentRow(document.id)
+        },
         onError: (error) => {
           const { title, description } = describeError(error)
           toast.error(title, { description })
@@ -364,11 +383,32 @@ function DocumentRow({
       },
     )
 
+  const link = (value: string) => {
+    const target = documentMustHaves.find((m) => m.id === value)
+    if ((target?.id ?? null) === document.must_have_id) return
+    save(
+      {
+        must_have_id: target ? target.id : null,
+        // A pricing must-have's file is a pricing document; a file uploaded as pricing only
+        // by default takes the mark of what it answers.
+        pricing: target?.pricing ? true : asking && target ? false : document.pricing,
+      },
+      target
+        ? `${document.filename} answers ${target.text}`
+        : `${document.filename} answers no must-have`,
+    )
+  }
+
   return (
-    <li className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+    <li
+      className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
+      data-document={document.id}
+    >
       <FileText aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted" />
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1">
-        <span className="text-sm font-medium break-all text-primary">{document.filename}</span>
+        <span className="text-sm font-medium break-all text-primary">
+          <bdi>{document.filename}</bdi>
+        </span>
         <span className="text-xs text-muted">
           {DOCUMENT_TYPE_LABEL[document.type]} · {formatSize(document.size_bytes)}
           {document.uploaded_by && <> · {document.uploaded_by.display_name}</>}{' '}
@@ -380,9 +420,41 @@ function DocumentRow({
         >
           {extractionText(document.extraction, document.type)}
         </span>
-        {(mustHave !== undefined || document.pricing || document.active_content) && (
+        {canUpload && documentMustHaves.length > 0 && (
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <label htmlFor={selectId} className="text-xs text-muted">
+              Answers
+            </label>
+            <Select
+              value={document.must_have_id ?? NO_MUST_HAVE}
+              onValueChange={link}
+              disabled={update.isPending}
+            >
+              <SelectTrigger
+                id={selectId}
+                className="h-8 w-auto max-w-full min-w-40 text-sm"
+                aria-label={`Must-have that ${document.filename} answers`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_MUST_HAVE}>No must-have</SelectItem>
+                {documentMustHaves.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.text}
+                    {m.pricing ? ' (pricing)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {guessed && <span className="text-xs text-muted">Matched from its name</span>}
+          </div>
+        )}
+        {((!canUpload && mustHave !== undefined) ||
+          document.pricing ||
+          document.active_content) && (
           <span className="flex flex-wrap items-center gap-1.5">
-            {mustHave && (
+            {!canUpload && mustHave && (
               <Badge variant="neutral">
                 <Link2 aria-hidden="true" /> {mustHave.text}
               </Badge>
@@ -398,6 +470,43 @@ function DocumentRow({
               </Badge>
             )}
           </span>
+        )}
+        {asking && canUpload && (
+          <div
+            role="group"
+            aria-label={`Is ${document.filename} a pricing document?`}
+            className="mt-1 flex flex-col gap-2 rounded-md bg-subtle px-3 py-2.5"
+          >
+            <p className="text-sm text-secondary">
+              <span className="font-medium text-primary">Is it a pricing document?</span> Until you
+              say it isn’t, only {pricingAudience(call)} can open it and the AI doesn’t read it.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                loading={update.isPending}
+                onClick={() =>
+                  save(
+                    { must_have_id: document.must_have_id, pricing: false },
+                    `${document.filename} isn’t a pricing document: every assessor can read it`,
+                  )
+                }
+              >
+                Not pricing
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  uploads.answered(document.id)
+                  focusDocumentRow(document.id)
+                }}
+              >
+                Yes, keep it restricted
+              </Button>
+            </div>
+          </div>
         )}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -423,49 +532,11 @@ function DocumentRow({
         {canUpload && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                loading={update.isPending}
-                aria-label={`More for ${document.filename}`}
-              >
-                {!update.isPending && <MoreHorizontal />}
+              <Button size="icon-sm" variant="ghost" aria-label={`More for ${document.filename}`}>
+                <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {documentMustHaves.length > 0 && (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Link2 /> Answers the must-have
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={document.must_have_id ?? 'none'}
-                      onValueChange={(value) => {
-                        const target = documentMustHaves.find((m) => m.id === value)
-                        save(
-                          {
-                            must_have_id: target ? target.id : null,
-                            // A pricing must-have's file is a pricing document.
-                            pricing: target?.pricing ? true : document.pricing,
-                          },
-                          target
-                            ? `${document.filename} linked to ${target.text}`
-                            : `${document.filename} unlinked`,
-                        )
-                      }}
-                    >
-                      <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
-                      {documentMustHaves.map((m) => (
-                        <DropdownMenuRadioItem key={m.id} value={m.id}>
-                          {m.text}
-                          {m.pricing && <span className="text-muted"> (pricing)</span>}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              )}
               {document.pricing ? (
                 <DropdownMenuItem
                   disabled={linkedToPricing}
@@ -503,6 +574,7 @@ function ConfirmDocumentDialog({
   confirm,
   mustHaveText,
   onDownload,
+  onDeleted,
   onClose,
 }: {
   ideaKey: string
@@ -511,6 +583,8 @@ function ConfirmDocumentDialog({
   confirm: { kind: 'delete' | 'pricing' | 'active'; document: BidDocument } | null
   mustHaveText: string | undefined
   onDownload: (document: BidDocument) => void
+  /** The file is gone: focus goes to its neighbour (m1). */
+  onDeleted: (documentId: string) => void
   onClose: () => void
 }) {
   const remove = useDeleteBidDocument(ideaKey, bidId)
@@ -558,7 +632,7 @@ function ConfirmDocumentDialog({
         }
       }}
     >
-      <DialogContent size="sm">
+      <DialogContent size="sm" role="alertdialog">
         <DialogHeader>
           <DialogTitle className="break-words">{copy?.title}</DialogTitle>
           <DialogDescription>{copy?.description}</DialogDescription>
@@ -587,6 +661,7 @@ function ConfirmDocumentDialog({
                   onSuccess: () => {
                     toast.success(`${document.filename} deleted`)
                     onClose()
+                    onDeleted(document.id)
                   },
                 })
               } else {
