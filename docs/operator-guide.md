@@ -125,10 +125,11 @@ machine or a throwaway cluster. Production mode refuses it.
 
 The chart runs the image `soundings:<appVersion>` (`image.registry`, `image.repository`,
 `image.tag`). Build it and push it where your cluster pulls from:
-`make image IMAGE=registry.example.com/soundings:0.2.0`, `docker push …`, then add
-`--set image.registry=registry.example.com` below. On k3s or k3d you can import it into
-the node instead (`make image IMAGE=soundings:0.2.0`, then `make k3s-load
-IMAGE=soundings:0.2.0` or `k3d image import soundings:0.2.0`). Then one command:
+`make image IMAGE=registry.example.com/soundings:0.3.0`, `docker push …`, then add
+`--set image.registry=registry.example.com` below (the image's version label comes from
+`backend/pyproject.toml`; `VERSION=` overrides it). On k3s or k3d you can import it into
+the node instead (`make image IMAGE=soundings:0.3.0`, then `make k3s-load
+IMAGE=soundings:0.3.0` or `k3d image import soundings:0.3.0`). Then one command:
 
 ```sh
 helm install soundings ./deploy/helm -n soundings --create-namespace \
@@ -265,6 +266,29 @@ and research due date and the two types' notifications (the answers stay). Upgra
 0.1.0's chart, both through `helm upgrade` and through `scripts/deploy.sh`: every row
 kept). The image still defaults to production (`SOUNDINGS_ENVIRONMENT=production`, since
 0.1.0): development setups say so.
+
+**Phase 10 (migration 0016, release 0.3.0):** 0016 adds bid evaluation's tables (calls,
+their template copies, bids, must-have results, documents with their bytes and text,
+section assessors, assessments, AI assessments), four columns on `ai_runs`, the
+`assess_bid` run kind and agent purpose, and three notification types ("Asked to assess
+bids", "Bid assessment reminder", "Bid assessments complete"; immediate by default,
+anyone who had every type off gets them off too). It gives **every existing project the
+default bid evaluation template** (Technical 40 / Commercial 40 with the price question /
+Delivery 20, and four must-haves) and touches no existing row otherwise: nothing changes
+for anyone until someone starts a call. It is expand only (`make check-migrations`), so
+0.2.0's pods keep working against it during the rollout. Downgrading past 0016 (an
+emergency only: restore a backup if you can) **deletes** every call, bid, document,
+assessment and AI assessment, the `assess_bid` runs and the three types' notifications;
+an agent left without a purpose gets `research`, is disabled and its key revoked.
+Upgrading 0.2.0 to 0.3.0 was rehearsed on k3s with 0.2.0's demo data through
+`scripts/deploy.sh` (`make k3s-deploy`). Before you upgrade, check two things that are
+new: the **database grows with the bidders' documents** (up to 5 GiB a project, see
+["Storage, limits and backups"](#storage-limits-and-backups): size the volume and the
+backups), and your ingress must let the **upload route** take a 25 MiB body for up to
+180 s (["The upload route's body size and
+timeout"](#the-upload-routes-body-size-and-timeout): the chart's `ingress.uploads` does it
+for ingress-nginx; Traefik needs its `readTimeout` raised). The worker's memory limit is
+now 1 GiB (the extraction child).
 
 **Moving a release installed by hand to `scripts/deploy.sh`** (continuous delivery):
 the environments' values name Secrets instead of letting the chart generate them, so

@@ -123,7 +123,7 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make k3s-install MCP=1` · `k3s-smoke MCP=1` | `dev/k3s-mcp-values.yaml` (`kagent.enabled`; the API admits only Traefik and the `kagent` namespace), then `mcp-smoke` through the ingress plus `scripts/k3s-mcp-client.sh`: the official Python SDK in a pod in namespace `kagent` with its key from a Secret (`Bearer sdg_…`) calling the Service URL, and a pod in another namespace refused by the NetworkPolicy. CI runs `SSO=1 SMTP=1 MCP=1` |
 | `make ai-smoke` | `scripts/ai-smoke.sh $(AI_BASE_URL)` (default :8000) against an app with AI on, dev login, the worker and the fake agent (`AI_FAKE_URL`, default :8083; `AI_FAKE_KEYS_DIR`, default `dev/.fake-agent-keys`): register an agent (key once), hand the fake its key, Test connection, "Ask AI to evaluate" watched over SSE by a pending evaluator (no score data, 204 after the end), the AI evaluation out of the aggregate then included, research note, section draft, a cancelled `-slow` run, the agent's key refused on REST and outside runs; `AI_PROTOCOL=kagent_v1_0` runs it over A2A 1.0; needs `jq` |
 | `make fake-agent-image` · `make k3s-fake-agent` · `make k3s-kagent-crds` · `k3s-install AI=1` · `k3s-smoke AI=1` | The fake agent's image (`FAKE_AGENT_IMAGE`, default `soundings-fake-agent:dev`); the fake in k3s as `kagent/kagent-controller:8083` (so the default `controllerUrl` works); kagent v0.10.2's CRDs (from the git tag, cloned into `.k3s/`) plus a server-side dry run of every kagent manifest; install with `dev/k3s-ai-values.yaml` (AI on, `kagent.examples` when the CRDs exist) and run `ai-smoke` through the ingress. CI's k3s job runs `SSO=1 SMTP=1 MCP=1 AI=1` |
-| `make bid-smoke` | `scripts/bid-smoke.sh $(BID_BASE_URL)` (default :8000) against an app with the demo data, dev login and the worker: a test idea's call in `BID_PROJECT` (default customer-innovation), bids, PDF/DOCX/pricing-CSV uploads and refusals (409 duplicate, 415 `.docm`, 413 at 25 MiB + 1 with a Content-Length and chunked, 422 `../`, 401, 403), extraction, download headers, must-haves, reject/reinstate, per-section assessors, price visibility, blind before/after submitting, the comparison total recomputed from the template, the report (403 for an assessor), with `BID_AI` (`auto`, `0`, `1`) an AI assess run through the fake agent (quotes found, `-invents` one not found, include/exclude), the award; deletes its idea. `BID_SLOW_UPLOAD=1` adds an 80 s slow upload (the ingress timeouts). `k3s-smoke` runs it (AI part with `AI=1`), and so does GitHub's e2e job |
+| `make bid-smoke` | `scripts/bid-smoke.sh $(BID_BASE_URL)` (default :8000) against an app with the demo data, dev login and the worker: a test idea's call in `BID_PROJECT` (default customer-innovation), bids, PDF/DOCX/pricing-CSV uploads and refusals (409 duplicate, 415 `.docm`, 413 at 25 MiB + 1 with a Content-Length and chunked, 422 `../`, 401, 403), extraction, download headers, must-haves, reject/reinstate, per-section assessors, price visibility, blind before/after submitting, the comparison total recomputed from the template, the report (403 for an assessor), a name in `X-Filename`, with `BID_AI` (`auto`, `0`, `1`) an AI assess run through the fake agent (quotes found, `-invents` one not found, include/exclude), the award; deletes its idea. `BID_SLOW_UPLOAD=1` adds a slow upload (1.6 MB at 20 KiB/s, about 78 s: the ingress timeouts). `k3s-smoke` runs it (AI part with `AI=1`), and so does GitHub's e2e job |
 | `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then deletes the idea. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too |
 | `make k3s-install PROD=1` · `k3s-smoke PROD=1` | Production mode on the local k3s (`dev/k3s-prod-values.yaml`: no dev login or demo data, break-glass sign-in): the smoke checks `__Host-` cookies, the OpenAPI document and Swagger UI 401 anonymously and 200 signed in, `/metrics` off the app port, the production startup log, no password in the logs; skips the public-form smoke (no demo data). Not with `SSO=1` |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
@@ -255,7 +255,7 @@ the price, Priya owes Tessellate: no ranks for her), TOOL-4 open with an AI asse
 (Kestrel flagged), TOOL-11 a draft, CUST-10 awarded, CUST-12 cancelled; an agent named
 `*-invents` invents a quote. Phase 10 mock screenshots: `SCREENSHOTS=1 npx playwright test
 bids-screenshots` → `docs/screenshots/phase-10/mock/`. Uploads go through
-`api/client.ts` `uploadRaw` (the raw file, the name in the query, progress).
+`api/client.ts` `uploadRaw` (the raw file, the name percent-encoded in `X-Filename`, progress).
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -772,11 +772,23 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   **Scoring** (`app/bids/scoring.py`) in exact fractions, rounded half up only for display
   (scores 2 decimals, section scores and totals 1); scored bids follow the facts (not
   rejected, every must-have met), not the award; equal rounded totals share a rank
-  ("1="). **Uploads** are the raw body (name in the query; `BodySizeLimitMiddleware`
-  gives that route alone 25 MiB and answers 413 before the body is read, so clients
-  check the size first), type from the bytes (`app/bids/sniff.py`: macro, OLE and
-  encrypted Office files 415), two at a time per API process (503 `upload_busy`), 120 s
-  (408), caps 30 a bid, 500 MiB a call and 5 GiB a project counting extracted text.
+  ("1="). **Uploads** are the raw body (the name percent-encoded in `X-Filename`, as the
+  SPA sends it, so it stays out of access logs; the `filename` query still works;
+  `BodySizeLimitMiddleware` gives that route alone 25 MiB and answers 413 before the body
+  is read, so clients check the size first), type from the bytes (`app/bids/sniff.py`:
+  macro, OLE and encrypted Office files and Excel macro/dialog sheets 415), two at a time
+  per API process and one per person (503 `upload_busy`), 120 s and 408 `upload_timeout`
+  once a body averages under 16 KiB/s after its first 15 s (tests set
+  `app.state.bid_upload_min_rate`), caps 30 a bid, 500 MiB a call and 5 GiB a project
+  counting extracted text. A call is read-only while its idea is closed (409
+  `idea_closed`). An **awarded or cancelled call has no pending assessors** (ACC-4:
+  nothing is hidden any more, except from agents). **Leaving a private project** removes
+  that person's unsubmitted section assignments, drafts too, on unfinished calls
+  (`app/bids/role_loss.py`, from the Phase 8b role-loss hook; audited
+  `bid_call.assessors_change` with `reason: left_project`); an edit to a submitted
+  assessment is audited (`edited`, `changed_question_ids`; the first scores aren't kept).
+  Emails show a due date at 23:59 in the instance zone (what the SPA's pickers save) as
+  the day alone (`app/email/model.py` `format_due`).
   **Extraction** only on the worker's own `bid_documents` pool, one child at a time
   (`app/bids/extraction.py` → `extract_child.py`: `python -I`, allow-listed environment,
   stdin/stdout, 30 s, 512 MiB, 2 M characters, three crashes then `internal_error`; the

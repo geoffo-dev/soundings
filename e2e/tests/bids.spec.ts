@@ -96,6 +96,10 @@ const documentRow = (sheet: Locator, filename: string) =>
 const mustHaveRow = (sheet: Locator, text: string) =>
   sheet.getByRole('list', { name: 'Must-haves' }).getByRole('listitem').filter({ hasText: text })
 
+// One upload at a time per person per API process (review L4: a second one is 503
+// upload_busy): most of these specs upload as alice, so they run in order, not side by side.
+test.describe.configure({ mode: 'default' })
+
 // --- BD-01 ---------------------------------------------------------------------------------
 test('BD-01 the owner starts a call from the project’s template, sets a deadline and opens it', async ({
   page,

@@ -11,6 +11,8 @@ BUILD_CA ?= $(SSL_CERT_FILE)
 # or --build-arg NPM_CONFIG_REGISTRY=https://npm.internal/.
 IMAGE_BUILD_ARGS ?=
 VCS_REF := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# The image's version label: the backend's version (pyproject.toml) unless VERSION is given.
+VERSION ?= $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' backend/pyproject.toml)
 OPENAPI_JSON := frontend/src/api/generated/openapi.json
 # `make demo`: the image with demo data on http://localhost:$(DEMO_PORT) and its email in
 # Mailpit on http://localhost:$(DEMO_MAILPIT_PORT) (scripts/demo.sh).
@@ -137,7 +139,7 @@ e2e: ## Playwright end-to-end tests (e2e/) against E2E_BASE_URL (default: make d
 
 # --- Image and local Kubernetes ----------------------------------------------------------
 image: ## Build the container image (IMAGE, default soundings:dev)
-	docker build $(build_ca_flag) --build-arg VCS_REF=$(VCS_REF) \
+	docker build $(build_ca_flag) --build-arg VERSION=$(VERSION) --build-arg VCS_REF=$(VCS_REF) \
 	  --build-arg BUILD_DATE=$$(date -u +%Y-%m-%dT%H:%M:%SZ) $(IMAGE_BUILD_ARGS) -t $(IMAGE) .
 
 fake-agent-image: ## Build the fake kagent agent's image (FAKE_AGENT_IMAGE, default soundings-fake-agent:dev)

@@ -362,6 +362,28 @@ describe('bids, must-haves and documents', () => {
     expect((await upload('../evil.pdf', '%PDF-1.7')).status).toBe(422)
   })
 
+  it('takes the file name from X-Filename, percent-encoded, before the query', async () => {
+    await signIn(USERS.alice)
+    const upload = (header: string) =>
+      fetch(`/api/v1/ideas/TOOL-4/bid-call/bids/${PHASE10.kestrel}/documents`, {
+        method: 'POST',
+        body: `%PDF-1.7 ${header}`,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-CSRF-Token': csrf(),
+          'X-Filename': header,
+        },
+      })
+    const ok = await upload(encodeURIComponent('Méthode – plan.pdf'))
+    expect(ok.status).toBe(201)
+    expect(await ok.json()).toMatchObject({ filename: 'Méthode – plan.pdf' })
+    const broken = await upload('%E9.pdf')
+    expect(broken.status).toBe(422)
+    expect(await broken.json()).toMatchObject({ errors: [{ loc: ['header', 'X-Filename'] }] })
+    const folder = await upload(encodeURIComponent('../evil.pdf'))
+    expect(folder.status).toBe(422)
+  })
+
   it('enters bids only while the call is open', async () => {
     await signIn(USERS.alice)
     const error = await rejection(

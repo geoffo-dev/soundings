@@ -655,9 +655,19 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+/** The name from `X-Filename` (percent-encoded, as the SPA sends it), else the query. */
 function filenameParam(ctx: RouteContext): string {
-  const raw = ctx.url.searchParams.get('filename')
-  const loc = ['query', 'filename']
+  const header = ctx.request.headers.get('X-Filename')
+  let raw = ctx.url.searchParams.get('filename')
+  let loc = ['query', 'filename']
+  if (header !== null) {
+    loc = ['header', 'X-Filename']
+    try {
+      raw = decodeURIComponent(header)
+    } catch {
+      failValidation([{ loc, msg: 'The name must be percent-encoded UTF-8.', type: 'value_error' }])
+    }
+  }
   if (raw === null || raw.trim() === '')
     failValidation([{ loc, msg: 'Field required', type: 'missing' }])
   const name = raw.trim()

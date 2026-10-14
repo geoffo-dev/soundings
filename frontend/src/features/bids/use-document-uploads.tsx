@@ -65,7 +65,9 @@ function uploadWords(error: unknown): { title: string; description?: string } {
   if (
     isApiError(error) &&
     error.status === 422 &&
-    (error.problem?.errors ?? []).some((entry) => entry.loc.includes('filename'))
+    (error.problem?.errors ?? []).some((entry) =>
+      entry.loc.some((part) => typeof part === 'string' && /^(x-)?filename$/i.test(part)),
+    )
   ) {
     return {
       title: 'That file name can’t be used',

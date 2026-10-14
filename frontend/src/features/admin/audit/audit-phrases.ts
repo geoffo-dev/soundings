@@ -68,6 +68,17 @@ function list(details: Details, key: string): string[] {
     : []
 }
 
+/** The distinct user ids in a `{section id: [user ids]}` detail. */
+function peopleBySection(details: Details, key: string): string[] {
+  const value = details[key]
+  if (Array.isArray(value)) return list(details, key)
+  if (!value || typeof value !== 'object') return []
+  const ids = Object.values(value as Record<string, unknown>).flatMap((users) =>
+    Array.isArray(users) ? users.filter((id): id is string => typeof id === 'string') : [],
+  )
+  return [...new Set(ids)]
+}
+
 function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString('en')} ${count === 1 ? one : many}`
 }
@@ -675,8 +686,28 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       ]
     }
     case 'bid_call.assessors_change': {
-      const added = num(details, 'added') ?? list(details, 'added_user_ids').length
-      const removed = num(details, 'removed') ?? list(details, 'removed_user_ids').length
+      // `added` / `removed` are user ids by section (the mock sends counts).
+      const added = num(details, 'added') ?? peopleBySection(details, 'added').length
+      const removed = num(details, 'removed') ?? peopleBySection(details, 'removed').length
+      if (str(details, 'reason') === 'left_project') {
+        // Review ACC-5: leaving a private project ends unsubmitted assignments.
+        const gone = peopleBySection(details, 'removed')
+        const [only] = gone
+        return gone.length === 1 && only
+          ? [
+              { type: 'user', id: only },
+              text(' was removed as an assessor of the call for bids on '),
+              idea(),
+              text(' (left the project)'),
+            ]
+          : [
+              text(
+                `${plural(removed, 'assessor')} ${removed === 1 ? 'was' : 'were'} removed from the call for bids on `,
+              ),
+              idea(),
+              text(' (left the project)'),
+            ]
+      }
       const changes = [
         added ? `${plural(added, 'assessor')} added` : '',
         removed ? `${plural(removed, 'assessor')} removed` : '',
@@ -690,8 +721,14 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
     }
     case 'bid.create':
       return [actor, text(' entered a bid on '), idea()]
-    case 'bid.update':
-      return [actor, text(' edited a bid on '), idea()]
+    case 'bid.update': {
+      // Review N4: whether the edit made the bid late, or not late any more.
+      const late =
+        details.late_changed === true
+          ? [text(details.late === true ? ' (now late)' : ' (no longer late)')]
+          : []
+      return [actor, text(' edited a bid on '), idea(), ...late]
+    }
     case 'bid.delete':
       return [actor, text(' deleted a bid on '), idea()]
     case 'bid.reject':
@@ -731,8 +768,17 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
     }
     case 'bid_document.delete':
       return [actor, text(' deleted a bid document on '), idea()]
-    case 'bid_assessment.submit':
-      return [actor, text(' submitted a bid assessment on '), idea()]
+    case 'bid_assessment.submit': {
+      if (details.edited !== true) return [actor, text(' submitted a bid assessment on '), idea()]
+      // Review L7: a change after submitting (which questions, never the scores).
+      const changed = list(details, 'changed_question_ids').length
+      return [
+        actor,
+        text(' edited a submitted bid assessment on '),
+        idea(),
+        ...(changed ? [text(` (${plural(changed, 'question')} changed)`)] : []),
+      ]
+    }
     case 'bid_assessment.include_ai':
       return details.include === false
         ? [actor, text(' left an AI bid assessment on '), idea(), text(' out of the totals')]

@@ -767,6 +767,62 @@ describe('audit sentences', () => {
     )
   })
 
+  it('words the bid review details: edits, lateness and leaving the project', () => {
+    const base = {
+      target_type: 'idea' as const,
+      target_id: 'i-12',
+      target_label: 'TOOL-12',
+      project: CUST,
+    }
+    const people: NameResolver = {
+      ...names,
+      user: (id) => ({ 'u-bob': 'Bob Brown', 'u-ann': 'Ann Lee' })[id],
+    }
+    const phrase = (action: string, details: Record<string, unknown>, actor = true) =>
+      say(
+        entry(action, { ...base, details, ...(actor ? {} : { actor_id: null, actor: null }) }),
+        people,
+      )
+    expect(phrase('bid_assessment.submit', { call_id: 'c1', section_id: 's1' })).toBe(
+      'Alice Anders submitted a bid assessment on TOOL-12',
+    )
+    expect(
+      phrase('bid_assessment.submit', { edited: true, changed_question_ids: ['q1', 'q2'] }),
+    ).toBe('Alice Anders edited a submitted bid assessment on TOOL-12 (2 questions changed)')
+    expect(phrase('bid.update', { fields: ['notes'], late: false, late_changed: false })).toBe(
+      'Alice Anders edited a bid on TOOL-12',
+    )
+    expect(phrase('bid.update', { fields: ['received_at'], late: true, late_changed: true })).toBe(
+      'Alice Anders edited a bid on TOOL-12 (now late)',
+    )
+    expect(phrase('bid.update', { fields: ['received_at'], late: false, late_changed: true })).toBe(
+      'Alice Anders edited a bid on TOOL-12 (no longer late)',
+    )
+    expect(
+      phrase('bid_call.assessors_change', {
+        added: { s1: ['u-bob'], s2: ['u-bob', 'u-ann'] },
+        removed: {},
+        due_at_changed: false,
+      }),
+    ).toBe('Alice Anders changed the assessors of the call for bids on TOOL-12 (2 assessors added)')
+    expect(
+      phrase(
+        'bid_call.assessors_change',
+        { added: {}, removed: { s1: ['u-bob'], s2: ['u-bob'] }, reason: 'left_project' },
+        false,
+      ),
+    ).toBe(
+      'Bob Brown was removed as an assessor of the call for bids on TOOL-12 (left the project)',
+    )
+    expect(
+      phrase(
+        'bid_call.assessors_change',
+        { added: {}, removed: { s1: ['u-bob', 'u-ann'] }, reason: 'left_project' },
+        false,
+      ),
+    ).toBe('2 assessors were removed from the call for bids on TOOL-12 (left the project)')
+  })
+
   it('falls back to the raw action for unknown actions', () => {
     expect(say(entry('agent.something_new'))).toBe('Alice Anders: agent.something_new')
   })

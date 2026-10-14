@@ -17,9 +17,10 @@ It is one container image and one Helm chart. PostgreSQL is its only stateful
 dependency, it sends mail through any SMTP server and it runs air-gapped. Guiding rule:
 **simple beats configurable**.
 
-Version **0.2.0**: [release notes](docs/RELEASE-NOTES.md) (per-project proposal
-templates, the research step with outside researchers, continuous delivery from GitLab
-and GitHub).
+Version **0.3.0**: [release notes](docs/RELEASE-NOTES.md) (bid evaluation: calls for
+bids with weighted sections, documents and must-haves, assessors per section, an AI
+assessor whose quotes are checked, the comparison, the award and the report; 0.2.0 added
+per-project proposal templates, the research step and continuous delivery).
 
 ![My work: evaluations due, ideas you own and what changed recently](docs/screenshots/tour/02-my-work-1440-light.png)
 
@@ -54,7 +55,7 @@ make demo-down     # remove it all
 ```
 
 **On Kubernetes** (1.27+, an ingress controller, a default StorageClass): build the
-image and push it where your cluster pulls from (`make image IMAGE=<registry>/soundings:0.2.0`),
+image and push it where your cluster pulls from (`make image IMAGE=<registry>/soundings:0.3.0`),
 then:
 
 ```sh
@@ -84,7 +85,7 @@ delivery"](docs/operator-guide.md#continuous-delivery-phase-9).
 | [Helm chart](deploy/helm/README.md) | Every value |
 | [MCP guide](docs/mcp.md) | Connecting Claude Code, Claude Desktop or an SDK with an API key; the thirteen tools (three only for the AI bid assessor) |
 | [kagent integration](deploy/kagent/README.md) | AI agents: how a run flows, example manifests |
-| [Release notes](docs/RELEASE-NOTES.md) | What 0.2.0 and 0.1.0 do, known issues, upgrade notes, decisions to confirm |
+| [Release notes](docs/RELEASE-NOTES.md) | What 0.3.0, 0.2.0 and 0.1.0 do, known issues, upgrade notes, decisions to confirm |
 | [Decisions](docs/decisions.md), [ADRs](docs/adr/README.md) | Why it is built this way |
 | [Role matrix](docs/role-matrix.md) | Every permission rule, and the exact blind-evaluation rules |
 | [API contract](docs/api/) | REST API per phase (`/api/docs` on a running instance) |
@@ -100,11 +101,11 @@ flowchart LR
   subgraph image["One image: soundings"]
     api["soundings api<br/>FastAPI: REST, the SPA,<br/>MCP server, SSE"]
     pdf["PDF renderer<br/>(WeasyPrint child process)"]
-    worker["soundings worker<br/>email outbox, digests,<br/>reminders, AI runs"]
+    worker["soundings worker<br/>email outbox, digests,<br/>reminders, AI runs,<br/>bid documents' text"]
     api --- pdf
   end
 
-  api --> db[("PostgreSQL 16<br/>data, job queue, outbox")]
+  api --> db[("PostgreSQL 16<br/>data, documents,<br/>job queue, outbox")]
   worker --> db
   api -->|"OIDC code flow + PKCE"| idp["Identity provider<br/>Keycloak, Entra ID, Google"]
   worker -->|SMTP| smtp["Any SMTP server"]
@@ -115,7 +116,9 @@ flowchart LR
 - **One image, two processes.** `soundings api` serves the REST API, the React SPA,
   the MCP server at `/mcp` and live AI progress (SSE). `soundings worker` sends email
   from a transactional outbox and runs digests, reminders and AI runs on procrastinate
-  queues in PostgreSQL. There is no Redis and no message broker.
+  queues in PostgreSQL, and reads uploaded bid documents' text in a time- and
+  memory-limited child process. Documents are stored in PostgreSQL too. There is no
+  Redis, message broker or object store.
 - **One policy module** decides every permission (routes, MCP tools, jobs, emails),
   deny by default. Pending evaluators see no score data anywhere, and emails never
   carry scores ([ADR 0006](docs/adr/0006-blind-evaluation-and-aggregate-scoring.md),

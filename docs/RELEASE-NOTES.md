@@ -3,9 +3,286 @@
 Soundings is a calm, fast web app where people submit ideas, anonymously too through a
 public form. Each idea gets one accountable owner and several evaluators, who score it
 blind against a short rubric. Strong ideas become a commercial proposal exported to PDF
-or Markdown. It is one container image and one Helm chart, needs only PostgreSQL, sends
-mail through any SMTP server and runs air-gapped. Tour: [README](../README.md#a-tour).
-Guides: [user](user-guide.md), [operator](operator-guide.md), [MCP](mcp.md).
+or Markdown, and once a proposal is agreed, a call for bids collects the bids that come in
+and has them assessed section by section, blind. It is one container image and one Helm
+chart, needs only PostgreSQL, sends mail through any SMTP server and runs air-gapped.
+Tour: [README](../README.md#a-tour). Guides: [user](user-guide.md),
+[operator](operator-guide.md), [MCP](mcp.md).
+
+## 0.3.0
+
+**Released:** 2026-10-14. The product owner's change after 0.2.0: Phase 10, **bid
+evaluation** (the product owner's ask of 2026-10-13), with its reviews' fixes, plus the
+fixes from the first CI run on GitHub. Waiting for the product owner's review.
+
+**Verified on 2026-10-14** (the build machine, not a real CI runner): @@VERIFIED@@
+[Phase 10 summary](phase-summaries/phase-10.md).
+
+### What's new in 0.3.0
+
+#### Calls for bids (Phase 10)
+
+- Once an idea is in **Proposal** and has a proposal, its new **Bids** tab runs **one call
+  for bids**: draft → **open** (bids are entered until a deadline; late ones are marked,
+  not refused) → **assessing** (no new bids; back to open while nothing is submitted) →
+  **awarded** or **cancelled** (read-only). The idea's owner and the project's and
+  platform admins run it (call managers). Closing the idea makes its call read-only;
+  reopening it lets the call go on.
+- **The evaluation template**: Project settings → **Bids** holds each project's default:
+  1-8 weighted sections (weights add up to 100), 1-15 questions each (**score** 0-5 with
+  the scale's six labels shown to assessors, at most one **price** question, scored from
+  the prices, and **comment**), and 0-20 **must-haves** (a required **document**, or a
+  **confirmation** a person checks). Every project starts from Technical 40 / Commercial
+  40 (with the price) / Delivery 20, a few sample questions, and "Signed form of tender",
+  "Pricing schedule", "Insurance certificate" and "Accepts our standard terms". A call
+  **copies** the template and may change its own copy until the first person submits an
+  assessment; later changes to the project's template never touch a call.
+
+#### Bids, documents and must-haves (Phase 10)
+
+- **Bids are entered by the team** (no bidder accounts or portal): the bidder, a contact
+  (never emailed), when it arrived, the price (when there is a price question) and notes.
+- **Documents** (PDF, Word, Excel, PowerPoint, OpenDocument, text, CSV, PNG, JPEG; up to
+  25 MB each, 30 a bid, 500 MB a call, 5 GB a project) are uploaded by call managers with
+  progress, by drag and drop or the keyboard, and matched to the must-have their name
+  points to. The type is decided from the file's bytes, never its name: macro-enabled,
+  encrypted and OLE-carrying Office files, Excel macro sheets and anything else are
+  refused, with the reason beside the file. Files are stored in PostgreSQL, downloaded
+  only as attachments, and never opened in the browser: the worker reads each file's
+  text in a time- and memory-limited child process, and the app shows that text as plain
+  text (a file with active content asks before it downloads).
+- **Pricing documents** (the pricing schedule, or any file marked as pricing) and the
+  price are for call managers and the assessors of the section with the price only;
+  everyone else sees "present (restricted)". The AI never reads them.
+- **Must-haves are flagged at once**: a required document with no file is **Missing**
+  the moment the bid is entered; confirmations wait for a person (the AI pre-checks them
+  as suggestions). **Reject…** is one click, with the reason filled in ("Missing:
+  Insurance certificate."), audited, and **Reinstate** undoes it until the award. A
+  rejected bid leaves the queues, the totals, the price formula and the ranking.
+
+#### Assessors, blind, scoring and the award (Phase 10)
+
+- **Assessors per section** (for example Technical, Commercial, Delivery), with one
+  assessment due date: each section's assessors score it for every bid. They are told
+  ("Asked to assess bids"), reminded 2 days before and on the day, and the call's managers
+  hear when every assessment is in; My work's **Bids to assess** and the sidebar's badge
+  list what each person owes. No email or inbox item carries a score, a price, a bidder or
+  document text.
+- **Blind per bid and section**, as idea evaluations: until you submit a section for a
+  bid you see nobody's scores for it (people's or the AI's), anywhere (the app, the API,
+  MCP, exports, emails); assessors never see totals or ranks, and a call manager who still
+  owes an assessment sees no ranking. Once the call is awarded or cancelled nobody can
+  score, so nothing is hidden any more (except from agents).
+- **Scoring**: a question's score is the mean of the submitted scores; a section's score
+  the weighted mean of its questions (0-5, shown as 0-100); the total weights the
+  sections; the price question scores lowest qualified price ÷ this bid's price × 5.
+  Worked out in exact fractions and rounded half up only for display; equal totals share a
+  rank ("1="); "Disagree" when two assessors' scores on a question differ by 2 or more.
+  Only bids that meet every must-have get a total.
+- **The comparison** (call managers): ranks, prices and price scores, section scores and
+  totals, "n of m assessed", and each section's assessments one click away (who scored
+  what and why). **Award…** picks one qualifying bid with an optional reason (it says how
+  many assessments are outstanding and never breaks a tie for you); the others become
+  unsuccessful; audited and in the idea's feed.
+- **The evaluation report** (Markdown and PDF through the existing PDF renderer, call
+  managers only): the ranking, each bid's section scores and total, must-have results,
+  rejected bids with their reasons, the assessors and their progress, whether the AI was
+  counted, and the award.
+
+#### The AI assessor (Phase 10)
+
+- Agents with the new purpose **Assess bids** score every question of a bid with a
+  rationale and quotes from its documents and check its must-haves, through three new MCP
+  tools that reach **only their run's bid** (never other bids, people's scores, prices or
+  pricing documents). **Every quote is checked** against the document's text and shown
+  "Found in the document" or "Not found in the document".
+- "Ask AI to assess" on a bid and "Assess all with AI" on the call (each counts toward
+  the 20 AI requests an hour); a call may name one AI assessor, which assesses each bid
+  **once by itself** when its documents are read and nothing was uploaded for 5 minutes.
+- Its scores are shown next to the people's but **left out of every total** until a call
+  manager switches on **Count in the totals** for that bid; a changed re-submission is
+  left out again. Its must-have findings are suggestions a person confirms.
+  `deploy/kagent/` has a bid-assessor Agent example whose system message treats document
+  text as untrusted data.
+
+#### Review fixes
+
+Phase 10 had a contract review before any code, then security and code, access and UX
+reviews of the build; every finding was fixed or decided by the lead
+([decisions.md](decisions.md), "2026-10-14 · Phase 10 review decisions"). The main ones:
+
+- **Security and code:** a closed idea's call is read-only for everyone, the AI too;
+  scoring the largest call reads its answers once; PDF active-content flags no longer
+  fire on compressed bytes (and survive a damaged file); Excel 4.0 macro and dialog
+  sheets, OpenDocument event scripts and ZIPs naming one entry twice are refused or
+  flagged; one upload per person per API process, and a trickling upload is cut off
+  (under 16 KiB/s after 15 s); the extraction child's time limit holds when it stops
+  reading; quote checks read one document at a time; one call's backlog can't starve
+  the other calls' extraction; edits to a submitted assessment are audited.
+- **Access:** the AI's must-have reasons and quotes are hidden from anyone who still owes
+  a section of the bid (only the verdict shows); a rejected bid's AI runs leave with it; a
+  pricing must-have's note and decider are for price viewers only; a finished call ends
+  everyone's blindness (agents excepted); leaving a private project takes away one's
+  unsubmitted sections there.
+- **UX:** the bid form says what is wrong as you type; uploads link to their must-haves by
+  name, with an "Answers" choice on every file; prices aren't exposed by default (an
+  unmatched file in a call with a price question goes up as pricing until you say it
+  isn't); call managers can read every assessment from the bid and the comparison; the
+  Bids tab follows the idea's status; due dates are the instance's days everywhere (the
+  app, emails, the report); focus lands on the next sensible control after every action.
+- **Release verification (this release):** the SPA sends the file's name in the
+  `X-Filename` header (percent-encoded) instead of the query string, so bidders' file
+  names stay out of ingress access logs; the audit log words an edited assessment, a bid
+  edit that changed whether it is late, and assessors taken off a call because they left
+  the project (and counts the assessors added and removed, which it had shown as none);
+  the image's version label now follows `backend/pyproject.toml` (0.2.0's image said
+  0.1.0).@@RELEASEFIXES@@
+
+#### CI fixes since 0.2.0
+
+The first run of `.github/workflows/ci.yml` on GitHub's runners (2026-10-10) found three
+things the build machine hadn't:
+
+- **The PDF renderer kept restarting**: the warm child process that renders PDF exports
+  retired itself after every export in a large API process, because it measured the
+  parent's peak memory (`ru_maxrss` carries it across `spawn`); it now measures its own
+  (`VmHWM`) and is reused as designed.
+- **shellcheck 0.9** (GitHub's ubuntu-24.04) names two warnings differently from 0.11 and
+  flags `A && B || C`: the scripts are clean with 0.9, 0.10 and 0.11.
+- **An email outage test across the hour**: the worker's send breaker counts every
+  failure and the hourly schedule sends the day's digests at minute 0, so the e2e outage
+  specs now wait for a quiet outbox before stopping Mailpit.
+
+### Known issues in 0.3.0
+
+| Item | Detail |
+|---|---|
+| **No antivirus scanning** | Uploads are allowed by their bytes and never executed, rendered or opened on the server except by the extraction child; macro and OLE content is refused and active content flagged. Where policy needs a virus scan, put a scanning proxy (ICAP, ClamAV) in front of the upload path or scan backups ([operator guide](operator-guide.md#no-antivirus-scanning)). |
+| **No OCR** | Images and scanned PDFs have no text: the AI can't read them and quotes from them can't be checked. |
+| **No bidder portal** | Bids are entered by the team (P1); bidders have no accounts, links or uploads of their own, and Soundings never emails them. |
+| **The AI assessor is verified against Soundings' fake agent only** | As for every AI feature: no kagent controller or LLM has carried an assess run here. The fake agent (`dev/fake-agent`) runs the real MCP tools with deterministic scores and quotes taken from the extracted text (and invented ones for the `-invents` suffix); the bid-assessor manifest is validated against kagent v0.10.2's CRDs. How well a real model scores, quotes exactly and resists instructions hidden in bid documents is untested. |
+| **Database growth** | Documents and their text are stored in PostgreSQL (up to 5 GiB a project): size the volume and every backup for them. Bidders' documents may hold personal data; they live as long as the call (delete the call, or the idea, to remove them). |
+| **The upload route needs its ingress settings** | 25 MiB bodies for up to 180 s on one path: the chart's `ingress.uploads` does it for ingress-nginx; Traefik (k3s) needs its entryPoint `readTimeout` raised; other controllers by annotation. Through Traefik an oversized *chunked* upload may get 502 instead of 413. |
+| **One call per idea; one currency label per call** | A second purchase from the same idea needs another idea. The currency is a label: no conversion. |
+| Not changed from the reviews | The bid count everyone who sees the idea gets includes rejected bids (ACC-6, declined); the first submitted scores of an edited assessment aren't kept (only the audit entry); the Bids, Comparison and Rejected lists stay three views (one table is a later change). |
+| As in 0.2.0 | GitLab Premium's environments and approvals, the Kubernetes executor, cosign, GitHub's runners/GHCR/ARC/environments and `scripts/ci-local/` weren't run again for this release; [0.2.0's known issues](#known-issues-in-020) otherwise apply. @@PERFNOTE@@ |
+| The image is @@IMAGESIZE@@ | Ubuntu 24.04 with the PDF libraries and `pypdf`; a slimmer final stage is still deferred. |
+
+### Upgrading from 0.2.0
+
+- **Migration 0016** runs before the new pods serve (`helm upgrade` or
+  `scripts/deploy.sh`): new tables for calls, bids, documents, assessments and AI
+  assessments, four columns on `ai_runs`, the `assess_bid` run kind and agent purpose,
+  and three notification types (anyone who had every type off gets them off too). It
+  gives **every existing project the default bid evaluation template** and changes no
+  existing row otherwise. It is expand only, so 0.2.0's pods keep working during the
+  rollout and `scripts/deploy.sh` can roll a failed deploy back. Rehearsed on k3s with
+  0.2.0's demo data (@@UPGRADEPROOF@@). Downgrading below 0016 is an emergency only
+  (restore a backup if you can): it **deletes** every call, bid, document, assessment and
+  AI assessment, the `assess_bid` runs and the three types' notifications.
+- **Database growth from documents**: up to 25 MiB a file, 500 MiB a call and 5 GiB a
+  project, extracted text counted; stored uncompressed in `bid_document_contents`. Size
+  `postgresql.persistence.size` (or your database) and your backups before people start
+  calls ([operator guide](operator-guide.md#storage-limits-and-backups)).
+- **The upload route's ingress body size and timeout**: `POST
+  /api/v1/ideas/{idea}/bid-call/bids/{bid}/documents` takes a 25 MiB raw body within
+  120 s; everything else keeps the 1 MiB limit. With ingress-nginx the chart's new
+  `ingress.uploads` (on with `ingress.enabled`) adds a fourth Ingress for that path only
+  (26 MiB, 180 s, no request buffering; its default path is a regular expression, and
+  ingress-nginx's `use-regex` then applies to every path of the host: the chart README
+  says what that means); with Traefik raise the entryPoint's
+  `respondingTimeouts.readTimeout` to 180 s (60 s by default since v2.11.2); with other
+  controllers set `ingress.uploads.path`, `.pathType` and `.annotations`
+  ([operator guide](operator-guide.md#the-upload-routes-body-size-and-timeout)). File
+  names travel in the `X-Filename` header from the SPA; scripts that send `?filename=`
+  put the name in your access log.
+- **The worker needs 1 GiB of memory** (the chart's new default; the extraction child is
+  capped at 512 MiB). Extraction runs on the worker's own `bid_documents` queue, one
+  document at a time per worker pod.
+- **New Helm values**: `ingress.uploads.*`, `kagent.agents.bidAssessor` (the example
+  Agent), the worker's resources; see the [chart README](../deploy/helm/README.md#bid-evaluation).
+  `pypdf` moved from a development to a runtime dependency (BSD-3-Clause).
+- **API (additive)**: 34 operations under `/api/v1/ideas/{idea}/bid-call` and
+  `/api/v1/projects/{slug}/bid-template`, new fields on ideas, My work and AI runs, three
+  notification types, 19 audit actions and new error codes; MCP gains
+  `get_bid_for_assessment`, `get_bid_document_text` and `submit_bid_assessment`, usable only
+  inside an `assess_bid` run ([contract-phase10](api/contract-phase10.md), its §21 for the
+  changes after the contract; [mcp.md](mcp.md)).
+
+### Decisions to confirm in 0.3.0
+
+The product owner decided P1-P4 (bids entered by the team; must-haves flagged and a bid
+rejected by a person in one click; assessors per section; the AI's scores out of the
+totals until included). The rest are the lead's defaults ("lead default, to confirm" in
+[decisions.md](decisions.md), sections F and G of "Phase 10 (product owner,
+2026-10-13)", "2026-10-13 · Phase 10 build and integration" and "2026-10-14 · Phase 10
+review decisions"), built that way and easy to change:
+
+**The call and its template**
+1. **One call per idea**, on an idea in Proposal with a proposal (L1); closing the idea
+   makes the call read-only, reopening resumes it.
+2. **The lifecycle** draft → open → assessing → awarded | cancelled, back to open only
+   while nothing is submitted; late bids marked, not refused (L2).
+3. **The default template** (Technical 40 / Commercial 40 with the price / Delivery 20;
+   four must-haves including "Pricing schedule"); a call's copy locks at the first
+   **person's** submitted assessment, and changing it deletes the AI's assessments (L3).
+4. **Question types** score / price / comment, one price question at most (L4).
+
+**Who does what**
+5. **Call managers** = the idea's owner, project admins and platform admins; uploads,
+   rejecting, reinstating, the award, cancelling, deleting and assigning assessors are
+   **session only** (L5).
+6. **Assessors must be able to view the idea in their own right** (in a private project: a
+   role there; never agents, the break-glass account or deactivated people), and **a
+   platform admin may be an assessor** without a role in the project.
+7. **Assessors per section** with one due date per call; nobody removes themselves from a
+   section they owe; someone who submitted keeps their section.
+8. **Blind per (bid, section)**; assessors never see totals, ranks, contacts, notes or
+   rejection reasons; no ranks for a manager who owes an assessment.
+9. **ACC-4**: a finished (awarded or cancelled) call has no pending assessors: nothing is
+   hidden any more, except from agents.
+10. **ACC-5**: leaving a private project removes one's unsubmitted section assignments on
+    its unfinished calls (drafts too), audited.
+11. **ACC-6** (finding declined): everyone who sees the idea sees the bid count, rejected
+    bids included.
+12. **L7**: edits after submitting are audited (which questions changed); the first scores
+    aren't kept.
+
+**Bids and documents**
+13. **Documents in PostgreSQL** (no object store), with the limits above; type from the
+    bytes; the SPA never renders a document.
+14. **No antivirus scanning** and **no OCR** in this phase.
+15. **Pricing documents**: a document can be marked pricing (or answers a pricing
+    must-have); it and the price are for call managers and the price section's assessors
+    only, and the AI never reads it; in a call with a price question an unmatched upload
+    is pricing until someone says it isn't.
+16. A must-have **document** is met automatically by a file and **missing** without one; a
+    **confirmation** waits for a person; AI findings never change a result.
+
+**Scoring and the award**
+17. **The price formula**: lowest qualified price ÷ this bid's price × 5.
+18. Exact fractions, rounded half up for display (scores 2 decimals, section scores and
+    totals 1); ranks by the rounded total, equal totals share a rank and the award breaks
+    the tie; disagreement at a spread of 2; scored bids follow the facts (not rejected,
+    every must-have met), not the award.
+
+**The AI assessor**
+19. **AI inclusion per bid**, by a call manager, and not while that manager still owes a
+    section of the bid; a changed re-submission is left out again.
+20. **The automatic AI pre-check**: a call may name one AI assessor, which runs once per
+    bid after a **5-minute quiet period** with every document read, outside anyone's 20
+    requests an hour; further runs are manual and counted.
+21. The AI's must-have reasons and quotes are hidden from anyone who owes a section of the
+    bid (the verdict shows); quotes are at least 20 characters and checked whitespace
+    aside.
+
+**Notifications and the report**
+22. "Bid assessments complete" goes to the idea's owner and the call's creator, not every
+    admin; reminders 2 days before and on the due date at the digest hour.
+23. The evaluation report is for call managers only; a manager who owes an assessment
+    gets it without that bid's scores and ranks.
+24. Due dates are the end of the chosen day in the instance's time zone, shown as the day
+    in emails.
 
 ## 0.2.0
 

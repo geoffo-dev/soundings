@@ -367,16 +367,24 @@ export interface UploadTarget {
   pricing?: boolean
 }
 
-/** Uploads one file as the raw body (`application/octet-stream`), reporting progress. */
+/**
+ * Uploads one file as the raw body (`application/octet-stream`), reporting progress. The
+ * file's name travels percent-encoded in `X-Filename`, never in the query string, so it
+ * stays out of proxies' access logs (contract-phase10 §21, review N2).
+ */
 export function uploadBidDocument(
   { idea, bidId, file, filename, mustHaveId, pricing }: UploadTarget,
   options: UploadOptions = {},
 ): Promise<BidDocument> {
-  const query = new URLSearchParams({ filename: filename ?? file.name })
+  const query = new URLSearchParams()
   if (mustHaveId) query.set('must_have_id', mustHaveId)
   if (pricing !== undefined) query.set('pricing', String(pricing))
-  const url = `/api/v1/ideas/${encodeURIComponent(idea)}/bid-call/bids/${encodeURIComponent(bidId)}/documents?${query.toString()}`
-  return uploadRaw<BidDocument>(url, file, options)
+  const search = query.toString()
+  const url = `/api/v1/ideas/${encodeURIComponent(idea)}/bid-call/bids/${encodeURIComponent(bidId)}/documents${search ? `?${search}` : ''}`
+  return uploadRaw<BidDocument>(url, file, {
+    ...options,
+    headers: { ...options.headers, 'X-Filename': encodeURIComponent(filename ?? file.name) },
+  })
 }
 
 /** After an upload: the bid (documents and must-haves) and the call's lists. */

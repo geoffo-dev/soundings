@@ -81,6 +81,8 @@ export interface UploadOptions {
   /** 0-1 as the body is sent (not including the server's checks). */
   onProgress?: (fraction: number) => void
   signal?: AbortSignal
+  /** Extra request headers (bid documents send the file name in `X-Filename`). */
+  headers?: Record<string, string>
 }
 
 /**
@@ -99,6 +101,8 @@ export function uploadRaw<T>(url: string, file: Blob, options: UploadOptions = {
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
     const token = readCsrfToken()
     if (token) xhr.setRequestHeader(CSRF_HEADER, token)
+    for (const [name, value] of Object.entries(options.headers ?? {}))
+      xhr.setRequestHeader(name, value)
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0)
         options.onProgress?.(event.loaded / event.total)

@@ -47,8 +47,9 @@
 #                     example Agent); the second agent is <name>-invents
 #   BID_UPLOAD_HEADER a response header the upload route's edge router adds ("Name: value",
 #                     k3s: dev/k3s/uploads-route.yaml), proving that route matched
-#   BID_SLOW_UPLOAD   1: also upload 800 kB at 10 kB/s (about 80 s, within the app's 120 s
-#                     but past Traefik's default 60 s readTimeout: the proxy must allow it)
+#   BID_SLOW_UPLOAD   1: also upload 1.6 MB at 20 KiB/s (about 78 s: above the app's 16 KiB/s
+#                     floor, within its 120 s but past Traefik's default 60 s readTimeout: the
+#                     proxy must allow it)
 #   CONNECT_HOST      as for mcp-smoke.sh
 # Needs curl, jq, base64 and sha256sum. Keys travel in files and stdin, never on a command
 # line. `test && ok ... || fail ...` is safe here: ok always succeeds.

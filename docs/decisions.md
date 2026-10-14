@@ -1331,3 +1331,15 @@ changes are in [contract-phase10 §21](api/contract-phase10.md#21-changes-after-
 | **Emails show an end-of-day due date as the day** ("Due Sat 24 Oct"; UX M6): the SPA saves the end of the chosen day in the instance's time zone, the report and reminders count in it too. | lead default, to confirm | One rule everywhere: the instance's day. |
 | **Filenames with folders or control characters stay 422** (UX m5, backend side): the SPA cleans names before it uploads. | Decided (contract) | Never stripped on the server (contract §6.1): what is stored is what was sent. |
 | **`received_at` changes record `late` and `late_changed`** in the audit (code N4); the perf kit's write timings take the best of up to three rounds, as its reads do (N5); the chart README says ingress-nginx's `use-regex` turns every path of the host into a case-insensitive regular expression (N6). | Decided (fixes) | A backdate that clears "late" is visible; one 260 ms sample on this VM isn't a regression. |
+
+## 2026-10-14 · Release 0.3.0 verification
+
+The release verification's own changes; the Phase 10 lead defaults above stay lead
+defaults, to confirm (the [release notes](RELEASE-NOTES.md#decisions-to-confirm-in-030)
+list them in one place).
+
+| Decision | Status | Why |
+|---|---|---|
+| The SPA sends a bid document's name only in `X-Filename` (percent-encoded with `encodeURIComponent`), never in the query string; the API still takes `?filename=` from other clients. | Decided (release, the backend review's request N2) | Proxies log query strings; bidders' file names can be personal data. |
+| The audit log words an edit to a submitted assessment ("edited a submitted bid assessment … (2 questions changed)"), a bid edit that changed whether it is late ("(now late)", "(no longer late)") and assessors removed because they left a private project ("… was removed as an assessor of the call for bids on TOOLS-3 (left the project)"); it counts assessors added and removed from the backend's by-section details (it had shown no count). | Decided (release, the backend review's requests L7, N4, ACC-5) | The details were recorded but the sentences didn't say so. |
+| `make image` labels the image with the backend's version (`VERSION`, default from `backend/pyproject.toml`); the Dockerfile's default is `unknown`. | Decided (release) | 0.2.0's image was labelled 0.1.0: the Dockerfile's default had never moved. |

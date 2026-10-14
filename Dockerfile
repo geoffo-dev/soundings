@@ -160,7 +160,7 @@ ENV PATH="/app/venv/bin:${PATH}" \
     SOUNDINGS_PORT=8000 \
     SOUNDINGS_ENVIRONMENT=production
 
-ARG VERSION=0.1.0
+ARG VERSION=unknown
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 ARG SOURCE_URL=""
