@@ -148,9 +148,13 @@ export const UPLOAD_TYPES_TEXT =
   'PDF, Word, Excel, PowerPoint, OpenDocument, text, CSV, PNG or JPEG, up to 25 MB each'
 
 /** Why a file can't be sent before it's tried (size only: the server reads the type). */
-export function uploadProblem(file: File, maxBytes: number): string | null {
-  if (file.size === 0) return `${file.name} is empty.`
+export function uploadProblem(
+  file: File,
+  maxBytes: number,
+  name: string = file.name,
+): string | null {
+  if (file.size === 0) return `${name} is empty.`
   if (file.size > maxBytes)
-    return `${file.name} is ${formatSize(file.size)}: files can be at most 25 MB.`
+    return `${name} is ${formatSize(file.size)}: files can be at most 25 MB.`
   return null
 }

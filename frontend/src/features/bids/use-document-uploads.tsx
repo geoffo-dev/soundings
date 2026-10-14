@@ -142,7 +142,7 @@ export function useDocumentUploads(ideaKey: string, bid: BidDetail, call: BidCal
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           drop(key)
-          setAnnouncement(`${file.name}: upload cancelled.`)
+          setAnnouncement(`${cleanFilename(file.name)}: upload cancelled.`)
           return
         }
         const words = uploadWords(error)
@@ -200,7 +200,7 @@ export function useDocumentUploads(ideaKey: string, bid: BidDetail, call: BidCal
         counter.current += 1
         const key = `upload-${counter.current}`
         const problem =
-          uploadProblem(file, BID_DOCUMENT_MAX_BYTES) ??
+          uploadProblem(file, BID_DOCUMENT_MAX_BYTES, cleanFilename(file.name)) ??
           (documentCount + waiting + added.filter((a) => a.state === 'queued').length >=
           BID_DOCUMENTS_PER_BID_MAX
             ? `A bid takes at most ${BID_DOCUMENTS_PER_BID_MAX} documents: delete one first.`

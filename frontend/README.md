@@ -251,6 +251,19 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   `template-copy-sheet.tsx`); My work's "Bids to assess" (`features/work/bids-to-assess.tsx`)
   and the sidebar's "Bids" badge come from `WorkCounts.bid_assessments_due`; ⌘K's
   `use-bid-commands.tsx` opens bids, your next assessment and the report.
+  Review fixes (2026-10-14): uploads for the bid as a whole guess each file's document
+  must-have from its name (`upload-names.ts` `guessMustHave`; names cleaned by
+  `cleanFilename`) and, in a call with a price question, send an unmatched file as pricing
+  and ask on its row ("Is it a pricing document?"); each row has an inline "Answers" select.
+  Call managers read every section's assessments in the bid sheet (`section-results.tsx`
+  `BidAssessments`; `?section=<id>` opens one, from a comparison cell). The call's dates are
+  days in the instance's zone (`call-dates.ts` `useCallZone`, from the notification
+  preferences' `timezone`; `lib/time-zones.ts`; `formatDate`/`dueDate`/`DueDateLabel` take a
+  `timeZone`). AI quotes open the document's text at the quote (`useQuotePage`, `quotes.ts`
+  `findQuote`, PDF line breaks joined by `readableText`). The header's one next step follows
+  the role (`CALL_PRIMARY_ID`: Open / Close / Assess (n) / Award / Export) with a draft
+  checklist; actions that remove their own button move focus with `focusWhenRendered`,
+  forced (the sheet's focus trap otherwise takes it).
 - **Untrusted text (agents):** `Markdown untrusted` keeps http/https links only (no `mailto:`),
   opens them with `rel="noopener noreferrer nofollow"` in a new tab with the host after each
   (`urlHost`: the browser's ASCII/punycode reading, isolated with `<bdi dir="ltr">` by `LinkHost`;
