@@ -15,7 +15,15 @@ Tour: [README](../README.md#a-tour). Guides: [user](user-guide.md),
 evaluation** (the product owner's ask of 2026-10-13), with its reviews' fixes, plus the
 fixes from the first CI run on GitHub. Waiting for the product owner's review.
 
-**Verified on 2026-10-14** (the build machine, not a real CI runner): @@VERIFIED@@
+**Verified on 2026-10-14** (the build machine, not a real CI runner): backend (10,254 tests,
+`test-slow`), frontend check (713 vitest) + `test:pw` (471), e2e in all three modes
+(default 353, `E2E_SSO=1` 374, `E2E_AI=1` 394 passed) and against `make demo` with the
+0.3.0 image (392 passed, none failed anywhere) followed by CI's MCP, AI and bid smokes,
+every `make check-*`, `make image` (533 MB); on k3s 0.2.0 with its demo data upgraded to
+0.3.0 by `make k3s-deploy`'s path (0015 → 0016, see [Upgrading](#upgrading-from-020)) and
+as CI (`SSO=1 SMTP=1 MCP=1 AI=1` with the bid smoke and a slow upload, two API replicas,
+`PROD=1`). Every real-stack screenshot set and the tour re-captured. Not verified: a real
+kagent and LLM, GitHub's and GitLab Premium's delivery features, `scripts/ci-local/`.
 [Phase 10 summary](phase-summaries/phase-10.md).
 
 ### What's new in 0.3.0
@@ -166,6 +174,7 @@ things the build machine hadn't:
 | **The upload route needs its ingress settings** | 25 MiB bodies for up to 180 s on one path: the chart's `ingress.uploads` does it for ingress-nginx; Traefik (k3s) needs its entryPoint `readTimeout` raised; other controllers by annotation. Through Traefik an oversized *chunked* upload may get 502 instead of 413. |
 | **One call per idea; one currency label per call** | A second purchase from the same idea needs another idea. The currency is a label: no conversion. |
 | Not changed from the reviews | The bid count everyone who sees the idea gets includes rejected bids (ACC-6, declined); the first submitted scores of an edited assessment aren't kept (only the audit entry); the Bids, Comparison and Rejected lists stay three views (one table is a later change). |
+| The demo's bid assessor warns "Removed: can't work there" | Demo data only: in Admin → AI agents the seeded, disabled "Bid assessor (demo)" has no role in Internal Tools (the seed skips the membership that registering an agent gives), so its Projects cell says it can't work there. Agents registered in the app get the role. |
 | As in 0.2.0 | GitLab Premium's environments and approvals, the Kubernetes executor, cosign, GitHub's runners/GHCR/ARC/environments and `scripts/ci-local/` weren't run again for this release; [0.2.0's known issues](#known-issues-in-020) otherwise apply. `make -C backend test-slow` passed within its budgets (150 ms p95) on a quiet machine. |
 | The image is 533 MB | Ubuntu 24.04 with the PDF libraries and `pypdf`; a slimmer final stage is still deferred. |
 
@@ -178,9 +187,14 @@ things the build machine hadn't:
   gives **every existing project the default bid evaluation template** and changes no
   existing row otherwise. It is expand only, so 0.2.0's pods keep working during the
   rollout and `scripts/deploy.sh` can roll a failed deploy back. Rehearsed on k3s with
-  0.2.0's demo data (@@UPGRADEPROOF@@). Downgrading below 0016 is an emergency only
-  (restore a backup if you can): it **deletes** every call, bid, document, assessment and
-  AI assessment, the `assess_bid` runs and the three types' notifications.
+  0.2.0's demo data (0015 to 0016 through `scripts/deploy.sh` as the deployer
+  ServiceAccount; the row counts of eleven tables unchanged; all three projects got the
+  default template, none without; a call on TOOLS-3, whose proposal was written on
+  0.2.0, took a bid and a PDF whose text the worker read, and the bid smoke assessed,
+  compared and awarded a call on the migrated data; the rollback to 0.2.0's revision was
+  refused because it crosses 0016). Downgrading below 0016 is an emergency only (restore
+  a backup if you can): it **deletes** every call, bid, document, assessment and AI
+  assessment, the `assess_bid` runs and the three types' notifications.
 - **Database growth from documents**: up to 25 MiB a file, 500 MiB a call and 5 GiB a
   project, extracted text counted; stored uncompressed in `bid_document_contents`. Size
   `postgresql.persistence.size` (or your database) and your backups before people start

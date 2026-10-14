@@ -878,9 +878,12 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
 - **CD rehearsals:** `GIT_SSL_CAINFO` overrides git's `http.sslCAInfo` (set it, not the
   config, for an internal CA). `kubectl auth can-i create pods/exec` asks about a pod
   named "exec": use `--subresource=exec`. The kubelet deletes imported (unused) images
-  when the disk is over 85 % full: import the image again before a rollback to it. A
-  bind-mounted script edited while a container runs it breaks that run (bash reads it as
-  it goes): edit between runs.
+  when the disk is over 85 % full: import the image again before a rollback to it. The
+  same garbage collection breaks `k3s-smoke AI=1`: every key handover restarts the fake
+  agent, its image is unused for a moment, and the new pod sticks in `ErrImageNeverPull`
+  ("error: timed out waiting for the condition"); free disk, `make k3s-fake-agent` again,
+  rerun (2026-10-14). A bind-mounted script edited while a container runs it breaks that
+  run (bash reads it as it goes): edit between runs.
 - **k3s NetworkPolicy** is enforced (kube-router) and on by default in the chart; a new
   pod's address is admitted a moment after it starts, so in-cluster clients started
   fresh (the `helm test` pod) retry. Through Traefik an oversized *chunked* POST may get
@@ -1284,4 +1287,24 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   tests + `test-slow`), frontend check (688 vitest) + test:pw (463), e2e default 353,
   `E2E_SSO=1` 374, `E2E_AI=1` 394 and against `make demo` 392 passed (none failed), mcp-,
   ai- and bid-smoke on the image, e2e check, Helm, scripts (shellcheck 0.9 too), workflows,
-  migrations, fake agent, `make gen-api`, `make image` (533 MB). Release 0.3.0 not cut yet.
+  migrations, fake agent, `make gen-api`, `make image` (533 MB). Reviews (2026-10-13/14;
+  `docs/phase-summaries/phase-10.md`; `ad072c1`, `152297f`, `ececfad`): security and code
+  (M1 a closed idea's call read-only, 409 `idea_closed`; M2 linear scoring; M3 active
+  content; L1-L9, N1-N6), access (ACC-1 a pricing must-have's note, ACC-2 the AI's finding
+  text while owing, ACC-3 rejected bids' runs, ACC-4 a finished call has no pending
+  assessors, ACC-5 `left_project` in `app/bids/role_loss.py`; ACC-6 declined) and UX (M1-M6,
+  m1-m13, p1-p7) fixed. **Release 0.3.0** (2026-10-14, `docs/RELEASE-NOTES.md`): versions
+  bumped (`backend/pyproject.toml`, `uv.lock`, `Chart.yaml` version and appVersion,
+  `deploy/helm/ci/production-values.yaml`; `check-release v0.3.0` passes; `make image`
+  labels the image from `pyproject.toml`); the SPA sends `X-Filename`; the audit log words
+  edited assessments, `late_changed` and `left_project`; `e2e/tests/bids.spec.ts` runs in
+  order (one upload per person). Verified: backend (10,254 tests, `test-slow`), frontend
+  check (713 vitest) + test:pw (471), e2e default 353, `E2E_SSO=1` 374, `E2E_AI=1`
+  394 and against `make demo` (0.3.0) 392 passed, then mcp-, ai- and bid-smoke on it; every
+  `make check-*`; on k3s 0.2.0 + demo data upgraded by `make k3s-deploy`'s path (0015 →
+  0016, counts unchanged, every project the default template, a call/bid/upload/extraction
+  on migrated TOOLS-3, the bid smoke on the migrated data, rollback across 0016 refused), as
+  CI (`SSO=1 SMTP=1 MCP=1 AI=1`, `BID_SLOW_UPLOAD=1`: 201 after 78 s), two API replicas
+  (uploads and downloads on each pod) and `PROD=1`; every real-stack screenshot set and the
+  tour re-captured. Known nit: the seeded "Bid assessor (demo)" has no role in Internal
+  Tools ("Removed: can't work there" in Admin → AI agents). Stop for the human's review.

@@ -54,7 +54,20 @@ default template.
 | Browser, real stack | `e2e/tests/bids.spec.ts` BD-01 … BD-12, BD-14; `bids-ai.spec.ts` BD-13 (`@ai`); `a11y-phase10.spec.ts` A11Y10, MO10-01, MO10-02, K10-01 |
 | SPA | `frontend/tests/bids.spec.ts`, `bids-review.spec.ts` (page tests against the mock), vitest (`features/bids/*.test.ts`, `mocks/phase10.test.ts`, `api/bids-upload.test.ts`, `audit-phrases.test.ts`) |
 
-@@VERIFICATION@@
+**Release verification (2026-10-14,** [test plan](../test-plans/phase-10.md#release-030-verification-2026-10-14)**):**
+backend `check` (10,254 passed, 5 skipped) and `test-slow`; frontend `check` (713 vitest)
+and `test:pw` (471 passed on a quiet machine); e2e default 353, `E2E_SSO=1` 374, `E2E_AI=1` 394 and against
+`make demo` with `soundings:0.3.0` 392 passed (none failed), then CI's `mcp-smoke`,
+`ai-smoke` and `bid-smoke` (`BID_AI=1`) on that image; e2e check, `check-helm`,
+`check-scripts` (shellcheck 0.9 too), `check-workflows`, `check-migrations`,
+`check-fake-agent`, `make gen-api` (the version only), `make image` (533 MB, labelled
+0.3.0). On k3s: 0.2.0 with its demo data upgraded to 0.3.0 through `scripts/deploy.sh` as
+the deployer ServiceAccount (0015 → 0016, row counts unchanged, every project the default
+template, a call, bid, upload and extraction on the migrated TOOLS-3, the bid smoke's
+assessing, report and award on the migrated data, the rollback across 0016 refused); then
+as CI (`SSO=1 SMTP=1 MCP=1 AI=1` with a 78 s slow upload through Traefik and the AI
+assessment through the fake agent), two API replicas (each pod served uploads and
+downloads) and `PROD=1`. Every real-stack screenshot set and the tour re-captured and read.
 
 ## Reviews and outcomes
 
@@ -108,7 +121,15 @@ default template.
 - **Declined**: the bid count includes rejected bids (ACC-6); the first submitted scores
   of an edited assessment aren't kept (L7).
 - Reminders by date are tested with a moved clock (the acceptance test), not by waiting.
-@@KNOWN@@
+- **The demo's bid assessor** shows "Removed: can't work there" in Admin → AI agents: the
+  seed (`app/seed/bids.py` `_agent`) links the disabled agent to Internal Tools without the
+  direct `member` role registration gives its service account (found re-capturing
+  `phase-6/admin-agents-*`; left for the backend owner, see the release report).
+- **Page tests under load**: with `make -C backend check` running beside it, 14 of
+  `test:pw`'s tests hit the 5 s default timeout; all passed again on a quiet machine.
+- **k3s image garbage collection**: at 86 % disk the kubelet removed the fake agent's
+  imported image during its rollout restart (ErrImageNeverPull); with disk freed and the
+  image imported again the smoke passed (the CD-rehearsal gotcha in CLAUDE.md).
 
 ## Screenshots
 

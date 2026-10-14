@@ -122,3 +122,22 @@ Integration (2026-10-13) fixed every row; the last column says how.
 | P10-QA-N8 | frontend | Project settings → Bids: a question's weight field has no visible label or unit (the comparison shows "× 2"); at 390 px question texts are one-line inputs cut off mid-word ("How well does the proposed s"). `project-bids-template-*`. **Fixed:** "×" before the weight ("Weight ×" on a phone); question text wraps. |
 | P10-QA-N9 | frontend | My work's "Bids to assess 2" counts assessments (bid × section) above a single call row that says "0 of 2 submitted"; the award dialog's chosen bid looks like the others except for its radio. **Fixed:** rows lead with "N to submit"; the chosen bid has the selected border and tint. |
 | P10-QA-N10 | frontend | Bid sheet → Documents: the "Upload as pricing documents" checkbox sits at the left edge while its label and help text are centred under the drop zone, far from it (`bid-documents-flagged-1440-*`). **Fixed:** the label is left-aligned beside its checkbox. |
+
+## Release 0.3.0 verification (2026-10-14)
+
+On the build machine, from the tree at `ececfad` plus the release changes (the SPA's
+`X-Filename`, the audit phrases, the version bump, `bids.spec.ts` in order).
+
+| Check | Result |
+|---|---|
+| `make -C backend check`, `test-slow` | 10,254 passed, 5 skipped; 6 passed (quiet machine) |
+| `npm --prefix frontend run check`, `test:pw` | 713 vitest; test:pw 471 passed, 238 skipped (the screenshot specs), none failed on a quiet machine (27.7 min); beside the backend check 14 had hit the 5 s timeout |
+| e2e default, `E2E_SSO=1`, `E2E_AI=1` (local stack) | 353, 374, 394 passed; none failed (the first default run: BD-02 503 `upload_busy` beside BD-03, both alice: `bids.spec.ts` now runs in order) |
+| e2e against `make demo` (`soundings:0.3.0`, CI's e2e job's settings) | 392 passed, 28 skipped, none failed; then `mcp-smoke`, `ai-smoke`, `bid-smoke` (`BID_AI=1`, 65 checks) passed |
+| `npm --prefix e2e run check`, `check-helm`, `check-scripts` (+ shellcheck 0.9.0), `check-workflows`, `check-migrations`, `check-fake-agent` (59), `make gen-api` | pass; `gen-api` changed only `info.version` |
+| `make image IMAGE=soundings:0.3.0` | 533 MB, label `org.opencontainers.image.version=0.3.0`; `scripts/deploy.sh check-release v0.3.0` passes |
+| k3s upgrade | 0.2.0's chart (`25ad3dd`), image and demo seed in `soundings-staging`, then `scripts/lib/k3s-deploy.sh deploy staging soundings:0.3.0` (the deployer ServiceAccount in the tools image): 0015 → 0016, helm test, `deploy-smoke.sh`, the app reports 0.3.0; eleven tables' row counts unchanged; CUST, GREEN and TOOLS have the default template (40/40/20, four must-haves); on TOOLS-3 a call, a bid, a PDF uploaded with `X-Filename` (201), its text read (558 characters), automatic must-haves; `bid-smoke.sh` (`BID_AI=0`, 54 checks: assessors, blind, comparison 80.8, report, award) on the migrated data; the rollback to revision 1 refused (it crosses 0016) |
+| k3s as CI (`SSO=1 SMTP=1 MCP=1 AI=1`, `BID_SLOW_UPLOAD=1`) | every smoke passed: the upload route's own router, a 1.6 MB upload at 20 KiB/s 201 after 78 s through Traefik, the AI assessment (6 quotes found; `-invents` 1 not found), SSO, email, MCP with the in-cluster SDK and the NetworkPolicy, AI, helm test; kagent v0.10.2 CRDs and a dry run of every manifest |
+| Two API replicas | the same smoke passed; uploads 201 on both pods (6 and 4), downloads 3 and 3 (matched by `X-Request-Id` in each pod's log) |
+| `PROD=1` | install and smoke passed (`__Host-` cookies, break-glass, `/metrics` 404 on the app port, production start-up, no password in the logs) |
+| Screenshots | phase-1, 2, 3 (+ emails), 4, 5, 6, 8, 8b, 10 (+ emails, pdf, mock) and the tour re-captured; every changed PNG read; one demo-data nit: "Bid assessor (demo)" says "Removed: can't work there" in Admin → AI agents |
