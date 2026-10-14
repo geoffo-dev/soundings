@@ -851,7 +851,14 @@ comparison, the report's rows.
    its scores left out), the report (*B*'s scores and every rank left out), SSE and AI run
    events (never scores anyway), MCP, My work, counts, the inbox and emails. **Rejecting
    *B* never ends it** (the comparison shows no scores for rejected bids at all), and a
-   pending assessor can't remove themselves from *S* (403 `cannot_remove_self`).
+   pending assessor can't remove themselves from *S* (403 `cannot_remove_self`). The AI's
+   must-have findings of *B* show their verdict alone (no rationale or quotes: free text
+   where scores can travel) to anyone who owes a section of *B* (review ACC-2).
+1b. **A finished call (awarded or cancelled) has no pending assessors** (review ACC-4):
+   nobody can submit any more, so rule 1 hides nothing for people then (agents stay blind,
+   rule 6). A call whose idea is closed isn't finished: rule 1 holds. Leaving a private
+   project removes one's sections of its unfinished calls where one submitted nothing
+   (audited `left_project`, review ACC-5); a section with a submitted assessment stays.
 2. **After submitting *S* for *B*** they see (*B*, *S*)'s submitted assessments and the
    AI's scores for *S* (`bid.view_section_scores`), even while it is excluded. Totals,
    ranks, other sections' scores and the report stay with the call managers
@@ -862,7 +869,9 @@ comparison, the report's rows.
    are only for call managers and the assessors of the section holding the price question
    (`bid.view_price`); everyone else gets `price: null, price_hidden: true`, no price in
    any list, export, notification or MCP result, and a pricing document only as "present
-   (restricted)" (counted, never named). The AI assessor never reads a price or a pricing
+   (restricted)" (counted, never named); a pricing must-have's note and who decided it are
+   empty for them too (review ACC-1), and so are the assess runs of a rejected bid for
+   anyone but a call manager (they name a bid the assessor can't see; review ACC-3). The AI assessor never reads a price or a pricing
    document.
 5. **Notifications, emails, the feed, My work and counts never carry bid score data,
    prices, bidder names, document text or rejection reasons**, for anyone: they carry the

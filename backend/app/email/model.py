@@ -29,6 +29,7 @@ __all__ = [
     "Links",
     "clean_subject",
     "format_day",
+    "format_due",
     "format_moment",
     "one_line",
     "plural",
@@ -237,3 +238,13 @@ def format_moment(
     """``Fri 9 Oct, 17:00 (Europe/London)``."""
     local = moment.astimezone(tz)
     return f"{format_day(moment, tz, now=now)}, {local:%H:%M} ({zone_name})"
+
+
+def format_due(moment: datetime, tz: tzinfo, zone_name: str, *, now: datetime | None = None) -> str:
+    """A due date: ``Fri 9 Oct`` when it is the end of that day in the instance time zone
+    (23:59 or later: what the SPA's date pickers save; UX review M6), else
+    :func:`format_moment`."""
+    local = moment.astimezone(tz)
+    if (local.hour, local.minute) == (23, 59):
+        return format_day(moment, tz, now=now)
+    return format_moment(moment, tz, zone_name, now=now)

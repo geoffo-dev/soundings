@@ -32,6 +32,7 @@ from app.email.model import (
     IdeaInfo,
     Links,
     format_day,
+    format_due,
     format_moment,
     plural,
     subject_title,
@@ -123,6 +124,10 @@ class _Context:
 
     def moment(self, moment: datetime) -> str:
         return format_moment(moment, self.settings.tz, self.settings.timezone, now=self.now)
+
+    def due(self, moment: datetime) -> str:
+        """A due date: the day alone at the end of the day (UX review M6)."""
+        return format_due(moment, self.settings.tz, self.settings.timezone, now=self.now)
 
     def same_day(self, moment: datetime) -> bool:
         tz = self.settings.tz
@@ -265,7 +270,7 @@ async def _notification(
                 context={
                     "actor": actor,
                     "idea": info,
-                    "due": context.moment(due_at) if due_at else None,
+                    "due": context.due(due_at) if due_at else None,
                 },
                 button=evaluate,
                 reason=f"You're evaluating {key}.",
@@ -283,7 +288,7 @@ async def _notification(
                 preheader=f"Your evaluation of {key} is due {when}.",
                 context={
                     "idea": info,
-                    "due": context.moment(due_at),
+                    "due": context.due(due_at),
                     "due_day": day,
                     "due_today": today,
                 },
@@ -356,7 +361,7 @@ async def _notification(
                 context={
                     "actor": actor,
                     "idea": info,
-                    "due": context.moment(due_at) if due_at else None,
+                    "due": context.due(due_at) if due_at else None,
                     # Review S2: the guest line only for column R (no view of the project).
                     "guest": not can(recipient.principal, Rule.PROJECT_VIEW, recipient.resource),
                     # UX review m10: without an owner, a project admin moves it on.
@@ -381,7 +386,7 @@ async def _notification(
                 preheader=f"Research for {key} is due {when}.",
                 context={
                     "idea": info,
-                    "due": context.moment(due_at),
+                    "due": context.due(due_at),
                     "due_day": day,
                     "due_today": today,
                     "open_items": plural(required_open or 1, "required item"),
@@ -433,7 +438,7 @@ async def _bid_email(
                     "idea": info,
                     "call": call.title,
                     "sections": sections,
-                    "due": context.moment(due_at) if due_at else None,
+                    "due": context.due(due_at) if due_at else None,
                 },
                 button=bids_button,
                 reason=f"You're assessing bids for {key}.",
@@ -452,7 +457,7 @@ async def _bid_email(
                 context={
                     "idea": info,
                     "call": call.title,
-                    "due": context.moment(due_at),
+                    "due": context.due(due_at),
                     "due_day": day,
                     "due_today": today,
                     "owed": plural(max(1, notice.owed), "assessment"),

@@ -310,13 +310,16 @@ BID_REFUSED_ARCHIVE_ENTRY: Final = re.compile(
     r"|(?:^|/)embeddings/[^/]*\.bin$"
     r"|(?:^|/)oleObject[^/]*\.bin$"
     r"|(?:^|/)(?:Basic|Scripts)/"
+    r"|(?:^|/)(?:macrosheets|dialogsheets)/"
     r"|\.(?:docm|dotm|xlsm|xltm|xlsb|xlam|pptm|potm|ppsm|ppam|sldm)$",
     re.IGNORECASE,
 )
 """An entry name (from the ZIP's central directory only, review M5) that makes an Office or
 OpenDocument upload 415 ``macro_document``: VBA projects, ActiveX controls, embedded OLE
 packages (an embedded ``.docm`` would get round the macro rule), OpenDocument ``Basic/`` and
-``Scripts/``, and nested macro-enabled files by name. Active content the names can't show (a
+``Scripts/``, Excel 4.0 macro sheets and dialog sheets (``xl/macrosheets/``,
+``xl/dialogsheets/``; review L3, with their content types), and nested macro-enabled files
+by name. Active content the names can't show (a
 PDF's JavaScript, launch actions or attached files; an Office file's remote template,
 external links or DDE fields) is found by the extraction child, which sets
 ``BidDocument.active_content`` (review S3)."""

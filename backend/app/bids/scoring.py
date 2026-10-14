@@ -119,9 +119,9 @@ def counted_scores(data: CallData, *, bid_id: UUID | None = None) -> Counted:
             if not assessment.included:
                 continue
             for question_id, ai_score in data.ai_scores.get(assessment.id, {}).items():
-                section_id = section_of.get(question_id)
-                if section_id is not None:
-                    counted[(assessment_bid, section_id)][question_id].append(ai_score.score)
+                ai_section = section_of.get(question_id)
+                if ai_section is not None:
+                    counted[(assessment_bid, ai_section)][question_id].append(ai_score.score)
     return counted
 
 

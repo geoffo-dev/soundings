@@ -67,8 +67,9 @@ def test_a_renamed_executable_is_refused() -> None:
 
 def test_text_with_a_nul_or_undecodable_bytes_is_refused() -> None:
     assert refused(b"hello\x00world", "a.txt") == UNSUPPORTED
-    # UTF-16 text has NULs; 0x81 is undefined in Windows-1252 and invalid UTF-8.
-    assert refused("hello".encode("utf-16"), "a.txt") == UNSUPPORTED
+    # UTF-16 text without a byte order mark has NULs (review N1: with one it is text);
+    # 0x81 is undefined in Windows-1252 and invalid UTF-8.
+    assert refused("hello".encode("utf-16-le"), "a.txt") == UNSUPPORTED
     assert refused(b"abc\x81def", "a.txt") == UNSUPPORTED
 
 
@@ -204,3 +205,77 @@ def test_a_zip64_archive_is_read() -> None:
         with archive.open("word/document.xml", "w", force_zip64=True) as part:
             part.write(b"<x/>")
     assert sniff(buffer.getvalue(), "tender.docx") is BidDocumentType.DOCX
+
+
+# --- Review L3: Excel 4.0 macro sheets, dialog sheets, duplicate names ------------------------
+@pytest.mark.parametrize(
+    "entry", ["xl/macrosheets/sheet1.xml", "xl/dialogsheets/sheet1.xml", "XL/MacroSheets/a.xml"]
+)
+def test_excel_macro_and_dialog_sheets_are_macro_documents(entry: str) -> None:
+    data = files.xlsx("Hello", extra={entry: "<xm:macrosheet/>"})
+    assert refused(data, "prices.xlsx") == MACRO_DOCUMENT
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/vnd.ms-excel.macrosheet+xml",
+        "application/vnd.ms-excel.intlmacrosheet+xml",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.dialogsheet+xml",
+    ],
+)
+def test_a_macro_sheet_content_type_alone_is_a_macro_document(content_type: str) -> None:
+    """A macro sheet stored under an innocent name is still declared in [Content_Types]."""
+    types = files.xlsx_content_types(
+        extra=f'<Override PartName="/xl/worksheets/sheet2.xml" ContentType="{content_type}"/>'
+    )
+    data = files.xlsx("Hello", extra={"[Content_Types].xml": types})
+    assert refused(data, "prices.xlsx") == MACRO_DOCUMENT
+
+
+def test_duplicate_entry_names_are_refused() -> None:
+    """Readers disagree on which of two same-named entries counts (the sniffer read the
+    last, an Office reader may take the first): refuse the file."""
+    benign = files.xlsx("Hello")
+    entries: list[tuple[str, bytes | str]] = [
+        ("[Content_Types].xml", files.content_types(DOCM_MAIN, "word/document.xml")),
+        *files.entries_of(benign),
+    ]
+    assert refused(files.zip_with_duplicates(entries), "prices.xlsx") == UNSUPPORTED
+
+
+def test_names_equal_but_for_case_are_refused() -> None:
+    """Office part names are case-insensitive (OPC)."""
+    entries: list[tuple[str, bytes | str]] = [
+        *files.entries_of(files.docx("Hello")),
+        ("WORD/Document.xml", "<x/>"),
+    ]
+    assert refused(files.zip_with_duplicates(entries), "tender.docx") == UNSUPPORTED
+
+
+# --- Review N1: UTF-16 text with a byte order mark, bytes before a PDF's header -------------
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be"])
+def test_utf16_text_with_a_byte_order_mark_is_text(encoding: str) -> None:
+    bom = {"utf-16": b"", "utf-16-le": b"\xff\xfe", "utf-16-be": b"\xfe\xff"}[encoding]
+    data = bom + "item\tprice\r\nCafé\t12\r\n".encode(encoding)
+    assert sniff(data, "prices.csv") is BidDocumentType.CSV
+    assert sniff(data, "notes.txt") is BidDocumentType.TXT
+
+
+def test_utf16_with_a_nul_character_or_broken_pairs_is_refused() -> None:
+    assert refused(b"\xff\xfe" + "a\x00b".encode("utf-16-le"), "a.txt") == UNSUPPORTED
+    assert refused(b"\xff\xfe" + b"\x00\xd8a\x00", "a.txt") == UNSUPPORTED  # lone surrogate
+    assert refused(b"\xff\xfe" + b"a\x00b", "a.txt") == UNSUPPORTED  # odd length
+
+
+def test_a_pdf_with_a_few_bytes_before_its_header_is_a_pdf() -> None:
+    """As Acrobat reads them: the header within the first 1,024 bytes."""
+    data = files.pdf("Hello")
+    assert sniff(b"\r\n" + data, "tender.pdf") is BidDocumentType.PDF
+    assert sniff(b"\xef\xbb\xbf" + data, "tender.pdf") is BidDocumentType.PDF
+    assert sniff(b"Content-Type: application/pdf\r\n\r\n" + data, "a.pdf") is (BidDocumentType.PDF)
+    # Not after 1,024 bytes, and never after binary (an executable's stub has NULs).
+    assert sniff(b"x" * 1025 + data, "tender.pdf") is not BidDocumentType.PDF
+    assert refused(b"MZ\x90\x00" + b"\x00" * 60 + data, "tender.pdf") == UNSUPPORTED
+    # A text file that only mentions the header is text.
+    assert sniff(b"Save it as %PDF-1.7, please.\n", "notes.txt") is BidDocumentType.TXT

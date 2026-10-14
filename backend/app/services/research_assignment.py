@@ -29,7 +29,7 @@ the user's sync lock first (contract-phase8b section 17).
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Final, Literal
 from uuid import UUID
@@ -39,6 +39,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import NamedResearcher, Resource, Rule, effective_role_of, require, require_any
+from app.bids import role_loss as bid_role_loss
+from app.bids.role_loss import AssessorSnapshot
 from app.domain.principal import Principal
 from app.errors import ProblemError
 from app.models.base import utcnow
@@ -310,9 +312,11 @@ async def clear_where(
 @dataclass(frozen=True, slots=True)
 class RoleSnapshot:
     """Assignments in private projects whose researcher held a role there before a change:
-    ``(idea id, project id, researcher id)``."""
+    ``(idea id, project id, researcher id)``; and the bid section assessors' (review ACC-5,
+    :mod:`app.bids.role_loss`)."""
 
     held: tuple[tuple[UUID, UUID, UUID], ...] = ()
+    assessors: AssessorSnapshot = field(default_factory=AssessorSnapshot)
 
 
 async def roles_before(
@@ -332,19 +336,20 @@ async def roles_before(
         )
         .where(Idea.researcher_id.is_not(None), Project.visibility == ProjectVisibility.PRIVATE)
     )
-    if user_ids is not None:
-        users = list(user_ids)
+    users = list(user_ids) if user_ids is not None else None
+    projects = list(project_ids) if project_ids is not None else None
+    if users is not None:
         if not users:
             return RoleSnapshot()
         statement = statement.where(Idea.researcher_id.in_(users))
-    if project_ids is not None:
-        projects = list(project_ids)
+    if projects is not None:
         if not projects:
             return RoleSnapshot()
         statement = statement.where(Idea.project_id.in_(projects))
     rows = await db.execute(statement)
     return RoleSnapshot(
-        held=tuple((idea, project, user) for idea, project, user in rows.all() if user is not None)
+        held=tuple((idea, project, user) for idea, project, user in rows.all() if user is not None),
+        assessors=await bid_role_loss.assessors_before(db, user_ids=users, project_ids=projects),
     )
 
 
@@ -353,10 +358,15 @@ async def end_after_role_loss(
 ) -> int:
     """After the change: clear the assignments of :func:`roles_before` whose researcher
     has no role in the project now (audited ``left_project``). Someone who never had a
-    role there (an outsider an admin named) is never in the snapshot."""
-    if not before.held:
+    role there (an outsider an admin named) is never in the snapshot. The bid section
+    assessors in the snapshot lose their unsubmitted assignments the same way
+    (:func:`app.bids.role_loss.end_after_role_loss`)."""
+    if not before.held and not before.assessors.held:
         return 0
     await db.flush()  # the change itself, so the view sees it
+    await bid_role_loss.end_after_role_loss(db, before.assessors, actor=actor)
+    if not before.held:
+        return 0
     pairs = {(project, user) for _, project, user in before.held}
     still = set(
         (

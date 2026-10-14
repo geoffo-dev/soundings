@@ -1025,3 +1025,53 @@ Builders record additive changes here (date, owner, what and why).
   longer carries the section scores: a "Section scores" section follows "Ranking", at most
   four sections a table, so A4 portrait holds every column (section 13's contents are
   unchanged).
+- **2026-10-14, backend (review fixes, `fix-backend`):** what the security, access and UX
+  reviews changed in the contract (finding ids from those reviews; decisions in
+  `docs/decisions.md` "Phase 10 review decisions"):
+  - **Closed idea (code M1):** every bid write on a closed idea's call is 409
+    `idea_closed`, the assessors' and the agent's (`submit_bid_assessment`) too, before the
+    call's own state; reopening the idea lets the call go on. No new code.
+  - **Pricing must-haves (access ACC-1):** a pricing must-have's `note`, `decided_by` and
+    `decided_at` are empty/null without `bid.view_price` (rule 4). Values only.
+  - **AI findings (ACC-2 / code L8):** for someone who owes a section of the bid,
+    `BidAiFindingView.rationale` is `""` and `evidence` `[]` (the verdict stays). The run
+    instruction, `MCP_INSTRUCTIONS` and the example agents say a finding's rationale never
+    mentions scores. Values and wording only.
+  - **Rejected bids' runs (ACC-3 / code L9):** `assess_bid` runs of a rejected bid are left
+    out of `list_ai_runs` and 404 on get, events, SSE and cancel for anyone but a call
+    manager. Values only.
+  - **A finished call has no pending assessors (ACC-4, role matrix 3a rule 1b):** awarded or
+    cancelled, nobody owes anything (nobody can submit), so nothing is hidden for anyone but
+    agents: `ranking_hidden` false, no `hidden` cells, the report's numbers. Values only.
+  - **Leaving a private project (ACC-5):** a person who loses their role in a private
+    project loses their section assignments on its unfinished calls where they submitted
+    nothing (their drafts go too), audited `bid_call.assessors_change` with
+    `reason: "left_project"` and `removed` by section. No shape changed.
+  - **Uploads:** `upload_bid_document`'s `filename` query parameter is **optional**, with a
+    new optional header **`X-Filename`** (percent-encoded UTF-8, ASCII on the wire; it wins
+    over the query) so a bidder's file name stays out of proxies' access logs (code N2);
+    neither is 422 `validation_error` at `["query","filename"]`, a bad header at
+    `["header","X-Filename", ...]`. One upload at a time **per person** per API process as
+    well as two in all (503 `upload_busy`), and 408 `upload_timeout` at once when the body
+    arrives slower than 16 KiB/s on average after its first 15 s (code L4).
+  - **What an upload may be:** 415 `macro_document` also for Excel 4.0 macro sheets and
+    dialog sheets (`xl/macrosheets/`, `xl/dialogsheets/` in `BID_REFUSED_ARCHIVE_ENTRY`, and
+    the `macrosheet` / `dialogsheet` content types); 415 `unsupported_document_type` for a
+    ZIP with two entries of one name (compared without case) (code L3). Accepted now (code
+    N1): UTF-16 text after a byte order mark (TXT/CSV), and a PDF whose `%PDF-` starts
+    within the first 1,024 bytes after bytes without a NUL (and ends with `%%EOF`).
+  - **Active content (code M3, L2, L3):** a PDF's active names count only outside streams
+    and in the objects `pypdf` reaches from the catalog (Names, OpenAction, AA, AcroForm)
+    and the pages (AA, Annots), with `/FileAttachment`, `/RichMedia` and `/XFA` added; a
+    damaged or encrypted PDF keeps the flag; an OpenDocument file's event listeners, DDE
+    links, applets, plugins and non-hyperlink links out of the package set it. Values only.
+  - **Audit (code L7, N4):** a change to a submitted assessment is audited
+    `bid_assessment.submit` with `edited: true` and `changed_question_ids` (never a score or
+    comment); `bid.update` adds `late` and `late_changed`. Details only (the SPA's phrase
+    for an edit is a request to the frontend).
+  - **Emails (UX M6):** a due date at 23:59 in the instance's time zone (what the SPA's
+    pickers save) shows as the day alone ("Due Sat 24 Oct"), in every email with a due date.
+  - **Extraction order (code L6):** each `extract_bid_document` job's priority is minus the
+    number of its call's older documents still waiting, so calls share the worker.
+  - `make gen-api` regenerated `openapi.json` and `schema.d.ts` (the upload's parameters and
+    description only).

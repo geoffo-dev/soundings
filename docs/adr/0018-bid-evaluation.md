@@ -28,25 +28,37 @@ image that needs only PostgreSQL and runs air-gapped.
 3. **Raw-body upload** on one route with its **own body limit** (25 MiB, counted while
    streaming, so a lying `Content-Length` or a chunked body stops at the limit) while the
    1 MiB limit stays everywhere else; the name, must-have and pricing mark travel as query
-   parameters. `python-multipart` is installed (through `mcp`), but a raw body needs no
-   parser, no spooled temporary files (the API runs read-only with a small `/tmp`) and one
-   bound. Authentication, the 404s and 403s and an upload slot (two per API process, 503
-   `upload_busy`) come **before** the body is read; the body is read into one buffer
-   within 120 s with **no transaction open**.
+   parameters (the name may instead travel in an `X-Filename` header, percent-encoded, so
+   it stays out of proxies' access logs: review N2). `python-multipart` is installed
+   (through `mcp`), but a raw body needs no parser, no spooled temporary files (the API runs
+   read-only with a small `/tmp`) and one bound. Authentication, the 404s and 403s and an
+   upload slot (two per API process and one per person, 503 `upload_busy`) come **before**
+   the body is read; the body is read into one buffer within 120 s, and never slower than
+   16 KiB/s on average after 15 s (review L4: a trickle can't hold a slot), with **no
+   transaction open**.
 4. **Type by content, not name, and bounded**: magic bytes for PDF, PNG and JPEG (no PDF
    is parsed in the API); for ZIP containers the end record's entry count first (more than
    2,000: refused), then the central directory's **names** only and two bounded reads
    (`[Content_Types].xml` up to 256 KiB, `mimetype` up to 64 bytes) checked by substring,
    never parsed, in a thread; text by decoding. PDF, DOCX, XLSX, PPTX, ODT, ODS, TXT, CSV,
    PNG, JPEG only; macro-enabled Office files, embedded OLE packages and nested macro
-   files (by name), OpenDocument scripts and encrypted Office files refused (415). The
+   files (by name), Excel 4.0 macro and dialog sheets (by name and content type),
+   OpenDocument scripts, encrypted Office files and a ZIP naming one entry twice (any case:
+   readers disagree on which counts) refused (415; review L3). UTF-16 text after a byte
+   order mark is text, and a PDF's header may start within its first 1,024 bytes (review
+   N1). The
    request's `Content-Type` is ignored. Downloads are always attachments with `nosniff`, a
    sandboxing CSP and `no-store`; the SPA never renders a document, only its extracted
    text, as text, and warns before downloading one the extractor flagged
-   (`active_content`: PDF scripts, launch actions or attached files; remote templates,
-   external links, DDE).
+   (`active_content`: PDF scripts, launch actions, attached files, rich media or XFA, found
+   by `pypdf` from the catalog and the pages and in the file's syntax outside streams,
+   never in compressed data, and kept when the file is damaged (review M3, L2); remote
+   templates, external links, DDE; OpenDocument event listeners, DDE, applets, plugins and
+   links out of the package (review L3)).
 5. **Text extraction in the worker, in a child process**, never in the API: one at a time
-   per worker; 30 s, a 512 MiB address-space cap in a 1 GiB worker, 2 million characters;
+   per worker, shared fairly between calls (a job's priority is minus its call's older
+   documents still waiting: review L6); 30 s (the feeder of the child's stdin is cancelled
+   with it, review L1), a 512 MiB address-space cap in a 1 GiB worker, 2 million characters;
    an allow-listed environment (the worker's database URL, secret key and SMTP
    credentials stay out), bytes on stdin and bounded output on stdout, three crashes at
    most per document. `pypdf` (BSD-3-Clause, pure Python, promoted from a dev dependency)
@@ -61,7 +73,9 @@ image that needs only PostgreSQL and runs air-gapped.
 7. **Blind per (bid, section)** (role matrix 3a): an assessor sees nobody's scores for a
    bid and section until they submit theirs, and never totals or ranks; a call manager who
    owes any assessment sees **no ranks at all** (the gaps would place the hidden bid); a
-   rejection never ends blindness; nobody steps out of a section they owe
+   rejection never ends blindness, the award or cancelling does (nobody can score then:
+   review ACC-4); the AI's must-have findings show only their verdict to anyone owing a
+   section of the bid (review ACC-2); nobody steps out of a section they owe
    (`cannot_remove_self`) and submitted work is never deleted (`assessor_has_submitted`).
    **Prices and pricing documents** only for call managers and the price section's
    assessors (a document is pricing when marked so or linked to a pricing must-have, like
@@ -74,7 +88,8 @@ image that needs only PostgreSQL and runs air-gapped.
    the price or pricing documents. A call may name one AI assessor, which runs **once
    automatically per bid** when the bid's documents are read (not counted toward anyone's
    hourly limit); later runs are people's requests. **Every quote is checked** against the
-   extracted text (whitespace normalised, each document once, off the event loop); a quote
+   extracted text (whitespace normalised, one document's text loaded at a time, off the
+   event loop: review L5); a quote
    that isn't there is stored and shown "not found". Its scores stay out of the totals
    until a call manager includes them; findings never change a result. Rejecting, a
    template change, a pricing mark, the award and cancelling cancel its active runs.

@@ -300,12 +300,21 @@ status="$(upload anon "$bid_a" "$work/two-mib.pdf" "filename=anon.pdf")"
 status="$(upload mateo "$bid_a" "$work/two-mib.pdf" "filename=member.pdf")"
 [ "$status" = "403" ] && ok "a member's upload: 403" || fail "mateo's upload: $status $(body_r .code)"
 rm -f "$work/two-mib.pdf"
+# The name in a header (percent-encoded UTF-8) instead of the query: kept out of access logs.
+printf 'Notes sent with the bid, in a file whose name travels in a header.\n' >"$work/header-name.txt"
+status="$(upload alice "$bid_a" "$work/header-name.txt" "" -H 'X-Filename: caf%C3%A9%20notes.txt')"
+[ "$status" = "201" ] && [ "$(body_r .filename)" = "café notes.txt" ] &&
+  ok "the file name in X-Filename (percent-encoded): 201 \"café notes.txt\"" ||
+  fail "the X-Filename upload: $status $(body '{code, filename}')"
+rm -f "$work/header-name.txt"
 if [ "${BID_SLOW_UPLOAD:-0}" = "1" ]; then
-  head -c 800000 /dev/zero | tr '\0' 'a' >"$work/slow.txt"
+  # Slower than the ingress's 60 s default, faster than the app's floor (16 KiB/s on
+  # average after 15 s, review L4): 1.6 MB at 20 KiB/s, about 78 s.
+  head -c 1600000 /dev/zero | tr '\0' 'a' >"$work/slow.txt"
   started="$(date +%s)"
-  status="$(upload alice "$bid_a" "$work/slow.txt" "filename=slow-upload.txt" --limit-rate 10k --max-time 150)"
+  status="$(upload alice "$bid_a" "$work/slow.txt" "filename=slow-upload.txt" --limit-rate 20k --max-time 150)"
   took=$(($(date +%s) - started))
-  [ "$status" = "201" ] && [ "$took" -ge 61 ] && ok "a slow upload (800 kB at 10 kB/s): 201 after ${took}s" ||
+  [ "$status" = "201" ] && [ "$took" -ge 61 ] && ok "a slow upload (1.6 MB at 20 KiB/s): 201 after ${took}s" ||
     fail "the slow upload: $status after ${took}s $(body_r .code) (want 201 after more than 60 s)"
   rm -f "$work/slow.txt"
 fi

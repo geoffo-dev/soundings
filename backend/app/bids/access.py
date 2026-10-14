@@ -26,7 +26,7 @@ from :class:`~app.authz.BidCallFacts`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, or_, select
@@ -203,7 +203,7 @@ class AssessRunAccess:
         if self.view_bids and self.manager:
             return None
         if not self.view_bids:
-            return run_kind != AiRunKind.ASSESS_BID
+            return cast("ColumnElement[bool]", run_kind != AiRunKind.ASSESS_BID)
         rejected = select(Bid.id).where(Bid.status == BidStatus.REJECTED)
         return or_(run_kind != AiRunKind.ASSESS_BID, run_bid_id.not_in(rejected))
 

@@ -249,9 +249,7 @@ async def still_allowed(
             return False
         row = (
             await db.execute(
-                select(AiRun.kind, AiRun.bid_id).where(
-                    AiRun.id == run_id, AiRun.idea_id == idea_id
-                )
+                select(AiRun.kind, AiRun.bid_id).where(AiRun.id == run_id, AiRun.idea_id == idea_id)
             )
         ).first()
         if row is None:

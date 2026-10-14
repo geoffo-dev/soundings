@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import re
 import tempfile
+import zlib
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
@@ -290,6 +292,120 @@ def test_excel_external_links_are_active_content() -> None:
     assert extract("xlsx", data, LIMITS).active_content
 
 
+# --- Review M3, L2, L3: active content without false alarms, kept on failures ----------------
+def test_active_names_inside_page_content_arent_active_content() -> None:
+    """Review M3: the names were matched in the raw bytes, compressed streams included, so
+    text (or random compressed bytes) reading ``/JS`` or ``/Launch`` raised the warning."""
+    data = files.pdf("Our /JS and /Launch plans", "see /JavaScript /EmbeddedFiles")
+    result = extract("pdf", data, LIMITS)
+    assert result.state == "done"
+    assert not result.active_content
+
+
+def test_binary_streams_arent_active_content() -> None:
+    """A stream's bytes (an image, a compressed font) may hold ``/JS`` by chance: about
+    once per 25 MB of random data (review M3)."""
+    binary = (b"\x00\x9c\xff /JS (x) /Launch\n\x01" + zlib.compress(b"x" * 999)) * 50
+    data = files.pdf("Plain", objects=[files.pdf_stream(binary)])
+    assert re.search(rb"/(?:JS|Launch)(?![A-Za-z0-9])", data)
+    assert not extract("pdf", data, LIMITS).active_content
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        "/OpenAction 6 0 R",  # an action dictionary held by reference
+        "/Names << /JavaScript << /Names [(a) 6 0 R] >> >>",
+    ],
+)
+def test_javascript_held_by_reference_is_active_content(catalog: str) -> None:
+    data = files.pdf(
+        "x", catalog_extra=catalog, objects=["<< /S /JavaScript /JS (app.alert(1)) >>"]
+    )
+    assert extract("pdf", data, LIMITS).active_content
+
+
+def test_a_file_attachment_annotation_is_active_content() -> None:
+    data = files.pdf(
+        "x",
+        page_extra="/Annots [6 0 R]",
+        objects=[
+            "<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] /FS 7 0 R >>",
+            "<< /Type /Filespec /F (a.exe) >>",
+        ],
+    )
+    assert extract("pdf", data, LIMITS).active_content
+
+
+def test_a_damaged_pdf_keeps_its_active_content() -> None:
+    """Review L2: a damaged file's raw objects (outside streams) still show the action."""
+    data = files.pdf("Open me", catalog_extra="/OpenAction << /S /JavaScript /JS (x) >>")
+    broken = data[: data.index(b"xref")].replace(b"/Type /Pages", b"/Type /Pagez")
+    broken = broken.replace(b"/Kids [3 0 R]", b"/Kids [9 0 R]")
+    result = extract("pdf", broken, LIMITS)
+    assert result.state == "failed"
+    assert result.active_content
+
+
+_SCRIPT = "urn:oasis:names:tc:opendocument:xmlns:script:1.0"
+_XLINK = "http://www.w3.org/1999/xlink"
+
+
+def test_opendocument_event_listeners_are_active_content() -> None:
+    """Review L3: a macro bound to an event (``script:event-listener``)."""
+    body = (
+        f'<office:scripts><office:event-listeners xmlns:script="{_SCRIPT}" '
+        f'xmlns:xlink="{_XLINK}"><script:event-listener script:language="ooo:script" '
+        'script:event-name="dom:load" xlink:href="vnd.sun.star.script:Standard.M.Run"/>'
+        "</office:event-listeners></office:scripts>"
+    )
+    data = files.odt("Hello", head=body)
+    result = extract("odt", data, LIMITS)
+    assert result.text == "Hello"
+    assert result.active_content
+
+
+def test_opendocument_external_objects_and_dde_are_active_content() -> None:
+    linked = files.odt(
+        "Hello",
+        body_extra=f'<draw:object xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
+        f'xmlns:xlink="{_XLINK}" xlink:href="https://evil.example/o.odt"/>',
+    )
+    dde = files.odt(
+        "Hello",
+        body_extra='<office:dde-source office:dde-application="cmd" office:dde-topic="x" '
+        'office:dde-item="y"/>',
+    )
+    assert extract("odt", linked, LIMITS).active_content
+    assert extract("odt", dde, LIMITS).active_content
+
+
+def test_opendocument_hyperlinks_and_own_pictures_arent_active_content() -> None:
+    data = files.odt(
+        "Hello",
+        body_extra=f'<text:p><text:a xmlns:xlink="{_XLINK}" xlink:href="https://example.com">'
+        "link</text:a></text:p>"
+        f'<draw:image xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
+        f'xmlns:xlink="{_XLINK}" xlink:href="Pictures/1.png"/>',
+    )
+    assert not extract("odt", data, LIMITS).active_content
+
+
+# --- Review N1: UTF-16 text and bytes before a PDF's header ----------------------------------
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be"])
+def test_utf16_text_is_read(encoding: str) -> None:
+    bom = {"utf-16": b"", "utf-16-le": b"\xff\xfe", "utf-16-be": b"\xfe\xff"}[encoding]
+    result = extract("csv", bom + "item\tprice\r\nCafé\t12\r\n".encode(encoding), LIMITS)
+    assert result.state == "done"
+    assert result.text == "item\tprice\r\nCafé\t12"
+
+
+def test_a_pdf_with_bytes_before_its_header_is_read() -> None:
+    result = extract("pdf", b"\r\n\xef\xbb\xbf" + files.pdf("Signed form of tender"), LIMITS)
+    assert result.state == "done"
+    assert result.text == "Signed form of tender"
+
+
 # --- The child process -------------------------------------------------------------------------
 def test_the_childs_environment_is_allow_listed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SOUNDINGS_DATABASE_URL", "postgresql://secret")
@@ -333,6 +449,18 @@ async def test_the_time_limit_kills_the_child() -> None:
     assert outcome == ChildOutcome.failed(ExtractionError.TIMEOUT)
     left = set(os.listdir(scratch)) - before
     assert not any(name.startswith("soundings-extract-") for name in left)
+
+
+async def test_the_time_limit_holds_when_the_child_stops_reading(tmp_path: Any) -> None:
+    """Review L1: a child that never reads stdin (a full pipe) must not hold the feeder,
+    and so the worker, past the time limit."""
+    script = tmp_path / "python"
+    script.write_text("#!/bin/sh\nsleep 30\n")
+    script.chmod(0o755)
+    started = asyncio.get_running_loop().time()
+    outcome = await run_child("txt", b"x" * (4 * 1024 * 1024), python=str(script), time_limit=1)
+    assert outcome == ChildOutcome.failed(ExtractionError.TIMEOUT)
+    assert asyncio.get_running_loop().time() - started < 8
 
 
 async def test_the_memory_cap() -> None:
@@ -523,3 +651,38 @@ async def test_the_sweep_requeues_lost_documents(
     assert jobs == [str(old)]
     assert fresh not in [UUID(j) for j in jobs]
     assert await db_session.scalar(select(func.count()).select_from(BidDocument)) == 2
+
+
+async def test_a_calls_backlog_waits_behind_other_calls(
+    stored: Callable[..., Any], app: FastAPI, db_session: AsyncSession
+) -> None:
+    """Review L6: one worker extracts one document at a time, so a call with hundreds of
+    documents waiting would hold up every other call for hours. Each job's priority is
+    minus the number of the call's older documents still waiting: a call's first document
+    goes before another call's hundredth."""
+    from datetime import timedelta
+
+    from app.bids.extraction import defer_extraction
+
+    ids = [await stored(files.pdf(f"Doc {n}"), BidDocumentType.PDF) for n in range(3)]
+    for offset, document_id in enumerate(ids):
+        document = await _document(db_session, document_id)
+        document.uploaded_at = utcnow() - timedelta(minutes=10 - offset)
+    await db_session.commit()
+    first = await _document(db_session, ids[0])
+    first.extraction_state = ExtractionState.NO_TEXT  # read already: it no longer counts
+    first.extracted_at = utcnow()
+    await db_session.commit()
+    for document_id in reversed(ids[1:]):
+        await defer_extraction(db_session, document_id)
+    await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT args->>'document_id', priority FROM procrastinate_jobs"
+                " WHERE task_name = 'extract_bid_document'"
+            )
+        )
+    ).all()
+    assert {UUID(document): priority for document, priority in rows} == {ids[1]: 0, ids[2]: -1}

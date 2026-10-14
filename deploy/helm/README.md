@@ -474,16 +474,23 @@ storage, backups, retention and antivirus).
 
 - **The upload route takes 25 MiB.** `POST /api/v1/ideas/<idea>/bid-call/bids/<bid>/documents`
   sends the raw file as the body, up to 25 MiB, within 120 s (408 `upload_timeout`
-  after that); every other route keeps the 1 MiB limit. The app counts the bytes itself
+  after that, or as soon as it arrives slower than 16 KiB/s on average after the first
+  15 s); every other route keeps the 1 MiB limit. The app counts the bytes itself
   (a body longer than its `Content-Length`, or a chunked one, is cut off at the limit),
   checks the sign-in and the caller's rights **before** it reads the body, and reads at
-  most two uploads at a time per API pod (503 `upload_busy` with `Retry-After: 5`). Your
-  ingress has to let that one path through:
+  most two uploads at a time per API pod, one per person (503 `upload_busy` with
+  `Retry-After: 5`). The file's name may come in the `filename` query parameter or the
+  `X-Filename` header (percent-encoded UTF-8): a bidder's file name in the query string
+  lands in your ingress's access log (`$request`), the header doesn't. Your ingress has
+  to let that one path through:
   - **ingress-nginx** (its default `proxy-body-size` is `1m`, so without this every
     upload over 1 MiB gets nginx's 413): `ingress.uploads` (on by default with
     `ingress.enabled`) renders `<release>-soundings-uploads` for that path only, as a
     regular expression (`use-regex`, which ingress-nginx then applies to every path of
-    the host; the longest path wins, so the other Ingresses keep matching as before),
+    the host, case-insensitively (`location ~*`): harmless here, since Soundings' other
+    paths are plain prefixes and the longest path wins, so the other Ingresses keep
+    matching as before; but another application's Ingress on the same host would get
+    regular-expression paths too),
     with `proxy-body-size: 26m` (25 MiB plus headers), `proxy-request-buffering: "off"`
     (nginx streams the body to the app, which refuses an unauthenticated or oversized
     upload at once, instead of first writing 25 MiB to the controller's disk) and

@@ -16,13 +16,13 @@ from app.bids.service import sync_document_must_have
 from app.models.activity import AuditLog
 from app.models.bid import Bid, BidDocument
 from tests.bids.conftest import (
-    bid_detail,
     AsUser,
     Crew,
     add_bid,
     assert_problem,
     assign,
     attach,
+    bid_detail,
     call_url,
     must_have_ids,
     ok,
@@ -151,6 +151,48 @@ async def test_editing_keeps_received_at(crew: Crew, api: AsUser) -> None:
         call_url(crew, f"/bids/{bid['id']}"), {**body, "received_at": too_old}
     )
     assert_problem(response, 422, "validation_error")
+
+
+async def test_a_received_at_change_that_flips_late_is_audited(
+    crew: Crew, api: AsUser, db_session: AsyncSession
+) -> None:
+    """Review N4: backdating a late bid so it no longer counts as late is visible in the
+    audit (``late_changed``, ``late``), not only as a changed field."""
+    from sqlalchemy import update
+
+    from app.models.bid import BidCall
+
+    owner, view = await _ready(crew, api)
+    await db_session.execute(
+        update(BidCall)
+        .where(BidCall.id == UUID(view["call"]["id"]))
+        .values(deadline_at=datetime.now(UTC) - timedelta(days=2))
+    )
+    await db_session.commit()
+    bid = await add_bid(owner, crew, "Late Ltd")
+    assert bid["late"] is True
+    body = {
+        "bidder": "Late Ltd",
+        "contact_name": "",
+        "contact_email": None,
+        "received_at": (datetime.now(UTC) - timedelta(days=3)).isoformat(),
+        "price": None,
+        "notes": "",
+    }
+
+    updated = ok(await owner.put(call_url(crew, f"/bids/{bid['id']}"), body))
+
+    assert updated["late"] is False
+    entry = (
+        await db_session.scalars(
+            select(AuditLog)
+            .where(AuditLog.action == "bid.update")
+            .order_by(AuditLog.created_at.desc())
+        )
+    ).first()
+    assert entry is not None
+    assert entry.details["fields"] == ["received_at"]
+    assert (entry.details["late_changed"], entry.details["late"]) == (True, False)
 
 
 async def test_deleting_a_bid_while_open(crew: Crew, api: AsUser, db_session: AsyncSession) -> None:

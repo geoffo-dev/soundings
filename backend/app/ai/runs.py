@@ -283,9 +283,7 @@ async def list_runs(
 
     # Phase 10: assess runs name bids, so they are left out (as if they didn't exist) for
     # whoever doesn't see the call's bids, and a rejected bid's for its assessors (ACC-3).
-    condition = (await assess_run_access(db, principal, loaded)).condition(
-        AiRun.kind, AiRun.bid_id
-    )
+    condition = (await assess_run_access(db, principal, loaded)).condition(AiRun.kind, AiRun.bid_id)
     if condition is not None:
         statement = statement.where(condition)
     runs = list(

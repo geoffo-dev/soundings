@@ -1083,16 +1083,22 @@ def bid_pending(principal: Principal | None, resource: Resource) -> bool:
     """Role matrix section 3a: the principal is a **pending assessor** of the bid and section
     in question (assigned to ``bid_section_id`` and hasn't submitted it for that bid), so
     they see none of its scores, whatever their role. An AI agent sees no bid score data at
-    all (rule 6)."""
+    all (rule 6). A **finished** call (awarded or cancelled) takes no assessment from anyone,
+    so nobody is pending on it any more (review ACC-4, rule 1b): seeing the scores then can't
+    sway one."""
     if principal is not None and principal.user.is_service_account:
         return True
     call, section = resource.bid_call, resource.bid_section_id
     return (
         call is not None
+        and call.status not in _FINISHED_CALL
         and section is not None
         and section in call.my_section_ids
         and not resource.bid_section_submitted
     )
+
+
+_FINISHED_CALL: Final = frozenset({BidCallStatus.AWARDED, BidCallStatus.CANCELLED})
 
 
 def _column(principal: Principal, spec: RuleSpec, resource: Resource) -> Column:

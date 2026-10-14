@@ -321,7 +321,9 @@ async def test_closing_the_idea_makes_the_call_read_only_for_everyone(
     await to_assessing(owner, crew)
     tech = sections_by_title(view)["Technical"]
     assessment = call_url(crew, f"/bids/{bid['id']}/sections/{tech['id']}/assessment")
-    answers = [{"question_id": q["id"], "score": 4} for q in tech["questions"] if q["type"] == "score"]
+    answers = [
+        {"question_id": q["id"], "score": 4} for q in tech["questions"] if q["type"] == "score"
+    ]
     closed = {"status": "closed", "resolution": "parked"}
     ok(await owner.post(f"/ideas/{crew.key}/status", closed))
 

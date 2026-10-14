@@ -1206,14 +1206,25 @@ without raising the limit for the rest of the API.
   read timeout through `ingress.uploads.path`, `.pathType` and `.annotations`.
 
 The [chart README](../deploy/helm/README.md#bid-evaluation) has the recipes for each.
-Each API pod reads at most two uploads at once (503 `upload_busy` with `Retry-After: 5`
-beyond), so an upload holds at most 50 MiB of an API pod's memory.
+Each API pod reads at most two uploads at once, and one per person (503 `upload_busy`
+with `Retry-After: 5` beyond), so uploads hold at most 50 MiB of an API pod's memory; a
+body that arrives slower than 16 KiB/s on average after its first 15 seconds is cut off
+at once (408 `upload_timeout`), so a trickling client can't hold the slots for the full
+two minutes.
+
+The file's name travels in the `filename` query parameter or, from clients that send it,
+in the `X-Filename` header (percent-encoded UTF-8). A name in the query string is in your
+ingress's access log (ingress-nginx logs `$request`); bidders' file names can be personal
+data ("J Smith CV.pdf"), so prefer the header, or leave `$args` out of the log format for
+the uploads Ingress.
 
 ### Text extraction on the worker
 
 The worker reads each new document's text in a **child process**, one at a time per
 worker pod, on its own `bid_documents` queue (email, the schedules and AI runs never
-wait for it): 30 seconds, a 512 MiB address-space cap, 2,000,000 characters, an
+wait for it), calls taking turns (each document's job waits behind only the older
+documents of its own call, so a call with hundreds of files doesn't hold up the
+others): 30 seconds, a 512 MiB address-space cap, 2,000,000 characters, an
 environment without the database URL, secret key or SMTP credentials, the file on stdin,
 its text on stdout. The worker container therefore needs **1 GiB** of memory (the
 chart's default since Phase 10). PDFs are read with `pypdf`; Office and OpenDocument
@@ -1239,13 +1250,16 @@ until they expire.
 
 Soundings doesn't scan uploads in this phase. Files are never executed, rendered or
 opened on the server except by the extraction child (above); uploads are allowed by
-their bytes (PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text, CSV, PNG, JPEG), and Office
-files with macros, ActiveX controls or embedded OLE packages, OpenDocument files with
-scripts, and encrypted Office files are refused (415). Downloads are always attachments
-(`nosniff`, a sandboxing CSP, `no-store`); the app shows the extracted text, never the
-file, and warns before downloading a file the extractor flagged (`active_content`: PDF
-scripts, launch actions or attached files; an Office file's remote template, external
-links or DDE fields). Where your policy needs a virus scan, put a scanning proxy (ICAP,
+their bytes (PDF, DOCX, XLSX, PPTX, ODT, ODS, plain text including UTF-16, CSV, PNG,
+JPEG), and Office files with macros (VBA, or Excel 4.0 macro and dialog sheets), ActiveX
+controls or embedded OLE packages, OpenDocument files with scripts, encrypted Office
+files and ZIP files that name one entry twice are refused (415). Downloads are always
+attachments (`nosniff`, a sandboxing CSP, `no-store`); the app shows the extracted text,
+never the file, and warns before downloading a file the extractor flagged
+(`active_content`: a PDF's JavaScript, launch actions, attached files, rich media or XFA
+forms, also when the rest of the file couldn't be read; an Office file's remote template,
+external links or DDE fields; an OpenDocument file's event-bound macros, DDE links or
+objects loaded from outside the file). Where your policy needs a virus scan, put a scanning proxy (ICAP,
 or a ClamAV-based one) in front of the upload path at the ingress, or scan
 `bid_document_contents` from a backup on a schedule.
 

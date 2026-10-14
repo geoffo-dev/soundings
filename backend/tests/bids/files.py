@@ -19,17 +19,22 @@ __all__ = [
     "DOCX_MAIN",
     "PPTX_MAIN",
     "XLSX_MAIN",
+    "content_types",
     "csv_file",
     "docx",
+    "entries_of",
     "jpeg",
     "lying_zip",
     "ods",
     "odt",
     "pdf",
+    "pdf_stream",
     "png",
     "pptx",
     "xlsx",
+    "xlsx_content_types",
     "zip_of",
+    "zip_with_duplicates",
 ]
 
 DOCX_MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
@@ -64,14 +69,37 @@ def zip_of(
     return buffer.getvalue()
 
 
-def _content_types(main: str, part: str) -> str:
+def _content_types(main: str, part: str, extra: str = "") -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.'
         'relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
-        f'<Override PartName="/{part}" ContentType="{main}"/></Types>'
+        f'<Override PartName="/{part}" ContentType="{main}"/>{extra}</Types>'
     )
+
+
+content_types = _content_types
+
+
+def xlsx_content_types(extra: str = "") -> str:
+    """A workbook's ``[Content_Types].xml`` with more ``Override`` elements."""
+    return _content_types(XLSX_MAIN, "xl/workbook.xml", extra)
+
+
+def entries_of(data: bytes) -> list[tuple[str, bytes]]:
+    """A ZIP's entries, in order."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return [(info.filename, archive.read(info)) for info in archive.infolist()]
+
+
+def zip_with_duplicates(entries: Iterable[tuple[str, bytes | str]]) -> bytes:
+    """A ZIP that may hold the same name twice (zipfile warns; these tests want it)."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return zip_of(list(entries))
 
 
 def _rels(part: str) -> str:
@@ -153,14 +181,16 @@ def pptx(*texts: str) -> bytes:
     )
 
 
-def _odf(mimetype: str, body: str, extra: Mapping[str, bytes | str] | None = None) -> bytes:
+def _odf(
+    mimetype: str, body: str, extra: Mapping[str, bytes | str] | None = None, head: str = ""
+) -> bytes:
     entries: list[tuple[str, bytes | str]] = [
         ("mimetype", mimetype),
         (
             "content.xml",
             f'<?xml version="1.0" encoding="UTF-8"?><office:document-content '
             f'xmlns:office="{_OFFICE}" xmlns:text="{_TEXT}" xmlns:table="{_TABLE}">'
-            f"<office:body>{body}</office:body></office:document-content>",
+            f"{head}<office:body>{body}</office:body></office:document-content>",
         ),
         ("META-INF/manifest.xml", '<?xml version="1.0" encoding="UTF-8"?><manifest/>'),
     ]
@@ -168,10 +198,20 @@ def _odf(mimetype: str, body: str, extra: Mapping[str, bytes | str] | None = Non
     return zip_of(entries, stored=["mimetype"])
 
 
-def odt(*paragraphs: str, extra: Mapping[str, bytes | str] | None = None) -> bytes:
-    body = "".join(f"<text:p>{escape(text)}</text:p>" for text in paragraphs)
+def odt(
+    *paragraphs: str,
+    extra: Mapping[str, bytes | str] | None = None,
+    head: str = "",
+    body_extra: str = "",
+) -> bytes:
+    """A text document; ``head`` goes before ``office:body`` (e.g. ``office:scripts``),
+    ``body_extra`` after the paragraphs (raw XML)."""
+    body = "".join(f"<text:p>{escape(text)}</text:p>" for text in paragraphs) + body_extra
     return _odf(
-        "application/vnd.oasis.opendocument.text", f"<office:text>{body}</office:text>", extra
+        "application/vnd.oasis.opendocument.text",
+        f"<office:text>{body}</office:text>",
+        extra,
+        head,
     )
 
 
@@ -192,10 +232,19 @@ def _pdf_string(text: str) -> str:
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def pdf(*lines: str, catalog_extra: str = "", objects: Iterable[str] = ()) -> bytes:
+def pdf_stream(data: bytes) -> str:
+    """An object body holding ``data`` as a stream without a filter (``latin-1`` round
+    trips every byte), for :func:`pdf`'s ``objects``."""
+    return f"<< /Length {len(data)} >>\nstream\n{data.decode('latin-1')}\nendstream"
+
+
+def pdf(
+    *lines: str, catalog_extra: str = "", page_extra: str = "", objects: Iterable[str] = ()
+) -> bytes:
     """A one-page PDF (Helvetica) with one line of text per argument. ``catalog_extra``
-    goes into the catalog dictionary (e.g. an ``/OpenAction`` with JavaScript);
-    ``objects`` are more objects, numbered from 6."""
+    goes into the catalog dictionary (e.g. an ``/OpenAction`` with JavaScript),
+    ``page_extra`` into the page's (e.g. ``/Annots``); ``objects`` are more objects,
+    numbered from 6."""
     content = (
         "BT /F1 12 Tf 72 720 Td 14 TL "
         + " ".join(f"({_pdf_string(line)}) Tj T*" for line in lines)
@@ -205,7 +254,7 @@ def pdf(*lines: str, catalog_extra: str = "", objects: Iterable[str] = ()) -> by
         f"<< /Type /Catalog /Pages 2 0 R {catalog_extra} >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
-        "/Resources << /Font << /F1 5 0 R >> >> >>",
+        f"/Resources << /Font << /F1 5 0 R >> >>{f' {page_extra}' if page_extra else ''} >>",
         f"<< /Length {len(content.encode('latin-1'))} >>\nstream\n{content}\nendstream",
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
         *objects,

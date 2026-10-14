@@ -1244,7 +1244,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a bid document
-         * @description bid.upload_document (session only), before the award. The checks before the body is read: 401, 404, 403, then an upload slot (503 upload_busy with Retry-After). Then the raw file as the body, read with no transaction open (this route alone takes up to 25 MiB: 413 content_too_large beyond, also for a body longer than its Content-Length says or a chunked one; 408 upload_timeout after 120 s). Allowed by its bytes alone (the ZIP's entry count, central-directory names and two bounded entries, off the event loop; no PDF is parsed here): 415 unsupported_document_type (anything else, an empty file, an encrypted Office file, more than 2,000 archive entries), macro_document (VBA, ActiveX, embedded OLE packages or macro-enabled files in an Office file, Basic/ or Scripts/ in an OpenDocument file). 422 invalid_must_have (must_have_id names a confirmation or another call's, or a pricing must-have with pricing=false). 409 too_many_documents (30 per bid), call_storage_full (500 MiB per call, text included), project_storage_full (5 GiB per project), duplicate_document (the same file on this bid). Text is extracted afterwards by the worker (extraction.state pending; an encrypted PDF ends failed, encrypted). Audited bid_document.upload. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
+         * @description bid.upload_document (session only), before the award. The checks before the body is read: 401, 404, 403, then an upload slot (503 upload_busy with Retry-After: two per API process, one per person). Then the raw file as the body, read with no transaction open (this route alone takes up to 25 MiB: 413 content_too_large beyond, also for a body longer than its Content-Length says or a chunked one; 408 upload_timeout after 120 s, or at once when it arrives slower than 16 KiB/s on average after 15 s). Allowed by its bytes alone (the ZIP's entry count, central-directory names and two bounded entries, off the event loop; no PDF is parsed here): 415 unsupported_document_type (anything else, an empty file, an encrypted Office file, more than 2,000 archive entries), macro_document (VBA, ActiveX, embedded OLE packages or macro-enabled files in an Office file, Basic/ or Scripts/ in an OpenDocument file). 422 invalid_must_have (must_have_id names a confirmation or another call's, or a pricing must-have with pricing=false). 409 too_many_documents (30 per bid), call_storage_full (500 MiB per call, text included), project_storage_full (5 GiB per project), duplicate_document (the same file on this bid). Text is extracted afterwards by the worker (extraction.state pending; an encrypted PDF ends failed, encrypted). Audited bid_document.upload. 409 project_archived, idea_closed (c5), bid_call_finished (the call is awarded or cancelled: read-only).
          */
         post: operations["upload_bid_document"];
         delete?: never;
@@ -16604,15 +16604,18 @@ export interface operations {
     };
     upload_bid_document: {
         parameters: {
-            query: {
-                /** @description The file's name (shown and used on download). */
-                filename: string;
+            query?: {
+                /** @description The file's name (shown and used on download); or send it in X-Filename, which keeps it out of access logs (one of the two is required). */
+                filename?: string | null;
                 /** @description A required-document must-have it satisfies. */
                 must_have_id?: string | null;
                 /** @description A pricing document (bid.view_price only, never read by the AI). Default: the must-have's pricing mark (false without one). */
                 pricing?: boolean | null;
             };
-            header?: never;
+            header?: {
+                /** @description The file's name, percent-encoded UTF-8 (ASCII only on the wire), instead of the filename query parameter (review N2: proxies log query strings); the same rules apply once decoded. Wins over the query parameter. */
+                "X-Filename"?: string | null;
+            };
             path: {
                 /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
                 idea: string;

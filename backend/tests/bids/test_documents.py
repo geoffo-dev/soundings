@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bids.documents import UploadSlots, content_disposition, stored_filename
+from app.errors import ProblemError
 from app.middleware import UPLOAD_BODY_BYTES
 from app.models.activity import AuditLog as AuditLogEntry
 from app.models.ai import AiAgent, AiRun
@@ -343,6 +344,89 @@ async def test_a_slow_body_is_408(
     finally:
         del app.state.bid_upload_read_timeout
     assert_problem(response, 408, "upload_timeout")
+
+
+async def test_a_trickling_body_is_cut_early(
+    call: tuple[Api, dict[str, Any], dict[str, Any]], crew: Crew, app: FastAPI
+) -> None:
+    """Review L4: a body arriving slower than the floor (16 KiB/s after 15 s; here 1 MiB/s
+    after 0.2 s) is 408 long before the 120 s limit, so slow senders can't hold the
+    process's two upload slots."""
+    owner, _, bid = call
+    app.state.bid_upload_min_rate = (0.2, 1024 * 1024)
+
+    async def trickle() -> AsyncIterator[bytes]:
+        for _ in range(50):
+            yield b"x" * 100
+            await asyncio.sleep(0.05)
+
+    started = asyncio.get_running_loop().time()
+    try:
+        response = await owner.http.post(
+            API + call_url(crew, f"/bids/{bid['id']}/documents"),
+            params={"filename": "slow.txt"},
+            content=trickle(),
+        )
+    finally:
+        del app.state.bid_upload_min_rate
+    assert_problem(response, 408, "upload_timeout")
+    assert asyncio.get_running_loop().time() - started < 2
+
+
+async def test_a_body_faster_than_the_floor_arrives(
+    call: tuple[Api, dict[str, Any], dict[str, Any]], crew: Crew, app: FastAPI
+) -> None:
+    owner, _, bid = call
+    app.state.bid_upload_min_rate = (0.2, 1024)
+    try:
+        response = await owner.http.post(
+            API + call_url(crew, f"/bids/{bid['id']}/documents"),
+            params={"filename": "steady.txt"},
+            content=_chunked(512 * 1024, pause=0.1),
+        )
+    finally:
+        del app.state.bid_upload_min_rate
+    ok(response, 201)
+
+
+def test_one_upload_at_a_time_per_person() -> None:
+    """Review L4: one person can't hold both of a process's slots (the SPA sends one file at
+    a time); someone else still gets the other."""
+    slots = UploadSlots(2)
+    alice, bob = uuid4(), uuid4()
+    with slots.take(alice):
+        with pytest.raises(ProblemError) as caught, slots.take(alice):
+            pass
+        assert caught.value.code == "upload_busy"
+        with slots.take(bob):
+            assert slots.busy == 2
+    assert slots.busy == 0
+    with slots.take(alice):  # free again
+        pass
+
+
+async def test_the_name_may_travel_in_a_header(
+    call: tuple[Api, dict[str, Any], dict[str, Any]], crew: Crew
+) -> None:
+    """Review N2: ``X-Filename`` (percent-encoded UTF-8) instead of the query, so a bidder's
+    file name stays out of proxies' access logs; the same rules apply to it."""
+    owner, _, bid = call
+    url = API + call_url(crew, f"/bids/{bid['id']}/documents")
+
+    def post(headers: dict[str, Any], data: bytes) -> Any:
+        return owner.http.post(url, content=data, headers=headers)
+
+    response = await post({"X-Filename": "Caf%C3%A9%20tender.pdf"}, files.pdf("Signed"))
+    assert ok(response, 201)["filename"] == "Café tender.pdf"
+    for bad in ("..%2Fsecret.pdf", "a%0Ab.pdf", "%FF%FE.pdf", "Café.pdf".encode(), ""):
+        refused = await post({"X-Filename": bad}, files.pdf(f"Other {bad!r}"))
+        problem = assert_problem(refused, 422, "validation_error")
+        assert problem["errors"][0]["loc"][:2] == ["header", "X-Filename"]
+    missing = await post({}, files.pdf("No name"))
+    assert assert_problem(missing, 422, "validation_error")["errors"][0]["loc"] == [
+        "query",
+        "filename",
+    ]
 
 
 async def test_no_transaction_is_open_while_the_body_is_read(

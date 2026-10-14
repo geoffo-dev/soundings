@@ -22,13 +22,19 @@ database code: it holds no secrets and needs none), limits its own address space
 * **Text**: at most ``max_chars`` characters (``truncated``), after removing NULs and the
   characters :func:`app.mcp.text.visible_text` hides (soft hyphens, zero-width, bidi
   controls, tag characters: review S1), so REST, MCP and quote checks read the same text.
-* **Active content** (review S3): a PDF's ``/JavaScript``, ``/JS``, ``/Launch`` or
-  ``/EmbeddedFile(s)``; an Office file's external relationship that isn't a hyperlink (a
-  remote ``attachedTemplate``, an external OLE object or image), ``xl/externalLinks/``, or a
-  DDE field: ``active_content: true`` (the file is kept; the SPA warns before a download).
+* **Active content** (review S3): a PDF's ``/JavaScript``, ``/JS``, ``/Launch``,
+  ``/EmbeddedFile(s)``, ``/FileAttachment``, ``/RichMedia`` or ``/XFA``, found by walking
+  its catalog and pages with ``pypdf`` and in its own syntax **outside streams** (review M3:
+  never in page text or compressed data; kept when the file turns out damaged, review L2);
+  an Office file's external relationship that isn't a hyperlink (a remote
+  ``attachedTemplate``, an external OLE object or image), ``xl/externalLinks/``, or a DDE
+  field; an OpenDocument file's event listeners, DDE links, applets and plugins, or an
+  element other than a hyperlink that loads something from outside the package (review
+  L3): ``active_content: true`` (the file is kept; the SPA warns before a download).
 
 PDF text comes from ``pypdf`` (BSD-3-Clause); an encrypted PDF without an empty user
 password is ``failed`` ``encrypted``. PNG and JPEG have no text (no OCR): ``no_text``.
+Plain text is UTF-16 after a byte order mark (review N1), else UTF-8, else Windows-1252.
 """
 
 from __future__ import annotations
@@ -110,9 +116,11 @@ class Result:
 
 
 class _Failed(Exception):
-    def __init__(self, error: str) -> None:
+    def __init__(self, error: str, *, active_content: bool = False) -> None:
         super().__init__(error)
         self.error = error
+        self.active_content = active_content
+        """What was found before the failure (review L2: a damaged file keeps its flag)."""
 
 
 class _Full(Exception):
@@ -352,15 +360,59 @@ class _SheetText(_Handler):
             self.formula.append(text)
 
 
-class _OpenDocumentText(_Handler):
+_XLINK_HREF: Final = "http://www.w3.org/1999/xlink href"
+_ODF_LINKS: Final = frozenset({f"{_TEXT} a", "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0 a"})
+"""Hyperlinks (``text:a``, ``draw:a``): a link to follow, not content that loads itself."""
+_ODF_DDE: Final = frozenset(
+    {
+        f"{_OFFICE} dde-source",
+        f"{_TEXT} dde-connection-decl",
+        f"{_TEXT} dde-connection",
+        f"{_TABLE} dde-link",
+    }
+)
+_URL_SCHEME: Final = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def _odf_external(href: str) -> bool:
+    """A link out of the package: a URL (any scheme) or a path above or outside it."""
+    return bool(_URL_SCHEME.match(href)) or href.startswith(("/", "../", "\\"))
+
+
+class _OpenDocumentActive(_Handler):
+    """Active content in an OpenDocument part (review L3): an event listener (a macro bound
+    to an event: ``script:event-listener``, ``presentation:event-listener``), a DDE link,
+    an applet or plugin, or an element other than a hyperlink that loads something from
+    outside the package (``draw:object``, ``draw:image``, a linked section or table)."""
+
+    def __init__(self) -> None:
+        self.active = False
+
+    def start(self, name: str, attrs: dict[str, str]) -> None:
+        if self.active:
+            return
+        local = name.rsplit(" ", 1)[-1]
+        loads_from_outside = name not in _ODF_LINKS and _odf_external(attrs.get(_XLINK_HREF, ""))
+        if (
+            local in ("event-listener", "applet", "plugin")
+            or name in _ODF_DDE
+            or loads_from_outside
+        ):
+            self.active = True
+
+
+class _OpenDocumentText(_OpenDocumentActive):
     """``content.xml`` of ODT and ODS: the text under ``office:body``, a line per
-    paragraph and heading, tabs between table cells and a line per table row."""
+    paragraph and heading, tabs between table cells and a line per table row (and, while
+    it reads, the active content :class:`_OpenDocumentActive` looks for)."""
 
     def __init__(self, sink: _Text) -> None:
+        super().__init__()
         self.sink = sink
         self.depth = 0
 
     def start(self, name: str, attrs: dict[str, str]) -> None:
+        super().start(name, attrs)
         if name == f"{_OFFICE} body":
             self.depth += 1
         elif self.depth:
@@ -542,16 +594,63 @@ def _pptx(data: bytes, limits: Limits) -> Result:
 def _opendocument(data: bytes, limits: Limits) -> Result:
     zipped = _open_archive(data, limits)
     sink = _Text(limits.max_chars)
+    text = _OpenDocumentText(sink)
     with contextlib.suppress(_Full):
-        zipped.parse("content.xml", _OpenDocumentText(sink))
-    return sink.result()
+        zipped.parse("content.xml", text)
+    active = text.active
+    if not active:
+        # The text cap may have stopped the content's parse early; and the styles (headers,
+        # footers, master pages) can hold the same links.
+        for part in ("content.xml", "styles.xml"):
+            scan = _OpenDocumentActive()
+            zipped.parse(part, scan)
+            if scan.active:
+                active = True
+                break
+    return sink.result(active_content=active)
 
 
 # --- PDF ---------------------------------------------------------------------------------------
-_PDF_ACTIVE: Final = re.compile(rb"/(?:JavaScript|JS|Launch|EmbeddedFiles?)(?![A-Za-z0-9])")
-_ACTIVE_NAMES: Final = frozenset(
-    {"/JavaScript", "/JS", "/Launch", "/EmbeddedFile", "/EmbeddedFiles"}
+_PDF_ACTIVE: Final = re.compile(
+    rb"/(?:JavaScript|JS|Launch|EmbeddedFiles?|FileAttachment|RichMedia|XFA)(?![A-Za-z0-9])"
 )
+_ACTIVE_NAMES: Final = frozenset(
+    {
+        "/JavaScript",
+        "/JS",
+        "/Launch",
+        "/EmbeddedFile",
+        "/EmbeddedFiles",
+        "/FileAttachment",
+        "/RichMedia",
+        "/XFA",
+    }
+)
+"""Actions that run (JavaScript, a launch), attached files (embedded files, a file
+attachment annotation), Flash-era rich media and XFA forms (which carry scripts)."""
+_STREAM: Final = re.compile(rb"(?<![A-Za-z])stream(?:\r\n|\n|\r)")
+_ENDSTREAM: Final = b"endstream"
+
+
+def _outside_streams(data: bytes) -> Iterable[bytes]:
+    """The PDF's bytes outside ``stream`` ... ``endstream`` (review M3): object
+    dictionaries and the like, never the content of a stream (page text, images, fonts,
+    compressed data), where the active names match by chance."""
+    at = 0
+    while (found := _STREAM.search(data, at)) is not None:
+        yield data[at : found.start()]
+        end = data.find(_ENDSTREAM, found.end())
+        if end < 0:
+            return
+        at = end + len(_ENDSTREAM)
+    yield data[at:]
+
+
+def _raw_active(data: bytes) -> bool:
+    """An active name in the file's own syntax, outside streams: a quick look that also
+    works on a file pypdf can't read (review L2); objects inside compressed object streams
+    are found by :func:`_pdf_names`."""
+    return any(_PDF_ACTIVE.search(part) for part in _outside_streams(data))
 
 
 def _pdf_names(value: Any, depth: int = 0, seen: set[int] | None = None) -> bool:
@@ -585,25 +684,27 @@ def _pdf(data: bytes, limits: Limits) -> Result:
     from pypdf import PdfReader
     from pypdf.errors import FileNotDecryptedError, PdfReadError
 
-    active = bool(_PDF_ACTIVE.search(data))
+    active = _raw_active(data)
     try:
         reader = PdfReader(io.BytesIO(data), strict=False)
         if reader.is_encrypted:
             try:
                 if not reader.decrypt(""):
-                    raise _Failed("encrypted")
+                    raise _Failed("encrypted", active_content=active)
             except (FileNotDecryptedError, NotImplementedError, PdfReadError):
-                raise _Failed("encrypted") from None
+                raise _Failed("encrypted", active_content=active) from None
         root = reader.trailer.get("/Root")
         if not active and root is not None:
             root = root.get_object()
-            active = any(_pdf_names(root.get(key)) for key in ("/Names", "/OpenAction", "/AA"))
+            active = any(
+                _pdf_names(root.get(key)) for key in ("/Names", "/OpenAction", "/AA", "/AcroForm")
+            )
         pages = reader.pages
         count = len(pages)
     except (_Failed, MemoryError):
         raise
     except Exception:  # noqa: BLE001 - pypdf raises many kinds on damaged files
-        raise _Failed("damaged") from None
+        raise _Failed("damaged", active_content=active) from None
     sink = _Text(limits.max_chars)
     read = 0
     try:
@@ -623,13 +724,14 @@ def _pdf(data: bytes, limits: Limits) -> Result:
     except _Full:
         pass
     if count and not read:
-        raise _Failed("damaged")
+        raise _Failed("damaged", active_content=active)
     return sink.result(active_content=active)
 
 
 # --- Plain text --------------------------------------------------------------------------------
 def _plain(data: bytes, limits: Limits) -> Result:
-    for encoding in ("utf-8-sig", "cp1252"):
+    encodings = ("utf-16",) if data.startswith((b"\xff\xfe", b"\xfe\xff")) else ()
+    for encoding in (*encodings, "utf-8-sig", "cp1252"):
         try:
             decoded = data.decode(encoding)
         except UnicodeDecodeError:
@@ -663,7 +765,7 @@ def extract(kind: str, data: bytes, limits: Limits) -> Result:
     try:
         return extractor(data, limits)
     except _Failed as failed:
-        return Result("failed", error=failed.error)
+        return Result("failed", error=failed.error, active_content=failed.active_content)
     except RecursionError:
         return Result("failed", error="damaged")
     except MemoryError:

@@ -36,7 +36,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Query, Request, status
+from fastapi import APIRouter, Header, Path, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -724,10 +724,12 @@ async def decide_must_have(
     summary="Upload a bid document",
     description=(
         "bid.upload_document (session only), before the award. The checks before the body is "
-        "read: 401, 404, 403, then an upload slot (503 upload_busy with Retry-After). Then "
-        "the raw file as the body, read with no transaction open (this route alone takes up "
-        "to 25 MiB: 413 content_too_large beyond, also for a body longer than its "
-        "Content-Length says or a chunked one; 408 upload_timeout after 120 s). Allowed by "
+        "read: 401, 404, 403, then an upload slot (503 upload_busy with Retry-After: two per "
+        "API process, one per person). Then the raw file as the body, read with no "
+        "transaction open (this route alone takes up to 25 MiB: 413 content_too_large beyond, "
+        "also for a body longer than its Content-Length says or a chunked one; 408 "
+        "upload_timeout after 120 s, or at once when it arrives slower than 16 KiB/s on "
+        "average after 15 s). Allowed by "
         "its bytes alone (the ZIP's entry count, central-directory names and two bounded "
         "entries, off the event loop; no PDF is parsed here): 415 unsupported_document_type "
         "(anything else, an empty file, an encrypted Office file, more than 2,000 archive "
@@ -750,8 +752,25 @@ async def upload_bid_document(
     idea: IdeaParam,
     bid_id: BidId,
     filename: Annotated[
-        BidDocumentFilename, Query(description="The file's name (shown and used on download).")
-    ],
+        BidDocumentFilename | None,
+        Query(
+            description=(
+                "The file's name (shown and used on download); or send it in X-Filename, "
+                "which keeps it out of access logs (one of the two is required)."
+            )
+        ),
+    ] = None,
+    x_filename: Annotated[
+        str | None,
+        Header(
+            alias="X-Filename",
+            description=(
+                "The file's name, percent-encoded UTF-8 (ASCII only on the wire), instead of "
+                "the filename query parameter (review N2: proxies log query strings); the "
+                "same rules apply once decoded. Wins over the query parameter."
+            ),
+        ),
+    ] = None,
     must_have_id: Annotated[
         UUID | None, Query(description="A required-document must-have it satisfies.")
     ] = None,
@@ -765,15 +784,16 @@ async def upload_bid_document(
         ),
     ] = None,
 ) -> BidDocument:
+    name = documents.upload_filename(filename, x_filename)
     # Before the body: 401 (the principal), the 404s and 403s, then an upload slot.
     loaded = await access.load_call(session, principal, idea, Rule.BID_UPLOAD_DOCUMENT)
     await access.load_bid(session, principal, loaded, bid_id)
     # The body is read with no transaction open (review S5): end the checks' read-only
     # one (a commit, which keeps the principal's objects loaded; nothing was written).
     await session.commit()
-    with documents.upload_slots(request).take():
+    with documents.upload_slots(request).take(principal.user_id):
         data = await documents.read_body(request)
-        inspected = await documents.inspect(data, filename)
+        inspected = await documents.inspect(data, name)
         # One short transaction: the locks again, the 422s and 409s, the rows.
         loaded = await access.load_call(
             session, principal, idea, Rule.BID_UPLOAD_DOCUMENT, write=True
@@ -786,7 +806,7 @@ async def upload_bid_document(
             bid,
             data=data,
             inspected=inspected,
-            filename=filename,
+            filename=name,
             must_have_id=must_have_id,
             pricing=pricing,
         )

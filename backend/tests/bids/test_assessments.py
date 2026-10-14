@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from sqlalchemy import delete, func, select, update
@@ -489,3 +489,141 @@ async def test_a_deactivated_assessor_stops_counting(
 
     # tech1 owes both bids (2), tech2's one submitted assessment still counts (1 of 1).
     assert progress == {"submitted": 1, "total": 3}
+
+
+async def test_a_finished_call_ends_everyones_blindness(
+    crew: Crew, api: AsUser, db_session: AsyncSession
+) -> None:
+    """Review ACC-4 (lead default, to confirm): once the call is awarded or cancelled nobody
+    can score any more (409 ``bid_call_finished`` for everyone), so nobody is pending: a
+    manager who still owed a section sees the ranking and the report's numbers, and an
+    assessor who never submitted sees their section's scores. An agent stays blind (rule 6)."""
+    owner, view, bids = await _assessing(
+        crew, api, db_session, {"Technical": [crew.tech1, crew.tech2], "Delivery": [crew.owner]}
+    )
+    sections = sections_by_title(view)
+    tech1 = await api(crew.tech1)
+    for bid in bids:
+        await submit(tech1, crew, bid["id"], sections["Technical"], 4)
+    tech2 = await api(crew.tech2)
+    technical_url = _assessment_url(crew, bids[0], sections["Technical"], "assessments")
+    assert ok(await tech2.get(technical_url))["hidden"] is True
+    assert ok(await owner.get(call_url(crew, "/comparison")))["ranking_hidden"] is True
+
+    ok(await owner.post(call_url(crew, "/award"), {"bid_id": bids[0]["id"]}))
+
+    comparison = ok(await owner.get(call_url(crew, "/comparison")))
+    assert comparison["ranking_hidden"] is False
+    assert all(not cell["hidden"] for row in comparison["rows"] for cell in row["sections"])
+    shown = ok(await tech2.get(technical_url))
+    assert shown["hidden"] is False
+    assert [a["assessor"]["id"] for a in shown["assessments"]] == [str(crew.tech1.id)]
+    report = await owner.get(call_url(crew, "/report/markdown"))
+    assert report.status_code == 200
+    assert "Hidden until you submit" not in report.text
+    # Still nobody can score: the call is finished.
+    answers = [{"question_id": q["id"], "score": 2} for q in score_questions(sections["Technical"])]
+    assessment = _assessment_url(crew, bids[0], sections["Technical"], "assessment")
+    response = await tech2.put(assessment, {"answers": answers, "submit": True})
+    assert_problem(response, 409, "bid_call_finished")
+
+
+async def test_leaving_the_private_project_ends_unsubmitted_assignments(
+    crew: Crew, api: AsUser, db_session: AsyncSession
+) -> None:
+    """Review ACC-5 (lead default, to confirm), as Phase 8b clears a researcher: removing
+    someone from the private project removes their assignments where they submitted nothing
+    (their drafts go with them), audited ``left_project``; an assignment with a submitted
+    assessment stays (its scores count). Added back, they get no bids until asked again."""
+    from app.models.activity import AuditLog
+    from app.models.bid import BidSectionAssessor
+
+    _, view, bids = await _assessing(
+        crew, api, db_session, {"Technical": [crew.tech1, crew.tech2], "Delivery": [crew.tech1]}
+    )
+    sections = sections_by_title(view)
+    tech1 = await api(crew.tech1)
+    await submit(tech1, crew, bids[0]["id"], sections["Technical"], 4)
+    await submit(tech1, crew, bids[0]["id"], sections["Delivery"], 3, final=False)  # a draft
+    admin = await api(crew.admin)
+    members = f"/projects/{crew.project.slug}/members"
+
+    response = await admin.delete(f"{members}/{crew.tech1.id}")
+    assert response.status_code == 204, response.text
+
+    held = set(
+        await db_session.scalars(
+            select(BidSectionAssessor.section_id).where(BidSectionAssessor.user_id == crew.tech1.id)
+        )
+    )
+    assert held == {UUID(sections["Technical"]["id"])}  # submitted: kept; Delivery: removed
+    drafts = await db_session.scalar(
+        select(func.count()).where(
+            BidAssessment.assessor_id == crew.tech1.id,
+            BidAssessment.section_id == UUID(sections["Delivery"]["id"]),
+        )
+    )
+    assert drafts == 0
+    entry = (
+        await db_session.scalars(
+            select(AuditLog)
+            .where(AuditLog.action == "bid_call.assessors_change")
+            .order_by(AuditLog.created_at.desc())
+        )
+    ).first()
+    assert entry is not None
+    assert entry.actor_id == crew.admin.id
+    assert entry.details["reason"] == "left_project"
+    assert entry.details["removed"] == {sections["Delivery"]["id"]: [str(crew.tech1.id)]}
+    # tech2, still a member, keeps everything.
+    assert ok(await (await api(crew.tech2)).get(call_url(crew, "/bids")))
+
+    # Added back as a member: Delivery isn't theirs any more.
+    added = await admin.post(members, {"user_id": str(crew.tech1.id), "role": "member"})
+    assert added.status_code == 201, added.text
+    again = ok(await tech1.get(call_url(crew, "/bids")))
+    first = next(bid for bid in again["items"] if bid["id"] == bids[0]["id"])
+    assert [s["section"]["title"] for s in first["my_sections"]] == ["Technical"]
+    # Changing a role keeps one: nothing more is removed.
+    before = await db_session.scalar(select(func.count()).select_from(BidSectionAssessor))
+    patch = await admin.patch(f"{members}/{crew.tech2.id}", {"role": "viewer"})
+    assert patch.status_code == 200, patch.text
+    after = await db_session.scalar(select(func.count()).select_from(BidSectionAssessor))
+    assert before == after
+
+
+async def test_an_edit_after_submitting_is_audited(
+    crew: Crew, api: AsUser, db_session: AsyncSession
+) -> None:
+    """Review L7: an assessor sees the others' scores once they submit, so a later change
+    is audited (``bid_assessment.submit`` with ``edited: true`` and which questions changed:
+    ids only, never a score). Saving the same answers again records nothing."""
+    from app.models.activity import AuditLog
+
+    _, view, bids = await _assessing(crew, api, db_session, {"Technical": [crew.tech1]})
+    technical = sections_by_title(view)["Technical"]
+    q1, _ = score_questions(technical)
+    tech = await api(crew.tech1)
+    await submit(tech, crew, bids[0]["id"], technical, [1, 4])
+
+    async def entries() -> list[AuditLog]:
+        return list(
+            await db_session.scalars(
+                select(AuditLog)
+                .where(AuditLog.action == "bid_assessment.submit")
+                .order_by(AuditLog.created_at, AuditLog.id)
+                .execution_options(populate_existing=True)
+            )
+        )
+
+    assert [e.details.get("edited", False) for e in await entries()] == [False]
+    await submit(tech, crew, bids[0]["id"], technical, [5, 4], final=False)
+    await submit(tech, crew, bids[0]["id"], technical, [5, 4])  # the same again
+
+    found = await entries()
+    assert [e.details.get("edited", False) for e in found] == [False, True]
+    edit = found[-1]
+    assert edit.actor_id == crew.tech1.id
+    assert edit.details["changed_question_ids"] == [q1["id"]]
+    assert edit.details["bid_id"] == bids[0]["id"]
+    assert "score" not in json.dumps(edit.details).replace("_ids", "")

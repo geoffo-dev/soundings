@@ -4,7 +4,8 @@ decision 5): never in the API process.
 **One at a time per worker**: the ``bid_documents`` queue has a pool of its own in the
 worker (:data:`app.worker.DOCUMENT_QUEUES`, concurrency
 :data:`~app.schemas.bids.BID_EXTRACTIONS_PER_WORKER`), so a 30-second extraction never
-holds up email, the schedules or AI runs.
+holds up email, the schedules or AI runs; and calls share it fairly (review L6: a job's
+priority is minus its call's older documents still waiting, :func:`extraction_priority`).
 
 **Each document in a fresh child process** (:func:`run_child`): ``python -I -B -m
 app.bids.extract_child`` with an **allow-listed environment** (:data:`CHILD_ENVIRONMENT`:
@@ -77,6 +78,7 @@ __all__ = [
     "defer_extraction",
     "extract_document",
     "extract_in_session",
+    "extraction_priority",
     "output_bound",
     "run_child",
     "sweep_documents",
@@ -115,15 +117,37 @@ def output_bound(max_chars: int = BID_TEXT_MAX_CHARS) -> int:
     return 4 * max_chars + 64 * 1024
 
 
+_WAITING_AHEAD = text(
+    """
+    SELECT count(*) FROM bid_documents other
+    JOIN bid_documents me ON me.call_id = other.call_id
+    WHERE me.id = :id AND other.id <> me.id AND other.extraction_state = 'pending'
+      AND (other.uploaded_at, other.id) < (me.uploaded_at, me.id)
+    """
+)
+_PRIORITY_FLOOR: Final = -100_000
+
+
+async def extraction_priority(db: AsyncSession, document_id: UUID) -> int:
+    """Fair share between calls (review L6): minus the number of the call's documents
+    uploaded before this one that are still waiting, so a call's first document goes
+    ahead of another call's backlog (procrastinate runs higher priorities first)."""
+    ahead = int(await db.scalar(_WAITING_AHEAD, {"id": document_id}) or 0)
+    return max(-ahead, _PRIORITY_FLOOR)
+
+
 async def defer_extraction(db: AsyncSession, document_id: UUID) -> None:
     """The ``extract_bid_document`` job on the session's connection (it exists when the
-    upload commits, or never). Its queueing lock keeps one waiting job per document."""
+    upload commits, or never), with :func:`extraction_priority`. Its queueing lock keeps
+    one waiting job per document."""
+    priority = await extraction_priority(db, document_id)
     connection = await psycopg_connection(db)
     deferrer = procrastinate_app.configure_task(
         EXTRACT_TASK,
         connection=connection,
         queue=BID_DOCUMENT_QUEUE,
         queueing_lock=f"bid_document:{document_id}",
+        priority=priority,
     )
     await deferrer.defer_async(document_id=str(document_id))
 
@@ -235,18 +259,22 @@ async def run_child(
             cwd=scratch,
             start_new_session=True,
         )
+        feeding = asyncio.create_task(_feed(process.stdin, data))
         try:
             async with asyncio.timeout(time_limit):
-                feeding = asyncio.create_task(_feed(process.stdin, data))
-                try:
-                    output = await _read(process.stdout, output_bound(limits["max_chars"]))
-                finally:
-                    await feeding
+                output = await _read(process.stdout, output_bound(limits["max_chars"]))
                 code = await process.wait()
         except TimeoutError:
             return ChildOutcome.failed(ExtractionError.TIMEOUT)
         except _TooMuchOutput:
             return ChildOutcome.failed(ExtractionError.INTERNAL_ERROR)
+        finally:
+            # Review L1: a child that stopped reading leaves the feeder blocked on a full
+            # pipe; awaiting it would outlast the time limit. Its output is complete (or
+            # refused) by now, so whatever is left to write doesn't matter.
+            feeding.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await feeding
         if code != 0 or not output:
             return ChildOutcome(crashed=True)
         return _parse(output, limits["max_chars"])
@@ -332,12 +360,14 @@ async def _record(
             if attempt >= BID_EXTRACTION_MAX_ATTEMPTS:
                 _finish(document, ChildOutcome.failed(ExtractionError.INTERNAL_ERROR))
                 return True
+            priority = await extraction_priority(db, document_id)
             connection = await psycopg_connection(db)
             await procrastinate_app.configure_task(
                 EXTRACT_TASK,
                 connection=connection,
                 queue=BID_DOCUMENT_QUEUE,
                 schedule_in={"seconds": int(RETRY_AFTER_CRASH.total_seconds())},
+                priority=priority,
             ).defer_async(document_id=str(document_id))
             return False
         if outcome.state is ExtractionState.DONE:

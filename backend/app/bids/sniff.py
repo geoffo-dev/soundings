@@ -2,7 +2,8 @@
 ADR 0018 decision 4; review M5: bounded, and never a PDF parser in the API).
 
 * ``%PDF-`` is a PDF (never parsed here: an encrypted PDF is accepted and its extraction ends
-  ``failed`` ``encrypted``); the PNG and JPEG signatures are images.
+  ``failed`` ``encrypted``), also within the first 1,024 bytes after bytes without a NUL
+  (review N1, as Acrobat reads them); the PNG and JPEG signatures are images.
 * ``PK\\x03\\x04`` is a ZIP container (OOXML, OpenDocument), inspected with fixed bounds:
 
   1. the end-of-central-directory record, found in the file's last 64 KiB like
@@ -19,8 +20,11 @@ ADR 0018 decision 4; review M5: bounded, and never a PDF parser in the API).
      :mod:`zipfile` isn't used here at all (its own end-record and directory logic could
      read a different directory from the one checked).
 
-* anything else that decodes as UTF-8, or else Windows-1252, without a NUL byte is plain
-  text: ``csv`` when the given name ends in ``.csv`` (any case), ``txt`` otherwise.
+* two entries with one name (compared without case) are refused (review L3); so are
+  macro and dialog sheets, by name or by content type.
+* anything else that decodes as UTF-8, or else Windows-1252, without a NUL byte, or as
+  UTF-16 after its byte order mark without a NUL character (review N1), is plain text:
+  ``csv`` when the given name ends in ``.csv`` (any case), ``txt`` otherwise.
 
 An OLE compound file (old Office formats, and Office files encrypted with a password),
 an empty file, an executable (NUL bytes) and every other format are refused. CPU-bound on
@@ -83,6 +87,10 @@ _OOXML_MAIN: Final[dict[str, BidDocumentType]] = {
         BidDocumentType.PPTX
     ),
 }
+_MACRO_CONTENT_TYPES: Final = ("macroenabled", "macrosheet", "dialogsheet")
+"""Substrings of a lower-cased ``[Content_Types].xml`` that make it ``macro_document``:
+macro-enabled formats, Excel 4.0 macro sheets (``macrosheet+xml``,
+``intlmacrosheet+xml``) and dialog sheets (review L3)."""
 _ODF: Final[dict[str, BidDocumentType]] = {
     "application/vnd.oasis.opendocument.text": BidDocumentType.ODT,
     "application/vnd.oasis.opendocument.spreadsheet": BidDocumentType.ODS,
@@ -239,15 +247,19 @@ def _sniff_zip(data: bytes) -> BidDocumentType:
     _directory, entries = _central_directory(data)
     if any(BID_REFUSED_ARCHIVE_ENTRY.search(entry.name) for entry in entries):
         raise RefusedDocument(MACRO_DOCUMENT)
+    # Two entries with one name (Office part names compare without case): readers disagree
+    # on which one counts, so what is checked here might not be what is opened (review L3).
+    if len({entry.name.casefold() for entry in entries}) != len(entries):
+        raise _unsupported()
     by_name = {entry.name: entry for entry in entries}
     if _CONTENT_TYPES in by_name:
         raw = _read_entry(data, by_name[_CONTENT_TYPES], BID_CONTENT_TYPES_MAX_BYTES)
         if len(raw) > BID_CONTENT_TYPES_MAX_BYTES:
             raise _unsupported()
-        text = raw.decode("utf-8", errors="replace")
-        if "macroenabled" in text.lower():
+        text = raw.decode("utf-8", errors="replace").lower()
+        if any(marker in text for marker in _MACRO_CONTENT_TYPES):
             raise RefusedDocument(MACRO_DOCUMENT)
-        found = {kind for main, kind in _OOXML_MAIN.items() if main in text}
+        found = {kind for main, kind in _OOXML_MAIN.items() if main.lower() in text}
         if len(found) != 1:
             raise _unsupported()  # a template, another Office format, or ambiguous
         return found.pop()
@@ -262,7 +274,20 @@ def _sniff_zip(data: bytes) -> BidDocumentType:
     raise _unsupported()
 
 
+_UTF16_BOMS: Final = (b"\xff\xfe", b"\xfe\xff")
+_PDF_HEADER_WITHIN: Final = 1024
+"""Acrobat reads a PDF whose ``%PDF-`` starts within the first 1,024 bytes (review N1)."""
+
+
 def _is_text(data: bytes) -> bool:
+    if data.startswith(_UTF16_BOMS):
+        # UTF-16 with a byte order mark (Excel's "Unicode Text"): text when it decodes
+        # (an even length, no lone surrogates) to no NUL character (review N1).
+        try:
+            decoded = data.decode("utf-16")
+        except UnicodeDecodeError:
+            return False
+        return "\x00" not in decoded
     if b"\x00" in data:
         return False
     for encoding in ("utf-8", "cp1252"):
@@ -272,6 +297,19 @@ def _is_text(data: bytes) -> bool:
             continue
         return True
     return False
+
+
+def _late_pdf_header(data: bytes) -> bool:
+    """``%PDF-`` within the first 1,024 bytes after bytes that aren't binary (a mail
+    gateway's line, a byte order mark), never after a NUL (an executable's stub), and a
+    ``%%EOF`` in the last 1,024 bytes (so a text file that only mentions the header stays
+    text)."""
+    at = data.find(_PDF, 0, _PDF_HEADER_WITHIN + len(_PDF))
+    return (
+        0 < at <= _PDF_HEADER_WITHIN
+        and b"\x00" not in data[:at]
+        and b"%%EOF" in data[-_PDF_HEADER_WITHIN:]
+    )
 
 
 def sniff(data: bytes, filename: str) -> BidDocumentType:
@@ -289,6 +327,8 @@ def sniff(data: bytes, filename: str) -> BidDocumentType:
         return _sniff_zip(data)
     if data.startswith(_OLE):
         raise _unsupported()  # old Office formats, and password-protected Office files
+    if _late_pdf_header(data):
+        return BidDocumentType.PDF
     if _is_text(data):
         return BidDocumentType.CSV if filename.lower().endswith(".csv") else BidDocumentType.TXT
     raise _unsupported()

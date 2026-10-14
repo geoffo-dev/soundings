@@ -349,23 +349,23 @@ def _largest_call() -> Any:
     """The contract's largest call: 50 bids, 8 sections, 10 assessors a section, 15 score
     questions a section, every assessment submitted with a 3 (and one AI assessment of each
     bid included, scoring 5)."""
-    import time  # noqa: F401 - used by the caller
     from decimal import Decimal
-    from types import SimpleNamespace as NS
+    from types import SimpleNamespace
+
+    ns: Any = SimpleNamespace  # stand-ins for the rows
 
     from app.bids.data import CallData
     from app.models.enums import BidQuestionType, BidStatus, EvaluationStatus
 
-    sections = [NS(id=uuid4(), weight=w, title=f"S{i}") for i, w in enumerate([13] * 7 + [9])]
+    sections = [ns(id=uuid4(), weight=w, title=f"S{i}") for i, w in enumerate([13] * 7 + [9])]
     questions = {
         s.id: [
-            NS(id=uuid4(), section_id=s.id, type=BidQuestionType.SCORE, weight=1)
-            for _ in range(15)
+            ns(id=uuid4(), section_id=s.id, type=BidQuestionType.SCORE, weight=1) for _ in range(15)
         ]
         for s in sections
     }
     bids = [
-        NS(id=uuid4(), status=BidStatus.QUALIFIED, price=Decimal(1000 + i), received_at=i)
+        ns(id=uuid4(), status=BidStatus.QUALIFIED, price=Decimal(1000 + i), received_at=i)
         for i in range(50)
     ]
     answers: dict[Any, Any] = _CountedItems()
@@ -374,24 +374,22 @@ def _largest_call() -> Any:
         for section in sections:
             for _ in range(10):
                 key = (bid.id, section.id, uuid4())
-                answers[key] = {q.id: NS(score=3) for q in questions[section.id]}
+                answers[key] = {q.id: ns(score=3) for q in questions[section.id]}
                 states[key] = EvaluationStatus.SUBMITTED
     data = CallData(
-        call=NS(),
-        sections=sections,  # type: ignore[arg-type]
-        questions=questions,  # type: ignore[arg-type]
+        call=ns(),
+        sections=sections,
+        questions=questions,
         must_haves=[],
         assignments=[],
-        bids=bids,  # type: ignore[arg-type]
+        bids=bids,
         states=states,
     )
     data.answers = answers
     for bid in bids:
-        ai = NS(id=uuid4(), included=True)
-        data.ai[bid.id] = [ai]  # type: ignore[list-item]
-        data.ai_scores[ai.id] = {  # type: ignore[assignment]
-            q.id: NS(score=5) for qs in questions.values() for q in qs
-        }
+        ai = ns(id=uuid4(), included=True)
+        data.ai[bid.id] = [ai]
+        data.ai_scores[ai.id] = {q.id: ns(score=5) for qs in questions.values() for q in qs}
     return data
 
 
@@ -417,7 +415,9 @@ def test_scoring_the_largest_call_reads_its_answers_once() -> None:
     question = scores[first.id].sections[section.id].questions[0]
     assert question.counted == (3,) * 10 + (5,)  # ten people, then the included AI
     assert question.score == Fraction(35, 11)
-    assert [item.rank for item in ranking][:2] == [1, 2]
+    # No price question: every bid's total is equal, so all 50 share first place.
+    assert len(ranking) == 50
+    assert {item.rank for item in ranking} == {1}
     # One bid alone (list_bid_section_assessments) scores the same.
     alone = score_bid(data, first, min(b.price for b in data.bids))
     assert alone.total == scores[first.id].total

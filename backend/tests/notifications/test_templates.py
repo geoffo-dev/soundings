@@ -284,3 +284,23 @@ def test_branding_colours_must_be_hex(colour: str) -> None:
 
 def test_branding_accepts_hex_colours() -> None:
     assert Branding(accent="#0A0b0C", accent_text="#fff").accent == "#0A0b0C"
+
+
+def test_a_due_date_at_the_end_of_the_day_is_shown_as_the_day() -> None:
+    """UX review M6: the SPA saves a due date as 23:59 of the day in the instance's time zone,
+    so an email shows the day (as the app and the report do), not "00:59" of the next one;
+    any other moment keeps its time."""
+    from zoneinfo import ZoneInfo
+
+    from app.email.model import format_due
+
+    london = ZoneInfo("Europe/London")
+    now = datetime(2026, 10, 14, 9, tzinfo=UTC)
+    end_of_day = datetime(2026, 10, 24, 22, 59, tzinfo=UTC)  # 23:59 BST
+    assert format_due(end_of_day, london, "Europe/London", now=now) == "Sat 24 Oct"
+    winter = datetime(2026, 12, 11, 23, 59, 59, tzinfo=UTC)  # 23:59:59 GMT
+    assert format_due(winter, london, "Europe/London", now=now) == "Fri 11 Dec"
+    five = datetime(2026, 12, 11, 17, tzinfo=UTC)
+    assert format_due(five, london, "Europe/London", now=now) == (
+        "Fri 11 Dec, 17:00 (Europe/London)"
+    )

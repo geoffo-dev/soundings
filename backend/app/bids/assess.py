@@ -575,6 +575,29 @@ async def score_questions(db: AsyncSession, call_id: UUID) -> list[BidCallQuesti
     )
 
 
+async def _check_quotes(db: AsyncSession, cited: Sequence[tuple[UUID, str]]) -> list[bool]:
+    """Every quote checked against its document's text, **one document at a time** (review
+    L5: a bid's 30 documents of 2 M characters each, normalised, were about 250 MB at once
+    in the API pod; now one text and its normalised copy), off the event loop."""
+    by_document: dict[UUID, list[int]] = {}
+    for index, (document_id, _) in enumerate(cited):
+        by_document.setdefault(document_id, []).append(index)
+    found = [False] * len(cited)
+    for document_id, indexes in sorted(by_document.items()):
+        text = await db.scalar(
+            select(BidDocumentText.text).where(BidDocumentText.document_id == document_id)
+        )
+        if text is None:
+            continue  # no text (not read yet, none, failed): nothing is found in it
+        results = await anyio.to_thread.run_sync(
+            quotes_found, [cited[i] for i in indexes], {document_id: text}
+        )
+        for index, result in zip(indexes, results, strict=True):
+            found[index] = result
+        del text
+    return found
+
+
 async def record_assessment(
     db: AsyncSession,
     *,
@@ -626,14 +649,7 @@ async def record_assessment(
                 cited.append((evidence.document_id, evidence.quote))
     if foreign:
         raise _invalid(foreign, "Quote only the bid's documents you were given.")
-    wanted = {document_id for document_id, _ in cited}
-    rows = await db.execute(
-        select(BidDocumentText.document_id, BidDocumentText.text).where(
-            BidDocumentText.document_id.in_(wanted)
-        )
-    )
-    texts: dict[UUID, str] = dict(rows.all())
-    found = await anyio.to_thread.run_sync(quotes_found, cited, texts)
+    found = await _check_quotes(db, cited)
     checks = iter(found)
 
     def evidence_of(item: Any) -> list[dict[str, Any]]:

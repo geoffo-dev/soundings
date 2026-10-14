@@ -594,7 +594,9 @@ async def test_pending_assessors_read_the_ai_findings_verdicts_only(
     run = agent_mcp.for_run(await assess_run(db_session, scene, crew))
     args = submission(scene)
     args["findings"][0]["rationale"] = "AI-SCORE-LEAK: I scored Technical 5/5."
-    args["findings"][0]["evidence"] = [{"document_id": scene.documents["technical"], "quote": SECURITY}]
+    args["findings"][0]["evidence"] = [
+        {"document_id": scene.documents["technical"], "quote": SECURITY}
+    ]
     await run.ok("submit_bid_assessment", **args)
     # The owner assesses Delivery too, so they owe a section of this bid as well.
     await assign(
@@ -610,7 +612,8 @@ async def test_pending_assessors_read_the_ai_findings_verdicts_only(
     tech1 = await api(crew.tech1)
     for who in (tech1, await api(crew.commercial), scene.owner):
         seen = findings(await bid_detail(who, crew, scene.bid["id"]))
-        assert seen and {f["finding"] for f in seen} == {"unclear"}
+        assert seen
+        assert {f["finding"] for f in seen} == {"unclear"}
         assert all(f["rationale"] == "" and f["evidence"] == [] for f in seen)
     listed = ok(await scene.owner.get(call_url(crew, f"/bids/{scene.bid['id']}/ai-assessments")))
     [assessment] = listed["items"]
@@ -621,8 +624,12 @@ async def test_pending_assessors_read_the_ai_findings_verdicts_only(
     assert any(f["evidence"] for f in admin)
     # Once tech1 has submitted Technical (all they assess) for the bid, they read them too.
     ok(await scene.owner.post(call_url(crew, "/status"), {"status": "assessing"}))
-    technical = next(s for s in scene.view["call"]["template"]["sections"] if s["title"] == "Technical")
-    answers = [{"question_id": q["id"], "score": 3} for q in technical["questions"] if q["type"] == "score"]
+    technical = next(
+        s for s in scene.view["call"]["template"]["sections"] if s["title"] == "Technical"
+    )
+    answers = [
+        {"question_id": q["id"], "score": 3} for q in technical["questions"] if q["type"] == "score"
+    ]
     url = call_url(crew, f"/bids/{scene.bid['id']}/sections/{technical['id']}/assessment")
     ok(await tech1.put(url, {"answers": answers, "submit": True}))
     after = findings(await bid_detail(tech1, crew, scene.bid["id"]))
@@ -731,6 +738,47 @@ async def test_quote_checks_run_off_the_event_loop(
     run = agent_mcp.for_run(await assess_run(db_session, scene, crew))
     await run.ok("submit_bid_assessment", **submission(scene))
     assert quotes_found in seen
+
+
+async def test_quote_checks_read_one_document_at_a_time(
+    scene: Scene,
+    crew: Crew,
+    db_session: AsyncSession,
+    agent_mcp: McpIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review L5: 30 cited documents of 2 M characters each were all loaded (and normalised)
+    at once, about 250 MB in the API pod; now one document's text at a time."""
+    import anyio.to_thread
+
+    loaded: list[int] = []
+    real = anyio.to_thread.run_sync
+
+    async def spy(function: Any, *args: Any, **kwargs: Any) -> Any:
+        if function is quotes_found:
+            loaded.append(len(args[1]))
+        return await real(function, *args, **kwargs)
+
+    monkeypatch.setattr(anyio.to_thread, "run_sync", spy)
+    args = submission(scene)
+    args["scores"][0]["evidence"] = [
+        {"document_id": scene.documents["tender"], "quote": TENDER},
+        {"document_id": scene.documents["technical"], "quote": SECURITY},
+        {"document_id": scene.documents["tender"], "quote": "Not in the form of tender at all."},
+    ]
+    run = agent_mcp.for_run(await assess_run(db_session, scene, crew))
+    result = await run.ok("submit_bid_assessment", **args)
+
+    assert loaded
+    assert max(loaded) == 1
+    assert result["quotes_not_found"] == 1
+    listed = ok(await scene.owner.get(call_url(crew, f"/bids/{scene.bid['id']}/ai-assessments")))
+    first = next(
+        s
+        for s in listed["items"][0]["scores"]
+        if s["question_id"] == args["scores"][0]["question_id"]
+    )
+    assert [e["found"] for e in first["evidence"]] == [True, True, False]
 
 
 # --- The call's AI assessor ---------------------------------------------------------------------

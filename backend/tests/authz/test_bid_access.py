@@ -221,6 +221,20 @@ def test_a_pending_assessor_is_blind_for_that_bid_and_section(column: Column) ->
     )
 
 
+@pytest.mark.parametrize("status", [BidCallStatus.AWARDED, BidCallStatus.CANCELLED])
+@pytest.mark.parametrize("column", ["PA", "PAd", "Mem", "Vwr", "NMi"])
+def test_a_finished_call_has_no_pending_assessors(column: Column, status: BidCallStatus) -> None:
+    """Review ACC-4 (rule 1b): nobody can score a finished call, so nobody is blind for it;
+    an agent still is (rule 6). A call on a closed idea isn't finished: it stays blind."""
+    who = Who(column, call_status=status)
+
+    assert outcome(decide(who, Rule.BID_VIEW_SECTION_SCORES)) == "allow"
+    if column in ("PA", "PAd"):
+        assert outcome(decide(who, Rule.BID_VIEW_SCORES)) == "allow"
+    agent = Who("Mem", service_account=True, call_status=status)
+    assert outcome(decide(agent, Rule.BID_VIEW_SECTION_SCORES)) != "allow"
+
+
 @pytest.mark.parametrize("column", ["PA", "PAd"])
 def test_a_call_manager_who_assesses_is_blind_for_what_they_owe(column: Column) -> None:
     who = Who(column)

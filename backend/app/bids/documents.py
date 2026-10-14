@@ -5,11 +5,13 @@ and the extracted text.
 **The upload** (``upload_bid_document``) reads the raw file as the request body, in this
 order (review S5): authentication, the 404s and 403s (:func:`app.bids.access.load_call`,
 ``load_bid``), then an **upload slot** (:class:`UploadSlots`: at most
-:data:`BID_UPLOADS_PER_PROCESS` per API process, else 503 ``upload_busy``), then the body
-into one buffer with **no transaction open** (the route ends the checks' transaction
-first), counted as it arrives (``app.middleware.BodySizeLimitMiddleware`` gives this route
-alone :data:`app.models.bid.BID_DOCUMENT_MAX_BYTES`: 413 ``content_too_large``) within
-:data:`BID_UPLOAD_READ_TIMEOUT` (408 ``upload_timeout``); then its type from the bytes,
+:data:`BID_UPLOADS_PER_PROCESS` per API process and one per person, else 503
+``upload_busy``), then the body into one buffer with **no transaction open** (the route
+ends the checks' transaction first), counted as it arrives
+(``app.middleware.BodySizeLimitMiddleware`` gives this route alone
+:data:`app.models.bid.BID_DOCUMENT_MAX_BYTES`: 413 ``content_too_large``) within
+:data:`BID_UPLOAD_READ_TIMEOUT` and above :data:`UPLOAD_MIN_RATE` (408
+``upload_timeout``); then its type from the bytes,
 off the event loop (:func:`inspect`: :mod:`app.bids.sniff`, 415); then, in one short
 transaction under the call's lock, the 422s (``invalid_must_have``) and the 409s (the
 call's state, then 30 documents per bid, 500 MiB per call and 5 GiB per project with
@@ -35,12 +37,14 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Final
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from uuid import UUID, uuid4
 
 import anyio
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import StreamingResponse
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import LargeBinary, Text, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import ClientDisconnect
@@ -76,6 +80,7 @@ from app.schemas.bids import (
     BID_TEXT_PAGE_CHARS,
     BID_UPLOAD_READ_TIMEOUT,
     BID_UPLOADS_PER_PROCESS,
+    BidDocumentFilename,
     BidDocumentUpdate,
 )
 from app.schemas.bids import BidDocumentText as BidDocumentTextOut
@@ -83,6 +88,7 @@ from app.services import audit
 
 __all__ = [
     "DOWNLOAD_CHUNK_BYTES",
+    "UPLOAD_MIN_RATE",
     "UPLOAD_RETRY_AFTER",
     "UploadSlots",
     "add_document",
@@ -97,6 +103,7 @@ __all__ = [
     "stored_filename",
     "unlink_documents",
     "update_document",
+    "upload_filename",
     "upload_slots",
 ]
 
@@ -144,17 +151,58 @@ def page_count(document: BidDocument) -> int:
 
 
 # --- The upload, before the transaction --------------------------------------------------------
+_FILENAME: Final = TypeAdapter(BidDocumentFilename)
+
+
+def upload_filename(query: str | None, header: str | None) -> str:
+    """The upload's file name: the ``X-Filename`` header (percent-encoded UTF-8, ASCII on
+    the wire; review N2: proxies log query strings) when sent, else the ``filename`` query
+    parameter (already validated); 422 ``validation_error`` naming the one to blame."""
+    if header is None:
+        if query is None:
+            raise RequestValidationError(
+                [{"loc": ("query", "filename"), "msg": "Field required", "type": "missing"}]
+            )
+        return query
+    try:
+        if not header.isascii():
+            raise UnicodeError
+        decoded = unquote(header, encoding="utf-8", errors="strict")
+    except UnicodeError:
+        raise RequestValidationError(
+            [
+                {
+                    "loc": ("header", "X-Filename"),
+                    "msg": "The name must be percent-encoded UTF-8.",
+                    "type": "value_error",
+                }
+            ]
+        ) from None
+    try:
+        return _FILENAME.validate_python(decoded)
+    except ValidationError as invalid:
+        raise RequestValidationError(
+            [
+                {"loc": ("header", "X-Filename", *e["loc"]), "msg": e["msg"], "type": e["type"]}
+                for e in invalid.errors(include_input=False, include_url=False)
+            ]
+        ) from None
+
+
 class UploadSlots:
     """At most ``size`` uploads read and checked at once in this API process (each holds
-    up to 25 MiB in memory): beyond, 503 ``upload_busy`` at once (never queued)."""
+    up to 25 MiB in memory), and one per person (review L4: one person can't hold them
+    all; the SPA sends one file at a time): beyond, 503 ``upload_busy`` at once (never
+    queued)."""
 
     def __init__(self, size: int = BID_UPLOADS_PER_PROCESS) -> None:
         self.size = size
         self.busy = 0
+        self.holders: set[UUID] = set()
 
     @contextmanager
-    def take(self) -> Iterator[None]:
-        if self.busy >= self.size:
+    def take(self, holder: UUID | None = None) -> Iterator[None]:
+        if self.busy >= self.size or (holder is not None and holder in self.holders):
             raise ProblemError(
                 503,
                 "upload_busy",
@@ -162,10 +210,14 @@ class UploadSlots:
                 headers={"Retry-After": str(UPLOAD_RETRY_AFTER)},
             )
         self.busy += 1
+        if holder is not None:
+            self.holders.add(holder)
         try:
             yield
         finally:
             self.busy -= 1
+            if holder is not None:
+                self.holders.discard(holder)
 
 
 def upload_slots(request: Request) -> UploadSlots:
@@ -177,27 +229,41 @@ def upload_slots(request: Request) -> UploadSlots:
     return slots
 
 
+UPLOAD_MIN_RATE: Final = (15.0, 16 * 1024)
+"""Review L4: after this many seconds a body must have arrived at this many bytes a second
+on average (a 128 kbit/s line), else 408 ``upload_timeout`` at once: a trickle can't hold
+an upload slot for the whole 120 s."""
+
+
 async def read_body(request: Request) -> bytes:
-    """The whole body into one buffer within :data:`BID_UPLOAD_READ_TIMEOUT` (408
-    ``upload_timeout``); the size limit is the middleware's (413). The app's
-    ``bid_upload_read_timeout`` state (seconds) replaces the limit in tests."""
+    """The whole body into one buffer within :data:`BID_UPLOAD_READ_TIMEOUT`, and never
+    slower than :data:`UPLOAD_MIN_RATE` (both 408 ``upload_timeout``); the size limit is
+    the middleware's (413). The app's ``bid_upload_read_timeout`` state (seconds) and
+    ``bid_upload_min_rate`` (grace seconds, bytes a second) replace them in tests."""
+    state = request.app.state
     timeout = float(
-        getattr(
-            request.app.state,
-            "bid_upload_read_timeout",
-            BID_UPLOAD_READ_TIMEOUT.total_seconds(),
-        )
+        getattr(state, "bid_upload_read_timeout", BID_UPLOAD_READ_TIMEOUT.total_seconds())
     )
+    grace, floor = getattr(state, "bid_upload_min_rate", UPLOAD_MIN_RATE)
     buffer = bytearray()
+    started = anyio.current_time()
+    deadline = started + timeout
+    chunks = request.stream().__aiter__()
     try:
-        with anyio.fail_after(timeout):
-            async for chunk in request.stream():
-                buffer += chunk
+        while True:
+            # The next chunk must come before the average falls under the floor.
+            due = min(deadline, started + max(float(grace), len(buffer) / float(floor)))
+            with anyio.fail_after(max(due - anyio.current_time(), 0)):
+                try:
+                    chunk = await chunks.__anext__()
+                except StopAsyncIteration:
+                    break
+            buffer += chunk
     except TimeoutError:
         raise ProblemError(
             408,
             "upload_timeout",
-            detail="The file didn't arrive within 2 minutes. Try again on a faster connection.",
+            detail="The file didn't arrive in time. Try again on a faster connection.",
             headers={"Connection": "close"},
         ) from None
     except ClientDisconnect:

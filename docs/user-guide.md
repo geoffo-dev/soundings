@@ -631,8 +631,13 @@ scored. Closing with unsaved changes asks first.
 scores, comments or the AI's scores for it, and no ranking at all. Once you submit,
 **Everyone's scores** shows the others' submitted scores, the spread ("Disagree" when two
 scores differ by 2 or more) and the AI's scores; **Next** moves to your next assessment.
-You can change a submitted assessment until the award (**Save changes**). Totals and the
-ranking stay with the call's managers.
+You can change a submitted assessment until the award (**Save changes**; the change is
+recorded in the audit log). Totals and the ranking stay with the call's managers. Once the
+call is awarded or cancelled nobody can score any more, so nothing is hidden from its
+assessors and managers then, even for an assessment that was never submitted. The AI's
+must-have checks show only met / not met / unclear until you have submitted your sections
+of that bid. If you leave a private project, your sections of its open calls where you
+hadn't submitted anything are taken off you (a call manager can ask you again).
 
 ### The AI assessor
 

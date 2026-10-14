@@ -581,6 +581,7 @@ async def update_bid(
     ]
     if not changed:
         return
+    was_late = _late(loaded.call, bid.received_at)
     bid.bidder, bid.contact_name, bid.contact_email = (
         body.bidder,
         body.contact_name,
@@ -596,6 +597,9 @@ async def update_bid(
         call_id=loaded.call.id,
         bid_id=bid.id,
         fields=changed,
+        # Review N4: whether the change made it late or not late any more.
+        late=_late(loaded.call, received),
+        late_changed=_late(loaded.call, received) != was_late,
     )
     await db.flush()
 
@@ -899,7 +903,8 @@ async def save_my_assessment(
     submitted assessment stays submitted (``edited_at`` on later saves). 422
     ``unknown_question`` / ``not_assessable``; then the 409s: the rule's, the call not
     being assessed, the bid rejected. The first submission is audited (and locks the
-    template)."""
+    template), and so is every later change to a submitted one (review L7: ``edited``, the
+    questions changed)."""
     questions = {
         q.id: q
         for q in await db.scalars(
@@ -927,6 +932,7 @@ async def save_my_assessment(
         .execution_options(populate_existing=True)
     )
     submitted_before = existing is not None and existing.status is EvaluationStatus.SUBMITTED
+    before: dict[UUID, tuple[int | None, str | None]] = {}
     if body.submit or submitted_before:
         scored = {a.question_id for a in body.answers if a.score is not None}
         missing = [
@@ -952,6 +958,17 @@ async def save_my_assessment(
         db.add(existing)
         await db.flush()
     else:
+        if submitted_before:
+            before = {
+                question_id: (score, comment)
+                for question_id, score, comment in await db.execute(
+                    select(
+                        BidAssessmentAnswer.question_id,
+                        BidAssessmentAnswer.score,
+                        BidAssessmentAnswer.comment,
+                    ).where(BidAssessmentAnswer.assessment_id == existing.id)
+                )
+            }
         await db.execute(
             delete(BidAssessmentAnswer).where(BidAssessmentAnswer.assessment_id == existing.id)
         )
@@ -966,6 +983,26 @@ async def save_my_assessment(
         )
     if submitted_before:
         existing.edited_at = now
+        # Review L7: after submitting, the assessor sees the others' scores: a change then
+        # is audited (which questions, never a score or comment).
+        after = {a.question_id: (a.score, a.comment or "") for a in body.answers}
+        was = {q: (score, comment or "") for q, (score, comment) in before.items()}
+        changed = sorted(
+            str(q) for q in questions if was.get(q, (None, "")) != after.get(q, (None, ""))
+        )
+        if changed:
+            await _audit(
+                db,
+                principal,
+                loaded,
+                "bid_assessment.submit",
+                Rule.BID_ASSESS,
+                call_id=loaded.call.id,
+                bid_id=bid.id,
+                section_id=section_id,
+                edited=True,
+                changed_question_ids=changed,
+            )
     elif body.submit:
         existing.status = EvaluationStatus.SUBMITTED
         existing.submitted_at = now
