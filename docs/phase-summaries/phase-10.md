@@ -86,7 +86,9 @@ default template.
 - **Release verification** (2026-10-14): the SPA's upload sends the name in `X-Filename`;
   the audit log words an edited assessment, a lateness change and a removal on leaving
   the project, and counts assessors added and removed (always "none" before: the backend
-  sends them by section); the image label follows `pyproject.toml`.@@RELEASEFIXES@@
+  sends them by section); the image label follows `pyproject.toml`; `e2e/tests/bids.spec.ts`
+  runs in order (BD-02 and BD-03 both upload as alice, and the review's one upload per
+  person turned the second away with 503 `upload_busy` when they ran side by side).
 
 ## Known issues
 
@@ -110,4 +112,28 @@ default template.
 
 ## Screenshots
 
-@@SCREENSHOTS@@
+Real stack (`npm --prefix e2e run screenshots:phase10`, re-captured for the release on
+2026-10-14), each at 1440 light, 1440 dark and 390 light, in `docs/screenshots/phase-10/`:
+
+| Screen | Files |
+|---|---|
+| The call as its manager (kenji) | `call-overview-*` |
+| A bid missing a must-have, its documents and their reading state | `bid-documents-flagged-*` |
+| Rejecting it ("Missing: Insurance certificate.") | `reject-dialog-*` |
+| An assessment with the Word proposal's text beside it (alice, Delivery) | `assessment-sheet-document-text-*` |
+| The comparison with an AI assessment not counted | `comparison-ai-not-counted-*` |
+| The award dialog | `award-dialog-*` |
+| Project settings → Bids (dave) | `project-bids-template-*` |
+| My work's "Bids to assess" (alice) | `my-work-bids-to-assess-*` |
+| An assessor's Bids tab (carol: no prices, no ranks) | `bids-assessor-*` |
+| A viewer's summary (zanele) | `bids-viewer-summary-*` |
+| "Asked to assess bids" as Mailpit received it | `emails/assessor-assigned-*` (+ `.html`, `.txt`) |
+| The evaluation report | `pdf/TOOLS-3-bid-evaluation.pdf`, its pages 1 and 2, the `.md` |
+
+Against the mock (`SCREENSHOTS=1 npx playwright test bids-screenshots` in `frontend/`):
+`docs/screenshots/phase-10/mock/` (`bids-draft`, `bids-manager`, `bids-member`,
+`bids-assessor`, `bids-ranking-hidden`, `bid-sheet`, `bid-flagged`, `assessment-sheet`,
+`award-dialog`, `settings-bids`, `my-work-bids`). The tour's 18-20
+(`docs/screenshots/tour/`): the comparison, a bid's must-haves, an assessment. Every
+other real-stack set the phase touched (phase-1, phase-3 with its emails, phase-8b) and
+the tour were re-captured too; every changed PNG was read, without a defect.

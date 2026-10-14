@@ -533,6 +533,11 @@ template** (see "For project admins") and starts as a **draft**. A call moves th
 - **Awarded** or **Cancelled**: read-only. **Cancel the call…** takes an optional reason.
   Once awarded, **Export the report** is the call's next step, and the idea's owner is
   reminded to close the idea as accepted when the work is under way.
+- **Closing the idea** makes its call read-only for everyone, the assessors and the AI
+  assessor too, without cancelling it: reopening the idea lets the call go on where it
+  stood. Once a call is awarded or cancelled nobody owes an assessment any more: a
+  manager who still owed a section sees the ranking and the report's numbers, and an
+  assessor who never submitted sees their section's scores.
 
 The deadline and the assessment due date are **days in your organisation's time zone**
 (the one emails and reminders use), by the end of that day. If your browser is in another
@@ -566,6 +571,10 @@ plain text. Files are never opened in the browser: the download button saves the
 and a file with **Active content** (scripts or attached files in a PDF, links that fetch
 data in an Office file) asks before it downloads. A file whose name has invisible or
 direction-changing characters, or a folder in it, is uploaded under its plain name.
+Files go up one after another. Each person uploads one file at a time (another tab or
+window uploading meanwhile gets "Soundings is busy with other uploads": **Try again** in a
+few seconds), and a file that arrives slower than about 16 KB a second after its first 15
+seconds is stopped, so try it again on a better connection.
 
 **Which must-have a file answers.** A file dropped or chosen for the bid is matched to the
 required document its name points to ("Insurance certificate 2026.pdf" answers
@@ -616,6 +625,10 @@ own right: in a private project, people with a role there. Each new assessor is 
 ("Asked to assess bids") and reminded 2 days before the due date and on the day. You
 can't remove yourself from a section while you still owe an assessment of it ("submit
 them, or ask another call manager"), and someone who has submitted keeps their section.
+Someone who loses their role in a private project stops assessing its calls that are
+still going: the sections they hadn't submitted anything for are taken off them, with
+their drafts (the audit log says "(left the project)"); what they submitted stays and
+counts. Added back later, they assess again only once a call manager asks them again.
 
 As an assessor, the Bids tab starts with **Your assessments**: every bid and section you
 assess, with **Assess**, **Continue** (a draft) or **View** (submitted). The assessment

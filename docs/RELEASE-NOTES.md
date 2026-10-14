@@ -136,7 +136,8 @@ reviews of the build; every finding was fixed or decided by the lead
   edit that changed whether it is late, and assessors taken off a call because they left
   the project (and counts the assessors added and removed, which it had shown as none);
   the image's version label now follows `backend/pyproject.toml` (0.2.0's image said
-  0.1.0).@@RELEASEFIXES@@
+  0.1.0). The e2e bid specs take turns (`bids.spec.ts` in order): two of them uploading as
+  the same person side by side met the new one-upload-per-person limit (503).
 
 #### CI fixes since 0.2.0
 
@@ -165,8 +166,8 @@ things the build machine hadn't:
 | **The upload route needs its ingress settings** | 25 MiB bodies for up to 180 s on one path: the chart's `ingress.uploads` does it for ingress-nginx; Traefik (k3s) needs its entryPoint `readTimeout` raised; other controllers by annotation. Through Traefik an oversized *chunked* upload may get 502 instead of 413. |
 | **One call per idea; one currency label per call** | A second purchase from the same idea needs another idea. The currency is a label: no conversion. |
 | Not changed from the reviews | The bid count everyone who sees the idea gets includes rejected bids (ACC-6, declined); the first submitted scores of an edited assessment aren't kept (only the audit entry); the Bids, Comparison and Rejected lists stay three views (one table is a later change). |
-| As in 0.2.0 | GitLab Premium's environments and approvals, the Kubernetes executor, cosign, GitHub's runners/GHCR/ARC/environments and `scripts/ci-local/` weren't run again for this release; [0.2.0's known issues](#known-issues-in-020) otherwise apply. @@PERFNOTE@@ |
-| The image is @@IMAGESIZE@@ | Ubuntu 24.04 with the PDF libraries and `pypdf`; a slimmer final stage is still deferred. |
+| As in 0.2.0 | GitLab Premium's environments and approvals, the Kubernetes executor, cosign, GitHub's runners/GHCR/ARC/environments and `scripts/ci-local/` weren't run again for this release; [0.2.0's known issues](#known-issues-in-020) otherwise apply. `make -C backend test-slow` passed within its budgets (150 ms p95) on a quiet machine. |
+| The image is 533 MB | Ubuntu 24.04 with the PDF libraries and `pypdf`; a slimmer final stage is still deferred. |
 
 ### Upgrading from 0.2.0
 

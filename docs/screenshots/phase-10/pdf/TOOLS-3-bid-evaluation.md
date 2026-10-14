@@ -4,7 +4,7 @@ idea: "TOOLS-3"
 project: "Internal Tools"
 status: "Proposal"
 owner: "Kenji Watanabe"
-exported: "2026-10-13"
+exported: "2026-10-14"
 exported_by: "Kenji Watanabe"
 ---
 
@@ -14,13 +14,13 @@ exported_by: "Kenji Watanabe"
 - Idea: TOOLS-3
 - Status: Proposal
 - Owner: Kenji Watanabe
-- Exported 13 October 2026 by Kenji Watanabe
+- Exported 14 October 2026 by Kenji Watanabe
 
 ## Summary
 
 - Status: Being assessed
-- Deadline for bids: 9 October 2026
-- Assessments due: 17 October 2026
+- Deadline for bids: 10 October 2026
+- Assessments due: 18 October 2026
 - Bids: 3 received, 1 rejected
 - Assessed: 8 of 10
 
@@ -56,7 +56,7 @@ Section scores are out of 100. ‡ two assessors' scores on a question differ by
 
 ## Rejected bids
 
-- **Quillfield Systems**, rejected 7 October 2026 by Kenji Watanabe: No insurance certificate provided.
+- **Quillfield Systems**, rejected 8 October 2026 by Kenji Watanabe: No insurance certificate provided.
 
 ## Assessors
 
