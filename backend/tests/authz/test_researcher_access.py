@@ -107,6 +107,8 @@ TABLE: dict[str, tuple[str, str]] = {
     "bid.view_scores": ("404", "·"),
     "bid.ai_assess": ("404", "·"),
     "ai.assess_bid": ("404", "·"),
+    # Phase 11: nothing of the conversation with the public submitter
+    "public.message_submitter": ("404", "·"),
 }
 # Table L's route table, copied by hand (operation -> R).
 ROUTES: dict[str, str] = {
@@ -133,6 +135,7 @@ ROUTES: dict[str, str] = {
     "accept_proposal_suggestion": "hidden", "discard_proposal_suggestion": "hidden",
     "get_idea_submission": "hidden", "approve_submission": "hidden",
     "reject_submission": "hidden", "erase_submitter": "hidden",
+    "list_submission_messages": "hidden", "send_submission_message": "hidden",  # Phase 11
     "list_idea_ai_runs": "hidden", "request_ai_evaluation": "hidden",
     "request_ai_research": "hidden", "request_ai_section_draft": "hidden",
     "get_ai_run": "hidden", "cancel_ai_run": "hidden", "stream_ai_run_events": "hidden",

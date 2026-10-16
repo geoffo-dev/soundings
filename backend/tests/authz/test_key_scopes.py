@@ -250,6 +250,8 @@ def test_scopes_grant_exactly_the_documented_rules() -> None:
         "bid.upload_document",
         "bid.decide",
         "bid.delete_call",
+        # Phase 11: the conversation with a public submitter (no key, no MCP tool)
+        "public.message_submitter",
     }
 
 

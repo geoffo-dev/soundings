@@ -77,6 +77,7 @@ DOMAIN_TABLES = {
     "research_answers",
     "research_checklist_items",
     "rubric_criteria",
+    "submission_messages",
     "tags",
     "user_external_ids",
     "user_identities",

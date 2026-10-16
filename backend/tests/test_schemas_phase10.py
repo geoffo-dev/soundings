@@ -650,7 +650,8 @@ def test_the_bid_notification_types() -> None:
     assert all(DEFAULT_MODES[t] is NotificationMode.IMMEDIATE for t in BID_NOTIFICATION_TYPES)
     # A guest researcher never holds one (no bid rule): not on the guest's inbox list.
     assert not BID_NOTIFICATION_TYPES & RESEARCH_GUEST_NOTIFICATION_TYPES
-    assert list(NotificationType)[-3:] == [
+    # Phase 11 appends "submitter_replied" after them (contract-phase11 section 6).
+    assert list(NotificationType)[-4:-1] == [
         NotificationType.ASSESSOR_ASSIGNED,
         NotificationType.ASSESSMENT_REMINDER,
         NotificationType.ASSESSMENTS_COMPLETE,

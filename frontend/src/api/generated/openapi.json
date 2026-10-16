@@ -2700,6 +2700,7 @@
           "submission.approve",
           "submission.reject",
           "submission.erase",
+          "submission.message",
           "branding.update",
           "api_key.create",
           "api_key.revoke",
@@ -7330,10 +7331,13 @@
           "assessor_assigned",
           "assessment_reminder",
           "assessments_complete",
+          "submitter_replied",
           "digest",
           "test",
           "submission_received",
-          "submission_status_changed"
+          "submission_status_changed",
+          "submission_link",
+          "submission_message"
         ],
         "title": "EmailType",
         "type": "string"
@@ -7362,13 +7366,20 @@
             "description": "The idea's title as submitted.",
             "title": "Title",
             "type": "string"
+          },
+          "tracking_link_emailed": {
+            "default": false,
+            "description": "Phase 11: this confirmation was the address's first and queued the email with the private tracking link (email is set up): say \"We've emailed you a private link to follow your idea.\" False on a repeated confirmation and without email.",
+            "title": "Tracking Link Emailed",
+            "type": "boolean"
           }
         },
         "required": [
           "project",
           "title",
           "held_for",
-          "branding"
+          "branding",
+          "tracking_link_emailed"
         ],
         "title": "EmailVerified",
         "type": "object"
@@ -9526,6 +9537,17 @@
             "title": "Idea Id",
             "type": "string"
           },
+          "messages": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubmissionMessagesSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Phase 11: the conversation with the submitter, in short; null unless you hold public.message_submitter (the idea's owner, project and platform admins, in a session): nobody else learns that one exists."
+          },
           "name": {
             "anyOf": [
               {
@@ -9554,7 +9576,8 @@
           "name",
           "contact",
           "erased_at",
-          "permissions"
+          "permissions",
+          "messages"
         ],
         "title": "IdeaSubmission",
         "type": "object"
@@ -9566,6 +9589,12 @@
             "title": "Can Erase",
             "type": "boolean"
           },
+          "can_message": {
+            "default": false,
+            "description": "Phase 11: public.message_submitter (the idea's owner, project and platform admins, in a session) and a message can be sent now (messages.blocked is null): show the composer.",
+            "title": "Can Message",
+            "type": "boolean"
+          },
           "can_moderate": {
             "description": "idea.moderate and the idea is held for moderation.",
             "title": "Can Moderate",
@@ -9574,7 +9603,8 @@
         },
         "required": [
           "can_moderate",
-          "can_erase"
+          "can_erase",
+          "can_message"
         ],
         "title": "IdeaSubmissionPermissions",
         "type": "object"
@@ -10292,6 +10322,24 @@
         "title": "MentionNotification",
         "type": "object"
       },
+      "MessageDelivery": {
+        "description": "Phase 11: where a new team message reaches the submitter.",
+        "enum": [
+          "email",
+          "tracking_page"
+        ],
+        "title": "MessageDelivery",
+        "type": "string"
+      },
+      "MessageDirection": {
+        "description": "Phase 11: who wrote a message in the conversation with a public submitter\n(``submission_messages.direction``; contract-phase11 section 3).",
+        "enum": [
+          "team",
+          "submitter"
+        ],
+        "title": "MessageDirection",
+        "type": "string"
+      },
       "ModerationItem": {
         "description": "A public idea waiting for approval: everything needed to decide.",
         "properties": {
@@ -10766,7 +10814,8 @@
                   "owner_assigned": "#/components/schemas/OwnerAssignedNotification",
                   "research_reminder": "#/components/schemas/ResearchReminderNotification",
                   "researcher_assigned": "#/components/schemas/ResearcherAssignedNotification",
-                  "status_changed": "#/components/schemas/StatusChangedNotification"
+                  "status_changed": "#/components/schemas/StatusChangedNotification",
+                  "submitter_replied": "#/components/schemas/SubmitterRepliedNotification"
                 },
                 "propertyName": "type"
               },
@@ -10806,6 +10855,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/AssessmentsCompleteNotification"
+                },
+                {
+                  "$ref": "#/components/schemas/SubmitterRepliedNotification"
                 }
               ]
             },
@@ -11013,6 +11065,16 @@
                 "type": "null"
               }
             ]
+          },
+          "submitter_replied": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "NotificationPreferencesUpdate",
@@ -11061,7 +11123,8 @@
           "research_reminder",
           "assessor_assigned",
           "assessment_reminder",
-          "assessments_complete"
+          "assessments_complete",
+          "submitter_replied"
         ],
         "title": "NotificationType",
         "type": "string"
@@ -12932,6 +12995,7 @@
             "type": "string"
           },
           "intro_md": {
+            "description": "The text shown at the top of the public form, above the fields (Markdown: headings, lists, links; no raw HTML). Phase 11 (D3): label it so in Project settings -> Public form.",
             "title": "Intro Md",
             "type": "string"
           },
@@ -12984,6 +13048,7 @@
                 "type": "null"
               }
             ],
+            "description": "The text at the top of the public form (Markdown, at most 2,000 characters).",
             "title": "Intro Md"
           },
           "moderation_required": {
@@ -13162,10 +13227,10 @@
         "type": "object"
       },
       "PublicSubmissionReceipt": {
-        "description": "The confirmation page. The tracking link is shown once here (and emailed when\nthere is an address): only its hash is kept to look it up.",
+        "description": "The confirmation page. The tracking link is shown once here (and, Phase 11, emailed\nonce the address is confirmed): only its hash and a sealed copy are kept.",
         "properties": {
           "email_sent": {
-            "description": "An address was given and email is set up: say \"We'll also email you the link.\" True even when the per-address limit held that email back (the limit is silent, so this can't reveal how often an address was used).",
+            "description": "An address was given and email is set up: we emailed them a link to confirm it, and (Phase 11) once they confirm we email them this tracking link, so say \"Once you confirm your address, we'll email you this link too.\" The confirmation email itself never carries the tracking link. True even when the per-address limit held the confirmation email back (the limit is silent, so this can't reveal how often an address was used).",
             "title": "Email Sent",
             "type": "boolean"
           },
@@ -13327,6 +13392,17 @@
         ],
         "title": "RemovedTemplateSection",
         "type": "object"
+      },
+      "ReplyBlocked": {
+        "description": "Phase 11: why the submitter can't reply on their tracking page now.",
+        "enum": [
+          "awaiting_team",
+          "conversation_full",
+          "project_archived",
+          "daily_limit"
+        ],
+        "title": "ReplyBlocked",
+        "type": "string"
       },
       "ResearchAnswer": {
         "properties": {
@@ -14518,6 +14594,17 @@
         "title": "SearchResults",
         "type": "object"
       },
+      "SendBlocked": {
+        "description": "Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``).",
+        "enum": [
+          "submitter_erased",
+          "conversation_full",
+          "project_archived",
+          "daily_limit"
+        ],
+        "title": "SendBlocked",
+        "type": "string"
+      },
       "SimilarIdea": {
         "description": "An idea whose title or summary is like this one's, in any project you can view.\nNo score data (blind rules are unaffected).",
         "properties": {
@@ -15242,6 +15329,160 @@
         "title": "StatusLabelsUpdate",
         "type": "object"
       },
+      "SubmissionMessage": {
+        "description": "Phase 11: a message in the conversation, as the team sees it.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who on the team wrote it (submitters see only \"The <project> team\"); null for the submitter's replies and if the user no longer exists."
+          },
+          "body": {
+            "description": "Plain text; render with line breaks, never as Markdown or HTML. A submitter's text is untrusted public input (don't make its links clickable).",
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/MessageDirection"
+          },
+          "emailed": {
+            "description": "A team message that was also emailed to their confirmed address (queued when sent); false: tracking page only. Always false for replies.",
+            "title": "Emailed",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "direction",
+          "body",
+          "created_at",
+          "author",
+          "emailed"
+        ],
+        "title": "SubmissionMessage",
+        "type": "object"
+      },
+      "SubmissionMessageCreate": {
+        "additionalProperties": false,
+        "description": "Phase 11: a message from the team to the submitter (plain text).",
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "SubmissionMessageCreate",
+        "type": "object"
+      },
+      "SubmissionMessagePage": {
+        "description": "Newest first (load earlier messages with ``next_cursor``; show them oldest at the\ntop). At most 200 in all.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "SubmissionMessagePage",
+        "type": "object"
+      },
+      "SubmissionMessagesSummary": {
+        "description": "Phase 11: what the submission panel needs to show the Messages section; only for\nwhoever holds public.message_submitter (``IdeaSubmission.messages`` is null for everyone\nelse, who must not learn that a conversation exists).",
+        "properties": {
+          "blocked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SendBlocked"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a message can't be sent now (say so instead of the composer); null: can."
+          },
+          "count": {
+            "description": "Messages in the conversation, both directions.",
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/MessageDelivery",
+            "description": "Where a message sent now reaches them; tracking_page: say before sending \"They'll see it only on their tracking page.\""
+          },
+          "last_direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageDirection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who wrote the latest message (submitter: \"They replied\"); null if none."
+          },
+          "last_message_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest message's time; null if none.",
+            "title": "Last Message At"
+          }
+        },
+        "required": [
+          "count",
+          "last_message_at",
+          "last_direction",
+          "delivery",
+          "blocked"
+        ],
+        "title": "SubmissionMessagesSummary",
+        "type": "object"
+      },
       "SubmitterContact": {
         "description": "Only for project and platform admins (``public.erase_submitter``).",
         "properties": {
@@ -15272,6 +15513,64 @@
           "wants_updates"
         ],
         "title": "SubmitterContact",
+        "type": "object"
+      },
+      "SubmitterRepliedNotification": {
+        "description": "Phase 11, \"The submitter replied\": the person who sent the idea through the public form\nreplied to the team on their tracking page. Fixed words only: \"The person who sent\n<KEY> through the public form replied to the team.\" (never their text, name or address).\n``actor`` is always null (the public has no account). Link:\n``/ideas/{key}?submission=1`` (opens the idea at its submission panel's Messages).",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who caused it; null for reminders (sent by Soundings) or if the user no longer exists."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaRef",
+            "description": "The idea it is about, with its current title and status."
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while unread.",
+            "title": "Read At"
+          },
+          "type": {
+            "const": "submitter_replied",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "read_at",
+          "idea",
+          "actor",
+          "type"
+        ],
+        "title": "SubmitterRepliedNotification",
         "type": "object"
       },
       "SuggestionSource": {
@@ -15360,6 +15659,38 @@
         "title": "TemplateSectionIn",
         "type": "object"
       },
+      "TrackedMessage": {
+        "description": "Phase 11: a message on the tracking page. The team's are shown as \"The <project\nname> team\" (never a person: public pages show no people), the submitter's as \"You\";\nplain text with its line breaks (never Markdown or HTML).",
+        "properties": {
+          "body": {
+            "description": "Plain text; render with line breaks, never as Markdown.",
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/MessageDirection",
+            "description": "team: show \"The <project> team\"; submitter: show \"You\"."
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "direction",
+          "body",
+          "created_at"
+        ],
+        "title": "TrackedMessage",
+        "type": "object"
+      },
       "TrackedStatusChange": {
         "description": "A change of the status the submitter sees. Phase 8: never ``research``: an idea in\nResearch is reported as the status before Research in its project's lifecycle (``new``\nbefore evaluation, ``shortlisted`` before the proposal;\n``app.schemas.research.public_status``), so a move that doesn't change the reported\nstatus or resolution (New -> Research, Shortlisted -> Research and back) is left out.",
         "properties": {
@@ -15398,10 +15729,16 @@
         "type": "object"
       },
       "TrackedSubmission": {
-        "description": "The private tracking page: what the submitter sent and its status, nothing\nelse (no people, comments, evaluations, scores, or anything the team wrote: the\ntitle and summary are the submitter's own, as sent, even if the team edited the\nidea since).",
+        "description": "The private tracking page: what the submitter sent and its status, nothing\nelse (no people, comments, evaluations, scores, or anything the team wrote: the\ntitle and summary are the submitter's own, as sent, even if the team edited the\nidea since). Phase 11: plus the conversation with the team (the one thing the team\nwrites that the submitter sees, signed \"The <project> team\").",
         "properties": {
           "branding": {
             "$ref": "#/components/schemas/EffectiveBranding"
+          },
+          "can_reply": {
+            "default": false,
+            "description": "Phase 11: show the reply box (reply_blocked is null).",
+            "title": "Can Reply",
+            "type": "boolean"
           },
           "can_resend_verification": {
             "description": "An unconfirmed address is on file and another confirmation email may be sent now (at most 3 a day).",
@@ -15443,6 +15780,21 @@
             "title": "History",
             "type": "array"
           },
+          "message_count": {
+            "default": 0,
+            "description": "Phase 11: messages in the conversation, both directions.",
+            "minimum": 0.0,
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "messages": {
+            "description": "Phase 11: the conversation with the team, oldest first: the latest 100 at most (message_count says how many there are). Empty until the team writes: then show a Messages section.",
+            "items": {
+              "$ref": "#/components/schemas/TrackedMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
           "project": {
             "$ref": "#/components/schemas/PublicProjectRef"
           },
@@ -15458,6 +15810,18 @@
             ],
             "description": "When it reached the team (the \"With the team\" step): at submission when nothing held it, else when the confirmation or the approval released it. Null while held. Added after the contract (2026-10-02).",
             "title": "Reached Team At"
+          },
+          "reply_blocked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplyBlocked"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "awaiting_team",
+            "description": "Phase 11: why there is no reply box now; null when can_reply."
           },
           "resolution": {
             "anyOf": [
@@ -15487,6 +15851,12 @@
             "title": "Summary",
             "type": "string"
           },
+          "team_messages_emailed": {
+            "default": false,
+            "description": "Phase 11: the team's messages are also emailed to the address on file (it is confirmed and email is set up): \"We'll also email you when the team writes.\" False: they appear only here.",
+            "title": "Team Messages Emailed",
+            "type": "boolean"
+          },
           "title": {
             "description": "As submitted.",
             "title": "Title",
@@ -15512,9 +15882,37 @@
           "email_verified",
           "wants_updates",
           "can_resend_verification",
-          "branding"
+          "branding",
+          "messages",
+          "message_count",
+          "team_messages_emailed",
+          "can_reply",
+          "reply_blocked"
         ],
         "title": "TrackedSubmission",
+        "type": "object"
+      },
+      "TrackingReplyRequest": {
+        "additionalProperties": false,
+        "description": "Phase 11: the submitter's reply to the team, from their tracking page (the token from\nits URL's fragment, as for every tracking write).",
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "body"
+        ],
+        "title": "TrackingReplyRequest",
         "type": "object"
       },
       "TrackingRequest": {
@@ -15604,6 +16002,7 @@
           "assessor_assigned",
           "assessment_reminder",
           "assessments_complete",
+          "submitter_replied",
           "digest",
           "all"
         ],
@@ -17280,7 +17679,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AuditAction"
                   },
-                  "maxItems": 73,
+                  "maxItems": 74,
                   "type": "array"
                 },
                 {
@@ -30640,6 +31039,267 @@
         ]
       }
     },
+    "/api/v1/ideas/{idea}/submission/messages": {
+      "get": {
+        "description": "public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Newest first (cursor pagination; at most 200 in all); plain text, a submitter's untrusted. Reading also works in an archived project. Empty after the submitter's details were erased (the conversation is deleted with them).",
+        "operationId": "list_submission_messages",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque cursor from next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from next_cursor.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionMessagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad request (e.g. invalid_cursor)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "The conversation with the submitter",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "post": {
+        "description": "public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Plain text (1-4,000 characters). Appears on their tracking page, signed \"The <project> team\" (never your name), and is also emailed when their address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 submitter_erased, project_archived, conversation_full (200 messages); 429 too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour across ideas). Audited (submission.message, never the text).",
+        "operationId": "send_submission_message",
+        "parameters": [
+          {
+            "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+            "in": "path",
+            "name": "idea",
+            "required": true,
+            "schema": {
+              "description": "The idea: its id (UUID) or its key such as \"CUST-12\" (any case).",
+              "maxLength": 36,
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z][A-Za-z0-9]{1,5}-[1-9][0-9]{0,8})$",
+              "title": "Idea",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionMessageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionMessage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not signed in (unauthorized)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not allowed (forbidden, csrf_failed, or a specific code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Message the submitter",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
     "/api/v1/ideas/{idea}/submission/reject": {
       "post": {
         "description": "idea.moderate. Deletes the idea with its submitter's details and emails (spam, abuse, off-topic); its tracking link stops working. No email is sent. 409 not_awaiting_moderation when it isn't held for moderation. Audited (ids only).",
@@ -36240,6 +36900,98 @@
         ]
       }
     },
+    "/api/v1/public/track/messages": {
+      "post": {
+        "description": "Public (public.track, c9): the submitter's reply to the team from their tracking page, once the team has written to them (409 awaiting_team: the public never starts a conversation). Plain text (1-4,000 characters), untrusted everywhere. Checks in order: content type (415) -> body (422) -> per-IP link requests, shared with the other tracking routes (429) -> token (404, unknown and erased alike) -> 30 replies per client IP an hour (429) -> 409 awaiting_team, project_archived, conversation_full (200 messages) -> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the text). Not audited (no actor; the message is the record). Returns the tracking page.",
+        "operationId": "send_tracking_reply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackedSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Reply to the team",
+        "tags": [
+          "public"
+        ]
+      }
+    },
     "/api/v1/public/track/updates": {
       "put": {
         "description": "Public (c9). wants_updates=true needs an address on file (409 no_email); emails go out only once the address is confirmed. Idempotent.",
@@ -36426,7 +37178,7 @@
     },
     "/api/v1/public/verify-email": {
       "post": {
-        "description": "Public (public.track, c9): the token from the confirmation email (/verify#<token>, valid 3 days), posted when the person clicks Confirm (never on page load). Confirms the address (idempotent); an idea held for confirmation moves on to moderation or to the team. Works while public submission is on for the instance, even if the project's form was turned off since. 404 for an invalid, expired or used-up token (the submission was erased, deleted or its address changed). Throttled per client IP (429).",
+        "description": "Public (public.track, c9): the token from the confirmation email (/verify#<token>, valid 3 days), posted when the person clicks Confirm (never on page load). Confirms the address (idempotent); an idea held for confirmation moves on to moderation or to the team. Phase 11: the first confirmation also emails the private tracking link to that address (tracking_link_emailed; never again after). Works while public submission is on for the instance, even if the project's form was turned off since. 404 for an invalid, expired or used-up token (the submission was erased, deleted or its address changed). Throttled per client IP (429).",
         "operationId": "verify_submission_email",
         "requestBody": {
           "content": {

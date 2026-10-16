@@ -121,10 +121,16 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "resend_verification_email": ("public.track",),
     "erase_tracked_submission": ("public.track",),
     "verify_submission_email": ("public.track",),
+    "send_tracking_reply": ("public.track",),  # Phase 11
     "get_public_form_settings": ("project.edit_settings",),
     "update_public_form_settings": ("project.edit_settings",),
     "list_moderation_queue": ("project.view", "idea.moderate"),
-    "get_idea_submission": ("idea.view", "public.erase_submitter", "idea.moderate"),
+    "get_idea_submission": (
+        "idea.view",
+        "public.erase_submitter",
+        "idea.moderate",
+        "public.message_submitter",  # Phase 11: IdeaSubmission.messages
+    ),
     "approve_submission": ("idea.moderate",),
     "reject_submission": ("idea.moderate",),
     "erase_submitter": ("public.erase_submitter",),
@@ -225,6 +231,9 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "request_ai_bid_assessment": ("ai.assess_bid",),
     "list_bid_ai_assessments": ("bid.view_scores",),
     "set_bid_ai_inclusion": ("bid.manage",),
+    # Phase 11 (docs/api/contract-phase11.md section 2)
+    "list_submission_messages": ("public.message_submitter",),  # implies idea.view
+    "send_submission_message": ("public.message_submitter",),
 }
 
 

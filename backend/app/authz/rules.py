@@ -105,6 +105,8 @@ class Rule(StrEnum):
     BID_VIEW_SCORES = "bid.view_scores"
     BID_AI_ASSESS = "bid.ai_assess"
     AI_ASSESS_BID = "ai.assess_bid"
+    # G (Phase 11). Talking to the public submitter (session only: no API key, no MCP tool)
+    PUBLIC_MESSAGE_SUBMITTER = "public.message_submitter"
 
 
 _READ: Final = frozenset(
@@ -187,5 +189,7 @@ SESSION_ONLY_RULES: Final = frozenset(set(Rule) - set(RULE_SCOPES) - PUBLIC_RULE
 project.create, project administration, public.erase_submitter, idea.delete,
 idea.moderate, platform.*, api_key.* and self.manage_profile (Phase 8: also the
 proposal template, the research settings and idea.research_override; Phase 10: the bid
-template, bid documents, the bid decisions and deleting a call). Routes without a rule of
-their own are classified in :data:`app.authz.keys.ROUTE_KEY_ACCESS`."""
+template, bid documents, the bid decisions and deleting a call; Phase 11:
+public.message_submitter, reading and writing the conversation with a public submitter).
+Routes without a rule of their own are classified in
+:data:`app.authz.keys.ROUTE_KEY_ACCESS`."""

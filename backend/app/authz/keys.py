@@ -179,6 +179,11 @@ ROUTE_KEY_ACCESS: Final[dict[str, KeyAccess]] = {
     "list_bid_section_assessments": _P,
     "request_ai_bid_assessment": _P, "request_ai_bid_assessments": _P,
     "list_bid_ai_assessments": _P, "set_bid_ai_inclusion": _P,
+    # Phase 11: the conversation with a public submitter is session only
+    # (public.message_submitter: no key, whatever its scopes, and no MCP tool); the
+    # submitter's reply is a public route (its tracking token decides)
+    "list_submission_messages": _S, "send_submission_message": _S,
+    "send_tracking_reply": _U,
 }
 # fmt: on
 """Every API operation (``operation_id``) and what a key may do there."""

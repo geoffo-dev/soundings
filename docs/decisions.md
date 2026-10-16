@@ -1344,3 +1344,45 @@ list them in one place).
 | The audit log words an edit to a submitted assessment ("edited a submitted bid assessment … (2 questions changed)"), a bid edit that changed whether it is late ("(now late)", "(no longer late)") and assessors removed because they left a private project ("… was removed as an assessor of the call for bids on TOOLS-3 (left the project)"); it counts assessors added and removed from the backend's by-section details (it had shown no count). | Decided (release, the backend review's requests L7, N4, ACC-5) | The details were recorded but the sentences didn't say so. |
 | `make image` labels the image with the backend's version (`VERSION`, default from `backend/pyproject.toml`); the Dockerfile's default is `unknown`. | Decided (release) | 0.2.0's image was labelled 0.1.0: the Dockerfile's default had never moved. |
 | `e2e/tests/bids.spec.ts` runs its tests in order (`test.describe.configure({ mode: 'default' })`), not in parallel. | Decided (release) | BD-02 and BD-03 both upload as alice: with the review's one upload per person per API process (L4), the second got 503 `upload_busy` when Playwright ran them side by side. Uploading is the behaviour under test, so the specs take turns rather than retrying. |
+
+## Phase 11 (product owner, 2026-10-16)
+
+Talking to public submitters: the product owner's change after release 0.3.0. SPEC.md is
+read-only, so it is recorded here. Contract: [contract-phase11.md](api/contract-phase11.md);
+design: [ADR 0019](adr/0019-public-submitter-messages.md); rules: role matrix table G
+(`public.message_submitter`), c31, trait `principal.named_person`.
+
+Trying the app, the product owner asked, in their words: "1) Add an email in the public form
+where the link could be emailed, but also used to contact the submitter 2) Make the text at
+the top of the public form customisable". The lead showed that both basics exist since Phase 4
+(the optional, or required, address on the form, shown only when email is set up and visible
+to project and platform admins in the idea's submission panel; the intro Markdown in Project
+settings → Public form → Intro). The product owner: "oh both are there!". The lead offered two
+follow-ups, (a) "Message the submitter" for the team, sent through Soundings in the project's
+branding without showing the submitter's address to anyone else and recorded in the audit
+log, and (b) the tracking link emailed once the address is confirmed (Phase 4 keeps it out of
+the confirmation email, and that stays). The product owner: "Yeah maybe have both".
+
+### H. Talking to public submitters (Decided, product owner)
+
+| Decision | Status | Why |
+|---|---|---|
+| **(a)** The team can message the submitter of a public idea through Soundings, in the project's branding, without the submitter's address being shown to anyone else, audited. | Decided (product owner: "Yeah maybe have both") | Contact without handing out personal data. |
+| **(b)** The tracking link is emailed once the address is confirmed; the confirmation email itself stays link-free. | Decided (product owner: "Yeah maybe have both") | The submitter keeps their link without copying it from the receipt. |
+| The intro at the top of the form needs no new feature (it exists). | Decided (product owner: "oh both are there!") | |
+
+### I. Talking to public submitters (lead defaults, to confirm)
+
+| Decision | Status | Why |
+|---|---|---|
+| **D1.** A new email `submission_link` ("Your link to follow your idea for <project>"), queued in the same transaction as the **first** confirmation (`email_verified_at` null → now), only with email set up and the sealed token present; never on a repeat, a resend or at submission; nothing retroactive. Fixed text (contract-phase11 §8): the project, the title as sent, "See where your idea stands", "Keep this link private: anyone who has it can see where your idea stands, reply to the team and delete your details."; the tracking page as the stop link; rendered at send time. The confirmation email gains "Once you confirm, we'll email you a private link to follow your idea."; the receipt says the link follows the confirmation; `EmailVerified.tracking_link_emailed` drives "We've emailed you a private link to follow your idea." | lead default, to confirm | The link reaches only an address that proved itself by clicking Confirm, as status emails already do (ADR 0019). |
+| **D2.** One conversation per public submission (`submission_messages`): plain text (1-4,000, `VisibleText`), never Markdown or HTML; written by the idea's owner and project and platform admins (`public.message_submitter`, session only, no key, no MCP; never agents or the break-glass account, c31), read by nobody else; allowed on closed ideas and ideas held for moderation, read-only in an archived project, 409 `submitter_erased` once erased; every team message on the tracking page and also emailed (`submission_message`) when the address is confirmed and email is set up, whatever `wants_updates` says; the submitter replies on the tracking page only after the team wrote (409 `awaiting_team`); limits 20 / day per submission and 30 / hour per person (team), 10 / day per submission and 30 / hour per address (submitter), 200 in all; "The submitter replied" to the owner and the writers (at most one immediate email per recipient and idea an hour, never the text); audited `submission.message`; not in the feed, search, ⌘K, MCP, exports or the activity time; erasure deletes the conversation and all four submitter email types (`SUBMITTER_EMAIL_TYPES`); retention rule 4 counts its latest message. | lead default, to confirm | The product owner's (a), with the safety rails a public, untrusted channel needs. |
+| **D3.** The intro needs no new feature: its field already says "Shown above the form … Markdown works."; the schema describes it as the text at the top of the form; the user guide names the path. | lead default, to confirm | It exists. |
+| **D4.** Migration 0017, expand only (head 0017); no new settings or Helm values; no version bump: `docs/RELEASE-NOTES.md` gets "Unreleased" (tagging is the product owner's call). | lead default, to confirm | Simple beats configurable. |
+| The rule is **not an idea write**: reading the conversation works in an archived project; sending's refusals (archived, erased, full, the limits) are the service's 409s and 429s; c19 doesn't apply (moderators may ask before approving). | lead default, to confirm (contract agent) | One rule covers reading and writing (D2), and reading shouldn't stop when a project is archived. |
+| **c31, a named person**, not a cell: the break-glass account is column PA and agents could hold roles, so the refusal is a property of the principal (`is_named_person`), like c21. | lead default, to confirm (contract agent) | "Never service accounts or the break-glass account" (D2) as a policy trait. |
+| **Limits answer 429 `too_many_attempts`** with `Retry-After`, like every per-action limit (AI runs, exports, uploads, the public routes); `rate_limited` stays the session-write limiter's. | lead default, to confirm (contract agent; deviation: D2 said "429 rate_limited where the app already uses it") | The app's per-action limits all use `too_many_attempts`; one code per kind of refusal. |
+| **No "The submitter replied" while the idea is held for moderation**; the moderation queue shows "They replied" (`messages.last_direction`). | lead default, to confirm (contract agent) | Held ideas are in nobody's inbox (role matrix 2c); a moderator who asked a question sees the answer in the queue. |
+| **The panel's delivery line gives no reason** ("Only on their tracking page", not "no address" or "unconfirmed"). | lead default, to confirm (contract agent) | Contact details are `public.erase_submitter`'s; the owner may not hold that. |
+| **Retention rule 5**: the hourly cleanup deletes messages left on an erased submission. | lead default, to confirm (contract agent) | An erasure by the previous release during a rollback window wouldn't delete them. |
+| **Demo**: CUST-21 gets a message from priya (a CUST admin; CUST-21 has no owner and keeps none) and Sam's reply an hour later, written by the seed (no emails); priya has one unread "The submitter replied". | lead default, to confirm (contract agent) | Alice's inbox and My work counts, which e2e reads, stay as they are. |

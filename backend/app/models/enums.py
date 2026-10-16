@@ -8,6 +8,7 @@ wire values (snake_case).
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Final
 
 
 class IdeaStatus(StrEnum):
@@ -126,6 +127,11 @@ class NotificationType(StrEnum):
     ASSESSMENTS_COMPLETE = "assessments_complete"
     """Phase 10: every assigned assessor has submitted every section they assess for every
     bid that isn't rejected (to the idea's owner and the call's creator). Never scores."""
+    SUBMITTER_REPLIED = "submitter_replied"
+    """Phase 11, "The submitter replied": the person who sent the idea through the public
+    form replied on their tracking page (to the idea's owner and everyone who has written to
+    them, while they hold ``public.message_submitter``). Never the reply's text (untrusted
+    public input)."""
 
 
 class NotificationMode(StrEnum):
@@ -159,6 +165,8 @@ class EmailType(StrEnum):
     """Phase 10: bid assessments due soon or today."""
     ASSESSMENTS_COMPLETE = "assessments_complete"
     """Phase 10: every bid assessment of a call is in."""
+    SUBMITTER_REPLIED = "submitter_replied"
+    """Phase 11: "The submitter replied" (to the team; never the reply's text)."""
     DIGEST = "digest"
     """The daily digest: every pending digest notification of one person."""
     TEST = "test"
@@ -167,6 +175,23 @@ class EmailType(StrEnum):
     """Phase 4: confirmation with the tracking link to a public submitter."""
     SUBMISSION_STATUS_CHANGED = "submission_status_changed"
     """Phase 4: status update to a public submitter who opted in."""
+    SUBMISSION_LINK = "submission_link"
+    """Phase 11: the private tracking link, once, to a public submitter's address when it is
+    confirmed for the first time (the confirmation email itself never carries it)."""
+    SUBMISSION_MESSAGE = "submission_message"
+    """Phase 11: a message from the team to a public submitter with a confirmed address."""
+
+
+SUBMITTER_EMAIL_TYPES: Final = (
+    EmailType.SUBMISSION_RECEIVED,
+    EmailType.SUBMISSION_STATUS_CHANGED,
+    EmailType.SUBMISSION_LINK,
+    EmailType.SUBMISSION_MESSAGE,
+)
+"""Phase 11: the emails to a public submitter, the one list used everywhere (the outbox's
+``ck_outbound_email_idea_iff_submission_type``, erasure, retention rule 3, branding, the
+send-time renderer, Admin -> Email). Each names its idea (``outbound_email.idea_id``) and goes
+to an address (``to_address``), never to a user; erasure deletes every one of them."""
 
 
 class EmailStatus(StrEnum):
@@ -238,6 +263,16 @@ class HoldReason(StrEnum):
     MODERATION = "moderation"
     """Waiting for a project admin to approve it (c12): only project and platform
     admins can see it, in the moderation queue and on its own page."""
+
+
+class MessageDirection(StrEnum):
+    """Phase 11: who wrote a message in the conversation with a public submitter
+    (``submission_messages.direction``; contract-phase11 section 3)."""
+
+    TEAM = "team"
+    """A person of the team (``author_id``, holding ``public.message_submitter``) wrote it."""
+    SUBMITTER = "submitter"
+    """The submitter replied on their tracking page (no author: public input, untrusted)."""
 
 
 class BrandFont(StrEnum):

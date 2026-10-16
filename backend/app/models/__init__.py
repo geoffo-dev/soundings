@@ -51,6 +51,7 @@ from app.models.enums import (
     GroupSyncMode,
     HoldReason,
     IdeaStatus,
+    MessageDirection,
     MustHaveKind,
     MustHaveResult,
     NotificationMode,
@@ -83,7 +84,12 @@ from app.models.proposal import (
     ProposalTemplateSection,
     ProposalThread,
 )
-from app.models.public import AltchaUsedChallenge, ConfirmationEmailSend, PublicSubmission
+from app.models.public import (
+    AltchaUsedChallenge,
+    ConfirmationEmailSend,
+    PublicSubmission,
+    SubmissionMessage,
+)
 from app.models.research import ResearchAnswer, ResearchChecklistItem
 from app.models.user import User, UserExternalId, UserIdentity, UserSession
 
@@ -150,6 +156,7 @@ __all__ = [
     "IdeaTag",
     "IdeaVote",
     "IdeaWatcher",
+    "MessageDirection",
     "MustHaveKind",
     "MustHaveResult",
     "Notification",
@@ -176,6 +183,7 @@ __all__ = [
     "ResearchStep",
     "Resolution",
     "RubricCriterion",
+    "SubmissionMessage",
     "SuggestionSource",
     "SuggestionStatus",
     "Tag",

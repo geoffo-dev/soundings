@@ -4,6 +4,14 @@ moderation queue, the submission behind an idea, and erasing a submitter's detai
 Rules: ``project.edit_settings`` (form settings), ``idea.moderate`` (queue, approve,
 reject), ``public.erase_submitter`` (contact details, erase). Business rules:
 docs/api/contract-phase4.md sections 3.4, 3.6 and 3.9.
+
+Phase 11 (contract-phase11, ADR 0019): the conversation with the submitter
+(``public.message_submitter``: the idea's owner, project and platform admins, in a session,
+never an AI agent or the break-glass account, c31). Order of checks: 401 -> 404 (the idea,
+``idea.view``; then an idea that didn't come through the public form) -> 403 (a key on these
+session-only routes: ``insufficient_scope``; the rule, c31) -> 422 (the body) -> 409
+(``submitter_erased``, ``project_archived``, ``conversation_full``) -> 429 (the limits). Writes
+lock project (``FOR KEY SHARE``) -> idea -> submission (``FOR UPDATE``), then insert.
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ from app.api.v1.responses import problems
 from app.authz import Rule, load_project
 from app.config import Settings
 from app.db import SessionDep
+from app.errors import NotImplementedProblem
 from app.models.base import utcnow
 from app.pagination import PageParamsDep
 from app.public import submissions
@@ -25,6 +34,9 @@ from app.schemas.public import (
     ModerationPage,
     PublicFormSettings,
     PublicFormSettingsUpdate,
+    SubmissionMessage,
+    SubmissionMessageCreate,
+    SubmissionMessagePage,
 )
 from app.services import ideas, moderation
 
@@ -164,3 +176,56 @@ async def erase_submitter(
 ) -> IdeaSubmission:
     loaded = await ideas.load_idea(session, principal, idea, for_update=True)
     return await submissions.erase_submitter(session, principal, loaded, now=utcnow())
+
+
+# --- Phase 11: the conversation with the submitter (contract-phase11) --------------------------
+_MESSAGES_RULE = (
+    "public.message_submitter: the idea's owner (member or admin), project and platform admins, "
+    "in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass "
+    "account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest "
+    "researcher and private non-members: 404). 404 when the idea didn't come through the "
+    "public form, or is held for email confirmation. Works on closed ideas and ideas held for "
+    "moderation (c19 doesn't apply)."
+)
+
+
+@router.get(
+    "/ideas/{idea}/submission/messages",
+    operation_id="list_submission_messages",
+    summary="The conversation with the submitter",
+    description=(
+        _MESSAGES_RULE + " Newest first (cursor pagination; at most 200 in all); plain text, a "
+        "submitter's untrusted. Reading also works in an archived project. Empty after the "
+        "submitter's details were erased (the conversation is deleted with them)."
+    ),
+    responses=problems(400, 401, 403, 404),
+)
+async def list_submission_messages(
+    principal: PrincipalDep, session: SessionDep, idea: IdeaParam, page: PageParamsDep
+) -> SubmissionMessagePage:
+    raise NotImplementedProblem
+
+
+@router.post(
+    "/ideas/{idea}/submission/messages",
+    operation_id="send_submission_message",
+    status_code=status.HTTP_201_CREATED,
+    summary="Message the submitter",
+    description=(
+        _MESSAGES_RULE + " Plain text (1-4,000 characters). Appears on their tracking page, "
+        'signed "The <project> team" (never your name), and is also emailed when their '
+        "address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 "
+        "submitter_erased, project_archived, conversation_full (200 messages); 429 "
+        "too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, "
+        "30 of yours an hour across ideas). Audited (submission.message, never the text)."
+    ),
+    responses=problems(401, 403, 404, 409, 422, 429),
+)
+async def send_submission_message(
+    principal: PrincipalDep,
+    session: SessionDep,
+    request: Request,
+    idea: IdeaParam,
+    body: SubmissionMessageCreate,
+) -> SubmissionMessage:
+    raise NotImplementedProblem

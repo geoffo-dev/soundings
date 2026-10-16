@@ -63,8 +63,10 @@ it immediately.
 - **Tracking token:** the private link given to a public submitter
   (`<base>/track#<token>`). It grants `public.track` for one idea (see its public status
   and what was submitted, turn status emails on or off, resend the confirmation email,
-  erase the submitter's details) and nothing else, whoever holds it; it stops working
-  when the submitter's details are erased.
+  erase the submitter's details; Phase 11: read the conversation with the team and reply
+  once the team has written) and nothing else, whoever holds it; it stops working
+  when the submitter's details are erased. Phase 11: it is also emailed once, to an
+  address that was just confirmed for the first time (`submission_link`).
 - **Confirmation-link token:** emailed to a public submitter (`<base>/<slug>/verify#<token>`;
   older links `<base>/verify#<token>`);
   grants `public.track` only to confirm that submission's address (and release an idea
@@ -136,6 +138,7 @@ on account kinds or roles itself (ADR 0010; security review P7 N4).
 | `counted_by_default` | evaluation.counted_by_default | people (not agents) | a first submission's `include_in_aggregate` (section 3 rule 10) |
 | `writes_as_ai` | proposal.suggest_as_ai | agents | suggestion `source` = `ai`; the MCP dispatcher strips invisible and direction characters from an agent's text |
 | `searches_co_members_only` | user.search (co-members only) | agents | `search_users` finds only people who share a project |
+| `is_named_person` | principal.named_person (Phase 11) | a person's own account: never an agent, never the break-glass account | c31: who may write to a public submitter (`public.message_submitter`) |
 
 Traits are not rules: they have no cells and no API-key scope (the trait names are
 written without backticks so the rule tables' parser, `tests/authz/test_policy_matrix.py`,
@@ -204,6 +207,12 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
   (also queued emails, at send time) the moment access ends. `evaluations_complete` also
   needs `evaluation.view_own` (never R, even an owner who lost their role and researches
   the idea).
+- **Phase 11, "The submitter replied"** (`submitter_replied`): to the idea's owner and
+  everyone who has written to the submitter, each holding `public.message_submitter` when
+  it is created and again when it is shown or emailed (`SUBMITTER_NOTIFICATION_TYPES`; never
+  a guest researcher, so not in `RESEARCH_GUEST_NOTIFICATION_TYPES`); none while the idea is
+  held for moderation; at most one immediate email per recipient and idea an hour; never the
+  reply's text (untrusted public input).
 - **The inbox** (signed in, like My work) lists only notifications about ideas the
   user can view now (Phase 8b: about an idea they see only as its guest researcher, only
   the types in `RESEARCH_GUEST_NOTIFICATION_TYPES`); marking read needs nothing more. Polling the unread count doesn't
@@ -348,6 +357,7 @@ existing calls keep their own copy (contract-phase10 §4).
 |---|---|---|---|---|---|---|---|---|---|---|
 | `public.submit` | Submit via `/{project}/submit` (honeypot, rate limit, ALTCHA) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | Y (c8) | · | · |
 | `public.track` | Open the private tracking link: own submission and its status only | Y (c9) | Y (c9) | Y (c9) | Y (c9) | Y (c9) | Y (c9) | Y (c9) | · | · |
+| `public.message_submitter` | Phase 11: read the conversation with a public idea's submitter and write to them (relayed by Soundings, signed "The <project> team"; session only, c31) | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
 
 The public form of a private project shows only the project's name, intro and
 branding. The tracking page shows the title and summary **as submitted** (a copy kept
@@ -375,6 +385,54 @@ Notes ([contract-phase4 §3.5–3.9](api/contract-phase4.md#35-the-public-form))
 - The submitter's name is visible to everyone who can view the idea; their email,
   confirmation and update preference only with `public.erase_submitter`. Status emails go
   only to an opted-in, confirmed address.
+
+Notes (Phase 11, [contract-phase11](api/contract-phase11.md),
+[ADR 0019](adr/0019-public-submitter-messages.md)):
+
+- `public.message_submitter` is idea-scoped (it implies `idea.view`) and **session only**
+  (no API key scope, no MCP tool). It covers reading the conversation, writing to the
+  submitter and the submission panel's `messages` summary and `can_message` flag. The
+  owner overlay counts only with member or admin (section 1). **c31** (not written in the
+  cells, like c21): never an AI agent's service account, never the break-glass account
+  (403 `forbidden`; they see nothing of the conversation).
+- It is **not an idea write**: reading works in an archived project; it works on a closed
+  idea and on one held for moderation (c19 doesn't apply: moderators may ask before
+  approving); an idea held for email confirmation is 404 (c12). Sending's refusals are the
+  service's: 409 `submitter_erased`, `project_archived`, `conversation_full`; 429
+  `too_many_attempts` for the limits.
+- Everyone who can view the idea but doesn't hold the rule sees **nothing** of the
+  conversation, not even that it exists (`IdeaSubmission.messages` null). It is in no feed,
+  search, ⌘K, My work, MCP result or export, and never moves the idea's activity time.
+- The submitter replies under `public.track` (c9), only after the team has written (409
+  `awaiting_team`), throttled per client address (30 an hour) and per submission (10 a day).
+
+**Phase 11: who reaches the conversation** (`list_submission_messages`,
+`send_submission_message`; `get_idea_submission` and the moderation queue's `messages` /
+`can_message`). A public idea in a private project unless the row says otherwise:
+
+| Principal | List / send | `IdeaSubmission.messages`, `can_message` | Why |
+|---|---|---|---|
+| The idea's owner (member or admin) | 200 / 201 | the summary, true | +Own `+` |
+| The idea's owner demoted to viewer | 403 | null, false | overlays need member or admin |
+| Project admin (PAd) | 200 / 201 | the summary, true | `Y` |
+| Platform admin (PA) | 200 / 201 | the summary, true | `Y` |
+| Member, viewer (not the owner) | 403 `forbidden` | null, false | the cell |
+| Internal non-member (NMi, an internal project) | 403 `forbidden` | null, false | the cell |
+| Private non-member (NMp) | 404 | (the idea is 404) | `idea.view` |
+| Guest researcher (R) | 404 | (the submission panel is 404) | table L, `RESEARCH_GUEST_ACCESS` hidden |
+| An AI agent's service account | 403 `insufficient_scope` (REST, c22); never holds it | null, false | c22, c31 |
+| The break-glass account (column PA) | 403 `forbidden` | null, false | c31 |
+| A person's API key, any scopes (all four too) | 403 `insufficient_scope` | (the panel route is session only) | `ROUTE_KEY_ACCESS` session |
+| Anonymous | 401 | 401 | |
+| Any of the above, the idea held for email confirmation | 404 | 404 | c12 |
+| PA / PAd, the idea held for moderation (the owner, a member: 404, c12) | 200 / 201 | the summary, true | not frozen (c19) |
+| PA / PAd / owner, the idea closed | 200 / 201 | the summary, true | not c5 |
+| PA / PAd / owner, archived project | 200 / 409 `project_archived` | the summary, `can_message` false, `blocked: project_archived` | not an idea write; the service refuses |
+| PA / PAd / owner, details erased | 200 (empty) / 409 `submitter_erased` | the summary, false, `blocked: submitter_erased` | the conversation went with the details |
+
+`send_tracking_reply` (the submitter, by token): 201 once the team has written; 404 for an
+unknown or erased token (c9); 409 `awaiting_team`, `project_archived`, `conversation_full`;
+429; 415 without JSON; 422. Keys and sessions are ignored there (a public route).
 
 ### H. Platform administration
 
@@ -628,6 +686,7 @@ cell and +Rsr `·`.
 | bid.view_scores | 404 | · | |
 | bid.ai_assess | 404 | · | |
 | ai.assess_bid | 404 | · | |
+| public.message_submitter | 404 | · | Phase 11: no submission panel, so nothing of the conversation with the submitter. |
 
 **Every route and MCP tool, for R** (identity keeps this as a table, e.g.
 `app.authz.guest.RESEARCH_GUEST_ACCESS`: `view` = part of R's view, `rule` = the route's
@@ -648,6 +707,7 @@ deny by default, and a meta-test fails for an idea route or tool without a row):
 | `add_evaluators`, `remove_evaluator`, `set_evaluation_due_date`, `close_evaluation`, `reopen_evaluation`, `list_evaluations`, `get_my_evaluation`, `save_my_evaluation`, `set_evaluation_inclusion` | hidden | 404. |
 | every `/ideas/{idea}/proposal…` route (proposal, sections, exports, threads, suggestions) | hidden | 404. |
 | `get_idea_submission`, `approve_submission`, `reject_submission`, `erase_submitter` | hidden | 404. |
+| `list_submission_messages`, `send_submission_message` (Phase 11) | hidden | 404: nothing of the conversation with the public submitter. |
 | `list_idea_ai_runs`, `request_ai_evaluation`, `request_ai_research`, `request_ai_section_draft`, `get_ai_run`, `cancel_ai_run`, `stream_ai_run_events` | hidden | 404; no stream can be opened. |
 | every `/ideas/{idea}/bid-call…` route (Phase 10: the call, its template, assessors, bids, documents, assessments, comparison, AI, award, report) | hidden | 404. |
 | every `/projects/{slug}…` route | NMp | 404 (`project.view`), unchanged. |
@@ -926,6 +986,7 @@ reinstating *B*; and rule 4 for a pricing document per principal kind.
 | c28 | Phase 10: every person named as a section assessor is an **active person** who can view the idea in their own right (in a private project: a role there, **never as its guest researcher**, column R; an admin adds people as members first), never a service account (AI agent) or the break-glass account. Checked on each person's user row and role, read under a lock (as c25), when assigning; **and live on every request** for the +Asr overlay (review M6): an assignment that fails c28 now grants nothing and isn't expected work | assigning: 422 `assessor_not_eligible`; live: the overlay doesn't apply |
 | c29 | Phase 10: the principal assesses **the section in question** (+Asr on that section; for `bid.view_price` the section holding the price question). Not written for call managers: their cells don't need it | 403 `not_section_assessor` (`bid.view_price`: the price is hidden and pricing documents are 404 / "present (restricted)", not an error) |
 | c30 | Phase 10 (review S14): deleting the call: it is a **draft or cancelled**, or **awarded and the principal is a platform admin** (the bidders' personal data shouldn't need the idea deleted); never open or assessing | 409 `bid_call_active` |
+| c31 | Phase 11: the principal is a **named person**: a person's own account, never an AI agent's service account, never the break-glass account (`is_named_person`, section 1a). Not written in the cells (a property of the principal, like c20/c21); applies to `public.message_submitter` (`NAMED_PEOPLE_ONLY`) | 403 `forbidden` |
 
 ## 5. API keys
 
@@ -988,6 +1049,10 @@ projects.**
   it (`write`: enter bids, decide must-haves, include the AI, ask the AI, name the AI
   assessor) and assess (`evaluate`). An assessor's key with `read` only can't save an
   assessment (403 `insufficient_scope`).
+- **Phase 11, session only**: `public.message_submitter` (the conversation with a public
+  submitter: `list_submission_messages`, `send_submission_message`), whatever the key's
+  scopes: a message goes out in the team's name to a member of the public and would outlive
+  a leaked key. The submitter's reply (`send_tracking_reply`) is a public route.
 - **Signed-in routes without a rule of their own** (`get_me`, My work, owned ideas,
   global search) need `read` with a key, and so does every route that loads an idea or
   project to read it (`require_view`, after the 404s): an `mcp`-only key reads nothing
@@ -1080,6 +1145,10 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   that run
   ([contract-phase6 §4](api/contract-phase6.md#4-mcp-additions)).
 
+- **Phase 11:** no tool reads or writes the conversation with a public submitter, and no
+  tool result carries it or says that one exists (`public.message_submitter` is session
+  only).
+
 - **Phase 10:** the three bid tools are for an agent's `assess_bid` run only: `bid_id`
   must be the run's bid (checked with the run, before any lookup: `ai_run_not_active`),
   the run reads only `get_bid_for_assessment` and `get_bid_document_text`
@@ -1158,6 +1227,12 @@ effect for that very call (the tool error `unauthorized`, audited as a denial).
   and turning the step off clearing the assignment;
   `idea.answer_research` for the researcher in every column (also a demoted member, a
   guest, after hand back); mentions of a guest researcher notify them.
+- Phase 11 ([contract-phase11 §14](api/contract-phase11.md#14-minimum-tests-tests-first)):
+  `public.message_submitter` for every column and overlay (a demoted owner; c31 with the
+  break-glass account and an agent; every key scope refused; R hidden) × the two routes and
+  the submission panel's `messages` / `can_message`; held for moderation (allowed), for email
+  confirmation (404), closed (allowed), archived (read only), erased (409); the conversation
+  never visible to non-holders through any surface of contract-phase11 §11.
 - Phase 4: table E for every column and overlay (a demoted owner can't write; c7 on
   start and save; archived → 409); c8 for each of its parts (instance switch, project
   setting, archived, reserved slug, unknown slug: identical 404s); c9 with unknown,

@@ -91,6 +91,8 @@ _ROWS: dict[str, tuple[str, ...]] = {
     # G. Public submission
     "public.submit": ("Y (c8)",) * 7 + ("·", "·"),
     "public.track": ("Y (c9)",) * 7 + ("·", "·"),
+    # G (Phase 11). Talking to the public submitter (c31, a named person, isn't in the cells)
+    "public.message_submitter": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
     # H. Platform administration
     "platform.manage_users": ("Y", "403", "403", "403", "403", "403", "401", "·", "·"),
     "platform.manage_groups": ("Y", "403", "403", "403", "403", "403", "401", "·", "·"),

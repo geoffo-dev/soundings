@@ -19,6 +19,13 @@ challenge expires, so a solution is accepted once.
 ``confirmation_email_sends`` counts confirmation emails per address for the limit of
 3 a day, by a keyed hash of the address (never the address), so erasing, rejecting or
 forgetting a submission (which delete its outbox rows) can't reset the count.
+
+Phase 11 (contract-phase11, ADR 0019): ``submission_messages`` is the one conversation
+between the team and the submitter of a public idea: plain text, written by the idea's
+owner and project and platform admins (``public.message_submitter``, sessions only) and,
+once the team has written, by the submitter on their tracking page. Erasing the details
+deletes the whole conversation; deleting or rejecting the idea deletes it with the
+submission.
 """
 
 from __future__ import annotations
@@ -31,19 +38,32 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     String,
+    UniqueConstraint,
     func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
+from app.models.enums import MessageDirection
+from app.models.types import str_enum
 
-__all__ = ["AltchaUsedChallenge", "ConfirmationEmailSend", "PublicSubmission"]
+__all__ = [
+    "SUBMISSION_MESSAGE_MAX_LENGTH",
+    "AltchaUsedChallenge",
+    "ConfirmationEmailSend",
+    "PublicSubmission",
+    "SubmissionMessage",
+]
 
 TRACKING_TOKEN_HASH_LENGTH = 64
 """Hex SHA-256 of the tracking token."""
+
+SUBMISSION_MESSAGE_MAX_LENGTH = 4_000
+"""Phase 11: characters in one message between the team and a public submitter."""
 
 
 class PublicSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -95,6 +115,9 @@ class PublicSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "created_at",
             postgresql_where=text("email IS NOT NULL AND email_verified_at IS NULL"),
         ),
+        # Phase 11: the target of submission_messages' (submission_id, idea_id), so a
+        # message's submission is always its idea's.
+        UniqueConstraint("id", "idea_id"),
     )
 
     idea_id: Mapped[uuid.UUID] = mapped_column(
@@ -150,4 +173,70 @@ class ConfirmationEmailSend(UUIDPrimaryKeyMixin, Base):
     address_key: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True
+    )
+
+
+class SubmissionMessage(UUIDPrimaryKeyMixin, Base):
+    """Phase 11: one message in the conversation between the team and a public submitter
+    (one conversation per submission; contract-phase11 section 3).
+
+    * ``direction``: ``team`` (written by ``author_id`` through the idea's submission
+      panel, ``public.message_submitter``) or ``submitter`` (a reply on the tracking page,
+      allowed only after the team has written; never an author: untrusted public input).
+    * ``body``: plain text, 1-4,000 characters with a visible one (``VisibleText``), never
+      rendered as Markdown or HTML anywhere; never logged, audited or put in a
+      notification.
+    * ``emailed``: a team message for which a ``submission_message`` email was queued
+      (the address was confirmed and email set up when it was sent); whether it was
+      delivered is the outbox's business.
+    * ``submission_id`` + ``idea_id``: the submission and its idea, by a composite foreign
+      key (``public_submissions (id, idea_id)``), so a message can't name another idea's
+      submission; deleting the idea deletes its submission, which deletes the
+      conversation. Erasing the submitter's details deletes it explicitly (the submission
+      row stays).
+
+    Not in the feed, search, MCP or exports, and it never moves the idea's
+    ``last_activity_at`` (retention rule 4 reads the latest ``created_at`` here instead).
+    """
+
+    __tablename__ = "submission_messages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["submission_id", "idea_id"],
+            ["public_submissions.id", "public_submissions.idea_id"],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            f"length(body) BETWEEN 1 AND {SUBMISSION_MESSAGE_MAX_LENGTH}", name="body_length"
+        ),
+        # A reply has no author (the public); a team message had one (null once that user
+        # row is deleted, which Soundings never does: people are deactivated).
+        CheckConstraint("direction = 'team' OR author_id IS NULL", name="author_only_for_team"),
+        CheckConstraint("direction = 'team' OR NOT emailed", name="emailed_only_for_team"),
+        # The conversation (newest or oldest first), its size (200 at most), the
+        # per-submission limits (team 20 / submitter 10 a day) and retention rule 4's
+        # latest message: all one submission's rows, at most 200.
+        Index(
+            "ix_submission_messages_submission_id_created_at",
+            "submission_id",
+            "created_at",
+            "id",
+        ),
+        # The per-person limit (30 team messages an hour across submissions).
+        Index(
+            "ix_submission_messages_author_id_created_at",
+            "author_id",
+            "created_at",
+            postgresql_where=text("author_id IS NOT NULL"),
+        ),
+    )
+
+    submission_id: Mapped[uuid.UUID] = mapped_column()
+    idea_id: Mapped[uuid.UUID] = mapped_column()
+    direction: Mapped[MessageDirection] = mapped_column(str_enum(MessageDirection, "direction"))
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    body: Mapped[str] = mapped_column(String(SUBMISSION_MESSAGE_MAX_LENGTH))
+    emailed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now()
     )

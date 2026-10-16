@@ -1,4 +1,4 @@
-"""The API contract (Phases 1 to 10): every route exists with its operation_id and,
+"""The API contract (Phases 1 to 11): every route exists with its operation_id and,
 until it is implemented, answers 501 problem+json to a *valid* request.
 
 When you implement an endpoint, delete its row from ``STUBS`` (the operation stays
@@ -341,12 +341,21 @@ CONTRACT: list[tuple[str, str, str]] = [
         "/include-in-totals",
         "set_bid_ai_inclusion",
     ),
+    # --- Phase 11: talking to public submitters (docs/api/contract-phase11.md) ----------
+    ("GET", "/api/v1/ideas/{idea}/submission/messages", "list_submission_messages"),
+    ("POST", "/api/v1/ideas/{idea}/submission/messages", "send_submission_message"),
+    ("POST", "/api/v1/public/track/messages", "send_tracking_reply"),
 ]
 
 PHASE10_OPERATIONS: frozenset[str] = frozenset(
     operation_id for _, path, operation_id in CONTRACT if "bid" in path
 )
-"""Phase 10's 33 operations (contract-phase10 section 2)."""
+"""Phase 10's 34 operations (contract-phase10 section 2)."""
+
+PHASE11_OPERATIONS: frozenset[str] = frozenset(
+    {"list_submission_messages", "send_submission_message", "send_tracking_reply"}
+)
+"""Phase 11's three operations (contract-phase11 section 2)."""
 
 ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT
 
@@ -514,7 +523,18 @@ _NEW_BID: dict[str, Any] = {
     "notes": "Sent by email and post.",
 }
 
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+_MESSAGES = "/api/v1/ideas/CUST-21/submission/messages"
+_MESSAGE_BODY = "Thanks! Which stores did you have in mind?\nWe'd like to try it in two."
+
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    # --- Phase 11: talking to public submitters (contract-phase11) ----------------------
+    "list_submission_messages": (f"{_MESSAGES}?limit=20", None),
+    "send_submission_message": (_MESSAGES, {"body": _MESSAGE_BODY}),
+    "send_tracking_reply": (
+        "/api/v1/public/track/messages",
+        {"token": "Zq3v9Xb2Lk7Wm4Np8Rt6Yc1Hd5Gf0Js_Ua-Ee2Oo4Ii", "body": "All of them."},
+    ),
+}
 
 # Phase 10 operations already implemented (tests/bids): a valid request each, for the
 # shape and session checks. Move a row here from STUBS when you implement it.
@@ -768,6 +788,8 @@ PUBLIC_OPERATIONS = frozenset(
         "verify_submission_email",
         "get_branding",
         "get_brand_asset",
+        # Phase 11: the submitter's reply from their tracking page
+        "send_tracking_reply",
     }
 )
 """Operations that need no session (sign-in and sign-out, unsubscribe links, the public
@@ -1910,9 +1932,10 @@ def test_research_notifications_are_in_the_contract(app: FastAPI) -> None:
     schemas = app.openapi()["components"]["schemas"]
     types = ["researcher_assigned", "research_reminder"]
 
-    # Phase 10 appends its three bid types after these (contract-phase10 section 9).
-    assert schemas["NotificationType"]["enum"][-5:-3] == types
-    assert schemas["UnsubscribeScope"]["enum"][-7:-5] == types
+    # Phase 10 appends its three bid types after these (contract-phase10 section 9), Phase
+    # 11 one more (contract-phase11 section 6).
+    assert schemas["NotificationType"]["enum"][-6:-4] == types
+    assert schemas["UnsubscribeScope"]["enum"][-8:-6] == types
     assert schemas["UnsubscribeScope"]["enum"][-2:] == ["digest", "all"]
     assert set(types) <= set(schemas["NotificationPreferencesUpdate"]["properties"])
     assert {"due_at"} <= set(schemas["ResearcherAssignedNotification"]["required"])
@@ -1960,8 +1983,8 @@ def test_phase10_has_its_34_operations_under_one_tag(app: FastAPI) -> None:
 
     assert tagged == PHASE10_OPERATIONS
     assert len(PHASE10_OPERATIONS) == 34
-    assert set(STUBS) | set(PHASE10_REQUESTS) == PHASE10_OPERATIONS
-    assert not set(STUBS) & set(PHASE10_REQUESTS)
+    assert set(PHASE10_REQUESTS) == PHASE10_OPERATIONS
+    assert not set(STUBS) & PHASE10_OPERATIONS
 
 
 @pytest.mark.usefixtures("signed_in")
@@ -2411,8 +2434,14 @@ def test_bid_notifications_and_my_work_are_in_the_contract(app: FastAPI) -> None
     schemas = app.openapi()["components"]["schemas"]
     types = ["assessor_assigned", "assessment_reminder", "assessments_complete"]
 
-    assert schemas["NotificationType"]["enum"][-3:] == types
-    assert schemas["UnsubscribeScope"]["enum"][-5:] == [*types, "digest", "all"]
+    # Phase 11 appends "submitter_replied" after these (contract-phase11 section 6).
+    assert schemas["NotificationType"]["enum"][-4:-1] == types
+    assert schemas["UnsubscribeScope"]["enum"][-6:] == [
+        *types,
+        "submitter_replied",
+        "digest",
+        "all",
+    ]
     assert set(types) <= set(schemas["NotificationPreferencesUpdate"]["properties"])
     assert {"call", "sections", "due_at"} <= set(
         schemas["AssessorAssignedNotification"]["required"]
@@ -2439,3 +2468,167 @@ def test_bid_notifications_and_my_work_are_in_the_contract(app: FastAPI) -> None
     assert {"bid_call_state", "bid_rejected"} <= set(schemas["AiBlockedReason"]["enum"])
     assert "bid_id" in schemas["AiRun"]["required"]
     assert "bid_ai_assessment_id" in schemas["AiRunResult"]["required"]
+
+
+# --- Phase 11 (contract-phase11) ----------------------------------------------------------
+def test_phase11_has_its_three_operations(app: FastAPI) -> None:
+    operations = {
+        operation["operationId"]: operation
+        for item in app.openapi()["paths"].values()
+        for operation in item.values()
+    }
+
+    assert operations["list_submission_messages"]["tags"] == ["submissions"]
+    assert operations["send_submission_message"]["tags"] == ["submissions"]
+    assert operations["send_tracking_reply"]["tags"] == ["public"]
+    assert {"201"} <= set(operations["send_submission_message"]["responses"])
+    assert {"201", "409", "415", "429"} <= set(operations["send_tracking_reply"]["responses"])
+    assert {"409", "429"} <= set(operations["send_submission_message"]["responses"])
+    assert set(STUBS) <= PHASE11_OPERATIONS
+
+
+def test_phase11_shapes_are_in_the_contract(app: FastAPI) -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    assert {"can_message"} <= set(schemas["IdeaSubmissionPermissions"]["required"])
+    assert "messages" in schemas["IdeaSubmission"]["required"]
+    assert set(schemas["SubmissionMessagesSummary"]["required"]) == {
+        "count",
+        "last_message_at",
+        "last_direction",
+        "delivery",
+        "blocked",
+    }
+    assert set(schemas["SubmissionMessage"]["required"]) == {
+        "id",
+        "direction",
+        "body",
+        "created_at",
+        "author",
+        "emailed",
+    }
+    # Public pages show no people: a tracked message has no author, only a direction.
+    assert set(schemas["TrackedMessage"]["required"]) == {"id", "direction", "body", "created_at"}
+    assert {
+        "messages",
+        "message_count",
+        "team_messages_emailed",
+        "can_reply",
+        "reply_blocked",
+    } <= set(schemas["TrackedSubmission"]["required"])
+    assert "tracking_link_emailed" in schemas["EmailVerified"]["required"]
+    assert schemas["MessageDirection"]["enum"] == ["team", "submitter"]
+    assert schemas["MessageDelivery"]["enum"] == ["email", "tracking_page"]
+    assert schemas["SendBlocked"]["enum"] == [
+        "submitter_erased",
+        "conversation_full",
+        "project_archived",
+        "daily_limit",
+    ]
+    assert schemas["ReplyBlocked"]["enum"] == [
+        "awaiting_team",
+        "conversation_full",
+        "project_archived",
+        "daily_limit",
+    ]
+    # The reply notification carries nothing but the idea (never the submitter's text).
+    assert set(schemas["SubmitterRepliedNotification"]["properties"]) == {
+        "id",
+        "created_at",
+        "read_at",
+        "idea",
+        "actor",
+        "type",
+    }
+    assert "submitter_replied" in schemas["NotificationPreferencesUpdate"]["properties"]
+    assert "submission.message" not in json.dumps(schemas["NotificationType"])
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    ("operation_id", "url", "body"),
+    [
+        ("send_submission_message", None, {}),
+        ("send_submission_message", None, {"body": ""}),
+        ("send_submission_message", None, {"body": "   \n\t  "}),
+        ("send_submission_message", None, {"body": "\u200b\u2060\u202e"}),
+        ("send_submission_message", None, {"body": "x" * 4_001}),
+        ("send_submission_message", None, {"body": "a\x00b"}),
+        ("send_submission_message", None, {"body": "tagged \U000e0041"}),
+        ("send_submission_message", None, {"body": "Hi", "to": "jo@example.org"}),
+        ("send_submission_message", None, {"body": "Hi", "body_md": "**Hi**"}),
+        ("send_submission_message", None, {"body": ["Hi"]}),
+        ("list_submission_messages", f"{_MESSAGES}?limit=0", None),
+        ("list_submission_messages", f"{_MESSAGES}?limit=1000", None),
+    ],
+)
+async def test_invalid_phase11_requests_are_rejected(
+    client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
+) -> None:
+    valid_url, valid_body = STUBS[operation_id]
+
+    response = await client.request(
+        _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"body": "All of them."},
+        {"token": "short", "body": "All of them."},
+        {"token": TRACKING_TOKEN},
+        {"token": TRACKING_TOKEN, "body": ""},
+        {"token": TRACKING_TOKEN, "body": "\u200b"},
+        {"token": TRACKING_TOKEN, "body": "x" * 4_001},
+        {"token": TRACKING_TOKEN, "body": "Hi", "name": "Jo"},
+        {"token": TRACKING_TOKEN, "body": "Hi", "direction": "team"},
+    ],
+)
+async def test_invalid_replies_are_rejected_without_a_session(
+    client: httpx.AsyncClient, body: dict[str, Any]
+) -> None:
+    response = await client.post("/api/v1/public/track/messages", json=body)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+
+
+async def test_a_reply_must_be_json(client: httpx.AsyncClient) -> None:
+    """Like every public write (contract-phase4 section 1): a form post or text body from
+    another site is 415 before the body is read."""
+    for content_type in ("text/plain", "application/x-www-form-urlencoded", None):
+        headers = {"content-type": content_type} if content_type else {}
+        response = await client.post(
+            "/api/v1/public/track/messages",
+            content=json.dumps({"token": TRACKING_TOKEN, "body": "All of them."}),
+            headers=headers,
+        )
+        assert response.status_code == 415, (content_type, response.text)
+        assert response.json()["code"] == "unsupported_media_type"
+
+
+@pytest.mark.usefixtures("signed_in")
+@pytest.mark.parametrize(
+    "text",
+    [
+        "x" * 4_000,
+        "Line one\nLine two\r\nLine three",
+        "  Padded, trimmed.  ",
+        "<script>alert(1)</script> is just text here",
+        "**not bold**, [not a link](https://example.org)",
+        "Family 👨\u200d👩\u200d👧 and café",
+    ],
+)
+async def test_valid_message_bodies_reach_the_stub(client: httpx.AsyncClient, text: str) -> None:
+    url, _ = STUBS["send_submission_message"]
+    reply_url, reply = STUBS["send_tracking_reply"]
+
+    response = await client.post(url, json={"body": text})
+    reply_response = await client.post(reply_url, json=(reply or {}) | {"body": text})
+
+    assert response.status_code == 501, response.text
+    assert reply_response.status_code == 501, reply_response.text

@@ -42,8 +42,16 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
-from app.models.enums import EmailStatus, EmailType, NotificationMode, NotificationType
+from app.models.enums import (
+    SUBMITTER_EMAIL_TYPES,
+    EmailStatus,
+    EmailType,
+    NotificationMode,
+    NotificationType,
+)
 from app.models.types import str_enum
+
+_SUBMITTER_TYPES_SQL = ", ".join(f"'{t.value}'" for t in SUBMITTER_EMAIL_TYPES)
 
 MAX_EMAIL_ATTEMPTS = 12
 """Attempts before a notification email fails for good (contract-phase3 section 3.9).
@@ -67,8 +75,10 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     The recipient is a user (address looked up at send time, so a changed address is
     used and a deactivated user gets nothing) or, for a test email to another address
     and Phase 4's public submitters, ``to_address``. Submitter emails
-    (``submission_received``, ``submission_status_changed``) and only they name their
-    idea (``idea_id``, required for them, so erasure finds every one): they are rendered
+    (:data:`app.models.enums.SUBMITTER_EMAIL_TYPES`: ``submission_received``,
+    ``submission_status_changed``; Phase 11 ``submission_link``, ``submission_message``) and
+    only they name their idea (``idea_id``, required for them, so erasure finds every one):
+    they are rendered
     from the idea and its ``public_submissions`` row at send time, deleted with the
     idea, and deleted when the submitter's details are erased (contract-phase4 section
     3.8). The per-address limit on confirmation emails doesn't count these rows
@@ -87,10 +97,10 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="next_attempt_iff_pending",
         ),
         CheckConstraint("(status = 'sent') = (sent_at IS NOT NULL)", name="sent_at_iff_sent"),
-        # Phase 4: submitter emails, and only they, name an idea; they go to an address.
+        # Phase 4: submitter emails, and only they, name an idea; they go to an address
+        # (Phase 11: the tracking-link and message emails too, SUBMITTER_EMAIL_TYPES).
         CheckConstraint(
-            "(idea_id IS NOT NULL)"
-            " = (type IN ('submission_received', 'submission_status_changed'))",
+            f"(idea_id IS NOT NULL) = (type IN ({_SUBMITTER_TYPES_SQL}))",
             name="idea_iff_submission_type",
         ),
         CheckConstraint("idea_id IS NULL OR to_address IS NOT NULL", name="submission_to_address"),
@@ -139,7 +149,8 @@ class OutboundEmail(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # "<uuid@host-of-the-first-base-url>", fixed at insert (the Message-ID header).
     message_id: Mapped[str] = mapped_column(String(255))
     # One email per key: "digest:<user id>:<local date>"; Phase 4:
-    # "submission_received:<submission id>:<n>", "submission_status:<event id>".
+    # "submission_received:<submission id>:<n>", "submission_status:<event id>"; Phase 11:
+    # "submission_link:<submission id>" (once ever), "submission_message:<message id>".
     idempotency_key: Mapped[str | None] = mapped_column(String(200))
     attempts: Mapped[int] = mapped_column(SmallInteger, default=0, server_default=text("0"))
     max_attempts: Mapped[int] = mapped_column(
@@ -160,12 +171,15 @@ class Notification(UUIDPrimaryKeyMixin, Base):
     ``payload`` holds the type's data (contract-phase3 section 3.3: from/to status,
     due date, reminder offset, submitted count); never scores. ``email_mode`` is the
     recipient's email preference for the type when the notification was created
-    (``off`` also when email isn't configured); ``email_id`` is the email that carried
-    it (its own immediate email, or the digest that collected it).
+    (``off`` also when email isn't configured, and, Phase 11, for a ``submitter_replied``
+    held back because the recipient had that idea's reply email in the last hour);
+    ``email_id`` is the email that carried it (its own immediate email, or the digest that
+    collected it).
 
     ``dedupe_key`` makes the fan-out idempotent: ``<type>:<activity event id>`` for
     event notifications, ``mention:<comment id>``,
-    ``evaluation_reminder:<idea id>:<due date>:<days before>``.
+    ``evaluation_reminder:<idea id>:<due date>:<days before>``; Phase 11
+    ``submitter_replied:<message id>``.
     """
 
     __tablename__ = "notifications"
@@ -200,6 +214,15 @@ class Notification(UUIDPrimaryKeyMixin, Base):
             "actor_id",
             "created_at",
             postgresql_where=text("type = 'mention'"),
+        ),
+        # Phase 11: at most one immediate "The submitter replied" email per recipient and
+        # idea an hour (contract-phase11 section 6).
+        Index(
+            "ix_notifications_submitter_replied",
+            "user_id",
+            "idea_id",
+            "created_at",
+            postgresql_where=text("type = 'submitter_replied'"),
         ),
         # The worker loads an email's notifications; pruning emails sets this null.
         Index(

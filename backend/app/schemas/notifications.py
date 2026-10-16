@@ -11,7 +11,7 @@ emailed).
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Final, Literal
@@ -30,6 +30,8 @@ __all__ = [
     "BID_NOTIFICATION_TYPES",
     "DEFAULT_MODES",
     "RESEARCH_GUEST_NOTIFICATION_TYPES",
+    "SUBMITTER_NOTIFICATION_TYPES",
+    "SUBMITTER_REPLIED_EMAIL_INTERVAL",
     "UNREAD_COUNT_CAP",
     "AssessmentReminderNotification",
     "AssessmentsCompleteNotification",
@@ -52,6 +54,7 @@ __all__ = [
     "ResearchReminderNotification",
     "ResearcherAssignedNotification",
     "StatusChangedNotification",
+    "SubmitterRepliedNotification",
     "UnsubscribeInfo",
     "UnsubscribeScope",
 ]
@@ -70,13 +73,26 @@ DEFAULT_MODES: Final[Mapping[NotificationType, NotificationMode]] = MappingProxy
         NotificationType.ASSESSOR_ASSIGNED: NotificationMode.IMMEDIATE,
         NotificationType.ASSESSMENT_REMINDER: NotificationMode.IMMEDIATE,
         NotificationType.ASSESSMENTS_COMPLETE: NotificationMode.IMMEDIATE,
+        NotificationType.SUBMITTER_REPLIED: NotificationMode.IMMEDIATE,
     }
 )
 """Email preference per type for anyone who hasn't chosen (contract-phase3 section 3.4):
 what you must act on arrives now; what you follow arrives once a day. Phase 8b's two
 research types are things you must act on (migration 0015 gives them ``off`` for anyone
 who had every earlier type off), and so are Phase 10's three bid types (migration 0016 does
-the same for them)."""
+the same for them) and Phase 11's "The submitter replied" (migration 0017)."""
+
+SUBMITTER_NOTIFICATION_TYPES: Final = frozenset({NotificationType.SUBMITTER_REPLIED})
+"""Phase 11: the types about the conversation with a public submitter. Each needs its
+recipient to hold ``public.message_submitter`` on the idea when it is created and again when
+it is shown or emailed, so nobody else (a member, a guest researcher) ever learns that a
+conversation exists; deliberately not in :data:`RESEARCH_GUEST_NOTIFICATION_TYPES`. None
+carries the submitter's text, name or address (untrusted public input: phishing)."""
+
+SUBMITTER_REPLIED_EMAIL_INTERVAL: Final = timedelta(hours=1)
+"""Phase 11: at most one immediate "The submitter replied" email per recipient and idea in
+this interval; later replies in it reach the inbox only (their ``email_mode`` is ``off``).
+Digest recipients get one line per reply in their next digest."""
 
 BID_NOTIFICATION_TYPES: Final = frozenset(
     {
@@ -270,6 +286,16 @@ class AssessmentReminderNotification(_NotificationBase):
     )
 
 
+class SubmitterRepliedNotification(_NotificationBase):
+    """Phase 11, "The submitter replied": the person who sent the idea through the public form
+    replied to the team on their tracking page. Fixed words only: "The person who sent
+    <KEY> through the public form replied to the team." (never their text, name or address).
+    ``actor`` is always null (the public has no account). Link:
+    ``/ideas/{key}?submission=1`` (opens the idea at its submission panel's Messages)."""
+
+    type: Literal["submitter_replied"]
+
+
 class AssessmentsCompleteNotification(_NotificationBase):
     """Phase 10: every assigned assessor has submitted every section they assess for every
     bid that isn't rejected (to the idea's owner and the call's creator). Counts only: never
@@ -293,7 +319,8 @@ NotificationItem = Annotated[
     | ResearchReminderNotification
     | AssessorAssignedNotification
     | AssessmentReminderNotification
-    | AssessmentsCompleteNotification,
+    | AssessmentsCompleteNotification
+    | SubmitterRepliedNotification,
     Field(discriminator="type"),
 ]
 """One inbox entry; branch on ``type`` (skip types you don't know)."""
@@ -362,6 +389,7 @@ class NotificationPreferencesUpdate(RequestModel):
     assessor_assigned: NotificationMode | None = None
     assessment_reminder: NotificationMode | None = None
     assessments_complete: NotificationMode | None = None
+    submitter_replied: NotificationMode | None = None
 
 
 # --- Unsubscribe links ------------------------------------------------------------------
@@ -381,6 +409,7 @@ class UnsubscribeScope(StrEnum):
     ASSESSOR_ASSIGNED = "assessor_assigned"
     ASSESSMENT_REMINDER = "assessment_reminder"
     ASSESSMENTS_COMPLETE = "assessments_complete"
+    SUBMITTER_REPLIED = "submitter_replied"
     DIGEST = "digest"
     ALL = "all"
 

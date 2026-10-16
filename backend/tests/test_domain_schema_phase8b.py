@@ -30,8 +30,15 @@ from tests.test_domain_schema import (  # noqa: F401 - scratch_database_url is a
 )
 
 NEW_TYPES = ("researcher_assigned", "research_reminder")
-LATER_TYPES = ("assessor_assigned", "assessment_reminder", "assessments_complete")
-"""Phase 10's (migration 0016): not there at 0015."""
+LATER_TYPES = (
+    "assessor_assigned",
+    "assessment_reminder",
+    "assessments_complete",
+    "submitter_replied",
+    "submission_link",
+    "submission_message",
+)
+"""Phase 10's (migration 0016) and Phase 11's (0017): not there at 0015."""
 AT_0015 = tuple(t.value for t in NotificationType if t.value not in LATER_TYPES)
 EARLIER_TYPES = tuple(t for t in AT_0015 if t not in NEW_TYPES)
 

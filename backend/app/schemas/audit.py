@@ -83,6 +83,9 @@ class AuditAction(StrEnum):
     SUBMISSION_APPROVE = "submission.approve"
     SUBMISSION_REJECT = "submission.reject"
     SUBMISSION_ERASE = "submission.erase"
+    # Phase 11: a team message to a public submitter (contract-phase11 section 9; actor, the
+    # idea as target, details: rule and message id; never the text, name or address)
+    SUBMISSION_MESSAGE = "submission.message"
     BRANDING_UPDATE = "branding.update"
     # API keys and MCP (contract-phase5 section 3.6)
     API_KEY_CREATE = "api_key.create"

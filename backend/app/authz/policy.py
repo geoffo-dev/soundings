@@ -9,7 +9,7 @@ failed condition denies. Evaluation order (role matrix section 2), first failure
    confirmation (c12, for everyone), or the implied view rule (``project.view`` /
    ``idea.view``, incl. c12) failing;
 3. **403**: the key's scopes, then no grant for the column or an overlay, then the
-   principal conditions (c1 submitter, c2, c3, c15, c16, c17, c20, c21);
+   principal conditions (c1 submitter, c2, c3, c15, c16, c17, c20, c21, c31);
 4. **422**: request-body conditions (c4);
 5. **409**: state conditions (archived project, then c19 (an idea held for moderation),
    then c1 status, c5, c6, c7, c10, c11, c13, c18, c26).
@@ -81,6 +81,7 @@ __all__ = [
     "FROZEN_WHILE_HELD",
     "ISSUING_KEYS",
     "MANAGE_USER_ACCESS",
+    "NAMED_PEOPLE_ONLY",
     "PERSONS_ONLY",
     "POLICY",
     "BidCallFacts",
@@ -100,6 +101,7 @@ __all__ = [
     "can",
     "counted_by_default",
     "is_agent",
+    "is_named_person",
     "may_cite_sources",
     "not_found",
     "require",
@@ -370,6 +372,11 @@ def _a_person(principal: Principal | None, _resource: Resource, _rule: Rule) -> 
     return principal is not None and not principal.user.is_service_account
 
 
+def _a_named_person(principal: Principal | None, _resource: Resource, _rule: Rule) -> bool:
+    """c31 (Phase 11): :func:`is_named_person`."""
+    return is_named_person(principal)
+
+
 def _researcher_eligible(_p: Principal | None, resource: Resource, _rule: Rule) -> bool:
     """c23: whoever is named researcher is an active person (nobody named: passes)."""
     return resource.researcher_named is None or resource.researcher_named.eligible
@@ -516,6 +523,9 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     # Not in the cells (role matrix section 4): properties of the principal.
     "c20": (Check("c20", 403, "break_glass_account", _not_issuing_for_break_glass),),
     "c21": (Check("c21", 403, "forbidden", _a_person),),
+    # Phase 11: a person's own account (never an AI agent or the break-glass account) writes
+    # to a public submitter; not written in the cells (NAMED_PEOPLE_ONLY), like c21.
+    "c31": (Check("c31", 403, "forbidden", _a_named_person),),
     # Phase 8b: who may be named the idea's researcher.
     "c23": (Check("c23", 422, "researcher_not_eligible", _researcher_eligible),),
     "c25": (Check("c25", 403, "outside_researcher_needs_admin", _researcher_in_private_project),),
@@ -605,13 +615,15 @@ class RuleSpec:
 
     def conditions_for(self, grant: Grant) -> tuple[Check, ...]:
         """The grant's checks in evaluation order: by phase, then as listed; the
-        archived-project check leads the 409s, then c19. c20 (:data:`ISSUING_KEYS`) and
-        c21 (:data:`PERSONS_ONLY`) are 403s that aren't written in the cells."""
+        archived-project check leads the 409s, then c19. c20 (:data:`ISSUING_KEYS`), c21
+        (:data:`PERSONS_ONLY`) and c31 (:data:`NAMED_PEOPLE_ONLY`) are 403s that aren't
+        written in the cells."""
         names = (
             (("archived",) if self.idea_write else ())
             + (("c19",) if self.frozen_while_held else ())
             + (("c20",) if self.rule in ISSUING_KEYS else ())
             + (("c21",) if self.rule in PERSONS_ONLY else ())
+            + (("c31",) if self.rule in NAMED_PEOPLE_ONLY else ())
             + grant.conditions
         )
         checks = [check for name in names for check in CONDITIONS[name]]
@@ -723,6 +735,14 @@ PERSONS_ONLY: Final = frozenset({Rule.IDEA_VOLUNTEER_OWNER})
 """c21: a service account (an AI agent) never volunteers as owner (403 ``forbidden``;
 contract-phase5 section 3.7). ``idea.assign_owner`` refuses one through c4."""
 
+NAMED_PEOPLE_ONLY: Final = frozenset({Rule.PUBLIC_MESSAGE_SUBMITTER})
+"""c31 (Phase 11, contract-phase11 section 4): only a person's own account talks to a public
+submitter on the team's behalf: never an AI agent's service account (which holds no admin
+role and owns no idea anyway) nor the break-glass account (a platform admin, column PA, but
+an emergency login, not someone the submitter's conversation should come from). 403
+``forbidden``; the account sees nothing of the conversation (``IdeaSubmission.messages``
+null)."""
+
 _G, _P, _I, _U = Scope.GLOBAL, Scope.PROJECT, Scope.IDEA, Scope.PUBLIC
 _W = True  # idea_write: 409 project_archived in archived projects
 
@@ -774,6 +794,11 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     # G. Public submission
     _row(Rule.PUBLIC_SUBMIT, _U, "Y (c8)",        "Y (c8)",     "Y (c8)",        "Y (c8)", "Y (c8)", "Y (c8)", "Y (c8)"),
     _row(Rule.PUBLIC_TRACK, _U,  "Y (c9)",        "Y (c9)",     "Y (c9)",        "Y (c9)", "Y (c9)", "Y (c9)", "Y (c9)"),
+    # G (Phase 11). Talking to the public submitter: the idea's owner and admins (c31: a
+    # named person). Not an idea write: reading works in an archived project and on a held
+    # or closed idea; sending's refusals (archived, erased, full, limits) are domain 409s and
+    # 429s, not conditions (contract-phase11 section 4).
+    _row(Rule.PUBLIC_MESSAGE_SUBMITTER, _I, "Y",  "Y",          "403",           "403",   "403",   "404", "401", owner="+"),
     # H. Platform administration
     _row(Rule.PLATFORM_MANAGE_USERS, _G, "Y",     "403",        "403",           "403",   "403",   "403", "401"),
     _row(Rule.PLATFORM_MANAGE_GROUPS, _G, "Y",    "403",        "403",           "403",   "403",   "403", "401"),
@@ -874,6 +899,8 @@ TABLE_L: Final[Mapping[Rule, tuple[str, str]]] = {
     Rule.BID_VIEW_SCORES:                ("404",     "·"),
     Rule.BID_AI_ASSESS:                  ("404",     "·"),
     Rule.AI_ASSESS_BID:                  ("404",     "·"),
+    # Phase 11: nothing of the conversation with the public submitter (no submission panel)
+    Rule.PUBLIC_MESSAGE_SUBMITTER:       ("404",     "·"),
 }
 # fmt: on
 
@@ -1305,6 +1332,17 @@ def writes_as_ai(principal: Principal | None) -> bool:
     whatever channel they came through; its Markdown and comments lose invisible and
     direction characters before validation (Phase 6 review M2)."""
     return is_agent(principal)
+
+
+def is_named_person(principal: Principal | None) -> bool:
+    """``principal.named_person`` (Phase 11, c31): a person's own account, signed in: never
+    an AI agent's service account, never the break-glass account. Only such a principal
+    writes to a public submitter (``public.message_submitter``)."""
+    return (
+        principal is not None
+        and not principal.user.is_service_account
+        and not principal.user.is_break_glass
+    )
 
 
 def searches_co_members_only(principal: Principal | None) -> bool:

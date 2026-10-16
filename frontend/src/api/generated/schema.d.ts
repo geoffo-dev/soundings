@@ -2157,6 +2157,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ideas/{idea}/submission/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The conversation with the submitter
+         * @description public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Newest first (cursor pagination; at most 200 in all); plain text, a submitter's untrusted. Reading also works in an archived project. Empty after the submitter's details were erased (the conversation is deleted with them).
+         */
+        get: operations["list_submission_messages"];
+        put?: never;
+        /**
+         * Message the submitter
+         * @description public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Plain text (1-4,000 characters). Appears on their tracking page, signed "The <project> team" (never your name), and is also emailed when their address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 submitter_erased, project_archived, conversation_full (200 messages); 429 too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour across ideas). Audited (submission.message, never the text).
+         */
+        post: operations["send_submission_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas/{idea}/submission/reject": {
         parameters: {
             query?: never;
@@ -3001,6 +3025,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/track/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply to the team
+         * @description Public (public.track, c9): the submitter's reply to the team from their tracking page, once the team has written to them (409 awaiting_team: the public never starts a conversation). Plain text (1-4,000 characters), untrusted everywhere. Checks in order: content type (415) -> body (422) -> per-IP link requests, shared with the other tracking routes (429) -> token (404, unknown and erased alike) -> 30 replies per client IP an hour (429) -> 409 awaiting_team, project_archived, conversation_full (200 messages) -> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the text). Not audited (no actor; the message is the record). Returns the tracking page.
+         */
+        post: operations["send_tracking_reply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/track/updates": {
         parameters: {
             query?: never;
@@ -3052,7 +3096,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm a submitter's address
-         * @description Public (public.track, c9): the token from the confirmation email (/verify#<token>, valid 3 days), posted when the person clicks Confirm (never on page load). Confirms the address (idempotent); an idea held for confirmation moves on to moderation or to the team. Works while public submission is on for the instance, even if the project's form was turned off since. 404 for an invalid, expired or used-up token (the submission was erased, deleted or its address changed). Throttled per client IP (429).
+         * @description Public (public.track, c9): the token from the confirmation email (/verify#<token>, valid 3 days), posted when the person clicks Confirm (never on page load). Confirms the address (idempotent); an idea held for confirmation moves on to moderation or to the team. Phase 11: the first confirmation also emails the private tracking link to that address (tracking_link_emailed; never again after). Works while public submission is on for the instance, even if the project's form was turned off since. 404 for an invalid, expired or used-up token (the submission was erased, deleted or its address changed). Throttled per client IP (429).
          */
         post: operations["verify_submission_email"];
         delete?: never;
@@ -4465,7 +4509,7 @@ export interface components {
          *     allowed an admin action.
          * @enum {string}
          */
-        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete" | "project.bid_template_replace" | "bid_call.create" | "bid_call.update" | "bid_call.template_replace" | "bid_call.status_change" | "bid_call.award" | "bid_call.delete" | "bid_call.assessors_change" | "bid.create" | "bid.update" | "bid.delete" | "bid.reject" | "bid.reinstate" | "bid.must_have_decide" | "bid_document.upload" | "bid_document.update" | "bid_document.delete" | "bid_assessment.submit" | "bid_assessment.include_ai";
+        AuditAction: "session.sign_in" | "session.sign_in_denied" | "session.sign_out" | "user.create" | "user.update" | "user.external_ids_replace" | "user.identity_link" | "user.identity_unlink" | "user.sessions_end" | "user.groups_sync" | "user.anonymise" | "group.create" | "group.update" | "group.delete" | "group.mapping_replace" | "group.member_add" | "group.member_remove" | "project.create" | "project.update" | "project.member_add" | "project.member_update" | "project.member_remove" | "project.group_grant_add" | "project.group_grant_update" | "project.group_grant_remove" | "project.rubric_replace" | "project.proposal_template_replace" | "project.research_step_change" | "project.research_checklist_replace" | "idea.delete" | "idea.owner_change" | "idea.researcher_change" | "idea.status_change" | "idea.research_override" | "evaluator.add" | "evaluator.remove" | "evaluation.submit" | "evaluation.close" | "evaluation.reopen" | "email.test_send" | "email.retry" | "submission.approve" | "submission.reject" | "submission.erase" | "submission.message" | "branding.update" | "api_key.create" | "api_key.revoke" | "mcp.call" | "ai_agent.register" | "ai_agent.update" | "ai_run.request" | "ai_run.cancel" | "evaluation.include_ai" | "ai_note.delete" | "project.bid_template_replace" | "bid_call.create" | "bid_call.update" | "bid_call.template_replace" | "bid_call.status_change" | "bid_call.award" | "bid_call.delete" | "bid_call.assessors_change" | "bid.create" | "bid.update" | "bid.delete" | "bid.reject" | "bid.reinstate" | "bid.must_have_decide" | "bid_document.upload" | "bid_document.update" | "bid_document.delete" | "bid_assessment.submit" | "bid_assessment.include_ai";
         /**
          * AuditEntry
          * @description One audit entry. Ids are resolved to names where the thing still exists.
@@ -6781,7 +6825,7 @@ export interface components {
          * @description What an outbox email is (``outbound_email.type``).
          * @enum {string}
          */
-        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "digest" | "test" | "submission_received" | "submission_status_changed";
+        EmailType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "submitter_replied" | "digest" | "test" | "submission_received" | "submission_status_changed" | "submission_link" | "submission_message";
         /**
          * EmailVerified
          * @description The confirmation page after the person clicked "Confirm" (the page posts the
@@ -6798,6 +6842,12 @@ export interface components {
              * @description The idea's title as submitted.
              */
             title: string;
+            /**
+             * Tracking Link Emailed
+             * @description Phase 11: this confirmation was the address's first and queued the email with the private tracking link (email is set up): say "We've emailed you a private link to follow your idea." False on a repeated confirmation and without email.
+             * @default false
+             */
+            tracking_link_emailed: boolean;
         };
         /**
          * Evaluation
@@ -7943,6 +7993,8 @@ export interface components {
              * Format: uuid
              */
             idea_id: string;
+            /** @description Phase 11: the conversation with the submitter, in short; null unless you hold public.message_submitter (the idea's owner, project and platform admins, in a session): nobody else learns that one exists. */
+            messages: components["schemas"]["SubmissionMessagesSummary"] | null;
             /**
              * Name
              * @description The name they gave (anyone who can view the idea sees it); null if none.
@@ -7962,6 +8014,12 @@ export interface components {
              * @description public.erase_submitter and not erased yet.
              */
             can_erase: boolean;
+            /**
+             * Can Message
+             * @description Phase 11: public.message_submitter (the idea's owner, project and platform admins, in a session) and a message can be sent now (messages.blocked is null): show the composer.
+             * @default false
+             */
+            can_message: boolean;
             /**
              * Can Moderate
              * @description idea.moderate and the idea is held for moderation.
@@ -8317,6 +8375,19 @@ export interface components {
             type: "mention";
         };
         /**
+         * MessageDelivery
+         * @description Phase 11: where a new team message reaches the submitter.
+         * @enum {string}
+         */
+        MessageDelivery: "email" | "tracking_page";
+        /**
+         * MessageDirection
+         * @description Phase 11: who wrote a message in the conversation with a public submitter
+         *     (``submission_messages.direction``; contract-phase11 section 3).
+         * @enum {string}
+         */
+        MessageDirection: "team" | "submitter";
+        /**
          * ModerationItem
          * @description A public idea waiting for approval: everything needed to decide.
          */
@@ -8538,7 +8609,7 @@ export interface components {
          */
         NotificationPage: {
             /** Items */
-            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"] | components["schemas"]["ResearcherAssignedNotification"] | components["schemas"]["ResearchReminderNotification"] | components["schemas"]["AssessorAssignedNotification"] | components["schemas"]["AssessmentReminderNotification"] | components["schemas"]["AssessmentsCompleteNotification"])[];
+            items: (components["schemas"]["OwnerAssignedNotification"] | components["schemas"]["EvaluatorInvitedNotification"] | components["schemas"]["EvaluationReminderNotification"] | components["schemas"]["EvaluationsCompleteNotification"] | components["schemas"]["StatusChangedNotification"] | components["schemas"]["CommentNotification"] | components["schemas"]["MentionNotification"] | components["schemas"]["ResearcherAssignedNotification"] | components["schemas"]["ResearchReminderNotification"] | components["schemas"]["AssessorAssignedNotification"] | components["schemas"]["AssessmentReminderNotification"] | components["schemas"]["AssessmentsCompleteNotification"] | components["schemas"]["SubmitterRepliedNotification"])[];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -8593,6 +8664,7 @@ export interface components {
             research_reminder?: components["schemas"]["NotificationMode"] | null;
             researcher_assigned?: components["schemas"]["NotificationMode"] | null;
             status_changed?: components["schemas"]["NotificationMode"] | null;
+            submitter_replied?: components["schemas"]["NotificationMode"] | null;
         };
         /**
          * NotificationSummary
@@ -8621,7 +8693,7 @@ export interface components {
          *     email preference; the in-app inbox always gets every notification.
          * @enum {string}
          */
-        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete";
+        NotificationType: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "submitter_replied";
         /**
          * OutboxEmail
          * @description One email in the outbox. Its content isn't stored (rendered when sent).
@@ -9613,7 +9685,10 @@ export interface components {
              * @description <base URL>/<slug>/submit, to copy and share.
              */
             form_url: string;
-            /** Intro Md */
+            /**
+             * Intro Md
+             * @description The text shown at the top of the public form, above the fields (Markdown: headings, lists, links; no raw HTML). Phase 11 (D3): label it so in Project settings -> Public form.
+             */
             intro_md: string;
             /**
              * Moderation Required
@@ -9633,7 +9708,10 @@ export interface components {
         PublicFormSettingsUpdate: {
             /** Enabled */
             enabled?: boolean | null;
-            /** Intro Md */
+            /**
+             * Intro Md
+             * @description The text at the top of the public form (Markdown, at most 2,000 characters).
+             */
             intro_md?: string | null;
             /** Moderation Required */
             moderation_required?: boolean | null;
@@ -9731,13 +9809,13 @@ export interface components {
         };
         /**
          * PublicSubmissionReceipt
-         * @description The confirmation page. The tracking link is shown once here (and emailed when
-         *     there is an address): only its hash is kept to look it up.
+         * @description The confirmation page. The tracking link is shown once here (and, Phase 11, emailed
+         *     once the address is confirmed): only its hash and a sealed copy are kept.
          */
         PublicSubmissionReceipt: {
             /**
              * Email Sent
-             * @description An address was given and email is set up: say "We'll also email you the link." True even when the per-address limit held that email back (the limit is silent, so this can't reveal how often an address was used).
+             * @description An address was given and email is set up: we emailed them a link to confirm it, and (Phase 11) once they confirm we email them this tracking link, so say "Once you confirm your address, we'll email you this link too." The confirmation email itself never carries the tracking link. True even when the per-address limit held the confirmation email back (the limit is silent, so this can't reveal how often an address was used).
              */
             email_sent: boolean;
             /** @description email_verification: ask them to open the link we emailed; moderation: the team reviews new ideas first; null: the team can see it now. */
@@ -9831,6 +9909,12 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * ReplyBlocked
+         * @description Phase 11: why the submitter can't reply on their tracking page now.
+         * @enum {string}
+         */
+        ReplyBlocked: "awaiting_team" | "conversation_full" | "project_archived" | "daily_limit";
         /** ResearchAnswer */
         ResearchAnswer: {
             /**
@@ -10502,6 +10586,12 @@ export interface components {
             projects: components["schemas"]["ProjectRef"][];
         };
         /**
+         * SendBlocked
+         * @description Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``).
+         * @enum {string}
+         */
+        SendBlocked: "submitter_erased" | "conversation_full" | "project_archived" | "daily_limit";
+        /**
          * SimilarIdea
          * @description An idea whose title or summary is like this one's, in any project you can view.
          *     No score data (blind rules are unaffected).
@@ -10805,6 +10895,78 @@ export interface components {
             shortlisted?: string | null;
         };
         /**
+         * SubmissionMessage
+         * @description Phase 11: a message in the conversation, as the team sees it.
+         */
+        SubmissionMessage: {
+            /** @description Who on the team wrote it (submitters see only "The <project> team"); null for the submitter's replies and if the user no longer exists. */
+            author: components["schemas"]["UserRef"] | null;
+            /**
+             * Body
+             * @description Plain text; render with line breaks, never as Markdown or HTML. A submitter's text is untrusted public input (don't make its links clickable).
+             */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            direction: components["schemas"]["MessageDirection"];
+            /**
+             * Emailed
+             * @description A team message that was also emailed to their confirmed address (queued when sent); false: tracking page only. Always false for replies.
+             */
+            emailed: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * SubmissionMessageCreate
+         * @description Phase 11: a message from the team to the submitter (plain text).
+         */
+        SubmissionMessageCreate: {
+            /** Body */
+            body: string;
+        };
+        /**
+         * SubmissionMessagePage
+         * @description Newest first (load earlier messages with ``next_cursor``; show them oldest at the
+         *     top). At most 200 in all.
+         */
+        SubmissionMessagePage: {
+            /** Items */
+            items: components["schemas"]["SubmissionMessage"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * SubmissionMessagesSummary
+         * @description Phase 11: what the submission panel needs to show the Messages section; only for
+         *     whoever holds public.message_submitter (``IdeaSubmission.messages`` is null for everyone
+         *     else, who must not learn that a conversation exists).
+         */
+        SubmissionMessagesSummary: {
+            /** @description Why a message can't be sent now (say so instead of the composer); null: can. */
+            blocked: components["schemas"]["SendBlocked"] | null;
+            /**
+             * Count
+             * @description Messages in the conversation, both directions.
+             */
+            count: number;
+            /** @description Where a message sent now reaches them; tracking_page: say before sending "They'll see it only on their tracking page." */
+            delivery: components["schemas"]["MessageDelivery"];
+            /** @description Who wrote the latest message (submitter: "They replied"); null if none. */
+            last_direction: components["schemas"]["MessageDirection"] | null;
+            /**
+             * Last Message At
+             * @description The latest message's time; null if none.
+             */
+            last_message_at: string | null;
+        };
+        /**
          * SubmitterContact
          * @description Only for project and platform admins (``public.erase_submitter``).
          */
@@ -10818,6 +10980,40 @@ export interface components {
             email_verified: boolean;
             /** Wants Updates */
             wants_updates: boolean;
+        };
+        /**
+         * SubmitterRepliedNotification
+         * @description Phase 11, "The submitter replied": the person who sent the idea through the public form
+         *     replied to the team on their tracking page. Fixed words only: "The person who sent
+         *     <KEY> through the public form replied to the team." (never their text, name or address).
+         *     ``actor`` is always null (the public has no account). Link:
+         *     ``/ideas/{key}?submission=1`` (opens the idea at its submission panel's Messages).
+         */
+        SubmitterRepliedNotification: {
+            /** @description Who caused it; null for reminders (sent by Soundings) or if the user no longer exists. */
+            actor: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description The idea it is about, with its current title and status. */
+            idea: components["schemas"]["IdeaRef"];
+            /**
+             * Read At
+             * @description Null while unread.
+             */
+            read_at: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "submitter_replied";
         };
         /**
          * SuggestionSource
@@ -10873,6 +11069,31 @@ export interface components {
             title: string;
         };
         /**
+         * TrackedMessage
+         * @description Phase 11: a message on the tracking page. The team's are shown as "The <project
+         *     name> team" (never a person: public pages show no people), the submitter's as "You";
+         *     plain text with its line breaks (never Markdown or HTML).
+         */
+        TrackedMessage: {
+            /**
+             * Body
+             * @description Plain text; render with line breaks, never as Markdown.
+             */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** @description team: show "The <project> team"; submitter: show "You". */
+            direction: components["schemas"]["MessageDirection"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
          * TrackedStatusChange
          * @description A change of the status the submitter sees. Phase 8: never ``research``: an idea in
          *     Research is reported as the status before Research in its project's lifecycle (``new``
@@ -10900,10 +11121,17 @@ export interface components {
          * @description The private tracking page: what the submitter sent and its status, nothing
          *     else (no people, comments, evaluations, scores, or anything the team wrote: the
          *     title and summary are the submitter's own, as sent, even if the team edited the
-         *     idea since).
+         *     idea since). Phase 11: plus the conversation with the team (the one thing the team
+         *     writes that the submitter sees, signed "The <project> team").
          */
         TrackedSubmission: {
             branding: components["schemas"]["EffectiveBranding"];
+            /**
+             * Can Reply
+             * @description Phase 11: show the reply box (reply_blocked is null).
+             * @default false
+             */
+            can_reply: boolean;
             /**
              * Can Resend Verification
              * @description An unconfirmed address is on file and another confirmation email may be sent now (at most 3 a day).
@@ -10923,12 +11151,28 @@ export interface components {
              * @description Changes of the status shown here since it reached the team, oldest first (Research counts as the status before it; moves that change nothing shown are left out).
              */
             history: components["schemas"]["TrackedStatusChange"][];
+            /**
+             * Message Count
+             * @description Phase 11: messages in the conversation, both directions.
+             * @default 0
+             */
+            message_count: number;
+            /**
+             * Messages
+             * @description Phase 11: the conversation with the team, oldest first: the latest 100 at most (message_count says how many there are). Empty until the team writes: then show a Messages section.
+             */
+            messages: components["schemas"]["TrackedMessage"][];
             project: components["schemas"]["PublicProjectRef"];
             /**
              * Reached Team At
              * @description When it reached the team (the "With the team" step): at submission when nothing held it, else when the confirmation or the approval released it. Null while held. Added after the contract (2026-10-02).
              */
             reached_team_at: string | null;
+            /**
+             * @description Phase 11: why there is no reply box now; null when can_reply.
+             * @default awaiting_team
+             */
+            reply_blocked: components["schemas"]["ReplyBlocked"] | null;
             resolution: components["schemas"]["Resolution"] | null;
             /** @description Never research: Phase 8 reports an idea in Research as the status before it in the project's lifecycle (new before evaluation, shortlisted before the proposal), with that status's label. */
             status: components["schemas"]["IdeaStatus"];
@@ -10945,12 +11189,29 @@ export interface components {
              */
             summary: string;
             /**
+             * Team Messages Emailed
+             * @description Phase 11: the team's messages are also emailed to the address on file (it is confirmed and email is set up): "We'll also email you when the team writes." False: they appear only here.
+             * @default false
+             */
+            team_messages_emailed: boolean;
+            /**
              * Title
              * @description As submitted.
              */
             title: string;
             /** Wants Updates */
             wants_updates: boolean;
+        };
+        /**
+         * TrackingReplyRequest
+         * @description Phase 11: the submitter's reply to the team, from their tracking page (the token from
+         *     its URL's fragment, as for every tracking write).
+         */
+        TrackingReplyRequest: {
+            /** Body */
+            body: string;
+            /** Token */
+            token: string;
         };
         /**
          * TrackingRequest
@@ -10999,7 +11260,7 @@ export interface components {
          *     currently sent in the digest (the digest's link), or every type.
          * @enum {string}
          */
-        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "digest" | "all";
+        UnsubscribeScope: "owner_assigned" | "evaluator_invited" | "evaluation_reminder" | "evaluations_complete" | "status_changed" | "comment" | "mention" | "researcher_assigned" | "research_reminder" | "assessor_assigned" | "assessment_reminder" | "assessments_complete" | "submitter_replied" | "digest" | "all";
         /**
          * UserGroup
          * @description A group the user belongs to, with provenance (both flags can be true).
@@ -20846,6 +21107,178 @@ export interface operations {
             };
         };
     };
+    list_submission_messages: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from next_cursor. */
+                cursor?: string | null;
+                /** @description Page size. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionMessagePage"];
+                };
+            };
+            /** @description Bad request (e.g. invalid_cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    send_submission_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The idea: its id (UUID) or its key such as "CUST-12" (any case). */
+                idea: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmissionMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionMessage"];
+                };
+            };
+            /** @description Not signed in (unauthorized) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not allowed (forbidden, csrf_failed, or a specific code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     reject_submission: {
         parameters: {
             query?: never;
@@ -24492,6 +24925,84 @@ export interface operations {
             };
             /** @description Not found, or not visible to you (not_found) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    send_tracking_reply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackingReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackedSubmission"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

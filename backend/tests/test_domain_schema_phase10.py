@@ -56,7 +56,11 @@ from tests.test_domain_schema import (  # noqa: F401 - scratch_database_url is a
 )
 
 NEW_TYPES = ("assessor_assigned", "assessment_reminder", "assessments_complete")
-EARLIER_TYPES = tuple(t.value for t in NotificationType if t.value not in NEW_TYPES)
+LATER_TYPES = ("submitter_replied", "submission_link", "submission_message")
+"""Phase 11's (migration 0017): not there at 0016."""
+AT_0016 = tuple(t.value for t in NotificationType if t.value not in LATER_TYPES)
+EARLIER_TYPES = tuple(t for t in AT_0016 if t not in NEW_TYPES)
+EMAIL_AT_0016 = tuple(t.value for t in EmailType if t.value not in LATER_TYPES)
 SCALE = "{Nothing,Poor,Weak,Fair,Good,Excellent}"
 
 
@@ -85,11 +89,11 @@ def test_enum_values_are_the_migrations() -> None:
     assert tuple(ExtractionError) == m.EXTRACTION_ERRORS
     assert tuple(EvaluationStatus) == m.ASSESSMENT_STATUSES
     assert tuple(AiRunKind) == m.KINDS
-    assert tuple(NotificationType) == m.NOTIFICATION_TYPES
+    assert AT_0016 == m.NOTIFICATION_TYPES
     assert m.NOTIFICATION_TYPES_BEFORE == EARLIER_TYPES
     assert m.NEW_TYPES == NEW_TYPES
-    assert tuple(EmailType) == m.EMAIL_TYPES
-    assert tuple(t for t in EmailType if t.value not in NEW_TYPES) == m.EMAIL_TYPES_BEFORE
+    assert EMAIL_AT_0016 == m.EMAIL_TYPES
+    assert tuple(t for t in EMAIL_AT_0016 if t not in NEW_TYPES) == m.EMAIL_TYPES_BEFORE
     assert m.NEW_ACTIVITY_TYPES == PHASE10_ACTIVITY_TYPES
     assert m.PURPOSES_DISTINCT == AI_PURPOSES_DISTINCT_SQL
     assert (m.DOCUMENT_MAX_BYTES, m.TEXT_MAX_CHARS, m.SCALE_POINTS) == (

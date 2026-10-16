@@ -22,6 +22,7 @@ from app.auth.public_form import JsonOnlyRoute, check_throttle
 from app.auth.throttle import ALTCHA_THROTTLE, PUBLIC_FORM_THROTTLE, PUBLIC_TOKEN_THROTTLE
 from app.config import Settings
 from app.db import SessionDep
+from app.errors import NotImplementedProblem
 from app.models.base import utcnow
 from app.public import forms, submit, tracking
 from app.schemas.public import (
@@ -31,6 +32,7 @@ from app.schemas.public import (
     PublicSubmissionCreate,
     PublicSubmissionReceipt,
     TrackedSubmission,
+    TrackingReplyRequest,
     TrackingRequest,
     TrackingUpdatesRequest,
     VerificationRequest,
@@ -226,6 +228,31 @@ async def erase_tracked_submission(
 
 
 @router.post(
+    "/track/messages",
+    operation_id="send_tracking_reply",
+    status_code=status.HTTP_201_CREATED,
+    summary="Reply to the team",
+    description=(
+        "Public (public.track, c9): the submitter's reply to the team from their tracking page, "
+        "once the team has written to them (409 awaiting_team: the public never starts a "
+        "conversation). Plain text (1-4,000 characters), untrusted everywhere. Checks in "
+        "order: content type (415) -> body (422) -> per-IP link requests, shared with the "
+        "other tracking routes (429) -> token (404, unknown and erased alike) -> 30 replies "
+        "per client IP an hour (429) -> 409 awaiting_team, project_archived, "
+        "conversation_full (200 messages) -> 10 replies per submission in 24 hours (429 "
+        "too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the "
+        "text). Not audited (no actor; the message is the record). Returns the tracking page."
+    ),
+    responses=problems(404, 409, 415, 422, 429),
+)
+async def send_tracking_reply(
+    request: Request, session: SessionDep, body: TrackingReplyRequest
+) -> TrackedSubmission:
+    _link_throttle(request)
+    raise NotImplementedProblem
+
+
+@router.post(
     "/verify-email",
     operation_id="verify_submission_email",
     summary="Confirm a submitter's address",
@@ -233,7 +260,9 @@ async def erase_tracked_submission(
         "Public (public.track, c9): the token from the confirmation email "
         "(/verify#<token>, valid 3 days), posted when the person clicks Confirm (never "
         "on page load). Confirms the address (idempotent); an idea held for confirmation "
-        "moves on to moderation or to the team. Works while public submission is on for "
+        "moves on to moderation or to the team. Phase 11: the first confirmation also emails "
+        "the private tracking link to that address (tracking_link_emailed; never again "
+        "after). Works while public submission is on for "
         "the instance, even if the project's form was turned off since. 404 for an "
         "invalid, expired or used-up token (the submission was erased, deleted or its "
         "address changed). Throttled per client IP (429)."

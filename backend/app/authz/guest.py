@@ -73,9 +73,9 @@ RESEARCH_GUEST_ACCESS: Final[dict[str, GuestAccess]] = {
     "reopen_proposal_thread": _H, "delete_proposal_comment": _H,
     "list_proposal_suggestions": _H, "create_proposal_suggestion": _H,
     "accept_proposal_suggestion": _H, "discard_proposal_suggestion": _H,
-    # The submission panel (404)
+    # The submission panel (404), Phase 11: its conversation with the submitter too
     "get_idea_submission": _H, "approve_submission": _H, "reject_submission": _H,
-    "erase_submitter": _H,
+    "erase_submitter": _H, "list_submission_messages": _H, "send_submission_message": _H,
     # The AI panel and its stream (404)
     "list_idea_ai_runs": _H, "request_ai_evaluation": _H, "request_ai_research": _H,
     "request_ai_section_draft": _H, "get_ai_run": _H, "cancel_ai_run": _H,

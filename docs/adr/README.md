@@ -24,6 +24,7 @@ go in [../decisions.md](../decisions.md) instead.
 | [0016](0016-research-assignment-and-guest-researcher.md) | A researcher per idea (columns on ideas) and guest access to that one idea as a policy column (R) with a researcher overlay and a deny-by-default route table | Proposed |
 | [0017](0017-continuous-delivery.md) | Continuous delivery from GitLab and GitHub through one deploy script (Helm, image by digest), cluster access only from inside (GitLab agent, ARC runners), one CI per environment | Proposed |
 | [0018](0018-bid-evaluation.md) | Bid evaluation: a call per idea with its own template copy, documents in Postgres with a raw-body upload and its own limit, extraction in a worker child, blind per section, AI evidence checked against the text | Proposed |
+| [0019](0019-public-submitter-messages.md) | Talking to public submitters: messages relayed through Soundings in the team's name, replies on the tracking page, the tracking link emailed once after the first confirmation | Proposed |
 
 ## Writing a new ADR
 
