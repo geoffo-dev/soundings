@@ -38,6 +38,10 @@ autoscaling:
 ingress:
   className: traefik
   tls: []
+  # (staging's ALB annotations stay: Traefik ignores them; the schema refuses null)
+# Traefik's pods, not staging's VPC.
+trustedProxies:
+  - 10.42.0.0/16
 
 networkPolicy:
   ingressFrom:

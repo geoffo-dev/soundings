@@ -1,0 +1,74 @@
+# Staging's OIDC client in keycloak-v26 (realm faster), through Crossplane's
+# provider-keycloak. Cluster-scoped. The client secret is soundings-oidc's (app-secrets.yaml),
+# so the app and Keycloak share it without anyone copying it.
+#
+# A ProviderConfig for keycloak-v26: crossplane/keycloak-credentials (synced by External
+# Secrets) holds master-realm admin-cli credentials. If another ProviderConfig takes them
+# over, point providerConfigRef below at that one and drop this.
+apiVersion: keycloak.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: keycloak-provider-config
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: keycloak-credentials
+      namespace: crossplane
+      key: credentials
+---
+apiVersion: openidclient.keycloak.crossplane.io/v1alpha1
+kind: Client
+metadata:
+  name: soundings-staging
+spec:
+  # Orphan: deleting this object leaves the client in Keycloak (and the app signed in).
+  deletionPolicy: Orphan
+  managementPolicies: [Observe, Create, Update]
+  providerConfigRef:
+    name: keycloak-provider-config
+  forProvider:
+    realmId: faster
+    clientId: soundings-staging
+    name: Soundings (staging)
+    enabled: true
+    accessType: CONFIDENTIAL
+    clientSecretSecretRef:
+      name: soundings-oidc
+      namespace: soundings-staging
+      key: client-secret
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    pkceCodeChallengeMethod: S256
+    rootUrl: https://soundings-staging.ops.faster.ice.mod.gov.uk
+    baseUrl: https://soundings-staging.ops.faster.ice.mod.gov.uk
+    validRedirectUris:
+      - https://soundings-staging.ops.faster.ice.mod.gov.uk/api/v1/auth/callback
+    validPostLogoutRedirectUris:
+      - https://soundings-staging.ops.faster.ice.mod.gov.uk/login?signed_out=1
+    webOrigins:
+      - https://soundings-staging.ops.faster.ice.mod.gov.uk
+---
+# The groups claim (oidc.groupsClaim: groups) with full paths, as the dev realm's mapper:
+# group mappings in Admin → Groups name groups like /soundings/admins.
+apiVersion: openidgroup.keycloak.crossplane.io/v1alpha1
+kind: GroupMembershipProtocolMapper
+metadata:
+  name: soundings-staging-groups
+spec:
+  deletionPolicy: Orphan
+  managementPolicies: [Observe, Create, Update]
+  providerConfigRef:
+    name: keycloak-provider-config
+  forProvider:
+    realmId: faster
+    clientIdRef:
+      name: soundings-staging
+    name: groups
+    claimName: groups
+    fullPath: true
+    addToIdToken: true
+    addToAccessToken: true
+    addToUserinfo: true

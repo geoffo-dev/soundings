@@ -60,7 +60,9 @@ frontend/         React 19 + TS SPA and design system — npm, Vite 8, Tailwind 
   src/components/ui/  design system; /design shows it (dev only)
 deploy/helm/      Helm chart          deploy/kagent/  example kagent 0.10 manifests (agents, BYO fake)
 deploy/environments/  CD values per environment (staging, production; no secrets), cluster-setup.yaml
-                  (namespaces, the soundings-deployer ClusterRole), k3s.values.yaml (rehearsal overlay)
+                  (namespaces, the soundings-deployer ClusterRole), k3s.values.yaml (rehearsal overlay);
+                  staging/ the faster-ops-cluster prerequisites (ESO, CNPG, Crossplane Keycloak
+                  client; `kubectl apply -k` by hand, not by CI)
 deploy/ci/        GitHub ARC: runner values, arc-rbac.yaml (no runner rights; soundings-ci-deployer
                   per environment), deploy-runner.Dockerfile (ARC runner and `tools` deploy images)
 deploy/gitlab-agent/  the GitLab agents' RBAC and chart values; .gitlab/agents/soundings-<env>/ their

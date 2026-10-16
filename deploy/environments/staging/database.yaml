@@ -1,0 +1,30 @@
+# Staging's PostgreSQL 16 (CloudNativePG 1.25): externalDatabase in ../staging.values.yaml.
+# CNPG creates Secret soundings-staging-db-app (key password, owner soundings) and serves
+# TLS (sslmode require), service soundings-staging-db-rw. One instance on EBS: staging,
+# no HA; no backups configured. pg_trgm is a trusted extension: the
+# migrations create it as the database owner.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: soundings-staging-db
+  namespace: soundings-staging
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: soundings
+      owner: soundings
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+  storage:
+    size: 5Gi
+    storageClass: ebs-general
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi

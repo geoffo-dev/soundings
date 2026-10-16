@@ -1,0 +1,16 @@
+# Staging's prerequisites on faster-ops-cluster (applied once by hand, by someone with
+# cluster rights; the CI deployer can't: operator CRDs and a cluster-scoped Keycloak client):
+#
+#   kubectl --context <faster-ops-cluster> apply -k deploy/environments/staging
+#
+# Then deploy:staging installs the chart with ../staging.values.yaml. Nothing secret is
+# in git: External Secrets reads the registry token from AWS Secrets Manager and generates
+# the app's secrets once; CloudNativePG writes the database's; Crossplane registers the
+# OIDC client with the generated secret. Operator guide "Continuous delivery".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - registry-pull-secret.yaml
+  - app-secrets.yaml
+  - database.yaml
+  - keycloak.yaml

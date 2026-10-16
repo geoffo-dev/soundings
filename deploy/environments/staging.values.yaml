@@ -1,9 +1,10 @@
 # Staging: what scripts/deploy.sh deploys on every push to main (and on a vX.Y.Z tag before
-# production). Production mode, like production, with smaller resources. Example values:
-# replace the placeholders (hostnames, the IdP, the database) with your site's.
+# production). Production mode, like production, with smaller resources. On
+# faster-ops-cluster behind the shared ALB, keycloak-v26 for SSO and a CloudNativePG database.
 #
-# No secrets here. The Secrets named below are created by operators in soundings-staging
-# (docs/operator-guide.md "Continuous delivery"); the chart only references them. The image
+# No secrets here. The Secrets named below come from deploy/environments/staging/ (applied
+# once by hand: External Secrets, CloudNativePG, Crossplane); the chart only references them
+# and scripts/deploy.sh checks they exist before Helm runs. The image
 # (registry, repository, tag, digest) is set by the deploy: don't set image.repository or
 # global.imageRegistry here (scripts/deploy.sh refuses a values file that would change the
 # image it was asked to deploy).
@@ -16,7 +17,7 @@ image:
     - soundings-registry
 
 baseUrls:
-  - https://soundings.staging.example.internal
+  - https://soundings-staging.ops.faster.ice.mod.gov.uk
 
 logLevel: INFO
 
@@ -24,9 +25,10 @@ secretKey:
   existingSecret: soundings-app
   existingSecretKey: secret-key
 
-# Sign-in: SSO against the staging realm of your IdP (break-glass while issuer is empty).
+# Sign-in: SSO against keycloak-v26's faster realm (break-glass only while issuer is empty).
+# The client soundings-staging is Crossplane's (staging/keycloak.yaml).
 oidc:
-  issuer: https://login.example.internal/realms/staging
+  issuer: https://keycloak.ops.faster.ice.mod.gov.uk/realms/faster
   clientId: soundings-staging
   existingSecret: soundings-oidc
   groupsClaim: groups
@@ -35,13 +37,7 @@ breakGlass:
   enabled: true
   existingSecret: soundings-break-glass
 
-smtp:
-  host: smtp.example.internal
-  port: 587
-  security: starttls
-  existingSecret: soundings-smtp
-  from: soundings-staging@example.internal
-  fromName: Soundings (staging)
+# No SMTP yet: notifications are in-app only (platform admins see "Email isn't set up").
 
 timezone: Europe/London
 
@@ -53,13 +49,12 @@ migrations:
   activeDeadlineSeconds: 480
   waitForDatabaseSeconds: 120
 
-# An external database (CloudNativePG or a managed PostgreSQL): migrations then run in the
-# pre-upgrade hook Job, as in production. For a throwaway staging, postgresql.enabled: true
-# uses the bundled StatefulSet instead.
+# CloudNativePG Cluster soundings-staging-db in this namespace (staging/database.yaml): its
+# -rw Service and -app Secret. Migrations run in the pre-upgrade hook Job, as in production.
 postgresql:
   enabled: false
 externalDatabase:
-  host: soundings-staging-db-rw.databases.svc
+  host: soundings-staging-db-rw.soundings-staging.svc
   port: 5432
   database: soundings
   user: soundings
@@ -72,19 +67,26 @@ api:
 worker:
   replicas: 1
 
+# The shared internal ALB (AWS Load Balancer Controller, instance targets): TLS ends at
+# the ALB with ACM's certificate, so no tls here; external-dns publishes the host.
 ingress:
   enabled: true
-  className: nginx
+  className: alb
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: 1m
-  tls:
-    - secretName: soundings-tls
-      hosts:
-        - soundings.staging.example.internal
+    alb.ingress.kubernetes.io/group.name: shared-apps-alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
+    external-dns.alpha.kubernetes.io/ingress-hostname-source: defined-hosts-only
+
+# Instance targets reach the pods through a NodePort from the nodes, which no namespace or
+# pod selector matches: admit any source, and trust X-Forwarded-For only from the VPC
+# (nodes and the ALB), never from pods (10.40.0.0/16), so a pod can't pick its client IP.
+trustedProxies:
+  - 10.1.196.0/22
+trustedProxyHops: 1
 
 networkPolicy:
   enabled: true
-  ingressFrom:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+  ingressFrom: []

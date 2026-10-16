@@ -1431,8 +1431,14 @@ head, the newer of the two (unless the migration Job failed), so later deploys a
 rollbacks still see where the schema is. The values files hold no secrets: they name
 Secrets (`existingSecret`) that operators create in each namespace (`soundings-app`,
 `soundings-oidc`, `soundings-smtp`, `soundings-break-glass`, the database's,
-`soundings-tls`, the registry pull Secret `soundings-registry`). Edit their hostnames and
-IdP for your site; don't set `image.*` or `global.imageRegistry` there (the deploy sets the
+`soundings-tls`, the registry pull Secret `soundings-registry`). Before Helm runs, the
+deploy checks that every Secret the render references (environment keys, pull Secrets,
+secret volumes) exists with its key, and names the missing ones: without it a missing pull
+Secret only shows as a migration Job in `ImagePullBackOff` until `--atomic` gives up.
+`deploy/environments/staging/` is one site's example of creating them declaratively
+(External Secrets for the registry token and generated app secrets, a CloudNativePG
+Cluster, the Keycloak client through Crossplane), applied once by hand with
+`kubectl apply -k`. Edit the values' hostnames and IdP for your site; don't set `image.*` or `global.imageRegistry` there (the deploy sets the
 image). `make check-helm` renders both. A whole deploy can take about 7 × `HELM_TIMEOUT`
 (waiting for another, upgrade, test, rollback): the deploy jobs' timeouts are 90 minutes.
 
