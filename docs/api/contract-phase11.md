@@ -515,6 +515,10 @@ migration's docstring).
   (`tests/authz/test_route_rules.py`); the matrix test's row; table L's row.
 - The rule's policy row, c31 (`NAMED_PEOPLE_ONLY`) and the trait `is_named_person` are in
   `app/authz/policy.py`; the services that use them are the builders'.
+- `tests/research/test_guest_access.py` probes the two team routes as a guest (404) and pins
+  them in `STILL_STUBS` (strict expected failures: they answer 501 until built; then delete
+  them from `STILL_STUBS`); `tests/bids/test_route_guards.py` takes only Phase 10's rows from
+  `STUBS`.
 - The new fields of Phase 4's response models have **defaults** (`IdeaSubmission.messages`
   null, `permissions.can_message` false; `TrackedSubmission.messages` `[]`, `message_count`
   0, `team_messages_emailed` false, `can_reply` false, `reply_blocked` `awaiting_team`;

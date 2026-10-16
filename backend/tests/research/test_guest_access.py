@@ -266,6 +266,14 @@ ROUTES: dict[str, tuple[str, str, Any, object]] = {
     "approve_submission": ("POST", "/ideas/{key}/submission/approve", None, 404),
     "reject_submission": ("POST", "/ideas/{key}/submission/reject", None, 404),
     "erase_submitter": ("POST", "/ideas/{key}/submission/erase", None, 404),
+    # Phase 11: the conversation with the submitter
+    "list_submission_messages": ("GET", "/ideas/{key}/submission/messages", None, 404),
+    "send_submission_message": (
+        "POST",
+        "/ideas/{key}/submission/messages",
+        {"body": "Which stores did you mean?"},
+        404,
+    ),
     # hidden: the AI panel and its stream
     "list_idea_ai_runs": ("GET", "/ideas/{key}/ai-runs?kind=evaluate", None, 404),
     "request_ai_evaluation": ("POST", "/ideas/{key}/ai-runs/evaluation", {"agent_id": X}, 404),
@@ -400,16 +408,16 @@ ROUTES: dict[str, tuple[str, str, Any, object]] = {
         404,
     ),
 }
-STILL_STUBS: frozenset[str] = frozenset()
-"""Operations still answering 501 (none since Phase 10's last backend part): a guest's 404
-for one would be pinned as an expected failure until it's built."""
+STILL_STUBS: frozenset[str] = frozenset({"list_submission_messages", "send_submission_message"})
+"""Operations still answering 501 (Phase 11's contract stubs): a guest's 404 for one is
+pinned as an expected failure until it's built."""
 
 
 def _operations() -> list[Any]:
     return [
         pytest.param(
             operation,
-            marks=pytest.mark.xfail(strict=True, reason="a Phase 10 stub (501) until built"),
+            marks=pytest.mark.xfail(strict=True, reason="a contract stub (501) until built"),
         )
         if operation in STILL_STUBS
         else operation

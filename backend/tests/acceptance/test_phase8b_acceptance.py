@@ -868,12 +868,13 @@ async def test_ac8b_api_1_an_outside_researcher_sees_one_idea_and_nothing_else(
         ("cancel_ai_run", "POST", f"/ideas/{key}/ai-runs/{run}/cancel", None, {404}),
         ("stream_ai_run_events", "GET", f"/ideas/{key}/ai-runs/{run}/events", None, {404}),
     ]
-    # hidden: the call for bids (Phase 10, table L), with the guest table's requests; a
-    # route still answering 501 is pinned there (STILL_STUBS) until it's built.
+    # hidden: the call for bids (Phase 10, table L) and the conversation with the submitter
+    # (Phase 11), with the guest table's requests; a route still answering 501 is pinned there
+    # (STILL_STUBS) until it's built.
     probes += [
         (operation, method, path.format(key=key), body, {501 if operation in STILL_STUBS else 404})
         for operation, (method, path, body, _) in GUEST_ROUTES.items()
-        if path.startswith("/ideas/{key}/bid-call")
+        if path.startswith(("/ideas/{key}/bid-call", "/ideas/{key}/submission/messages"))
     ]
     outcomes = {}
     for operation, method, path, body, wanted in probes:

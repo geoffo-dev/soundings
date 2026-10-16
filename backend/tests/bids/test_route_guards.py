@@ -14,7 +14,10 @@ from tests.bids.conftest import Crew, assert_problem
 from tests.conftest import Login
 from tests.test_contract_routes import _METHODS, PHASE10_OPERATIONS, PHASE10_REQUESTS, STUBS
 
-REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {**PHASE10_REQUESTS, **STUBS}
+REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
+    **PHASE10_REQUESTS,
+    **{op: request for op, request in STUBS.items() if op in PHASE10_OPERATIONS},
+}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
