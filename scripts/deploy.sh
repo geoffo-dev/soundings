@@ -344,6 +344,38 @@ preflight() {
   done
 }
 
+# Every Secret the render references (env secretKeyRef name + key, imagePullSecrets, secret
+# volumes; not Ingress TLS, which cert-manager may create afterwards) but
+# doesn't create must exist before Helm runs: else pods sit in CreateContainerConfigError or
+# ImagePullBackOff until the timeout and --atomic rolls back. Reads key names, never values.
+check_secrets() { # rendered manifests
+  local refs own missing="" name key keys
+  own="$(awk '/^kind: / { secret = ($2 == "Secret") } secret && /^  name: / { gsub(/"/, "", $2); print $2; secret = 0 }' <<<"$1")"
+  refs="$(awk '
+    { gsub(/"/, "") }
+    /secretKeyRef:/ { ref = 1; n = ""; k = ""; next }
+    ref && /^ *name: / { n = $2 }
+    ref && /^ *key: / { k = $2 }
+    ref && n != "" && k != "" { print n, k; ref = 0 }
+    /imagePullSecrets:/ { pull = 1; next }
+    pull && /^ *- name: / { print $3, "-"; next }
+    { pull = 0 }
+    vol && /^ *secretName: / { print $2, "-" }
+    { vol = /^ *secret:$/ }' <<<"$1" | sort -u)"
+  while read -r name key; do
+    [ -n "$name" ] || continue
+    ! grep -qxF "$name" <<<"$own" || continue
+    # shellcheck disable=SC2016 # a Go template, not shell
+    if ! keys="$(kc get secret "$name" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}' 2>/dev/null)"; then
+      missing+="  secret/$name"$'\n'
+    elif [ "$key" != - ] && ! grep -qxF "$key" <<<"$keys"; then
+      missing+="  secret/$name has no key '$key'"$'\n'
+    fi
+  done <<<"$refs"
+  [ -z "$missing" ] || die "Secrets the release needs are missing (or unreadable) in $KUBE_NAMESPACE:
+${missing}  Operators create them before the first deploy (operator guide \"Continuous delivery\"; deploy/environments/<env>/ where there is one)."
+}
+
 # The other CI made the running release: each environment is deployed by one CI only.
 guard_other_ci() {
   local current="$1" by
@@ -533,6 +565,7 @@ case "$ACTION" in
     fi
 
     preflight
+    check_secrets "$rendered"
     current="$(deployed_revision)"
     guard_other_ci "$current"
     current_head=""
