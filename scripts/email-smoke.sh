@@ -78,7 +78,7 @@ cleanup() {
   for user_id in ${invited[@]+"${invited[@]}"}; do
     write DELETE "/ideas/$key/evaluators/$user_id" >/dev/null 2>&1 || true
   done
-  [ -f "$jar" ] && write POST /auth/logout >/dev/null 2>&1 || true
+  if [ -f "$jar" ]; then write POST /auth/logout >/dev/null 2>&1 || true; fi
   rm -rf "$work"
 }
 trap cleanup EXIT

@@ -1,0 +1,4 @@
+# SC2317 ("command appears to be unreachable"): shellcheck 0.9.0 (Ubuntu 24.04's, on the
+# GitHub runners) reports every function called indirectly (check-task.sh's
+# "${area}_checks", traps); newer releases don't.
+disable=SC2317

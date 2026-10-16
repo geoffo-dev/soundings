@@ -422,7 +422,7 @@ smoke() {
     [ -n "$line" ] || continue
     read -r name component phase deleting <<<"${line%%|*}"
     images="${line#*|}"
-    [ "$phase" = Running ] && [ -z "${deleting:-}" ] || continue
+    { [ "$phase" = Running ] && [ -z "${deleting:-}" ]; } || continue
     running=$((running + 1))
     [ "$component" != api ] || [ -n "$api_pod" ] || api_pod="$name"
     for image in $images; do
