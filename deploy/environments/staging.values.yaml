@@ -69,6 +69,11 @@ worker:
 
 # The shared internal ALB (AWS Load Balancer Controller, instance targets): TLS ends at
 # the ALB with ACM's certificate, so no tls here; external-dns publishes the host.
+# The ALB controller's default target type here is instance, which needs a NodePort
+# (pod IPs aren't routable from the VPC), as the shared ALB's other apps have.
+service:
+  type: NodePort
+
 ingress:
   enabled: true
   className: alb
