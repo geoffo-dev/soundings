@@ -10,7 +10,7 @@ settings, is in [docs/operator-guide.md, "Continuous delivery"](../../docs/opera
 | File | What it is |
 |---|---|
 | [`../environments/cluster-setup.yaml`](../environments/cluster-setup.yaml) | The namespaces and the `soundings-deployer` ClusterRole (namespaced rules) |
-| [`rbac.yaml`](rbac.yaml) | The agents' namespaces, agentk's Lease/Events Role, and `soundings-deployer` bound in `soundings-<env>` to each agent's ServiceAccount |
+| [`rbac.yaml`](rbac.yaml) | The agents' namespace `soundings-ops`, agentk's Lease/Events Role, and `soundings-deployer` bound in `soundings-<env>` to each agent's ServiceAccount |
 | [`rbac-ci-job.yaml`](rbac-ci-job.yaml) | Instead of `rbac.yaml` when one agent per cluster serves both environments (Premium, `access_as: ci_job`): `soundings-deployer` bound to each environment's job group, `gitlab:project_env:<project id>:<env>`; set `STAGING_KUBE_AGENT` and `PRODUCTION_KUBE_AGENT` to that agent |
 | [`values.yaml`](values.yaml) | Values for GitLab's `gitlab-agent` chart from your mirror: `rbac.create=false`, no container scanning, the token from a Secret |
 | [`../../.gitlab/agents/soundings-*/config.yaml`](../../.gitlab/agents/) | Each agent's `ci_access`: this project only, its environment only, protected refs only (main counts: see the operator guide's "Who can deploy") |
@@ -26,11 +26,11 @@ Install order (an operator with cluster-admin, once per cluster):
    it), since whoever may merge there may widen `ci_access`.
 4. Register the agents (Operate > Kubernetes clusters > Connect a cluster, names
    `soundings-staging` and `soundings-production`) and keep each token:
-   `kubectl -n gitlab-agent-staging create secret generic soundings-staging-agent-token --from-literal=token=<token>`
+   `kubectl -n soundings-ops create secret generic soundings-staging-agent-token --from-literal=token=<token>`
    (and the same for production).
 5. Mirror the chart and the agentk image, then install it twice (`values.yaml` has the
    command), with `--set-file config.kasCaCert=<internal CA>` when GitLab's certificate
    comes from an internal CA.
 6. Check: **Operate > Kubernetes clusters** shows both agents connected; then
-   `kubectl auth can-i --list -n soundings-production --as=system:serviceaccount:gitlab-agent-staging:soundings-staging-agent`
+   `kubectl auth can-i --list -n soundings-production --as=system:serviceaccount:soundings-ops:soundings-staging-agent`
    shows nothing beyond what every account may do.

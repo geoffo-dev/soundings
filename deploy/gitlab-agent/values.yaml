@@ -3,7 +3,7 @@
 #
 #   helm upgrade --install soundings-staging-agent gitlab-agent --version 2.32.0 \
 #     --repo https://nexus.ops.faster.ice.mod.gov.uk/repository/charts-gitlab \
-#     -n gitlab-agent-staging -f deploy/gitlab-agent/values.yaml \
+#     -n soundings-ops -f deploy/gitlab-agent/values.yaml \
 #     --set serviceAccount.name=soundings-staging-agent \
 #     --set config.secretName=soundings-staging-agent-token
 #

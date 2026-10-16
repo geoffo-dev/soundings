@@ -669,7 +669,7 @@ cmd_agents() {
         --from-literal="password=$(random 24)" >/dev/null
     kc -n "$ns" create secret docker-registry soundings-registry --docker-server="$REGISTRY_HOST" \
       --docker-username="$user" --docker-password="$pass" --dry-run=client -o yaml | kc apply -f - >/dev/null
-    kc -n "gitlab-agent-$env" create secret generic "soundings-$env-agent-token" \
+    kc -n soundings-ops create secret generic "soundings-$env-agent-token" \
       --from-literal="token=$(cat "$DIR/agent-$env.token")" --dry-run=client -o yaml | kc apply -f - >/dev/null
   done
 
@@ -680,7 +680,7 @@ cmd_agents() {
   for env in staging production; do
     log "installing agent soundings-$env (deploy/gitlab-agent/values.yaml, rbac.create=false)"
     ci_helm "$chart" upgrade --install "soundings-$env-agent" "./$(basename "$chart")" \
-      --namespace "gitlab-agent-$env" -f deploy/gitlab-agent/values.yaml \
+      --namespace soundings-ops -f deploy/gitlab-agent/values.yaml \
       --set "serviceAccount.name=soundings-$env-agent" --set "config.secretName=soundings-$env-agent-token" \
       --set "config.kasAddress=wss://$GITLAB_HOST:$WEB_PORT/-/kubernetes-agent/" \
       --set-file config.kasCaCert=tls/ca.crt \
@@ -694,7 +694,7 @@ cmd_agents() {
     connected="$(graphql "{ project(fullPath: \"$PROJECT_PATH\") { clusterAgents { nodes { name connections { nodes { connectedAt } } } } } }" |
       jq -r '[.data.project.clusterAgents.nodes[] | select((.connections.nodes | length) > 0) | .name] | sort | join(" ")')"
     [ "$connected" != "soundings-production soundings-staging" ] || break
-    [ $SECONDS -lt $deadline ] || die "agents not connected (connected: '${connected}'); kubectl -n gitlab-agent-staging logs deploy/soundings-staging-agent-gitlab-agent-v2"
+    [ $SECONDS -lt $deadline ] || die "agents not connected (connected: '${connected}'); kubectl -n soundings-ops logs deploy/soundings-staging-agent-gitlab-agent-v2"
     sleep 5
   done
   log "agents connected: $connected"
