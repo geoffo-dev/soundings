@@ -749,6 +749,14 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   command line and kills it; stop servers by pid. Page tests that wait for an error
   state shown after the client's query retries (about 3 s) need a 10 s timeout: the
   default 5 s flakes while backend tests or image builds load the machine.
+- **CI's backend tests** (~30 min) run only when `backend/`, `dev/keycloak/`, `dev/fake-agent/`
+  or the CI file changed since the push's previous commit (GitLab `rules:changes`; GitHub
+  skips the steps, so `deploy-staging`'s needs hold); tags always run them, `FULL_CHECKS=1`
+  forces them (GitLab pipeline variable, GitHub repository variable). A docs-only push after
+  a red backend push deploys without them: fix forward with a backend change or `FULL_CHECKS=1`.
+- **shellcheck 0.9.0** (Ubuntu 24.04's, GitHub runners) flags every indirectly called
+  function as SC2317: `.shellcheckrc` disables it. Under `set -o pipefail` never `| head`
+  (SIGPIPE: exit 141, flaky in CI); use `awk 'NR == 1'`.
 - **`ruff format`** also formats Python code blocks in `backend/README.md`.
 - **Keycloak:** it marks its cookies `Secure` even on http://localhost, so curl must
   pass cookies by hand (`scripts/lib/keycloak.sh` does). glibc and Node don't resolve

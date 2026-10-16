@@ -15,9 +15,14 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/repo/e2e"
 cp "$REPO_ROOT/.gitlab-ci.yml" "$work/repo/"
 echo '{}' >"$work/repo/e2e/package.json" # the e2e jobs' `exists:` rule
-git -C "$work/repo" init -q -b main
-git -C "$work/repo" -c user.email=ci@example.invalid -c user.name=ci add -A
-git -C "$work/repo" -c user.email=ci@example.invalid -c user.name=ci commit -qm pipeline
+gitc() { git -C "$work/repo" -c user.email=ci@example.invalid -c user.name=ci "$@"; }
+gitc init -q -b main
+# gitlab-ci-local evaluates `changes:` as `git diff origin/main`: an empty base, so the
+# pipeline file itself is the change (backend:test runs) until the docs-only case below.
+gitc commit -q --allow-empty -m base
+gitc update-ref refs/remotes/origin/main HEAD
+gitc add -A
+gitc commit -qm pipeline
 
 failed=0
 # expect "<what>" "<jobs that must be there>" "<jobs that must not>" [gitlab-ci-local --variable args]
@@ -64,5 +69,14 @@ expect "CD_ONLY=1: build, scan gate and staging without the long checks" \
 expect "CD_ONLY=1 on a vX.Y.Z tag: release check, release and gate stay" \
   "release:check image:trivy deploy:staging release:publish deploy:production" "$checks" \
   --variable "SOUNDINGS_DEPLOY=staging production" --variable CD_ONLY=1 --variable CI_COMMIT_TAG=v1.2.3 --variable CI_COMMIT_BRANCH=
+# backend:test only when its paths changed (rules:changes), else with a tag or FULL_CHECKS=1.
+gitc update-ref refs/remotes/origin/main HEAD
+mkdir -p "$work/repo/docs" && echo docs >"$work/repo/docs/x.md"
+gitc add -A
+gitc commit -qm docs
+expect "main, docs-only change: no backend:test" "backend:lint backend:typecheck e2e" "backend:test"
+expect "main, docs-only change, FULL_CHECKS=1: backend:test" "backend:test" "" --variable FULL_CHECKS=1
+expect "vX.Y.Z tag, docs-only change: backend:test" "backend:test" "" \
+  --variable CI_COMMIT_TAG=v1.2.3 --variable CI_COMMIT_BRANCH=
 [ "$failed" = 0 ] || { echo "==> .gitlab-ci.yml FAILED" >&2; exit 1; }
 echo "==> .gitlab-ci.yml passed" >&2

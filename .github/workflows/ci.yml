@@ -49,10 +49,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The tests take ~30 minutes, so they run only when something they test changed
+      # since the push's previous commit (a pull request: against its base). Tags, new
+      # branches, force-pushes and the FULL_CHECKS repository variable ("1") always run
+      # them. Lint and mypy always run. The job passes either way, so deploy-staging's
+      # needs still hold.
+      - name: Did anything the tests cover change?
+        id: changes
+        working-directory: .
+        env:
+          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          FULL: ${{ github.ref_type == 'tag' || vars.FULL_CHECKS == '1' }}
+        run: |
+          tests=true
+          if [ "$FULL" != true ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
+            git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; then
+            changed="$(git diff --name-only "$BEFORE" HEAD)"
+            grep -qE '^(backend/|dev/keycloak/|dev/fake-agent/|\.github/workflows/ci\.yml$)' <<<"$changed" || tests=false
+          fi
+          echo "tests=$tests" >>"$GITHUB_OUTPUT"
+          echo "backend tests: $tests"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: |
+      - if: steps.changes.outputs.tests == 'true'
+        run: |
           # shellcheck disable=SC2086 # the package list splits on purpose
           sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PDF_APT_PACKAGES
       - run: pip install "uv==0.8.17"
@@ -63,6 +84,7 @@ jobs:
       # code flow, group sync, the SPEC acceptance); they fail rather than skip when it
       # doesn't answer. Postgres comes from testcontainers on the runner's Docker.
       - name: Keycloak with the dev realm
+        if: steps.changes.outputs.tests == 'true'
         run: |
           docker run -d --name keycloak -p 127.0.0.1:8080:8080 \
             -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
@@ -70,11 +92,13 @@ jobs:
           python3 ../dev/keycloak/import_realm.py http://localhost:8080 --origin http://testserver
       # Mailpit for the email tests that talk to a real SMTP server (SMTP 1025, API 8025).
       - name: Mailpit
+        if: steps.changes.outputs.tests == 'true'
         run: |
           docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 \
             -e MP_SMTP_AUTH_ACCEPT_ANY=true -e MP_SMTP_AUTH_ALLOW_INSECURE=true \
             -e MP_DISABLE_VERSION_CHECK=true "$MAILPIT_IMAGE"
-      - run: uv run pytest
+      - if: steps.changes.outputs.tests == 'true'
+        run: uv run pytest
         env:
           SOUNDINGS_TEST_KEYCLOAK_URL: http://localhost:8080
           SOUNDINGS_TEST_MAILPIT_URL: http://localhost:8025

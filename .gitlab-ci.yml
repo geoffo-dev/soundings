@@ -54,6 +54,8 @@
 #                         pipeline); release:check, helm:lint, the build and the scan gate
 #                         still run, and deploy:production refuses such a pipeline. Never
 #                         set it as a project variable.
+#   FULL_CHECKS           "1" runs backend:test even when nothing under backend/,
+#                         dev/keycloak/, dev/fake-agent/ or this file changed (tags always do)
 # Pipeline variables (push options, Run pipeline, triggers) can change any of these: set
 # Settings > CI/CD > Variables > "Minimum role to use pipeline variables" to Maintainer.
 
@@ -135,6 +137,8 @@ variables:
   KAGENT_COMMIT: 68df64f671800c37c4204d81ebe0dd66ec35d223
   # "1": no lint/test/e2e/k3s jobs in this pipeline (see the header). Off by default.
   CD_ONLY: ""
+  # "1": backend:test even when its paths didn't change (see the header). Off by default.
+  FULL_CHECKS: ""
   # Caches live in the project dir so GitLab can cache them.
   UV_CACHE_DIR: ${CI_PROJECT_DIR}/.cache/uv
   UV_LINK_MODE: copy
@@ -330,6 +334,19 @@ migrations:lint:
 backend:test:
   extends: .backend
   stage: test
+  # ~30 minutes, so only when something it tests changed (a branch push: since the push's
+  # previous commit; a merge request: against its target; a new branch, a web or scheduled
+  # pipeline: always). Tags always run it; FULL_CHECKS=1 forces it
+  # (git push -o ci.variable="FULL_CHECKS=1", or Run pipeline).
+  rules:
+    - if: $CD_ONLY == "1"
+      when: never
+    - if: $CI_COMMIT_TAG || $FULL_CHECKS == "1"
+    - changes:
+        - backend/**/*
+        - dev/keycloak/**/*
+        - dev/fake-agent/**/*
+        - .gitlab-ci.yml
   # The runtime image's OS and interpreter (ADR 0011): Ubuntu 24.04, /usr/bin/python3.12,
   # and the Pango stack, so the PDF export tests render as the image does.
   image: ${UBUNTU_IMAGE}
