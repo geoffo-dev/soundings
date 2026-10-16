@@ -2166,13 +2166,13 @@ export interface paths {
         };
         /**
          * The conversation with the submitter
-         * @description public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Newest first (cursor pagination; at most 200 in all); plain text, a submitter's untrusted. Reading also works in an archived project. Empty after the submitter's details were erased (the conversation is deleted with them).
+         * @description public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Newest first (cursor pagination; at most 100 in all); plain text, a submitter's untrusted. Reading also works in an archived project. Empty after the submitter's details were erased (the conversation is deleted with them).
          */
         get: operations["list_submission_messages"];
         put?: never;
         /**
          * Message the submitter
-         * @description public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Plain text (1-4,000 characters). Appears on their tracking page, signed "The <project> team" (never your name), and is also emailed when their address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 submitter_erased, project_archived, conversation_full (200 messages); 429 too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour across ideas). Audited (submission.message, never the text).
+         * @description public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Plain text (1-4,000 characters). Appears on their tracking page, signed "The <project> team" (never your name), and is also emailed when their address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 project_archived, submitter_erased, public_submission_off (the instance's switch: tracking links don't open), conversation_full (100 messages); 429 too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour across ideas). Plain text sent as typed (no @mentions: nobody is notified). Audited (submission.message, never the text).
          */
         post: operations["send_submission_message"];
         delete?: never;
@@ -3025,6 +3025,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/track/forget-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove my email address
+         * @description Public (public.track, c9; Phase 11 review M2): the submitter removes their address, exactly as the 3-day rule for unconfirmed addresses does: the address, its confirmation and the status-email opt-in are cleared and every email of this idea to it is deleted, queued and sent (no message, link or status email follows). The tracking link, the idea and the conversation stay (team messages then reach the tracking page only). Idempotent without an address. 409 awaiting_confirmation while the idea waits for that address to be confirmed (it reaches the team only then; delete your details to withdraw it). Not audited (like the 3-day rule). Checks in order: 415 -> 422 -> per-IP link requests (429) -> token (404) -> 409. Returns the tracking page.
+         */
+        post: operations["forget_submission_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/track/messages": {
         parameters: {
             query?: never;
@@ -3036,7 +3056,7 @@ export interface paths {
         put?: never;
         /**
          * Reply to the team
-         * @description Public (public.track, c9): the submitter's reply to the team from their tracking page, once the team has written to them (409 awaiting_team: the public never starts a conversation). Plain text (1-4,000 characters), untrusted everywhere. Checks in order: content type (415) -> body (422) -> per-IP link requests, shared with the other tracking routes (429) -> token (404, unknown and erased alike) -> 30 replies per client IP an hour (429) -> 409 awaiting_team, project_archived, conversation_full (200 messages) -> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the text). Not audited (no actor; the message is the record). Returns the tracking page.
+         * @description Public (public.track, c9): the submitter's reply to the team from their tracking page, once the team has written to them (409 awaiting_team: the public never starts a conversation, and at most 10 replies follow each team message). Plain text (1-4,000 characters), untrusted everywhere. Checks in order: content type (415) -> body (422) -> per-IP link requests, shared with the other tracking routes (429) -> token (404, unknown and erased alike, or public submission off) -> 30 replies per client IP an hour (429) -> 409 project_archived, awaiting_team, conversation_full (100 messages) -> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the text). Not audited (no actor; the message is the record). Returns the tracking page.
          */
         post: operations["send_tracking_reply"];
         delete?: never;
@@ -9911,10 +9931,12 @@ export interface components {
         };
         /**
          * ReplyBlocked
-         * @description Phase 11: why the submitter can't reply on their tracking page now.
+         * @description Phase 11: why the submitter can't reply on their tracking page now, in the order they
+         *     are checked (the archived project leads, as everywhere: review C6). Show the Messages
+         *     section whenever ``messages`` isn't empty, whatever this says.
          * @enum {string}
          */
-        ReplyBlocked: "awaiting_team" | "conversation_full" | "project_archived" | "daily_limit";
+        ReplyBlocked: "project_archived" | "awaiting_team" | "conversation_full" | "daily_limit";
         /** ResearchAnswer */
         ResearchAnswer: {
             /**
@@ -10587,10 +10609,11 @@ export interface components {
         };
         /**
          * SendBlocked
-         * @description Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``).
+         * @description Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``), in the
+         *     order they are checked (the archived project leads the 409s, as everywhere: review C6).
          * @enum {string}
          */
-        SendBlocked: "submitter_erased" | "conversation_full" | "project_archived" | "daily_limit";
+        SendBlocked: "project_archived" | "submitter_erased" | "public_submission_off" | "conversation_full" | "daily_limit";
         /**
          * SimilarIdea
          * @description An idea whose title or summary is like this one's, in any project you can view.
@@ -10914,7 +10937,7 @@ export interface components {
             direction: components["schemas"]["MessageDirection"];
             /**
              * Emailed
-             * @description A team message that was also emailed to their confirmed address (queued when sent); false: tracking page only. Always false for replies.
+             * @description A team message for which an email to their confirmed address was queued when it was sent (say "Email queued", not "Emailed": the send may still fail, which only Admin -> Email shows; review C10); false: tracking page only. Always false for replies.
              */
             emailed: boolean;
             /**
@@ -10934,7 +10957,7 @@ export interface components {
         /**
          * SubmissionMessagePage
          * @description Newest first (load earlier messages with ``next_cursor``; show them oldest at the
-         *     top). At most 200 in all.
+         *     top). At most 100 in all.
          */
         SubmissionMessagePage: {
             /** Items */
@@ -11127,6 +11150,12 @@ export interface components {
         TrackedSubmission: {
             branding: components["schemas"]["EffectiveBranding"];
             /**
+             * Can Remove Email
+             * @description Phase 11 (review M2): an address is on file and may be removed now (forget_submission_email): offer "Remove my email address", which stops every email about this idea and keeps the link and the conversation. False without an address, and while the idea waits for that address to be confirmed (the confirmation is what sends it to the team).
+             * @default false
+             */
+            can_remove_email: boolean;
+            /**
              * Can Reply
              * @description Phase 11: show the reply box (reply_blocked is null).
              * @default false
@@ -11152,14 +11181,8 @@ export interface components {
              */
             history: components["schemas"]["TrackedStatusChange"][];
             /**
-             * Message Count
-             * @description Phase 11: messages in the conversation, both directions.
-             * @default 0
-             */
-            message_count: number;
-            /**
              * Messages
-             * @description Phase 11: the conversation with the team, oldest first: the latest 100 at most (message_count says how many there are). Empty until the team writes: then show a Messages section.
+             * @description Phase 11: the whole conversation with the team, oldest first (at most 100 messages). Empty until the team writes: then show a Messages section.
              */
             messages: components["schemas"]["TrackedMessage"][];
             project: components["schemas"]["PublicProjectRef"];
@@ -24925,6 +24948,84 @@ export interface operations {
             };
             /** @description Not found, or not visible to you (not_found) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Wrong Content-Type (unsupported_media_type) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many attempts (too_many_attempts): wait and retry */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    forget_submission_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackedSubmission"];
+                };
+            };
+            /** @description Not found, or not visible to you (not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflicts with the current state (see code) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

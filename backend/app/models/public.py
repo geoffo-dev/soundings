@@ -38,10 +38,8 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
-    ForeignKeyConstraint,
     Index,
     String,
-    UniqueConstraint,
     func,
     text,
 )
@@ -115,9 +113,6 @@ class PublicSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "created_at",
             postgresql_where=text("email IS NOT NULL AND email_verified_at IS NULL"),
         ),
-        # Phase 11: the target of submission_messages' (submission_id, idea_id), so a
-        # message's submission is always its idea's.
-        UniqueConstraint("id", "idea_id"),
     )
 
     idea_id: Mapped[uuid.UUID] = mapped_column(
@@ -189,11 +184,10 @@ class SubmissionMessage(UUIDPrimaryKeyMixin, Base):
     * ``emailed``: a team message for which a ``submission_message`` email was queued
       (the address was confirmed and email set up when it was sent); whether it was
       delivered is the outbox's business.
-    * ``submission_id`` + ``idea_id``: the submission and its idea, by a composite foreign
-      key (``public_submissions (id, idea_id)``), so a message can't name another idea's
-      submission; deleting the idea deletes its submission, which deletes the
-      conversation. Erasing the submitter's details deletes it explicitly (the submission
-      row stays).
+    * ``submission_id``: the submission (one per idea, so its idea is the submission's:
+      review C2 keeps no ``idea_id`` here), ``ON DELETE CASCADE``: deleting or rejecting the
+      idea deletes its submission, which deletes the conversation. Erasing the submitter's
+      details deletes it explicitly (the submission row stays).
 
     Not in the feed, search, MCP or exports, and it never moves the idea's
     ``last_activity_at`` (retention rule 4 reads the latest ``created_at`` here instead).
@@ -201,11 +195,6 @@ class SubmissionMessage(UUIDPrimaryKeyMixin, Base):
 
     __tablename__ = "submission_messages"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["submission_id", "idea_id"],
-            ["public_submissions.id", "public_submissions.idea_id"],
-            ondelete="CASCADE",
-        ),
         CheckConstraint(
             f"length(body) BETWEEN 1 AND {SUBMISSION_MESSAGE_MAX_LENGTH}", name="body_length"
         ),
@@ -213,9 +202,10 @@ class SubmissionMessage(UUIDPrimaryKeyMixin, Base):
         # row is deleted, which Soundings never does: people are deactivated).
         CheckConstraint("direction = 'team' OR author_id IS NULL", name="author_only_for_team"),
         CheckConstraint("direction = 'team' OR NOT emailed", name="emailed_only_for_team"),
-        # The conversation (newest or oldest first), its size (200 at most), the
-        # per-submission limits (team 20 / submitter 10 a day) and retention rule 4's
-        # latest message: all one submission's rows, at most 200.
+        # The conversation (newest or oldest first), its size (100 at most), the
+        # per-submission limits (team 20 / submitter 10 a day, 10 replies since the team's
+        # latest message), retention rule 4's latest message and the cascade: all one
+        # submission's rows, at most 100.
         Index(
             "ix_submission_messages_submission_id_created_at",
             "submission_id",
@@ -231,8 +221,9 @@ class SubmissionMessage(UUIDPrimaryKeyMixin, Base):
         ),
     )
 
-    submission_id: Mapped[uuid.UUID] = mapped_column()
-    idea_id: Mapped[uuid.UUID] = mapped_column()
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("public_submissions.id", ondelete="CASCADE")
+    )
     direction: Mapped[MessageDirection] = mapped_column(str_enum(MessageDirection, "direction"))
     author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     body: Mapped[str] = mapped_column(String(SUBMISSION_MESSAGE_MAX_LENGTH))

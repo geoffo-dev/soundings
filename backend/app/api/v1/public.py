@@ -235,18 +235,44 @@ async def erase_tracked_submission(
     description=(
         "Public (public.track, c9): the submitter's reply to the team from their tracking page, "
         "once the team has written to them (409 awaiting_team: the public never starts a "
-        "conversation). Plain text (1-4,000 characters), untrusted everywhere. Checks in "
-        "order: content type (415) -> body (422) -> per-IP link requests, shared with the "
-        "other tracking routes (429) -> token (404, unknown and erased alike) -> 30 replies "
-        "per client IP an hour (429) -> 409 awaiting_team, project_archived, "
-        "conversation_full (200 messages) -> 10 replies per submission in 24 hours (429 "
-        "too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the "
-        "text). Not audited (no actor; the message is the record). Returns the tracking page."
+        "conversation, and at most 10 replies follow each team message). Plain text (1-4,000 "
+        "characters), untrusted everywhere. Checks in order: content type (415) -> body (422) "
+        "-> per-IP link requests, shared with the other tracking routes (429) -> token (404, "
+        "unknown and erased alike, or public submission off) -> 30 replies per client IP an "
+        "hour (429) -> 409 project_archived, awaiting_team, conversation_full (100 messages) "
+        "-> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). "
+        "Notifies the team (submitter_replied, never the text). Not audited (no actor; the "
+        "message is the record). Returns the tracking page."
     ),
     responses=problems(404, 409, 415, 422, 429),
 )
 async def send_tracking_reply(
     request: Request, session: SessionDep, body: TrackingReplyRequest
+) -> TrackedSubmission:
+    _link_throttle(request)
+    raise NotImplementedProblem
+
+
+@router.post(
+    "/track/forget-email",
+    operation_id="forget_submission_email",
+    summary="Remove my email address",
+    description=(
+        "Public (public.track, c9; Phase 11 review M2): the submitter removes their address, "
+        "exactly as the 3-day rule for unconfirmed addresses does: the address, its "
+        "confirmation and the status-email opt-in are cleared and every email of this idea to "
+        "it is deleted, queued and sent (no message, link or status email follows). The "
+        "tracking link, the idea and the conversation stay (team messages then reach the "
+        "tracking page only). Idempotent without an address. 409 awaiting_confirmation while "
+        "the idea waits for that address to be confirmed (it reaches the team only then; "
+        "delete your details to withdraw it). Not audited (like the 3-day rule). Checks in "
+        "order: 415 -> 422 -> per-IP link requests (429) -> token (404) -> 409. Returns the "
+        "tracking page."
+    ),
+    responses=problems(404, 409, 415, 422, 429),
+)
+async def forget_submission_email(
+    request: Request, session: SessionDep, body: TrackingRequest
 ) -> TrackedSubmission:
     _link_throttle(request)
     raise NotImplementedProblem

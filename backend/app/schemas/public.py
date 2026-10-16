@@ -51,9 +51,9 @@ __all__ = [
     "SUBMISSION_MESSAGE_MAX_LENGTH",
     "SUBMITTER_MESSAGES_PER_ADDRESS_PER_HOUR",
     "SUBMITTER_MESSAGES_PER_SUBMISSION_PER_DAY",
+    "SUBMITTER_MESSAGES_SINCE_TEAM_MESSAGE",
     "TEAM_MESSAGES_PER_PERSON_PER_HOUR",
     "TEAM_MESSAGES_PER_SUBMISSION_PER_DAY",
-    "TRACKED_MESSAGES_SHOWN",
     "TRACKING_TOKEN_PATTERN",
     "VERIFICATION_TOKEN_PATTERN",
     "AltchaChallenge",
@@ -106,10 +106,9 @@ TrackingToken = Annotated[str, StringConstraints(pattern=TRACKING_TOKEN_PATTERN)
 VerificationToken = Annotated[str, StringConstraints(pattern=VERIFICATION_TOKEN_PATTERN)]
 
 # --- Phase 11: messages with the submitter (contract-phase11 section 5; constants) ------------
-CONVERSATION_MAX_MESSAGES: Final = 200
-"""Messages in one conversation, both directions; then 409 ``conversation_full``."""
-TRACKED_MESSAGES_SHOWN: Final = 100
-"""The latest messages the tracking page shows (oldest first)."""
+CONVERSATION_MAX_MESSAGES: Final = 100
+"""Messages in one conversation, both directions; then 409 ``conversation_full``. The tracking
+page and the panel show all of them (review C1: one cap, no "latest 100 of 140")."""
 MESSAGE_DAY: Final = timedelta(hours=24)
 MESSAGE_HOUR: Final = timedelta(hours=1)
 TEAM_MESSAGES_PER_SUBMISSION_PER_DAY: Final = 20
@@ -118,14 +117,22 @@ TEAM_MESSAGES_PER_PERSON_PER_HOUR: Final = 30
 """Messages one person sends to public submitters in any hour, all ideas (429)."""
 SUBMITTER_MESSAGES_PER_SUBMISSION_PER_DAY: Final = 10
 """Replies to one submission's conversation in any 24 hours, counted in the database (429)."""
+SUBMITTER_MESSAGES_SINCE_TEAM_MESSAGE: Final = 10
+"""Replies since the team's latest message (review S6): then 409 ``awaiting_team`` until the
+team writes again, so the replies, and the team's notifications, stay what the team invited
+and the submitter alone can't fill the conversation. Counted in the database, no new state."""
 SUBMITTER_MESSAGES_PER_ADDRESS_PER_HOUR: Final = 30
 """Replies from one client address (the trusted-proxy address, IPv6 per /64) in any hour, an
 in-process throttle like the other public ones (no address is stored)."""
 
 
+_LINE_BREAKS: Final = str.maketrans({"\r": "\n", "\u2028": "\n", "\u2029": "\n"})
+
+
 def normalise_line_breaks(value: str) -> str:
-    r"""``\r\n`` and a lone ``\r`` become ``\n``: one kind of line break is stored."""
-    return value.replace("\r\n", "\n").replace("\r", "\n")
+    r"""``\r\n``, a lone ``\r`` and the Unicode line and paragraph separators (U+2028,
+    U+2029; review C8) become ``\n``: one kind of line break is stored and shown."""
+    return value.replace("\r\n", "\n").translate(_LINE_BREAKS)
 
 
 MessageBody = Annotated[
@@ -137,7 +144,9 @@ MessageBody = Annotated[
 """A message between the team and a public submitter: **plain text** (never Markdown or
 HTML), 1-4,000 characters with at least one visible one; NUL and Unicode tag characters are
 a 422, other invisible characters are removed, the ends trimmed and line breaks kept (as
-``\n``). Shown with its line breaks as plain text everywhere; escaped in emails."""
+``\n``; ``\r\n``, ``\r``, U+2028 and U+2029 become ``\n``). Shown with its line breaks as plain
+text everywhere (wrapping anywhere, each message's box clipped: review C8); escaped in
+emails."""
 
 
 # --- The public form -----------------------------------------------------------------
@@ -326,16 +335,21 @@ class TrackedStatusChange(ResponseModel):
 
 
 class ReplyBlocked(StrEnum):
-    """Phase 11: why the submitter can't reply on their tracking page now."""
+    """Phase 11: why the submitter can't reply on their tracking page now, in the order they
+    are checked (the archived project leads, as everywhere: review C6). Show the Messages
+    section whenever ``messages`` isn't empty, whatever this says."""
 
-    AWAITING_TEAM = "awaiting_team"
-    """The team hasn't written yet: the public never starts a conversation (no reply box;
-    the Messages section isn't shown)."""
-    CONVERSATION_FULL = "conversation_full"
-    """200 messages in the conversation: "This conversation is full." (reading stays)."""
     PROJECT_ARCHIVED = "project_archived"
     """The project is archived: "The team isn't taking messages about this idea any more."
-    (reading stays)."""
+    (reading stays; 409 ``project_archived``)."""
+    AWAITING_TEAM = "awaiting_team"
+    """It's the team's turn (409 ``awaiting_team``): the team hasn't written yet (the public
+    never starts a conversation; no Messages section while ``messages`` is empty), or you have
+    replied 10 times since its latest message (review S6): "You can reply again once the team
+    writes back." """
+    CONVERSATION_FULL = "conversation_full"
+    """100 messages in the conversation: "This conversation is full." (reading stays; 409
+    ``conversation_full``)."""
     DAILY_LIMIT = "daily_limit"
     """10 replies in the last 24 hours: "You can reply again tomorrow." (sending anyway is 429
     ``too_many_attempts``)."""
@@ -406,16 +420,23 @@ class TrackedSubmission(ResponseModel):
         )
     )
     branding: EffectiveBranding
+    can_remove_email: bool = Field(
+        default=False,
+        description=(
+            "Phase 11 (review M2): an address is on file and may be removed now "
+            '(forget_submission_email): offer "Remove my email address", which stops every '
+            "email about this idea and keeps the link and the conversation. False without an "
+            "address, and while the idea waits for that address to be confirmed (the "
+            "confirmation is what sends it to the team)."
+        ),
+    )
     messages: list[TrackedMessage] = Field(
         default_factory=list,
         description=(
-            "Phase 11: the conversation with the team, oldest first: the latest "
-            f"{TRACKED_MESSAGES_SHOWN} at most (message_count says how many there are). Empty "
-            "until the team writes: then show a Messages section."
+            "Phase 11: the whole conversation with the team, oldest first (at most "
+            f"{CONVERSATION_MAX_MESSAGES} messages). Empty until the team writes: then show a "
+            "Messages section."
         ),
-    )
-    message_count: int = Field(
-        default=0, ge=0, description="Phase 11: messages in the conversation, both directions."
     )
     team_messages_emailed: bool = Field(
         default=False,
@@ -537,15 +558,20 @@ class MessageDelivery(StrEnum):
 
 
 class SendBlocked(StrEnum):
-    """Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``)."""
+    """Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``), in the
+    order they are checked (the archived project leads the 409s, as everywhere: review C6)."""
 
+    PROJECT_ARCHIVED = "project_archived"
+    """The project is archived: the conversation is read-only (409 ``project_archived``)."""
     SUBMITTER_ERASED = "submitter_erased"
     """Their details were erased: no link, no address, no conversation (409
     ``submitter_erased``)."""
+    PUBLIC_SUBMISSION_OFF = "public_submission_off"
+    """Public submission is off for the whole instance (``SOUNDINGS_PUBLIC_SUBMISSION_ENABLED``),
+    so every tracking link is 404 and nobody could read or answer a message (409
+    ``public_submission_off``; review C4). Reading stays."""
     CONVERSATION_FULL = "conversation_full"
-    """200 messages (409 ``conversation_full``)."""
-    PROJECT_ARCHIVED = "project_archived"
-    """The project is archived: the conversation is read-only (409 ``project_archived``)."""
+    """100 messages (409 ``conversation_full``)."""
     DAILY_LIMIT = "daily_limit"
     """The team sent 20 messages to this submitter in the last 24 hours (429
     ``too_many_attempts``). Your own hourly limit (30, every idea) isn't shown here: sending
@@ -593,15 +619,17 @@ class SubmissionMessage(ResponseModel):
     )
     emailed: bool = Field(
         description=(
-            "A team message that was also emailed to their confirmed address (queued when "
-            "sent); false: tracking page only. Always false for replies."
+            "A team message for which an email to their confirmed address was queued when it "
+            'was sent (say "Email queued", not "Emailed": the send may still fail, which only '
+            "Admin -> Email shows; review C10); false: tracking page only. Always false for "
+            "replies."
         )
     )
 
 
 class SubmissionMessagePage(Page[SubmissionMessage]):
     """Newest first (load earlier messages with ``next_cursor``; show them oldest at the
-    top). At most 200 in all."""
+    top). At most 100 in all."""
 
 
 class SubmissionMessageCreate(RequestModel):

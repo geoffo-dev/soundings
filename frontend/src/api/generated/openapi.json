@@ -13394,11 +13394,11 @@
         "type": "object"
       },
       "ReplyBlocked": {
-        "description": "Phase 11: why the submitter can't reply on their tracking page now.",
+        "description": "Phase 11: why the submitter can't reply on their tracking page now, in the order they\nare checked (the archived project leads, as everywhere: review C6). Show the Messages\nsection whenever ``messages`` isn't empty, whatever this says.",
         "enum": [
+          "project_archived",
           "awaiting_team",
           "conversation_full",
-          "project_archived",
           "daily_limit"
         ],
         "title": "ReplyBlocked",
@@ -14595,11 +14595,12 @@
         "type": "object"
       },
       "SendBlocked": {
-        "description": "Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``).",
+        "description": "Phase 11: why the team can't send a message now (``SubmissionMessagesSummary``), in the\norder they are checked (the archived project leads the 409s, as everywhere: review C6).",
         "enum": [
-          "submitter_erased",
-          "conversation_full",
           "project_archived",
+          "submitter_erased",
+          "public_submission_off",
+          "conversation_full",
           "daily_limit"
         ],
         "title": "SendBlocked",
@@ -15357,7 +15358,7 @@
             "$ref": "#/components/schemas/MessageDirection"
           },
           "emailed": {
-            "description": "A team message that was also emailed to their confirmed address (queued when sent); false: tracking page only. Always false for replies.",
+            "description": "A team message for which an email to their confirmed address was queued when it was sent (say \"Email queued\", not \"Emailed\": the send may still fail, which only Admin -> Email shows; review C10); false: tracking page only. Always false for replies.",
             "title": "Emailed",
             "type": "boolean"
           },
@@ -15396,7 +15397,7 @@
         "type": "object"
       },
       "SubmissionMessagePage": {
-        "description": "Newest first (load earlier messages with ``next_cursor``; show them oldest at the\ntop). At most 200 in all.",
+        "description": "Newest first (load earlier messages with ``next_cursor``; show them oldest at the\ntop). At most 100 in all.",
         "properties": {
           "items": {
             "items": {
@@ -15734,6 +15735,12 @@
           "branding": {
             "$ref": "#/components/schemas/EffectiveBranding"
           },
+          "can_remove_email": {
+            "default": false,
+            "description": "Phase 11 (review M2): an address is on file and may be removed now (forget_submission_email): offer \"Remove my email address\", which stops every email about this idea and keeps the link and the conversation. False without an address, and while the idea waits for that address to be confirmed (the confirmation is what sends it to the team).",
+            "title": "Can Remove Email",
+            "type": "boolean"
+          },
           "can_reply": {
             "default": false,
             "description": "Phase 11: show the reply box (reply_blocked is null).",
@@ -15780,15 +15787,8 @@
             "title": "History",
             "type": "array"
           },
-          "message_count": {
-            "default": 0,
-            "description": "Phase 11: messages in the conversation, both directions.",
-            "minimum": 0.0,
-            "title": "Message Count",
-            "type": "integer"
-          },
           "messages": {
-            "description": "Phase 11: the conversation with the team, oldest first: the latest 100 at most (message_count says how many there are). Empty until the team writes: then show a Messages section.",
+            "description": "Phase 11: the whole conversation with the team, oldest first (at most 100 messages). Empty until the team writes: then show a Messages section.",
             "items": {
               "$ref": "#/components/schemas/TrackedMessage"
             },
@@ -15883,8 +15883,8 @@
           "wants_updates",
           "can_resend_verification",
           "branding",
+          "can_remove_email",
           "messages",
-          "message_count",
           "team_messages_emailed",
           "can_reply",
           "reply_blocked"
@@ -31041,7 +31041,7 @@
     },
     "/api/v1/ideas/{idea}/submission/messages": {
       "get": {
-        "description": "public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Newest first (cursor pagination; at most 200 in all); plain text, a submitter's untrusted. Reading also works in an archived project. Empty after the submitter's details were erased (the conversation is deleted with them).",
+        "description": "public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Newest first (cursor pagination; at most 100 in all); plain text, a submitter's untrusted. Reading also works in an archived project. Empty after the submitter's details were erased (the conversation is deleted with them).",
         "operationId": "list_submission_messages",
         "parameters": [
           {
@@ -31177,7 +31177,7 @@
         ]
       },
       "post": {
-        "description": "public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Plain text (1-4,000 characters). Appears on their tracking page, signed \"The <project> team\" (never your name), and is also emailed when their address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 submitter_erased, project_archived, conversation_full (200 messages); 429 too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour across ideas). Audited (submission.message, never the text).",
+        "description": "public.message_submitter: the idea's owner (member or admin), project and platform admins, in a session only (any API key: 403 insufficient_scope; an AI agent or the break-glass account: 403 forbidden, c31; members, viewers, internal non-members: 403; a guest researcher and private non-members: 404). 404 when the idea didn't come through the public form, or is held for email confirmation. Works on closed ideas and ideas held for moderation (c19 doesn't apply). Plain text (1-4,000 characters). Appears on their tracking page, signed \"The <project> team\" (never your name), and is also emailed when their address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 project_archived, submitter_erased, public_submission_off (the instance's switch: tracking links don't open), conversation_full (100 messages); 429 too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour across ideas). Plain text sent as typed (no @mentions: nobody is notified). Audited (submission.message, never the text).",
         "operationId": "send_submission_message",
         "parameters": [
           {
@@ -36900,9 +36900,101 @@
         ]
       }
     },
+    "/api/v1/public/track/forget-email": {
+      "post": {
+        "description": "Public (public.track, c9; Phase 11 review M2): the submitter removes their address, exactly as the 3-day rule for unconfirmed addresses does: the address, its confirmation and the status-email opt-in are cleared and every email of this idea to it is deleted, queued and sent (no message, link or status email follows). The tracking link, the idea and the conversation stay (team messages then reach the tracking page only). Idempotent without an address. 409 awaiting_confirmation while the idea waits for that address to be confirmed (it reaches the team only then; delete your details to withdraw it). Not audited (like the 3-day rule). Checks in order: 415 -> 422 -> per-IP link requests (429) -> token (404) -> 409. Returns the tracking page.",
+        "operationId": "forget_submission_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackedSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found, or not visible to you (not_found)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflicts with the current state (see code)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Wrong Content-Type (unsupported_media_type)"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Validation Failed"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts (too_many_attempts): wait and retry"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Problem"
+          }
+        },
+        "summary": "Remove my email address",
+        "tags": [
+          "public"
+        ]
+      }
+    },
     "/api/v1/public/track/messages": {
       "post": {
-        "description": "Public (public.track, c9): the submitter's reply to the team from their tracking page, once the team has written to them (409 awaiting_team: the public never starts a conversation). Plain text (1-4,000 characters), untrusted everywhere. Checks in order: content type (415) -> body (422) -> per-IP link requests, shared with the other tracking routes (429) -> token (404, unknown and erased alike) -> 30 replies per client IP an hour (429) -> 409 awaiting_team, project_archived, conversation_full (200 messages) -> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the text). Not audited (no actor; the message is the record). Returns the tracking page.",
+        "description": "Public (public.track, c9): the submitter's reply to the team from their tracking page, once the team has written to them (409 awaiting_team: the public never starts a conversation, and at most 10 replies follow each team message). Plain text (1-4,000 characters), untrusted everywhere. Checks in order: content type (415) -> body (422) -> per-IP link requests, shared with the other tracking routes (429) -> token (404, unknown and erased alike, or public submission off) -> 30 replies per client IP an hour (429) -> 409 project_archived, awaiting_team, conversation_full (100 messages) -> 10 replies per submission in 24 hours (429 too_many_attempts with Retry-After). Notifies the team (submitter_replied, never the text). Not audited (no actor; the message is the record). Returns the tracking page.",
         "operationId": "send_tracking_reply",
         "requestBody": {
           "content": {

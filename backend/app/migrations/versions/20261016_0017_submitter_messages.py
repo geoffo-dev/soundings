@@ -1,24 +1,29 @@
 """Phase 11: talking to public submitters (messages between the team and a submitter, the
 tracking-link email, "The submitter replied").
 
-Expand only (``scripts/lib/check-migrations.py``): one new table, one new unique constraint,
-one new partial index and swapped ``CHECK`` constraints that accept more values; nothing the
-previous release reads is dropped, renamed or retyped.
+Expand only (``scripts/lib/check-migrations.py``): one new table and swapped ``CHECK``
+constraints that accept more values; nothing the previous release reads is dropped, renamed
+or retyped.
 
 * ``submission_messages``: the conversation of a public submission (team messages with
   their author, the submitter's replies without one; plain text, 1-4,000 characters;
-  ``emailed`` for team messages that were emailed). Its ``(submission_id, idea_id)``
-  references ``public_submissions (id, idea_id)`` (the new ``uq_public_submissions_id_idea_id``)
-  with ``ON DELETE CASCADE``: a message always names its own idea's submission, and
-  deleting or rejecting the idea deletes the conversation with the submission. Indexes for
-  the conversation (and its size, the per-submission limits and retention rule 4's latest
-  message) and for the per-person limit.
+  ``emailed`` for team messages whose email was queued). ``submission_id`` references
+  ``public_submissions`` with ``ON DELETE CASCADE`` (one submission per idea, so no
+  ``idea_id`` of its own: the contract review's C2): deleting or rejecting the idea deletes
+  the conversation with the submission. Indexes for the conversation (and its size, the
+  per-submission limits, retention rule 4's latest message and the cascade) and for the
+  per-person limit.
 * The notification type ``submitter_replied``: the ``CHECK`` constraints of
   ``notifications.type``, ``notification_preferences.type`` and ``outbound_email.type`` are
   swapped (the columns are long enough: 20 and 25 characters); it defaults to
   ``immediate`` in code, and someone who had every existing type off gets an ``off`` row for
-  it, so "Unsubscribe from all email" stays all. ``ix_notifications_submitter_replied``
-  (partial) serves the hourly coalescing of its emails.
+  it, so "Unsubscribe from all email" stays all. The hourly coalescing of its emails reads
+  the inbox index ``(user_id, created_at, id)`` (no index of its own: review C3).
+* The swaps hold ``ACCESS EXCLUSIVE`` on ``notifications``, ``notification_preferences`` and
+  ``outbound_email`` while each new ``CHECK`` is validated, as 0015 and 0016 did; those tables
+  are bounded by the hourly cleanup (notifications 90 days, emails 30, failed ones 90), and
+  ``NOT VALID`` + ``VALIDATE`` wouldn't shorten the lock inside Alembic's one transaction
+  (review C12, declined).
 * Two submitter email types, ``submission_link`` and ``submission_message``:
   ``ck_outbound_email_type`` and ``ck_outbound_email_idea_iff_submission_type`` (submitter
   emails, and only they, name their idea) accept them.
@@ -27,7 +32,7 @@ previous release reads is dropped, renamed or retyped.
 
 Downgrade (below 0017 there is no conversation): every message is **deleted**, with the
 outbox rows of the three new email types and the ``submitter_replied`` notifications and
-preferences; the constraints, the index and the unique constraint go back.
+preferences; the constraints go back.
 
 Hand-written to match the models exactly (``tests/test_domain_schema.py`` compares them).
 See docs/erd.md and docs/api/contract-phase11.md.
@@ -106,13 +111,9 @@ def _swap_type_checks(
 
 # --- Upgrade ---------------------------------------------------------------------------------
 def _messages() -> None:
-    op.create_unique_constraint(
-        op.f("uq_public_submissions_id_idea_id"), "public_submissions", ["id", "idea_id"]
-    )
     op.create_table(
         "submission_messages",
         sa.Column("submission_id", sa.Uuid(), nullable=False),
-        sa.Column("idea_id", sa.Uuid(), nullable=False),
         sa.Column(
             "direction", sa.String(length=max(len(value) for value in DIRECTIONS)), nullable=False
         ),
@@ -148,8 +149,8 @@ def _messages() -> None:
             ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
-            ["submission_id", "idea_id"],
-            ["public_submissions.id", "public_submissions.idea_id"],
+            ["submission_id"],
+            ["public_submissions.id"],
             name=op.f("fk_submission_messages_submission_id_public_submissions"),
             ondelete="CASCADE",
         ),
@@ -170,12 +171,6 @@ def _messages() -> None:
 
 def _notification_types() -> None:
     _swap_type_checks(NOTIFICATION_TYPES, EMAIL_TYPES, SUBMITTER_EMAILS)
-    op.create_index(
-        "ix_notifications_submitter_replied",
-        "notifications",
-        ["user_id", "idea_id", "created_at"],
-        postgresql_where=sa.text("type = 'submitter_replied'"),
-    )
     # Whoever had every existing type off keeps getting no email for the new one.
     before = _values(NOTIFICATION_TYPES_BEFORE)  # constants, not input
     for new_type in NEW_TYPES:
@@ -200,7 +195,6 @@ def downgrade() -> None:
     op.execute(f"DELETE FROM notification_preferences WHERE type IN ({new_types})")  # noqa: S608
     new_emails = _values((*NEW_TYPES, *NEW_SUBMITTER_EMAILS))
     op.execute(f"DELETE FROM outbound_email WHERE type IN ({new_emails})")  # noqa: S608
-    op.drop_index("ix_notifications_submitter_replied", table_name="notifications")
     _swap_type_checks(NOTIFICATION_TYPES_BEFORE, EMAIL_TYPES_BEFORE, SUBMITTER_EMAILS_BEFORE)
 
     op.drop_index("ix_submission_messages_author_id_created_at", table_name="submission_messages")
@@ -208,6 +202,3 @@ def downgrade() -> None:
         "ix_submission_messages_submission_id_created_at", table_name="submission_messages"
     )
     op.drop_table("submission_messages")
-    op.drop_constraint(
-        op.f("uq_public_submissions_id_idea_id"), "public_submissions", type_="unique"
-    )

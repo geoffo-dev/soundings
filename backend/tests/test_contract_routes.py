@@ -345,6 +345,7 @@ CONTRACT: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/ideas/{idea}/submission/messages", "list_submission_messages"),
     ("POST", "/api/v1/ideas/{idea}/submission/messages", "send_submission_message"),
     ("POST", "/api/v1/public/track/messages", "send_tracking_reply"),
+    ("POST", "/api/v1/public/track/forget-email", "forget_submission_email"),  # review M2
 ]
 
 PHASE10_OPERATIONS: frozenset[str] = frozenset(
@@ -353,9 +354,14 @@ PHASE10_OPERATIONS: frozenset[str] = frozenset(
 """Phase 10's 34 operations (contract-phase10 section 2)."""
 
 PHASE11_OPERATIONS: frozenset[str] = frozenset(
-    {"list_submission_messages", "send_submission_message", "send_tracking_reply"}
+    {
+        "list_submission_messages",
+        "send_submission_message",
+        "send_tracking_reply",
+        "forget_submission_email",
+    }
 )
-"""Phase 11's three operations (contract-phase11 section 2)."""
+"""Phase 11's four operations (contract-phase11 section 2; the fourth from review M2)."""
 
 ALL_OPERATIONS: list[tuple[str, str, str]] = CONTRACT
 
@@ -533,6 +539,10 @@ STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
     "send_tracking_reply": (
         "/api/v1/public/track/messages",
         {"token": "Zq3v9Xb2Lk7Wm4Np8Rt6Yc1Hd5Gf0Js_Ua-Ee2Oo4Ii", "body": "All of them."},
+    ),
+    "forget_submission_email": (
+        "/api/v1/public/track/forget-email",
+        {"token": "Zq3v9Xb2Lk7Wm4Np8Rt6Yc1Hd5Gf0Js_Ua-Ee2Oo4Ii"},
     ),
 }
 
@@ -788,8 +798,9 @@ PUBLIC_OPERATIONS = frozenset(
         "verify_submission_email",
         "get_branding",
         "get_brand_asset",
-        # Phase 11: the submitter's reply from their tracking page
+        # Phase 11: the submitter's reply and "Remove my email address" (tracking page)
         "send_tracking_reply",
+        "forget_submission_email",
     }
 )
 """Operations that need no session (sign-in and sign-out, unsubscribe links, the public
@@ -1205,6 +1216,8 @@ async def test_invalid_phase4_requests_are_rejected_before_the_endpoint(
         ("track_submission", None, {}),
         ("set_submission_updates", None, {"token": TRACKING_TOKEN}),
         ("erase_tracked_submission", None, {"token": TRACKING_TOKEN, "reason": "spam"}),
+        ("forget_submission_email", None, {"token": "short"}),
+        ("forget_submission_email", None, {"token": TRACKING_TOKEN, "email": "jo@example.org"}),
         ("verify_submission_email", None, {"token": "a<script>" * 3}),
         ("get_brand_asset", "/api/v1/branding/assets/logo.png", None),
     ],
@@ -2471,7 +2484,7 @@ def test_bid_notifications_and_my_work_are_in_the_contract(app: FastAPI) -> None
 
 
 # --- Phase 11 (contract-phase11) ----------------------------------------------------------
-def test_phase11_has_its_three_operations(app: FastAPI) -> None:
+def test_phase11_has_its_four_operations(app: FastAPI) -> None:
     operations = {
         operation["operationId"]: operation
         for item in app.openapi()["paths"].values()
@@ -2484,6 +2497,10 @@ def test_phase11_has_its_three_operations(app: FastAPI) -> None:
     assert {"201"} <= set(operations["send_submission_message"]["responses"])
     assert {"201", "409", "415", "429"} <= set(operations["send_tracking_reply"]["responses"])
     assert {"409", "429"} <= set(operations["send_submission_message"]["responses"])
+    assert operations["forget_submission_email"]["tags"] == ["public"]
+    assert {"200", "404", "409", "415", "429"} <= set(
+        operations["forget_submission_email"]["responses"]
+    )
     assert set(STUBS) <= PHASE11_OPERATIONS
 
 
@@ -2510,25 +2527,28 @@ def test_phase11_shapes_are_in_the_contract(app: FastAPI) -> None:
     # Public pages show no people: a tracked message has no author, only a direction.
     assert set(schemas["TrackedMessage"]["required"]) == {"id", "direction", "body", "created_at"}
     assert {
+        "can_remove_email",
         "messages",
-        "message_count",
         "team_messages_emailed",
         "can_reply",
         "reply_blocked",
     } <= set(schemas["TrackedSubmission"]["required"])
+    assert "message_count" not in schemas["TrackedSubmission"]["properties"]  # review C1
     assert "tracking_link_emailed" in schemas["EmailVerified"]["required"]
     assert schemas["MessageDirection"]["enum"] == ["team", "submitter"]
     assert schemas["MessageDelivery"]["enum"] == ["email", "tracking_page"]
+    # In the order they are checked: the archived project leads (review C6).
     assert schemas["SendBlocked"]["enum"] == [
-        "submitter_erased",
-        "conversation_full",
         "project_archived",
+        "submitter_erased",
+        "public_submission_off",
+        "conversation_full",
         "daily_limit",
     ]
     assert schemas["ReplyBlocked"]["enum"] == [
+        "project_archived",
         "awaiting_team",
         "conversation_full",
-        "project_archived",
         "daily_limit",
     ]
     # The reply notification carries nothing but the idea (never the submitter's text).
@@ -2597,16 +2617,14 @@ async def test_invalid_replies_are_rejected_without_a_session(
     assert response.json()["code"] == "validation_error"
 
 
-async def test_a_reply_must_be_json(client: httpx.AsyncClient) -> None:
+@pytest.mark.parametrize("operation_id", ["send_tracking_reply", "forget_submission_email"])
+async def test_a_reply_must_be_json(client: httpx.AsyncClient, operation_id: str) -> None:
     """Like every public write (contract-phase4 section 1): a form post or text body from
     another site is 415 before the body is read."""
+    url, body = STUBS[operation_id]
     for content_type in ("text/plain", "application/x-www-form-urlencoded", None):
         headers = {"content-type": content_type} if content_type else {}
-        response = await client.post(
-            "/api/v1/public/track/messages",
-            content=json.dumps({"token": TRACKING_TOKEN, "body": "All of them."}),
-            headers=headers,
-        )
+        response = await client.post(url, content=json.dumps(body), headers=headers)
         assert response.status_code == 415, (content_type, response.text)
         assert response.json()["code"] == "unsupported_media_type"
 

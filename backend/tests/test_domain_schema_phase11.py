@@ -32,8 +32,8 @@ NEW_EMAILS = ("submission_link", "submission_message")
 EARLIER_TYPES = tuple(t.value for t in NotificationType if t.value not in NEW_TYPES)
 
 INSERT_MESSAGE = text(
-    "INSERT INTO submission_messages (id, submission_id, idea_id, direction, author_id, body,"
-    " emailed) VALUES (:id, :s, :i, :d, :a, :b, :e)"
+    "INSERT INTO submission_messages (id, submission_id, direction, author_id, body, emailed)"
+    " VALUES (:id, :s, :d, :a, :b, :e)"
 )
 
 
@@ -77,31 +77,22 @@ async def _submission(db: AsyncSession) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID
     return submission_id, idea_id, user_id
 
 
-def _message(submission: uuid.UUID, idea: uuid.UUID, **values: object) -> dict[str, object]:
+def _message(submission: uuid.UUID, **values: object) -> dict[str, object]:
     row: dict[str, object] = {
-        "id": uuid.uuid4(), "s": submission, "i": idea, "d": "submitter", "a": None,
+        "id": uuid.uuid4(), "s": submission, "d": "submitter", "a": None,
         "b": "All of them.", "e": False,
     }  # fmt: skip
     row.update(values)
     return row
 
 
-async def test_messages_belong_to_their_ideas_submission(db_session: AsyncSession) -> None:
-    submission, idea, user = await _submission(db_session)
-    other_idea = uuid.uuid4()  # an idea of the same project without this submission
-    await db_session.execute(
-        text(
-            "INSERT INTO ideas (id, project_id, number, title)"
-            " SELECT :o, project_id, 2, 'Other' FROM ideas WHERE id = :i"
-        ),
-        {"o": other_idea, "i": idea},
-    )
-    await db_session.execute(INSERT_MESSAGE, _message(submission, idea, d="team", a=user, e=True))
-    await db_session.execute(INSERT_MESSAGE, _message(submission, idea))
+async def test_messages_belong_to_a_submission(db_session: AsyncSession) -> None:
+    """One submission per idea, so the submission names the idea (review C2: no idea_id)."""
+    submission, _, user = await _submission(db_session)
+    await db_session.execute(INSERT_MESSAGE, _message(submission, d="team", a=user, e=True))
+    await db_session.execute(INSERT_MESSAGE, _message(submission))
 
     cases: list[tuple[dict[str, object], str]] = [
-        # A message can't name another idea's submission (the composite foreign key).
-        ({"i": other_idea}, "fk_submission_messages_submission_id_public_submissions"),
         ({"s": uuid.uuid4()}, "fk_submission_messages_submission_id_public_submissions"),
         # Replies have no author and are never emailed; directions are fixed.
         ({"a": user}, "ck_submission_messages_author_only_for_team"),
@@ -112,12 +103,12 @@ async def test_messages_belong_to_their_ideas_submission(db_session: AsyncSessio
     for values, constraint in cases:
         with pytest.raises(IntegrityError, match=constraint):
             async with db_session.begin_nested():
-                await db_session.execute(INSERT_MESSAGE, _message(submission, idea, **values))
+                await db_session.execute(INSERT_MESSAGE, _message(submission, **values))
     with pytest.raises(DataError):  # 4,001 characters don't fit the column
         async with db_session.begin_nested():
             await db_session.execute(
                 INSERT_MESSAGE,
-                _message(submission, idea, b="x" * (SUBMISSION_MESSAGE_MAX_LENGTH + 1)),
+                _message(submission, b="x" * (SUBMISSION_MESSAGE_MAX_LENGTH + 1)),
             )
 
     # People are deactivated, not deleted; a deleted author leaves the message unsigned.
@@ -135,13 +126,14 @@ async def test_deleting_the_idea_or_submission_deletes_the_conversation(
     db_session: AsyncSession, deleted: str
 ) -> None:
     submission, idea, user = await _submission(db_session)
-    await db_session.execute(INSERT_MESSAGE, _message(submission, idea, d="team", a=user))
+    await db_session.execute(INSERT_MESSAGE, _message(submission, d="team", a=user))
     target = idea if deleted == "ideas" else submission
 
     await db_session.execute(text(f"DELETE FROM {deleted} WHERE id = :t"), {"t": target})  # noqa: S608
 
     left = await db_session.scalar(
-        text("SELECT count(*) FROM submission_messages WHERE idea_id = :i"), {"i": idea}
+        text("SELECT count(*) FROM submission_messages WHERE submission_id = :s"),
+        {"s": submission},
     )
     assert left == 0
     await db_session.rollback()
@@ -250,9 +242,9 @@ def test_0017_downgrade_removes_the_conversations(scratch_database_url: str) -> 
             (submission, idea, project),
         )
         connection.execute(
-            "INSERT INTO submission_messages (id, submission_id, idea_id, direction, author_id,"
-            " body) VALUES (%s, %s, %s, 'team', %s, 'Which stores?')",
-            (uuid.uuid4(), submission, idea, user),
+            "INSERT INTO submission_messages (id, submission_id, direction, author_id, body)"
+            " VALUES (%s, %s, 'team', %s, 'Which stores?')",
+            (uuid.uuid4(), submission, user),
         )
         for type_ in (*NEW_EMAILS, "submission_status_changed"):
             email = uuid.uuid4()

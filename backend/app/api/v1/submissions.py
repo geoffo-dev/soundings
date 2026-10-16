@@ -10,8 +10,9 @@ Phase 11 (contract-phase11, ADR 0019): the conversation with the submitter
 never an AI agent or the break-glass account, c31). Order of checks: 401 -> 404 (the idea,
 ``idea.view``; then an idea that didn't come through the public form) -> 403 (a key on these
 session-only routes: ``insufficient_scope``; the rule, c31) -> 422 (the body) -> 409
-(``submitter_erased``, ``project_archived``, ``conversation_full``) -> 429 (the limits). Writes
-lock project (``FOR KEY SHARE``) -> idea -> submission (``FOR UPDATE``), then insert.
+(``project_archived``, ``submitter_erased``, ``public_submission_off``, ``conversation_full``:
+the archived project leads, review C6) -> 429 (the limits). Writes lock project (``FOR KEY
+SHARE``) -> idea -> submission (``FOR UPDATE``), then insert.
 """
 
 from __future__ import annotations
@@ -194,7 +195,7 @@ _MESSAGES_RULE = (
     operation_id="list_submission_messages",
     summary="The conversation with the submitter",
     description=(
-        _MESSAGES_RULE + " Newest first (cursor pagination; at most 200 in all); plain text, a "
+        _MESSAGES_RULE + " Newest first (cursor pagination; at most 100 in all); plain text, a "
         "submitter's untrusted. Reading also works in an archived project. Empty after the "
         "submitter's details were erased (the conversation is deleted with them)."
     ),
@@ -215,9 +216,11 @@ async def list_submission_messages(
         _MESSAGES_RULE + " Plain text (1-4,000 characters). Appears on their tracking page, "
         'signed "The <project> team" (never your name), and is also emailed when their '
         "address is confirmed and email is set up (IdeaSubmission.messages.delivery). 409 "
-        "submitter_erased, project_archived, conversation_full (200 messages); 429 "
-        "too_many_attempts with Retry-After (20 team messages to this submitter in 24 hours, "
-        "30 of yours an hour across ideas). Audited (submission.message, never the text)."
+        "project_archived, submitter_erased, public_submission_off (the instance's switch: "
+        "tracking links don't open), conversation_full (100 messages); 429 too_many_attempts "
+        "with Retry-After (20 team messages to this submitter in 24 hours, 30 of yours an hour "
+        "across ideas). Plain text sent as typed (no @mentions: nobody is notified). Audited "
+        "(submission.message, never the text)."
     ),
     responses=problems(401, 403, 404, 409, 422, 429),
 )

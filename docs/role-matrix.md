@@ -64,7 +64,7 @@ it immediately.
   (`<base>/track#<token>`). It grants `public.track` for one idea (see its public status
   and what was submitted, turn status emails on or off, resend the confirmation email,
   erase the submitter's details; Phase 11: read the conversation with the team and reply
-  once the team has written) and nothing else, whoever holds it; it stops working
+  once the team has written, and remove their email address) and nothing else, whoever holds it; it stops working
   when the submitter's details are erased. Phase 11: it is also emailed once, to an
   address that was just confirmed for the first time (`submission_link`).
 - **Confirmation-link token:** emailed to a public submitter (`<base>/<slug>/verify#<token>`;
@@ -210,7 +210,9 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
 - **Phase 11, "The submitter replied"** (`submitter_replied`): to the idea's owner and
   everyone who has written to the submitter, each holding `public.message_submitter` when
   it is created and again when it is shown or emailed (`SUBMITTER_NOTIFICATION_TYPES`; never
-  a guest researcher, so not in `RESEARCH_GUEST_NOTIFICATION_TYPES`); none while the idea is
+  a guest researcher, so not in `RESEARCH_GUEST_NOTIFICATION_TYPES`); the inbox list and
+  count filter it in SQL with the rule's SQL form (a platform admin, a project admin, or the
+  idea's owner with member: the predicate `assessments_complete` uses); none while the idea is
   held for moderation; at most one immediate email per recipient and idea an hour; never the
   reply's text (untrusted public input).
 - **The inbox** (signed in, like My work) lists only notifications about ideas the
@@ -394,17 +396,23 @@ Notes (Phase 11, [contract-phase11](api/contract-phase11.md),
   submitter and the submission panel's `messages` summary and `can_message` flag. The
   owner overlay counts only with member or admin (section 1). **c31** (not written in the
   cells, like c21): never an AI agent's service account, never the break-glass account
-  (403 `forbidden`; they see nothing of the conversation).
+  (403 `forbidden`; they never read a message's text; the break-glass account, a platform
+  admin, still sees the `submission.message` audit entries and the outbox rows like any
+  platform admin).
 - It is **not an idea write**: reading works in an archived project; it works on a closed
   idea and on one held for moderation (c19 doesn't apply: moderators may ask before
   approving); an idea held for email confirmation is 404 (c12). Sending's refusals are the
-  service's: 409 `submitter_erased`, `project_archived`, `conversation_full`; 429
-  `too_many_attempts` for the limits.
+  service's, the archived project first as everywhere: 409 `project_archived`,
+  `submitter_erased`, `public_submission_off` (the instance's switch is off, so no tracking
+  link opens), `conversation_full` (100 messages); 429 `too_many_attempts` for the limits.
 - Everyone who can view the idea but doesn't hold the rule sees **nothing** of the
   conversation, not even that it exists (`IdeaSubmission.messages` null). It is in no feed,
   search, ⌘K, My work, MCP result or export, and never moves the idea's activity time.
-- The submitter replies under `public.track` (c9), only after the team has written (409
-  `awaiting_team`), throttled per client address (30 an hour) and per submission (10 a day).
+- The submitter replies under `public.track` (c9), only after the team has written and at
+  most 10 times after each team message (409 `awaiting_team`), throttled per client address
+  (30 an hour) and per submission (10 a day). Under the same token they may remove their email
+  address (`forget_submission_email`: every email about the idea stops; the link and the
+  conversation stay).
 
 **Phase 11: who reaches the conversation** (`list_submission_messages`,
 `send_submission_message`; `get_idea_submission` and the moderation queue's `messages` /
@@ -421,18 +429,22 @@ Notes (Phase 11, [contract-phase11](api/contract-phase11.md),
 | Private non-member (NMp) | 404 | (the idea is 404) | `idea.view` |
 | Guest researcher (R) | 404 | (the submission panel is 404) | table L, `RESEARCH_GUEST_ACCESS` hidden |
 | An AI agent's service account | 403 `insufficient_scope` (REST, c22); never holds it | null, false | c22, c31 |
-| The break-glass account (column PA) | 403 `forbidden` | null, false | c31 |
+| The break-glass account (column PA) | 403 `forbidden` | null, false | c31 (it still sees the audit entries and outbox rows as a platform admin, never a message's text) |
 | A person's API key, any scopes (all four too) | 403 `insufficient_scope` | (the panel route is session only) | `ROUTE_KEY_ACCESS` session |
 | Anonymous | 401 | 401 | |
 | Any of the above, the idea held for email confirmation | 404 | 404 | c12 |
 | PA / PAd, the idea held for moderation (the owner, a member: 404, c12) | 200 / 201 | the summary, true | not frozen (c19) |
 | PA / PAd / owner, the idea closed | 200 / 201 | the summary, true | not c5 |
 | PA / PAd / owner, archived project | 200 / 409 `project_archived` | the summary, `can_message` false, `blocked: project_archived` | not an idea write; the service refuses |
+| PA / PAd / owner, public submission off for the instance | 200 / 409 `public_submission_off` | the summary, `can_message` false, `blocked: public_submission_off` | no tracking link opens; the service refuses |
 | PA / PAd / owner, details erased | 200 (empty) / 409 `submitter_erased` | the summary, false, `blocked: submitter_erased` | the conversation went with the details |
 
 `send_tracking_reply` (the submitter, by token): 201 once the team has written; 404 for an
-unknown or erased token (c9); 409 `awaiting_team`, `project_archived`, `conversation_full`;
-429; 415 without JSON; 422. Keys and sessions are ignored there (a public route).
+unknown or erased token (c9); 409 `project_archived`, `awaiting_team` (also after 10 replies
+since the team's latest message), `conversation_full`; 429; 415 without JSON; 422.
+`forget_submission_email` (by token): 200 (the address removed, or none on file); 404 (c9); 409
+`awaiting_confirmation` while the idea waits for that address's confirmation; 429; 415; 422.
+Keys and sessions are ignored on both (public routes).
 
 ### H. Platform administration
 

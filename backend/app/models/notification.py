@@ -172,7 +172,8 @@ class Notification(UUIDPrimaryKeyMixin, Base):
     due date, reminder offset, submitted count); never scores. ``email_mode`` is the
     recipient's email preference for the type when the notification was created
     (``off`` also when email isn't configured, and, Phase 11, for a ``submitter_replied``
-    held back because the recipient had that idea's reply email in the last hour);
+    held back because the recipient had that idea's reply email in the last hour: read
+    through the inbox index ``(user_id, created_at, id)``, review C3);
     ``email_id`` is the email that carried it (its own immediate email, or the digest that
     collected it).
 
@@ -214,15 +215,6 @@ class Notification(UUIDPrimaryKeyMixin, Base):
             "actor_id",
             "created_at",
             postgresql_where=text("type = 'mention'"),
-        ),
-        # Phase 11: at most one immediate "The submitter replied" email per recipient and
-        # idea an hour (contract-phase11 section 6).
-        Index(
-            "ix_notifications_submitter_replied",
-            "user_id",
-            "idea_id",
-            "created_at",
-            postgresql_where=text("type = 'submitter_replied'"),
         ),
         # The worker loads an email's notifications; pruning emails sets this null.
         Index(

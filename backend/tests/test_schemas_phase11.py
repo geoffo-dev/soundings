@@ -56,11 +56,13 @@ from app.schemas.public import (
     CONVERSATION_MAX_MESSAGES,
     SUBMITTER_MESSAGES_PER_ADDRESS_PER_HOUR,
     SUBMITTER_MESSAGES_PER_SUBMISSION_PER_DAY,
+    SUBMITTER_MESSAGES_SINCE_TEAM_MESSAGE,
     TEAM_MESSAGES_PER_PERSON_PER_HOUR,
     TEAM_MESSAGES_PER_SUBMISSION_PER_DAY,
-    TRACKED_MESSAGES_SHOWN,
     EmailVerified,
     IdeaSubmission,
+    ReplyBlocked,
+    SendBlocked,
     SubmissionMessage,
     SubmissionMessageCreate,
     SubmissionMessagesSummary,
@@ -71,6 +73,7 @@ from app.schemas.public import (
 
 TOKEN = "Zq3v9Xb2Lk7Wm4Np8Rt6Yc1Hd5Gf0Js_Ua-Ee2Oo4Ii"
 OPERATIONS = ("list_submission_messages", "send_submission_message")
+PUBLIC_OPERATIONS = ("send_tracking_reply", "forget_submission_email")
 
 
 # --- The text --------------------------------------------------------------------------------
@@ -80,6 +83,10 @@ OPERATIONS = ("list_submission_messages", "send_submission_message")
         ("Thanks!", "Thanks!"),
         ("  padded  ", "padded"),
         ("one\r\ntwo\rthree\nfour", "one\ntwo\nthree\nfour"),
+        # The Unicode line and paragraph separators are line breaks too (review C8).
+        ("one\u2028two\u2029three", "one\ntwo\nthree"),
+        # A mention-shaped token is plain text, kept as typed (review S5: no mentions here).
+        ("Ask @[Priya Raman](user:3f0c) about it", "Ask @[Priya Raman](user:3f0c) about it"),
         ("zero\u200bwidth and \u202ebidi\u202c", "zerowidth and bidi"),
         ("<b>not html</b> **not markdown**", "<b>not html</b> **not markdown**"),
         ("x" * SUBMISSION_MESSAGE_MAX_LENGTH, "x" * SUBMISSION_MESSAGE_MAX_LENGTH),
@@ -121,11 +128,11 @@ def test_requests_take_only_their_fields() -> None:
 
 def test_the_limits_are_the_product_owners() -> None:
     assert SUBMISSION_MESSAGE_MAX_LENGTH == 4_000
-    assert CONVERSATION_MAX_MESSAGES == 200
-    assert TRACKED_MESSAGES_SHOWN == 100
+    assert CONVERSATION_MAX_MESSAGES == 100  # one cap, all shown (review C1)
     assert TEAM_MESSAGES_PER_SUBMISSION_PER_DAY == 20
     assert TEAM_MESSAGES_PER_PERSON_PER_HOUR == 30
     assert SUBMITTER_MESSAGES_PER_SUBMISSION_PER_DAY == 10
+    assert SUBMITTER_MESSAGES_SINCE_TEAM_MESSAGE == 10  # review S6
     assert SUBMITTER_MESSAGES_PER_ADDRESS_PER_HOUR == 30
     assert SUBMITTER_REPLIED_EMAIL_INTERVAL.total_seconds() == 3_600
 
@@ -143,13 +150,14 @@ def test_public_pages_show_no_people() -> None:
     submitter emails show no people: "The <project> team")."""
     assert _fields(TrackedMessage) == {"id", "direction", "body", "created_at"}
     added = {
+        "can_remove_email",
         "messages",
-        "message_count",
         "team_messages_emailed",
         "can_reply",
         "reply_blocked",
     }
     assert added <= _fields(TrackedSubmission)
+    assert "message_count" not in _fields(TrackedSubmission)  # review C1: all are shown
     assert not {name for name in added if _PERSON.search(name)}
     assert "tracking_link_emailed" in _fields(EmailVerified)
 
@@ -245,8 +253,9 @@ def test_keys_and_guests_never_reach_the_conversation() -> None:
     for operation in OPERATIONS:
         assert ROUTE_KEY_ACCESS[operation] is KeyAccess.SESSION
         assert RESEARCH_GUEST_ACCESS[operation] is GuestAccess.HIDDEN
-    assert ROUTE_KEY_ACCESS["send_tracking_reply"] is KeyAccess.PUBLIC
-    assert "send_tracking_reply" not in RESEARCH_GUEST_ACCESS  # not an idea route
+    for operation in PUBLIC_OPERATIONS:
+        assert ROUTE_KEY_ACCESS[operation] is KeyAccess.PUBLIC
+        assert operation not in RESEARCH_GUEST_ACCESS  # not an idea route
     # No MCP tool reads or writes it (guest rows exist for every tool).
     assert not [name for name in RESEARCH_GUEST_ACCESS if "message" in name and "mcp." in name]
 
@@ -324,13 +333,31 @@ def test_new_response_fields_default_to_nothing() -> None:
     assert SubmissionMessagesSummary.model_fields["blocked"].is_required()  # a new model
     defaults = {
         name: TrackedSubmission.model_fields[name].get_default(call_default_factory=True)
-        for name in ("messages", "message_count", "team_messages_emailed", "can_reply")
+        for name in ("can_remove_email", "messages", "team_messages_emailed", "can_reply")
     }
     assert defaults == {
+        "can_remove_email": False,
         "messages": [],
-        "message_count": 0,
         "team_messages_emailed": False,
         "can_reply": False,
     }
     assert TrackedSubmission.model_fields["reply_blocked"].default == "awaiting_team"
     assert EmailVerified.model_fields["tracking_link_emailed"].default is False
+
+
+def test_refusals_are_listed_in_the_order_they_are_checked() -> None:
+    """The archived project leads the 409s, as everywhere (review C6); the instance switch
+    blocks the team too, since no tracking link opens then (review C4)."""
+    assert [value.value for value in SendBlocked] == [
+        "project_archived",
+        "submitter_erased",
+        "public_submission_off",
+        "conversation_full",
+        "daily_limit",
+    ]
+    assert [value.value for value in ReplyBlocked] == [
+        "project_archived",
+        "awaiting_team",
+        "conversation_full",
+        "daily_limit",
+    ]

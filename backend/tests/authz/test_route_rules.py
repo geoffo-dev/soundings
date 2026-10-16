@@ -122,6 +122,7 @@ ROUTE_RULES: dict[str, tuple[str, ...]] = {
     "erase_tracked_submission": ("public.track",),
     "verify_submission_email": ("public.track",),
     "send_tracking_reply": ("public.track",),  # Phase 11
+    "forget_submission_email": ("public.track",),  # Phase 11 (review M2)
     "get_public_form_settings": ("project.edit_settings",),
     "update_public_form_settings": ("project.edit_settings",),
     "list_moderation_queue": ("project.view", "idea.moderate"),
