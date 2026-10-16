@@ -100,7 +100,7 @@ else
   ok "/metrics not exposed through the ingress"
 fi
 deployment="$(kubectl -n "$NAMESPACE" get deploy -o name \
-  -l "app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=api" | head -n 1)"
+  -l "app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=api" | awk 'NR == 1')"
 metrics_port="$(kubectl -n "$NAMESPACE" get "$deployment" \
   -o jsonpath='{.spec.template.spec.containers[0].ports[?(@.name=="metrics")].containerPort}')"
 pod_metrics="$(kubectl -n "$NAMESPACE" exec "$deployment" -c api -- python -c \
@@ -155,7 +155,7 @@ dev_users="$workdir/users.json"
 status="$(curl -sS "${curl_args[@]}" -o "$dev_users" -w '%{http_code}' "$BASE_URL/api/v1/auth/dev/users" || true)"
 if [ "$status" = "200" ]; then
   ok "/api/v1/auth/dev/users 200 ($(grep -o '"id":' "$dev_users" | wc -l | tr -d ' ') users)"
-  user_id="$(grep -o '"id":"[0-9a-f-]*"' "$dev_users" | head -n 1 | cut -d'"' -f4)"
+  user_id="$(grep -o '"id":"[0-9a-f-]*"' "$dev_users" | awk -F'"' 'NR == 1 { print $4 }')"
   jar="$workdir/cookies"
   login="$(curl -sS "${curl_args[@]}" -c "$jar" -b "$jar" -o /dev/null -w '%{http_code}' \
     -H 'Content-Type: application/json' -d "{\"user_id\":\"$user_id\"}" \

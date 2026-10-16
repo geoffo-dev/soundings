@@ -33,7 +33,7 @@ command -v jq >/dev/null || die "jq is required"
 require_k3s
 
 deployment="$(kubectl -n "$NAMESPACE" get deploy -o name \
-  -l "app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=api" | head -n 1)"
+  -l "app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=api" | awk 'NR == 1')"
 [ -n "$deployment" ] || die "no api Deployment for release $RELEASE in namespace $NAMESPACE"
 image="$(kubectl -n "$NAMESPACE" get "$deployment" -o jsonpath='{.spec.template.spec.containers[0].image}')"
 pull="$(kubectl -n "$NAMESPACE" get "$deployment" -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}')"
