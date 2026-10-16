@@ -1,0 +1,22 @@
+# GitLab agent for Kubernetes "soundings-staging": which CI jobs may use it
+# (docs/operator-guide.md "Continuous delivery"; deploy/gitlab-agent/ installs it).
+# GitLab reads this file from the default branch of the project that registers the agent:
+# whoever may merge there may widen ci_access (prefer a project the platform team owns,
+# KUBE_AGENT_PROJECT).
+#
+# While the agent is configured in this project, this explicit entry is what restricts
+# it: without it, GitLab's implicit access lets every job of the project use the agent,
+# on any branch (the deploy jobs refuse to run until the path matches).
+ci_access:
+  projects:
+    - id: user-research/soundings
+      # The context's namespace; the agent's ServiceAccount may act only there.
+      default_namespace: soundings-staging
+      # Only jobs with `environment: staging` (deploy:staging, rollback:staging) get the
+      # context; every other job has no cluster access through this agent.
+      environments:
+        - staging
+      # ...and only in pipelines of protected refs (main, the v* tags): without this, a job
+      # with `environment: staging` on any branch someone pushes would get the context, and
+      # with it the namespace's Secrets (verified on GitLab 19.4, docs/test-plans/phase-9.md).
+      protected_branches_only: true

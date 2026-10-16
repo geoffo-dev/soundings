@@ -297,7 +297,7 @@ preflight() {
   contexts="$(kubectl config get-contexts -o name 2>/dev/null || true)"
   if [ -n "$KUBE_CONTEXT" ] && ! grep -qxF "$KUBE_CONTEXT" <<<"$contexts"; then
     die "no kubeconfig context '$KUBE_CONTEXT' (have: $(tr '\n' ' ' <<<"$contexts"))
-  GitLab: the agent soundings-$ENVIRONMENT must be connected, and its ci_access must name this
+  GitLab: the agent ${KUBE_CONTEXT##*:} must be connected, and its ci_access must name this
   project and the environment '$ENVIRONMENT' (production: on a protected branch or tag)."
   fi
   # Reading the namespace's default ServiceAccount proves both that the namespace exists

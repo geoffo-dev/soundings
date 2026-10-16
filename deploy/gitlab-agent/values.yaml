@@ -12,8 +12,8 @@
 image:
   # agentk is published on registry.gitlab.com only: mirror it. Match GitLab's minor
   # version (GitLab 19.4: agentk 19.3-19.5).
-  repository: registry.internal.example/gitlab-org/cluster-integration/gitlab-agent/agentk
-  tag: v19.4.1
+  repository: nexus.ops.faster.ice.mod.gov.uk/registry-gitlab/gitlab-org/cluster-integration/gitlab-agent/agentk
+  tag: v19.4.0
 
 # No ClusterRoleBinding to cluster-admin (the chart's default): the agent's ServiceAccount
 # gets exactly deploy/gitlab-agent/rbac.yaml.
@@ -27,7 +27,7 @@ serviceAccount:
 config:
   # GitLab's agent server (KAS). Linux package: wss://<gitlab>/-/kubernetes-agent/;
   # GitLab's Helm chart: wss:// or grpcs://kas.<domain>.
-  kasAddress: wss://gitlab.example.internal/-/kubernetes-agent/
+  kasAddress: wss://kas.ops.faster.ice.mod.gov.uk
   # set per environment: soundings-staging-agent-token / soundings-production-agent-token
   secretName: soundings-staging-agent-token
   # Operational container scanning is an Ultimate feature that needs cluster-wide reads.

@@ -116,7 +116,7 @@ variables:
   IMAGE_TAG: ci-${CI_PIPELINE_ID}
   # Delivery (see the header): off until SOUNDINGS_DEPLOY names environments.
   SOUNDINGS_DEPLOY: ""
-  KUBE_AGENT_PROJECT: infrastructure/gitlab-kas
+  KUBE_AGENT_PROJECT: ${CI_PROJECT_PATH}
   STAGING_KUBE_AGENT: soundings-staging
   PRODUCTION_KUBE_AGENT: soundings-production
   STAGING_URL: "https://soundings-staging.ops.faster.ice.mod.gov.uk"
