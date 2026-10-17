@@ -127,7 +127,7 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make ai-smoke` | `scripts/ai-smoke.sh $(AI_BASE_URL)` (default :8000) against an app with AI on, dev login, the worker and the fake agent (`AI_FAKE_URL`, default :8083; `AI_FAKE_KEYS_DIR`, default `dev/.fake-agent-keys`): register an agent (key once), hand the fake its key, Test connection, "Ask AI to evaluate" watched over SSE by a pending evaluator (no score data, 204 after the end), the AI evaluation out of the aggregate then included, research note, section draft, a cancelled `-slow` run, the agent's key refused on REST and outside runs; `AI_PROTOCOL=kagent_v1_0` runs it over A2A 1.0; needs `jq` |
 | `make fake-agent-image` · `make k3s-fake-agent` · `make k3s-kagent-crds` · `k3s-install AI=1` · `k3s-smoke AI=1` | The fake agent's image (`FAKE_AGENT_IMAGE`, default `soundings-fake-agent:dev`); the fake in k3s as `kagent/kagent-controller:8083` (so the default `controllerUrl` works); kagent v0.10.2's CRDs (from the git tag, cloned into `.k3s/`) plus a server-side dry run of every kagent manifest; install with `dev/k3s-ai-values.yaml` (AI on, `kagent.examples` when the CRDs exist) and run `ai-smoke` through the ingress. CI's k3s job runs `SSO=1 SMTP=1 MCP=1 AI=1` |
 | `make bid-smoke` | `scripts/bid-smoke.sh $(BID_BASE_URL)` (default :8000) against an app with the demo data, dev login and the worker: a test idea's call in `BID_PROJECT` (default customer-innovation), bids, PDF/DOCX/pricing-CSV uploads and refusals (409 duplicate, 415 `.docm`, 413 at 25 MiB + 1 with a Content-Length and chunked, 422 `../`, 401, 403), extraction, download headers, must-haves, reject/reinstate, per-section assessors, price visibility, blind before/after submitting, the comparison total recomputed from the template, the report (403 for an assessor), a name in `X-Filename`, with `BID_AI` (`auto`, `0`, `1`) an AI assess run through the fake agent (quotes found, `-invents` one not found, include/exclude), the award; deletes its idea. `BID_SLOW_UPLOAD=1` adds a slow upload (1.6 MB at 20 KiB/s, about 78 s: the ingress timeouts). `k3s-smoke` runs it (AI part with `AI=1`), and so does GitHub's e2e job |
-| `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then the Phase 11 conversation (409 `awaiting_team` and 415 before the team writes, the owner it makes writes, a member 403 with `messages: null`, the reply, newest first, one `submission.message` audit entry without the text), then deletes the idea. With `MAILPIT_URL` (`MAIL_TIMEOUT`, 90 s) also the submitter's email: no tracking link in the confirmation email, the link email once after the first confirmation, the message email (escaped, signed by the team, no `Reply-To`) and "The submitter replied" without the text. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too (`SMTP=1` passes `MAILPIT_URL`), and so does GitHub's e2e job against `make demo` |
+| `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then the Phase 11 conversation (409 `awaiting_team` and 415 before the team writes, a member it makes the owner writes, another member 403 with `messages: null`, the reply, newest first, one `submission.message` audit entry without the text), then deletes the idea. With `MAILPIT_URL` (`MAIL_TIMEOUT`, 90 s) also the submitter's email: no tracking link in the confirmation email, the link email once after the first confirmation, the message email (escaped, signed by the team, no `Reply-To`) and "The submitter replied" without the text. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too (`SMTP=1` passes `MAILPIT_URL`), and so does GitHub's e2e job against `make demo` |
 | `make k3s-install PROD=1` · `k3s-smoke PROD=1` | Production mode on the local k3s (`dev/k3s-prod-values.yaml`: no dev login or demo data, break-glass sign-in): the smoke checks `__Host-` cookies, the OpenAPI document and Swagger UI 401 anonymously and 200 signed in, `/metrics` off the app port, the production startup log, no password in the logs; skips the public-form smoke (no demo data). Not with `SSO=1` |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
@@ -888,8 +888,8 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   the lock); rule 5 sweeps messages and submitter emails left on erased submissions. SPA:
   `features/moderation/submitter-messages.tsx` (the panel's Messages part and the sheet,
   `?submission=1`, a plain textarea without mentions, drafts per idea), `message-copy.ts`
-  (every refusal by code), the tracking page's Messages section and "Remove my email
-  address".
+  (every refusal by code), `features/public/track-messages.tsx` (the tracking page's Messages
+  and reply box; no key hint on a public page) and "Remove my email address".
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.
@@ -1384,3 +1384,30 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   (uploads and downloads on each pod) and `PROD=1`; every real-stack screenshot set and the
   tour re-captured. Known nit: the seeded "Bid assessor (demo)" has no role in Internal
   Tools ("Removed: can't work there" in Admin → AI agents). Stop for the human's review.
+- **Phase 11** (talking to public submitters, product owner 2026-10-16; `docs/decisions.md`
+  "Phase 11 (product owner, 2026-10-16)" and "2026-10-17 · Phase 11 build and integration",
+  contract-phase11, ADR 0019, role matrix table G / c31, `docs/test-plans/phase-11.md`): the
+  idea's owner and project and platform admins **message the sender of a public idea** from
+  the submission panel (a side sheet, `?submission=1`), plain text signed "The <project>
+  team", on the tracking page and emailed to a confirmed address (`submission_message`, no
+  `Reply-To`), audited `submission.message`, invisible to everyone else (members, viewers,
+  guests, keys, MCP, agents, the feed, search, exports); the sender **replies on the tracking
+  page** once the team has written; **"The submitter replied"** to the owner and the writers
+  (one email an hour per idea, never the text; the queue's "They replied" while held); the
+  **tracking link emailed** at the first confirmation (`submission_link`; the confirmation
+  email stays link-free); **"Remove my email address"**; erasure and retention take the
+  conversation; fixed limits (20/day and 30/hour for the team, 10/day, 10 after each team
+  message and 30/hour per address for replies, 100 a conversation); the form's email help
+  and "Intro text" label. Migration 0017 (head 0017), no new settings or Helm values, no
+  version bump (`docs/RELEASE-NOTES.md` "Unreleased"). Demo: priya's conversation with
+  CUST-21's sender. Integration (2026-10-17): QA's V1 (the seeded message "Email queued"),
+  V3 (the form says who sees the address once), V4 (a receipt-with-address shot) fixed, V2
+  accepted; a run card's Cancel keyed so React never relabels it "Try again" (`test:pw`'s
+  cancel test failed under load); no key hint on the tracking page's Send reply; tour shots
+  21-22. Checks: backend (10,524 tests + `test-slow`), frontend check (744 vitest) + test:pw
+  (483), e2e default 381, `E2E_SSO=1` 402, `E2E_AI=1` 422 and against `make demo` 420
+  passed (none failed), then mcp-, ai-, bid- and public-smoke (with Mailpit) on that image;
+  e2e check, Helm, scripts (shellcheck 0.9 too), workflows, migrations, fake agent, `make
+  gen-api` (no diff), `make image` (535 MB). Screenshots `docs/screenshots/phase-11/` (+
+  `emails/`, `mock/`), phase-3 (+ the three new emails), phase-4 and the tour re-captured.
+  Not run: k3s (chart unchanged). Reviews (code, UX) and the phase summary are next.

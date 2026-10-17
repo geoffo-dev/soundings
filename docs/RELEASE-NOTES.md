@@ -16,7 +16,13 @@ of 2026-10-16), on top of 0.3.0. No version bump: whether and when to tag it is 
 owner's call (`scripts/deploy.sh check-release` needs the versions bumped first). Waiting
 for the product owner's review.
 
-**Verified on 2026-10-17** (the build machine, not a real CI runner): VERIFIED_LINE
+**Verified on 2026-10-17** (the build machine, not a real CI runner): backend (10,524 tests, `test-slow`),
+frontend check (744 vitest) + `test:pw` (483), e2e in all three modes (default 381,
+`E2E_SSO=1` 402, `E2E_AI=1` 422 passed) and against `make demo` (420 passed; none failed
+anywhere), then CI's MCP, AI, bid and public smokes on that image (the public smoke with
+Mailpit: the link email, a message, the reply), every `make check-*`, `make gen-api` (no
+diff), `make image` (535 MB). Not run for this change: k3s (the chart is unchanged) and a
+real CI runner.
 [Contract](api/contract-phase11.md), [ADR 0019](adr/0019-public-submitter-messages.md),
 [test plan](test-plans/phase-11.md).
 
@@ -63,7 +69,7 @@ for the product owner's review.
 | **Two narrow windows** | An erasure racing an email already being sent, and mail link rewriters (such as Safe Links) logging the whole `/track#` link, as for status emails since 0.1.0 ([ADR 0019](adr/0019-public-submitter-messages.md)). |
 | **Nothing retroactive** | Senders who confirmed their address before this release get no tracking-link email. |
 | The demo's message reads "Email queued" | Demo data only: priya's seeded message to CUST-21's sender reads as emailed (his address is confirmed), but the seed queues no email. |
-| As in 0.3.0 | KNOWN_AS_BEFORE |
+| As in 0.3.0 | [0.3.0's known issues](#known-issues-in-030) otherwise apply. |
 
 ### Upgrading from 0.3.0
 

@@ -109,6 +109,12 @@ story did (above). Visual review of `docs/screenshots/phase-11/` and the re-capt
 | P11-QA-V3 | frontend (nit) | The public form says twice who sees the address: the section line "Your email address is only for contacting you: it isn't shown with your idea." and the email help "…Only administrators can see your address." (`phase-4/public-submit-*`). |
 | P11-QA-V4 | qa (note) | Phase 4's receipt shot is sent without an address, so the receipt's new line ("Once you confirm your address, we'll email you this link too.") is in no screenshot; SM-01 checks it on a phone. |
 
+Outcomes (integration, 2026-10-17; [decisions](../decisions.md#2026-10-17--phase-11-build-and-integration)):
+V1 fixed in the seed (priya's message to Sam's confirmed address reads "Email queued"; nothing
+is queued; `test_seed.py` checks it); V2 accepted (as decided for the demo); V3 fixed (the
+line above the name says only "The team sees your name with your idea."); V4 fixed
+(`public-receipt-with-address-*` in `docs/screenshots/phase-11/`).
+
 ## Results
 
 Local e2e stack (prefix `p11-qa-`, default ports), freshly seeded, from the tree at `6620a12`
@@ -129,4 +135,19 @@ tracking page's new keys: the spec's list updated) and RS-02 once (the drag libr
 announcement timed out; it passed in the two runs since); the second (lost to a container
 restart) failed SM-03/05/08/09 waiting for the whole outbox to drain behind other specs' held or
 retried email (they now wait only for their own idea's email, `ideaEmailsSettled`).
+
+### Integration (2026-10-17)
+
+Prefix `p11-int-`, default ports, freshly seeded each run, from the tree at `6f976d9` plus the
+integration's changes (the seed's `emailed`, the form's line, the tracking page's reply button
+without a key hint, a run card's Cancel key, the tour's 21-22).
+
+| Check | Result |
+|---|---|
+| `make -C backend check` | 10,524 passed, 5 skipped (1 h 06); `test-slow` 6 passed |
+| `npm --prefix frontend run check`, `test:pw` | 744 vitest; `test:pw` 483 passed, none failed |
+| e2e default / `E2E_SSO=1` / `E2E_AI=1` | 381 / 402 / 422 passed, none failed |
+| e2e against `make demo` (as CI's e2e job) | 420 passed, 28 skipped, none failed; then `mcp-smoke`, `ai-smoke`, `bid-smoke` (`BID_AI=1`) and `public-smoke` with Mailpit (48 checks) passed |
+| A walk on the real stack | a submitter (form, receipt, confirmation email without a link, the confirm page, the link email, the tracking page before and after the team wrote, the reply, "Remove my email address"), priya (the review queue, a message before approving), amara as owner (inbox, "The submitter replied" email without the text, the sheet, a message), bob as a member (no Messages part, `?submission=1` dropped), at 390 px too: as the mock |
+| Screenshots | `screenshots:phase11` (22), `phase4` (37), `phase3` (28 + 6: the three new templates in `phase-3/emails/`), `tour` (54: 21 and 22 new); every changed PNG read |
 
