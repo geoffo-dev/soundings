@@ -70,8 +70,16 @@ test('PT-01: the tracking page shows only what was sent, and its token stays in 
       'summary',
       'title',
       'wants_updates',
+      // Phase 11: the conversation with the team (none here) and "Remove my email address".
+      'can_remove_email',
+      'messages',
+      'team_messages_emailed',
+      'can_reply',
+      'reply_blocked',
     ].sort(),
   )
+  expect(tracked.messages).toEqual([])
+  expect([tracked.can_reply, tracked.reply_blocked]).toEqual([false, 'awaiting_team'])
   expect([tracked.title, tracked.summary, tracked.status_label]).toEqual([
     SENT_TITLE,
     SENT_SUMMARY,

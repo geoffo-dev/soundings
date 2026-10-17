@@ -448,7 +448,7 @@ test('RA-08 notification preferences: “Asked to research” off sends no email
 
     await signInAs(page, nora)
     await page.goto('/settings/notifications')
-    await expect(page.getByRole('radiogroup')).toHaveCount(12) // twelve types since Phase 10
+    await expect(page.getByRole('radiogroup')).toHaveCount(13) // thirteen types since Phase 11
     const row = (label: string) => page.getByRole('radiogroup', { name: label, exact: true })
     for (const label of ['Asked to research', 'Research reminders']) {
       await expect(row(label).getByRole('radio', { name: 'Immediate' })).toBeChecked()

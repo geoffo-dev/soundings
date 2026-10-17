@@ -247,6 +247,16 @@ jobs:
           BID_AI: "1"
           AI_FAKE_KEYS_DIR: dev/.fake-agent-keys
           AI_FAKE_URL: http://127.0.0.1:8027
+      # The public form against the same image, with the demo's Mailpit: an anonymous idea
+      # (its ALTCHA solved by the app container's Python) with an address, the confirmation
+      # and tracking-link emails, the owner's message to the submitter (emailed) and the
+      # reply on the tracking link, "The submitter replied", approval, the proposal's PDF
+      # and Markdown exports; it deletes its idea.
+      - if: steps.e2e.outputs.present == 'true'
+        run: scripts/public-smoke.sh http://localhost:8000
+        env:
+          ALTCHA_PYTHON: docker exec -i soundings-demo-app python
+          MAILPIT_URL: http://localhost:8026
       - if: failure() && steps.e2e.outputs.present == 'true'
         run: |
           docker logs soundings-demo-app

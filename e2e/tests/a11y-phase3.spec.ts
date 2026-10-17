@@ -77,8 +77,8 @@ const SCREENS: Screen[] = [
     open: async (page) => {
       await page.goto('/settings/notifications')
       await expect(h2(page, 'Notifications')).toBeVisible()
-      // Twelve types since Phase 10 (the three bid types).
-      await expect(page.getByRole('radiogroup')).toHaveCount(12)
+      // Thirteen types since Phase 11 ("The submitter replied").
+      await expect(page.getByRole('radiogroup')).toHaveCount(13)
     },
   },
   {

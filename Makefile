@@ -39,7 +39,7 @@ SSO_BASE_URL ?= http://localhost:8000
 # MAILPIT_CONTAINER; defaults: the dev compose Mailpit).
 EMAIL_BASE_URL ?= http://localhost:8000
 # `make public-smoke` runs against this app (demo data and dev login: `make dev` or
-# `make demo`).
+# `make demo`); MAILPIT_URL=<its Mailpit> also checks the submitter's and team's emails.
 PUBLIC_BASE_URL ?= http://localhost:8000
 # `make mcp-smoke` runs against this app (demo data and dev login: `make dev` or `make demo`).
 MCP_BASE_URL ?= http://localhost:8000
@@ -208,7 +208,7 @@ sso-smoke: ## Scripted SSO sign-in + groups -> access against SSO_BASE_URL (defa
 email-smoke: ## Invite -> branded email in Mailpit, then an SMTP outage -> delivered once (EMAIL_BASE_URL, MAILPIT_URL)
 	scripts/email-smoke.sh $(EMAIL_BASE_URL)
 
-public-smoke: ## Public form + branding, then anonymous idea -> approved -> proposal -> PDF/Markdown export (PUBLIC_BASE_URL)
+public-smoke: ## Public form + branding, then anonymous idea -> approved -> messages with the submitter -> proposal -> PDF/Markdown export (PUBLIC_BASE_URL, MAILPIT_URL)
 	scripts/public-smoke.sh $(PUBLIC_BASE_URL)
 
 mcp-smoke: ## API key -> /mcp: tools, blind search, submit an evaluation, project restriction, audit, revoke -> 401 (MCP_BASE_URL)

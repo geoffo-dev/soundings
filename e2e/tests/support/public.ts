@@ -149,6 +149,20 @@ export class Visitor {
   erase(token: string) {
     return this.context.post(`${PUBLIC}/track/erase`, { data: { token } })
   }
+
+  /** Phase 11: a reply on the tracking page (201 with the page). */
+  reply(token: string, body: string) {
+    return this.context.post(`${PUBLIC}/track/messages`, { data: { token, body } })
+  }
+
+  async replied(token: string, body: string): Promise<TrackedSubmission> {
+    return json<TrackedSubmission>(await this.reply(token, body), 201)
+  }
+
+  /** Phase 11: "Remove my email address" (200 with the page). */
+  forgetEmail(token: string) {
+    return this.context.post(`${PUBLIC}/track/forget-email`, { data: { token } })
+  }
 }
 
 /**

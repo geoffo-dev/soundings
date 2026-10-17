@@ -147,7 +147,7 @@ test(
       await expect(
         form.getByRole('switch', { name: 'Review new ideas before the team sees them' }),
       ).toBeChecked()
-      await form.getByRole('textbox', { name: 'Intro' }).fill(INTRO)
+      await form.getByRole('textbox', { name: 'Intro text' }).fill(INTRO)
       await form.getByRole('button', { name: /^Save/ }).click()
       await expect(toast(page, 'The public form is on')).toBeVisible()
       await page.goto(`/p/${slug}/settings?tab=branding`)

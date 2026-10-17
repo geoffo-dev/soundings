@@ -4,8 +4,11 @@
 # login on, sign in over the ingress (session + CSRF cookies) and read My work; with
 # break-glass available, sign in with the credentials from its Secret; the public form,
 # branding and proposal export (scripts/public-smoke.sh: the public project and its logo,
-# and with the dev login an anonymous idea with a solved ALTCHA, approved, shortlisted,
-# its proposal exported as PDF in the API pod and as Markdown, then deleted); calls for
+# and with the dev login an anonymous idea with a solved ALTCHA, approved, a message
+# from its owner and the submitter's reply on the tracking link, shortlisted, its proposal
+# exported as PDF in the API pod and as Markdown, then deleted; with SMTP=1 also the
+# confirmation, the tracking-link email, the message email and "The submitter replied"
+# in the cluster's Mailpit); calls for
 # bids (scripts/bid-smoke.sh through the ingress: bids, PDF/DOCX/CSV uploads to the
 # 25 MiB route with the refused ones, the worker's text extraction, must-haves, reject and
 # reinstate, assessors, blind assessments, the comparison and report, the award; with
@@ -286,9 +289,12 @@ fi
 
 # Public form, branding and proposal export through the ingress. The ALTCHA is solved
 # with the api pod's Python (it has the altcha package; CI's runner has no Python).
-# Production has no demo data (it needs the dev login), so nothing to submit to.
+# Production has no demo data (it needs the dev login), so nothing to submit to. With
+# SMTP=1 the submitter gives an address and the emails are read in the cluster's Mailpit.
 if [ "$PROD" != "1" ]; then
-  CONNECT_HOST="${K3S_CONNECT_HOST:-}" \
+  public_mail=()
+  if [ "${SMTP:-0}" = "1" ]; then public_mail=(MAILPIT_URL="http://mailpit.localhost:$K3S_HTTP_PORT"); fi
+  env CONNECT_HOST="${K3S_CONNECT_HOST:-}" ${public_mail[@]+"${public_mail[@]}"} \
     ALTCHA_PYTHON="docker exec -i $K3S_NAME kubectl -n $NAMESPACE exec -i $deployment -c api -- python" \
     "$(dirname "$0")/public-smoke.sh" "$BASE_URL" || failed=1
   # Calls for bids (demo data and the dev login, like the public form). With AI=1 the

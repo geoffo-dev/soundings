@@ -65,6 +65,12 @@ import { defineConfig, devices } from '@playwright/test'
  * projects of their own; BD-06, BD-08, BD-10, BD-11 and the a11y spec read the seeded
  * TOOLS-3 call; BD-13 is @ai). `npm run screenshots:phase10` (SCREENSHOTS=phase-10) runs
  * screenshots/phase-10.spec.ts (docs/screenshots/phase-10/, with emails/ and pdf/).
+ *
+ * Phase 11: messages with public submitters need nothing new to run (tests/support/
+ * messages.ts arranges a project of its own whose ideas a new person owns, so nobody seeded
+ * gets their notifications; A11Y11 reads the seeded CUST-21 conversation as priya without
+ * changing it). `npm run screenshots:phase11` (SCREENSHOTS=phase-11) runs
+ * screenshots/phase-11.spec.ts (docs/screenshots/phase-11/, with emails/).
  */
 const external = process.env.E2E_BASE_URL
 const baseURL = (external ?? `http://localhost:${process.env.E2E_PORT ?? 8100}`).replace(/\/$/, '')
@@ -86,9 +92,11 @@ const screenshotSpec =
                 ? /screenshots\/phase-8b\.spec\.ts$/
                 : process.env.SCREENSHOTS === 'phase-10'
                   ? /screenshots\/phase-10\.spec\.ts$/
-                  : process.env.SCREENSHOTS === 'tour'
-                    ? /screenshots\/tour\.spec\.ts$/
-                    : /screenshots\/phase-1\.spec\.ts$/
+                  : process.env.SCREENSHOTS === 'phase-11'
+                    ? /screenshots\/phase-11\.spec\.ts$/
+                    : process.env.SCREENSHOTS === 'tour'
+                      ? /screenshots\/tour\.spec\.ts$/
+                      : /screenshots\/phase-1\.spec\.ts$/
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 const smtpOutage = /@smtp-outage/
 const serial = /@serial/
