@@ -16,7 +16,17 @@ of 2026-10-16), on top of 0.3.0, with its reviews' fixes. No version bump: wheth
 to tag it is the product owner's call (`scripts/deploy.sh check-release` needs the versions
 bumped first). Waiting for the product owner's review.
 
-VERIFIED_PARAGRAPH
+**Verified on 2026-10-17** (the build machine, not a real CI runner), after the security and
+UX reviews' fixes: backend (10,542 tests, `test-slow`), frontend check (747 vitest) +
+`test:pw` (487), e2e in all three modes (default 381, `E2E_SSO=1` 402, `E2E_AI=1` 422 passed)
+and against `make demo` (420 passed; none failed anywhere), then CI's MCP, AI, bid and public
+smokes on that image (the public smoke with Mailpit: the link email, a message, the reply),
+every `make check-*`, `make gen-api` (no diff), `make image` (535 MB); on k3s 0.3.0 with its
+demo data upgraded by `make k3s-deploy`'s path (0016 → 0017, row counts unchanged, nothing
+retroactive, the public smoke's conversation and its emails on the migrated data, the
+rollback across 0017 refused), as CI (`SSO=1 SMTP=1 MCP=1 AI=1`) and `PROD=1`. The real-stack
+screenshots of the changed screens (Phase 11, 4 and 3 with their emails) and the tour
+re-captured. Not run: a real CI runner, a real kagent, `scripts/ci-local/`.
 [Contract](api/contract-phase11.md), [ADR 0019](adr/0019-public-submitter-messages.md),
 [test plan](test-plans/phase-11.md), [Phase 11 summary](phase-summaries/phase-11.md).
 
@@ -74,7 +84,7 @@ VERIFIED_PARAGRAPH
 | **Two narrow windows** | An erasure racing an email already being sent, and mail link rewriters (such as Safe Links) logging the whole `/track#` link, as for status emails since 0.1.0 ([ADR 0019](adr/0019-public-submitter-messages.md)). |
 | **Nothing retroactive** | Senders who confirmed their address before this release get no tracking-link email; members who volunteered to own public ideas before it keep them. |
 | The demo's message reads "By email too" | Demo data only: priya's seeded message to CUST-21's sender reads as emailed (his address is confirmed), but the seed queues no email. |
-KNOWN_FINAL_ROWS
+| **A forced rollback across 0017 with the bundled Postgres** | `DEPLOY_FORCE=1 scripts/deploy.sh rollback` to 0.3.0 doesn't start the old pods: with the chart's bundled Postgres they migrate in an init container, and 0.3.0's `soundings migrate` stops at "Can't locate revision identified by '0017'"; Helm's rollback times out while the new pods keep serving, and rolling forward works. With an external database (the production setup: migrations in a pre-upgrade hook Job, which a rollback doesn't run) it doesn't apply. Not new in this release (any migration since Phase 9 behaves so); `scripts/deploy.sh` refuses the rollback unless forced. |
 | As in 0.3.0 | [0.3.0's known issues](#known-issues-in-030) otherwise apply. |
 
 ### Upgrading from 0.3.0
@@ -84,7 +94,8 @@ KNOWN_FINAL_ROWS
   submitter email types `submission_link` and `submission_message` (anyone who had every
   notification type off gets the new one off too). It is expand only, so 0.3.0's pods keep
   working during the rollout and `scripts/deploy.sh` can roll a failed deploy back; a
-  rollback across it is refused unless forced (`DEPLOY_FORCE=1`), as for every migration.
+  rollback across it is refused unless forced (`DEPLOY_FORCE=1`), as for every migration
+  (and with the bundled Postgres a forced one doesn't start the old pods: known issues).
   A submitter erased by a 0.3.0 pod during that window leaves their conversation and the
   new emails behind: the hourly cleanup deletes them. Downgrading below 0017 **deletes**
   every message, the new emails and the `submitter_replied` notifications and preferences.

@@ -966,7 +966,13 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   agent, its image is unused for a moment, and the new pod sticks in `ErrImageNeverPull`
   ("error: timed out waiting for the condition"); free disk, `make k3s-fake-agent` again,
   rerun (2026-10-14). A bind-mounted script edited while a container runs it breaks that
-  run (bash reads it as it goes): edit between runs.
+  run (bash reads it as it goes): edit between runs. With the bundled Postgres (k3s values)
+  a `DEPLOY_FORCE=1` rollback across a migration never starts the older pods: their `migrate`
+  init container fails with alembic's "Can't locate revision identified by '<newer>'"; the
+  newer pods keep serving and rolling forward works (2026-10-17). To rehearse a deploy with
+  sign-in and email in `soundings-staging`, pass helm arguments after the image:
+  `scripts/lib/k3s-deploy.sh deploy staging soundings:dev --set devLogin=true --set
+  demo.seed=true -f dev/k3s-smtp-values.yaml` (after `make k3s-mailpit`).
 - **k3s NetworkPolicy** is enforced (kube-router) and on by default in the chart; a new
   pod's address is admitted a moment after it starts, so in-cluster clients started
   fresh (the `helm test` pod) retry. Through Traefik an oversized *chunked* POST may get
@@ -1426,4 +1432,15 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   names); UX M1 ("They won't get an email"), M2 (one unread "The submitter replied" per
   recipient and idea), m1 ("By email too" / "Tracking page only"), m2-m6 and p1-p9 (the
   receipt leads with the confirmation, `/track?reply=1#…`, the form's help "Only the team's
-  admins…", the intro preview, one footer line, …). FINAL_STATUS Stop for the human's review.
+  admins…", the intro preview, one footer line, …). Final verification (2026-10-17,
+  `docs/phase-summaries/phase-11.md`): backend (10,542 tests + `test-slow`), frontend check (747 vitest) + test:pw (487), e2e default 381,
+  `E2E_SSO=1` 402, `E2E_AI=1` 422 and against `make demo` 420 passed (none failed), then mcp-,
+  ai-, bid- and public-smoke (with Mailpit) on that image; every `make check-*`, `make gen-api`
+  (no diff), `make image` (535 MB); on k3s 0.3.0 + demo data upgraded by `make k3s-deploy`'s
+  path (0016 → 0017, counts unchanged, nothing retroactive, the public smoke's conversation
+  and emails and a message to CUST-21's 0.3.0-era sender on the migrated data, the rollback
+  across 0017 refused), as CI (`SSO=1 SMTP=1 MCP=1 AI=1`) and `PROD=1`; screenshots phase-11
+  (+ `emails/`, `mock/`), phase-4 (+ `mock/`), phase-3 (+ `emails/`) and the tour re-captured.
+  Known: a forced rollback across a migration with the bundled Postgres can't start the older
+  pods (their `migrate` init container doesn't know the newer revision; pre-existing since
+  Phase 9; release notes). Stop for the human's review.

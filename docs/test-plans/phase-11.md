@@ -151,3 +151,46 @@ without a key hint, a run card's Cancel key, the tour's 21-22).
 | A walk on the real stack | a submitter (form, receipt, confirmation email without a link, the confirm page, the link email, the tracking page before and after the team wrote, the reply, "Remove my email address"), priya (the review queue, a message before approving), amara as owner (inbox, "The submitter replied" email without the text, the sheet, a message), bob as a member (no Messages part, `?submission=1` dropped), at 390 px too: as the mock |
 | Screenshots | `screenshots:phase11` (22), `phase4` (37), `phase3` (28 + 6: the three new templates in `phase-3/emails/`), `tour` (54: 21 and 22 new); every changed PNG read |
 
+
+### Review fixes (2026-10-17)
+
+The security and UX reviews' fixes (`621fac8`, `c2ecc5b`; [decisions](../decisions.md#2026-10-17--phase-11-review-decisions))
+changed what some specs read: SM-02/SM-03 the delivery labels ("By email too", "Tracking page
+only") and "They won't get an email"; SM-01 the receipt's "Open the link we've just emailed
+you"; SM-05 the subject `[KEY] The submitter replied` and one unread item per recipient and
+idea (the spec waits for the first item to be read before the second reply, which then adds
+a new one); SM-09 "Team message (public submitter)"; MO11-02 the phone's return to Details.
+New backend tests for each finding: c32 (`test_a_member_cannot_volunteer_to_own_a_public_idea`,
+`test_admins_volunteer_or_name_the_owner_of_a_public_idea`,
+`test_a_member_still_volunteers_for_an_idea_the_team_wrote`, the matrix's c32 cases), L1 and
+p3 (`test_the_owner_and_everyone_who_wrote_are_told`), N1
+(`test_a_signature_line_in_a_message_hides_nothing_after_it`), N3
+(`test_concurrent_sends_never_pass_the_hourly_limit_of_one_person`), N4
+(`test_a_throttled_reply_takes_no_lock`), N5 (`test_create_project_validation`,
+`test_update_project_errors`), M2 (`test_replies_bring_the_unread_item_up_to_date`,
+`test_an_hour_after_the_last_email_the_next_reply_is_emailed_again`,
+`test_digest_recipients_get_one_line_per_unread_item`,
+`test_once_read_a_reply_within_the_hour_reaches_the_inbox_only`), m4
+(`test_a_team_message_reaches_a_confirmed_address_signed_by_the_team`); the SPA's page tests
+for M1, p5, p8, p9 and `?reply=1` (`frontend/tests/submitter-messages.spec.ts`).
+
+### Final verification (2026-10-17)
+
+On the build machine, from `c2ecc5b` plus the final verification's changes (SM-05's subject
+and read wait, the Phase 11 screenshot spec's copy, a stale ready check in the mock's
+`public-screenshots.spec.ts`, docs). Prefix `p11-final-`, default ports, freshly seeded each run.
+
+| Check | Result |
+|---|---|
+| `make -C backend check` | ruff, format, mypy (518 files) clean; 10,542 passed, 5 skipped (1 h 14, the real Mailpit, Keycloak and fake-agent tests on) |
+| `make -C backend test-slow` | 6 passed (idle machine) |
+| `npm --prefix frontend run check`, `test:pw` | 747 vitest, build; `test:pw` 487 passed, 277 skipped (the screenshot specs), none failed (24.6 min, quiet machine) |
+| e2e default / `E2E_SSO=1` / `E2E_AI=1` (local stack) | 381 / 402 / 422 passed, none failed (20.3 / 20.9 / 24.4 min) |
+| e2e against `make demo` (the rebuilt `soundings:dev`, CI's e2e job's settings) | 420 passed, 28 skipped, none failed (16.8 min); then `mcp-smoke`, `ai-smoke`, `bid-smoke` (`BID_AI=1`, 65 checks) and `public-smoke` with Mailpit (48 checks: the link email once, the message email, `[CUST-…] The submitter replied` without the text or the title) passed |
+| `npm --prefix e2e run check`, `check-helm`, `check-scripts` (+ shellcheck 0.9.0), `check-workflows`, `check-migrations`, `check-fake-agent` (59), `make gen-api` | pass; `gen-api` no diff |
+| `make image` | `soundings:dev`, 535 MB (label 0.3.0: no version bump) |
+| k3s upgrade (the Phase 9 path) | `soundings:0.3.0` with its demo data in `soundings-staging` by `scripts/lib/k3s-deploy.sh deploy staging soundings:0.3.0` (the deployer ServiceAccount in the tools image; `devLogin`, `demo.seed` and `dev/k3s-smtp-values.yaml` added, so the cluster's Mailpit gets the mail), then `… deploy staging soundings:dev`: the release's migration-head label 0016 → 0017, `alembic_version` 0017, thirteen tables' row counts unchanged, `submission_messages` empty, the swapped `CHECK`s accept the new types, no email queued (CUST-21's address was confirmed under 0.3.0: nothing retroactive); helm test and `deploy-smoke.sh` passed. On the migrated data: `public-smoke.sh` with `MAILPIT_URL` (48 checks: a submission with an address, the confirmation, the link email in Mailpit once, the owner's message emailed, the reply, `[CUST-24] The submitter replied`), and priya's message to CUST-21's 0.3.0-era sender (201, `delivery: email`, the email in Mailpit without `Reply-To`). The rollback to revision 1 refused (it crosses 0017). |
+| The rollback window, forced | `DEPLOY_FORCE=1 … rollback staging`: the 0.3.0 pods never started: with the bundled Postgres their `migrate` init container stops at "Can't locate revision identified by '0017'", Helm's rollback timed out while the 0017 pods kept serving, and rolling forward again (revision 4) passed. With an external database migrations run in a pre-upgrade hook Job, which a rollback doesn't run. A known issue since Phase 9, not Phase 11's (release notes). |
+| k3s as CI (`SSO=1 SMTP=1 MCP=1 AI=1`) | `make k3s-install` + `k3s-smoke` with `soundings:dev`: every smoke passed (the public smoke's conversation and its emails through the cluster's Mailpit, SSO, email with the outage, MCP with the in-cluster SDK and the NetworkPolicy, bids, AI), helm test; kagent v0.10.2's CRDs with every `deploy/kagent/` manifest created against them |
+| `PROD=1` | install and smoke passed (break-glass, `__Host-` cookies, `/metrics` 404 on the app port, production start-up, no password in the logs); then `k3s-down` |
+| Screenshots | `screenshots:phase11` (22), `screenshots:phase4` (37), `screenshots:phase3` (28 + 6), `screenshots:tour` (54) on the real stack; the mock's `submitter-messages-screenshots` and `public-screenshots` (82, into `phase-11/mock/` and `phase-4/mock/`); every changed PNG of the Phase 11 screens read (the sheet's "They won't get an email" and "By email too", the panel, the inbox's single reply item, the receipt's "Open the link we've just emailed you", the form's help, the Public form settings' preview, the emails' subject and footer); no defect |

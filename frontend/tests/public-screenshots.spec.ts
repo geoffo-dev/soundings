@@ -307,7 +307,8 @@ const shots: Shot[] = [
     width: 1440,
     height: 900,
     user: USERS.priya,
-    ready: (page) => page.getByText(/waiting for review/).waitFor(),
+    // The board's notice (the header's phone-only link says it too, hidden at this width).
+    ready: (page) => page.getByText(/from the public form (is|are) waiting/).waitFor(),
   },
   {
     name: 'moderation-queue-1440',

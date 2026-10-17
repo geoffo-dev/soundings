@@ -1936,7 +1936,14 @@ makes one NOT NULL, unless the file says why that is safe (`# contract-ok: <reas
 migrations, and a deploy of an image whose newest migration is older than the database's,
 are refused unless `DEPLOY_FORCE=1`: use it only when you know that code runs on the
 current schema (the release just before does, by the rule). The check relies on migration
-ids being zero-padded sequence numbers (`0001`, `0002`, ...).
+ids being zero-padded sequence numbers (`0001`, `0002`, ...). With the chart's **bundled
+Postgres** a forced rollback across a migration doesn't get that far: the pods migrate in an
+init container, and the older image's `soundings migrate` stops at "Can't locate revision
+identified by '<newer id>'", so its pods never start, Helm's rollback times out and the newer
+pods keep serving (roll forward instead; verified on k3s, 2026-10-17). With an external
+database, migrations run in a pre-upgrade hook Job, which a rollback doesn't run, and the
+pods have no migrate init container, so the older pods start on the newer schema (by the
+chart's templates; not exercised on a cluster here).
 
 ### On-prem and air-gapped
 

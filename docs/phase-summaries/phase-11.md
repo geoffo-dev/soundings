@@ -57,7 +57,15 @@ off gets the new one off). No new setting, Helm value or MCP tool.
 **Final verification (2026-10-17):** see [the test plan](../test-plans/phase-11.md#final-verification-2026-10-17)
 and the table below.
 
-FINAL_VERIFICATION_TABLE
+| Check | Result |
+|---|---|
+| `make -C backend check` | ruff, format, mypy (518 files) clean; 10,542 passed, 5 skipped (1 h 14, the real Mailpit, Keycloak and fake-agent tests on); `test-slow` 6 passed |
+| `npm --prefix frontend run check`, `test:pw` | 747 vitest, build; `test:pw` 487 passed, none failed |
+| e2e (local stack) | default 381, `E2E_SSO=1` 402, `E2E_AI=1` 422 passed, none failed |
+| e2e against `make demo` (CI's e2e job) | 420 passed, none failed; then `mcp-smoke`, `ai-smoke`, `bid-smoke` (`BID_AI=1`) and `public-smoke` with Mailpit (48 checks) passed |
+| Static | `npm --prefix e2e run check`, `check-helm`, `check-scripts` (+ shellcheck 0.9.0), `check-workflows`, `check-migrations`, `check-fake-agent` (59), `make gen-api` (no diff); `make image` 535 MB |
+| k3s upgrade (`make k3s-deploy`'s path) | 0.3.0 + demo data → `soundings:dev`: 0016 → 0017, row counts unchanged, nothing retroactive (CUST-21 confirmed under 0.3.0 got no link email), the public smoke's conversation and emails on the migrated data, priya's message to CUST-21's 0.3.0-era sender emailed; the rollback across 0017 refused |
+| k3s as CI and in production mode | `SSO=1 SMTP=1 MCP=1 AI=1` install and every smoke; `PROD=1` install and smoke |
 
 ## Reviews and outcomes
 
@@ -96,7 +104,15 @@ FINAL_VERIFICATION_TABLE
   message, the preference sentence and the reply email's reason line, the tracking page
   after removing the address, the panel's order and "The team wrote …", Admin → Email's type
   names, the phone's Details → Messages focus, a warning before the reply limit): all fixed.
-- **Final verification** (2026-10-17): FINAL_FIXES
+- **Final verification** (2026-10-17): SM-05 still expected the reply email's old subject
+  (fixed), and now waits for the first item to be read before the second reply, which then
+  adds a new item (an unread one would be brought up to date); the Phase 11 screenshot spec
+  still waited for the sheet's and receipt's old sentences (fixed); the mock's
+  `public-screenshots.spec.ts` waited on a text the phone-only header link now shares
+  (strict-mode, fixed); docs (release notes, decisions "Phase 11 review decisions", ADR 0019
+  points 8-9, the operator guide's no-reply `from` and footer wording, the user guide's
+  single reply item, README, CLAUDE.md). Found and documented, not changed: a forced
+  rollback across a migration with the bundled Postgres can't start the older pods (below).
 
 ## Known issues
 
@@ -111,7 +127,15 @@ FINAL_VERIFICATION_TABLE
 - **Members who volunteered** as owners of public ideas before c32 keep them (and the
   conversation).
 - The seeded message reads "By email too" although the seed queues no email (demo data only).
-- KNOWN_FINAL
+- **A forced rollback across 0017 with the bundled Postgres** doesn't start the older pods:
+  their `migrate` init container stops at "Can't locate revision identified by '0017'"
+  (seen on k3s: Helm's rollback timed out while the 0017 pods kept serving; rolling forward
+  worked). Not new in Phase 11: any migration since Phase 9 behaves so. External databases
+  (migrations in a hook Job) aren't affected. `scripts/deploy.sh` refuses the rollback unless
+  forced. A fix (`soundings migrate` doing nothing when the database is ahead of the image)
+  is a request to the backend owner.
+- Not run: a real CI runner (GitHub's runners, GitLab Premium), a real kagent and LLM,
+  `scripts/ci-local/`.
 
 ## Screenshots
 
@@ -137,4 +161,5 @@ Against the mock (`SCREENSHOTS=1 npx playwright test submitter-messages-screensh
 (`docs/screenshots/tour/`): priya's conversation with CUST-21's sender, and a sender's
 tracking page. Re-captured with the phase: phase-3 (+ `emails/`: the three new templates and
 the changed ones), phase-4 (the form, receipt, tracking page and Public form settings whose
-copy changed) and the tour. SCREENSHOT_NOTE
+copy changed; its mock set `phase-4/mock/` too) and the tour. Every changed PNG of the
+Phase 11 screens was read after the final re-capture, without a defect.
