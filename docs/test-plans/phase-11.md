@@ -118,10 +118,11 @@ plus the screenshot spec's names (2026-10-17).
 |---|---|
 | `test_phase11_acceptance.py` (real Mailpit) | 3 passed (22 s); Phase 3 and 4 acceptance 4 passed |
 | e2e default (`e2e`, `serial`, `smtp-outage`) | 381 passed, 67 skipped, none failed (15.0 min); Phase 10's 353 + SM-01…09 + 19 in `a11y-phase11.spec.ts` |
-| e2e `E2E_SSO=1` | (running) |
-| e2e `E2E_AI=1` | (to run) |
+| e2e `E2E_SSO=1` | 402 passed, 46 skipped, none failed (18.2 min); Phase 10's 374 + 28 |
+| e2e `E2E_AI=1` | 422 passed, 26 skipped, none failed (17.0 min); Phase 10's 394 + 28 |
 | `npm --prefix e2e run check` | pass |
 | `screenshots:phase11`, `screenshots:phase4` | 19 and 37 passed; every PNG read (above) |
+| `frontend`: `SCREENSHOTS=1 npx playwright test submitter-messages-screenshots` (MSW mock) | 39 passed into `docs/screenshots/phase-11/mock/` (13 screens; the full-page `track-remove-email-390` shows the dialog's overlay over the first screen only, a capture artefact) |
 
 Earlier runs on the way: the first full default run (before the Phase 11 specs) failed PT-01 (the
 tracking page's new keys: the spec's list updated) and RS-02 once (the drag library's "is over"

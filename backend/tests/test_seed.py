@@ -678,8 +678,9 @@ async def test_seed_has_a_conversation_with_cust_21s_submitter(
     settings: Settings, db_session: AsyncSession, login: Login
 ) -> None:
     """Phase 11 (contract-phase11 section 15): priya wrote to Sam, Sam replied an hour later;
-    priya has one unread "The submitter replied"; CUST-21 keeps no owner, nothing was
-    emailed, and alice's inbox has nothing of it."""
+    priya has one unread "The submitter replied"; CUST-21 keeps no owner; priya's message
+    to Sam's confirmed address reads as emailed but nothing was queued (P11-QA-V1), and
+    alice's inbox has nothing of it."""
     from app.models.notification import Notification, OutboundEmail
     from app.models.public import SubmissionMessage
     from app.seed.public import CONVERSATION
@@ -695,6 +696,7 @@ async def test_seed_has_a_conversation_with_cust_21s_submitter(
         ("team" if seed.author else "submitter", seed.body) for seed in CONVERSATION
     ]
     assert messages[0].author_id == priya.id
+    assert [m.emailed for m in messages] == [True, False]
     gap = messages[1].created_at - messages[0].created_at
     assert abs(gap - timedelta(hours=1)) < timedelta(minutes=1)
     assert await db_session.scalar(select(func.count()).select_from(OutboundEmail)) == 0

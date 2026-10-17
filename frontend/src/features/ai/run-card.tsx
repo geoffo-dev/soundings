@@ -163,6 +163,9 @@ export function RunCard({ ideaKey, run, resultAction, retry, counted, className 
           {active
             ? current.can_cancel && (
                 <Button
+                  // Its own key: when the run ends, React must not reuse this button as
+                  // "Try again" (focus would stay on a control the person never chose).
+                  key="cancel"
                   variant="ghost"
                   size="sm"
                   // Stays focusable while it cancels (aria-disabled), so focus isn't lost.

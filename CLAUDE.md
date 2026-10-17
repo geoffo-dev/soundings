@@ -58,7 +58,10 @@ backend/          FastAPI app (app/), Alembic (app/migrations/, ships in the whe
                       worker's text child), assess.py (AI assess runs, quote checks), report.py
   app/mcp/bid_tools.py  the three bid tools, bound to the open `assess_bid` run's bid (c22)
   app/notifications/bids.py  "Asked to assess bids", the reminder scan, "Bid assessments complete"
-  app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention
+  app/public/         public form, ALTCHA flow, tracking, confirmation, erasure, retention;
+                      messages.py (Phase 11: the conversation with a public submitter, send,
+                      the reply, the limits), emails.py (the submitter emails, incl. the link)
+  app/notifications/submitter.py  "The submitter replied" (Phase 11, a before-commit hook)
   app/services/branding.py brand_assets.py moderation.py  branding (cached), images, queue
   app/ai/             AI runs (Phase 6): registry (agents.py), runs.py, runner.py + tasks.py (the
                       worker's `ai` queue), a2a.py (hand-written A2A 0.3/1.0 client), scope.py (c22),
@@ -124,7 +127,7 @@ Root (`make` or `make help` lists them; all verified to exist on 2026-09-30):
 | `make ai-smoke` | `scripts/ai-smoke.sh $(AI_BASE_URL)` (default :8000) against an app with AI on, dev login, the worker and the fake agent (`AI_FAKE_URL`, default :8083; `AI_FAKE_KEYS_DIR`, default `dev/.fake-agent-keys`): register an agent (key once), hand the fake its key, Test connection, "Ask AI to evaluate" watched over SSE by a pending evaluator (no score data, 204 after the end), the AI evaluation out of the aggregate then included, research note, section draft, a cancelled `-slow` run, the agent's key refused on REST and outside runs; `AI_PROTOCOL=kagent_v1_0` runs it over A2A 1.0; needs `jq` |
 | `make fake-agent-image` · `make k3s-fake-agent` · `make k3s-kagent-crds` · `k3s-install AI=1` · `k3s-smoke AI=1` | The fake agent's image (`FAKE_AGENT_IMAGE`, default `soundings-fake-agent:dev`); the fake in k3s as `kagent/kagent-controller:8083` (so the default `controllerUrl` works); kagent v0.10.2's CRDs (from the git tag, cloned into `.k3s/`) plus a server-side dry run of every kagent manifest; install with `dev/k3s-ai-values.yaml` (AI on, `kagent.examples` when the CRDs exist) and run `ai-smoke` through the ingress. CI's k3s job runs `SSO=1 SMTP=1 MCP=1 AI=1` |
 | `make bid-smoke` | `scripts/bid-smoke.sh $(BID_BASE_URL)` (default :8000) against an app with the demo data, dev login and the worker: a test idea's call in `BID_PROJECT` (default customer-innovation), bids, PDF/DOCX/pricing-CSV uploads and refusals (409 duplicate, 415 `.docm`, 413 at 25 MiB + 1 with a Content-Length and chunked, 422 `../`, 401, 403), extraction, download headers, must-haves, reject/reinstate, per-section assessors, price visibility, blind before/after submitting, the comparison total recomputed from the template, the report (403 for an assessor), a name in `X-Filename`, with `BID_AI` (`auto`, `0`, `1`) an AI assess run through the fake agent (quotes found, `-invents` one not found, include/exclude), the award; deletes its idea. `BID_SLOW_UPLOAD=1` adds a slow upload (1.6 MB at 20 KiB/s, about 78 s: the ingress timeouts). `k3s-smoke` runs it (AI part with `AI=1`), and so does GitHub's e2e job |
-| `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then deletes the idea. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too |
+| `make public-smoke` | `scripts/public-smoke.sh $(PUBLIC_BASE_URL)` (default :8000): anonymously the public form, branding, logo headers, 404 and 415; with dev login a real ALTCHA submission (replay refused), tracking, approve, shortlist, proposal, PDF and Markdown export, then the Phase 11 conversation (409 `awaiting_team` and 415 before the team writes, the owner it makes writes, a member 403 with `messages: null`, the reply, newest first, one `submission.message` audit entry without the text), then deletes the idea. With `MAILPIT_URL` (`MAIL_TIMEOUT`, 90 s) also the submitter's email: no tracking link in the confirmation email, the link email once after the first confirmation, the message email (escaped, signed by the team, no `Reply-To`) and "The submitter replied" without the text. `ALTCHA_PYTHON` names a Python with `altcha` (default the backend venv). `k3s-smoke` runs it too (`SMTP=1` passes `MAILPIT_URL`), and so does GitHub's e2e job against `make demo` |
 | `make k3s-install PROD=1` · `k3s-smoke PROD=1` | Production mode on the local k3s (`dev/k3s-prod-values.yaml`: no dev login or demo data, break-glass sign-in): the smoke checks `__Host-` cookies, the OpenAPI document and Swagger UI 401 anonymously and 200 signed in, `/metrics` off the app port, the production startup log, no password in the logs; skips the public-form smoke (no demo data). Not with `SSO=1` |
 | `make openapi` | Export the backend's OpenAPI to `frontend/src/api/generated/openapi.json` |
 | `make gen-api` | `openapi` + regenerate `schema.d.ts` (openapi-typescript) |
@@ -196,6 +199,16 @@ regenerated with `uv run python -m tests.bids.seed_documents` (`test_seed_docume
 fails when the committed copies drift). `test_phase10_acceptance.py` (about 70 s, Mailpit
 and the real fake agent like Phase 3's and 6's) plays the whole call (AC10-API-1) and the
 demo story with keys per scope (AC10-API-2).
+Phase 11 tests (`tests/public/conftest.py`): `make_public_idea(db, settings, team, email=,
+verified=, held_for=, owner=)` (a public idea and its submission straight in the database;
+returns the tracking token and the idea), `messages_url(idea)`, `add_message(db, idea,
+direction, author=, at=, count=)` (messages straight in the database, e.g. up to a limit);
+`tests/public/test_messages.py` (the team side over principal kinds and every place a
+message could leak), `test_tracking_messages.py` (the reply route, its throttles, forget-email),
+`test_submitter_emails.py`, `test_message_erasure.py` (three erasure paths, rules 3-5, the
+cascade), `tests/notifications/test_submitter_replied.py`, `tests/mcp/test_submitter_messages.py`;
+`test_phase11_acceptance.py` (about 22 s, Mailpit like Phase 3's) plays the conversation
+(AC11-API-1), the limits (AC11-API-2) and erasure and retention (AC11-API-3).
 API-key tests use `tests/api_keys/helpers.py` (`world`, `make_key` through the service
 layer, also for service accounts; `key_client`; a person's key needs `last_seen_at`, which
 `make_key` sets); MCP tests (`tests/mcp/conftest.py`) run the SDK client over
@@ -256,6 +269,13 @@ the price, Priya owes Tessellate: no ranks for her), TOOL-4 open with an AI asse
 `*-invents` invents a quote. Phase 10 mock screenshots: `SCREENSHOTS=1 npx playwright test
 bids-screenshots` → `docs/screenshots/phase-10/mock/`. Uploads go through
 `api/client.ts` `uploadRaw` (the raw file, the name percent-encoded in `X-Filename`, progress).
+Phase 11 mock (`src/mocks/phase11-fixtures.ts`, rules in `submitter-messages.ts`,
+`frontend/README.md`), all in Sustainability: GREEN-13 (Grace's, a confirmed address, four
+messages), GREEN-14 (an unconfirmed address: tracking page only), GREEN-15 (details erased),
+GREEN-10 (held for moderation: Carol asked, they replied), GREEN-9 (the team hasn't written:
+no conversation); Alice and Emma are members there and see none of it. Phase 11 mock
+screenshots: `SCREENSHOTS=1 npx playwright test submitter-messages-screenshots` →
+`docs/screenshots/phase-11/mock/`.
 
 E2E (`e2e/`, after `npm --prefix e2e ci`): `npm --prefix e2e test` starts the real stack
 from the working tree (Postgres `<E2E_PREFIX>pg` on 55433, migrate, `seed --reset`, a
@@ -306,7 +326,10 @@ under the serial ones) and restore the profile in `finally`. PDFs
 are read with `tests/support/pdf.ts` (`pdfjs-dist`, an e2e dev dependency: text,
 metadata, colours, embedded fonts, page renders; there is no poppler here). The demo seed
 has 48 ideas (CUST-21 approved from the public form, CUST-22/23 in the moderation
-queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators. Phase 8
+queue), so the Phase 1 list counts are 21 CUST ideas, 6 needing evaluators; Phase 11:
+priya (CUST's admin) wrote to CUST-21's sender, Sam Okafor (a confirmed address), who
+replied on his tracking page an hour later (priya has one unread "The submitter replied";
+CUST-21 keeps no owner; nothing is queued). Phase 8
 (contract-phase8 §3.14, `app/seed/research.py`): Internal Tools (13 ideas) has the research
 step before evaluation, the default checklist and a six-section template; TOOLS-11
 (complete; "Similar ideas" finds CUST-14) and TOOLS-12 (one required item open) are in
@@ -380,8 +403,21 @@ project. The fake agent's assess suffixes: `-invents` (a quote in no document) a
 `-not-met` (the first must-have not met). `screenshots:phase10` writes
 `docs/screenshots/phase-10/` (11 screens × 1440 light/dark and 390 light), `emails/` and
 `pdf/` (TOOLS-3's report and its pages).
+**Talking to public submitters (Phase 11):** specs use `tests/support/messages.ts`
+(`messagingTeam(alice, name, { moderated, exact })`: a private project with its public form
+on and two new people, Nora, who owns every idea sent through it, and Theo, a member, so no
+seeded inbox changes; `sendPublicIdea(alice, team, visitor, { title, email, confirm, name,
+summary })` through a `Visitor`, the confirmation clicked through the API; `confirmationToken`,
+`sendTeamMessage`, `teamMessages`, `ideaEmailsSettled` (waits for that idea's email only:
+others' held mail can keep the outbox busy); locators `messagesPart`, `messagesSheet`,
+`conversation`, `trackedMessages`, `openMessages`): SM-01…SM-09 (`submitter-messages.spec.ts`),
+A11Y11/MO11/K11 (`a11y-phase11.spec.ts`), which read the seeded CUST-21 without changing
+it. The preference specs count 13 notification types. `screenshots:phase11` writes
+`docs/screenshots/phase-11/` (6 screens × 1440 light/dark and 390 light: the seeded CUST-21,
+then "Home Delivery" (HOME) with Sam Okafor and Ana Silva, archived afterwards) and
+`emails/` (the three new emails).
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
-`docs/test-plans/phase-1.md` … `phase-10.md` (Phase 7: `performance.md`).
+`docs/test-plans/phase-1.md` … `phase-11.md` (Phase 7: `performance.md`).
 
 Wireframes: edit `docs/wireframes/0*.md`, then `python3 docs/wireframes/build_index.py`.
 
@@ -814,6 +850,46 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   as ingress-nginx annotations; Traefik needs its entryPoint `readTimeout` raised instead),
   the worker's 1Gi memory limit (the extraction child), `kagent.agents.bidAssessor` (its
   system message: document text is untrusted data, quote one exact passage).
+- **Talking to public submitters** (contract-phase11, ADR 0019, role matrix table G, c31,
+  `app/public/messages.py`): one conversation per public submission (`submission_messages`,
+  `submission_id` `ON DELETE CASCADE`), plain text (1-4,000, `VisibleText`, U+2028/U+2029 as
+  `\n`), never Markdown or HTML anywhere (the SPA shows it as plain text with line breaks,
+  emails escape it; a reply is untrusted public input). Rule `public.message_submitter`
+  (reading and writing): the idea's owner, project and platform admins, **session only**
+  (`ROUTE_KEY_ACCESS` and `RESEARCH_GUEST_ACCESS` rows deny, no MCP tool), never an agent or
+  the break-glass account (c31, `is_named_person`); everyone else sees nothing, not even
+  that one exists (`IdeaSubmission.messages` and `permissions.can_message` null/false, no
+  query run for them). GET/POST `/ideas/{idea}/submission/messages` (newest first, the house
+  cursor); allowed on closed ideas and ideas held for moderation (c19 doesn't apply),
+  read-only in an archived project; 409s in order `project_archived`, `submitter_erased`,
+  `public_submission_off`, `conversation_full`, then 429 `too_many_attempts` (20 team
+  messages per submission a day, 30 per person an hour); 100 messages a conversation in all.
+  Every team message is on the tracking page and is also emailed (`submission_message`,
+  payload the message id, rendered at send time) when the address is confirmed and email is
+  set up, whatever `wants_updates` says; signed "The <project> team", never a person; no
+  `Reply-To` (`EmailContent.allow_reply_to`). The submitter replies on the tracking page
+  (POST `/public/track/messages` {token, body}: JSON only, the token rules, the shared
+  per-IP throttle then `PUBLIC_REPLY_THROTTLE` 30 an hour per client address) only after the
+  team wrote and at most 10 times after each team message (409 `awaiting_team`), 10 a day;
+  not audited. "Remove my email address" (POST `/public/track/forget-email`) does what rule 3
+  does, on request. **"The submitter replied"** (`app/notifications/submitter.py`, a
+  before-commit hook like the bid notifications, not feed events) goes to the owner and
+  everyone who wrote, re-checked against the rule (SQL form in the inbox) when written, shown
+  and sent; never the reply's text; no item while the idea is held (the queue shows "They
+  replied"); at most one immediate email per recipient and idea an hour
+  (`SUBMITTER_REPLIED_EMAIL_INTERVAL`, `fanout.py`). Not in the feed, search, ⌘K, MCP,
+  exports or `last_activity_at`. Team messages are audited `submission.message` (the
+  message id, never the text). The **tracking-link email** (`submission_link`) is queued with
+  the first confirmation only (`email_verified_at` null → now, email set up, the sealed
+  token present; `EmailVerified.tracking_link_emailed`); the confirmation email stays
+  link-free. Erasure (admin, "Delete my details", retention) deletes the conversation and the
+  idea's outbox rows of all four `SUBMITTER_EMAIL_TYPES`; rule 3 keeps the conversation
+  (emails stop); rule 4 counts the latest message (in the candidate query and again under
+  the lock); rule 5 sweeps messages and submitter emails left on erased submissions. SPA:
+  `features/moderation/submitter-messages.tsx` (the panel's Messages part and the sheet,
+  `?submission=1`, a plain textarea without mentions, drafts per idea), `message-copy.ts`
+  (every refusal by code), the tracking page's Messages section and "Remove my email
+  address".
 - **Air-gapped:** no CDN assets, web fonts or telemetry; everything is bundled.
 - **Dependencies:** one-line justification each, in the owner's report.
 - **Commits** (lead): small conventional commits, no secrets.

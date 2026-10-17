@@ -70,7 +70,7 @@ from app.models.enums import (
 )
 from app.models.group import Group, GroupMembership
 from app.models.notification import Notification
-from app.models.public import PublicSubmission
+from app.models.public import PublicSubmission, SubmissionMessage
 from app.models.research import ResearchChecklistItem
 from app.models.user import UserExternalId
 from app.notifications import bids as bid_notifications
@@ -849,7 +849,9 @@ class _Player:
     def _message(self, seed: ConversationSeed) -> None:
         """Phase 11: a message in a public idea's conversation, through the services
         without settings (no email): the team's (audited) or the submitter's reply (which
-        notifies the team)."""
+        notifies the team). In the story a team message to a confirmed address was emailed,
+        so its row says so (P11-QA-V1: else the sheet shows "Tracking page only" right above
+        a composer that says "Emailed to them"); nothing is queued."""
         from app.public import messages
 
         async def write() -> None:
@@ -857,7 +859,20 @@ class _Player:
             if seed.author is not None:
                 principal = await self.principal(seed.author)
                 loaded = await ideas.load_idea(self.db, principal, key, for_update=True)
-                await messages.send(self.db, None, principal, loaded, seed.body, now=utcnow())
+                sent = await messages.send(
+                    self.db, None, principal, loaded, seed.body, now=utcnow()
+                )
+                confirmed = await self.db.scalar(
+                    select(PublicSubmission.email_verified_at.is_not(None)).where(
+                        PublicSubmission.idea_id == loaded.idea.id
+                    )
+                )
+                if confirmed:
+                    await self.db.execute(
+                        update(SubmissionMessage)
+                        .where(SubmissionMessage.id == sent.id)
+                        .values(emailed=True)
+                    )
                 return
             project_key, number = key.rsplit("-", 1)
             row = (

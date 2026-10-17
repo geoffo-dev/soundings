@@ -159,8 +159,10 @@ conversation in its submission panel's **Messages**: **priya** (a Customer Innov
 asked "Which of our stores did you have in mind?" and Sam replied an hour later. priya has
 one unread "The submitter replied" in her inbox, and the audit log one `submission.message`
 by her; alice's inbox and every count e2e reads are unchanged. A member (bob, farah) sees
-the submitter's name on `CUST-21` and nothing of the conversation. Nothing was emailed and
-the seeded submission has no tracking link: to see the submitter's side (the tracking
+the submitter's name on `CUST-21` and nothing of the conversation. priya's message reads
+"Email queued" (Sam's address is confirmed, so in the story it was emailed), but the seed
+queues no email, and nobody has the seeded submission's tracking link: to see the
+submitter's side (the tracking
 page's Messages and reply box, the link and message emails in Mailpit), send an idea through
 the form with an address, confirm it from the email, then write to it from the panel.
 

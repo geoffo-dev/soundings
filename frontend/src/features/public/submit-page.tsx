@@ -300,8 +300,9 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
           <fieldset className="flex flex-col gap-4 border-t border-subtle pt-5">
             <legend className="sr-only">About you</legend>
             <p className="text-sm text-muted">
+              {/* Who sees the address is said once, in the email field's help (P11-QA-V3). */}
               {project.asks_for_email
-                ? 'The team sees your name with your idea. Your email address is only for contacting you: it isn’t shown with your idea.'
+                ? 'The team sees your name with your idea.'
                 : 'Optional. The team sees your name with your idea.'}
             </p>
             <Field

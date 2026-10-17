@@ -6,21 +6,30 @@ import type { Browser, Locator, Page } from '@playwright/test'
 
 import { FakeAgent } from '../scripts/fake-agent'
 import { type AiAgentList, askAgent, NAMESPACE, registerAgent, waitRun } from '../tests/support/ai'
-import { Api, daysFromNow, type Person } from '../tests/support/api'
+import { Api, daysFromNow, uniqueSuffix, type Person } from '../tests/support/api'
 import { emailTo, Mailpit, newPeople, projectWithIdea, type Message } from '../tests/support/email'
 import { expect, heading, settled, signIn, test } from '../tests/support/fixtures'
 import { renderPdfPages } from '../tests/support/pdf'
-import { fillPublicForm, humanCheckDone } from '../tests/support/public'
+import {
+  confirmationToken,
+  conversation,
+  messagesSheet,
+  sendTeamMessage,
+  trackedMessages,
+} from '../tests/support/messages'
+import { fillPublicForm, humanCheckDone, Visitor } from '../tests/support/public'
 
 /**
- * The product tour: twenty hero screenshots that tell Soundings' story in order, from the
+ * The product tour: twenty-two hero screenshots that tell Soundings' story in order, from the
  * real app with the demo data (for the root README and the release notes). Not a
  * regression test. 07-08 show Internal Tools' own proposal template (TOOLS-3), 13-16 its
  * research step: the Research column, the checklist with similar ideas, the gate and an
  * outside researcher (bob on TOOLS-12, who has no role in the private project), 18-20
  * TOOLS-3's call for bids (Phase 10): the comparison as kenji (its owner), the rejected
  * bid without its insurance certificate, and alice's blind assessment beside the bid's
- * documents.
+ * documents; 21-22 talking to a public submitter (Phase 11): priya's conversation with
+ * CUST-21's sender, and a sender's tracking page with the team's messages and the reply box
+ * (an idea sent through Customer Innovation's form at the end of the run, then deleted).
  *
  * `npm run screenshots:tour` (E2E_SSO=1 E2E_AI=1: the sign-in page with single sign-on,
  * and the fake kagent agent for the AI evaluation) → docs/screenshots/tour/
@@ -435,6 +444,21 @@ SHOTS.push(
       }
     },
   },
+  {
+    // Phase 11: priya (Customer Innovation's admin) wrote to the person who sent CUST-21
+    // through the public form; Sam replied on his tracking page.
+    name: '21-submitter-messages',
+    as: 'priya',
+    variants: ['1440-light', '1440-dark', '390-light'],
+    open: async (page) => {
+      await page.goto('/ideas/CUST-21?submission=1')
+      const sheet = messagesSheet(page, 'Sam Okafor')
+      await expect(conversation(sheet)).toHaveCount(2)
+      await sheet
+        .getByRole('textbox', { name: 'Message to Sam Okafor' })
+        .fill('Lovely, thank you. We’ll start in those two stores in November.')
+    },
+  },
 )
 
 const VARIANTS = {
@@ -494,5 +518,77 @@ test('10-email: an invitation to evaluate, as Mailpit received it', async ({ bro
     await page.setContent(email ?? '', { waitUntil: 'load' })
     await page.screenshot({ path: join(outDir, `10-email-${variant.suffix}.png`), fullPage: true })
     await context.close()
+  }
+})
+
+// --- A sender's tracking page (Phase 11), last: it sends an idea through the form --------
+test('22-tracking-page: a sender’s tracking page with the team’s messages', async ({ browser }) => {
+  test.setTimeout(180_000)
+  const slug = 'customer-innovation'
+  const title = 'Refill station for cleaning products'
+  const priya = await Api.as(baseURL(), 'priya')
+  const visitor = await Visitor.open(baseURL())
+  let key: string | undefined
+  try {
+    const mail = (await priya.notificationSummary()).email_available && (await new Mailpit().isUp())
+    const email = mail ? `ana.${uniqueSuffix()}@example.org` : null
+    const since = new Date()
+    const receipt = await visitor.submitted(slug, {
+      title,
+      summary: 'Bring your own bottle and refill washing-up liquid and detergent in store.',
+      name: 'Ana Silva',
+      email,
+      wants_updates: false,
+    })
+    // Customer Innovation reviews public ideas first: priya approves this one.
+    key = (await priya.moderationQueue(slug)).items.find((item) => item.title === title)?.key
+    if (!key) throw new Error(`"${title}" isn't in the review queue`)
+    await priya.approve(key)
+    if (email) await visitor.verify(await confirmationToken(email, 'Customer Innovation', since))
+    await sendTeamMessage(
+      priya,
+      key,
+      'Thanks, Ana! Which store do you use most? We’d like to try it in one first.',
+    )
+    await visitor.replied(receipt.tracking_token, 'The one on the high street, near the station.')
+    await sendTeamMessage(
+      priya,
+      key,
+      'Perfect, that’s on our list. Would you be happy to tell us how it goes after a month?',
+    )
+    for (const [suffix, variant] of Object.entries(VARIANTS) as [
+      Variant,
+      (typeof VARIANTS)[Variant],
+    ][]) {
+      const context = await browser.newContext({
+        baseURL: baseURL(),
+        viewport: variant.viewport,
+        colorScheme: variant.colorScheme,
+        isMobile: variant.phone,
+        hasTouch: variant.phone,
+      })
+      const page = await context.newPage()
+      await page.goto(`/track#${receipt.tracking_token}`)
+      const section = trackedMessages(page)
+      await expect(conversation(section)).toHaveCount(3)
+      await section
+        .getByRole('textbox', { name: 'Reply to the team' })
+        .fill('Happy to. I’ll bring my own bottles.')
+      await settled(page)
+      await page.evaluate(() => document.fonts.ready)
+      await page.waitForTimeout(500) // enter animations
+      await page.screenshot({
+        path: join(outDir, `22-tracking-page-${suffix}.png`),
+        animations: 'disabled',
+        caret: 'hide',
+        fullPage: true,
+      })
+      await context.close()
+    }
+  } finally {
+    // The demo story stays as seeded: the idea (and its conversation) goes again.
+    if (key) await priya.send('DELETE', `/ideas/${key}`, undefined, 204)
+    await visitor.dispose()
+    await priya.dispose()
   }
 })
