@@ -66,6 +66,7 @@ changing it.
 | SM-06 | | "Remove my email address" on a phone: the dialog ("Your link and your messages stay."), then "We don't have an email address for you any more…", the Messages section kept; the panel then says the tracking page only; the next message not emailed. |
 | SM-07 | | A moderated project: alice (its admin) asks before approving, the submitter replies; no notification while held; the review queue's "They replied: the messages about <KEY>" opens the sheet with both messages; axe. |
 | SM-08 | | Confirming twice: `tracking_link_emailed` true then false; exactly the confirmation and one link email. |
+| SM-09 | | Admin → Email: the outbox names "Message to a public submitter" and "Tracking link (public submitter)", the rows carry neither the address nor the text; the audit log's "<Owner> messaged the submitter of <KEY>" (one entry, no text, no address). |
 | A11Y11-* | `a11y-phase11.spec.ts` | axe (serious and critical) light and dark, best practice in light without overlays: the submission panel's Messages and the conversation sheet (priya, CUST-21), priya's inbox with "The submitter replied", the public form's email help, the tracking page with the conversation and the reply box, an unconfirmed address's tracking page, the "Remove my email address" dialog, the confirm page after a first confirmation. |
 | MO11-01 | | The same screens at 390 px: no sideways scrolling, axe. |
 | MO11-02 | | On a phone, Details → Open messages opens the conversation; the sheet, not the box, takes focus. |
@@ -74,7 +75,10 @@ changing it.
 Earlier specs changed with the story (not the behaviour they test): the notification
 preferences have **13** rows ("The submitter replied"): `a11y-phase3.spec.ts`,
 `preferences.spec.ts`, `research-assignment.spec.ts` (RA-11) and `screenshots/phase-3.spec.ts`;
-`public-acceptance.spec.ts` (AC4-01) finds the intro field by its new label "Intro text".
+`public-acceptance.spec.ts` (AC4-01) finds the intro field by its new label "Intro text";
+`public-tracking.spec.ts` (PT-01) lists the tracking page's five new fields (`messages`,
+`can_reply`, `reply_blocked`, `team_messages_emailed`, `can_remove_email`) among the keys it
+allows, and checks a page without messages says `awaiting_team`.
 The demo's CUST-21 conversation changes no count an earlier spec reads (alice's inbox and My
 work are unchanged; priya's inbox has one more unread item, which no spec counts).
 
@@ -82,7 +86,8 @@ work are unchanged; priya's inbox has one more unread item, which no spec counts
 
 `docs/screenshots/phase-11/<screen>-<1440-light|1440-dark|390-light>.png`: the submission
 panel's Messages and the conversation sheet with a message being written (priya, CUST-21),
-priya's inbox with "The submitter replied", the sheet for an unconfirmed address ("only on
+priya's inbox with "The submitter replied"; on a project of its own ("Home Delivery", HOME,
+archived afterwards; Nora Quinn owns its ideas) the sheet for an unconfirmed address ("only on
 their tracking page"), the tracking page with the conversation and the reply box, the confirm
 page's new line; `emails/`: `submission-link`, `submission-message` and `submitter-replied` as
 Mailpit received them (desktop light and dark, 390 light). `npm --prefix e2e run
@@ -90,6 +95,37 @@ screenshots:phase4` re-captures Phase 4's public pages and emails whose copy cha
 email help, the receipt, the confirm page, the tracking page's "Remove my email address", the
 "Intro text" field, the confirmation email's sentence).
 
+## Defects and nits found (2026-10-17, real stack)
+
+No defect in the built behaviour: every Phase 11 rule above passed on the real stack (API,
+worker, Mailpit) in the first run that had the specs. Earlier specs changed only where the
+story did (above). Visual review of `docs/screenshots/phase-11/` and the re-captured
+`phase-4/` sets:
+
+| ID | Owner | What |
+|---|---|---|
+| P11-QA-V1 | backend (seed) | CUST-21's seeded team message says "Tracking page only" in the sheet although Sam's address is confirmed (the seed writes through the services with email off, so `emailed` is false); beside the composer's "Emailed to them and shown on their tracking page" it reads oddly in the demo (`messages-sheet-composer-*`). Accept, or seed it as emailed. |
+| P11-QA-V2 | lead (note) | CUST-21 has no owner, so the seeded team message is priya's (a project admin), not "its owner's" as D2 put it. Its panel offers "Assign owner" next to the conversation. |
+| P11-QA-V3 | frontend (nit) | The public form says twice who sees the address: the section line "Your email address is only for contacting you: it isn't shown with your idea." and the email help "…Only administrators can see your address." (`phase-4/public-submit-*`). |
+| P11-QA-V4 | qa (note) | Phase 4's receipt shot is sent without an address, so the receipt's new line ("Once you confirm your address, we'll email you this link too.") is in no screenshot; SM-01 checks it on a phone. |
+
 ## Results
 
-See "Runs" below (filled in by qa after each run).
+Local e2e stack (prefix `p11-qa-`, default ports), freshly seeded, from the tree at `6620a12`
+plus the screenshot spec's names (2026-10-17).
+
+| Check | Result |
+|---|---|
+| `test_phase11_acceptance.py` (real Mailpit) | 3 passed (22 s); Phase 3 and 4 acceptance 4 passed |
+| e2e default (`e2e`, `serial`, `smtp-outage`) | 381 passed, 67 skipped, none failed (15.0 min); Phase 10's 353 + SM-01…09 + 19 in `a11y-phase11.spec.ts` |
+| e2e `E2E_SSO=1` | (running) |
+| e2e `E2E_AI=1` | (to run) |
+| `npm --prefix e2e run check` | pass |
+| `screenshots:phase11`, `screenshots:phase4` | 19 and 37 passed; every PNG read (above) |
+
+Earlier runs on the way: the first full default run (before the Phase 11 specs) failed PT-01 (the
+tracking page's new keys: the spec's list updated) and RS-02 once (the drag library's "is over"
+announcement timed out; it passed in the two runs since); the second (lost to a container
+restart) failed SM-03/05/08/09 waiting for the whole outbox to drain behind other specs' held or
+retried email (they now wait only for their own idea's email, `ideaEmailsSettled`).
+

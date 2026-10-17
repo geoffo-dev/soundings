@@ -29,8 +29,8 @@ import { Visitor } from '../tests/support/public'
  * - <screen>-<1440-light|1440-dark|390-light>.png: the seeded CUST-21 (priya, Customer
  *   Innovation's admin, wrote to its sender, Sam Okafor, who replied): the submission
  *   panel's Messages, the conversation sheet with a message being written, and priya's
- *   inbox with "The submitter replied"; and, on a project of their own ("Customer
- *   Innovation", archived afterwards; Nora Quinn, a new person, owns its ideas): the
+ *   inbox with "The submitter replied"; and, on a project of their own ("Home Delivery",
+ *   HOME, archived afterwards; Nora Quinn, a new person, owns its ideas): the
  *   sheet for an unconfirmed address ("only on their tracking page"), the tracking page
  *   with the conversation and the reply box, and the confirm page after a first
  *   confirmation ("We've emailed you a private link").
@@ -62,10 +62,13 @@ let arranged: Promise<Arranged> | undefined
 
 async function arrange(): Promise<Arranged> {
   const alice = await Api.as(baseURL(), 'alice')
-  const team = await messagingTeam(alice, 'Customer Innovation')
+  const team = await messagingTeam(alice, 'Home Delivery', { exact: { key: 'HOME' } })
   const visitor = await Visitor.open(baseURL())
   const confirmed = await sendPublicIdea(alice, team, visitor, {
     title: 'Reusable delivery boxes with a deposit',
+    summary:
+      'Sturdy boxes the driver collects on the next delivery, with a small deposit refunded to the customer.',
+    name: 'Sam Okafor',
     email: `sam.${uniqueSuffix()}@example.org`,
     confirm: true,
   })
@@ -85,6 +88,8 @@ async function arrange(): Promise<Arranged> {
   )
   const unconfirmed = await sendPublicIdea(alice, team, visitor, {
     title: 'A refill station for cleaning products',
+    summary: 'Bring your own bottle and fill it with washing-up liquid or detergent by weight.',
+    name: 'Ana Silva',
     email: `ana.${uniqueSuffix()}@example.org`,
   })
   await sendTeamMessage(team.owner.api, unconfirmed.key, 'Thanks, Ana! Where would it go?')
@@ -153,7 +158,7 @@ const SHOTS: Shot[] = [
       const { team, unconfirmed } = await setUp()
       await signInAs(page, team.owner)
       await page.goto(`/ideas/${unconfirmed.key}?submission=1`)
-      const sheet = messagesSheet(page, 'Sam Public')
+      const sheet = messagesSheet(page, 'Ana Silva')
       await expect(sheet).toContainText('They’ll see it only on their tracking page')
       await expect(conversation(sheet)).toHaveCount(1)
     },

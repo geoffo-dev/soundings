@@ -35,10 +35,12 @@ export interface MessagingTeam {
 export async function messagingTeam(
   alice: Api,
   name: string,
-  options: { moderated?: boolean } = {},
+  options: { moderated?: boolean; exact?: { key: string } } = {},
 ): Promise<MessagingTeam> {
   const { nora, theo } = await newPeople(alice, ['nora', 'theo'])
-  const project = await createTeamProject(alice, name, {})
+  const project = options.exact
+    ? await exactProject(alice, name, options.exact.key)
+    : await createTeamProject(alice, name, {})
   await alice.addMemberUser(project.slug, nora.user)
   await alice.addMemberUser(project.slug, theo.user)
   await alice.updatePublicForm(project.slug, {
@@ -47,6 +49,18 @@ export async function messagingTeam(
     intro_md: 'Tell us how to make shopping with us better. We read every idea.',
   })
   return { project, owner: nora, member: theo }
+}
+
+/**
+ * A project named exactly `name` (for review screenshots, on freshly seeded data); when a
+ * project already has that name or key (the stack wasn't reseeded), the usual run-unique one.
+ */
+async function exactProject(alice: Api, name: string, key: string): Promise<Project> {
+  try {
+    return await alice.createProject({ name, slug: `e2e-${key.toLowerCase()}`, key })
+  } catch {
+    return createTeamProject(alice, name, {})
+  }
 }
 
 export interface PublicIdea {
@@ -65,13 +79,21 @@ export async function sendPublicIdea(
   alice: Api,
   team: MessagingTeam,
   visitor: Visitor,
-  fields: { title: string; email?: string | null; confirm?: boolean; since?: Date },
+  fields: {
+    title: string
+    email?: string | null
+    confirm?: boolean
+    since?: Date
+    /** The sender's name and summary (defaults: "Sam Public", a summary from the title). */
+    name?: string
+    summary?: string
+  },
 ): Promise<PublicIdea> {
   const since = fields.since ?? new Date()
   const receipt = await visitor.submitted(team.project.slug, {
     title: fields.title,
-    summary: `${fields.title}: what we'd do, as the visitor wrote it.`,
-    name: 'Sam Public',
+    summary: fields.summary ?? `${fields.title}: what we'd do, as the visitor wrote it.`,
+    name: fields.name ?? 'Sam Public',
     email: fields.email ?? null,
     wants_updates: false,
   })
