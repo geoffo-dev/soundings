@@ -20,7 +20,9 @@ dependency, it sends mail through any SMTP server and it runs air-gapped. Guidin
 Version **0.3.0**: [release notes](docs/RELEASE-NOTES.md) (bid evaluation: calls for
 bids with weighted sections, documents and must-haves, assessors per section, an AI
 assessor whose quotes are checked, the comparison, the award and the report; 0.2.0 added
-per-project proposal templates, the research step and continuous delivery).
+per-project proposal templates, the research step and continuous delivery). Not yet
+released: talking to the people who send ideas through the public form (messages from the
+team, replies on their tracking page, the tracking link by email).
 
 ![My work: evaluations due, ideas you own and what changed recently](docs/screenshots/tour/02-my-work-1440-light.png)
 

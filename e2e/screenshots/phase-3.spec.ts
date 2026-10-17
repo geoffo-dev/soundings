@@ -32,8 +32,9 @@ import { expect, heading, settled, signIn, test } from '../tests/support/fixture
  *   email), the mention picker. A second run with E2E_SMTP=0 (`@no-smtp`) adds the
  *   "email isn't set up" banner and the Email page's setup steps.
  * - emails/<template>-<desktop-light|desktop-dark|390-light|390-dark>.png: every
- *   template as `soundings email-preview` renders it (sample data, all thirteen types,
- *   Phases 4 and 8b included), and emails/mailpit-<subject>-…png: real emails this run sent,
+ *   template as `soundings email-preview` renders it (sample data: the thirteen notification
+ *   types, the digest, the test email and the four submitter emails of Phases 4 and 11), and
+ *   emails/mailpit-<subject>-…png: real emails this run sent,
  *   as Mailpit received them.
  *
  * The failed send needs a Mailpit container to stop (the local stack's). Needs freshly

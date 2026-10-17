@@ -178,6 +178,10 @@ key, no tool); handing the research back takes a `write` key on the REST API
 (`DELETE /api/v1/ideas/{key}/research/assignment`). Soundings' AI agents are never
 assigned and never assign.
 
+**Messages with public submitters (Phase 11) are session only.** No tool reads or sends
+them, `get_idea` and `search_ideas` say nothing about a conversation (not even that one
+exists), and an API key of any scope gets 403 on `/api/v1/ideas/{key}/submission/messages`.
+
 **`research_guest: true` means the values are masked, not facts about the idea.** For a
 guest (and for an AI agent in an "Ask AI to research" run, below) `score` and `aggregate`
 are null with `score_hidden: true`, `evaluator_progress` is `{submitted: 0, total: 0}`,

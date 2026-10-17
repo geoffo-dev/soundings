@@ -833,7 +833,7 @@ kind of notification, whether it is also **emailed**:
 
 - **Immediate**: one email as it happens. The default for things you need to act on:
   being made owner, being asked to evaluate or to research, reminders, all evaluations
-  in, mentions.
+  in, mentions, a public submitter's reply [Phase 11].
 - **Daily digest**: one email a day with everything set to "Daily digest" that you
   haven't already read in the app. The default for things you follow: status changes
   and new comments. The page says when it arrives (for example "08:00

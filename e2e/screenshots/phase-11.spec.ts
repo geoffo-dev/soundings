@@ -18,7 +18,7 @@ import {
   type MessagingTeam,
   type PublicIdea,
 } from '../tests/support/messages'
-import { Visitor } from '../tests/support/public'
+import { fillPublicForm, humanCheckDone, Visitor } from '../tests/support/public'
 
 /**
  * Review screenshots of the Phase 11 screens (talking to public submitters) from the real
@@ -32,8 +32,8 @@ import { Visitor } from '../tests/support/public'
  *   inbox with "The submitter replied"; and, on a project of their own ("Home Delivery",
  *   HOME, archived afterwards; Nora Quinn, a new person, owns its ideas): the
  *   sheet for an unconfirmed address ("only on their tracking page"), the tracking page
- *   with the conversation and the reply box, and the confirm page after a first
- *   confirmation ("We've emailed you a private link").
+ *   with the conversation and the reply box, the receipt of an idea sent with an address,
+ *   and the confirm page after a first confirmation ("We've emailed you a private link").
  * - emails/<type>-<desktop-light|desktop-dark|390-light>.png: the three new emails as
  *   Mailpit received them: the tracking link (`submission-link`), a message from the team
  *   (`submission-message`) and "The submitter replied" (`submitter-replied`).
@@ -174,6 +174,26 @@ const SHOTS: Shot[] = [
       await section
         .getByRole('textbox', { name: 'Reply to the team' })
         .fill('Of course, I’ll send one this evening.')
+    },
+  },
+  {
+    // The receipt for an idea sent with an address: the link follows the confirmation
+    // (QA P11-QA-V4: Phase 4's receipt shot is sent without one).
+    name: 'public-receipt-with-address',
+    open: async (page) => {
+      const { team } = await setUp()
+      await page.goto(`/${team.project.slug}/submit`)
+      await fillPublicForm(page, {
+        title: 'Gift wrapping at the till',
+        summary: 'Wrap presents in recycled paper while customers wait.',
+        name: 'Finn',
+        email: `finn.${uniqueSuffix()}@example.org`,
+      })
+      await humanCheckDone(page)
+      await page.getByRole('button', { name: 'Send idea' }).click()
+      await expect(
+        page.getByText('Once you confirm your address, we’ll email you this link too.'),
+      ).toBeVisible({ timeout: 15_000 })
     },
   },
   {

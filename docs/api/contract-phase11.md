@@ -728,3 +728,17 @@ of simple and safe and recorded in [decisions.md](../decisions.md#phase-11-produ
 
 Also from this round: the critic counted the builder-owned test failures at 12 (the contract
 report said 13; the cases add up to 12).
+
+### 20.2 Build and integration (2026-10-17)
+
+No schema, route or field changed after the contract (`make gen-api` gives no diff). What the
+builders and the integration settled within it (decisions:
+["2026-10-17 · Phase 11 build and integration"](../decisions.md#2026-10-17--phase-11-build-and-integration)):
+
+| Item | What |
+|---|---|
+| The moderation queue's conversation summaries | Read inside the queue's own statement (a correlated subquery per card), not a second grouped statement: the queue stays within its perf budget of 5 statements. |
+| The reply route's own throttle | `PUBLIC_REPLY_THROTTLE` (`app/auth/throttle.py`, `("public_reply", 30, 3600)`) counts every attempt that got past the token check, as §2.1 says; refusals before it (415, 422, the shared per-IP throttle, 404) don't count. |
+| Audit details | `submission.message` entries also carry the `auth` / `auth_method` keys every audit entry gets. |
+| Demo seed (§15) | Written through the services (no settings: no email); the team message's `emailed` is set because the submitter's address is confirmed (only the row: nothing is queued). |
+| The SPA | The conversation opens in a side sheet (`?submission=1`); the API's newest-first pages are shown oldest at the top with "Show earlier messages". |

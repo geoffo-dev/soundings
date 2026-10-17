@@ -19,7 +19,7 @@ SMTP server, and runs air-gapped. Guiding rule: **simple beats configurable**.
 | File | Why |
 |---|---|
 | `README.md` | The front door: what Soundings is, the tour (`docs/screenshots/tour/`), quick start, architecture |
-| `docs/RELEASE-NOTES.md` | 0.2.0 (and 0.1.0 below it): what is in it, known issues, upgrade notes, decisions to confirm |
+| `docs/RELEASE-NOTES.md` | Unreleased (Phase 11) on top, then 0.3.0, 0.2.0 and 0.1.0: what is in each, known issues, upgrade notes, decisions to confirm |
 | `SPEC.md` | The product brief and source of truth (read-only) |
 | `docs/ownership.md` | Which paths you may edit; how to ask other owners for changes |
 | `docs/role-matrix.md` | Every permission rule by stable name, and the exact blind-evaluation rules |
@@ -413,9 +413,9 @@ others' held mail can keep the outbox busy); locators `messagesPart`, `messagesS
 `conversation`, `trackedMessages`, `openMessages`): SM-01…SM-09 (`submitter-messages.spec.ts`),
 A11Y11/MO11/K11 (`a11y-phase11.spec.ts`), which read the seeded CUST-21 without changing
 it. The preference specs count 13 notification types. `screenshots:phase11` writes
-`docs/screenshots/phase-11/` (6 screens × 1440 light/dark and 390 light: the seeded CUST-21,
+`docs/screenshots/phase-11/` (7 screens × 1440 light/dark and 390 light: the seeded CUST-21,
 then "Home Delivery" (HOME) with Sam Okafor and Ana Silva, archived afterwards) and
-`emails/` (the three new emails).
+`emails/` (the three new emails); the tour's 21-22 are Phase 11's too.
 `npm --prefix e2e run check` = tsc + prettier. Test plans and case IDs:
 `docs/test-plans/phase-1.md` … `phase-11.md` (Phase 7: `performance.md`).
 

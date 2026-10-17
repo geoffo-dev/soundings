@@ -4,7 +4,7 @@ import { useSendTrackingReply } from '@/api/public'
 import type { TrackedMessage, TrackedSubmission } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
-import { ariaKeys, ButtonShortcut } from '@/components/ui/kbd'
+import { ariaKeys } from '@/components/ui/kbd'
 import { RelativeTime } from '@/components/ui/relative-time'
 import { Textarea } from '@/components/ui/textarea'
 import { LiveRegion, useLiveRegion } from '@/features/idea/live-region'
@@ -154,8 +154,8 @@ function ReplyBox({ token, onSent }: { token: string; onSent: () => void }) {
           className="h-11 w-full sm:h-9 sm:w-auto"
           onClick={submit}
         >
+          {/* ⌘Enter / Ctrl+Enter works, but public pages show no shortcut hints (as the form). */}
           Send reply
-          <ButtonShortcut keys={SEND_KEYS} />
         </Button>
       </div>
     </div>
