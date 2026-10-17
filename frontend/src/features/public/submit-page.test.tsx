@@ -152,7 +152,9 @@ describe('the public form', { timeout: 15_000 }, () => {
     await user.type(await screen.findByRole('textbox', { name: /^Your email/ }), 'jo@example.org')
     await user.click(screen.getByRole('checkbox', { name: 'Email me when the status changes' }))
     await fillAndSend(user)
-    expect(await screen.findByText(/Keep this tracking link: it isn’t in the email/)).toBeVisible()
+    expect(
+      await screen.findByText(/Once you confirm your address, we’ll email you this link too/),
+    ).toBeVisible()
   })
 
   it('leads with “confirm your email” when the idea waits for that', async () => {

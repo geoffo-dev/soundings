@@ -73,7 +73,7 @@ def build_message(
     message = EmailMessage()
     message["From"] = Address(display_name=settings.smtp_from_name, addr_spec=settings.smtp_from)
     message["To"] = Address(addr_spec=to_address)
-    if settings.smtp_reply_to:
+    if settings.smtp_reply_to and content.allow_reply_to:
         message["Reply-To"] = Address(addr_spec=settings.smtp_reply_to)
     message["Subject"] = subject_header(rendered.subject)
     message["Date"] = format_datetime(now)

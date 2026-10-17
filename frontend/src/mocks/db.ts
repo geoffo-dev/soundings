@@ -48,6 +48,8 @@ import { seedPhase8 } from './phase8-fixtures'
 import { seedPhase8b } from './phase8b-fixtures'
 import { emptyBidStore, type MockBidStore } from './bids'
 import { seedPhase10 } from './phase10-fixtures'
+import { seedPhase11 } from './phase11-fixtures'
+import type { MockSubmissionMessage } from './submitter-messages'
 import type { MockResearchAnswer, MockResearchItem } from './research'
 import { defaultTemplate, type MockTemplateSection } from './templates'
 
@@ -356,6 +358,10 @@ export interface MockDb {
   altchaUsed: Set<string>
   /** Public submission attempts (ms) from "this browser" (the mock's one client address). */
   publicAttempts: number[]
+  /* Phase 11 (contract-phase11; records in submitter-messages.ts) */
+  submissionMessages: MockSubmissionMessage[]
+  /** Tracking-page replies (ms) from "this browser", for the 30-an-hour limit per address. */
+  publicReplyAttempts: number[]
   brandingProfiles: MockBrandingProfile[]
   brandAssets: MockBrandAsset[]
   /* Phase 5 (contract-phase5; records in api-keys.ts, suggestions.ts) */
@@ -1285,6 +1291,8 @@ export function createDb({
     publicSubmissions: [],
     altchaUsed: new Set(),
     publicAttempts: [],
+    submissionMessages: [],
+    publicReplyAttempts: [],
     brandingProfiles: [],
     brandAssets: [],
     apiKeys: [],
@@ -1602,6 +1610,7 @@ export function createDb({
   seedPhase8(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase8b(db, { users: USERS, projects: PROJECTS, nextId })
   seedPhase10(db, { users: USERS, projects: PROJECTS, nextId })
+  seedPhase11(db, { users: USERS, projects: PROJECTS, nextId })
   if (projects === 'private') for (const project of db.projects) project.visibility = 'private'
   return db
 }

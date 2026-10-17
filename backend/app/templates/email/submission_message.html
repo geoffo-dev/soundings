@@ -1,0 +1,16 @@
+{% extends "_layout.html" %}
+{#- Phase 11 (contract-phase11 section 8): a message from the team, signed by the team
+    (never a person). The text is plain: each line escaped, line breaks kept as <br>. -#}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">A message from the {{ project }} team</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">About your idea <strong>“{{ title }}”</strong>:</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">
+<tr>
+<td class="sx-panel sx-text" style="border-left:3px solid {{ c.rule }};background-color:{{ c.panel }};padding:10px 14px;font-family:{{ s.font }};font-size:15px;line-height:1.55;color:{{ c.text }};word-break:break-word;">{% for line in lines %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+</tr>
+</table>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">The {{ project }} team</p>
+{% endblock %}
+{% block after_button %}
+<p class="sx-muted" style="margin:18px 0 0 0;font-size:14px;line-height:1.55;color:{{ c.muted }};">Replies to this email aren't read: reply on your tracking page.</p>
+{% endblock %}

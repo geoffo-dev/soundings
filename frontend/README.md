@@ -264,6 +264,28 @@ tests/            Playwright page tests (support.ts has the fixtures) against de
   the role (`CALL_PRIMARY_ID`: Open / Close / Assess (n) / Award / Export) with a draft
   checklist; actions that remove their own button move focus with `focusWhenRendered`,
   forced (the sheet's focus trap otherwise takes it).
+- **Messages with public submitters (Phase 11, contract-phase11 §3):** the submission panel
+  (`features/moderation/idea-submission.tsx`) shows a **Messages** part only when
+  `IdeaSubmission.messages` isn't null (the idea's owner, project and platform admins:
+  `public.message_submitter`); everyone else gets nothing, and `?submission=1` is dropped
+  without a word for them (the idea page reads the submission first). For holders it opens
+  `SubmitterMessagesSheet` (`features/moderation/submitter-messages.tsx`, `?submission=1`,
+  from "The submitter replied" and the review queue's "They replied" too; from the phone
+  Details sheet through `IdeaPageContext.openMessages`): the conversation oldest at the top
+  ("Show earlier messages" pages back), team rows with the author and "Email queued" /
+  "Tracking page only", the submitter's as "Submitter (name)", and a plain `Textarea`
+  composer (no Markdown, no @mentions: a colleague's name must never reach the public;
+  ⌘/Ctrl+Enter; the unsent text in `lib/drafts.ts` as `submission-message:<idea id>`; Send
+  stays busy while it runs; focus returns to the box). `blocked` replaces the composer with
+  its reason; refusals are worded by code (`message-copy.ts`: `SEND_BLOCKED_COPY`,
+  `sendProblem`, `REPLY_BLOCKED_COPY`, `replyProblem`, `deliveryText`). Every message is
+  plain text (`whitespace-pre-wrap wrap-anywhere`, clipped by its box): never Markdown, never
+  a link. The tracking page's `TrackedMessages` (`features/public/track-messages.tsx`) signs
+  the team's messages "The <project> team" and the submitter's "You", with "Reply to the
+  team" while `can_reply`; `track-page.tsx` adds "Remove my email address" (confirmed) for
+  `can_remove_email`. The receipt, the confirm page (`tracking_link_emailed`) and the form's
+  email help say the link is emailed once the address is confirmed and that only
+  administrators see the address.
 - **Untrusted text (agents):** `Markdown untrusted` keeps http/https links only (no `mailto:`),
   opens them with `rel="noopener noreferrer nofollow"` in a new tab with the host after each
   (`urlHost`: the browser's ASCII/punycode reading, isolated with `<bdi dir="ltr">` by `LinkHost`;
@@ -395,13 +417,13 @@ One module per area, each exporting `…QueryOptions` (for loaders and prefetchi
 | `admin-email.ts`   | `useEmailConfig`, `useOutboxEmails(filters)` (infinite), `useOutboxEmail(id, { poll })` (test email, every 2 s)                                                                                                                                 | `useSendTestEmail` (inline errors), `useRetryOutboxEmail` (optimistic), `useRetryFailedOutboxEmails`                                                                                                                                                                                                                                                                                         |
 | `admin.ts`         | `useAdminUsers(filters)` (infinite), `useAdminUser`, `useAdminGroups(q)` (infinite), `useAdminGroup`, `useGroupMembers` (infinite), `useAuditEntries(filters)` (infinite), `useSsoConfig`, `useAdminUserName` / `useAdminGroupName` (audit ids) | `useCreateAdminUser`, `useUpdateAdminUser`, `useReplaceExternalIds`, `useUnlinkIdentity`, `useEndUserSessions`, `useCreateGroup`, `useUpdateGroup`, `useDeleteGroup`, `useReplaceGroupMapping`, `useAddGroupMember`, `useRemoveGroupMember` (Undo for manual members), `useTestGroupMapping`                                                                                                 |
 | `proposals.ts`     | `useProposal(key)` (the tab: proposal or null + permissions), `useProposalThreads(key)` (margin threads; deferred deletes filtered)                                                                                                             | `useCreateProposal` (Shortlisted → Proposal), `saveProposalSection` (plain function: the editor's autosave store calls it, 409 `proposal_conflict` carries `current`), `useCreateProposalThread`, `useReplyToProposalThread` (optimistic), `useSetProposalThreadResolved` (optimistic), `useDeleteProposalComment` (deferred, Undo), `useExportProposal` / `downloadProposal` (fetch + blob) |
-| `public.ts`        | `usePublicProject(slug)`, `useTrackedSubmission(token)` (POST: the token stays out of URLs), `fetchAltchaChallenge(slug)` (no session, no CSRF)                                                                                                 | `useSubmitPublicIdea`, `useSetSubmissionUpdates`, `useResendVerificationEmail`, `useEraseTrackedSubmission`, `useVerifySubmissionEmail` (all silent: the pages say what happened)                                                                                                                                                                                                            |
+| `public.ts`        | `usePublicProject(slug)`, `useTrackedSubmission(token)` (POST: the token stays out of URLs), `fetchAltchaChallenge(slug)` (no session, no CSRF)                                                                                                 | `useSubmitPublicIdea`, `useSetSubmissionUpdates`, `useResendVerificationEmail`, `useEraseTrackedSubmission`, `useVerifySubmissionEmail`, `useSendTrackingReply`, `useForgetSubmissionEmail` (all silent: the pages say what happened)                                                                                                                                                        |
 | `branding.ts`      | `useEffectiveBranding` (GET /branding, refetched on focus at most every 5 min), `useGlobalBranding`, `useProjectBranding(slug)`                                                                                                                 | `useUpdateBranding(scope)` (complete profile; the shell re-themes on a global save), `useUploadBrandAsset(scope)` / `uploadBrandAsset` (the raw PNG or SVG as the body)                                                                                                                                                                                                                      |
 | `ai.ts`            | `useIdeaAiRuns(key)` (runs, `agents`, `permissions`), `useAiRun(key, runId, { poll })` (the stream's fallback)                                                                                                                                  | `useRequestAiRun` (`{ run, existing }`: 201 new, 200 the active one), `useCancelAiRun`, `useSetEvaluationInclusion` (optimistic), `useDeleteResearchNote`; `runFinished(queryClient, key, run)` refetches by kind                                                                                                                                                                            |
 | `ai-stream.ts`     | `openRunStream({ idea, runId, after, onEvent, onFallback })` (EventSource; the only API use outside `client.ts`), `parseRunEvent`, `applyRunEvent`                                                                                              |                                                                                                                                                                                                                                                                                                                                                                                              |
 | `research.ts`      | `useProposalTemplate(slug)`, `useResearchSettings(slug)`, `useIdeaResearch(key)`, `useSimilarIdeas(key)`; `useResearchGate()` (the gate dialog's store)                                                                                         | `useReplaceProposalTemplate` (silent), `useReplaceResearchSettings` (silent; 409 `ideas_in_research` inline), `useAnswerResearchItem` (silent), `useClearResearchItem`; `openResearchGate(error, request)`, `overrideBody`                                                                                                                                                                   |
 | `ai-agents.ts`     | `useAiAgents` (Admin → AI agents)                                                                                                                                                                                                               | `useRegisterAiAgent` (silent; the key once: `reset()` after), `useUpdateAiAgent`, `useRotateAiAgentKey` (`reset()` after), `useTestAiAgent`                                                                                                                                                                                                                                                  |
-| `submissions.ts`   | `usePublicFormSettings(slug)`, `useModerationQueue(slug)` (infinite, oldest first), `useModerationCount(slug)`, `useIdeaSubmission(key)`                                                                                                        | `useUpdatePublicFormSettings` (PATCH of what changed), `useModerate()` (approve / reject wait for their Undo toast), `useEraseSubmitter(key)` (confirm first: no undo)                                                                                                                                                                                                                       |
+| `submissions.ts`   | `usePublicFormSettings(slug)`, `useModerationQueue(slug)` (infinite, oldest first), `useModerationCount(slug)`, `useIdeaSubmission(key)`, `useSubmissionMessages(key)` (Phase 11: infinite, newest page first, `messages` oldest first)         | `useUpdatePublicFormSettings` (PATCH of what changed), `useModerate()` (approve / reject wait for their Undo toast), `useEraseSubmitter(key)` (confirm first: no undo), `useSendSubmissionMessage(key)` (silent)                                                                                                                                                                             |
 
 Conventions:
 
@@ -576,6 +598,19 @@ backend and its tests are.
   cancelled one; **GREEN-4** (Emma, no proposal) none. Uploads sniff the bytes (415
   `unsupported_document_type`, `macro_document`), refuse duplicates and read the text 1.5 s
   later; an agent named `*-invents` invents a quote. Hannah, Emma and Ivan see the summary only.
+- **Phase 11 fixtures** (`phase11-fixtures.ts`; rules in `submitter-messages.ts`, handlers in
+  `handlers/submissions.ts` and `handlers/public.ts`): **GREEN-13** (owner **Grace**, a
+  member) came through the form from Sam Okafor, whose address is confirmed: four messages
+  (Grace, Sam, Carol, Sam 40 minutes ago), "The submitter replied" for Grace and Carol;
+  **Alice** and Emma (members) see no Messages at all. **GREEN-14** (Ana Ruiz, address not
+  confirmed: tracking page only) has one message from Carol and a reply box; **GREEN-15**'s
+  submitter details are erased (`submitter_erased`); **GREEN-10** (held for moderation) has
+  Carol's question and the answer (the queue says "They replied"); **GREEN-9** (Jo) has
+  none, so its tracking page has no Messages. Tokens: `PHASE11_TOKENS` (`sam`, `ana`).
+  Limits as the API's (20 team messages to one submitter a day, 30 per person an hour, 10
+  replies a day and 10 after each team message, 100 a conversation); the first confirmation
+  queues `submission_link`; replies notify the owner and the writers (at most one email an
+  hour per idea), never while held.
 - **Knobs** (localStorage, then reload): `soundings-mock-dataset` = `large` adds 10,000 ideas to
   Customer Innovation (also in the user menu → Switch user → Mock data);
   `soundings-mock-latency` = `none` or a number of ms (default realistic 100–400 ms);

@@ -410,6 +410,27 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     description: 'Submitted assessments are kept, so they stay on the section.',
   },
   unknown_section: { title: 'That section isn’t in the template any more' },
+  // Phase 11: messages with public submitters (contract-phase11 §13)
+  submitter_erased: {
+    title: 'Their details were erased',
+    description: 'There’s no one to write to any more.',
+  },
+  public_submission_off: {
+    title: 'Public submission is turned off',
+    description: 'Tracking links don’t open while it’s off, so they couldn’t read a message.',
+  },
+  conversation_full: {
+    title: 'This conversation is full',
+    description: 'It has reached 100 messages.',
+  },
+  awaiting_team: {
+    title: 'You can reply once the team writes back',
+  },
+  awaiting_confirmation: {
+    title: 'Your address isn’t confirmed yet',
+    description:
+      'Your idea reaches the team once you confirm it. To withdraw it, delete your details.',
+  },
   // Phase 5: API keys and proposal suggestions (contract-phase5 §5)
   insufficient_scope: {
     title: 'An API key can’t do that',

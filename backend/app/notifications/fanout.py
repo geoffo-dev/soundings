@@ -48,6 +48,7 @@ from app.notifications import access, preferences
 from app.notifications.access import Recipient
 from app.public.emails import queue_status_email
 from app.schemas.admin_users import is_reserved_email
+from app.schemas.notifications import SUBMITTER_REPLIED_EMAIL_INTERVAL
 from app.services.sql import any_of
 from app.worker import procrastinate_app
 
@@ -88,6 +89,13 @@ _EMAIL_CAPS: Final[dict[NotificationType, tuple[int, int]]] = {
     NotificationType.RESEARCHER_ASSIGNED: (RESEARCHER_EMAIL_CAP, _RESEARCHER_LOCK_SALT),
 }
 """Types whose emails are capped per actor and rolling hour: (cap, advisory lock salt)."""
+_EMAIL_INTERVALS: Final[dict[NotificationType, timedelta]] = {
+    NotificationType.SUBMITTER_REPLIED: SUBMITTER_REPLIED_EMAIL_INTERVAL,
+}
+"""Phase 11: types emailed at most once per recipient and idea in the interval (immediate
+emails only): a later one within it of the last one emailed is written ``off`` (inbox
+only). Read through the inbox index ``(user_id, created_at, id)``; one idea's replies are
+serialised by its submission's lock, so two can't both pass."""
 
 _INSERT_NOTIFICATIONS: Final = text(
     """
@@ -201,8 +209,31 @@ class NotificationWriter:
             self._budget[(type_, actor_id)] = max(0, cap - int(emailed or 0))
         return self._budget[(type_, actor_id)]
 
+    async def _recently_emailed(
+        self, type_: NotificationType, idea_id: UUID, user_ids: list[UUID]
+    ) -> set[UUID]:
+        """Of ``user_ids``, those who had an immediate email of ``type_`` about the idea
+        within its interval (:data:`_EMAIL_INTERVALS`)."""
+        if not user_ids:
+            return set()
+        return set(
+            await self.db.scalars(
+                select(Notification.user_id).where(
+                    any_of(Notification.user_id, user_ids),
+                    Notification.created_at > self.now - _EMAIL_INTERVALS[type_],
+                    Notification.type == type_,
+                    Notification.idea_id == idea_id,
+                    Notification.email_mode == NotificationMode.IMMEDIATE,
+                )
+            )
+        )
+
     async def _modes(
-        self, type_: NotificationType, recipients: list[Recipient], actor_id: UUID | None
+        self,
+        type_: NotificationType,
+        recipients: list[Recipient],
+        actor_id: UUID | None,
+        idea_id: UUID,
     ) -> dict[UUID, NotificationMode]:
         if not self.email:
             return dict.fromkeys((r.id for r in recipients), NotificationMode.OFF)
@@ -213,6 +244,10 @@ class NotificationWriter:
             if not usable_address(recipient.user.email):
                 mode = NotificationMode.OFF
             modes[recipient.id] = mode
+        if type_ in _EMAIL_INTERVALS:
+            immediate = [u for u, mode in modes.items() if mode is NotificationMode.IMMEDIATE]
+            for user_id in await self._recently_emailed(type_, idea_id, immediate):
+                modes[user_id] = NotificationMode.OFF
         if type_ in _EMAIL_CAPS:
             allowance = await self._allowance(type_, actor_id)
             for user_id, mode in modes.items():
@@ -261,7 +296,7 @@ class NotificationWriter:
         people = [recipient for user_id, recipient in wanted.items() if user_id not in existing]
         if not people:
             return []
-        modes = await self._modes(type_, people, actor_id)
+        modes = await self._modes(type_, people, actor_id, idea.id)
         immediate = [r.id for r in people if modes[r.id] is NotificationMode.IMMEDIATE]
         email_ids: dict[UUID, UUID] = {}
         if immediate:

@@ -68,7 +68,8 @@ export function VerifyPage({ slug }: { slug?: string }) {
           <>
             <PublicMessage icon={<MailQuestion />} title="Confirm your email address">
               Someone sent an idea and gave this email address. If it was you, confirm it: the team
-              gets your idea, and you get status emails if you asked for them.
+              gets your idea, we email you a private link to follow it, and you get status emails if
+              you asked for them.
             </PublicMessage>
             {verify.isError && (
               <Callout role="alert" tone="danger" title="That didn’t work">
@@ -126,7 +127,9 @@ function Confirmed({ result }: { result: EmailVerified }) {
             : 'The team has your idea now'
         }
       >
-        Your private tracking link (shown when you sent the idea) says what happens next.
+        {result.tracking_link_emailed
+          ? 'We’ve emailed you a private link to follow your idea.'
+          : 'Your private tracking link (shown when you sent the idea) says what happens next.'}
       </Callout>
     </PublicCard>
   )

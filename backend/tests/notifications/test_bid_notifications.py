@@ -385,11 +385,11 @@ async def test_preferences_digest_and_unsubscribe(
     member = await api(crew.tech1)
     prefs = ok(await member.get("/me/notification-preferences"))
     modes = {row["type"]: row["mode"] for row in prefs["items"]}
-    assert [row["type"] for row in prefs["items"]][-3:] == [
+    assert [row["type"] for row in prefs["items"]][-4:-1] == [
         "assessor_assigned",
         "assessment_reminder",
         "assessments_complete",
-    ]
+    ]  # then Phase 11's "submitter_replied"
     assert {modes[t] for t in ("assessor_assigned", "assessment_reminder")} == {"immediate"}
     ok(await member.patch("/me/notification-preferences", {"assessor_assigned": "digest"}))
 

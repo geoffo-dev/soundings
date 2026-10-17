@@ -1,0 +1,10 @@
+{% extends "_layout.txt" %}
+{% block content %}
+Your link to follow your idea
+
+Thanks for confirming your address. This is your private link to follow the idea you sent to {{ project }}, "{{ title }}":
+{%- endblock %}
+{% block after_button %}
+Keep this link private: anyone who has it can see where your idea stands, reply to the team and delete your details.
+
+{% endblock %}

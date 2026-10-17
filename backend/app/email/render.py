@@ -41,8 +41,11 @@ TEMPLATES: Final = (
     "assessments_complete",  # Phase 10
     "digest",
     "test",
+    "submitter_replied",  # Phase 11
     "submission_received",
     "submission_status_changed",
+    "submission_link",  # Phase 11
+    "submission_message",  # Phase 11
 )
 """Every email template (``<name>.html`` + ``<name>.txt``)."""
 
@@ -133,6 +136,8 @@ def render(content: EmailContent, branding: Branding = DEFAULT_BRANDING) -> Rend
         "unsubscribe_label": content.unsubscribe_label,
         "unsubscribe_all_url": content.unsubscribe_all_url,
         "stop_url": content.stop_url,
+        "stop_label": content.stop_label,
+        "stop_note": content.stop_note,
         "brand": branding,
         "s": _styles(branding),
         "c": _colours(branding),

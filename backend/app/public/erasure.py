@@ -6,8 +6,11 @@ One function for the three ways it happens: an admin (``erase_submitter``,
 cleanup (no actor, ``reason: "retention"``). It clears the name, address,
 confirmation, opt-in, both tracking-token columns and the copy of what was sent, sets
 ``erased_at``, deletes **all** the idea's submitter emails (queued and sent: no address
-lingers in the outbox) and audits ``submission.erase`` with ids only. The idea, its
-content and history stay; the tracking link stops working at once.
+lingers in the outbox; every type of :data:`app.models.enums.SUBMITTER_EMAIL_TYPES`) and,
+Phase 11, the whole conversation with the team (``submission_messages``), and audits
+``submission.erase`` with ids only. The idea, its content and history stay; the tracking
+link stops working at once. "The submitter replied" notifications stay (they hold no
+text); their queued emails are cancelled at send time (the reply is gone).
 """
 
 from __future__ import annotations
@@ -20,10 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import Rule
 from app.domain.principal import Principal
-from app.models.enums import EmailType
+from app.models.enums import SUBMITTER_EMAIL_TYPES
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
-from app.models.public import PublicSubmission
+from app.models.public import PublicSubmission, SubmissionMessage
 from app.services import audit
 
 __all__ = ["ERASE_ACTION", "erase"]
@@ -60,10 +63,13 @@ async def erase(
         delete(OutboundEmail)
         .where(
             OutboundEmail.idea_id == idea.id,
-            OutboundEmail.type.in_(
-                [EmailType.SUBMISSION_RECEIVED, EmailType.SUBMISSION_STATUS_CHANGED]
-            ),
+            OutboundEmail.type.in_(SUBMITTER_EMAIL_TYPES),
         )
+        .execution_options(synchronize_session=False)
+    )
+    await db.execute(
+        delete(SubmissionMessage)
+        .where(SubmissionMessage.submission_id == submission.id)
         .execution_options(synchronize_session=False)
     )
     details: dict[str, str] = (

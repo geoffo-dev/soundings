@@ -33,7 +33,8 @@ import { toast } from '@/components/ui/toaster'
 import { AiRunsSection } from '@/features/ai/ai-runs-section'
 import { AiMenu, submittedEvaluatorIds, useAiCommands } from '@/features/ai/idea-ai'
 import { useCurrentUser } from '@/features/auth/current-user'
-import { HeldIdeaBanner } from '@/features/moderation/idea-submission'
+import { HeldIdeaBanner, useSubmissionOf } from '@/features/moderation/idea-submission'
+import { SubmitterMessagesSheet } from '@/features/moderation/submitter-messages'
 import { HandBackDialog, ResearchAssignmentDialog } from '@/features/research/research-assignment'
 import { requestResearchFocus } from '@/features/research/research-focus'
 import { answerDraftName, ResearchPanel } from '@/features/research/research-panel'
@@ -223,6 +224,19 @@ function LoadedIdeaPage({
     if (ownEvaluator) setSearch({ evaluate: true })
   }, [ownEvaluator, setSearch])
 
+  // Phase 11: `?submission=1` ("The submitter replied" links) opens the messages with the
+  // public submitter, for whoever may read them; for anyone else the flag is dropped
+  // without a word (nothing may say that a conversation exists).
+  const submission = useSubmissionOf(idea, ideaKey)
+  const messagesAllowed = Boolean(submission.data?.messages)
+  const messagesSettled =
+    !idea.via_public_form || guest || submission.isSuccess || submission.isError
+  useEffect(() => {
+    if (search.submission && messagesSettled && !messagesAllowed) {
+      setSearch({ submission: undefined })
+    }
+  }, [search.submission, messagesSettled, messagesAllowed, setSearch])
+
   // `?research=1` (the "Asked to research" email and inbox links): the Research panel.
   useEffect(() => {
     if (!search.research) return
@@ -252,6 +266,13 @@ function LoadedIdeaPage({
     return want
   }, [])
 
+  const openMessages = useCallback(() => {
+    // From the phone details sheet: close it first and let the messages take focus.
+    if (detailsOpen) handingOff.current = true
+    setDetailsOpen(false)
+    setSearch({ submission: true })
+  }, [detailsOpen, setSearch])
+
   const page: IdeaPageContextValue = {
     ideaKey,
     idea,
@@ -275,6 +296,7 @@ function LoadedIdeaPage({
     tab,
     search,
     setSearch,
+    openMessages,
   }
 
   useIdeaCommands(page)
@@ -543,6 +565,13 @@ function LoadedIdeaPage({
         open={dialog === 'hand-back'}
         onOpenChange={(open) => !open && setDialog(null)}
       />
+      {messagesAllowed && (
+        <SubmitterMessagesSheet
+          open={Boolean(search.submission)}
+          onOpenChange={(open) => setSearch({ submission: open ? true : undefined })}
+          submission={submission.data}
+        />
+      )}
       {ownEvaluator && (
         <EvaluateSheet
           open={evaluateOpen}

@@ -8,6 +8,7 @@ import {
   Lock,
   Mail,
   MailCheck,
+  MessagesSquare,
   Settings,
   Trash2,
 } from 'lucide-react'
@@ -25,6 +26,8 @@ import { RelativeTime } from '@/components/ui/relative-time'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { byId, focusWhenRendered } from '@/lib/focus'
 import { useListNavigation } from '@/lib/list-navigation'
+
+import { messageCount } from './message-copy'
 
 const EMPTY_ID = 'moderation-queue-empty'
 const titleLinkId = (ideaId: string) => `queue-${ideaId}-link`
@@ -245,6 +248,26 @@ function QueueItem({ item, archived }: { item: ModerationItem; archived: boolean
                 {contact.email_verified ? '(confirmed)' : '(not confirmed)'}
               </span>
             </span>
+          )}
+          {/* Phase 11: a moderator who asked before approving learns of the answer here
+              (held ideas notify nobody: contract-phase11 §6, review C5). */}
+          {submission.messages && submission.messages.count > 0 && (
+            <Link
+              to="/ideas/$ideaKey"
+              params={{ ideaKey: item.key }}
+              search={{ submission: true }}
+              aria-label={`${
+                submission.messages.last_direction === 'submitter'
+                  ? 'They replied'
+                  : messageCount(submission.messages.count)
+              }: the messages about ${item.key}`}
+              className="inline-flex items-center gap-1 rounded-sm font-medium text-secondary hover:underline focus-visible:outline-offset-2"
+            >
+              <MessagesSquare aria-hidden="true" className="size-3.5" />
+              {submission.messages.last_direction === 'submitter'
+                ? 'They replied'
+                : messageCount(submission.messages.count)}
+            </Link>
           )}
         </p>
         {canModerate && (

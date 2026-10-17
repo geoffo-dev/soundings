@@ -4,14 +4,16 @@ import {
   LinkIcon,
   MailCheck,
   MailWarning,
+  MailX,
   Trash2,
   UserRoundX,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { describeError, isApiError } from '@/api/errors'
 import {
   useEraseTrackedSubmission,
+  useForgetSubmissionEmail,
   useResendVerificationEmail,
   useSetSubmissionUpdates,
   useTrackedSubmission,
@@ -25,17 +27,21 @@ import { StatusBadge, StatusDot } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { formatDate } from '@/lib/dates'
+import { focusWhenRendered } from '@/lib/focus'
 import { statusTone, type StatusTone } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { TRACKING_TOKEN, useFragmentToken } from './fragment-token'
 import { PublicCard, PublicLayout, PublicMessage } from './public-layout'
+import { TrackedMessages } from './track-messages'
 
 /**
  * /track#<token> (contract-phase4 §3.7): what the submitter sent and where it
  * is now, a calm timeline of status changes (dates and labels only: no people,
  * comments or scores), status emails on or off, the confirmation email again,
- * and "Delete my details". Unknown and erased links read the same.
+ * and "Delete my details". Unknown and erased links read the same. Phase 11: the
+ * messages with the team and a reply box once the team has written, and "Remove
+ * my email address" (every email about the idea stops; the link stays).
  */
 export function TrackPage() {
   const token = useFragmentToken(TRACKING_TOKEN)
@@ -59,8 +65,8 @@ export function TrackPage() {
       <PublicLayout branding={null} width="narrow">
         <PublicCard>
           <PublicMessage icon={<LinkIcon />} title="This tracking link is incomplete">
-            Open the private link you saved after sending your idea (we don’t email it). It ends
-            with a long code after “#”.
+            Open the private link you saved after sending your idea, or the one we emailed you once
+            you confirmed your address. It ends with a long code after “#”.
           </PublicMessage>
         </PublicCard>
       </PublicLayout>
@@ -215,6 +221,7 @@ function TrackedView({
         <Timeline tracked={tracked} />
       </PublicCard>
 
+      <TrackedMessages token={token} tracked={tracked} />
       <EmailSettings token={token} tracked={tracked} />
       <DeleteDetails token={token} onErased={onErased} />
     </PublicLayout>
@@ -277,14 +284,49 @@ function EmailSettings({ token, tracked }: { token: string; tracked: TrackedSubm
   const updates = useSetSubmissionUpdates(token)
   const resend = useResendVerificationEmail(token)
   const [resent, setResent] = useState(false)
+  const [removed, setRemoved] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const forget = useForgetSubmissionEmail(token)
+  const heading = useRef<HTMLHeadingElement>(null)
+  // Here, not in the row below: the row goes once the address is removed, and the dialog
+  // and its request must outlive it (so the result is said and focus lands on the heading).
+  const removeDialog = (
+    <RemoveEmailDialog
+      open={removing}
+      forget={forget}
+      onOpenChange={(next) => {
+        setRemoving(next)
+        if (!next) forget.reset()
+      }}
+      onConfirm={() =>
+        forget.mutate(undefined, {
+          onSuccess: () => {
+            setRemoved(true)
+            setRemoving(false)
+            // The section's controls are gone: its heading now says why.
+            focusWhenRendered(() => heading.current, { force: true })
+          },
+        })
+      }
+    />
+  )
 
   if (!tracked.email_hint) {
     return (
       <PublicCard className="gap-2">
-        <h2 className="text-base font-semibold text-primary">Email updates</h2>
-        <p className="text-sm text-muted">
-          You didn’t leave an email address, so we can’t send you updates. Check back here any time.
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className="text-base font-semibold text-primary focus:outline-none"
+        >
+          Email updates
+        </h2>
+        <p role={removed ? 'status' : undefined} className="text-sm text-muted">
+          {removed
+            ? 'We don’t have an email address for you any more. Check this page for news.'
+            : 'We don’t have an email address for you, so we can’t send you updates. Check back here any time.'}
         </p>
+        {removeDialog}
       </PublicCard>
     )
   }
@@ -355,7 +397,59 @@ function EmailSettings({ token, tracked }: { token: string; tracked: TrackedSubm
           </p>
         </div>
       )}
+      {tracked.can_remove_email && (
+        <div className="flex flex-col gap-2 border-t border-subtle pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted">
+            To stop all email about this idea, remove your address. Your link keeps working.
+          </p>
+          <Button variant="outline" className="shrink-0" onClick={() => setRemoving(true)}>
+            <MailX aria-hidden="true" />
+            Remove my email address
+          </Button>
+        </div>
+      )}
+      {removeDialog}
     </PublicCard>
+  )
+}
+
+/**
+ * Phase 11 (review M2): "Remove my email address" stops every email about this idea, the
+ * team's messages too, and deletes the address. The link, the idea and the conversation
+ * stay. Confirmed first: an address can't be added back.
+ */
+function RemoveEmailDialog({
+  open,
+  forget,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean
+  forget: ReturnType<typeof useForgetSubmissionEmail>
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+}) {
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Remove your email address?"
+      description="We’ll stop emailing you about this idea and delete your address. Your link and your messages stay. You can’t add an address again."
+      confirmLabel="Remove my email address"
+      tone="danger"
+      pending={forget.isPending}
+      onConfirm={onConfirm}
+    >
+      {forget.isError && (
+        <Callout role="alert" tone="danger" title="That didn’t work">
+          {isApiError(forget.error) && forget.error.code === 'awaiting_confirmation'
+            ? 'Your idea reaches the team once you confirm this address. To withdraw it, delete your details.'
+            : isApiError(forget.error) && forget.error.status === 404
+              ? 'This link no longer works: your details may already be deleted.'
+              : 'Nothing changed. Check your connection and try again.'}
+        </Callout>
+      )}
+    </ConfirmDialog>
   )
 }
 
@@ -381,7 +475,8 @@ function DeleteDetails({ token, onErased }: { token: string; onErased: () => voi
           Delete my details
         </h2>
         <p className="text-sm text-muted">
-          Removes your name, email address and this link. The idea stays with the team.
+          Removes your name, email address, this link and any messages with the team. The idea stays
+          with the team.
         </p>
       </div>
       <Button variant="outline" className="shrink-0" onClick={() => setOpen(true)}>
@@ -395,7 +490,7 @@ function DeleteDetails({ token, onErased }: { token: string; onErased: () => voi
           if (!next) erase.reset()
         }}
         title="Delete your details?"
-        description="This removes your name, email address and this private link. You won’t be able to follow your idea any more. The idea stays with the team."
+        description="This removes your name, email address, this private link and any messages with the team. You won’t be able to follow your idea any more. The idea stays with the team."
         confirmLabel="Delete my details"
         tone="danger"
         pending={erase.isPending}

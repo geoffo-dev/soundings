@@ -19,10 +19,14 @@ from app.api.v1.projects import ProjectSlug
 from app.api.v1.responses import problems
 from app.auth import altcha
 from app.auth.public_form import JsonOnlyRoute, check_throttle
-from app.auth.throttle import ALTCHA_THROTTLE, PUBLIC_FORM_THROTTLE, PUBLIC_TOKEN_THROTTLE
+from app.auth.throttle import (
+    ALTCHA_THROTTLE,
+    PUBLIC_FORM_THROTTLE,
+    PUBLIC_REPLY_THROTTLE,
+    PUBLIC_TOKEN_THROTTLE,
+)
 from app.config import Settings
 from app.db import SessionDep
-from app.errors import NotImplementedProblem
 from app.models.base import utcnow
 from app.public import forms, submit, tracking
 from app.schemas.public import (
@@ -44,6 +48,7 @@ router = APIRouter(prefix="/public", tags=["public"], route_class=JsonOnlyRoute)
 _TOO_MANY_CHALLENGES = "Too many requests from your network. Wait a minute and try again."
 _TOO_MANY_LINK_REQUESTS = "Too many requests from your network. Wait a minute and try again."
 _TOO_MANY_FORM_REQUESTS = "Too many requests from your network. Wait a minute and try again."
+_TOO_MANY_REPLIES = "Too many replies from your network. Try again later."
 
 
 def _settings(request: Request) -> Settings:
@@ -250,7 +255,16 @@ async def send_tracking_reply(
     request: Request, session: SessionDep, body: TrackingReplyRequest
 ) -> TrackedSubmission:
     _link_throttle(request)
-    raise NotImplementedProblem
+    settings = _settings(request)
+    found = await tracking.find(session, settings, body.token, lock=True)
+    check_throttle(
+        request,
+        PUBLIC_REPLY_THROTTLE,
+        detail=_TOO_MANY_REPLIES,
+        event="public reply refused",
+        log_fields={"idea_id": str(found[1].id)},
+    )
+    return await tracking.reply(session, settings, found, body.body, now=utcnow())
 
 
 @router.post(
@@ -275,7 +289,7 @@ async def forget_submission_email(
     request: Request, session: SessionDep, body: TrackingRequest
 ) -> TrackedSubmission:
     _link_throttle(request)
-    raise NotImplementedProblem
+    return await tracking.forget_email(session, _settings(request), body.token, now=utcnow())
 
 
 @router.post(

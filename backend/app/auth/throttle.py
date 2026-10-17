@@ -30,6 +30,7 @@ __all__ = [
     "BREAK_GLASS_THROTTLE",
     "LOGIN_THROTTLE",
     "PUBLIC_FORM_THROTTLE",
+    "PUBLIC_REPLY_THROTTLE",
     "PUBLIC_TOKEN_THROTTLE",
     "Throttle",
     "client_key",
@@ -57,6 +58,12 @@ PUBLIC_TOKEN_THROTTLE: Final = ("public_token", 60, 60.0)
 """Tracking and confirmation links (track, updates, resend, erase, verify): 60
 requests per client per minute, shared. Tokens can't be guessed (256 bits or signed);
 this only bounds load."""
+
+
+PUBLIC_REPLY_THROTTLE: Final = ("public_reply", 30, 60 * 60.0)
+"""Phase 11: a submitter's replies to the team (``POST /public/track/messages``): 30 per
+client per hour, counted for every attempt that got past the token (contract-phase11
+section 5). No address is stored."""
 
 
 def public_submission_throttle(per_hour: int) -> tuple[str, int, float]:

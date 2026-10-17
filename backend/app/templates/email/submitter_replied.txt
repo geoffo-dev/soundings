@@ -1,0 +1,8 @@
+{% extends "_layout.txt" %}
+{% block content %}
+The submitter replied
+
+The person who sent {{ idea.key }} through the public form replied to the team.
+
+{% include "_idea.txt" %}
+{%- endblock %}

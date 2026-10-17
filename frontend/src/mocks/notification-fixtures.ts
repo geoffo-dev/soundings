@@ -33,6 +33,7 @@ const DEFAULTS: Record<NotificationType, NotificationMode> = {
   assessor_assigned: 'immediate',
   assessment_reminder: 'immediate',
   assessments_complete: 'immediate',
+  submitter_replied: 'immediate',
 }
 
 interface NotificationSpec {

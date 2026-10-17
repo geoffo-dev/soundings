@@ -155,6 +155,11 @@ export function deleteIdeaRows(db: MockDb, idea: MockIdea): void {
     for (const entry of [...set]) if (entry.startsWith(`${idea.id}:`)) set.delete(entry)
   }
   forgetProposal(db, idea.id)
+  // Phase 11: the conversation with the submitter goes with the submission (cascade).
+  const submissionIds = new Set(
+    db.publicSubmissions.filter((s) => s.idea_id === idea.id).map((s) => s.id),
+  )
+  db.submissionMessages = db.submissionMessages.filter((m) => !submissionIds.has(m.submission_id))
   db.publicSubmissions = db.publicSubmissions.filter((s) => s.idea_id !== idea.id)
   db.outbox = db.outbox.filter((row) => row.idea_id !== idea.id)
 }

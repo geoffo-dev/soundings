@@ -10,6 +10,8 @@ confirmation; change it with ``await form(...)``.
 * ``solve(client, slug)``: a solved ALTCHA payload for the form, fetched like the
   widget does.
 * ``send(client, slug, **fields)``: solve and submit (``altcha=`` overrides).
+* Phase 11: ``make_public_idea(..., owner=)``, ``add_message(db, idea, direction, ...)``
+  (a message straight in the database, e.g. to reach a limit), ``messages_url(idea)``.
 """
 
 from __future__ import annotations
@@ -65,9 +67,11 @@ __all__ = [
     "RecordingTransport",
     "Team",
     "Visitor",
+    "add_message",
     "assert_problem",
     "challenge_for",
     "make_public_idea",
+    "messages_url",
     "ok",
     "only",
     "payload_for",
@@ -201,6 +205,7 @@ async def make_public_idea(
     verified: bool = False,
     wants_updates: bool = False,
     project: Project | None = None,
+    owner: Any = None,
 ) -> tuple[str, Idea]:
     """A public idea and its submission written straight to the database (as
     ``app.public.submit`` would, without the form, its limits or ALTCHA). Returns the
@@ -216,7 +221,7 @@ async def make_public_idea(
     from tests.factories import make_idea
 
     target = project or team.project
-    idea = await make_idea(db, target, title=title, summary="As sent.")
+    idea = await make_idea(db, target, title=title, summary="As sent.", owner=owner)
     idea.held_for = held_for
     token = new_tracking_token()
     db.add(
@@ -236,3 +241,46 @@ async def make_public_idea(
     )
     await db.commit()
     return token, idea
+
+
+def messages_url(idea: Idea) -> str:
+    """Phase 11: the conversation's path (under ``API``)."""
+    return f"/ideas/{idea.id}/submission/messages"
+
+
+async def add_message(
+    db: AsyncSession,
+    idea: Idea,
+    direction: str = "team",
+    *,
+    author: Any = None,
+    body: str = "A message.",
+    at: Any = None,
+    count: int = 1,
+) -> None:
+    """Phase 11: ``count`` messages in the idea's conversation straight in the database
+    (``at``: their time, default now), e.g. to bring it to a limit."""
+    from uuid import uuid4
+
+    from app.models.base import utcnow
+    from app.models.enums import MessageDirection
+    from app.models.public import SubmissionMessage
+
+    submission_id = await db.scalar(
+        select(PublicSubmission.id).where(PublicSubmission.idea_id == idea.id)
+    )
+    assert submission_id is not None
+    when = at or utcnow()
+    db.add_all(
+        SubmissionMessage(
+            id=uuid4(),
+            submission_id=submission_id,
+            direction=MessageDirection(direction),
+            author_id=author.id if author is not None and direction == "team" else None,
+            body=body,
+            emailed=False,
+            created_at=when,
+        )
+        for _ in range(count)
+    )
+    await db.commit()

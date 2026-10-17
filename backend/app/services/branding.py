@@ -49,7 +49,7 @@ from app.errors import ProblemError
 from app.models.base import utcnow
 from app.models.branding import BrandAsset as BrandAssetRow
 from app.models.branding import BrandingProfile
-from app.models.enums import BrandAssetKind, BrandFont, EmailType
+from app.models.enums import SUBMITTER_EMAIL_TYPES, BrandAssetKind, BrandFont, EmailType
 from app.models.idea import Idea
 from app.models.project import Project
 from app.models.user import User
@@ -118,9 +118,8 @@ PROFILE_FIELDS: Final = (
 )
 """Field names as audited (``details.fields``)."""
 
-_SUBMITTER_EMAILS: Final = frozenset(
-    {EmailType.SUBMISSION_RECEIVED, EmailType.SUBMISSION_STATUS_CHANGED}
-)
+_SUBMITTER_EMAILS: Final = frozenset(SUBMITTER_EMAIL_TYPES)
+"""Emails to public submitters (the one list, Phase 11): in their project's branding."""
 
 
 # --- Colours ----------------------------------------------------------------------------

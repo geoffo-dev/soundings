@@ -20,6 +20,16 @@ import type { MockDb, MockEvent, MockIdea, MockProject, MockUser } from './db'
 import { ideaRef, isProjectAdmin, projectOf, rowsForIdea, statusLabel } from './domain'
 import { publicStatus, type ResearchStep } from '@/lib/status'
 import { maskEmail, queueEmail } from './notifications'
+import {
+  canMessageSubmitter,
+  conversationOf,
+  messageDelivery,
+  messagesSummary,
+  replyBlocked,
+  sendBlocked,
+  SUBMITTER_EMAIL_TYPES,
+  trackedMessage,
+} from './submitter-messages'
 
 export interface MockPublicForm {
   project_id: string
@@ -171,7 +181,12 @@ export function ideaSubmission(
       can_moderate:
         admin && idea.held_for === 'moderation' && projectOf(db, idea).archived_at === null,
       can_erase: admin && submission.erased_at === null,
+      // Phase 11: the rule, and a message can be sent now.
+      can_message:
+        canMessageSubmitter(db, idea, user) && sendBlocked(db, idea, submission) === null,
     },
+    // Phase 11: only for holders of public.message_submitter (nobody else learns of it).
+    messages: messagesSummary(db, idea, submission, user),
   }
 }
 
@@ -190,7 +205,8 @@ export function moderationItem(db: MockDb, idea: MockIdea, user: MockUser): Mode
           name: null,
           contact: null,
           erased_at: null,
-          permissions: { can_moderate: true, can_erase: false },
+          permissions: { can_moderate: true, can_erase: false, can_message: false },
+          messages: null,
         },
   }
 }
@@ -263,10 +279,47 @@ export function trackedSubmission(db: MockDb, submission: MockPublicSubmission):
     wants_updates: submission.wants_updates,
     can_resend_verification: canResendConfirmation(db, submission),
     branding: effectiveBranding(db, project.id),
+    // Phase 11 (contract-phase11 §3): the conversation, oldest first, never a person.
+    can_remove_email: canRemoveEmail(idea, submission),
+    messages: conversationOf(db, submission).map(trackedMessage),
+    team_messages_emailed: messageDelivery(db, submission) === 'email',
+    can_reply: replyBlocked(db, idea, submission) === null,
+    reply_blocked: replyBlocked(db, idea, submission),
   }
 }
 
-export function emailVerified(db: MockDb, submission: MockPublicSubmission): EmailVerified {
+/** "Remove my email address": an address is on file and the idea isn't waiting for it. */
+export function canRemoveEmail(idea: MockIdea, submission: MockPublicSubmission): boolean {
+  return Boolean(submission.email) && idea.held_for !== 'email_verification'
+}
+
+/**
+ * "Remove my email address" (and retention rule 3): no address, no confirmation, no
+ * opt-in, and none of the idea's submitter emails left in the outbox. The link and the
+ * conversation stay.
+ */
+export function forgetSubmitterEmail(db: MockDb, submission: MockPublicSubmission): void {
+  submission.email = null
+  submission.email_verified_at = null
+  submission.wants_updates = false
+  db.outbox = db.outbox.filter(
+    (row) => !(row.idea_id === submission.idea_id && SUBMITTER_EMAIL_TYPES.includes(row.type)),
+  )
+}
+
+/** Phase 11 (D1): the tracking link, emailed once, when the address is first confirmed. */
+export function queueLinkEmail(db: MockDb, submission: MockPublicSubmission): boolean {
+  if (!db.email.configured || !submission.email || !submission.tracking_token) return false
+  const row = queueEmail(db, { type: 'submission_link', to_address: submission.email })
+  row.idea_id = submission.idea_id
+  return true
+}
+
+export function emailVerified(
+  db: MockDb,
+  submission: MockPublicSubmission,
+  trackingLinkEmailed = false,
+): EmailVerified {
   const idea = db.ideas.find((i) => i.id === submission.idea_id)
   if (!idea) throw new Error('submission without an idea')
   const project = projectOf(db, idea)
@@ -275,6 +328,7 @@ export function emailVerified(db: MockDb, submission: MockPublicSubmission): Ema
     title: submission.submitted_title ?? '',
     held_for: idea.held_for ?? null,
     branding: effectiveBranding(db, project.id),
+    tracking_link_emailed: trackingLinkEmailed,
   }
 }
 
@@ -359,6 +413,8 @@ export function eraseSubmission(
   submission.erased_at = new Date().toISOString()
   submission.erased_by_id = by?.id ?? null
   db.outbox = db.outbox.filter((row) => row.idea_id !== submission.idea_id)
+  // Phase 11: the whole conversation goes with them.
+  db.submissionMessages = db.submissionMessages.filter((m) => m.submission_id !== submission.id)
 }
 
 /** Status emails to an opted-in, confirmed submitter (fan-out of `status_changed`, §3.8). */

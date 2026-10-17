@@ -104,7 +104,7 @@ have the external IDs `employee_no` E1001–E1003):
 | `kenji` | Kenji Watanabe | member of all three; owns `TOOLS-3`, whose proposal uses the TOOLS template and ends with the research appendix, and runs its call for bids (the comparison, the AI's left-out assessment, the report) |
 | `amara` | Amara Okafor | admin of GREEN, member of CUST; owns `GREEN-6`, Shortlisted with its checklist started, and researches it (asked by alice) |
 | `mateo` | Mateo Rodríguez | member of CUST and TOOLS; assesses Technical on `TOOLS-3`'s call (disagrees with carol on Tessellate's first question) |
-| `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN; assesses Commercial (with the price) on `TOOLS-3`'s call, so she sees prices and opens the pricing schedules |
+| `priya` | Priya Raman | admin of CUST, member of TOOLS and GREEN; assesses Commercial (with the price) on `TOOLS-3`'s call, so she sees prices and opens the pricing schedules; wrote to `CUST-21`'s public submitter, who replied ("The submitter replied" in her inbox) |
 | `sven` | Sven Lindqvist | member of TOOLS and GREEN, viewer of CUST; owns `TOOLS-12`, in Research with "Departments or teams consulted" still open (the gate refuses Evaluating; bob researches it); assesses Delivery on `TOOLS-3`'s call (submitted) |
 | `zanele` | Zanele Dlamini | member of CUST and GREEN, viewer of TOOLS; owns `GREEN-4`, whose proposal has Carbon impact written; sees only the summary of `TOOLS-3`'s call (title, status, deadline, 3 bids) |
 
@@ -150,9 +150,24 @@ rejected by kenji, "No insurance certificate provided."). 8 of 10 assessments ar
 walk the comparison as **kenji** (the owner) or **dave** (the project admin); alice's is
 fully hidden while she owes her two. Export the evaluation report (Markdown or PDF) from
 the Bids tab as kenji. carol, mateo, priya, sven and alice each have "Asked to assess bids"
-in their inbox. The content lives in `backend/app/seed/content.py` (Phase 8:
+in their inbox.
+
+Phase 11, talking to public submitters: `CUST-21` ("Reusable delivery boxes with a
+deposit", approved from the public form; Sam Okafor's confirmed address) has a short
+conversation in its submission panel's **Messages**: **priya** (a Customer Innovation admin;
+`CUST-21` has no owner and keeps none, so My work's and the board's counts stay as before)
+asked "Which of our stores did you have in mind?" and Sam replied an hour later. priya has
+one unread "The submitter replied" in her inbox, and the audit log one `submission.message`
+by her; alice's inbox and every count e2e reads are unchanged. A member (bob, farah) sees
+the submitter's name on `CUST-21` and nothing of the conversation. Nothing was emailed and
+the seeded submission has no tracking link: to see the submitter's side (the tracking
+page's Messages and reply box, the link and message emails in Mailpit), send an idea through
+the form with an address, confirm it from the email, then write to it from the panel.
+
+The content lives in `backend/app/seed/content.py` (Phase 8:
 `backend/app/seed/research.py`, Phase 8b: its `ASSIGNMENTS`; Phase 10:
-`backend/app/seed/bids.py` and the documents in `backend/app/seed/bids/`).
+`backend/app/seed/bids.py` and the documents in `backend/app/seed/bids/`; Phase 11:
+`CONVERSATION` in `backend/app/seed/public.py`).
 
 ## The whole app from the image
 

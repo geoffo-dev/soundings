@@ -107,7 +107,11 @@ async def test_admins_see_the_queue_oldest_first(
         assert first["status"] == "new"
         assert first["summary"] == "As sent."
         assert first["submission"]["held_for"] == "moderation"
-        assert first["submission"]["permissions"] == {"can_moderate": True, "can_erase": True}
+        assert first["submission"]["permissions"] == {
+            "can_moderate": True,
+            "can_erase": True,
+            "can_message": True,
+        }
         assert first["submission"]["contact"] is not None  # admins see the contact
 
 

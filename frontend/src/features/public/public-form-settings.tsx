@@ -282,13 +282,14 @@ function PublicFormForm({
       </Field>
 
       <Field
-        label="Intro"
+        label="Intro text"
         id="public-form-intro"
-        description={
+        // Phase 11 (D3): where it shows and what it takes stay visible, near the limit too.
+        description={`Shown at the top of the form, above the fields: what kind of ideas you’re after. Markdown works (headings, lists, links).${
           form.intro_md.length >= INTRO_MAX_LENGTH * 0.8
-            ? `${form.intro_md.length.toLocaleString('en')}/${INTRO_MAX_LENGTH.toLocaleString('en')} characters`
-            : 'Shown above the form: what kind of ideas you’re after. Markdown works.'
-        }
+            ? ` ${form.intro_md.length.toLocaleString('en')}/${INTRO_MAX_LENGTH.toLocaleString('en')} characters.`
+            : ''
+        }`}
       >
         <Textarea
           value={form.intro_md}

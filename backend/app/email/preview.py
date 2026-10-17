@@ -10,7 +10,7 @@ import html
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 from uuid import UUID
 
 from app.email.model import (
@@ -68,10 +68,18 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
         url=links.idea("TOOLS-3"),
     )
     bids_button = Button("Open the bids", links.idea("TOOLS-3", bids=True))
+    public = IdeaInfo(
+        key="CUST-21",
+        title="Reusable delivery boxes with a deposit",
+        project="Customer Innovation",
+        status="New",
+        url=links.idea("CUST-21"),
+    )
+    tracking = f"{base_url}/track#sample-tracking-token"
     token = "sample-token.preview-only"  # noqa: S105 - not a secret
     all_token = "sample-all-token.preview-only"  # noqa: S105 - not a secret
 
-    def footer(type_: NotificationType, reason: str) -> dict[str, str]:
+    def footer(type_: NotificationType, reason: str) -> dict[str, Any]:
         return {
             "reason": reason,
             "preferences_url": links.preferences(),
@@ -281,6 +289,53 @@ def sample_contents(base_url: str = "http://localhost:8000") -> dict[str, EmailC
             },
             button=Button("Confirm my email address", confirm_url),
             reason="Someone gave this address on the public idea form of Customer Innovation.",
+        ),
+        # Phase 11: to the team, fixed words only (never the reply's text).
+        "submitter_replied": EmailContent(
+            template="submitter_replied",
+            subject=f'[CUST-21] The submitter replied about "{public.title}"',
+            preheader="The person who sent CUST-21 through the public form replied to the team.",
+            context={"idea": public},
+            button=Button("Read the reply", links.idea("CUST-21", submission=True)),
+            **footer(
+                NotificationType.SUBMITTER_REPLIED,
+                "You get this because you own CUST-21 or have written to the person who sent it.",
+            ),
+        ),
+        # Phase 11: to a public submitter, in the project's branding, no Reply-To.
+        "submission_link": EmailContent(
+            template="submission_link",
+            subject="Your link to follow your idea for Customer Innovation",
+            preheader="Your private link to follow the idea you sent to Customer Innovation.",
+            context={"project": "Customer Innovation", "title": "Recycle packaging at the till"},
+            button=Button("See where your idea stands", tracking),
+            reason="You confirmed this address on the public idea form of Customer Innovation.",
+            stop_url=tracking,
+            stop_label="Stop emails about this idea",
+            allow_reply_to=False,
+        ),
+        "submission_message": EmailContent(
+            template="submission_message",
+            subject="A message about your idea for Customer Innovation",
+            preheader="The Customer Innovation team wrote to you about your idea.",
+            context={
+                "project": "Customer Innovation",
+                "title": "Recycle packaging at the till",
+                "lines": [
+                    "Thanks for this! Which of our stores did you have in mind?",
+                    "",
+                    "We'd like to try it in two first <script> & friends stay plain text.",
+                ],
+            },
+            button=Button("Reply", tracking),
+            reason="You sent an idea to Customer Innovation through its public form.",
+            stop_url=tracking,
+            stop_label="Stop emails about this idea",
+            stop_note=(
+                "To stop all email about this idea, remove your email address on your "
+                "tracking page."
+            ),
+            allow_reply_to=False,
         ),
         "submission_status_changed": EmailContent(
             template="submission_status_changed",

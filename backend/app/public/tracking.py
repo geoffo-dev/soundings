@@ -10,7 +10,11 @@
   confirmation email again and erases the submitter's details.
 * **Confirmation link** (``/verify#<token>``): a signed token (no table) that confirms
   the address while the submission still has it, and releases an idea held for
-  confirmation (to moderation, or to the team).
+  confirmation (to moderation, or to the team). Phase 11: the **first** confirmation also
+  queues the tracking-link email (``submission_link``), once.
+* Phase 11: the page carries the conversation with the team (:mod:`app.public.messages`)
+  and whether the submitter may reply; "Remove my email address" (:func:`forget_email`)
+  does what retention rule 3 does to an unconfirmed address, on request.
 
 Writes lock in the app's one order: the project row ``FOR KEY SHARE``, the idea, then
 the submission, so they serialise with status changes (whose fan-out reads the
@@ -23,7 +27,7 @@ from datetime import datetime
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.public_form import refuse
@@ -33,21 +37,24 @@ from app.config import Settings
 from app.domain.labels import status_label
 from app.errors import ProblemError
 from app.models.activity import ActivityEvent
-from app.models.enums import HoldReason, IdeaStatus, Resolution
+from app.models.enums import SUBMITTER_EMAIL_TYPES, HoldReason, IdeaStatus, Resolution
 from app.models.idea import Idea
+from app.models.notification import OutboundEmail
 from app.models.project import Project
 from app.models.public import PublicSubmission
 from app.notifications.unsubscribe import email_hint
-from app.public import erasure
+from app.public import erasure, messages
 from app.public.emails import (
     CONFIRMATION_WINDOW,
     CONFIRMATIONS_PER_SUBMISSION,
     confirmations_sent,
     queue_confirmation,
+    queue_link_email,
 )
 from app.public.reported import reported, reported_move
 from app.schemas.public import (
     EmailVerified,
+    MessageDelivery,
     PublicProjectRef,
     TrackedStatusChange,
     TrackedSubmission,
@@ -58,6 +65,8 @@ __all__ = [
     "Tracked",
     "erase_own_details",
     "find",
+    "forget_email",
+    "reply",
     "resend_confirmation",
     "set_updates",
     "tracked_submission",
@@ -188,11 +197,14 @@ async def _can_resend(
 async def tracked_submission(
     db: AsyncSession, settings: Settings, found: Tracked, *, now: datetime
 ) -> TrackedSubmission:
-    """The tracking page: the submitter's own words and the idea's public status."""
+    """The tracking page: the submitter's own words and the idea's public status; Phase 11,
+    the conversation with the team and whether they may reply now."""
     submission, idea, project = found
     assert submission.submitted_title is not None  # noqa: S101 - not erased (c9)
     assert submission.submitted_summary is not None  # noqa: S101
     status, resolution = reported(project.research_step, idea.status, idea.resolution)
+    conversation = await messages.thread(db, submission.id)
+    blocked = messages.reply_blocked(project, conversation, now)
     return TrackedSubmission(
         project=PublicProjectRef(slug=project.slug, name=project.name),
         title=submission.submitted_title,
@@ -209,6 +221,12 @@ async def tracked_submission(
         wants_updates=submission.wants_updates,
         can_resend_verification=await _can_resend(db, settings, submission, now=now),
         branding=await effective_branding(db, project.id),
+        can_remove_email=submission.email is not None
+        and idea.held_for is not HoldReason.EMAIL_VERIFICATION,
+        messages=messages.tracked_messages(conversation),
+        team_messages_emailed=messages.delivery(settings, submission) is MessageDelivery.EMAIL,
+        can_reply=blocked is None,
+        reply_blocked=blocked,
     )
 
 
@@ -276,9 +294,12 @@ async def verify_email(
     if found is None:  # pragma: no cover - c9 passed
         raise not_found()
     submission, idea, project = found
+    link_emailed = False
     if submission.email_verified_at is None:
         submission.email_verified_at = now
         submission.updated_at = now
+        # Phase 11 (D1): the first confirmation, and only it, emails the tracking link.
+        link_emailed = await queue_link_email(db, settings, submission, now=now)
     if idea.held_for is HoldReason.EMAIL_VERIFICATION:
         idea.held_for = HoldReason.MODERATION if project.public_moderation_required else None
         idea.last_activity_at = now
@@ -291,4 +312,50 @@ async def verify_email(
         title=submission.submitted_title,
         held_for=idea.held_for,
         branding=await effective_branding(db, project.id),
+        tracking_link_emailed=link_emailed,
     )
+
+
+async def forget_email(
+    db: AsyncSession, settings: Settings, token: str, *, now: datetime
+) -> TrackedSubmission:
+    """Phase 11 (review M2), "Remove my email address": exactly what retention rule 3 does
+    to an unconfirmed address, on request (address, confirmation and opt-in cleared, every
+    submitter email of the idea deleted, queued and sent). The link and the conversation
+    stay. 409 ``awaiting_confirmation`` while the idea waits for that address's
+    confirmation; without an address, nothing changes. Not audited (like rule 3)."""
+    found = await find(db, settings, token, lock=True)
+    submission, idea, _ = found
+    if submission.email is not None:
+        if idea.held_for is HoldReason.EMAIL_VERIFICATION:
+            raise ProblemError(
+                409,
+                "awaiting_confirmation",
+                detail=(
+                    "Your idea reaches the team once you confirm this address. To withdraw "
+                    "it, delete your details."
+                ),
+            )
+        submission.email = None
+        submission.email_verified_at = None
+        submission.wants_updates = False
+        submission.updated_at = now
+        await db.flush()
+        await db.execute(
+            delete(OutboundEmail)
+            .where(
+                OutboundEmail.idea_id == idea.id,
+                OutboundEmail.type.in_(SUBMITTER_EMAIL_TYPES),
+            )
+            .execution_options(synchronize_session=False)
+        )
+    return await tracked_submission(db, settings, found, now=now)
+
+
+async def reply(
+    db: AsyncSession, settings: Settings, found: Tracked, body: str, *, now: datetime
+) -> TrackedSubmission:
+    """Phase 11: the submitter's reply to the team (the caller found the submission by its
+    token with the lock and applied the per-address throttle); the page, updated."""
+    await messages.add_reply(db, found, body, now=now)
+    return await tracked_submission(db, settings, found, now=now)

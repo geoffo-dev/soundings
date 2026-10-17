@@ -1,0 +1,16 @@
+{% extends "_layout.txt" %}
+{% block content %}
+A message from the {{ project }} team
+
+About your idea "{{ title }}":
+
+{% for line in lines %}
+{{ line }}
+{% endfor %}
+
+The {{ project }} team
+{%- endblock %}
+{% block after_button %}
+Replies to this email aren't read: reply on your tracking page.
+
+{% endblock %}

@@ -11,6 +11,11 @@ sent through it (contract-phase4 sections 3.5-3.11).
   same): one approved by the project admin (its submitter gave a confirmed address and
   asked for updates), two waiting in the moderation queue (one anonymous). They have no
   tracking link (nobody could know its token); send the form to get a real one.
+* Phase 11 (contract-phase11 section 15): the approved one (CUST-21) has a short
+  conversation with its submitter: priya, a Customer Innovation admin, wrote to Sam (CUST-21
+  has no owner, and keeps none so My work's and the board's counts stay as e2e reads them),
+  and Sam replied an hour later on the tracking page, so priya has one unread "The
+  submitter replied". Through the services without settings: no email is queued.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from dataclasses import dataclass
 from typing import Final
 
 __all__ = [
+    "CONVERSATION",
     "CUST_BRANDING",
     "CUST_FAVICON",
     "CUST_LOGO",
@@ -26,6 +32,7 @@ __all__ = [
     "PUBLIC_FORM_INTRO",
     "PUBLIC_IDEAS",
     "PUBLIC_PROJECT",
+    "ConversationSeed",
     "PublicIdeaSeed",
 ]
 
@@ -129,3 +136,34 @@ PUBLIC_IDEAS: Final = (
         name="Robin",
     ),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationSeed:
+    """Phase 11: one message with a public submitter. ``author``: the team member who wrote
+    it (a username); ``None``: the submitter's reply on their tracking page."""
+
+    idea: int
+    """Index into :data:`PUBLIC_IDEAS`."""
+    hours_ago: float
+    body: str
+    author: str | None = None
+
+
+CONVERSATION: Final = (
+    ConversationSeed(
+        idea=0,
+        hours_ago=4,
+        author="priya",
+        body=(
+            "Thanks, Sam! Which of our stores did you have in mind? We'd like to try it in "
+            "two first."
+        ),
+    ),
+    ConversationSeed(
+        idea=0,
+        hours_ago=3,
+        body=("The two in the city centre see the most deliveries. Happy to help with the trial."),
+    ),
+)
+"""CUST-21's conversation: priya's question, then Sam's reply an hour later."""

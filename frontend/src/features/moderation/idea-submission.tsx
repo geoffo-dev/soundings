@@ -18,6 +18,8 @@ import { ConfirmDialog } from '@/features/admin/confirm-dialog'
 import { formatDate } from '@/lib/dates'
 import { focusWhenRendered } from '@/lib/focus'
 
+import { SubmissionMessagesEntry } from './submitter-messages'
+
 /*
  * Public submissions on the idea page (contract-phase4 §3.6, §3.9): a banner
  * with Approve / Reject while an idea waits for review (only admins can open
@@ -26,7 +28,7 @@ import { focusWhenRendered } from '@/lib/focus'
  */
 
 /** The submission behind a public idea (no request for ideas from members). */
-function useSubmissionOf(idea: IdeaDetail, ideaKey: string) {
+export function useSubmissionOf(idea: IdeaDetail, ideaKey: string) {
   // A guest researcher can't read the submission (Phase 8b: 404 for column R).
   return useIdeaSubmission(ideaKey, {
     enabled: idea.via_public_form && idea.permissions.can_view_project,
@@ -202,6 +204,10 @@ function SubmissionDetails({
           <UserRoundX aria-hidden="true" /> Erase submitter details…
         </Button>
       )}
+      {/* Phase 11: only for the idea's owner and admins (null for everyone else). */}
+      {submission.messages && (
+        <SubmissionMessagesEntry submission={submission} summary={submission.messages} />
+      )}
       <ConfirmDialog
         open={open}
         onOpenChange={(next) => {
@@ -209,7 +215,7 @@ function SubmissionDetails({
           if (!next) erase.reset()
         }}
         title="Erase the submitter’s details?"
-        description={`${who} name, email address and private tracking link will be deleted, along with any emails waiting to go to them. The idea and its history stay. This can’t be undone.`}
+        description={`${who} name, email address and private tracking link will be deleted, along with any messages with them and emails waiting to go to them. The idea and its history stay. This can’t be undone.`}
         confirmLabel="Erase details"
         tone="danger"
         pending={erase.isPending}

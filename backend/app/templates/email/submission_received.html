@@ -3,5 +3,6 @@
 <h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Confirm your idea for {{ project }}</h1>
 <p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Someone sent an idea to {{ project }} and gave this email address.</p>
 <p class="sx-text" style="{{ s.p }}color:{{ c.text }};">{% if held_until_confirmed %}Confirm your address and the team gets your idea{% if wants_updates %}, and we'll email you when its status changes{% endif %}.{% elif wants_updates %}Confirm your address and we'll email you when the idea's status changes.{% else %}Confirm your address so the team knows it's really yours.{% endif %} The link works for 3 days.</p>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Once you confirm, we'll email you a private link to follow your idea.</p>
 <p class="sx-text" style="{{ s.p }}color:{{ c.text }};">If this wasn't you, ignore this email: nothing more will be sent unless you confirm.</p>
 {% endblock %}

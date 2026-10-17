@@ -31,6 +31,7 @@ export const KNOWN_TYPES = new Set<string>([
   'assessor_assigned',
   'assessment_reminder',
   'assessments_complete',
+  'submitter_replied',
 ])
 
 export function isKnownNotification(item: { type: string }): item is NotificationItem {
@@ -138,6 +139,14 @@ export function describeNotification(
         text: `All the assessments for “${item.call.title}” are in (${plural(item.bid_count, 'bid')}): you can compare the bids and award the call`,
         quote: null,
       }
+    // Phase 11 (contract-phase11 §6): fixed words only, never the reply's text (untrusted
+    // public input) or anything about the submitter.
+    case 'submitter_replied':
+      return {
+        actor: null,
+        text: `The person who sent ${item.idea.key} through the public form replied to the team`,
+        quote: null,
+      }
   }
 }
 
@@ -165,6 +174,8 @@ export interface NotificationLink {
   research?: boolean
   /** `?tab=bids`: the idea's call for bids (Phase 10). */
   bids?: boolean
+  /** `?submission=1`: the messages with the public submitter (Phase 11). */
+  submission?: boolean
   /** `#comment-<id>` for comments and mentions that still exist. */
   hash?: string
 }
@@ -187,6 +198,8 @@ export function notificationLink(item: NotificationItem): NotificationLink {
     case 'assessment_reminder':
     case 'assessments_complete':
       return { ideaKey, evaluate: false, bids: true }
+    case 'submitter_replied':
+      return { ideaKey, evaluate: false, submission: true }
     default:
       return { ideaKey, evaluate: false }
   }
@@ -346,6 +359,15 @@ export const TYPE_COPY: Record<
     when: 'every assessor of a call for bids you run has submitted',
     description: 'Every assessor of a call for bids on your idea has submitted every bid.',
   },
+  // Phase 11 (contract-phase11 §6): never the reply's text or anything about its sender.
+  submitter_replied: {
+    label: 'The submitter replied',
+    one: 'The submitter replied',
+    phrase: 'replies from public submitters',
+    when: 'the person who sent an idea through the public form replies to the team',
+    description:
+      'The person who sent an idea you own, or have written to, through the public form replies on their tracking page.',
+  },
 }
 
 /**
@@ -363,6 +385,7 @@ const PREFERENCE_ORDER: readonly NotificationType[] = [
   'assessor_assigned',
   'assessment_reminder',
   'assessments_complete',
+  'submitter_replied',
   'status_changed',
   'comment',
   'mention',

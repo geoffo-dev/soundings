@@ -8,7 +8,10 @@ researcher (:func:`app.authz.researched_ideas`), only ``RESEARCH_GUEST_NOTIFICAT
 "Asked to research" only while it is the caller's live assignment (review M1). Phase 10:
 a bid type only while its call exists and the caller still assesses a section of it
 ("Asked to assess bids", reminders) or manages it ("Bid assessments complete"), as the
-send-time checks (:func:`app.notifications.access.applies`) decide.
+send-time checks (:func:`app.notifications.access.applies`) decide. Phase 11: "The
+submitter replied" only while the caller holds ``public.message_submitter`` on the idea, in
+its SQL form (:func:`_manages`: a platform admin, a project admin, or the idea's owner with
+member there), so a demoted owner or a writer who left sees no item and no count.
 """
 
 from __future__ import annotations
@@ -57,6 +60,7 @@ from app.schemas.notifications import (
     ResearcherAssignedNotification,
     ResearchReminderNotification,
     StatusChangedNotification,
+    SubmitterRepliedNotification,
 )
 from app.services.refs import idea_ref
 from app.services.sql import any_of
@@ -104,6 +108,23 @@ _CALL_ID: Final = cast(Notification.payload["call_id"].astext, Uuid)
 _roles = project_effective_roles
 
 
+def _manages(principal: Principal) -> Any:
+    """The caller manages the idea (joined as ``ideas``): a platform admin, a project admin,
+    or the idea's owner with member there (groups included): the SQL form of Phase 10's
+    ``bid.view_scores`` without a section and of Phase 11's ``public.message_submitter``
+    (c31 needs nothing here: the break-glass account and agents get no notifications)."""
+    if principal.is_platform_admin:
+        return true()
+    return exists().where(
+        _roles.c.project_id == Idea.project_id,
+        _roles.c.user_id == principal.user_id,
+        or_(
+            _roles.c.role == ProjectRole.ADMIN,
+            and_(Idea.owner_id == principal.user_id, _roles.c.role == ProjectRole.MEMBER),
+        ),
+    )
+
+
 def _bid_items(principal: Principal) -> Any:
     """Phase 10: a bid notification only while its call exists and the caller still holds
     the rule its send-time check needs (:func:`app.notifications.access.applies`): assessing
@@ -115,17 +136,7 @@ def _bid_items(principal: Principal) -> Any:
         BidSectionAssessor.call_id == _CALL_ID,
         BidSectionAssessor.user_id == Notification.user_id,
     )
-    if principal.is_platform_admin:
-        manager: Any = true()
-    else:
-        manager = exists().where(
-            _roles.c.project_id == Idea.project_id,
-            _roles.c.user_id == principal.user_id,
-            or_(
-                _roles.c.role == ProjectRole.ADMIN,
-                and_(Idea.owner_id == principal.user_id, _roles.c.role == ProjectRole.MEMBER),
-            ),
-        )
+    manager = _manages(principal)
     return or_(
         Notification.type.not_in(_BID_TYPES),
         and_(Notification.type.in_(_ASSESSOR_TYPES), assessor),
@@ -149,10 +160,13 @@ def _mine(principal: Principal) -> Any:
             Notification.created_at >= Idea.research_assigned_at,
         ),
     )
+    # Phase 11: "The submitter replied" only while the caller holds public.message_submitter.
+    replies = or_(Notification.type != NotificationType.SUBMITTER_REPLIED, _manages(principal))
     return (
         (Notification.user_id == principal.user_id)
         & current_request
         & _bid_items(principal)
+        & replies
         & or_(
             viewable_ideas(principal),
             and_(researched_ideas(principal), Notification.type.in_(_GUEST_TYPES)),
@@ -369,6 +383,9 @@ def _item(
                 assessment_count=max(1, int(payload.get("assessment_count") or 1)),
                 **base,
             )
+        case NotificationType.SUBMITTER_REPLIED:
+            # Phase 11: fixed words only (the SPA's sentence); the reply needn't still exist.
+            return SubmitterRepliedNotification(type="submitter_replied", **base)
 
 
 def _resolution(value: object) -> Resolution | None:

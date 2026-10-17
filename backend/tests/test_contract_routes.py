@@ -532,7 +532,12 @@ _NEW_BID: dict[str, Any] = {
 _MESSAGES = "/api/v1/ideas/CUST-21/submission/messages"
 _MESSAGE_BODY = "Thanks! Which stores did you have in mind?\nWe'd like to try it in two."
 
-STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {
+STUBS: dict[str, tuple[str, dict[str, Any] | None]] = {}
+
+# Phase 11 operations (tests/public/test_messages.py, test_tracking_messages.py): a valid
+# request each, for the shape and session checks. Move a row here from STUBS when you
+# implement it.
+PHASE11_REQUESTS: dict[str, tuple[str, dict[str, Any] | None]] = {
     # --- Phase 11: talking to public submitters (contract-phase11) ----------------------
     "list_submission_messages": (f"{_MESSAGES}?limit=20", None),
     "send_submission_message": (_MESSAGES, {"body": _MESSAGE_BODY}),
@@ -883,6 +888,7 @@ def test_operation_ids_are_explicit_and_match_function_names() -> None:
 
 def test_every_stub_has_a_contract_entry() -> None:
     assert set(STUBS) <= set(_METHODS)
+    assert set(PHASE11_REQUESTS) <= set(_METHODS)
     assert set(PHASE10_REQUESTS) <= set(_METHODS)
     assert set(PHASE8B_REQUESTS) <= set(_METHODS)
     assert set(PHASE8_REQUESTS) <= set(_METHODS)
@@ -978,6 +984,15 @@ async def test_implemented_public_routes_need_no_session(client: httpx.AsyncClie
         assert response.status_code == expected, (operation_id, response.text)
 
 
+async def test_phase11_public_routes_need_no_session(client: httpx.AsyncClient) -> None:
+    """The submitter's reply and "Remove my email address" answer anonymous requests (404
+    here: no such token), never 401."""
+    for operation_id in sorted(PUBLIC_OPERATIONS & set(PHASE11_REQUESTS)):
+        url, body = PHASE11_REQUESTS[operation_id]
+        response = await client.request(_METHODS[operation_id], url, json=body)
+        assert response.status_code == 404, (operation_id, response.text)
+
+
 async def test_public_stubs_need_no_session(client: httpx.AsyncClient) -> None:
     """Sign-in routes answer without a session (here: 501, not 401)."""
     for operation_id in sorted(PUBLIC_OPERATIONS & set(STUBS)):
@@ -995,6 +1010,7 @@ async def test_admin_routes_need_a_session(client: httpx.AsyncClient) -> None:
         | PHASE8_REQUESTS
         | PHASE8B_REQUESTS
         | PHASE10_REQUESTS
+        | PHASE11_REQUESTS
         | STUBS
     )
     for operation_id in sorted(set(requests) - PUBLIC_OPERATIONS):
@@ -1182,7 +1198,9 @@ _BRANDING = PHASE4_REQUESTS["update_global_branding"][1] or {}
 async def test_invalid_phase4_requests_are_rejected_before_the_endpoint(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = (PHASE4_REQUESTS | STUBS).get(operation_id, ("", None))
+    valid_url, valid_body = (PHASE4_REQUESTS | PHASE11_REQUESTS | STUBS).get(
+        operation_id, ("", None)
+    )
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -1225,7 +1243,7 @@ async def test_invalid_phase4_requests_are_rejected_before_the_endpoint(
 async def test_invalid_public_requests_are_rejected_without_a_session(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = (PHASE4_REQUESTS | STUBS)[operation_id]
+    valid_url, valid_body = (PHASE4_REQUESTS | PHASE11_REQUESTS | STUBS)[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -2585,7 +2603,7 @@ def test_phase11_shapes_are_in_the_contract(app: FastAPI) -> None:
 async def test_invalid_phase11_requests_are_rejected(
     client: httpx.AsyncClient, operation_id: str, url: str | None, body: dict[str, Any] | None
 ) -> None:
-    valid_url, valid_body = STUBS[operation_id]
+    valid_url, valid_body = PHASE11_REQUESTS[operation_id]
 
     response = await client.request(
         _METHODS[operation_id], url or valid_url, json=body if body is not None else valid_body
@@ -2621,7 +2639,7 @@ async def test_invalid_replies_are_rejected_without_a_session(
 async def test_a_reply_must_be_json(client: httpx.AsyncClient, operation_id: str) -> None:
     """Like every public write (contract-phase4 section 1): a form post or text body from
     another site is 415 before the body is read."""
-    url, body = STUBS[operation_id]
+    url, body = PHASE11_REQUESTS[operation_id]
     for content_type in ("text/plain", "application/x-www-form-urlencoded", None):
         headers = {"content-type": content_type} if content_type else {}
         response = await client.post(url, content=json.dumps(body), headers=headers)
@@ -2641,12 +2659,13 @@ async def test_a_reply_must_be_json(client: httpx.AsyncClient, operation_id: str
         "Family 👨\u200d👩\u200d👧 and café",
     ],
 )
-async def test_valid_message_bodies_reach_the_stub(client: httpx.AsyncClient, text: str) -> None:
-    url, _ = STUBS["send_submission_message"]
-    reply_url, reply = STUBS["send_tracking_reply"]
+async def test_valid_message_bodies_reach_the_service(client: httpx.AsyncClient, text: str) -> None:
+    """Past the schema (no 422): here 404, for there is no such idea or token."""
+    url, _ = PHASE11_REQUESTS["send_submission_message"]
+    reply_url, reply = PHASE11_REQUESTS["send_tracking_reply"]
 
     response = await client.post(url, json={"body": text})
     reply_response = await client.post(reply_url, json=(reply or {}) | {"body": text})
 
-    assert response.status_code == 501, response.text
-    assert reply_response.status_code == 501, reply_response.text
+    assert response.status_code == 404, response.text
+    assert reply_response.status_code == 404, reply_response.text

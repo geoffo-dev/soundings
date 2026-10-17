@@ -22,6 +22,8 @@ import type {
   ProjectSummary,
   PublicFormSettings,
   PublicFormSettingsUpdate,
+  SubmissionMessage,
+  SubmissionMessagePage,
 } from '@/api/types'
 
 /**
@@ -326,6 +328,88 @@ export function useEraseSubmitter(ideaKey: string) {
     onSuccess: (submission) => {
       queryClient.setQueryData(queryKeys.submissions.idea(ideaKey), submission)
       void queryClient.invalidateQueries({ queryKey: queryKeys.submissions.moderationAll() })
+    },
+    meta: { silent: true },
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Phase 11: messages with the submitter (contract-phase11 §2, §3)      */
+/* ------------------------------------------------------------------ */
+
+/** A page of the conversation (newest first; a conversation holds at most 100). */
+const MESSAGES_PAGE_SIZE = 50
+
+export const submissionMessagesOptions = (idea: string) =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.submissions.messages(idea),
+    queryFn: ({ pageParam, signal }) =>
+      unwrap(
+        api.GET('/api/v1/ideas/{idea}/submission/messages', {
+          params: {
+            path: { idea },
+            query: { cursor: pageParam ?? undefined, limit: MESSAGES_PAGE_SIZE },
+          },
+          signal,
+        }),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    staleTime: 15_000,
+  })
+
+type MessagesData = InfiniteData<SubmissionMessagePage, string | null>
+
+/**
+ * The conversation with the person who sent the idea, oldest first (the API pages it
+ * newest first: `fetchNextPage` loads earlier messages). Only for holders of
+ * `public.message_submitter` (`IdeaSubmission.messages` isn't null): ask for nothing
+ * otherwise, so nobody else learns that one exists.
+ */
+export function useSubmissionMessages(idea: string, options: { enabled?: boolean } = {}) {
+  const select = useCallback(
+    (data: MessagesData) => ({
+      ...data,
+      messages: data.pages.flatMap((page) => page.items).reverse(),
+    }),
+    [],
+  )
+  return useInfiniteQuery({
+    ...submissionMessagesOptions(idea),
+    enabled: options.enabled ?? true,
+    select,
+  })
+}
+
+/**
+ * Send a message to the submitter (plain text). Silent: the composer says what went
+ * wrong in place (409 `submitter_erased`, `conversation_full`, `public_submission_off`,
+ * `project_archived`; 429 `too_many_attempts`). The message goes on the newest page at
+ * once; the summary (count, delivery, `blocked`) is read again.
+ */
+export function useSendSubmissionMessage(idea: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SubmissionMessage, Error, string>({
+    mutationFn: (body) =>
+      unwrap(
+        api.POST('/api/v1/ideas/{idea}/submission/messages', {
+          params: { path: { idea } },
+          body: { body },
+        }),
+      ),
+    onSuccess: (message) => {
+      queryClient.setQueryData<MessagesData>(queryKeys.submissions.messages(idea), (data) => {
+        if (!data) return data
+        const [first, ...rest] = data.pages
+        if (!first || first.items.some((item) => item.id === message.id)) return data
+        return { ...data, pages: [{ ...first, items: [message, ...first.items] }, ...rest] }
+      })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.submissions.idea(idea) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.submissions.messages(idea) })
+    },
+    onError: () => {
+      // A refusal may mean the state moved (erased, archived, full): read it again.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.submissions.idea(idea) })
     },
     meta: { silent: true },
   })

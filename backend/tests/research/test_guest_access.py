@@ -408,9 +408,9 @@ ROUTES: dict[str, tuple[str, str, Any, object]] = {
         404,
     ),
 }
-STILL_STUBS: frozenset[str] = frozenset({"list_submission_messages", "send_submission_message"})
-"""Operations still answering 501 (Phase 11's contract stubs): a guest's 404 for one is
-pinned as an expected failure until it's built."""
+STILL_STUBS: frozenset[str] = frozenset()
+"""Operations still answering 501 (a phase's contract stubs): a guest's 404 for one is
+pinned as an expected failure until it's built (Phase 11's two are built)."""
 
 
 def _operations() -> list[Any]:

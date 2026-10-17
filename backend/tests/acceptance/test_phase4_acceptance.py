@@ -558,15 +558,19 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     await olive.send("POST", f"/ideas/{key}/status", {"status": "shortlisted"})
 
     await run_worker_once(jobs, runtime)
-    mails = await inbox.wait_for(jo, count=3)
+    mails = await inbox.wait_for(jo, count=4)
     subjects = sorted(message["Subject"] for message in mails)
     assert subjects == sorted(
         [
             f"Confirm your idea for {PROJECT_NAME}",
+            # Phase 11 (D1): the first confirmation emails the tracking link, once.
+            f"Your link to follow your idea for {PROJECT_NAME}",
             f'Your idea "{TITLE}" is now Evaluating',
             f'Your idea "{TITLE}" is now Shortlisted',
         ]
     ), subjects
+    [link_summary] = [m for m in mails if m["Subject"].startswith("Your link to follow")]
+    assert f"{BASE}/track#{token}" in links(await inbox.message(link_summary["ID"]))
     [shortlisted_summary] = [m for m in mails if m["Subject"].endswith("now Shortlisted")]
     shortlisted = await inbox.message(shortlisted_summary["ID"])
     body = visible_text(shortlisted["HTML"]) + shortlisted["Text"]
@@ -605,7 +609,14 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
         "wants_updates",
         "can_resend_verification",
         "branding",
+        # Phase 11: the conversation with the team (none here) and "Remove my email address"
+        "can_remove_email",
+        "messages",
+        "team_messages_emailed",
+        "can_reply",
+        "reply_blocked",
     }
+    assert tracked["messages"] == []
     exposed = json.dumps(tracked)
     for internal in (key, EDITED_SUMMARY, "Olive", "Bob Brown", "worth a pilot", olive.user["id"]):
         assert internal not in exposed, internal
@@ -635,7 +646,7 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
     assert (listed["section_key"], bool(listed["resolved_at"])) == ("problem", True)
 
     await run_worker_once(jobs, runtime)
-    mails = await inbox.wait_for(jo, count=4)
+    mails = await inbox.wait_for(jo, count=5)  # Phase 11: the tracking-link email too
     assert f'Your idea "{TITLE}" is now Proposal' in [m["Subject"] for m in mails]
 
     # --- 6. Exports ---------------------------------------------------------------------
@@ -696,7 +707,8 @@ async def test_an_anonymous_idea_becomes_an_exported_branded_proposal(
         assert "from 3 evaluations" not in text_, label
 
     # --- 7. Erasure ---------------------------------------------------------------------
-    assert len(await outbox_rows_for(db_session, detail["id"])) == 4
+    # The confirmation, the tracking link (Phase 11) and three status emails.
+    assert len(await outbox_rows_for(db_session, detail["id"])) == 5
     erased = await alice.send("POST", f"/ideas/{key}/submission/erase")
     assert erased["erased_at"]
     assert erased["name"] is None

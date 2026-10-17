@@ -12,6 +12,10 @@ someone who can't view the project, :func:`holds`); ``evaluations_complete`` als
 ``evaluation.view_own`` (review S3); "Asked to research" needs the recipient to be the
 idea's live researcher (c24); research reminders need them to do the research, may answer
 it and it still to be to do (:func:`does_research`).
+
+Phase 11 (contract-phase11 section 6): "The submitter replied" needs
+``public.message_submitter`` (:func:`holds`, so the digest build drops it too), the idea not
+held for moderation and the reply still there (:func:`reply_exists`).
 """
 
 from __future__ import annotations
@@ -50,9 +54,14 @@ from app.models.enums import (
 from app.models.evaluation import Evaluation
 from app.models.idea import Idea, IdeaEvaluator
 from app.models.project import Project
+from app.models.public import SubmissionMessage
 from app.models.user import User
 from app.schemas.comments import mentioned_user_ids
-from app.schemas.notifications import BID_NOTIFICATION_TYPES, RESEARCH_GUEST_NOTIFICATION_TYPES
+from app.schemas.notifications import (
+    BID_NOTIFICATION_TYPES,
+    RESEARCH_GUEST_NOTIFICATION_TYPES,
+    SUBMITTER_NOTIFICATION_TYPES,
+)
 from app.schemas.research import research_to_do
 from app.services.sql import any_of
 
@@ -71,6 +80,7 @@ __all__ = [
     "parse_time",
     "parse_uuid",
     "recipients",
+    "reply_exists",
     "submitted_count",
 ]
 
@@ -266,10 +276,28 @@ def _owes_evaluation(recipient: Recipient) -> bool:
 def holds(type_: NotificationType, recipient: Recipient) -> bool:
     """Phase 8b review S5: someone who sees the idea without its project (a guest
     researcher, role matrix column R) holds only ``RESEARCH_GUEST_NOTIFICATION_TYPES``
-    about it, so an evaluator's or owner's older items never reach them as a guest."""
+    about it, so an evaluator's or owner's older items never reach them as a guest.
+    Phase 11: the submitter types need ``public.message_submitter`` (nobody else learns
+    that a conversation exists: a member, a demoted owner, a writer who left)."""
+    if type_ in SUBMITTER_NOTIFICATION_TYPES:
+        return can(recipient.principal, Rule.PUBLIC_MESSAGE_SUBMITTER, recipient.resource)
     return type_ in RESEARCH_GUEST_NOTIFICATION_TYPES or can(
         recipient.principal, Rule.PROJECT_VIEW, recipient.resource
     )
+
+
+async def reply_exists(
+    db: AsyncSession, type_: NotificationType, payload: Mapping[str, Any]
+) -> bool | None:
+    """Phase 11: whether the reply a ``submitter_replied`` notification names is still there
+    (an erasure deletes the conversation); ``None`` for other types (no query)."""
+    if type_ not in SUBMITTER_NOTIFICATION_TYPES:
+        return None
+    message_id = parse_uuid(payload.get("message_id"))
+    if message_id is None:
+        return False
+    found = await db.scalar(select(SubmissionMessage.id).where(SubmissionMessage.id == message_id))
+    return found is not None
 
 
 def does_research(recipient: Recipient, idea: Idea, *, required_open: int) -> bool:
@@ -307,12 +335,14 @@ def applies(
     now: datetime,
     required_open: int | None = None,
     bid: BidNotice | None = None,
+    reply: bool | None = None,
 ) -> bool:
     """The type's own condition (contract-phase3 section 3.3 table), for a recipient
     who already passed ``idea.view`` (:func:`recipients`). ``required_open``: the idea's
     open required research items, for research reminders (unknown: not sent). ``bid``:
     Phase 10, the call of a bid notification for this recipient (:func:`bid_notice`;
-    unknown or gone: not sent)."""
+    unknown or gone: not sent). ``reply``: Phase 11, the reply of a ``submitter_replied``
+    still exists (:func:`reply_exists`; unknown: not sent)."""
     if not holds(type_, recipient):
         return False
     match type_:
@@ -401,6 +431,10 @@ def applies(
                 and bid.call.status in (BidCallStatus.ASSESSING, BidCallStatus.AWARDED)
                 and manages_call(recipient, bid)
             )
+        case NotificationType.SUBMITTER_REPLIED:
+            # Phase 11: still holding public.message_submitter (holds, above), the reply
+            # still there, and the idea not held for moderation (in nobody's inbox).
+            return reply is True and idea.held_for is None
 
 
 async def evaluator_ids(db: AsyncSession, idea_id: UUID) -> list[UUID]:

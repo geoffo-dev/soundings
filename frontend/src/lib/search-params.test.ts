@@ -57,4 +57,9 @@ describe('search params', () => {
       tab: undefined,
     })
   })
+
+  it('accepts submission=1 from “The submitter replied” links (Phase 11)', () => {
+    expect(validateIdeaSearch(parseSearch('?submission=1')).submission).toBe(true)
+    expect(validateIdeaSearch(parseSearch('?submission=0')).submission).toBeUndefined()
+  })
 })

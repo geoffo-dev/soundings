@@ -701,32 +701,42 @@ at `https://<your Soundings>/<project-slug>/submit` (a project admin turns it on
 project's name, an introduction and the project's branding, nothing else about it.
 
 **Sending an idea.** Fill in a title and a summary, and optionally a description
-(Markdown), your name and your email address. With an address you can tick "Email me
-when the status changes". A quiet "Verifying you're human" line works in the background
+(Markdown), your name and your email address. The address is used to email you your
+private tracking link once you confirm it, and for the team to contact you about this
+idea [Phase 11]; only the project's administrators can see it. With an address you can
+tick "Email me when the status changes". A quiet "Verifying you're human" line works in the background
 while you type (a small proof-of-work puzzle your browser solves; no images to click, no
 third party). `⌘↵` sends. The fixed privacy notice under the form says what is kept:
 what you write, plus your name and address only if you give them; never your IP
 address.
 
 **Your private tracking link.** After sending, the page shows a private link
-(`…/track#…`) once, with **Copy** (and **Share** on phones): keep it, it's the only way
+(`…/track#…`) once, with **Copy** (and **Share** on phones): keep it, it's your way
 back to your idea without an account. It is not in the confirmation email (anyone can
-type any address into the form); status emails carry it once your address is
-confirmed. The tracking page shows the title and summary as you sent them, what the
+type any address into the form). Once you confirm your address, we email it to you
+once ("Your link to follow your idea for <project>") [Phase 11], and status emails carry
+it too. The tracking page shows the title and summary as you sent them, what the
 status means in plain words, and its history: Sent, **With the team** (the date the
 team got it) and every status change since (dates only, no names). It lets you:
 
+- read the team's messages and **reply** to them (see [Messages with the person who
+  sent an idea](#messages-with-the-person-who-sent-an-idea-phase-11)) [Phase 11];
 - turn status emails on or off ("Email me when the status changes");
 - **resend** the confirmation email if you haven't confirmed your address;
-- **Delete my details**: erases your name, address and the link itself; the idea stays
-  with the team, and the link stops working at once.
+- **Remove my email address** [Phase 11]: stops every email about this idea, the team's
+  messages included, and deletes your address; the link and the messages stay, and you
+  can't add an address again;
+- **Delete my details**: erases your name, address, the link itself and any messages
+  with the team; the idea stays with the team, and the link stops working at once.
 
 Anyone who has the link can do these things, so don't share it.
 
 **Confirming your address.** The confirmation email ("Confirm your idea for <project>")
 contains no text you typed. Its button opens a page in the project's look
 (`…/<project>/verify#…`) where you click **Confirm my email address** (nothing happens
-just by opening the link, so mail scanners can't confirm for you). Only confirmed addresses get status emails. Some projects also hold an idea until
+just by opening the link, so mail scanners can't confirm for you). The first time, the
+page says "We've emailed you a private link to follow your idea." Only confirmed
+addresses get status emails, the tracking link and the team's messages by email. Some projects also hold an idea until
 its address is confirmed: then the team sees nothing until you click. Confirmation links
 last 3 days; an unconfirmed address is forgotten after 3 days, and an idea still waiting
 for confirmation then is deleted.
@@ -740,6 +750,45 @@ is now Evaluating" and link to the tracking page, which is also where you stop t
 **Limits.** To keep the form usable, each address can send a handful of ideas an hour,
 and a project takes at most 100 public ideas an hour; "You've sent several ideas in a
 short time" means try again in a few minutes.
+
+## Messages with the person who sent an idea [Phase 11]
+
+The idea's **owner** and the project's and platform's **admins** can write to the person
+who sent an idea through the public form, without anyone seeing their email address. Nobody
+else sees the conversation, or that one exists: not members, viewers, a guest researcher,
+API keys or AI agents. Messages are never in the activity feed, search, My work, exports or
+"recently updated", and the break-glass account can't send them.
+
+**Writing to them.** In the idea's details, the **Public form** panel has a **Messages**
+part ("4 messages · They replied 40 minutes ago"); **Open messages** (or **Message the
+submitter…** before anyone has written) opens the conversation, oldest at the top. Each of
+the team's messages shows who wrote it and "Email queued" or "Tracking page only"; theirs
+read "Submitter". Write in the box at the bottom and press **Send** or `⌘↵`/`Ctrl+Enter`.
+It's plain text: line breaks are kept, nothing is formatted, links aren't clickable, and
+"@" mentions nobody. What you haven't sent is kept on this device until you sign out.
+Above Send it says where it goes: "Emailed to them and shown on their tracking page"
+when their address is confirmed and email is set up, or "They'll see it only on their
+tracking page". Either way it is signed **"The <project> team"**: they never see your
+name. Every message is in the audit log ("… messaged the submitter of CUST-21"), never
+its text.
+
+**Their reply.** They answer on their tracking page, and only after the team has written
+(at most 10 replies after each of the team's messages). The idea's owner and everyone who
+has written to them get **"The submitter replied"** (inbox, and email at most once an hour
+per idea), which opens the conversation; it never contains what they wrote. While an idea
+waits for review nobody is notified: the review queue shows "They replied" on its card.
+
+**When you can't write.** The panel says why instead of showing the box: their details
+were erased (the conversation is deleted with them), the project is archived (reading
+still works), public submission is turned off for the instance, the conversation has
+100 messages, or the team has sent them 20 messages in a day (you can also send at most
+30 messages an hour to public submitters in all). You can write to the sender of an idea
+that is closed or still waiting for review (to ask something before approving).
+
+**On the tracking page** the sender sees a **Messages** section once the team has
+written: the team's messages as "The <project> team", theirs as "You", and **Reply to
+the team** (`⌘↵` sends). "We'll also email you when they write again" when their address
+is confirmed; otherwise new messages appear only there.
 
 ## Notifications and email preferences [Phase 3]
 
@@ -765,6 +814,7 @@ what on which idea, in one sentence:
 | an idea you own, evaluate or watch **changes status** | the idea |
 | someone **comments** on an idea you watch | the comment |
 | someone **@mentions** you | the comment |
+| the person who sent an idea you own, or wrote to, through the public form **replies to the team** [Phase 11] | the conversation with them |
 
 Opening a notification marks it read, and so does opening the idea it's about. You're
 never told about your own actions, and you only see notifications about ideas you can
@@ -1072,7 +1122,9 @@ the public form", then choose:
 - **Ask people to confirm their email address**: the address becomes required and the
   idea reaches the team only once its sender clicks the confirmation link (needs email
   set up; ideas never confirmed are deleted after 3 days).
-- An **intro** (Markdown) shown above the form: what kind of ideas you're after.
+- **Intro text** (project settings → Public form → Intro text): shown at the top of the
+  form, above the fields: what kind of ideas you're after. Markdown works (headings,
+  lists, links).
 
 The page shows the form's link to copy. Changes apply to new submissions only. The form
 isn't available in an archived project, when a platform operator has turned public
@@ -1099,8 +1151,8 @@ panel.
 
 **Erasing submitter details** (UK GDPR): "Erase submitter details" in the submission
 panel removes the sender's name, email address, confirmation, update preference, the
-copy of what they sent and their private link, and deletes the emails queued or sent to
-them; the idea and its history stay. It asks first and can't be undone. Senders can do
+copy of what they sent, their private link and the messages with them, and deletes the
+emails queued or sent to them; the idea and its history stay. It asks first and can't be undone. Senders can do
 the same themselves with "Delete my details" on their tracking page. Personal data they
 typed into the idea itself is removed by editing the idea. Automatically, unconfirmed
 addresses are forgotten after 3 days, and contact details of closed ideas with no

@@ -95,6 +95,12 @@ async def test_the_tracking_page_shows_the_submitters_own_words_and_status(
         "wants_updates": True,
         "can_resend_verification": True,
         "branding": body["branding"],
+        # Phase 11: no conversation until the team writes; the address may be removed.
+        "can_remove_email": True,
+        "messages": [],
+        "team_messages_emailed": False,
+        "can_reply": False,
+        "reply_blocked": "awaiting_team",
     }
     assert not all_keys(body) & PRIVATE_FIELDS
 
@@ -526,7 +532,8 @@ async def test_confirming_releases_an_idea_held_for_it(
     assert body["held_for"] == after
     assert body["title"] == "Recycle packaging at the till"
     assert body["project"] == {"slug": team.slug, "name": "Customer Innovation"}
-    assert set(body) == {"project", "title", "held_for", "branding"}
+    assert set(body) == {"project", "title", "held_for", "branding", "tracking_link_emailed"}
+    assert body["tracking_link_emailed"] is True  # Phase 11: the first confirmation
     row, idea = await submitted(db_session)
     assert row.email_verified_at is not None
     assert (idea.held_for.value if idea.held_for else None) == after

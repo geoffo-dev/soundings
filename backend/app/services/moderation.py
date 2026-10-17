@@ -10,7 +10,9 @@ queue, and approving or rejecting an idea held for moderation (contract-phase4 s
   ``project.update`` with the changed column names.
 * **The queue** (``project.view``, then ``idea.moderate`` at project level: project and
   platform admins): ideas held for moderation, oldest first, with the total for the
-  board's "3 ideas waiting for review" link. Held ideas are in no other list.
+  board's "3 ideas waiting for review" link. Held ideas are in no other list. Phase 11:
+  each item's conversation summary for holders of ``public.message_submitter`` (the
+  moderators, but not the break-glass account: c31), in one grouped statement per page.
 * **Approve** (``idea.moderate``): the idea becomes visible, at the top of New
   (``last_activity_at`` now); audited ``submission.approve``. No email and no
   notification: nothing happens on a held idea, and approving is not news.
@@ -31,19 +33,21 @@ from datetime import datetime
 from typing import Any, Final
 from uuid import UUID
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, select, true, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import IdeaFacts, Resource, Rule, can, require
 from app.config import Settings
 from app.domain.principal import Principal
 from app.errors import ProblemError
+from app.models.base import utcnow
 from app.models.enums import HoldReason, IdeaStatus
 from app.models.idea import Idea
 from app.models.project import Project
 from app.models.public import PublicSubmission
 from app.pagination import InvalidCursorProblem, PageParams, decode_cursor, slice_page
-from app.public.submissions import idea_submission, load_submission
+from app.public import messages
+from app.public.submissions import idea_submission, load_submission, view
 from app.schemas.projects import RESERVED_SLUGS
 from app.schemas.public import (
     IdeaSubmission,
@@ -51,6 +55,7 @@ from app.schemas.public import (
     ModerationPage,
     PublicFormSettings,
     PublicFormSettingsUpdate,
+    SubmissionMessagesSummary,
 )
 from app.services import audit
 from app.services.ideas import LoadedIdea
@@ -199,16 +204,27 @@ def _after(cursor: str | None) -> tuple[datetime, UUID] | None:
 
 
 async def moderation_queue(
-    db: AsyncSession, principal: Principal, project: Project, resource: Resource, page: PageParams
+    db: AsyncSession,
+    principal: Principal,
+    project: Project,
+    resource: Resource,
+    page: PageParams,
+    *,
+    settings: Settings | None = None,
+    now: datetime | None = None,
 ) -> ModerationPage:
     """``GET /projects/{slug}/moderation``: oldest first. The caller checked
-    ``project.view``."""
+    ``project.view``. Phase 11: the conversations of the page's submissions in one
+    grouped statement, for a holder of ``public.message_submitter``."""
     _require_moderator(principal, resource)
     after = _after(page.cursor)
     held = (Idea.project_id == project.id, Idea.held_for == HoldReason.MODERATION)
+    # Phase 11: each submission's conversation figures in the page's own statement.
+    conversation = messages.conversation_of(PublicSubmission.id, now=now or utcnow())
     statement = (
-        select(Idea, PublicSubmission)
+        select(Idea, PublicSubmission, *conversation.c)
         .join(PublicSubmission, PublicSubmission.idea_id == Idea.id)
+        .join(conversation, true())
         .where(*held)
         .order_by(Idea.created_at, Idea.id)
         .limit(page.limit + 1)
@@ -220,27 +236,31 @@ async def moderation_queue(
         rows, page.limit, lambda row: {"created_at": row[0].created_at, "id": row[0].id}
     )
     total = await awaiting_moderation(db, project.id)
-    return ModerationPage(
-        items=[_item(principal, project, resource, idea, submission) for idea, submission in items],
-        next_cursor=next_cursor,
-        total=total,
-    )
+    page_items: list[ModerationItem] = []
+    for row in items:
+        idea, submission = row[0], row[1]
+        one = LoadedIdea(idea, project, resource.replace(idea=IdeaFacts.of(idea)))
+        summary = None
+        if messages.may_message(principal, one.resource):
+            figures = messages.conversation_from(conversation, row)
+            summary = messages.summary(settings, project, submission, figures)
+        page_items.append(_item(principal, one, submission, summary))
+    return ModerationPage(items=page_items, next_cursor=next_cursor, total=total)
 
 
 def _item(
     principal: Principal,
-    project: Project,
-    resource: Resource,
-    idea: Idea,
+    loaded: LoadedIdea,
     submission: PublicSubmission,
+    summary: SubmissionMessagesSummary | None,
 ) -> ModerationItem:
-    loaded = LoadedIdea(idea, project, resource.replace(idea=IdeaFacts.of(idea)))
-    ref: dict[str, Any] = idea_ref(idea, project).model_dump()
+    idea = loaded.idea
+    ref: dict[str, Any] = idea_ref(idea, loaded.project).model_dump()
     return ModerationItem(
         **ref,
         summary=idea.summary,
         description_md=idea.description_md,
-        submission=idea_submission(principal, loaded, submission),
+        submission=idea_submission(principal, loaded, submission, messages=summary),
     )
 
 
@@ -264,7 +284,12 @@ async def _decide(db: AsyncSession, principal: Principal, loaded: LoadedIdea) ->
 
 
 async def approve(
-    db: AsyncSession, principal: Principal, loaded: LoadedIdea, *, now: datetime
+    db: AsyncSession,
+    principal: Principal,
+    loaded: LoadedIdea,
+    *,
+    now: datetime,
+    settings: Settings | None = None,
 ) -> IdeaSubmission:
     """``POST /ideas/{idea}/submission/approve``; the caller loaded the idea
     ``for_update``."""
@@ -286,7 +311,7 @@ async def approve(
     approved = dataclasses.replace(
         loaded, resource=loaded.resource.replace(idea=IdeaFacts.of(idea))
     )
-    return idea_submission(principal, approved, submission)
+    return await view(db, settings, principal, approved, submission, now=now)
 
 
 async def reject(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> None:

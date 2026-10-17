@@ -22,10 +22,14 @@ export const EMAIL_TYPE_LABEL: Record<EmailType, string> = {
   assessor_assigned: TYPE_COPY.assessor_assigned.one,
   assessment_reminder: TYPE_COPY.assessment_reminder.one,
   assessments_complete: TYPE_COPY.assessments_complete.one,
+  submitter_replied: TYPE_COPY.submitter_replied.one,
   digest: 'Daily digest',
   test: 'Test email',
   submission_received: 'Submission received',
   submission_status_changed: 'Submission update',
+  // Phase 11 (contract-phase11 §19): to the person who sent a public idea.
+  submission_link: 'Tracking link (public submitter)',
+  submission_message: 'Message to a public submitter',
 }
 
 export type StatusTone = 'success' | 'neutral' | 'info' | 'danger' | 'muted'

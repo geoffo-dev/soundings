@@ -152,6 +152,22 @@ describe('where a notification leads', () => {
   })
 })
 
+describe('“The submitter replied” (contract-phase11 §6)', () => {
+  it('says it in fixed words, never the reply or who sent it, and opens the messages', () => {
+    const replied = item({ type: 'submitter_replied', actor: null })
+    expect(isKnownNotification(replied)).toBe(true)
+    expect(notificationText(replied, NOW)).toBe(
+      'The person who sent CUST-1 through the public form replied to the team',
+    )
+    expect(describeNotification(replied, NOW).quote).toBeNull()
+    expect(notificationLink(replied)).toEqual({
+      ideaKey: 'CUST-1',
+      evaluate: false,
+      submission: true,
+    })
+  })
+})
+
 describe('grouping by day', () => {
   it('keeps the order and labels Today, Yesterday, then dates', () => {
     const items = [

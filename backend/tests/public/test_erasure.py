@@ -69,10 +69,21 @@ async def test_the_name_is_shown_to_viewers_the_contact_only_to_admins(
             "email_verified": False,
             "wants_updates": True,
         }
-        assert body["permissions"] == {"can_moderate": False, "can_erase": True}
+        assert body["permissions"] == {
+            "can_moderate": False,
+            "can_erase": True,
+            "can_message": True,
+        }
+        assert body["messages"]["count"] == 0
     else:
         assert body["contact"] is None
-        assert body["permissions"] == {"can_moderate": False, "can_erase": False}
+        # Phase 11: nothing of the conversation either ("owner" doesn't own this idea).
+        assert body["permissions"] == {
+            "can_moderate": False,
+            "can_erase": False,
+            "can_message": False,
+        }
+        assert body["messages"] is None
 
 
 async def test_an_internal_idea_has_no_submission(api: AsUser, team: Team) -> None:
@@ -92,7 +103,7 @@ async def test_admins_see_the_moderation_permission_while_held(
     detail = ok(await (await api(team.admin)).get(f"/ideas/{held.id}"))
 
     assert body["held_for"] == "moderation"
-    assert body["permissions"] == {"can_moderate": True, "can_erase": True}
+    assert body["permissions"] == {"can_moderate": True, "can_erase": True, "can_message": True}
     assert (detail["held_for"], detail["via_public_form"]) == ("moderation", True)
 
 

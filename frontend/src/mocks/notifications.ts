@@ -47,6 +47,7 @@ import {
 import { queueSubmitterStatusEmail } from './public'
 import { isLiveResearcher, isResearchGuest, RESEARCH_GUEST_NOTIFICATION_TYPES } from './researchers'
 import { bidCallRefFor, bidNotificationVisible } from './bids'
+import { repliedEmailedRecently, submitterRepliedVisible } from './submitter-messages'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -65,6 +66,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'assessor_assigned',
   'assessment_reminder',
   'assessments_complete',
+  'submitter_replied',
 ]
 
 /** `app.schemas.notifications.DEFAULT_MODES`. */
@@ -81,6 +83,7 @@ export const DEFAULT_MODES: Record<NotificationType, NotificationMode> = {
   assessor_assigned: 'immediate',
   assessment_reminder: 'immediate',
   assessments_complete: 'immediate',
+  submitter_replied: 'immediate',
 }
 
 /** The mock instance's schedule (`SOUNDINGS_TIMEZONE`, `_DIGEST_HOUR`, `_REMINDER_DAYS`). */
@@ -209,6 +212,14 @@ export function notify(
       candidate.type === 'mention' &&
       actorId &&
       mentionEmailsLastHour(db, actorId, now) >= MENTION_EMAIL_CAP
+    ) {
+      mode = 'off'
+    }
+    // Phase 11: one immediate "The submitter replied" email per person and idea an hour.
+    if (
+      candidate.type === 'submitter_replied' &&
+      mode === 'immediate' &&
+      repliedEmailedRecently(db, user.id, idea.id, now)
     ) {
       mode = 'off'
     }
@@ -506,7 +517,8 @@ export function notificationItem(
       n.type === 'evaluation_reminder' ||
       n.type === 'research_reminder' ||
       n.type === 'assessment_reminder' ||
-      n.type === 'assessments_complete'
+      n.type === 'assessments_complete' ||
+      n.type === 'submitter_replied'
         ? null
         : userRefById(db, n.actor_id),
   }
@@ -613,6 +625,9 @@ export function notificationItem(
         assessment_count: Number(p.assessment_count ?? 1),
       }
     }
+    // Phase 11 (contract-phase11 §6): fixed words in the SPA; never the reply's text.
+    case 'submitter_replied':
+      return { ...base, type: 'submitter_replied' }
   }
 }
 
@@ -630,6 +645,8 @@ function visibleInInbox(
   if (isResearchGuest(db, idea, viewer)) return RESEARCH_GUEST_NOTIFICATION_TYPES.includes(n.type)
   // Phase 10: re-checked when shown (still an assessor of the call, still a call manager).
   if (!bidNotificationVisible(db, n, idea, viewer)) return false
+  // Phase 11: still holding public.message_submitter (the inbox's SQL form, review S4).
+  if (n.type === 'submitter_replied') return submitterRepliedVisible(db, idea, viewer)
   return true
 }
 
@@ -713,10 +730,9 @@ export function maskEmail(address: string): string {
 export function outboxEmail(db: MockDb, row: MockOutboxEmail, now = Date.now()): OutboxEmail {
   const recipient = findUser(db, row.recipient_user_id)
   const notification = db.notifications.find((n) => n.email_id === row.id)
-  const idea =
-    row.type !== 'digest' && notification
-      ? db.ideas.find((i) => i.id === notification.idea_id)
-      : undefined
+  // Submitter emails name their idea themselves (`idea_id`, contract-phase4 §3.8).
+  const ideaId = row.idea_id ?? (row.type !== 'digest' ? notification?.idea_id : undefined)
+  const idea = ideaId ? db.ideas.find((i) => i.id === ideaId) : undefined
   return {
     id: row.id,
     type: row.type,

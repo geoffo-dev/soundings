@@ -20,7 +20,9 @@ export const USERS = {
   priya: '10000000-0000-4000-8000-000000000001', // platform admin
   alice: '10000000-0000-4000-8000-000000000002',
   bob: '10000000-0000-4000-8000-000000000003',
+  carol: '10000000-0000-4000-8000-000000000004', // Sustainability's admin
   emma: '10000000-0000-4000-8000-000000000006', // viewer in Customer Innovation
+  grace: '10000000-0000-4000-8000-000000000008', // Sustainability member, owns GREEN-13
   ivan: '10000000-0000-4000-8000-00000000000a', // no project roles
 } as const
 

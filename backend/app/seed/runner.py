@@ -76,6 +76,7 @@ from app.models.user import UserExternalId
 from app.notifications import bids as bid_notifications
 from app.notifications import fanout
 from app.notifications import preferences as notification_preferences
+from app.notifications import submitter as submitter_notifications
 from app.proposals import service as proposal_service
 from app.proposals import template as proposal_template
 from app.schemas.admin_users import ExternalIdIn, ExternalIdsReplace
@@ -107,6 +108,7 @@ from app.seed.content import (
     Review,
 )
 from app.seed.public import (
+    CONVERSATION,
     CUST_BRANDING,
     CUST_FAVICON,
     CUST_LOGO,
@@ -114,6 +116,7 @@ from app.seed.public import (
     PUBLIC_FORM_INTRO,
     PUBLIC_IDEAS,
     PUBLIC_PROJECT,
+    ConversationSeed,
     PublicIdeaSeed,
 )
 from app.seed.research import ANSWERS, ASSIGNMENTS, PROPOSALS, RESEARCH_STEPS, TEMPLATES
@@ -419,6 +422,8 @@ class _Player:
         self._public_form()
         for index, public_idea in enumerate(PUBLIC_IDEAS):
             self._public_idea(index, public_idea)
+        for message in CONVERSATION:
+            self._message(message)
         retime = _retime_statement()
         for step in sorted(self.steps):
             mark = utcnow()
@@ -428,6 +433,7 @@ class _Player:
                 # The step's notifications, in-app only (no settings: no email).
                 await fanout.fan_out(self.db, settings=None)
                 await bid_notifications.fan_out(self.db, settings=None)
+                await submitter_notifications.fan_out(self.db, settings=None)
             except Exception as exc:
                 exc.add_note(f"seed step: {step.label}")
                 raise
@@ -839,6 +845,34 @@ class _Player:
 
             at = sent + timedelta(hours=seed.approved_after)
             self.add(at, f"approve public idea {seed.title!r}", approve)
+
+    def _message(self, seed: ConversationSeed) -> None:
+        """Phase 11: a message in a public idea's conversation, through the services
+        without settings (no email): the team's (audited) or the submitter's reply (which
+        notifies the team)."""
+        from app.public import messages
+
+        async def write() -> None:
+            key = self.public_keys[seed.idea]
+            if seed.author is not None:
+                principal = await self.principal(seed.author)
+                loaded = await ideas.load_idea(self.db, principal, key, for_update=True)
+                await messages.send(self.db, None, principal, loaded, seed.body, now=utcnow())
+                return
+            project_key, number = key.rsplit("-", 1)
+            row = (
+                await self.db.execute(
+                    select(PublicSubmission, Idea, Project)
+                    .join(Idea, Idea.id == PublicSubmission.idea_id)
+                    .join(Project, Project.id == Idea.project_id)
+                    .where(Project.key == project_key, Idea.number == int(number))
+                    .with_for_update(of=PublicSubmission)
+                )
+            ).one()
+            await messages.add_reply(self.db, (row[0], row[1], row[2]), seed.body, now=utcnow())
+
+        label = "team message" if seed.author else "submitter reply"
+        self.add(self.now - timedelta(hours=seed.hours_ago), f"{label} on a public idea", write)
 
     def _idea(self, index: int, seed: IdeaSeed) -> None:
         # A deterministic time of day per idea (within 2.5 hours either way), so ideas

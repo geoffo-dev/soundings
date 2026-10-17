@@ -327,9 +327,11 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
                   id="public-email"
                   error={errors.email}
                   description={
+                    // Phase 11 (contract-phase11 §8, review M1): what the address is for, and
+                    // who sees it (administrators do).
                     project.email_required
-                      ? 'We email you a link to confirm your idea; it reaches the team once you do.'
-                      : 'Only to email you about this idea.'
+                      ? 'We email you a link to confirm your idea; it reaches the team once you do. Then we’ll email you your private link to follow it, and the team may use your address to contact you about this idea. Only administrators can see your address.'
+                      : 'We’ll ask you to confirm it, then email you your private link to follow your idea. The team may also use it to contact you about this idea. Only administrators can see your address.'
                   }
                 >
                   <Input

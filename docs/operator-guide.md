@@ -774,7 +774,12 @@ challenges 30 a minute, confirmation emails 3 a day per address (an address is c
 lower-cased with any `+tag` removed, Gmail's dots and Yahoo's `-keyword` folded;
 counted in the database by a keyed hash of the address, so erasing a submission doesn't
 reset it) and per submission, and the confirmation email contains no text the visitor
-typed and no tracking link, so the form can't be used to send anyone spam.
+typed and no tracking link, so the form can't be used to send anyone spam (the tracking
+link is emailed only after the address is confirmed, Phase 11). The conversation with the
+team (Phase 11) has fixed limits too: a submitter replies only after the team has written,
+at most 10 times after each team message, 10 a day per submission and 30 an hour per client
+address (in memory, like the other public throttles); the team sends at most 20 messages a
+day to one submitter and each person 30 an hour; a conversation holds 100 messages.
 
 ### Rate limits behind a proxy (trusted proxies)
 
@@ -827,16 +832,22 @@ Per project, admins choose **moderation** (on by default for a new form: public 
 wait in a queue, invisible everywhere, until an admin approves or rejects them) and
 **email verification** (the idea reaches the team only after its sender confirms their
 address; needs SMTP; ideas never confirmed are deleted after 3 days). Without SMTP the
-form asks for no address at all. Submitters' confirmation and status emails go through
-the normal outbox and worker ([Email](#email-phase-3)) in the project's branding; there
-is no unsubscribe header because the tracking page is where people stop them ("Stop
-these emails" in every status email's footer). Confirmation links have the form
+form asks for no address at all. Submitters' confirmation and status emails (and, Phase
+11, the tracking-link and team-message emails) go through the normal outbox and worker
+([Email](#email-phase-3)) in the project's branding; there is no unsubscribe header
+because the tracking page is where people stop them ("Stop these emails" in every status
+email's footer; "Stop emails about this idea" in the link and message emails, which lead to
+"Remove my email address"). The link and message emails carry no `Reply-To`, even when
+`smtp.replyTo` is set: replies aren't read, the submitter answers on the tracking page.
+Confirmation links have the form
 `<publicBaseUrl>/<project slug>/verify#<token>` (links sent before 2 October 2026 as
 `/verify#<token>` keep working); the token stays after `#`, so it never reaches a log.
 
 The hourly cleanup (the worker) deletes expired ALTCHA records, ideas held for
 confirmation for more than 3 days, unconfirmed addresses after 3 days, contact details
-of closed ideas idle for 180 days, and unused uploaded images after 24 hours.
+(and, Phase 11, the conversation) of closed ideas idle for 180 days (a message counts as
+activity), anything left on submissions erased by an older release, and unused uploaded
+images after 24 hours.
 
 ## Branding [Phase 4]
 
@@ -1434,21 +1445,51 @@ address, user agent or cookie is stored**: rate limits are counted in memory, an
 logs and the audit log hold ids and outcome codes only, never names, addresses, tokens
 or idea text. The form shows a fixed privacy notice saying this.
 
+Since Phase 11 the team can also **message the submitter** through Soundings (the idea's
+owner and project and platform admins, in the submission panel; never an AI agent or the
+break-glass account), and the submitter answers on their tracking page once the team has
+written. Soundings then also keeps that **conversation** (`submission_messages`: who wrote
+each message, the team member for team messages, and the plain text, 4,000 characters at
+most; 100 messages a conversation). The submitter's replies are untrusted public text: they
+are never put in a notification, an email, the feed, search, MCP or an export, and "The
+submitter replied" tells the team only that a reply came in. Team messages are audited as
+`submission.message` (who, which idea and message, whether an email was queued; never the
+text). Two more emails go to the submitter's address, both rendered at send time from the
+submission and both **without** the operator's `SOUNDINGS_SMTP_REPLY_TO` (a reply would
+carry their address and words into a mailbox erasure never reaches): `submission_link`
+(their private tracking link, once, when they first confirm their address) and
+`submission_message` (each team message, when the address is confirmed and email is set
+up; the outbox row holds the message's id, never its text).
+
 Erasure removes the name, address, confirmation, update preference, the copy of what was
-sent and the tracking link (which stops working at once), and deletes every email queued
-or sent to that person; the idea and its history stay. It happens three ways, each
-recorded as `submission.erase` in the audit log:
+sent, the tracking link (which stops working at once) and the **whole conversation**, and
+deletes every email queued or sent to that person (all four submitter types:
+`submission_received`, `submission_status_changed`, `submission_link`,
+`submission_message`); the idea and its history stay. "The submitter replied"
+notifications stay in the team's inboxes (they hold no text) and their queued emails are
+cancelled. It happens three ways, each recorded as `submission.erase` in the audit log:
 
 - a project or platform admin clicks **Erase submitter details** in the idea's
   submission panel (a request by email or phone ends here);
 - the submitter clicks **Delete my details** on their tracking page (no actor);
 - the retention rules, hourly (no actor, reason `retention`): contact details of closed
-  ideas idle for 180 days; unconfirmed addresses are dropped after 3 days, and ideas
-  still waiting for confirmation then are deleted.
+  ideas idle for 180 days (the conversation's latest message counts as activity: a closed
+  idea whose submitter wrote last month keeps them); unconfirmed addresses are dropped
+  after 3 days (the conversation stays: team messages then reach the tracking page only),
+  and ideas still waiting for confirmation then are deleted; and, for submissions already
+  erased, any conversation or submitter email left behind is deleted (an erasure made by
+  0.3.0 during a rollback leaves both).
+
+The submitter can also **Remove my email address** on their tracking page: the address,
+its confirmation and the status-email choice go, and so does every email of the idea to it
+(queued and sent), exactly as the 3-day rule does to an unconfirmed address; the tracking
+link and the conversation stay. It is not audited (like the 3-day rule) and not possible
+while the idea still waits for that address's confirmation.
 
 Personal data someone typed into the idea's own text is removed by editing the idea;
-rejecting a held idea deletes it entirely. The retention periods are constants. Database
-backups keep erased data until they expire, so set your backup retention accordingly.
+rejecting a held idea, or deleting an idea, deletes it entirely, with its conversation. The
+retention periods and the message limits are constants. Database backups keep erased data
+until they expire, so set your backup retention accordingly.
 
 ### What is stored about users [Phase 7]
 

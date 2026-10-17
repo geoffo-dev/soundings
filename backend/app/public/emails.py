@@ -1,5 +1,5 @@
-"""The two emails to a public submitter (contract-phase4 section 3.8), sent through the
-Phase 3 outbox and worker unchanged.
+"""The emails to a public submitter (contract-phase4 section 3.8; Phase 11:
+contract-phase11 sections 7-8), sent through the Phase 3 outbox and worker unchanged.
 
 * ``submission_received``: **fixed text**, nothing the submitter typed (anyone can put
   any address in the form, so it must be useless for spam): "Confirm your idea for
@@ -16,10 +16,22 @@ Phase 3 outbox and worker unchanged.
   public idea whose submitter asked for updates and confirmed their address: the new
   status label, the title *as they sent it*, the tracking link and "Stop these emails".
 
+* ``submission_link`` (Phase 11): the private tracking link, **once**, queued in the
+  transaction that confirms the address for the first time (``verify_email``) when email
+  is set up and the sealed token is there; never on a repeat, a resend or at submission,
+  nothing retroactive. It goes only to an address that proved itself by clicking Confirm,
+  exactly as status emails carry the link (ADR 0019); the confirmation email stays
+  link-free.
+* ``submission_message`` (Phase 11): each team message, when the address is confirmed and
+  email is set up (whatever ``wants_updates`` says): the team's text (escaped, line breaks
+  kept), signed "The <project> team" (never a person), a Reply button to the tracking page.
+
 Rows carry ``idea_id`` (erasure deletes them by idea) and ``to_address``; ``payload``
-is ``{}`` or the status change, never personal data or tokens. Content is rendered at
-send time from the submission, so an erased, changed or turned-off submission cancels
-its queued emails.
+is ``{}``, the status change or (Phase 11) the message's id, never personal data, text or
+tokens. Content is rendered at send time from the submission, so an erased, changed or
+turned-off submission cancels its queued emails. Phase 11's two types carry no
+``Reply-To`` (review S1) and their footer link reads "Stop emails about this idea" (the
+tracking page has "Remove my email address": review M2).
 """
 
 from __future__ import annotations
@@ -44,11 +56,11 @@ from app.domain.labels import status_label
 from app.email import outbox
 from app.email.model import Button, EmailContent, subject_title
 from app.models.activity import ActivityEvent
-from app.models.enums import EmailType, HoldReason
+from app.models.enums import EmailType, HoldReason, MessageDirection
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
 from app.models.project import Project
-from app.models.public import ConfirmationEmailSend, PublicSubmission
+from app.models.public import ConfirmationEmailSend, PublicSubmission, SubmissionMessage
 from app.public.reported import reported_move
 
 if TYPE_CHECKING:
@@ -63,6 +75,8 @@ __all__ = [
     "confirmation_url",
     "confirmations_sent",
     "queue_confirmation",
+    "queue_link_email",
+    "queue_message_email",
     "queue_status_email",
     "submitter_email",
     "tracking_url",
@@ -80,6 +94,9 @@ _ADDRESS_INFO: Final = b"soundings/submitter-address/v1"
 _GMAIL: Final = {"gmail.com": "gmail.com", "googlemail.com": "gmail.com"}
 _KEYWORD_DOMAINS: Final = frozenset({"yahoo.com", "ymail.com", "rocketmail.com"})
 """Yahoo's disposable addresses: ``base-keyword@`` reaches the owner of ``base``."""
+STOP_ABOUT_THIS_IDEA: Final = "Stop emails about this idea"
+"""Phase 11: the footer link of the tracking-link and message emails (to the tracking
+page, where "Remove my email address" stops every email about the idea)."""
 _ADDRESS_LOCK_SALT: Final = 0x5355_424D
 """First key of the advisory lock that serialises one address's confirmation emails
 (the second is a hash of the address key), so concurrent submissions can't all count
@@ -248,6 +265,67 @@ async def queue_status_email(
     )
 
 
+async def queue_link_email(
+    db: AsyncSession, settings: Settings, submission: PublicSubmission, *, now: datetime
+) -> bool:
+    """Phase 11: the ``submission_link`` email to a just-confirmed address (the caller
+    moved ``email_verified_at`` from null to now), when email is set up and the sealed
+    token is there; at most one per submission ever (idempotency key). ``True`` if
+    queued."""
+    if (
+        not settings.smtp_configured
+        or submission.erased_at is not None
+        or submission.email is None
+        or submission.email_verified_at is None
+        or submission.tracking_token_sealed is None
+    ):
+        return False
+    queued = await outbox.enqueue(
+        db,
+        settings,
+        [
+            outbox.NewEmail(
+                type=EmailType.SUBMISSION_LINK,
+                to_address=submission.email,
+                idea_id=submission.idea_id,
+                idempotency_key=f"submission_link:{submission.id}",
+            )
+        ],
+        now=now,
+    )
+    return bool(queued)
+
+
+async def queue_message_email(
+    db: AsyncSession,
+    settings: Settings,
+    submission: PublicSubmission,
+    message_id: UUID,
+    *,
+    now: datetime,
+) -> bool:
+    """Phase 11: the ``submission_message`` email for one team message (the caller checked
+    the delivery: a confirmed address and email set up). The payload holds the message's id
+    only; it is rendered at send time."""
+    if submission.email is None:
+        return False
+    queued = await outbox.enqueue(
+        db,
+        settings,
+        [
+            outbox.NewEmail(
+                type=EmailType.SUBMISSION_MESSAGE,
+                to_address=submission.email,
+                idea_id=submission.idea_id,
+                payload={"message_id": str(message_id)},
+                idempotency_key=f"submission_message:{message_id}",
+            )
+        ],
+        now=now,
+    )
+    return bool(queued)
+
+
 # --- Content at send time --------------------------------------------------------------------
 async def _load(db: AsyncSession, idea_id: UUID) -> tuple[PublicSubmission, Idea, Project] | None:
     row = (
@@ -311,6 +389,11 @@ async def submitter_email(
             reason=f"Someone gave this address on the public idea form of {project_name}.",
         )
 
+    if email.type is EmailType.SUBMISSION_LINK:
+        return _link_email(settings, submission, project_name)
+    if email.type is EmailType.SUBMISSION_MESSAGE:
+        return await _message_email(db, settings, email, submission, idea, project_name)
+
     if not submission.wants_updates or submission.email_verified_at is None:
         return TURNED_OFF
     if idea.held_for is not None:
@@ -319,9 +402,7 @@ async def submitter_email(
     if label is None or submission.submitted_title is None:
         return NO_LONGER_APPLIES
     title = submission.submitted_title
-    sealed = submission.tracking_token_sealed
-    token = None if sealed is None else unseal_tracking_token(settings, sealed)
-    tracking = None if token is None else tracking_url(settings, token)
+    tracking = _tracking(settings, submission)
     return EmailContent(
         template="submission_status_changed",
         subject=f'Your idea "{subject_title(title)}" is now {label}',
@@ -335,4 +416,89 @@ async def submitter_email(
         button=Button("See where your idea stands", tracking) if tracking else None,
         reason=f"You asked for updates on an idea you sent to {project_name}.",
         stop_url=tracking,  # the tracking page is the opt-out (no unsubscribe token)
+    )
+
+
+def _tracking(settings: Settings, submission: PublicSubmission) -> str | None:
+    """The tracking page's URL from the sealed token (``None`` without one: the seeded
+    demo submissions)."""
+    sealed = submission.tracking_token_sealed
+    token = None if sealed is None else unseal_tracking_token(settings, sealed)
+    return None if token is None else tracking_url(settings, token)
+
+
+def _link_email(
+    settings: Settings, submission: PublicSubmission, project_name: str
+) -> EmailContent | str:
+    """Phase 11, ``submission_link``: fixed text, the title as they sent it and the link."""
+    from app.email.content import NO_LONGER_APPLIES
+
+    tracking = _tracking(settings, submission)
+    if (
+        submission.email_verified_at is None
+        or tracking is None
+        or submission.submitted_title is None
+    ):
+        return NO_LONGER_APPLIES
+    return EmailContent(
+        template="submission_link",
+        subject=f"Your link to follow your idea for {project_name}",
+        preheader=f"Your private link to follow the idea you sent to {project_name}.",
+        context={"project": project_name, "title": submission.submitted_title},
+        button=Button("See where your idea stands", tracking),
+        reason=f"You confirmed this address on the public idea form of {project_name}.",
+        stop_url=tracking,
+        stop_label=STOP_ABOUT_THIS_IDEA,
+        allow_reply_to=False,
+    )
+
+
+async def _message_email(
+    db: AsyncSession,
+    settings: Settings,
+    email: OutboxRow,
+    submission: PublicSubmission,
+    idea: Idea,
+    project_name: str,
+) -> EmailContent | str:
+    """Phase 11, ``submission_message``: the team's text (escaped by the template, one line
+    per line), signed by the team; cancelled once the message is gone (an erased
+    conversation) or the address is no longer confirmed. An idea held for moderation is
+    allowed (a moderator may ask before approving)."""
+    from app.email.content import NO_LONGER_APPLIES
+
+    message_id = email.payload.get("message_id")
+    message = None
+    if message_id:
+        try:
+            message = await db.get(SubmissionMessage, UUID(str(message_id)))
+        except ValueError:
+            message = None
+    if (
+        message is None
+        or message.submission_id != submission.id
+        or message.direction is not MessageDirection.TEAM
+        or submission.email_verified_at is None
+        or submission.submitted_title is None
+        or idea.held_for is HoldReason.EMAIL_VERIFICATION
+    ):
+        return NO_LONGER_APPLIES
+    tracking = _tracking(settings, submission)
+    return EmailContent(
+        template="submission_message",
+        subject=f"A message about your idea for {project_name}",
+        preheader=f"The {project_name} team wrote to you about your idea.",
+        context={
+            "project": project_name,
+            "title": submission.submitted_title,
+            "lines": message.body.split("\n"),
+        },
+        button=Button("Reply", tracking) if tracking else None,
+        reason=f"You sent an idea to {project_name} through its public form.",
+        stop_url=tracking,
+        stop_label=STOP_ABOUT_THIS_IDEA,
+        stop_note=(
+            "To stop all email about this idea, remove your email address on your tracking page."
+        ),
+        allow_reply_to=False,
     )

@@ -91,6 +91,7 @@ const AUDIT_ACTION_SET: Record<AuditAction, true> = {
   'submission.approve': true,
   'submission.reject': true,
   'submission.erase': true,
+  'submission.message': true,
   'branding.update': true,
   'api_key.create': true,
   'api_key.revoke': true,

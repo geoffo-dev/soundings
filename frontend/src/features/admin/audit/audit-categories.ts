@@ -85,7 +85,7 @@ export const AUDIT_CATEGORIES = [
   {
     id: 'public_submissions',
     label: 'Public submissions',
-    actions: ['submission.approve', 'submission.reject', 'submission.erase'],
+    actions: ['submission.approve', 'submission.reject', 'submission.erase', 'submission.message'],
   },
   { id: 'branding', label: 'Branding', actions: ['branding.update'] },
   {

@@ -52,6 +52,7 @@ TYPE_LABELS: Final[Mapping[NotificationType, str]] = {
     NotificationType.ASSESSOR_ASSIGNED: "bid assessment requests",
     NotificationType.ASSESSMENT_REMINDER: "bid assessment reminders",
     NotificationType.ASSESSMENTS_COMPLETE: "“all bid assessments are in” emails",
+    NotificationType.SUBMITTER_REPLIED: "replies from public submitters",
 }
 """"Unsubscribe from <label>" in an email's footer."""
 
@@ -147,6 +148,15 @@ class EmailContent:
     stop_url: str | None = None
     """"Stop these emails" in the footer: where the recipient turns these emails off
     without an unsubscribe token (a public submitter's tracking page)."""
+    stop_label: str = "Stop these emails"
+    """Phase 11: the words of the ``stop_url`` link ("Stop emails about this idea" for the
+    tracking-link and message emails, whose tracking page has "Remove my email address")."""
+    stop_note: str | None = None
+    """Phase 11: one line after the ``stop_url`` link (only shown with it)."""
+    allow_reply_to: bool = True
+    """Phase 11 (review S1): ``False`` leaves ``SOUNDINGS_SMTP_REPLY_TO`` out: a reply to a
+    submitter's tracking-link or message email would carry their address and words into a
+    mailbox that erasure never reaches ("Replies to this email aren't read")."""
     list_unsubscribe_url: str | None = None
     """``List-Unsubscribe`` (with ``List-Unsubscribe-Post: List-Unsubscribe=One-Click``)."""
     references: str | None = None
@@ -167,6 +177,7 @@ class Links:
         comment_id: object = None,
         research: bool = False,
         bids: bool = False,
+        submission: bool = False,
     ) -> str:
         url = f"{self.base}/ideas/{quote(key)}"
         if evaluate:
@@ -175,6 +186,8 @@ class Links:
             url += "?research=1"
         elif bids:  # Phase 10: open the idea at its Bids tab
             url += "?tab=bids"
+        elif submission:  # Phase 11: open the idea at its submission panel's Messages
+            url += "?submission=1"
         if comment_id is not None:
             url += f"#comment-{quote(str(comment_id))}"
         return url

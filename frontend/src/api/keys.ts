@@ -28,7 +28,7 @@ import type { IdeaFilters, IdeaStatus } from '@/api/types'
  *   public     ['public', 'project', slug] · ['public', 'track', token] (public pages, no session)
  *   branding   ['branding', 'effective'] · ['branding', 'global'] · ['branding', 'project', slug]
  *   submissions ['submissions', 'form', slug] · ['submissions', 'moderation', slug] ·
- *              ['submissions', 'idea', KEY]
+ *              ['submissions', 'idea', KEY] · ['submissions', 'messages', KEY]
  *
  * Ideas are cached by their upper-case key ("CUST-12"): the SPA's URLs use keys
  * and every `/ideas/{idea}` route accepts one. Use `ideaCacheId()` to normalise.
@@ -236,6 +236,8 @@ export const queryKeys = {
     moderation: (slug: string) => ['submissions', 'moderation', slug] as const,
     moderationAll: () => ['submissions', 'moderation'] as const,
     idea: (idea: string) => ['submissions', 'idea', ideaCacheId(idea)] as const,
+    /** Phase 11: the conversation with the submitter (newest page first). */
+    messages: (idea: string) => ['submissions', 'messages', ideaCacheId(idea)] as const,
   },
   /** The inbox, the bell's summary and email preferences (`api/notifications.ts`). */
   notifications: {

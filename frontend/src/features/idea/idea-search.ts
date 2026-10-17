@@ -15,7 +15,8 @@ function searchUuid(value: unknown): string | undefined {
  * opens the evaluate sheet and (Phase 8b) `?research=1` the Research panel
  * (email and inbox links use them). Phase 10: `?tab=bids&bid=<id>` opens a bid,
  * and `&assess=<section id>` your assessment of that section of it (`&section=<id>`:
- * a call manager's view of that section's assessments in the bid sheet).
+ * a call manager's view of that section's assessments in the bid sheet). Phase 11:
+ * `?submission=1` opens the messages with the public submitter.
  */
 export interface IdeaSearch {
   tab?: IdeaTab
@@ -25,6 +26,11 @@ export interface IdeaSearch {
   assess?: string
   /** Phase 10: with `bid`, the bid sheet opens that section's assessments (managers). */
   section?: string
+  /**
+   * Phase 11: `?submission=1` ("The submitter replied" links) opens the messages with the
+   * person who sent the idea through the public form (for whoever may read them).
+   */
+  submission?: true
 }
 
 export function validateIdeaSearch(search: Record<string, unknown>): IdeaSearch {
@@ -36,5 +42,6 @@ export function validateIdeaSearch(search: Record<string, unknown>): IdeaSearch 
     bid,
     assess: bid ? searchUuid(search.assess) : undefined,
     section: bid ? searchUuid(search.section) : undefined,
+    submission: searchFlag(search.submission),
   }
 }

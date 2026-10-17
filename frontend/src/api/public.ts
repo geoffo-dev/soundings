@@ -124,3 +124,35 @@ export function useVerifySubmissionEmail() {
     meta: { silent: true },
   })
 }
+
+/**
+ * Phase 11: the submitter's reply to the team (plain text), once the team has written.
+ * Answers with the tracking page (the conversation included).
+ */
+export function useSendTrackingReply(token: string) {
+  const queryClient = useQueryClient()
+  return useMutation<TrackedSubmission, Error, string>({
+    mutationFn: (body) =>
+      unwrap(api.POST('/api/v1/public/track/messages', { body: { token, body } })),
+    onSuccess: (tracked) => {
+      queryClient.setQueryData(queryKeys.public.tracking(token), tracked)
+    },
+    meta: { silent: true },
+  })
+}
+
+/**
+ * Phase 11 (review M2): "Remove my email address": every email about this idea stops
+ * and the address is deleted; the link and the conversation stay.
+ */
+export function useForgetSubmissionEmail(token: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (): Promise<TrackedSubmission> =>
+      unwrap(api.POST('/api/v1/public/track/forget-email', { body: { token } })),
+    onSuccess: (tracked) => {
+      queryClient.setQueryData(queryKeys.public.tracking(token), tracked)
+    },
+    meta: { silent: true },
+  })
+}

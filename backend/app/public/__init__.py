@@ -7,9 +7,12 @@
 * :mod:`.tracking`: the private tracking link (``public.track``, c9), status emails on
   or off, the confirmation email again, the submitter erasing their own details, and
   confirming the address.
-* :mod:`.erasure`: erasing a submitter's details (admin, submitter, retention).
-* :mod:`.emails`: the two submitter emails (Phase 3 outbox): queueing, the status
-  fan-out hook and their content at send time.
+* :mod:`.messages`: Phase 11, the conversation between the team and the submitter (the
+  panel's summary, list and send; the submitter's reply on the tracking page).
+* :mod:`.erasure`: erasing a submitter's details (admin, submitter, retention), the
+  conversation included.
+* :mod:`.emails`: the submitter emails (Phase 3 outbox): queueing, the status fan-out hook
+  and their content at send time (Phase 11: the tracking link and team messages too).
 * :mod:`.branding`: a project's effective branding for its public pages.
 * :mod:`.retention`: the hourly cleanup's public-submission rules.
 

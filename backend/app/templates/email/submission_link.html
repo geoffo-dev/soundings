@@ -1,0 +1,11 @@
+{% extends "_layout.html" %}
+{#- Phase 11 (contract-phase11 section 8): the private tracking link, once, after the
+    address's first confirmation. Fixed text: the project's name and the title as they
+    sent it; no person, no Reply-To. -#}
+{% block content %}
+<h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">Your link to follow your idea</h1>
+<p class="sx-text" style="{{ s.p }}color:{{ c.text }};">Thanks for confirming your address. This is your private link to follow the idea you sent to {{ project }}, <strong>“{{ title }}”</strong>:</p>
+{% endblock %}
+{% block after_button %}
+<p class="sx-text" style="margin:18px 0 0 0;font-size:15px;line-height:1.55;color:{{ c.text }};">Keep this link private: anyone who has it can see where your idea stands, reply to the team and delete your details.</p>
+{% endblock %}

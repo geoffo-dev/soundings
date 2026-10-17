@@ -27,16 +27,28 @@ import {
   tooManyAttempts,
   type PublicRouteContext,
 } from '@/mocks/http'
+import { notify } from '@/mocks/notifications'
+import {
+  messageBody,
+  PUBLIC_REPLIES_PER_IP_PER_HOUR,
+  repliesToday,
+  replyBlocked,
+  replyRecipients,
+  retryAfter,
+  type MockSubmissionMessage,
+} from '@/mocks/submitter-messages'
 import {
   ALTCHA_EXPIRY_MS,
   CONFIRMATIONS_PER_DAY,
   emailVerified,
   eraseSubmission,
+  forgetSubmitterEmail,
   formOpen,
   newTrackingToken,
   publicFormOf,
   publicProject,
   queueConfirmation,
+  queueLinkEmail,
   recentSends,
   submissionByConfirmationToken,
   submissionByToken,
@@ -307,6 +319,83 @@ export const publicHandlers = [
     return accepted(trackedSubmission(ctx.db, submission))
   }),
 
+  // Phase 11 (contract-phase11 §2.1): the submitter's reply, once the team has written.
+  publicRoute('post', '/public/track/messages', async (ctx) => {
+    requireJson(ctx)
+    const body = await readJson(ctx.request)
+    allowOnly(body, ['token', 'body'])
+    const token = tokenField(body, TRACKING_TOKEN)
+    const text = messageBody(body)
+    const submission = submissionByToken(ctx.db, token)
+    if (!submission) notFound('We can’t find this submission. It may have been removed.')
+    const now = Date.now()
+    // 30 replies per client address an hour (the mock has one: this browser).
+    ctx.db.publicReplyAttempts = ctx.db.publicReplyAttempts.filter((at) => now - at < HOUR)
+    if (ctx.db.publicReplyAttempts.length >= PUBLIC_REPLIES_PER_IP_PER_HOUR) {
+      tooManyAttempts(
+        (HOUR - (now - (ctx.db.publicReplyAttempts[0] ?? now))) / 1000,
+        'You’ve sent a lot of replies in a short time. Try again later.',
+      )
+    }
+    ctx.db.publicReplyAttempts.push(now)
+    const idea = ctx.db.ideas.find((i) => i.id === submission.idea_id)
+    if (!idea) notFound()
+    const blocked = replyBlocked(ctx.db, idea, submission, now)
+    if (blocked === 'daily_limit') {
+      tooManyAttempts(
+        retryAfter(repliesToday(ctx.db, submission, now), 24 * HOUR, now),
+        'You’ve replied 10 times today.',
+      )
+    }
+    if (blocked === 'project_archived') {
+      conflict('project_archived', 'The team isn’t taking messages about this idea any more.')
+    }
+    if (blocked === 'awaiting_team') {
+      conflict('awaiting_team', 'You can reply once the team writes back.')
+    }
+    if (blocked === 'conversation_full') {
+      conflict('conversation_full', 'This conversation has reached 100 messages.')
+    }
+    const message: MockSubmissionMessage = {
+      id: newId(ctx.db, ID_KIND.phase4),
+      submission_id: submission.id,
+      direction: 'submitter',
+      author_id: null,
+      body: text,
+      emailed: false,
+      created_at: new Date(now).toISOString(),
+    }
+    ctx.db.submissionMessages.push(message)
+    // "The submitter replied" to the owner and the writers (never the text; none while held).
+    notify(
+      ctx.db,
+      idea,
+      null,
+      replyRecipients(ctx.db, idea, submission).map((user) => ({
+        userId: user.id,
+        type: 'submitter_replied' as const,
+        payload: { message_id: message.id },
+        dedupeKey: `submitter_replied:${message.id}`,
+      })),
+      now,
+    )
+    return created(trackedSubmission(ctx.db, submission))
+  }),
+
+  // Phase 11 (review M2): "Remove my email address"; the link and the conversation stay.
+  publicRoute('post', '/public/track/forget-email', async (ctx) => {
+    const { submission } = await tracked(ctx)
+    const idea = ctx.db.ideas.find((i) => i.id === submission.idea_id)
+    if (idea?.held_for === 'email_verification') {
+      conflict(
+        'awaiting_confirmation',
+        'Your idea reaches the team once you confirm this address. To withdraw it, delete your details.',
+      )
+    }
+    if (submission.email) forgetSubmitterEmail(ctx.db, submission)
+    return trackedSubmission(ctx.db, submission)
+  }),
+
   publicRoute('post', '/public/track/erase', async (ctx) => {
     const { submission } = await tracked(ctx)
     eraseSubmission(ctx.db, submission, null)
@@ -329,8 +418,11 @@ export const publicHandlers = [
     const token = tokenField(body, VERIFICATION_TOKEN)
     const submission = submissionByConfirmationToken(ctx.db, token)
     if (!submission) notFound('This link has expired or isn’t valid.')
+    let linkEmailed = false
     if (!submission.email_verified_at) {
       submission.email_verified_at = new Date().toISOString()
+      // Phase 11 (D1): the first confirmation emails the tracking link, once.
+      linkEmailed = queueLinkEmail(ctx.db, submission)
       const idea = ctx.db.ideas.find((i) => i.id === submission.idea_id)
       if (idea?.held_for === 'email_verification') {
         const project = ctx.db.projects.find((p) => p.id === idea.project_id)
@@ -340,6 +432,6 @@ export const publicHandlers = [
         if (!idea.held_for) submission.reached_team_at = idea.last_activity_at
       }
     }
-    return emailVerified(ctx.db, submission)
+    return emailVerified(ctx.db, submission, linkEmailed)
   }),
 ]

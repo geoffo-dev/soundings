@@ -20,7 +20,7 @@ export function nextStep(receipt: Pick<PublicSubmissionReceipt, 'held_for' | 'em
     return {
       heading: 'One more step: confirm your email',
       title: 'Open the link we’ve just emailed you',
-      text: 'Your idea reaches the team once you confirm (within 3 days). Can’t see the email? Check your spam folder.',
+      text: 'Your idea reaches the team once you confirm (within 3 days), and then we’ll email you this tracking link too. Can’t see the email? Check your spam folder.',
     }
   }
   if (receipt.held_for === 'moderation') {
@@ -150,8 +150,9 @@ export function SubmissionReceipt({
           )}
         </div>
         <p id={`${linkId}-help`} className="text-sm text-muted">
-          Keep it somewhere safe: it’s the only way to follow your idea, and we can’t show it again.
-          Anyone with the link can see its status.
+          {receipt.email_sent
+            ? 'Keep it somewhere safe: we can’t show it again here. Anyone with the link can see where your idea stands.'
+            : 'Keep it somewhere safe: it’s the only way to follow your idea, and we can’t show it again. Anyone with the link can see its status.'}
         </p>
         <p aria-live="polite" className="sr-only">
           {copied === true
@@ -168,9 +169,10 @@ export function SubmissionReceipt({
       {!confirming && (
         <Callout tone="neutral" title={step.title}>
           {step.text}
-          {/* The email holds a link to confirm the address, never this tracking link. */}
+          {/* The email holds a link to confirm the address, never this tracking link: that
+              follows once the address is confirmed (Phase 11, D1). */}
           {receipt.email_sent &&
-            ' We’ve emailed you a link to confirm your address. Keep this tracking link: it isn’t in the email.'}
+            ' We’ve emailed you a link to confirm your address. Once you confirm your address, we’ll email you this link too.'}
         </Callout>
       )}
 

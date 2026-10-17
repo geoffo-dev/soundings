@@ -8,10 +8,17 @@ indexed and batched; constants, not settings:
 2. ideas still held for email confirmation 3 days after they were sent are deleted
    (with their submission and emails: they never reached the team);
 3. unconfirmed addresses are forgotten 3 days after the submission (address and
-   opt-in cleared, the idea's submitter emails deleted; the tracking link keeps
-   working);
+   opt-in cleared, the idea's submitter emails deleted; the tracking link and, Phase 11,
+   the conversation with the team keep working: team messages then reach the tracking
+   page only);
 4. the details of submitters whose idea is closed and has had no activity for 180 days
    are erased (audited ``submission.erase`` without an actor, ``reason: "retention"``).
+   Phase 11: the conversation's latest message counts as activity too, in the candidate
+   query (so live conversations can't fill every batch: review S3) and again under the
+   idea's and submission's locks (a reply takes the same locks);
+5. Phase 11 (belt and braces, review S2): for submissions already erased, any
+   conversation and submitter email left behind are deleted (an erasure made by 0.3.0
+   during a rollback knows neither).
 
 (Brand images nobody uses are branding's own rule.)
 """
@@ -21,16 +28,21 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Final
+from typing import Any, Final
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import ColumnElement, delete, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import EmailType, HoldReason, IdeaStatus
+from app.models.enums import SUBMITTER_EMAIL_TYPES, HoldReason, IdeaStatus
 from app.models.idea import Idea
 from app.models.notification import OutboundEmail
 from app.models.project import Project
-from app.models.public import AltchaUsedChallenge, ConfirmationEmailSend, PublicSubmission
+from app.models.public import (
+    AltchaUsedChallenge,
+    ConfirmationEmailSend,
+    PublicSubmission,
+    SubmissionMessage,
+)
 from app.public import erasure
 from app.public.emails import CONFIRMATION_WINDOW
 
@@ -51,7 +63,7 @@ CLOSED_IDEA_RETENTION: Final = timedelta(days=180)
 BATCH: Final = 500
 """Rows per statement (rule 4: ideas per run; the next hour takes the rest)."""
 
-_SUBMITTER_EMAILS: Final = (EmailType.SUBMISSION_RECEIVED, EmailType.SUBMISSION_STATUS_CHANGED)
+_SUBMITTER_EMAILS: Final = SUBMITTER_EMAIL_TYPES
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +73,8 @@ class RetentionResult:
     addresses: int = 0
     erased: int = 0
     sends: int = 0
+    swept: int = 0
+    """Phase 11 rule 5: erased submissions whose leftovers were deleted."""
 
 
 async def _forget_challenges(db: AsyncSession, now: datetime) -> int:
@@ -136,9 +150,19 @@ async def _forget_unconfirmed_addresses(db: AsyncSession, now: datetime) -> int:
     return len(forgotten)
 
 
+def _quiet_conversation(submission_id: Any, now: datetime) -> ColumnElement[bool]:
+    """Phase 11: no message in the conversation in the last 180 days
+    (``ix_submission_messages_submission_id_created_at``)."""
+    return ~exists().where(
+        SubmissionMessage.submission_id == submission_id,
+        SubmissionMessage.created_at >= now - CLOSED_IDEA_RETENTION,
+    )
+
+
 async def _erase_closed(db: AsyncSession, now: datetime) -> int:
     """Rule 4, one idea at a time under its lock (project ``FOR KEY SHARE``, then the
-    idea), like any idea write; an idea reopened meanwhile is skipped."""
+    idea, then the submission), like any idea write; an idea reopened, or a conversation
+    with a reply committed meanwhile, is skipped."""
     candidates = (
         await db.execute(
             select(Idea.id, Idea.project_id)
@@ -147,6 +171,7 @@ async def _erase_closed(db: AsyncSession, now: datetime) -> int:
                 PublicSubmission.erased_at.is_(None),
                 Idea.status == IdeaStatus.CLOSED,
                 Idea.last_activity_at < now - CLOSED_IDEA_RETENTION,
+                _quiet_conversation(PublicSubmission.id, now),
             )
             .order_by(Idea.last_activity_at)
             .limit(BATCH)
@@ -177,29 +202,67 @@ async def _erase_closed(db: AsyncSession, now: datetime) -> int:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        if submission is not None and await erasure.erase(
-            db, submission, idea, by="retention", now=now
+        if submission is None or not await db.scalar(
+            select(_quiet_conversation(submission.id, now))
         ):
+            continue  # a reply came in meanwhile (it takes the same locks)
+        if await erasure.erase(db, submission, idea, by="retention", now=now):
             erased += 1
     return erased
 
 
+async def _sweep_erased(db: AsyncSession) -> int:
+    """Rule 5: messages and submitter emails left on erased submissions (batched)."""
+    leftovers = or_(
+        exists().where(SubmissionMessage.submission_id == PublicSubmission.id),
+        exists().where(
+            OutboundEmail.idea_id == PublicSubmission.idea_id,
+            OutboundEmail.type.in_(_SUBMITTER_EMAILS),
+        ),
+    )
+    rows = (
+        await db.execute(
+            select(PublicSubmission.id, PublicSubmission.idea_id)
+            .where(PublicSubmission.erased_at.is_not(None), leftovers)
+            .limit(BATCH)
+        )
+    ).all()
+    if not rows:
+        return 0
+    await db.execute(
+        delete(SubmissionMessage)
+        .where(SubmissionMessage.submission_id.in_([row[0] for row in rows]))
+        .execution_options(synchronize_session=False)
+    )
+    await db.execute(
+        delete(OutboundEmail)
+        .where(
+            OutboundEmail.idea_id.in_([row[1] for row in rows]),
+            OutboundEmail.type.in_(_SUBMITTER_EMAILS),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return len(rows)
+
+
 async def cleanup(db: AsyncSession, now: datetime) -> RetentionResult:
-    """Run the four rules (in the caller's transaction)."""
+    """Run the five rules (in the caller's transaction)."""
     result = RetentionResult(
         challenges=await _forget_challenges(db, now),
         unconfirmed_ideas=await _delete_unconfirmed_ideas(db, now),
         addresses=await _forget_unconfirmed_addresses(db, now),
         erased=await _erase_closed(db, now),
         sends=await _forget_sends(db, now),
+        swept=await _sweep_erased(db),
     )
-    if result.unconfirmed_ideas or result.addresses or result.erased:
+    if result.unconfirmed_ideas or result.addresses or result.erased or result.swept:
         logger.info(
             "public submission retention",
             extra={
                 "unconfirmed_ideas": result.unconfirmed_ideas,
                 "addresses": result.addresses,
                 "erased": result.erased,
+                "swept": result.swept,
             },
         )
     return result

@@ -23,8 +23,9 @@ test('every type has Immediate / Daily digest / Off with the defaults; saves as 
     'aria-current',
     'page',
   )
-  // Phase 3's seven types, Phase 8b's two research types and Phase 10's three bid types.
-  await expect(page.getByRole('radiogroup')).toHaveCount(12)
+  // Phase 3's seven types, Phase 8b's two research types, Phase 10's three bid types and
+  // Phase 11's "The submitter replied".
+  await expect(page.getByRole('radiogroup')).toHaveCount(13)
   await expect(row(page, 'Mentions').getByRole('radio', { name: 'Immediate' })).toBeChecked()
   await expect(
     row(page, 'Status changes').getByRole('radio', { name: 'Daily digest' }),
@@ -181,7 +182,7 @@ test.describe('the unsubscribe page', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: 'Unsubscribe from all Soundings email?' }),
     ).toBeVisible()
-    await expect(page.getByRole('listitem')).toHaveCount(12)
+    await expect(page.getByRole('listitem')).toHaveCount(13)
     await page.getByRole('button', { name: 'Unsubscribe', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'You’re unsubscribed' })).toBeFocused()
     await expect(page.getByText('Soundings won’t email a•••@example.com any more.')).toBeVisible()

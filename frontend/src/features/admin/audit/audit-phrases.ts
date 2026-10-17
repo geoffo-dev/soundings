@@ -818,6 +818,9 @@ export function describeAuditEntry(entry: AuditEntry): AuditPart[] {
       }
       return [text('The submitter of '), idea(), text(' erased their details')]
     }
+    // Phase 11 (contract-phase11 §9): never the text, the submitter's name or address.
+    case 'submission.message':
+      return [actor, text(' messaged the submitter of '), idea()]
     case 'branding.update': {
       const fields = list(details, 'fields')
       return [

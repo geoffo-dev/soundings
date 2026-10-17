@@ -10,10 +10,13 @@
 
 {% endif %}
 {% endblock %}
+{% block after_button %}{% endblock %}
 {{ "-- " }}
 {% if reason %}{{ reason }}
 {% endif %}
-{% if stop_url %}Stop these emails: {{ stop_url }}
+{% if stop_url %}{{ stop_label }}: {{ stop_url }}
+{% if stop_note %}{{ stop_note }}
+{% endif %}
 {% endif %}
 {% if preferences_url %}Email preferences: {{ preferences_url }}
 {% endif %}

@@ -41,6 +41,7 @@ from app.email.outbox import max_age, message_id_domain
 from app.models.activity import Comment
 from app.models.bid import BidCallSection
 from app.models.enums import (
+    SUBMITTER_EMAIL_TYPES,
     EmailType,
     IdeaStatus,
     NotificationMode,
@@ -175,18 +176,17 @@ async def prepare(
     if now - email.created_at >= max_age(email.type):
         return Cancelled(OUT_OF_DATE)
     result: EmailContent | Cancelled
-    match email.type:
-        case EmailType.TEST:
-            result = await _test(context, email, branding)
-        case EmailType.DIGEST:
-            assert user is not None  # noqa: S101 - digests are for users
-            result = await _digest(context, email, user, branding)
-        case EmailType.SUBMISSION_RECEIVED | EmailType.SUBMISSION_STATUS_CHANGED:
-            result = await _submission(context, email)
-        case _:
-            if user is None:
-                return Cancelled(NO_LONGER_APPLIES)
-            result = await _notification(context, email, user, branding)
+    if email.type in SUBMITTER_EMAIL_TYPES:  # Phase 4 and 11: to a public submitter
+        result = await _submission(context, email)
+    elif email.type is EmailType.TEST:
+        result = await _test(context, email, branding)
+    elif email.type is EmailType.DIGEST:
+        assert user is not None  # noqa: S101 - digests are for users
+        result = await _digest(context, email, user, branding)
+    else:
+        if user is None:
+            return Cancelled(NO_LONGER_APPLIES)
+        result = await _notification(context, email, user, branding)
     if isinstance(result, Cancelled):
         return result
     return Prepared(address=address, content=result)
@@ -219,6 +219,7 @@ async def _notification(
     recipient = (await access.recipients(db, idea, project, [user.id])).get(user.id)
     required_open = await _required_open(db, notification.type, idea)
     notice = await access.bid_notice(db, notification.type, notification.payload, user.id)
+    reply = await access.reply_exists(db, notification.type, notification.payload)
     if recipient is None or not access.applies(
         notification.type,
         recipient,
@@ -228,6 +229,7 @@ async def _notification(
         now=context.now,
         required_open=required_open,
         bid=notice,
+        reply=reply,
     ):
         return Cancelled(NO_LONGER_APPLIES)
     if await preferences.mode_of(db, user.id, notification.type) is NotificationMode.OFF:
@@ -236,7 +238,7 @@ async def _notification(
     actor = names.get(notification.actor_id, SOMEONE) if notification.actor_id else SOMEONE
     info = context.idea(idea, project)
     token = make_token(context.settings, user.id, UnsubscribeScope(notification.type.value))
-    base = {
+    base: dict[str, Any] = {
         "preferences_url": context.links.preferences(),
         "unsubscribe_url": context.links.unsubscribe_page(token),
         "unsubscribe_label": TYPE_LABELS[notification.type],
@@ -404,6 +406,21 @@ async def _notification(
         ):
             assert notice is not None  # noqa: S101 - checked by access.applies
             return await _bid_email(context, notification, idea, info, notice, actor, base)
+        case NotificationType.SUBMITTER_REPLIED:
+            # Phase 11: fixed words only (never the reply's text, the submitter's name or
+            # address: untrusted public input); the button opens the submission panel.
+            sentence = f"The person who sent {key} through the public form replied to the team."
+            return EmailContent(
+                template="submitter_replied",
+                subject=f'[{key}] The submitter replied about "{title}"',
+                preheader=sentence,
+                context={"idea": info},
+                button=Button("Read the reply", context.links.idea(key, submission=True)),
+                reason=(
+                    f"You get this because you own {key} or have written to the person who sent it."
+                ),
+                **base,
+            )
 
 
 async def _bid_email(
@@ -581,6 +598,8 @@ def _digest_line(
             return f"Your bid assessments in {call} are{when}"
         case NotificationType.ASSESSMENTS_COMPLETE:
             return f"All bid assessments are in for {call}"
+        case NotificationType.SUBMITTER_REPLIED:
+            return "The submitter replied"
 
 
 async def _digest(
@@ -627,6 +646,7 @@ async def _digest(
                 now=context.now,
                 required_open=await _required_open(db, notification.type, idea),
                 bid=notice,
+                reply=await access.reply_exists(db, notification.type, notification.payload),
             ):
                 kept.append((notification, idea, project))
                 if notice is not None:
@@ -693,9 +713,9 @@ async def _test(context: _Context, email: OutboxRow, branding: Branding) -> Emai
 
 
 async def _submission(context: _Context, email: OutboxRow) -> EmailContent | Cancelled:
-    """Public submitter emails (contract-phase4 section 3.8): rendered from the idea's
-    ``public_submissions`` row now (no notification row, no user preferences), by
-    :func:`app.public.emails.submitter_email`."""
+    """Public submitter emails (contract-phase4 section 3.8; Phase 11's link and message
+    emails): rendered from the idea's ``public_submissions`` row now (no notification
+    row, no user preferences), by :func:`app.public.emails.submitter_email`."""
     from app.public.emails import submitter_email
 
     found = await submitter_email(context.db, context.settings, email, now=context.now)

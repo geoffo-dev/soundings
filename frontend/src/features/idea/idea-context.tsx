@@ -62,6 +62,8 @@ export interface IdeaPageContextValue {
   search?: IdeaSearch
   /** Phase 10: patch the URL state (`replace`, no scroll). */
   setSearch?: (patch: IdeaSearch) => void
+  /** Phase 11: opens the messages with the public submitter (`?submission=1`). */
+  openMessages?: () => void
 }
 
 const IdeaPageContext = createContext<IdeaPageContextValue | null>(null)

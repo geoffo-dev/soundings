@@ -391,6 +391,14 @@ describe('audit sentences', () => {
     expect(
       onIdea('submission.erase', { reason: 'retention' }, { actor: null, actor_id: null }),
     ).toBe('The submitter’s details of GREEN-9 were erased automatically (closed for 180 days)')
+    // Phase 11: a team message to the submitter, never its text.
+    expect(
+      onIdea('submission.message', {
+        rule: 'public.message_submitter',
+        message_id: 'm-1',
+        emailed: true,
+      }),
+    ).toBe('Alice Anders messaged the submitter of GREEN-9')
     expect(
       say(
         entry('branding.update', {
@@ -870,6 +878,7 @@ describe('audit categories', () => {
       'submission.approve': true,
       'submission.reject': true,
       'submission.erase': true,
+      'submission.message': true,
       'branding.update': true,
       'api_key.create': true,
       'api_key.revoke': true,

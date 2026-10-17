@@ -146,7 +146,9 @@ function InboxRow({
             ? { research: true }
             : link.bids
               ? { tab: 'bids' }
-              : {}
+              : link.submission
+                ? { submission: true }
+                : {}
       }
       hash={link.hash}
       onClick={(event: MouseEvent) => {

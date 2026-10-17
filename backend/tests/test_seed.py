@@ -672,3 +672,53 @@ async def test_seed_has_the_call_for_bids_on_tools_3(
     assert (await zanele.get(f"{API}/ideas/TOOLS-3/bid-call/bids")).status_code == 403
     inbox = (await carol.get(f"{API}/me/notifications")).json()["items"]
     assert [i["sections"] for i in inbox if i["type"] == "assessor_assigned"] == [["Technical"]]
+
+
+async def test_seed_has_a_conversation_with_cust_21s_submitter(
+    settings: Settings, db_session: AsyncSession, login: Login
+) -> None:
+    """Phase 11 (contract-phase11 section 15): priya wrote to Sam, Sam replied an hour later;
+    priya has one unread "The submitter replied"; CUST-21 keeps no owner, nothing was
+    emailed, and alice's inbox has nothing of it."""
+    from app.models.notification import Notification, OutboundEmail
+    from app.models.public import SubmissionMessage
+    from app.seed.public import CONVERSATION
+
+    await run_seed(settings)
+    users = {user.email: user for user in await db_session.scalars(select(User))}
+    priya, alice = users["priya@example.com"], users["alice@example.com"]
+
+    messages = list(
+        await db_session.scalars(select(SubmissionMessage).order_by(SubmissionMessage.created_at))
+    )
+    assert [(m.direction.value, m.body) for m in messages] == [
+        ("team" if seed.author else "submitter", seed.body) for seed in CONVERSATION
+    ]
+    assert messages[0].author_id == priya.id
+    gap = messages[1].created_at - messages[0].created_at
+    assert abs(gap - timedelta(hours=1)) < timedelta(minutes=1)
+    assert await db_session.scalar(select(func.count()).select_from(OutboundEmail)) == 0
+
+    client = await login(priya)
+    panel = (await client.get(f"{API}/ideas/CUST-21/submission")).json()
+    assert panel["messages"]["count"] == 2
+    assert panel["messages"]["last_direction"] == "submitter"
+    listed = (await client.get(f"{API}/ideas/CUST-21/submission/messages")).json()
+    assert [m["direction"] for m in listed["items"]] == ["submitter", "team"]
+    idea = (await client.get(f"{API}/ideas/CUST-21")).json()
+    assert idea["owner"] is None
+    inbox = (await client.get(f"{API}/me/notifications", params={"unread": "true"})).json()
+    replies = [item for item in inbox["items"] if item["type"] == "submitter_replied"]
+    assert len(replies) == 1
+    assert replies[0]["idea"]["key"] == "CUST-21"
+    others = await db_session.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(Notification.type == "submitter_replied", Notification.user_id != priya.id)
+    )
+    assert others == 0
+    audit = await db_session.scalar(
+        select(func.count()).select_from(AuditLog).where(AuditLog.action == "submission.message")
+    )
+    assert audit == 1
+    del alice

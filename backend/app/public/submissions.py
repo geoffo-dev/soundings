@@ -3,7 +3,9 @@ and 3.9): ``GET /ideas/{idea}/submission`` and an admin erasing the submitter's 
 
 Anyone who can view the idea sees the name the submitter gave ("Submitted by Jo via
 the public form"); their address, confirmation and update preference only with
-``public.erase_submitter`` (project and platform admins, session only).
+``public.erase_submitter`` (project and platform admins, session only). Phase 11: the
+conversation's summary and ``can_message`` only with ``public.message_submitter``
+(:func:`view`; :mod:`app.public.messages`): nobody else learns that one exists.
 """
 
 from __future__ import annotations
@@ -14,14 +16,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authz import Rule, can, not_found, require
+from app.config import Settings
 from app.domain.principal import Principal
 from app.models.enums import HoldReason
 from app.models.public import PublicSubmission
 from app.public import erasure
-from app.schemas.public import IdeaSubmission, IdeaSubmissionPermissions, SubmitterContact
+from app.schemas.public import (
+    IdeaSubmission,
+    IdeaSubmissionPermissions,
+    SubmissionMessagesSummary,
+    SubmitterContact,
+)
 from app.services.ideas import LoadedIdea
 
-__all__ = ["erase_submitter", "idea_submission", "load_submission"]
+__all__ = ["erase_submitter", "idea_submission", "load_submission", "view"]
 
 
 async def load_submission(
@@ -39,9 +47,14 @@ async def load_submission(
 
 
 def idea_submission(
-    principal: Principal, loaded: LoadedIdea, submission: PublicSubmission
+    principal: Principal,
+    loaded: LoadedIdea,
+    submission: PublicSubmission,
+    *,
+    messages: SubmissionMessagesSummary | None = None,
 ) -> IdeaSubmission:
-    """``IdeaSubmission`` as ``principal`` may see it."""
+    """``IdeaSubmission`` as ``principal`` may see it; ``messages`` (Phase 11) only for a
+    holder of ``public.message_submitter`` (:func:`view` decides)."""
     idea, resource = loaded.idea, loaded.resource
     may_erase = can(principal, Rule.PUBLIC_ERASE_SUBMITTER, resource)
     contact = None
@@ -62,16 +75,40 @@ def idea_submission(
             can_moderate=idea.held_for is HoldReason.MODERATION
             and can(principal, Rule.IDEA_MODERATE, resource),
             can_erase=may_erase and submission.erased_at is None,
+            can_message=messages is not None and messages.blocked is None,
         ),
+        messages=messages,
     )
 
 
+async def view(
+    db: AsyncSession,
+    settings: Settings | None,
+    principal: Principal,
+    loaded: LoadedIdea,
+    submission: PublicSubmission,
+    *,
+    now: datetime,
+) -> IdeaSubmission:
+    """:func:`idea_submission` with the conversation's summary for a holder of
+    ``public.message_submitter`` (one statement; none for anyone else)."""
+    from app.public import messages
+
+    summary = await messages.summary_for(db, settings, principal, loaded, submission, now=now)
+    return idea_submission(principal, loaded, submission, messages=summary)
+
+
 async def erase_submitter(
-    db: AsyncSession, principal: Principal, loaded: LoadedIdea, *, now: datetime
+    db: AsyncSession,
+    principal: Principal,
+    loaded: LoadedIdea,
+    *,
+    now: datetime,
+    settings: Settings | None = None,
 ) -> IdeaSubmission:
     """``public.erase_submitter``: erase the details (idempotent; audited once). The
     caller loaded the idea ``for_update``."""
     require(principal, Rule.PUBLIC_ERASE_SUBMITTER, loaded.resource)
     submission = await load_submission(db, loaded, for_update=True)
     await erasure.erase(db, submission, loaded.idea, by=principal, now=now)
-    return idea_submission(principal, loaded, submission)
+    return await view(db, settings, principal, loaded, submission, now=now)

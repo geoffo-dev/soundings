@@ -26,10 +26,9 @@ from app.api.v1.responses import problems
 from app.authz import Rule, load_project
 from app.config import Settings
 from app.db import SessionDep
-from app.errors import NotImplementedProblem
 from app.models.base import utcnow
 from app.pagination import PageParamsDep
-from app.public import submissions
+from app.public import messages, submissions
 from app.schemas.public import (
     IdeaSubmission,
     ModerationPage,
@@ -102,10 +101,16 @@ async def update_public_form_settings(
     responses=problems(400, 401, 403, 404),
 )
 async def list_moderation_queue(
-    principal: PrincipalDep, session: SessionDep, slug: ProjectSlug, page: PageParamsDep
+    principal: PrincipalDep,
+    session: SessionDep,
+    request: Request,
+    slug: ProjectSlug,
+    page: PageParamsDep,
 ) -> ModerationPage:
     project, resource = await load_project(session, principal, slug)
-    return await moderation.moderation_queue(session, principal, project, resource, page)
+    return await moderation.moderation_queue(
+        session, principal, project, resource, page, settings=_settings(request), now=utcnow()
+    )
 
 
 @router.get(
@@ -119,11 +124,13 @@ async def list_moderation_queue(
     responses=problems(401, 404),
 )
 async def get_idea_submission(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+    principal: PrincipalDep, session: SessionDep, request: Request, idea: IdeaParam
 ) -> IdeaSubmission:
     loaded = await ideas.load_idea(session, principal, idea)
     found = await submissions.load_submission(session, loaded)
-    return submissions.idea_submission(principal, loaded, found)
+    return await submissions.view(
+        session, _settings(request), principal, loaded, found, now=utcnow()
+    )
 
 
 @router.post(
@@ -137,10 +144,12 @@ async def get_idea_submission(
     responses=problems(401, 404, 409),
 )
 async def approve_submission(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+    principal: PrincipalDep, session: SessionDep, request: Request, idea: IdeaParam
 ) -> IdeaSubmission:
     loaded = await ideas.load_idea(session, principal, idea, for_update=True)
-    return await moderation.approve(session, principal, loaded, now=utcnow())
+    return await moderation.approve(
+        session, principal, loaded, now=utcnow(), settings=_settings(request)
+    )
 
 
 @router.post(
@@ -173,10 +182,12 @@ async def reject_submission(principal: PrincipalDep, session: SessionDep, idea: 
     responses=problems(401, 403, 404),
 )
 async def erase_submitter(
-    principal: PrincipalDep, session: SessionDep, idea: IdeaParam
+    principal: PrincipalDep, session: SessionDep, request: Request, idea: IdeaParam
 ) -> IdeaSubmission:
     loaded = await ideas.load_idea(session, principal, idea, for_update=True)
-    return await submissions.erase_submitter(session, principal, loaded, now=utcnow())
+    return await submissions.erase_submitter(
+        session, principal, loaded, now=utcnow(), settings=_settings(request)
+    )
 
 
 # --- Phase 11: the conversation with the submitter (contract-phase11) --------------------------
@@ -204,7 +215,8 @@ _MESSAGES_RULE = (
 async def list_submission_messages(
     principal: PrincipalDep, session: SessionDep, idea: IdeaParam, page: PageParamsDep
 ) -> SubmissionMessagePage:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea)
+    return await messages.list_messages(session, principal, loaded, page)
 
 
 @router.post(
@@ -231,4 +243,7 @@ async def send_submission_message(
     idea: IdeaParam,
     body: SubmissionMessageCreate,
 ) -> SubmissionMessage:
-    raise NotImplementedProblem
+    loaded = await ideas.load_idea(session, principal, idea, for_update=True)
+    return await messages.send(
+        session, _settings(request), principal, loaded, body.body, now=utcnow()
+    )
