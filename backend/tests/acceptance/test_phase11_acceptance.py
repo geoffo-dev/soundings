@@ -533,9 +533,10 @@ async def test_ac11_api_1_the_team_talks_to_a_public_submitter(
     assert "Replies to this email aren't read: reply on your tracking page." in shown
     # UX review p1: one footer line, its link on "your tracking page".
     assert (
-        "To stop all email about this idea, remove your email address on your tracking page."
+        "To stop all email about this idea, remove your email address on your tracking page"
         in shown
     )
+    assert re.search(r"remove your email address on <a [^>]*>your tracking page</a>\.", html)
     assert "Stop emails about this idea" not in shown
     # UX review m4: Reply opens the page at its reply box; the stop link is the page itself.
     reply_url = tracking_url.replace("/track#", "/track?reply=1#")

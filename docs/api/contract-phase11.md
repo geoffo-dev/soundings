@@ -742,3 +742,24 @@ builders and the integration settled within it (decisions:
 | Audit details | `submission.message` entries also carry the `auth` / `auth_method` keys every audit entry gets. |
 | Demo seed (§15) | Written through the services (no settings: no email); the team message's `emailed` is set because the submitter's address is confirmed (only the row: nothing is queued). |
 | The SPA | The conversation opens in a side sheet (`?submission=1`); the API's newest-first pages are shown oldest at the top with "Show earlier messages". |
+
+### 20.3 Review fixes, backend (2026-10-17)
+
+From the security and UX reviews of the build. No OpenAPI change (`make gen-api` gives no
+diff): the schema change below is a validator, and the rest is behaviour. Where this table and
+§6 or §8 disagree, this table wins. Lead defaults, to confirm.
+
+| Item | What changed |
+|---|---|
+| **Security M1** A member reads the conversation by volunteering to own the idea | New condition **c32** on the member's cell of `idea.volunteer_owner` (role matrix table C and section 4): a member can't volunteer for an idea sent through the public form, **403 `public_idea_owner_needs_admin`** (with or without a conversation, so the refusal reveals none); project and platform admins still volunteer or name the owner, and the person an admin names reads the conversation. `IdeaFacts.via_public_form` (unknown fails); `IdeaPermissions.can_volunteer` false for members on public ideas. Owners who volunteered before this release keep the idea. The alternatives (409 only once a conversation exists, which tells members one exists; the owner overlay only for admin-named owners, which needs to record who named them) were not taken. |
+| **Security L1** The public sets off staff email with a subject it wrote | "The submitter replied": subject `[KEY] The submitter replied` (no title), and the email's idea card shows the key, project and status without the title (a public idea's title is the submitter's own words). The digest's line was already fixed words. |
+| **Security N1** A "-- " line in a team message | The message email's lines lose trailing whitespace, so only the footer's own `-- ` is a signature separator. |
+| **Security N2** The inbox's rule check per row | `_manages` (the SQL form of `public.message_submitter` and `bid.view_scores`) reads the caller's admin and member projects in two uncorrelated subqueries, once per statement: 20,000 "submitter replied" rows list in 69 ms here (108 ms before; `owner_assigned` 64-75 ms). |
+| **Security N3** The per-person hourly limit overshot under a race | A team send takes the sender's transaction advisory lock (after the submission's row lock) before counting their hour: exact across submissions. |
+| **Security N4** The reply route locked before its throttle | `send_tracking_reply`: token (404, unlocked) -> per-address reply throttle (429) -> the project, idea and submission locks (`tracking.lock`, re-checked after the wait). A throttled client takes no row lock. |
+| **Security N5** Project names accept line breaks | `ProjectCreate.name` and `ProjectUpdate.name` are `SingleLine` (422 for CR/LF, U+2028/U+2029, bidi controls, tag characters), like idea titles. Existing names are left as they are (emails clean them anyway). |
+| **Security L2** Replies reach `smtp.from` | The chart's `smtp.from` comment and README row and the `smtp_from` setting's description say to use a no-reply mailbox (or treat it as personal data). The operator guide's line is the lead's. |
+| **UX M2** One inbox row per reply | **One unread "The submitter replied" per recipient and idea**: a reply brings an unread one up to date (its time, so it moves to the top, the reply it names, its dedupe key) instead of adding another; once it is read (opening the idea marks it read), the next reply adds a new one. Emails: still at most one an hour per recipient and idea, now counted from the last email's outbox row (the item's time moves); a digest recipient's item goes back into the next digest. No count field (no contract change). |
+| **UX m4** Reply lands at the top of the tracking page | The message email's Reply button opens `/track?reply=1#<token>` (the token still only in the fragment); the stop link stays `/track#<token>`. |
+| **UX p1** "Stop emails" twice in the message email's footer | One line: "To stop all email about this idea, remove your email address on [your tracking page]." (`EmailContent.stop_lead` replaces `stop_note`). The link email keeps "Stop emails about this idea". |
+| **UX p3** The reply email's reason line | Names the one that applies: "You're the owner of KEY." or "You wrote to the person who sent KEY." |
