@@ -62,7 +62,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
     "idea.vote": ("Y", "Y", "Y", "403", "403", "404", "401", "·", "·"),
     "idea.watch": ("Y", "Y", "Y", "Y", "Y", "404", "401", "·", "·"),
     # C. Ownership and evaluation management
-    "idea.volunteer_owner": ("Y (c4, c13, c5)", "Y (c13, c5)", "Y (c3, c13, c5)", "403", "403", "404", "401", "·", "·"),
+    "idea.volunteer_owner": ("Y (c4, c13, c5)", "Y (c13, c5)", "Y (c3, c32, c13, c5)", "403", "403", "404", "401", "·", "·"),
     "idea.release_owner": ("Y", "Y", "403", "403", "403", "404", "401", "+", "·"),
     "idea.assign_owner": ("Y (c4)", "Y (c4)", "403", "403", "403", "404", "401", "·", "·"),
     "evaluator.manage": ("Y (c4, c6)", "Y (c4, c6)", "403", "403", "403", "404", "401", "+ (c4, c6)", "·"),
@@ -174,6 +174,10 @@ CONDITION_RESPONSES: dict[str, dict[str, tuple[int, str]]] = {
     "c25": {"outsider": (403, "outside_researcher_needs_admin")},
     "c29": {"other_section": (403, "not_section_assessor")},
     "c30": {"open": (409, "bid_call_active"), "assessing": (409, "bid_call_active")},
+    "c32": {
+        "public": (403, "public_idea_owner_needs_admin"),
+        "unknown": (403, "public_idea_owner_needs_admin"),
+    },
 }
 
 # Contract section 2: in an archived project every idea-level write is 409.
@@ -280,6 +284,8 @@ class State:
     token_valid: bool = True
     token_covers_request: bool = True
     researcher_named: NamedResearcher | None = None
+    # Phase 11 (security review M1): sent through the public form (c32); None = not known.
+    via_public_form: bool | None = False
     # Phase 10: the idea's call for bids and the principal's section assignments.
     call_status: BidCallStatus = BidCallStatus.ASSESSING
     my_sections: frozenset[UUID] = frozenset()
@@ -309,6 +315,7 @@ class State:
             evaluation_closed=self.evaluation_closed,
             held_for=self.held_for,
             my_evaluation=self.my_evaluation,
+            via_public_form=self.via_public_form,
         )
         return principal, Resource(
             project=project,
@@ -458,6 +465,12 @@ BREAKS: dict[str, dict[str, Callable[[State, str], State]]] = {
     # c29: the assessor assesses another section (and the price is in another one).
     "c29": {
         "other_section": lambda s, _: replace(s, section=OTHER_SECTION, price_section=OTHER_SECTION)
+    },
+    # c32: a member volunteers for an idea sent through the public form, or one whose origin
+    # the decision wasn't told (deny by default).
+    "c32": {
+        "public": lambda s, _: replace(s, via_public_form=True),
+        "unknown": lambda s, _: replace(s, via_public_form=None),
     },
     # c30: the call is still open or being assessed.
     "c30": {

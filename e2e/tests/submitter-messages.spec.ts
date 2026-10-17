@@ -89,7 +89,7 @@ test('SM-01: the submitter sends an idea with an address, gets the link once con
     await phone.goto(`/${team.project.slug}/submit`)
     await expect(
       phone.getByText(
-        'We’ll ask you to confirm it, then email you your private link to follow your idea. The team may also use it to contact you about this idea. Only administrators can see your address.',
+        'We’ll ask you to confirm it, then email you your private link. The team may write to you about this idea; you reply on your tracking page. Only the team’s admins can see your address.',
       ),
     ).toBeVisible()
     await expect(phone.getByText(/never show it to anyone/)).toHaveCount(0)
@@ -104,8 +104,13 @@ test('SM-01: the submitter sends an idea with an address, gets the link once con
     await expect(
       phone.getByRole('heading', { level: 1, name: 'Thanks! Your idea is in' }),
     ).toBeFocused()
+    // The confirm step leads (UX review m2); the link's warning is the link email's (m3).
+    await expect(phone.getByText('Open the link we’ve just emailed you')).toBeVisible()
     await expect(
-      phone.getByText(/Once you confirm your address, we’ll email you this link too\./),
+      phone.getByText(/Once you confirm, we’ll email you this link, and the team’s messages too\./),
+    ).toBeVisible()
+    await expect(
+      phone.getByText(/anyone who has it can see where your idea stands, reply to the team/),
     ).toBeVisible()
     const privateLink = await phone.getByRole('textbox', { name: 'Your private link' }).inputValue()
     expect(await seriousViolations(phone)).toEqual([])
@@ -253,7 +258,7 @@ test('SM-02: the owner reads and writes in the panel with the keyboard; a member
     const rows = conversation(sheet)
     await expect(rows).toHaveCount(1)
     await expect(rows.first()).toContainText(team.owner.name)
-    await expect(rows.first()).toContainText('Email queued')
+    await expect(rows.first()).toContainText('By email too')
     await expect(rows.first()).toContainText('https://example.org/x')
     await expect(sheet.getByRole('link')).toHaveCount(0) // plain text, never a link
     await expect(box).toHaveValue('')
@@ -266,7 +271,7 @@ test('SM-02: the owner reads and writes in the panel with the keyboard; a member
     await expect(sheet).toBeHidden()
     await expect(page).not.toHaveURL(/submission=/)
     await expect(part.getByRole('button', { name: 'Open messages' })).toBeFocused()
-    await expect(part).toContainText(/1 message · Last sent/)
+    await expect(part).toContainText(/1 message · The team wrote/)
     await page.reload()
     await part.getByRole('button', { name: 'Open messages' }).click()
     await expect(sheet.getByRole('textbox', { name: 'Message to Sam Public' })).toHaveValue(
@@ -330,8 +335,10 @@ test('SM-03: an unconfirmed address: the panel says the tracking page only, and 
     await signInAs(page, team.owner)
     await openMessages(page, idea.key, 'Sam Public')
     const sheet = messagesSheet(page, 'Sam Public')
+    // Said plainly above the box when no email will reach them (UX review M1).
+    await expect(sheet).toContainText('They won’t get an email')
     await expect(sheet).toContainText(
-      `They’ll see it only on their tracking page, signed “The ${team.project.name} team”.`,
+      `Shown on their tracking page only, signed “The ${team.project.name} team”.`,
     )
     await sheet.getByRole('textbox', { name: 'Message to Sam Public' }).fill('Thanks, Ana!')
     await sheet.getByRole('button', { name: /^Send/ }).click()
@@ -382,7 +389,9 @@ test('SM-04: once the submitter deletes their details, the panel says there is n
     await page.goto(`/ideas/${idea.key}?submission=1`)
     const sheet = messagesSheet(page)
     await expect(sheet).toContainText('Their details were erased')
-    await expect(sheet).toContainText('Any messages with them were deleted with their details.')
+    await expect(sheet).toContainText('Any messages with them were deleted with their details')
+    // Said once (UX review p2): no footer under the empty conversation repeating it.
+    await expect(sheet.getByText('Their details were erased')).toHaveCount(1)
     await expect(sheet.getByRole('textbox')).toHaveCount(0)
     expect(await seriousViolations(page)).toEqual([])
     expect(await teamMessages(team.owner.api, idea.key)).toEqual([])
@@ -506,8 +515,9 @@ test('SM-06: “Remove my email address” stops the email and keeps the link an
 
     await signInAs(page, team.owner)
     await openMessages(page, idea.key, 'Sam Public')
+    await expect(messagesSheet(page, 'Sam Public')).toContainText('They won’t get an email')
     await expect(messagesSheet(page, 'Sam Public')).toContainText(
-      `They’ll see it only on their tracking page, signed “The ${team.project.name} team”.`,
+      `Shown on their tracking page only, signed “The ${team.project.name} team”.`,
     )
     expect((await sendTeamMessage(team.owner.api, idea.key, 'Still there?')).emailed).toBe(false)
   } finally {
@@ -545,7 +555,7 @@ test('SM-07: an admin asks before approving; the review queue says they replied 
     const sheet = messagesSheet(page, 'Sam Public')
     await expect(sheet).toBeVisible()
     await expect(conversation(sheet)).toHaveCount(2)
-    await expect(sheet).toContainText('They’ll see it only on their tracking page')
+    await expect(sheet).toContainText('They won’t get an email')
     expect(await seriousViolations(page)).toEqual([])
   } finally {
     await visitor.dispose()
@@ -613,7 +623,7 @@ test('SM-09: Admin → Email names the submitter emails and masks the address; t
     await page.goto('/settings/email?status=all')
     const table = page.getByRole('table', { name: 'Outbox emails' })
     await expect(
-      table.getByRole('row').filter({ hasText: 'Message to a public submitter' }).first(),
+      table.getByRole('row').filter({ hasText: 'Team message (public submitter)' }).first(),
     ).toBeVisible()
     await expect(
       table.getByRole('row').filter({ hasText: 'Tracking link (public submitter)' }).first(),

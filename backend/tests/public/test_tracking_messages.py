@@ -5,6 +5,7 @@ conversation on the tracking page, the reply route (token checks, ``can_reply`` 
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import timedelta
 from typing import Any
@@ -288,6 +289,27 @@ async def test_30_replies_an_hour_from_one_address(
     assert int(refused.headers["Retry-After"]) > 3000
     # Another address isn't held back; unknown tokens aren't counted.
     assert_problem(await reply(await visitor("198.51.100.21"), token), 409, "awaiting_team")
+
+
+async def test_a_throttled_reply_takes_no_lock(
+    visitor: Visitor, team: Team, db_session: AsyncSession, settings: Settings
+) -> None:
+    """Security review N4: the per-address throttle comes before the project, idea and
+    submission locks, so a throttled client never waits for (or holds) a row lock: here the
+    submission is locked elsewhere and the 31st attempt is still refused at once."""
+    token, idea = await public_idea(db_session, settings, team)
+    client = await visitor("198.51.100.30")
+    for _ in range(30):
+        assert_problem(await reply(client, token), 409, "awaiting_team")
+    await db_session.execute(
+        select(PublicSubmission.id).where(PublicSubmission.idea_id == idea.id).with_for_update()
+    )
+    try:
+        refused = await asyncio.wait_for(reply(client, token), timeout=10)
+    finally:
+        await db_session.rollback()
+
+    assert_problem(refused, 429, "too_many_attempts")
 
 
 @pytest.mark.settings(trusted_proxies=["10.0.0.0/8"])

@@ -194,19 +194,22 @@ function SubmissionDetails({
           </>
         )}
       </div>
-      {submission.permissions.can_erase && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2.5 self-start text-secondary"
-          onClick={() => setOpen(true)}
-        >
-          <UserRoundX aria-hidden="true" /> Erase submitter details…
-        </Button>
-      )}
       {/* Phase 11: only for the idea's owner and admins (null for everyone else). */}
       {submission.messages && (
         <SubmissionMessagesEntry submission={submission} summary={submission.messages} />
+      )}
+      {/* The destructive action comes last (UX review p5), set apart from Messages. */}
+      {submission.permissions.can_erase && (
+        <div className={submission.messages ? 'border-t border-subtle pt-2' : undefined}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2.5 text-secondary"
+            onClick={() => setOpen(true)}
+          >
+            <UserRoundX aria-hidden="true" /> Erase submitter details…
+          </Button>
+        </div>
       )}
       <ConfirmDialog
         open={open}

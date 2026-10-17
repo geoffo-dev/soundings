@@ -135,7 +135,7 @@ const SCREENS: Screen[] = [
     open: async (page) => {
       const { team } = await setUp()
       await page.goto(`/${team.project.slug}/submit`)
-      await expect(page.getByText(/Only administrators can see your address\./)).toBeVisible()
+      await expect(page.getByText(/Only the team’s admins can see your address\./)).toBeVisible()
     },
   },
   {
@@ -270,6 +270,11 @@ test.describe('on a phone (390 px)', () => {
     await expect(conversation(sheet)).toHaveCount(2)
     // Touch: the sheet itself takes focus, so the on-screen keyboard doesn't hide it.
     await expect(sheet.getByRole('textbox')).not.toBeFocused()
+    // Closing goes back to Details, on its Open messages button (UX review p8).
+    await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
+    const details = page.getByRole('dialog', { name: 'Details' })
+    await expect(details.getByRole('button', { name: 'Open messages' })).toBeFocused()
   })
 })
 

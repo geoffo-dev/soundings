@@ -42,7 +42,7 @@ from app.models.activity import ActivityEvent, Comment
 from app.models.base import utcnow
 from app.models.enums import EmailType, NotificationMode, NotificationType
 from app.models.idea import Idea, IdeaWatcher
-from app.models.notification import Notification
+from app.models.notification import Notification, OutboundEmail
 from app.models.project import Project
 from app.notifications import access, preferences
 from app.notifications.access import Recipient
@@ -93,9 +93,10 @@ _EMAIL_INTERVALS: Final[dict[NotificationType, timedelta]] = {
     NotificationType.SUBMITTER_REPLIED: SUBMITTER_REPLIED_EMAIL_INTERVAL,
 }
 """Phase 11: types emailed at most once per recipient and idea in the interval (immediate
-emails only): a later one within it of the last one emailed is written ``off`` (inbox
-only). Read through the inbox index ``(user_id, created_at, id)``; one idea's replies are
-serialised by its submission's lock, so two can't both pass."""
+emails only): one within it of the last email queued (its outbox row's time: the item
+itself is brought up to date by :meth:`NotificationWriter.coalesce_unread`) is written
+``off`` (inbox only). One idea's replies are serialised by its submission's lock, so two
+can't both pass."""
 
 _INSERT_NOTIFICATIONS: Final = text(
     """
@@ -218,12 +219,14 @@ class NotificationWriter:
             return set()
         return set(
             await self.db.scalars(
-                select(Notification.user_id).where(
+                select(Notification.user_id)
+                .join(OutboundEmail, OutboundEmail.id == Notification.email_id)
+                .where(
                     any_of(Notification.user_id, user_ids),
-                    Notification.created_at > self.now - _EMAIL_INTERVALS[type_],
                     Notification.type == type_,
                     Notification.idea_id == idea_id,
                     Notification.email_mode == NotificationMode.IMMEDIATE,
+                    OutboundEmail.created_at > self.now - _EMAIL_INTERVALS[type_],
                 )
             )
         )
@@ -260,6 +263,71 @@ class NotificationWriter:
             if actor_id is not None:
                 self._budget[(type_, actor_id)] = allowance
         return modes
+
+    async def coalesce_unread(
+        self,
+        type_: NotificationType,
+        idea: Idea,
+        recipients: Iterable[Recipient],
+        *,
+        dedupe_key: str,
+        payload: Mapping[str, Any],
+    ) -> list[Recipient]:
+        """Phase 11 (UX review M2): someone who still has an unread notification of
+        ``type_`` about the idea gets **that one** brought up to date instead of a second
+        (its time, payload and dedupe key: it moves to the top of the inbox), with an email
+        or a digest place as a new one would get (:meth:`_modes`: an immediate email at most
+        once an interval; back in the next digest). Returns the others, for :meth:`notify`.
+
+        The unread rows are locked (``FOR UPDATE``): marking one read meanwhile makes this
+        write a new one instead. Two statements, then one update per row brought up to date."""
+        wanted = {r.id: r for r in recipients}
+        if not wanted:
+            return []
+        rows: dict[UUID, Notification] = {}
+        for row in await self.db.scalars(
+            select(Notification)
+            .where(
+                any_of(Notification.user_id, wanted),
+                Notification.type == type_,
+                Notification.idea_id == idea.id,
+                Notification.read_at.is_(None),
+            )
+            .order_by(Notification.created_at.desc(), Notification.id.desc())
+            .with_for_update()
+        ):
+            rows.setdefault(row.user_id, row)  # the newest, should there be several
+        people = [wanted[user_id] for user_id, row in rows.items() if row.dedupe_key != dedupe_key]
+        if people:
+            modes = await self._modes(type_, people, None, idea.id)
+            immediate = [r.id for r in people if modes[r.id] is NotificationMode.IMMEDIATE]
+            email_ids: dict[UUID, UUID] = {}
+            if immediate:
+                assert self.settings is not None  # noqa: S101 - immediate needs email on
+                queued = await outbox.enqueue(
+                    self.db,
+                    self.settings,
+                    [
+                        outbox.NewEmail(type=EmailType(type_.value), recipient_user_id=user_id)
+                        for user_id in immediate
+                    ],
+                    now=self.now,
+                )
+                email_ids = dict(zip(immediate, queued, strict=True))
+            for recipient in people:
+                row = rows[recipient.id]
+                row.created_at = self.now
+                row.payload = dict(payload)
+                row.dedupe_key = dedupe_key
+                mode = modes[recipient.id]
+                if recipient.id in email_ids:
+                    row.email_mode, row.email_id = mode, email_ids[recipient.id]
+                elif row.email_id is None or mode is NotificationMode.DIGEST:
+                    # A digest place (again, once the last digest took it), or none. An email
+                    # already queued or sent stays: the interval counts from it.
+                    row.email_mode, row.email_id = mode, None
+            await self.db.flush()
+        return [recipient for user_id, recipient in wanted.items() if user_id not in rows]
 
     async def notify(
         self,

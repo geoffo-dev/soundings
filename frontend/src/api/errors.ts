@@ -143,6 +143,11 @@ const ERROR_COPY: Record<string, { title: string; description?: string }> = {
     title: 'Volunteering is turned off',
     description: 'A project admin assigns owners in this project.',
   },
+  // Phase 11 (security review M1, c32).
+  public_idea_owner_needs_admin: {
+    title: 'A project admin names this idea’s owner',
+    description: 'Ideas sent through the public form get their owner from a project admin.',
+  },
   cannot_remove_self: {
     title: 'You can’t remove yourself',
     description: 'Submit your evaluation, or ask the owner to remove you.',

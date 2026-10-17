@@ -1,4 +1,4 @@
-import { Globe, MessagesSquare, Send } from 'lucide-react'
+import { Globe, MailX, MessagesSquare, Send } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 
 import { useSendSubmissionMessage, useSubmissionMessages } from '@/api/submissions'
@@ -28,9 +28,11 @@ import { SHORTCUTS } from '@/lib/shortcuts'
 import { cn } from '@/lib/utils'
 
 import {
+  channelLabel,
   deliveryText,
   MESSAGE_MAX_LENGTH,
   messageCount,
+  NO_EMAIL_COPY,
   SEND_BLOCKED_COPY,
   sendProblem,
 } from './message-copy'
@@ -84,7 +86,7 @@ export function SubmissionMessagesEntry({
             {summary.last_message_at && (
               <span className="text-muted">
                 {' · '}
-                {summary.last_direction === 'submitter' ? 'They replied ' : 'Last sent '}
+                {summary.last_direction === 'submitter' ? 'They replied ' : 'The team wrote '}
                 <RelativeTime date={summary.last_message_at} />
               </span>
             )}
@@ -94,8 +96,22 @@ export function SubmissionMessagesEntry({
       {blocked && summary.count === 0 && summary.blocked !== 'submitter_erased' && (
         <p className="text-sm text-muted">{blocked.title}.</p>
       )}
+      {/* Said before anyone writes, so nobody waits for an answer that may never come. */}
+      {!summary.blocked && summary.delivery === 'tracking_page' && (
+        <p className="flex items-start gap-1.5 text-sm text-muted">
+          <MailX aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          <span>{NO_EMAIL_COPY.short}</span>
+        </p>
+      )}
       {(summary.count > 0 || canWrite) && (
-        <Button variant="outline" size="sm" className="self-start" onClick={() => openMessages?.()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          // The phone's Details sheet focuses it again when the messages close.
+          data-open-messages=""
+          onClick={() => openMessages?.()}
+        >
           <MessagesSquare aria-hidden="true" />
           {summary.count === 0 ? 'Message the submitter…' : 'Open messages'}
         </Button>
@@ -111,10 +127,13 @@ export function SubmissionMessagesEntry({
 export function SubmitterMessagesSheet({
   open,
   onOpenChange,
+  onClosed,
   submission,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** After the sheet has gone and focus went back where it came from. */
+  onClosed?: () => void
   submission: IdeaSubmission | undefined
 }) {
   const { idea } = useIdeaPage()
@@ -134,6 +153,8 @@ export function SubmitterMessagesSheet({
           if (box && !window.matchMedia('(pointer: coarse)').matches) box.focus()
           else contentRef.current?.focus()
         }}
+        // A later task, so focus has gone back to where the sheet came from first.
+        onCloseAutoFocus={() => onClosed && window.setTimeout(onClosed)}
       >
         <SheetHeader>
           <SheetTitle>{who ? `Messages with ${who}` : 'Messages with the submitter'}</SheetTitle>
@@ -218,13 +239,15 @@ function Conversation({
         ) : count === 0 ? (
           <div className="flex flex-col items-start gap-1 py-6 text-sm">
             <p className="font-medium text-primary">
-              {summary.blocked === 'submitter_erased' ? 'No messages' : 'No messages yet'}
+              {summary.blocked === 'submitter_erased'
+                ? SEND_BLOCKED_COPY.submitter_erased.title
+                : 'No messages yet'}
             </p>
             <p className="text-secondary">
               {submission.permissions.can_message
                 ? `Ask ${who ?? 'them'} something about their idea. They read and answer on their private tracking page.`
                 : summary.blocked === 'submitter_erased'
-                  ? 'Any messages with them were deleted with their details.'
+                  ? 'Any messages with them were deleted with their details, and there’s no one to write to any more.'
                   : 'Nobody has written to them about this idea.'}
             </p>
           </div>
@@ -249,22 +272,25 @@ function Conversation({
           </>
         )}
       </SheetBody>
-      <SheetFooter className="flex-col items-stretch gap-3">
-        {summary.blocked ? (
-          <Callout role="status" tone="neutral" title={SEND_BLOCKED_COPY[summary.blocked].title}>
-            {SEND_BLOCKED_COPY[summary.blocked].text}
-          </Callout>
-        ) : (
-          <Composer
-            ideaId={idea.id}
-            ideaKey={ideaKey}
-            projectName={idea.project.name}
-            summary={summary}
-            who={who}
-            onSent={() => announce('Message sent')}
-          />
-        )}
-      </SheetFooter>
+      {/* Erased: the empty conversation says so already (UX review p2). */}
+      {summary.blocked !== 'submitter_erased' && (
+        <SheetFooter className="flex-col items-stretch gap-3">
+          {summary.blocked ? (
+            <Callout role="status" tone="neutral" title={SEND_BLOCKED_COPY[summary.blocked].title}>
+              {SEND_BLOCKED_COPY[summary.blocked].text}
+            </Callout>
+          ) : (
+            <Composer
+              ideaId={idea.id}
+              ideaKey={ideaKey}
+              projectName={idea.project.name}
+              summary={summary}
+              who={who}
+              onSent={() => announce('Message sent')}
+            />
+          )}
+        </SheetFooter>
+      )}
     </>
   )
 }
@@ -305,11 +331,7 @@ function MessageRow({ message, who }: { message: SubmissionMessage; who: string 
           <span className="text-muted">
             <RelativeTime date={message.created_at} />
           </span>
-          {team && (
-            <span className="text-muted">
-              · {message.emailed ? 'Email queued' : 'Tracking page only'}
-            </span>
-          )}
+          {team && <span className="text-muted">· {channelLabel(message.emailed)}</span>}
         </header>
         <div
           // Plain text, kept as written: line breaks shown, long words wrapped, and
@@ -347,6 +369,8 @@ function Composer({
   const [body, setBody] = useState(() => readDraft(me.id, draftName) ?? '')
   const boxRef = useRef<HTMLTextAreaElement>(null)
   const fieldId = useId()
+  const noEmailId = useId()
+  const noEmail = summary.delivery === 'tracking_page'
   const problem = send.isError ? sendProblem(send.error) : null
 
   const change = (value: string) => {
@@ -376,6 +400,13 @@ function Composer({
 
   return (
     <div className="flex flex-col gap-2">
+      {noEmail && (
+        // Above the box, not a muted line under it (UX review M1): the team mustn't wait
+        // for an answer to a message that may never be seen. The box is described by it.
+        <Callout id={noEmailId} tone="warning" icon={<MailX />} title={NO_EMAIL_COPY.title}>
+          {NO_EMAIL_COPY.text}
+        </Callout>
+      )}
       {problem && (
         <Callout role="alert" tone="danger" title={problem.title}>
           {problem.text}
@@ -393,6 +424,7 @@ function Composer({
           minRows={3}
           maxRows={10}
           placeholder="Write a message…"
+          aria-describedby={noEmail ? noEmailId : undefined}
           // Plain text: no Markdown, no @mentions (a colleague's name never reaches the public).
           spellCheck
           onChange={(event) => change(event.target.value)}

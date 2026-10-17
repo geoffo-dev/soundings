@@ -346,6 +346,15 @@ export function projectPermissions(
   }
 }
 
+/**
+ * Phase 11 (security review M1, c32): the owner reads the conversation with whoever sent
+ * the idea through the public form, so a member can't make themselves its owner; a project
+ * admin names one.
+ */
+export function sentThroughPublicForm(db: MockDb, idea: MockIdea): boolean {
+  return db.publicSubmissions.some((s) => s.idea_id === idea.id)
+}
+
 /** The IdeaPermissions booleans, computed by the same rules the handlers enforce. */
 export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): IdeaPermissions {
   const project = projectOf(db, idea)
@@ -363,7 +372,7 @@ export function ideaPermissions(db: MockDb, idea: MockIdea, user: MockUser): Ide
     notClosed &&
     (role === 'admin' ||
       (user.is_platform_admin && memberish) ||
-      (role === 'member' && project.allow_volunteer_owners))
+      (role === 'member' && project.allow_volunteer_owners && !sentThroughPublicForm(db, idea)))
   const none: IdeaPermissions = {
     can_assign_owner: false,
     can_assign_researcher: false,

@@ -27,7 +27,7 @@ from app.models.enums import (
     ProjectRole,
 )
 from app.models.idea import Idea
-from app.models.notification import Notification, NotificationPreference
+from app.models.notification import Notification, NotificationPreference, OutboundEmail
 from app.models.project import Project, ProjectMember
 from app.models.public import SubmissionMessage
 from app.models.user import User
@@ -134,14 +134,17 @@ async def test_the_owner_and_everyone_who_wrote_are_told(
         if str(message["To"]) == "sam@example.org":
             continue  # the team's own messages to the submitter
         subject, html, text = bodies(message)
-        assert subject == f'[{key}] The submitter replied about "Reusable delivery boxes"'
+        # Security review L1: no title (a public idea's title is the submitter's words).
+        assert subject == f"[{key}] The submitter replied"
         assert f"The person who sent {key} through the public form replied to the team." in text
         assert f"Read the reply: http://testserver/ideas/{key}?submission=1" in text
-        assert (
-            f"You get this because you own {key} or have written to the person who sent it." in text
-        )
+        # UX review p3: the reason that applies.
+        if str(message["To"]) == team.owner.email:
+            assert f"You're the owner of {key}." in text
+        else:
+            assert f"You wrote to the person who sent {key}." in text
         assert "Unsubscribe from replies from public submitters" in text
-        for secret in ("07700", "evil.example", "sam@example.org"):
+        for secret in ("07700", "evil.example", "sam@example.org", "Reusable delivery boxes"):
             assert secret not in subject + html + text
 
 
@@ -198,32 +201,96 @@ async def test_no_notification_while_held_for_moderation(
     assert await replied(outbox) == []
 
 
-# --- One immediate email per recipient and idea an hour ----------------------------------------
-async def test_a_second_reply_within_the_hour_reaches_the_inbox_only(
+# --- One unread item per recipient and idea (UX review M2), one email an hour ------------------
+async def test_replies_bring_the_unread_item_up_to_date(
     api: AsUser,
     client: httpx.AsyncClient,
-    db_session: AsyncSession,
+    team: Team,
+    public: tuple[str, Idea],
+    outbox: Outbox,
+) -> None:
+    """A burst of replies is one unread inbox item (the latest reply's time and id), not one
+    each, and one email: public input can't fill the team's inboxes."""
+    token, idea = public
+    await write(api, team.admin, idea)
+
+    await reply(client, token, "First")
+    first = only(await replied(outbox, team.owner))
+    first_id, first_at, first_email = first.id, first.created_at, first.email_id
+    for body in ("Second", "Third"):
+        await reply(client, token, body)
+
+    note = only(await replied(outbox, team.owner))
+    latest = (
+        await outbox.db.scalars(
+            select(SubmissionMessage)
+            .where(SubmissionMessage.direction == "submitter")
+            .order_by(SubmissionMessage.created_at.desc())
+        )
+    ).first()
+    assert latest is not None
+    assert note.id == first_id
+    assert note.created_at > first_at
+    assert note.payload == {"message_id": str(latest.id)}
+    assert note.dedupe_key == f"submitter_replied:{latest.id}"
+    assert note.email_mode is NotificationMode.IMMEDIATE
+    assert note.email_id == first_email  # still the one email
+    assert len(await outbox.emails(team.owner.id)) == 1
+    owner = await api(team.owner)
+    assert [i["type"] for i in ok(await owner.get("/me/notifications"))["items"]] == [
+        "submitter_replied"
+    ]
+    assert ok(await owner.get("/me/notifications/summary"))["unread_count"] == 1
+
+
+async def test_once_read_a_reply_within_the_hour_reaches_the_inbox_only(
+    api: AsUser,
+    client: httpx.AsyncClient,
     team: Team,
     public: tuple[str, Idea],
     outbox: Outbox,
 ) -> None:
     token, idea = public
     await write(api, team.admin, idea)
-
     await reply(client, token, "First")
+    first = only(await replied(outbox, team.owner))
+    owner = await api(team.owner)
+    assert (await owner.post(f"/me/notifications/{first.id}/read")).status_code == 204
+
     await reply(client, token, "Second")
 
-    first, second = await replied(outbox, team.owner)
-    assert first.email_mode is NotificationMode.IMMEDIATE
-    assert first.email_id is not None
-    assert second.email_mode is NotificationMode.OFF
-    assert second.email_id is None
+    read, unread = await replied(outbox, team.owner)
+    assert read.id == first.id
+    assert unread.read_at is None
+    assert unread.email_mode is NotificationMode.OFF  # emailed less than an hour ago
+    assert unread.email_id is None
 
-    # An hour after the last emailed one, the next is emailed again.
-    await outbox.set(Notification, first.id, created_at=utcnow() - timedelta(minutes=61))
+
+async def test_an_hour_after_the_last_email_the_next_reply_is_emailed_again(
+    api: AsUser,
+    client: httpx.AsyncClient,
+    team: Team,
+    public: tuple[str, Idea],
+    outbox: Outbox,
+) -> None:
+    """Counted from the email (its outbox row), not from the item, which every reply
+    brings up to date."""
+    token, idea = public
+    await write(api, team.admin, idea)
+    await reply(client, token, "First")
+    first_email = only(await replied(outbox, team.owner)).email_id
+    await reply(client, token, "Second")  # brings it up to date, no second email
+    assert first_email is not None
+    assert only(await replied(outbox, team.owner)).email_id == first_email
+    await outbox.set(OutboundEmail, first_email, created_at=utcnow() - timedelta(minutes=61))
+
     await reply(client, token, "Third")
-    third = (await replied(outbox, team.owner))[-1]
-    assert third.email_mode is NotificationMode.IMMEDIATE
+
+    note = only(await replied(outbox, team.owner))
+    assert note.email_mode is NotificationMode.IMMEDIATE
+    assert note.email_id is not None
+    assert note.email_id != first_email
+    assert len(await outbox.emails(team.owner.id)) == 2
 
 
 async def test_coalescing_is_per_idea(
@@ -249,7 +316,7 @@ async def test_coalescing_is_per_idea(
     assert modes == [NotificationMode.IMMEDIATE, NotificationMode.IMMEDIATE]
 
 
-async def test_digest_recipients_get_a_line_per_reply(
+async def test_digest_recipients_get_one_line_per_unread_item(
     app: FastAPI,
     api: AsUser,
     client: httpx.AsyncClient,
@@ -261,6 +328,8 @@ async def test_digest_recipients_get_a_line_per_reply(
     runtime: Runtime,
     transport: RecordingTransport,
 ) -> None:
+    """Two replies before the digest: one line. A reply after the digest went out puts the
+    (still unread) item in the next one."""
     token, idea = public
     db_session.add(
         NotificationPreference(user_id=team.owner.id, type=REPLIED, mode=NotificationMode.DIGEST)
@@ -269,10 +338,8 @@ async def test_digest_recipients_get_a_line_per_reply(
     await write(api, team.admin, idea)
     await reply(client, token, "First")
     await reply(client, token, "Second")
-    assert [n.email_mode for n in await replied(outbox, team.owner)] == [
-        NotificationMode.DIGEST,
-        NotificationMode.DIGEST,
-    ]
+    note = only(await replied(outbox, team.owner))
+    assert (note.email_mode, note.email_id) == (NotificationMode.DIGEST, None)
 
     any_hour = settings.model_copy(update={"digest_hour": 0})
     assert await build_digests(app.state.sessionmaker, any_hour, utcnow()) >= 1
@@ -281,10 +348,14 @@ async def test_digest_recipients_get_a_line_per_reply(
 
     digest = only([m for m in transport.messages if str(m["To"]) == team.owner.email])
     subject, html, text = bodies(digest)
-    assert subject.startswith("Soundings digest: 2 updates")
-    assert text.count("The submitter replied") == 2
+    assert subject.startswith("Soundings digest: 1 update")
+    assert text.count("The submitter replied") == 1
     for secret in ("First", "Second", "07700"):
         assert secret not in html + text
+
+    await reply(client, token, "Third")
+    again = only(await replied(outbox, team.owner))
+    assert (again.email_mode, again.email_id) == (NotificationMode.DIGEST, None)
 
 
 async def test_the_unsubscribe_link_turns_off_this_type_only(

@@ -14,9 +14,7 @@
 {{ "-- " }}
 {% if reason %}{{ reason }}
 {% endif %}
-{% if stop_url %}{{ stop_label }}: {{ stop_url }}
-{% if stop_note %}{{ stop_note }}
-{% endif %}
+{% if stop_url %}{% if stop_lead %}{{ stop_lead }} {% endif %}{{ stop_label }}: {{ stop_url }}
 {% endif %}
 {% if preferences_url %}Email preferences: {{ preferences_url }}
 {% endif %}

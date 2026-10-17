@@ -54,7 +54,7 @@ test('a visitor sends an idea: verified in the background, private link shown on
   const link = page.getByRole('textbox', { name: 'Your private link' })
   await expect(link).toHaveValue(/\/track#[A-Za-z0-9_-]{43}$/)
   await expect(
-    page.getByText(/Once you confirm your address, we’ll email you this link too/),
+    page.getByText(/Once you confirm, we’ll email you this link, and the team’s messages too/),
   ).toBeVisible()
   await expect(page.getByText('The team reviews new ideas first')).toBeVisible()
 

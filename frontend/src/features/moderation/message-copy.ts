@@ -35,12 +35,33 @@ export const SEND_BLOCKED_COPY: Record<SendBlocked, { title: string; text: strin
   },
 }
 
-/** Where a message sent now reaches them. */
+/** Where a message sent now reaches them (under the message box). */
 export function deliveryText(delivery: MessageDelivery, projectName: string): string {
   const signed = `signed “The ${projectName} team”`
   return delivery === 'email'
     ? `Emailed to them and shown on their tracking page, ${signed}.`
-    : `They’ll see it only on their tracking page, ${signed}.`
+    : `Shown on their tracking page only, ${signed}.`
+}
+
+/**
+ * Said plainly above the box when a message won't reach their inbox (UX review M1):
+ * otherwise the team waits for an answer that may never come. Why isn't said (no
+ * address, not confirmed, removed, email off): contact details are `public.erase_submitter`'s.
+ */
+export const NO_EMAIL_COPY = {
+  title: 'They won’t get an email',
+  text: 'They’ll see your message only if they open their private link again.',
+  /** The panel's line, before the conversation is opened. */
+  short: 'Tracking page only: they won’t get an email.',
+} as const
+
+/**
+ * Which way one of the team's messages went (UX review m1): names the channel without
+ * claiming it arrived (`emailed` means an email was queued; a failed send shows only in
+ * Admin → Email, review C10).
+ */
+export function channelLabel(emailed: boolean): string {
+  return emailed ? 'By email too' : 'Tracking page only'
 }
 
 /** "in 12 minutes", "in about 2 hours", from a 429's `Retry-After`. */
@@ -99,6 +120,40 @@ export const REPLY_BLOCKED_COPY: Record<ReplyBlocked, string> = {
   awaiting_team: 'You can reply again once the team writes back.',
   conversation_full: 'This conversation is full: it has 100 messages.',
   daily_limit: 'You’ve replied 10 times today. You can reply again tomorrow.',
+}
+
+/** `SUBMITTER_MESSAGES_SINCE_TEAM_MESSAGE` (review S6) and the 10 replies a day (§5). */
+export const REPLIES_SINCE_TEAM_MAX = 10
+export const REPLIES_PER_DAY = 10
+/** From how many replies left the tracking page says so (UX review p9). */
+const REPLIES_LEFT_WARNING = 2
+
+/**
+ * "You can send 2 more replies until the team writes back." once a limit is near, from
+ * the conversation the tracking page holds (all of it: 100 messages at most), so nobody
+ * hits the limit without warning. Null while there's room.
+ */
+export function repliesLeftText(
+  messages: readonly { direction: 'team' | 'submitter'; created_at: string }[],
+  now: number = Date.now(),
+): string | null {
+  let sinceTeam = 0
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.direction === 'team') break
+    sinceTeam += 1
+  }
+  const dayAgo = now - 24 * 60 * 60 * 1000
+  const today = messages.filter(
+    (message) => message.direction === 'submitter' && Date.parse(message.created_at) > dayAgo,
+  ).length
+  const untilTeam = REPLIES_SINCE_TEAM_MAX - sinceTeam
+  const forToday = REPLIES_PER_DAY - today
+  const left = Math.min(untilTeam, forToday)
+  if (left > REPLIES_LEFT_WARNING || left < 1) return null
+  const replies = left === 1 ? '1 more reply' : `${left} more replies`
+  return forToday < untilTeam
+    ? `You can send ${replies} today.`
+    : `You can send ${replies} until the team writes back.`
 }
 
 /** Why the submitter's reply wasn't sent (their text is kept). */

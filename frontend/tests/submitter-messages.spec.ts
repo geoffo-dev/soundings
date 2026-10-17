@@ -36,7 +36,8 @@ test.describe('the team (Grace owns GREEN-13)', () => {
     const rows = messages(page).getByRole('listitem')
     await expect(rows).toHaveCount(4)
     await expect(rows.first()).toContainText('Grace Kim')
-    await expect(rows.first()).toContainText('Email queued')
+    // The channel, not a delivery claim (UX review m1).
+    await expect(rows.first()).toContainText('By email too')
     await expect(rows.nth(1)).toContainText('Submitter (Sam Okafor)')
     // Plain text: a URL in a reply is never a link.
     await expect(rows.nth(1)).toContainText('https://example.org/crates')
@@ -50,7 +51,7 @@ test.describe('the team (Grace owns GREEN-13)', () => {
     await page.keyboard.press('Control+Enter')
     await expect(rows).toHaveCount(5)
     await expect(rows.last()).toContainText('We’ll order 600 crates.')
-    await expect(rows.last()).toContainText('Email queued')
+    await expect(rows.last()).toContainText('By email too')
     await expect(box).toHaveValue('')
     await expect(box).toBeFocused()
     await expect(dialog.getByRole('status').filter({ hasText: 'Message sent' })).toHaveCount(1)
@@ -61,7 +62,9 @@ test.describe('the team (Grace owns GREEN-13)', () => {
     await expect(page).not.toHaveURL(/submission=/)
     // Back to the button that opened it.
     await expect(panel.getByRole('button', { name: 'Open messages' })).toBeFocused()
-    await expect(panel).toContainText('5 messages · Last sent')
+    await expect(panel).toContainText('5 messages · The team wrote')
+    // Email reaches them: no "tracking page only" warning anywhere.
+    await expect(panel).not.toContainText('won’t get an email')
   })
 
   test('keeps an unsent message as a draft, and the text when sending fails', async ({ page }) => {
@@ -92,6 +95,9 @@ test.describe('the team (Grace owns GREEN-13)', () => {
     await page.goto('/ideas/GREEN-15?submission=1')
     const dialog = page.getByRole('dialog', { name: 'Messages with the submitter' })
     await expect(dialog).toContainText('Their details were erased')
+    // Said once (UX review p2): no footer repeating it under the empty conversation.
+    await expect(dialog.getByText('Their details were erased')).toHaveCount(1)
+    await expect(dialog.getByText(/no one to write to/)).toHaveCount(1)
     await expect(dialog.getByRole('textbox')).toHaveCount(0)
   })
 
@@ -108,6 +114,16 @@ test.describe('the team (Grace owns GREEN-13)', () => {
     await expect(messages(page).getByRole('listitem')).toHaveCount(4)
     // Touch: the sheet itself takes focus, so the keyboard doesn't hide the conversation.
     expect(await seriousViolations(page)).toEqual([])
+
+    // Closing goes back to Details, where it was opened (UX review p8), on its button.
+    await page.keyboard.press('Escape')
+    await expect(sheet(page)).toBeHidden()
+    const details = page.getByRole('dialog', { name: 'Details' })
+    await expect(details).toBeVisible()
+    await expect(details.getByRole('button', { name: 'Open messages' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(details).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Details' })).toBeFocused()
   })
 })
 
@@ -138,7 +154,28 @@ test.describe('the moderators (Carol, Sustainability’s admin)', () => {
     const dialog = page.getByRole('dialog', { name: 'Messages with the submitter' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole('listitem')).toHaveCount(2)
-    await expect(dialog).toContainText('They’ll see it only on their tracking page')
+    // No address: said plainly above the box (UX review M1), and the box is described by it.
+    await expect(dialog).toContainText('They won’t get an email')
+    await expect(dialog).toContainText('Shown on their tracking page only')
+    await expect(dialog.getByRole('textbox')).toHaveAccessibleDescription(
+      /They won’t get an email.+only if they open their private link again\./,
+    )
+    expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test('the panel lists Messages before the destructive Erase', async ({ page }) => {
+    await page.goto('/ideas/GREEN-13')
+    const panel = page.getByRole('region', { name: 'Public form', exact: true })
+    const buttons = panel.getByRole('button')
+    await expect(buttons).toHaveCount(2)
+    await expect(buttons.first()).toHaveText(/Open messages/)
+    await expect(buttons.last()).toHaveText(/Erase submitter details/)
+  })
+
+  test('the panel says before anyone writes that no email will reach them', async ({ page }) => {
+    await page.goto('/ideas/GREEN-14')
+    const panel = page.getByRole('group', { name: 'Messages' })
+    await expect(panel).toContainText('Tracking page only: they won’t get an email.')
   })
 
   test('“The submitter replied” in the inbox opens the conversation', async ({ page }) => {
@@ -177,6 +214,36 @@ test.describe('the submitter’s tracking page', () => {
     await expect(box).toHaveValue('')
     await expect(box).toBeFocused()
     expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test('the message email’s Reply button lands on the reply box', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`/track?reply=1#${SAM}`)
+    const box = page.getByRole('textbox', { name: 'Reply to the team' })
+    await expect(box).toBeFocused()
+    await expect(box).toBeInViewport()
+  })
+
+  test('warns before the replies run out until the team writes back', async ({ page }) => {
+    await page.goto(`/track#${SAM}`)
+    const section = page.getByRole('region', { name: 'Messages', exact: true })
+    const box = section.getByRole('textbox', { name: 'Reply to the team' })
+    // One reply since the team's latest message: seven more make eight, two left.
+    for (let n = 1; n <= 7; n += 1) {
+      await box.fill(`Reply number ${n}`)
+      await page.keyboard.press('Control+Enter')
+      await expect(box).toHaveValue('')
+    }
+    await expect(box).toHaveAccessibleDescription(
+      'Only the team sees your reply. You can send 2 more replies until the team writes back.',
+    )
+    await box.fill('Reply number 8')
+    await page.keyboard.press('Control+Enter')
+    await expect(box).toHaveAccessibleDescription(/You can send 1 more reply until/)
+    await box.fill('Reply number 9')
+    await page.keyboard.press('Control+Enter')
+    await expect(section).toContainText('You can reply again once the team writes back.')
+    await expect(section.getByRole('textbox')).toHaveCount(0)
   })
 
   test('no Messages section until the team writes', async ({ page }) => {

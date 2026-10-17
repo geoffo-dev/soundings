@@ -183,8 +183,9 @@ is no undo).
 ### Volunteering ("I'll own this") and being assigned
 
 Every idea has one accountable owner. A project admin assigns one (`A`), or, when the
-project allows it, any member can volunteer with "I'll own this" on an unowned idea.
-An owner can step down from the owner menu. Owners and evaluators must be project
+project allows it, any member can volunteer with "I'll own this" on an unowned idea,
+except one sent through the public form: its owner writes to the person who sent it, so a
+project admin names that owner [Phase 11]. An owner can step down from the owner menu. Owners and evaluators must be project
 members with the member or admin role.
 
 ### Inviting evaluators and setting a due date
@@ -702,8 +703,9 @@ project's name, an introduction and the project's branding, nothing else about i
 
 **Sending an idea.** Fill in a title and a summary, and optionally a description
 (Markdown), your name and your email address. The address is used to email you your
-private tracking link once you confirm it, and for the team to contact you about this
-idea [Phase 11]; only the project's administrators can see it. With an address you can
+private tracking link once you confirm it, and for the team to write to you about this
+idea (you reply on your tracking page) [Phase 11]; only the team's admins (the project's
+and the platform's) can see it. With an address you can
 tick "Email me when the status changes". A quiet "Verifying you're human" line works in the background
 while you type (a small proof-of-work puzzle your browser solves; no images to click, no
 third party). `⌘↵` sends. The fixed privacy notice under the form says what is kept:
@@ -712,7 +714,10 @@ address.
 
 **Your private tracking link.** After sending, the page shows a private link
 (`…/track#…`) once, with **Copy** (and **Share** on phones): keep it, it's your way
-back to your idea without an account. It is not in the confirmation email (anyone can
+back to your idea without an account, and keep it private: anyone who has it can see where
+your idea stands, reply to the team and delete your details. If you gave an address, the
+page leads with "Open the link we've just emailed you": confirming is what brings the link,
+and the team's messages, by email. The link is not in the confirmation email (anyone can
 type any address into the form). Once you confirm your address, we email it to you
 once ("Your link to follow your idea for <project>") [Phase 11], and status emails carry
 it too. The tracking page shows the title and summary as you sent them, what the
@@ -760,17 +765,21 @@ API keys or AI agents. Messages are never in the activity feed, search, My work,
 "recently updated", and the break-glass account can't send them.
 
 **Writing to them.** In the idea's details, the **Public form** panel has a **Messages**
-part ("4 messages · They replied 40 minutes ago"); **Open messages** (or **Message the
-submitter…** before anyone has written) opens the conversation, oldest at the top. Each of
-the team's messages shows who wrote it and "Email queued" or "Tracking page only"; theirs
-read "Submitter". Write in the box at the bottom and press **Send** or `⌘↵`/`Ctrl+Enter`.
+part ("4 messages · They replied 40 minutes ago", or "The team wrote …"), above **Erase
+submitter details…**; **Open messages** (or **Message the submitter…** before anyone has
+written) opens the conversation, oldest at the top. Each of the team's messages shows who
+wrote it and "By email too" (an email to them was queued with it) or "Tracking page only";
+theirs read "Submitter". Write in the box at the bottom and press **Send** or `⌘↵`/`Ctrl+Enter`.
 It's plain text: line breaks are kept, nothing is formatted, links aren't clickable, and
 "@" mentions nobody. What you haven't sent is kept on this device until you sign out.
-Above Send it says where it goes: "Emailed to them and shown on their tracking page"
-when their address is confirmed and email is set up, or "They'll see it only on their
-tracking page". Either way it is signed **"The <project> team"**: they never see your
+Under the box it says where it goes: "Emailed to them and shown on their tracking page"
+when their address is confirmed and email is set up. Otherwise the panel already says
+"Tracking page only: they won't get an email.", and above the box **"They won't get an
+email"**: they'll see your message only if they open their private link again, so don't
+wait for an answer. Either way it is signed **"The <project> team"**: they never see your
 name. Every message is in the audit log ("… messaged the submitter of CUST-21"), never
-its text.
+its text. On a phone, the messages opened from **Details** go back to Details when you
+close them.
 
 **Their reply.** They answer on their tracking page, and only after the team has written
 (at most 10 replies after each of the team's messages). The idea's owner and everyone who
@@ -787,8 +796,10 @@ that is closed or still waiting for review (to ask something before approving).
 
 **On the tracking page** the sender sees a **Messages** section once the team has
 written: the team's messages as "The <project> team", theirs as "You", and **Reply to
-the team** (`⌘↵` sends). "We'll also email you when they write again" when their address
-is confirmed; otherwise new messages appear only there.
+the team** (`⌘↵` sends; the message email's **Reply** button opens the page at this box).
+"We'll also email you when they write again" when their address is confirmed; otherwise
+new messages appear only there. Two replies before a limit, the box says so ("You can send
+2 more replies until the team writes back.").
 
 ## Notifications and email preferences [Phase 3]
 
@@ -1124,10 +1135,11 @@ the public form", then choose:
   set up; ideas never confirmed are deleted after 3 days).
 - **Intro text** (project settings → Public form → Intro text): shown at the top of the
   form, above the fields: what kind of ideas you're after. Markdown works (headings,
-  lists, links).
+  lists, links), and a preview under the field ("Top of the form") shows it as the form
+  will, before you save.
 
-The page shows the form's link to copy. Changes apply to new submissions only. The form
-isn't available in an archived project, when a platform operator has turned public
+The page shows the form's link to copy. Review and confirmation apply to ideas sent from
+then on. The form isn't available in an archived project, when a platform operator has turned public
 submission off for the whole instance, or for a project whose address clashes with one
 of the app's own pages. A private project's form shows only its name, introduction and
 branding.
@@ -1353,7 +1365,7 @@ through a group); **platform admins** act as an admin of every project. Being an
 |---|---|---|---|---|---|---|
 | Read the project's ideas (internal projects: everyone signed in) | yes | yes | yes | that idea (also from outside a private project) | yes | yes |
 | Submit ideas, comment, vote | watch only | yes | yes | comment on that idea | yes | yes |
-| Volunteer to own an idea ("I'll own this") | | yes (where the project allows it) | | | yes | yes |
+| Volunteer to own an idea ("I'll own this") | | yes (where the project allows it; not an idea sent through the public form) | | | yes | yes |
 | Invite evaluators, set the due date, move the idea, close or reopen evaluation | | | yes | | yes | yes |
 | Evaluate (evaluators are members or admins of the project) | | when invited | | | when invited | when invited |
 | See the scores | unless you are a pending evaluator | same | same | never from outside a private project | same | same |

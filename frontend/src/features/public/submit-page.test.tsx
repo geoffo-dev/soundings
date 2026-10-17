@@ -152,8 +152,13 @@ describe('the public form', { timeout: 15_000 }, () => {
     await user.type(await screen.findByRole('textbox', { name: /^Your email/ }), 'jo@example.org')
     await user.click(screen.getByRole('checkbox', { name: 'Email me when the status changes' }))
     await fillAndSend(user)
+    // The confirm step leads (UX review m2), and the link's warning is the link email's.
+    expect(await screen.findByText('Open the link we’ve just emailed you')).toBeVisible()
     expect(
-      await screen.findByText(/Once you confirm your address, we’ll email you this link too/),
+      screen.getByText(/Once you confirm, we’ll email you this link, and the team’s messages too/),
+    ).toBeVisible()
+    expect(
+      screen.getByText(/anyone who has it can see where your idea stands, reply to the team/),
     ).toBeVisible()
   })
 

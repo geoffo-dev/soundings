@@ -9,12 +9,14 @@
 </table>
 {%- endmacro %}
 
-{% macro idea_card(idea, c, s) -%}
+{#- ``title=False``: the card without the idea's title (Phase 11's "The submitter replied":
+    a public idea's title is the submitter's own words). -#}
+{% macro idea_card(idea, c, s, title=True) -%}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 18px 0;">
 <tr>
 <td class="sx-panel" style="background-color:{{ c.panel }};border:1px solid {{ c.border }};border-radius:8px;padding:12px 14px;font-family:{{ s.font }};">
 <p class="sx-muted" style="margin:0 0 2px 0;font-size:12px;line-height:1.5;color:{{ c.muted }};">{{ idea.key }} &nbsp;·&nbsp; {{ idea.project }}</p>
-<p style="margin:0;font-size:16px;line-height:1.4;font-weight:600;"><a class="sx-text" href="{{ idea.url }}" style="color:{{ c.text }};text-decoration:none;">{{ idea.title }}</a></p>
+{% if title %}<p style="margin:0;font-size:16px;line-height:1.4;font-weight:600;"><a class="sx-text" href="{{ idea.url }}" style="color:{{ c.text }};text-decoration:none;">{{ idea.title }}</a></p>{% endif %}
 {% if idea.status %}<p class="sx-muted" style="margin:4px 0 0 0;font-size:13px;line-height:1.5;color:{{ c.muted }};">Status: {{ idea.status }}</p>{% endif %}
 </td>
 </tr>

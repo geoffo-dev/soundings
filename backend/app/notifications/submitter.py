@@ -11,9 +11,13 @@ Recipients: the idea's owner and everyone who has sent a team message in that co
 (:func:`app.notifications.access.applies`, again when shown and sent). Never while the idea
 is held for moderation (held ideas are in nobody's inbox). The payload names the reply only
 (``message_id``): never its text, the submitter's name or address (untrusted public input,
-a phishing channel into staff inboxes otherwise). At most one immediate email per recipient
-and idea an hour (:data:`app.schemas.notifications.SUBMITTER_REPLIED_EMAIL_INTERVAL`, the
-writer's coalescing): later replies in that hour reach the inbox only.
+a phishing channel into staff inboxes otherwise). **One unread item per recipient and
+idea** (UX review M2): a reply brings an unread one up to date (its time and the reply it
+names) instead of adding another (:meth:`NotificationWriter.coalesce_unread`), so public
+input can't fill the team's inboxes; once read, the next reply adds a new item. At most one
+immediate email per recipient and idea an hour, counted from the last email
+(:data:`app.schemas.notifications.SUBMITTER_REPLIED_EMAIL_INTERVAL`): later replies in that
+hour reach the inbox only; a digest recipient's item is back in the next digest.
 """
 
 from __future__ import annotations
@@ -106,11 +110,7 @@ async def _notify(writer: NotificationWriter, message_id: UUID) -> None:
         for recipient in found.values()
         if access.applies(_TYPE, recipient, idea, payload=payload, now=writer.now, reply=True)
     ]
-    await writer.notify(
-        _TYPE,
-        idea,
-        kept,
-        actor_id=None,
-        dedupe_key=f"submitter_replied:{message.id}",
-        payload=payload,
-    )
+    dedupe_key = f"submitter_replied:{message.id}"
+    # UX review M2: one unread item per recipient and idea, brought up to date by each reply.
+    fresh = await writer.coalesce_unread(_TYPE, idea, kept, dedupe_key=dedupe_key, payload=payload)
+    await writer.notify(_TYPE, idea, fresh, actor_id=None, dedupe_key=dedupe_key, payload=payload)

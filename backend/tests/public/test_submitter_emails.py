@@ -259,13 +259,52 @@ async def test_a_team_message_reaches_a_confirmed_address_signed_by_the_team(
     assert "Hi Sam!<br>" in rich
     assert "The Customer Innovation team" in text
     assert 'About your idea "Reusable delivery boxes":' in text
-    assert f"Reply: http://testserver/track#{tracking}" in text
+    # UX review m4: Reply lands on the reply box (the token still only in the fragment).
+    assert f"Reply: http://testserver/track?reply=1#{tracking}" in text
+    assert f'href="http://testserver/track?reply=1#{tracking}"' in rich
     assert "Replies to this email aren't read: reply on your tracking page." in text
-    assert "To stop all email about this idea, remove your email address" in text
+    # UX review p1: one footer line says how to stop, and links the tracking page itself.
+    assert (
+        "To stop all email about this idea, remove your email address on your tracking page: "
+        f"http://testserver/track#{tracking}"
+    ) in text
+    assert text.lower().count("stop") == 1
+    assert (
+        "To stop all email about this idea, remove your email address on "
+        f'<a class="sx-muted" href="http://testserver/track#{tracking}"'
+    ) in rich
+    assert "Stop emails about this idea" not in text + rich
     # Never a person: not the author's name or address.
     for person in (team.owner.display_name, team.owner.email, "Olive"):
         assert person not in text
         assert person not in html.unescape(rich)
+
+
+async def test_a_signature_line_in_a_message_hides_nothing_after_it(
+    api: AsUser,
+    team: Team,
+    db_session: AsyncSession,
+    settings: Settings,
+    runtime: Runtime,
+    transport: RecordingTransport,
+) -> None:
+    """Security review N1: a line that is exactly "-- " (a common sign-off) would be the
+    plain-text signature separator, and mail clients hide or dim what follows it (the team's
+    name, Reply). Trailing spaces go, so only the footer's own separator is one."""
+    _, idea = await make_public_idea(
+        db_session, settings, team, email="sam@example.org", verified=True, owner=team.owner
+    )
+    body = "Thanks!\n-- \nPriya   \nSecond line\t"
+
+    ok(await (await api(team.owner)).post(messages_url(idea), {"body": body}), 201)
+
+    email = only(await emails_of(db_session, EmailType.SUBMISSION_MESSAGE))
+    assert await delivery.send_email(runtime, email.id) == "sent"
+    text, _ = text_of(transport.sent[-1][0])
+    lines = text.splitlines()
+    assert lines.count("-- ") == 1  # the footer's
+    assert lines.index("-- ") > lines.index("The Customer Innovation team")
+    assert "Thanks!\n--\nPriya\nSecond line\n" in text
 
 
 async def test_message_emails_ignore_the_status_email_switch(

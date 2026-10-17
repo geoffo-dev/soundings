@@ -137,7 +137,7 @@ def render(content: EmailContent, branding: Branding = DEFAULT_BRANDING) -> Rend
         "unsubscribe_all_url": content.unsubscribe_all_url,
         "stop_url": content.stop_url,
         "stop_label": content.stop_label,
-        "stop_note": content.stop_note,
+        "stop_lead": content.stop_lead,
         "brand": branding,
         "s": _styles(branding),
         "c": _colours(branding),

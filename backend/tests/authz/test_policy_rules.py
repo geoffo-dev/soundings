@@ -74,6 +74,7 @@ def resource(
     submitted_by_id: UUID | None = OTHER,
     evaluation_closed: bool = False,
     my_evaluation: EvaluatorState | None = None,
+    via_public_form: bool | None = False,
     **extra: Any,
 ) -> Resource:
     return Resource(
@@ -91,6 +92,7 @@ def resource(
             submitted_by_id=submitted_by_id,
             evaluation_closed=evaluation_closed,
             my_evaluation=my_evaluation,
+            via_public_form=via_public_form,
         ),
     ).replace(**extra)
 
@@ -597,6 +599,37 @@ def test_volunteer_flag(role: ProjectRole, volunteering: bool, owner: UUID | Non
     flag = idea_permissions(principal(), facts).can_volunteer
 
     assert flag == (role is ProjectRole.MEMBER and volunteering and owner is None)
+
+
+# --- c32 (Phase 11, security review M1): no member owns a public idea by volunteering --------
+@pytest.mark.parametrize("via_public_form", [True, None])
+def test_a_member_never_volunteers_for_a_public_idea(via_public_form: bool | None) -> None:
+    """Sent through the public form, or not known (deny by default): 403, the 403s' place."""
+    facts = resource(via_public_form=via_public_form)
+
+    decision = authorize(principal(), Rule.IDEA_VOLUNTEER_OWNER, facts)
+    owned = authorize(
+        principal(),
+        Rule.IDEA_VOLUNTEER_OWNER,
+        resource(via_public_form=via_public_form, owner_id=OTHER),
+    )
+
+    assert (decision.status, decision.code, decision.condition) == (
+        403,
+        "public_idea_owner_needs_admin",
+        "c32",
+    )
+    assert owned.condition == "c32"  # before c13's 409
+    assert not idea_permissions(principal(), facts).can_volunteer
+
+
+@pytest.mark.parametrize("role", [ProjectRole.ADMIN, None])
+def test_admins_volunteer_for_a_public_idea(role: ProjectRole | None) -> None:
+    """A project admin, or a platform admin with a project role (c4), owns it if they like."""
+    who = principal(platform_admin=role is None)
+    facts = resource(role=role or ProjectRole.MEMBER, via_public_form=True)
+
+    assert authorize(who, Rule.IDEA_VOLUNTEER_OWNER, facts).allowed
 
 
 # --- Platform admins changing users' access: c17 and c18 (contract-phase2 section 3.4) ------

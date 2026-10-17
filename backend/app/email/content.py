@@ -408,16 +408,21 @@ async def _notification(
             return await _bid_email(context, notification, idea, info, notice, actor, base)
         case NotificationType.SUBMITTER_REPLIED:
             # Phase 11: fixed words only (never the reply's text, the submitter's name or
-            # address: untrusted public input); the button opens the submission panel.
+            # address: untrusted public input); the button opens the submission panel. Nor
+            # the idea's title (security review L1): a public idea's title is the
+            # submitter's own words, and this email is one the public sets off.
             sentence = f"The person who sent {key} through the public form replied to the team."
             return EmailContent(
                 template="submitter_replied",
-                subject=f'[{key}] The submitter replied about "{title}"',
+                subject=f"[{key}] The submitter replied",
                 preheader=sentence,
                 context={"idea": info},
                 button=Button("Read the reply", context.links.idea(key, submission=True)),
+                # UX review p3: the reason that applies to this recipient.
                 reason=(
-                    f"You get this because you own {key} or have written to the person who sent it."
+                    f"You're the owner of {key}."
+                    if idea.owner_id == user.id
+                    else f"You wrote to the person who sent {key}."
                 ),
                 **base,
             )

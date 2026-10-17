@@ -531,12 +531,16 @@ async def test_ac11_api_1_the_team_talks_to_a_public_submitter(
     assert f"About your idea “{title}”" in shown or f'About your idea "{title}"' in shown
     assert f"The {PROJECT_NAME} team" in shown.split("Could you send", 1)[1]
     assert "Replies to this email aren't read: reply on your tracking page." in shown
-    assert "Stop emails about this idea" in shown
+    # UX review p1: one footer line, its link on "your tracking page".
     assert (
         "To stop all email about this idea, remove your email address on your tracking page."
-        in " ".join(plain.split())
+        in shown
     )
-    assert links(olive_mail).count(tracking_url) >= 2  # Reply and the stop link
+    assert "Stop emails about this idea" not in shown
+    # UX review m4: Reply opens the page at its reply box; the stop link is the page itself.
+    reply_url = tracking_url.replace("/track#", "/track?reply=1#")
+    assert links(olive_mail).count(reply_url) == 1
+    assert links(olive_mail).count(tracking_url) == 1
     assert tracking_url in plain
 
     # --- 5. The tracking page; the submitter replies -------------------------------------
@@ -565,7 +569,7 @@ async def test_ac11_api_1_the_team_talks_to_a_public_submitter(
             for m in await inbox.wait_for(person.user["email"])
             if "The submitter replied" in m["Subject"]
         ]
-        assert summary["Subject"] == f'[{key}] The submitter replied about "{title}"'
+        assert summary["Subject"] == f"[{key}] The submitter replied"  # security review L1
         email_ = await inbox.message(summary["ID"])
         shown = " ".join(visible_text(email_["HTML"]).split())
         assert f"The person who sent {key} through the public form replied to the team." in shown
@@ -577,12 +581,12 @@ async def test_ac11_api_1_the_team_talks_to_a_public_submitter(
             assert sam not in part
             assert "Sam Public" not in part
 
-    # A second reply within the hour: the inbox only (one email per recipient and idea an
-    # hour).
+    # A second reply within the hour: the unread item is brought up to date (UX review M2:
+    # one per recipient and idea) and no second email (one per recipient and idea an hour).
     ok(await visitor.reply(f"And the deposit could be two pounds. {MARK} five."), 201)
     await run_worker_once(jobs, runtime)
     for person in (olive, alice):
-        assert len(await inbox_items(person, "submitter_replied")) == 2
+        assert len(await inbox_items(person, "submitter_replied")) == 1
         assert (
             len(await staff_emails(db_session, person.user["id"], EmailType.SUBMITTER_REPLIED)) == 1
         )

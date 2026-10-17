@@ -115,13 +115,22 @@ def _manages(principal: Principal) -> Any:
     (c31 needs nothing here: the break-glass account and agents get no notifications)."""
     if principal.is_platform_admin:
         return true()
-    return exists().where(
-        _roles.c.project_id == Idea.project_id,
-        _roles.c.user_id == principal.user_id,
-        or_(
-            _roles.c.role == ProjectRole.ADMIN,
-            and_(Idea.owner_id == principal.user_id, _roles.c.role == ProjectRole.MEMBER),
+    # Security review N2: two uncorrelated subqueries (the caller's projects by role), which
+    # Postgres runs once per statement and hashes, instead of a probe of the roles view per
+    # notification row.
+    return or_(
+        Idea.project_id.in_(_projects_where(principal, ProjectRole.ADMIN)),
+        and_(
+            Idea.owner_id == principal.user_id,
+            Idea.project_id.in_(_projects_where(principal, ProjectRole.MEMBER)),
         ),
+    )
+
+
+def _projects_where(principal: Principal, role: ProjectRole) -> Any:
+    """The projects where the caller's effective role is ``role`` (groups included)."""
+    return select(_roles.c.project_id).where(
+        _roles.c.user_id == principal.user_id, _roles.c.role == role
     )
 
 

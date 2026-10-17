@@ -25,11 +25,11 @@ export const EMAIL_TYPE_LABEL: Record<EmailType, string> = {
   submitter_replied: TYPE_COPY.submitter_replied.one,
   digest: 'Daily digest',
   test: 'Test email',
-  submission_received: 'Submission received',
-  submission_status_changed: 'Submission update',
-  // Phase 11 (contract-phase11 §19): to the person who sent a public idea.
+  // To the person who sent a public idea: one pattern for all four (UX review p7).
+  submission_received: 'Confirm address (public submitter)',
+  submission_status_changed: 'Status update (public submitter)',
   submission_link: 'Tracking link (public submitter)',
-  submission_message: 'Message to a public submitter',
+  submission_message: 'Team message (public submitter)',
 }
 
 export type StatusTone = 'success' | 'neutral' | 'info' | 'danger' | 'muted'

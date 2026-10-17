@@ -10,6 +10,7 @@ import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Markdown } from '@/components/ui/markdown'
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -100,6 +101,30 @@ export function PublicFormSettingsSection({
         </SkeletonGroup>
       )}
     </SettingsSection>
+  )
+}
+
+/**
+ * The top of the public form as it will read (UX review m6): the heading and the intro
+ * rendered as the form renders it, before saving. A picture, not part of the form.
+ */
+function IntroPreview({ projectName, intro }: { projectName: string; intro: string }) {
+  return (
+    <figure className="flex flex-col gap-1.5">
+      <figcaption className="text-sm font-medium text-primary">
+        Top of the form
+        <span className="font-normal text-muted"> · preview</span>
+      </figcaption>
+      <div className="flex flex-col gap-2 rounded-lg border border-subtle bg-subtle px-4 py-3">
+        <p className="text-lg font-semibold text-balance text-primary">
+          Share an idea with {projectName}
+        </p>
+        <div className="text-secondary">
+          {/* Under the section's h2: its headings start at h3. */}
+          <Markdown nested>{intro.trim()}</Markdown>
+        </div>
+      </div>
+    </figure>
   )
 }
 
@@ -280,6 +305,10 @@ function PublicFormForm({
           onCheckedChange={(require_email_verification) => set({ require_email_verification })}
         />
       </Field>
+      {/* Under the two switches it is about, not under the intro (UX review m6). */}
+      <p className="-mt-3 text-sm text-muted">
+        Review and confirmation apply to ideas sent from now on.
+      </p>
 
       <Field
         label="Intro text"
@@ -300,8 +329,7 @@ function PublicFormForm({
           onChange={(event) => set({ intro_md: event.target.value })}
         />
       </Field>
-
-      <p className="text-sm text-muted">Changes apply to ideas sent from now on.</p>
+      {form.intro_md.trim() && <IntroPreview projectName={project.name} intro={form.intro_md} />}
 
       <FormActions
         form="the public form"

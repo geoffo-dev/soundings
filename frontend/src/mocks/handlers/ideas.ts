@@ -16,6 +16,7 @@ import {
   queryProjectIdeas,
   RESOLUTIONS,
   rowsForIdea,
+  sentThroughPublicForm,
   STATUSES,
   tagNames,
   type ListQuery,
@@ -409,6 +410,13 @@ export const ideaHandlers = [
     if (!who.admin && who.role !== 'member') forbidden()
     if (!who.admin && !project.allow_volunteer_owners) {
       forbidden('volunteering_disabled', 'A project admin assigns owners in this project.')
+    }
+    // c32 (security review M1): the owner reads the conversation with a public submitter.
+    if (!who.admin && sentThroughPublicForm(ctx.db, idea)) {
+      forbidden(
+        'public_idea_owner_needs_admin',
+        'A project admin names the owner of an idea sent through the public form.',
+      )
     }
     if (!who.memberish) {
       failValidation(

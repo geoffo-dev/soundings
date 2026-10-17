@@ -1,9 +1,10 @@
 {% extends "_layout.html" %}
 {% import "_macros.html" as m %}
 {#- Phase 11 (contract-phase11 section 6): fixed words only, never the reply's text, the
-    submitter's name or address (untrusted public input). -#}
+    submitter's name or address, nor the idea's title (security review L1: a public idea's
+    title is the submitter's own words): all untrusted public input. -#}
 {% block content %}
 <h1 class="sx-text" style="{{ s.h1 }}color:{{ c.text }};">The submitter replied</h1>
 <p class="sx-text" style="{{ s.p }}color:{{ c.text }};">The person who sent {{ idea.key }} through the public form replied to the team.</p>
-{{ m.idea_card(idea, c, s) }}
+{{ m.idea_card(idea, c, s, title=False) }}
 {% endblock %}

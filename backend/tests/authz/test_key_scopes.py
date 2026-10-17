@@ -334,10 +334,12 @@ def test_c21_a_service_account_never_volunteers(role: ProjectRole) -> None:
     resource = Resource(
         project=ProjectFacts(id=uuid4(), visibility=ProjectVisibility.PRIVATE),
         role=role,
-        idea=IdeaFacts(id=uuid4(), status=IdeaStatus.EVALUATING),
+        idea=IdeaFacts(id=uuid4(), status=IdeaStatus.EVALUATING, via_public_form=False),
     )
     owned = resource.replace(
-        idea=IdeaFacts(id=uuid4(), status=IdeaStatus.EVALUATING, owner_id=uuid4())
+        idea=IdeaFacts(
+            id=uuid4(), status=IdeaStatus.EVALUATING, owner_id=uuid4(), via_public_form=False
+        )
     )
 
     for principal in (

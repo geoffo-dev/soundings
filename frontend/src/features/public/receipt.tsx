@@ -10,6 +10,24 @@ import { copyText } from '@/features/admin/copy-button'
 
 import { PublicCard } from './public-layout'
 
+/**
+ * The confirmation email is the next thing to do whenever one was sent (UX review m2):
+ * confirming is what brings this link, and the team's messages, by email.
+ */
+const CONFIRM_THEN =
+  'we’ll email you this link, and the team’s messages too. Can’t see the email? Check your spam folder.'
+export const CONFIRM_STEP = {
+  title: 'Open the link we’ve just emailed you',
+  text: `Once you confirm, ${CONFIRM_THEN}`,
+} as const
+
+/**
+ * What the link lets anyone who has it do: the same sentence as the link email's
+ * (UX review m3).
+ */
+export const LINK_WARNING =
+  'Keep this link private: anyone who has it can see where your idea stands, reply to the team and delete your details.'
+
 /** The receipt's heading and what happens next, by what the idea is waiting for. */
 export function nextStep(receipt: Pick<PublicSubmissionReceipt, 'held_for' | 'email_sent'>): {
   heading: string
@@ -19,8 +37,8 @@ export function nextStep(receipt: Pick<PublicSubmissionReceipt, 'held_for' | 'em
   if (receipt.held_for === 'email_verification') {
     return {
       heading: 'One more step: confirm your email',
-      title: 'Open the link we’ve just emailed you',
-      text: 'Your idea reaches the team once you confirm (within 3 days), and then we’ll email you this tracking link too. Can’t see the email? Check your spam folder.',
+      title: CONFIRM_STEP.title,
+      text: `Your idea reaches the team once you confirm (within 3 days). Then ${CONFIRM_THEN}`,
     }
   }
   if (receipt.held_for === 'moderation') {
@@ -64,6 +82,8 @@ export function SubmissionReceipt({
   const step = nextStep(receipt)
   // Held until the address is confirmed: that is the one thing to do now.
   const confirming = receipt.held_for === 'email_verification'
+  // An optional address: confirming isn't required, but it's still the next step.
+  const askToConfirm = !confirming && receipt.email_sent
   // Phones (and some desktops) can hand the link to another app: notes, a message to yourself.
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
@@ -88,10 +108,16 @@ export function SubmissionReceipt({
         </p>
       </div>
 
-      {confirming && (
+      {confirming ? (
         <Callout tone="info" icon={<MailCheck />} title={step.title}>
           {step.text}
         </Callout>
+      ) : (
+        askToConfirm && (
+          <Callout tone="info" icon={<MailCheck />} title={CONFIRM_STEP.title}>
+            {CONFIRM_STEP.text}
+          </Callout>
+        )
       )}
 
       <div className="flex flex-col gap-2">
@@ -151,8 +177,8 @@ export function SubmissionReceipt({
         </div>
         <p id={`${linkId}-help`} className="text-sm text-muted">
           {receipt.email_sent
-            ? 'Keep it somewhere safe: we can’t show it again here. Anyone with the link can see where your idea stands.'
-            : 'Keep it somewhere safe: it’s the only way to follow your idea, and we can’t show it again. Anyone with the link can see its status.'}
+            ? `${LINK_WARNING} We can’t show it again here.`
+            : `${LINK_WARNING} It’s the only way to follow your idea, and we can’t show it again.`}
         </p>
         <p aria-live="polite" className="sr-only">
           {copied === true
@@ -167,12 +193,10 @@ export function SubmissionReceipt({
       </div>
 
       {!confirming && (
+        // The confirmation email holds a link to confirm the address, never this tracking
+        // link: that follows once the address is confirmed (Phase 11, D1), said above.
         <Callout tone="neutral" title={step.title}>
           {step.text}
-          {/* The email holds a link to confirm the address, never this tracking link: that
-              follows once the address is confirmed (Phase 11, D1). */}
-          {receipt.email_sent &&
-            ' We’ve emailed you a link to confirm your address. Once you confirm your address, we’ll email you this link too.'}
         </Callout>
       )}
 

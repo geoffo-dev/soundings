@@ -43,7 +43,7 @@ import { TrackedMessages } from './track-messages'
  * messages with the team and a reply box once the team has written, and "Remove
  * my email address" (every email about the idea stops; the link stays).
  */
-export function TrackPage() {
+export function TrackPage({ toReply = false }: { toReply?: boolean }) {
   const token = useFragmentToken(TRACKING_TOKEN)
   const tracked = useTrackedSubmission(token)
   const [erasedWith, setErasedWith] = useState<EffectiveBranding | null>(null)
@@ -109,6 +109,7 @@ export function TrackPage() {
     <TrackedView
       token={token}
       tracked={tracked.data}
+      toReply={toReply}
       onErased={() => setErasedWith(tracked.data.branding)}
     />
   )
@@ -173,10 +174,12 @@ const HELD_COPY = {
 function TrackedView({
   token,
   tracked,
+  toReply,
   onErased,
 }: {
   token: string
   tracked: TrackedSubmission
+  toReply: boolean
   onErased: () => void
 }) {
   const held = tracked.held_for ? HELD_COPY[tracked.held_for] : null
@@ -221,7 +224,7 @@ function TrackedView({
         <Timeline tracked={tracked} />
       </PublicCard>
 
-      <TrackedMessages token={token} tracked={tracked} />
+      <TrackedMessages token={token} tracked={tracked} toReply={toReply} />
       <EmailSettings token={token} tracked={tracked} />
       <DeleteDetails token={token} onErased={onErased} />
     </PublicLayout>
@@ -324,7 +327,8 @@ function EmailSettings({ token, tracked }: { token: string; tracked: TrackedSubm
         <p role={removed ? 'status' : undefined} className="text-sm text-muted">
           {removed
             ? 'We don’t have an email address for you any more. Check this page for news.'
-            : 'We don’t have an email address for you, so we can’t send you updates. Check back here any time.'}
+            : // No address given, or one removed earlier: the page can't tell (UX review p4).
+              'No email address on file: news about your idea shows only here.'}
         </p>
         {removeDialog}
       </PublicCard>

@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/errors'
 
 import {
+  channelLabel,
   deliveryText,
   messageCount,
+  NO_EMAIL_COPY,
+  repliesLeftText,
   REPLY_BLOCKED_COPY,
   replyProblem,
   SEND_BLOCKED_COPY,
@@ -21,8 +24,49 @@ describe('messages with public submitters: plain words (contract-phase11 §5)', 
       'Emailed to them and shown on their tracking page, signed “The Sustainability team”.',
     )
     expect(deliveryText('tracking_page', 'Sustainability')).toBe(
-      'They’ll see it only on their tracking page, signed “The Sustainability team”.',
+      'Shown on their tracking page only, signed “The Sustainability team”.',
     )
+    // Said plainly when no email will reach them (UX review M1).
+    expect(NO_EMAIL_COPY.title).toBe('They won’t get an email')
+  })
+
+  it('names each message’s channel without claiming delivery (review C10, UX m1)', () => {
+    expect(channelLabel(true)).toBe('By email too')
+    expect(channelLabel(false)).toBe('Tracking page only')
+    expect(channelLabel(true)).not.toMatch(/emailed|delivered|sent/i)
+  })
+
+  it('warns the submitter two replies before a limit, by the nearer one (UX review p9)', () => {
+    const now = Date.parse('2026-10-17T12:00:00Z')
+    const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString()
+    const team = (minutesAgo: number) => ({
+      direction: 'team' as const,
+      created_at: at(minutesAgo),
+    })
+    const reply = (minutesAgo: number) => ({
+      direction: 'submitter' as const,
+      created_at: at(minutesAgo),
+    })
+    const replies = (count: number, from = 60) =>
+      Array.from({ length: count }, (_, n) => reply(from - n))
+    // Room to spare: nothing said.
+    expect(repliesLeftText([team(120), ...replies(7)], now)).toBeNull()
+    expect(repliesLeftText([team(120), ...replies(8)], now)).toBe(
+      'You can send 2 more replies until the team writes back.',
+    )
+    expect(repliesLeftText([team(120), ...replies(9)], now)).toBe(
+      'You can send 1 more reply until the team writes back.',
+    )
+    // None left: the blocked line says why instead.
+    expect(repliesLeftText([team(120), ...replies(10)], now)).toBeNull()
+    // The team wrote back after eight replies: the count starts again…
+    expect(repliesLeftText([team(300), ...replies(8, 200), team(60)], now)).toBe(
+      'You can send 2 more replies today.',
+    )
+    // …and replies older than a day don't count towards today.
+    expect(
+      repliesLeftText([team(3_000), ...replies(5, 2_000), team(60), reply(10)], now),
+    ).toBeNull()
   })
 
   it('words every refusal of the team’s message by its code', () => {

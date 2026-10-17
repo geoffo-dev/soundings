@@ -272,6 +272,63 @@ async def test_an_idea_that_did_not_come_through_the_form_is_404(
     assert_problem(await send(api, team.admin, idea), 404, "not_found")
 
 
+# --- Security review M1: volunteering never opens the conversation (c32) ------------------------
+@pytest.mark.parametrize("conversation", [True, False])
+async def test_a_member_cannot_volunteer_to_own_a_public_idea(
+    api: AsUser, team: Team, db_session: AsyncSession, settings: Settings, conversation: bool
+) -> None:
+    """The owner overlay opens the conversation, so a member can't make themselves the owner
+    of an idea sent through the public form (an admin names its owner): the same answer
+    whether a conversation exists or not, so the refusal tells nothing."""
+    _, idea = await public_idea(db_session, settings, team, owner=None)
+    if conversation:
+        await add_message(db_session, idea, author=team.admin)
+        await add_message(db_session, idea, "submitter")
+    await db_session.commit()
+    member = await api(team.member)
+
+    detail = ok(await member.get(f"/ideas/{idea.id}"))
+    volunteered = await member.post(f"/ideas/{idea.id}/volunteer")
+
+    assert detail["permissions"]["can_volunteer"] is False
+    assert_problem(volunteered, 403, "public_idea_owner_needs_admin")
+    assert_problem(await listed(api, team.member, idea), 403, "forbidden")
+    assert ok(await panel(api, team.member, idea))["messages"] is None
+    owner = await db_session.scalar(
+        select(Idea.owner_id).where(Idea.id == idea.id).execution_options(populate_existing=True)
+    )
+    assert owner is None
+
+
+async def test_a_member_still_volunteers_for_an_idea_the_team_wrote(
+    api: AsUser, team: Team, db_session: AsyncSession
+) -> None:
+    idea = await make_idea(db_session, team.project)
+    await db_session.commit()
+    member = await api(team.member)
+
+    assert ok(await member.get(f"/ideas/{idea.id}"))["permissions"]["can_volunteer"] is True
+    assert ok(await member.post(f"/ideas/{idea.id}/volunteer"))
+
+
+async def test_admins_volunteer_or_name_the_owner_of_a_public_idea(
+    api: AsUser, team: Team, db_session: AsyncSession, settings: Settings
+) -> None:
+    """A project admin may own it themselves; the member an admin names owns the
+    conversation too (the admin's choice, not the member's)."""
+    _, idea = await public_idea(db_session, settings, team, owner=None)
+    _, other = await public_idea(db_session, settings, team, owner=None, title="Refill station")
+    await db_session.commit()
+    admin = await api(team.admin)
+
+    assert ok(await admin.get(f"/ideas/{idea.id}"))["permissions"]["can_volunteer"] is True
+    assert ok(await admin.post(f"/ideas/{idea.id}/volunteer"))
+    assert ok(await admin.put(f"/ideas/{other.id}/owner", {"user_id": str(team.member.id)}))
+
+    assert (await listed(api, team.admin, idea)).status_code == 200
+    assert (await send(api, team.member, other)).status_code == 201
+
+
 # --- States -------------------------------------------------------------------------------------
 async def test_held_for_email_confirmation_is_404_for_everyone(
     api: AsUser, team: Team, db_session: AsyncSession, settings: Settings
@@ -445,6 +502,30 @@ async def test_30_messages_of_one_person_an_hour_across_ideas(
     ok(await send(api, team.owner, second), 201)  # someone else still may
     # Not a daily limit of the submission: the panel doesn't say so.
     assert ok(await panel(api, team.admin, second))["messages"]["blocked"] is None
+
+
+async def test_concurrent_sends_never_pass_the_hourly_limit_of_one_person(
+    api: AsUser, team: Team, db_session: AsyncSession, settings: Settings
+) -> None:
+    """Security review N3: one person's sends to different submitters are serialised (an
+    advisory lock on the sender), so of six racing for the 30th place, one wins."""
+    ideas = [
+        (await public_idea(db_session, settings, team, title=f"Public idea {n}"))[1]
+        for n in range(6)
+    ]
+    await add_message(db_session, ideas[0], author=team.admin, count=29)
+    clients = [await api(team.admin) for _ in ideas]
+
+    responses = await asyncio.gather(
+        *(
+            http.post(messages_url(idea), {"body": f"Race {n}"})
+            for n, (http, idea) in enumerate(zip(clients, ideas, strict=True))
+        )
+    )
+
+    assert sorted(response.status_code for response in responses) == [201] + [429] * 5
+    count = await db_session.scalar(select(func.count()).select_from(SubmissionMessage))
+    assert count == 30
 
 
 async def test_concurrent_sends_never_pass_the_daily_limit(

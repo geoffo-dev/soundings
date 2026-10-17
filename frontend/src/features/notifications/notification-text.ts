@@ -365,8 +365,9 @@ export const TYPE_COPY: Record<
     one: 'The submitter replied',
     phrase: 'replies from public submitters',
     when: 'the person who sent an idea through the public form replies to the team',
+    // UX review p3: who replies first, then which ideas.
     description:
-      'The person who sent an idea you own, or have written to, through the public form replies on their tracking page.',
+      'Someone who sent an idea through the public form replies to the team, on an idea you own or have written to them about.',
   },
 }
 

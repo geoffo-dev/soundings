@@ -256,7 +256,8 @@ async def send_tracking_reply(
 ) -> TrackedSubmission:
     _link_throttle(request)
     settings = _settings(request)
-    found = await tracking.find(session, settings, body.token, lock=True)
+    found = await tracking.find(session, settings, body.token)
+    # Security review N4: the per-address throttle before any row lock.
     check_throttle(
         request,
         PUBLIC_REPLY_THROTTLE,
@@ -264,6 +265,7 @@ async def send_tracking_reply(
         event="public reply refused",
         log_fields={"idea_id": str(found[1].id)},
     )
+    found = await tracking.lock(session, settings, found, body.token)
     return await tracking.reply(session, settings, found, body.body, now=utcnow())
 
 

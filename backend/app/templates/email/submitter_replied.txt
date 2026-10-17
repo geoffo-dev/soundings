@@ -4,5 +4,8 @@ The submitter replied
 
 The person who sent {{ idea.key }} through the public form replied to the team.
 
-{% include "_idea.txt" %}
+{{ idea.key }} · {{ idea.project }}
+{% if idea.status %}Status: {{ idea.status }}
+{% endif %}
+{{ idea.url }}
 {%- endblock %}

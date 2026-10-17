@@ -67,6 +67,7 @@ def _resource(visibility: ProjectVisibility, role: ProjectRole | None) -> Resour
         evaluation_closed=False,
         held_for=None,
         my_evaluation=EvaluatorState.INVITED,
+        via_public_form=False,
     )
     return Resource(project=project, role=role, idea=idea)
 

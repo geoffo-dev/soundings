@@ -31,8 +31,8 @@
 #   confirmation email without the tracking link; after the first confirmation
 #   (tracking_link_emailed, not on a repeat) one "Your link to follow your idea" email
 #   with /track#<token>; the team's message emailed (escaped HTML, signed by the team,
-#   naming nobody, no Reply-To); "The submitter replied" to the owner without the
-#   reply's text.
+#   naming nobody, no Reply-To, Reply to /track?reply=1#<token>); "The submitter
+#   replied" to the owner without the reply's text or the idea's title.
 #
 #   PUBLIC_SLUG    the project with the public form (default customer-innovation)
 #   ALTCHA_PYTHON  command that runs a Python with the `altcha` package and reads the
@@ -476,7 +476,7 @@ if [ $mail -eq 1 ]; then
     fetch_mail "$id"
     if mail_has "We'd like to try <b>two</b> first." "Which stores did you have in mind?" \
       "The $project_name team" "Replies to this email aren't read: reply on your tracking page." \
-      "/track#$token" "remove your email address on your tracking page" &&
+      "/track#$token" "/track?reply=1#$token" "remove your email address on your tracking page" &&
       jq -e '(.HTML | contains("&lt;b&gt;two&lt;/b&gt;")) and (.HTML | contains("<b>two</b>") | not)' \
         "$work/mail.json" >/dev/null &&
       ! jq -r '.Text + .HTML' "$work/mail.json" | grep -qiF -e "$owner_name" -e "$owner_email" && no_reply_to; then
@@ -490,8 +490,9 @@ if [ $mail -eq 1 ]; then
   if id="$(wait_mail "$owner_email" "$mail_since" "[$key] The submitter replied")"; then
     fetch_mail "$id"
     if mail_has "The person who sent $key through the public form replied to the team." "?submission=1" &&
+      jq -e --arg s "[$key] The submitter replied" '.Subject == $s' "$work/mail.json" >/dev/null &&
       ! jq -r '.Text + .HTML' "$work/mail.json" | grep -qF -e "by the station" -e "$submitter_email"; then
-      ok "\"$(jq -r .Subject "$work/mail.json")\" to the owner, without the reply's text"
+      ok "\"$(jq -r .Subject "$work/mail.json")\" to the owner, without the reply's text or the title"
     else
       fail "the owner's \"submitter replied\" email: fixed words or link missing, or it carries the reply"
     fi

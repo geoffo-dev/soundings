@@ -102,6 +102,14 @@ function SubmitSkeleton() {
   )
 }
 
+/**
+ * What the address is for (UX review m5): the link, the team's messages and where to
+ * answer them, and who can see it. "Admins", not "administrators": the people who run
+ * the form, words the public knows.
+ */
+const EMAIL_USE =
+  'The team may write to you about this idea; you reply on your tracking page. Only the team’s admins can see your address.'
+
 const PRIVACY_NOTICE_TEXT =
   'We keep what you write here, and your name and email address only if you give them. We don’t store your IP address. An email address you don’t confirm is forgotten after 3 days, and your name and address are erased 180 days after your idea is closed. To remove them sooner, use “Delete my details” on your tracking page, or ask the team. Your idea itself stays with the team.'
 
@@ -328,11 +336,11 @@ function SubmitContent({ project, solver }: { project: PublicProject; solver?: A
                   id="public-email"
                   error={errors.email}
                   description={
-                    // Phase 11 (contract-phase11 §8, review M1): what the address is for, and
-                    // who sees it (administrators do).
+                    // Phase 11 (contract-phase11 §8, review M1; UX review m5): what the address
+                    // is for, where replies happen, and who sees it (admins do).
                     project.email_required
-                      ? 'We email you a link to confirm your idea; it reaches the team once you do. Then we’ll email you your private link to follow it, and the team may use your address to contact you about this idea. Only administrators can see your address.'
-                      : 'We’ll ask you to confirm it, then email you your private link to follow your idea. The team may also use it to contact you about this idea. Only administrators can see your address.'
+                      ? `We email you a link to confirm your idea; it reaches the team once you do. Then we’ll email you your private link. ${EMAIL_USE}`
+                      : `We’ll ask you to confirm it, then email you your private link. ${EMAIL_USE}`
                   }
                 >
                   <Input

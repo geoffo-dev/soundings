@@ -66,6 +66,7 @@ __all__ = [
     "erase_own_details",
     "find",
     "forget_email",
+    "lock",
     "reply",
     "resend_confirmation",
     "set_updates",
@@ -141,6 +142,18 @@ async def find(db: AsyncSession, settings: Settings, token: str, *, lock: bool =
     found: Tracked | None = None if row is None else (row[0], row[1], row[2])
     if found is not None and lock:
         found = await _lock(db, found[0].id)
+    return _opened(settings, found, digest)
+
+
+async def lock(db: AsyncSession, settings: Settings, found: Tracked, token: str) -> Tracked:
+    """``found`` (from :func:`find` without the lock) locked for a write, project (key
+    share) -> idea -> submission, and checked again after the wait (404 if it was erased
+    meanwhile). Lets a route apply a throttle between the two, so a throttled client
+    never takes a row lock (security review N4)."""
+    return _opened(settings, await _lock(db, found[0].id), tracking_token_hash(token))
+
+
+def _opened(settings: Settings, found: Tracked | None, digest: str) -> Tracked:
     valid = (
         found is not None
         and found[0].erased_at is None

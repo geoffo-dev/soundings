@@ -9,7 +9,7 @@ failed condition denies. Evaluation order (role matrix section 2), first failure
    confirmation (c12, for everyone), or the implied view rule (``project.view`` /
    ``idea.view``, incl. c12) failing;
 3. **403**: the key's scopes, then no grant for the column or an overlay, then the
-   principal conditions (c1 submitter, c2, c3, c15, c16, c17, c20, c21, c31);
+   principal conditions (c1 submitter, c2, c3, c15, c16, c17, c20, c21, c31, c32);
 4. **422**: request-body conditions (c4);
 5. **409**: state conditions (archived project, then c19 (an idea held for moderation),
    then c1 status, c5, c6, c7, c10, c11, c13, c18, c26).
@@ -155,6 +155,9 @@ class IdeaFacts:
     else their state (``invited`` = nothing saved yet, ``draft``, ``submitted``).
     ``held_for``: a public submission not visible yet (``ideas.held_for``; c12, c19).
     ``researcher_id``: Phase 8b, the idea's assigned researcher (column R, +Rsr, c24).
+    ``via_public_form``: Phase 11 (security review M1), the idea came through the public
+    form (a ``public_submissions`` row): c32. ``None`` = not known, and c32 fails (deny by
+    default): only the decisions that need it load it (``volunteer``, the idea page's flag).
     """
 
     id: UUID
@@ -165,6 +168,7 @@ class IdeaFacts:
     held_for: HoldReason | None = None
     my_evaluation: EvaluatorState | None = None
     researcher_id: UUID | None = None
+    via_public_form: bool | None = None
 
     @property
     def awaiting_moderation(self) -> bool:
@@ -187,7 +191,13 @@ class IdeaFacts:
         return self.my_evaluation in (EvaluatorState.INVITED, EvaluatorState.DRAFT)
 
     @classmethod
-    def of(cls, idea: Idea, my_evaluation: EvaluatorState | None = None) -> IdeaFacts:
+    def of(
+        cls,
+        idea: Idea,
+        my_evaluation: EvaluatorState | None = None,
+        *,
+        via_public_form: bool | None = None,
+    ) -> IdeaFacts:
         return cls(
             id=idea.id,
             status=idea.status,
@@ -197,7 +207,12 @@ class IdeaFacts:
             held_for=idea.held_for,
             my_evaluation=my_evaluation,
             researcher_id=idea.researcher_id,
+            via_public_form=via_public_form,
         )
+
+    def knowing(self, *, via_public_form: bool) -> IdeaFacts:
+        """These facts with ``via_public_form`` known (c32)."""
+        return dataclasses.replace(self, via_public_form=via_public_form)
 
 
 @dataclass(frozen=True, slots=True)
@@ -533,6 +548,17 @@ CONDITIONS: Final[Mapping[str, tuple[Check, ...]]] = {
     # Phase 10: bid evaluation (role matrix table M).
     "c29": (Check("c29", 403, "not_section_assessor", _assesses_the_section),),
     "c30": (Check("c30", 409, "bid_call_active", _call_deletable),),
+    # Phase 11 (security review M1): a member can't make themselves the owner of an idea sent
+    # through the public form, because the owner overlay opens the conversation with its
+    # submitter (public.message_submitter); a project admin names that owner. Unknown fails.
+    "c32": (
+        Check(
+            "c32",
+            403,
+            "public_idea_owner_needs_admin",
+            lambda p, r, _: _idea(r).via_public_form is False,
+        ),
+    ),
 }
 
 _PHASE: Final = {404: 0, 401: 1, 403: 1, 422: 2, 409: 3}
@@ -763,7 +789,7 @@ _ROWS: Final[tuple[RuleSpec, ...]] = (
     _row(Rule.IDEA_VOTE, _I,     "Y",             "Y",          "Y",             "403",   "403",   "404", "401", idea_write=_W),
     _row(Rule.IDEA_WATCH, _I,    "Y",             "Y",          "Y",             "Y",     "Y",     "404", "401"),
     # C. Ownership and evaluation management
-    _row(Rule.IDEA_VOLUNTEER_OWNER, _I, "Y (c4, c13, c5)", "Y (c13, c5)", "Y (c3, c13, c5)", "403", "403", "404", "401", idea_write=_W),
+    _row(Rule.IDEA_VOLUNTEER_OWNER, _I, "Y (c4, c13, c5)", "Y (c13, c5)", "Y (c3, c32, c13, c5)", "403", "403", "404", "401", idea_write=_W),
     _row(Rule.IDEA_RELEASE_OWNER, _I, "Y",        "Y",          "403",           "403",   "403",   "404", "401", owner="+", idea_write=_W),
     _row(Rule.IDEA_ASSIGN_OWNER, _I, "Y (c4)",    "Y (c4)",     "403",           "403",   "403",   "404", "401", idea_write=_W),
     _row(Rule.EVALUATOR_MANAGE, _I, "Y (c4, c6)", "Y (c4, c6)", "403",           "403",   "403",   "404", "401", owner="+ (c4, c6)", idea_write=_W),

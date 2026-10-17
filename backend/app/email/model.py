@@ -151,8 +151,9 @@ class EmailContent:
     stop_label: str = "Stop these emails"
     """Phase 11: the words of the ``stop_url`` link ("Stop emails about this idea" for the
     tracking-link and message emails, whose tracking page has "Remove my email address")."""
-    stop_note: str | None = None
-    """Phase 11: one line after the ``stop_url`` link (only shown with it)."""
+    stop_lead: str | None = None
+    """Phase 11 (UX review p1): words before the ``stop_url`` link on the same line ("To stop
+    all email about this idea, remove your email address on" + "your tracking page")."""
     allow_reply_to: bool = True
     """Phase 11 (review S1): ``False`` leaves ``SOUNDINGS_SMTP_REPLY_TO`` out: a reply to a
     submitter's tracking-link or message email would carry their address and words into a

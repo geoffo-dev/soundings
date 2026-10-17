@@ -375,7 +375,11 @@ class Settings(DatabaseSettings):
     )
     smtp_from: str | None = Field(
         default=None,
-        description="Sender address, e.g. soundings@example.com (required with smtp_host).",
+        description=(
+            "Sender address, e.g. no-reply@example.com (required with smtp_host). Use a "
+            "no-reply mailbox: replies to emails without Reply-To (always those to public "
+            "submitters) come here, holding a submitter's address and words."
+        ),
     )
     smtp_from_name: str = Field(
         default="Soundings", max_length=100, description="Sender display name."

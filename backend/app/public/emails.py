@@ -24,14 +24,17 @@ contract-phase11 sections 7-8), sent through the Phase 3 outbox and worker uncha
   link-free.
 * ``submission_message`` (Phase 11): each team message, when the address is confirmed and
   email is set up (whatever ``wants_updates`` says): the team's text (escaped, line breaks
-  kept), signed "The <project> team" (never a person), a Reply button to the tracking page.
+  kept), signed "The <project> team" (never a person), a Reply button to the tracking page
+  at its reply box (``/track?reply=1#<token>``, UX review m4).
 
 Rows carry ``idea_id`` (erasure deletes them by idea) and ``to_address``; ``payload``
 is ``{}``, the status change or (Phase 11) the message's id, never personal data, text or
 tokens. Content is rendered at send time from the submission, so an erased, changed or
 turned-off submission cancels its queued emails. Phase 11's two types carry no
-``Reply-To`` (review S1) and their footer link reads "Stop emails about this idea" (the
-tracking page has "Remove my email address": review M2).
+``Reply-To`` (review S1); the link email's footer link reads "Stop emails about this idea",
+the message email's one footer line "To stop all email about this idea, remove your email
+address on your tracking page" (UX review p1; the tracking page has "Remove my email
+address": review M2).
 """
 
 from __future__ import annotations
@@ -103,10 +106,13 @@ _ADDRESS_LOCK_SALT: Final = 0x5355_424D
 the same rows before any of them commits."""
 
 
-def tracking_url(settings: Settings, token: str) -> str:
+def tracking_url(settings: Settings, token: str, *, reply: bool = False) -> str:
     """``<base>/track#<token>``: the token stays in the fragment, which browsers never
-    send to a server (no access log, proxy log, trace or ``Referer`` can hold it)."""
-    return f"{settings.public_base_url.rstrip('/')}/track#{token}"
+    send to a server (no access log, proxy log, trace or ``Referer`` can hold it).
+    ``reply``: ``<base>/track?reply=1#<token>``, the message email's Reply button (UX
+    review m4: the page opens at its reply box; the query holds nothing secret)."""
+    query = "?reply=1" if reply else ""
+    return f"{settings.public_base_url.rstrip('/')}/track{query}#{token}"
 
 
 def confirmation_url(settings: Settings, slug: str, token: str) -> str:
@@ -419,12 +425,14 @@ async def submitter_email(
     )
 
 
-def _tracking(settings: Settings, submission: PublicSubmission) -> str | None:
+def _tracking(
+    settings: Settings, submission: PublicSubmission, *, reply: bool = False
+) -> str | None:
     """The tracking page's URL from the sealed token (``None`` without one: the seeded
     demo submissions)."""
     sealed = submission.tracking_token_sealed
     token = None if sealed is None else unseal_tracking_token(settings, sealed)
-    return None if token is None else tracking_url(settings, token)
+    return None if token is None else tracking_url(settings, token, reply=reply)
 
 
 def _link_email(
@@ -484,6 +492,7 @@ async def _message_email(
     ):
         return NO_LONGER_APPLIES
     tracking = _tracking(settings, submission)
+    reply = _tracking(settings, submission, reply=True)
     return EmailContent(
         template="submission_message",
         subject=f"A message about your idea for {project_name}",
@@ -491,14 +500,15 @@ async def _message_email(
         context={
             "project": project_name,
             "title": submission.submitted_title,
-            "lines": message.body.split("\n"),
+            # Security review N1: no trailing spaces, so a "-- " sign-off line isn't the
+            # plain-text signature separator (clients hide what follows: Reply, the footer).
+            "lines": [line.rstrip() for line in message.body.split("\n")],
         },
-        button=Button("Reply", tracking) if tracking else None,
+        button=Button("Reply", reply) if reply else None,
         reason=f"You sent an idea to {project_name} through its public form.",
+        # UX review p1: one footer line, "stop" once, the link on "your tracking page".
         stop_url=tracking,
-        stop_label=STOP_ABOUT_THIS_IDEA,
-        stop_note=(
-            "To stop all email about this idea, remove your email address on your tracking page."
-        ),
+        stop_lead="To stop all email about this idea, remove your email address on",
+        stop_label="your tracking page",
         allow_reply_to=False,
     )

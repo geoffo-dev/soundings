@@ -54,7 +54,7 @@ enums are rejected). `values.yaml` has a comment on every setting.
 | `oidc.autoCreateUsers` | `false` | Create an account (no roles; access only through groups) for an unmatched person with a verified email. |
 | `smtp.host` / `.port` / `.security` | `""` / `""` / `starttls` | SMTP server (host name or IP, no scheme or port); `security`: `none`, `starttls` or `tls` (implicit). Empty port: 465 for `tls`, else 587. Empty host: in-app notifications only. See [Email](#email). |
 | `smtp.existingSecret` | `""` | Secret with keys `username` and `password` (both required; mounted in the worker pods only). Or `smtp.username` / `smtp.password` in values (not both). Not with `security: none` unless `devLogin`. |
-| `smtp.from` / `.fromName` / `.replyTo` | `""` / `Soundings` / `""` | Sender address (one plain address, required with `host`), display name, optional Reply-To. |
+| `smtp.from` / `.fromName` / `.replyTo` | `""` / `Soundings` / `""` | Sender address (one plain address, required with `host`), display name, optional Reply-To. Make `from` a no-reply mailbox (or treat it as personal data): replies reach it without `replyTo`, and always from public submitters, whose emails never carry `replyTo` (a reply holds their address and words, which an erasure can't reach). |
 | `smtp.caBundle.configMap` / `.key` | `""` / `ca.crt` | Existing ConfigMap with a PEM CA bundle for the SMTP server's certificate, mounted read-only. Empty: system trust store. |
 | `smtp.timeout` | `10` | Seconds for the connection and each SMTP command (max 120). |
 | `timezone` | `UTC` | IANA time zone of the organisation: digests and reminders follow it, emails show dates in it. |

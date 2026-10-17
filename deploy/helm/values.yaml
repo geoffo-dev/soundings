@@ -146,6 +146,9 @@ smtp:
   # worker pods get the credentials. Not with security none (unless devLogin).
   existingSecret: ""
   # -- Sender address of every email (one plain address); required when host is set.
+  # Use a no-reply mailbox (or treat it as personal data): replies go here when replyTo is
+  # empty, and always for the emails to public submitters (they never carry replyTo), so a
+  # reply would hold a submitter's address and words where an erasure never reaches.
   from: ""
   # -- Sender display name.
   fromName: Soundings

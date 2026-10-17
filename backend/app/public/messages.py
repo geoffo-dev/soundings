@@ -22,8 +22,9 @@ Messages are plain text (``MessageBody``); a submitter's is untrusted public inp
 here logs or audits a message's text, the submitter's name or address, or a token.
 
 Writes lock project (``FOR KEY SHARE``) -> idea -> submission (``FOR UPDATE``), so the
-per-submission limits and the conversation cap are exact; the per-person hourly count is
-read in the same transaction but not serialised across submissions.
+per-submission limits and the conversation cap are exact; a team send then takes the
+sender's advisory lock before counting their hour (security review N3), so the per-person
+limit is exact across submissions too.
 """
 
 from __future__ import annotations
@@ -312,11 +313,21 @@ async def list_messages(
     return SubmissionMessagePage(items=[_out(m, authors) for m in items], next_cursor=next_cursor)
 
 
+_SENDER_LOCK_SALT: Final = 0x534D_5347
+"""First key of the transaction-level advisory lock that serialises one person's sends
+(the second is a hash of their id): security review N3, the hourly count across
+submissions can't be read by two sends before either commits."""
+
+
 async def _person_hourly(
     db: AsyncSession, author_id: UUID, *, now: datetime
 ) -> tuple[int, datetime | None]:
     """The sender's team messages in the last hour, all submissions, and the oldest
-    (``ix_submission_messages_author_id_created_at``)."""
+    (``ix_submission_messages_author_id_created_at``), after taking the sender's advisory
+    lock (held until commit; taken after the submission's row lock, always in that order)."""
+    await db.execute(
+        select(func.pg_advisory_xact_lock(_SENDER_LOCK_SALT, func.hashtext(str(author_id))))
+    )
     row = (
         await db.execute(
             select(func.count(), func.min(SubmissionMessage.created_at)).where(

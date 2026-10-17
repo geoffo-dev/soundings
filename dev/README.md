@@ -159,7 +159,9 @@ conversation in its submission panel's **Messages**: **priya** (a Customer Innov
 asked "Which of our stores did you have in mind?" and Sam replied an hour later. priya has
 one unread "The submitter replied" in her inbox, and the audit log one `submission.message`
 by her; alice's inbox and every count e2e reads are unchanged. A member (bob, farah) sees
-the submitter's name on `CUST-21` and nothing of the conversation. priya's message reads
+the submitter's name on `CUST-21` and nothing of the conversation, and can't volunteer to own
+it (an idea from the public form gets its owner from an admin: the owner reads the
+conversation; c32, security review M1). priya's message reads
 "Email queued" (Sam's address is confirmed, so in the story it was emailed), but the seed
 queues no email, and nobody has the seeded submission's tracking link: to see the
 submitter's side (the tracking

@@ -179,6 +179,10 @@ function LoadedIdeaPage({
   const [dialog, setDialog] = useState<IdeaDialog | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const handingOff = useRef(false)
+  // Phase 11 (UX review p8): the messages opened from the phone's Details sheet go back
+  // there when they close, focused on their own button, as a sub-page would.
+  const messagesFromDetails = useRef(false)
+  const backToMessagesEntry = useRef(false)
   const ownEvaluator = idea.evaluators.find((evaluator) => evaluator.user.id === me.id)
   const statusLabels = project?.status_labels
   const statusLabel = useMemo(() => statusLabeller(statusLabels), [statusLabels])
@@ -268,10 +272,22 @@ function LoadedIdeaPage({
 
   const openMessages = useCallback(() => {
     // From the phone details sheet: close it first and let the messages take focus.
-    if (detailsOpen) handingOff.current = true
+    if (detailsOpen) {
+      handingOff.current = true
+      messagesFromDetails.current = true
+    }
     setDetailsOpen(false)
     setSearch({ submission: true })
   }, [detailsOpen, setSearch])
+
+  // Runs once the messages sheet has gone: focus has returned to the Details button (where
+  // the Details sheet came from, so it goes back there again when it closes).
+  const afterMessagesClosed = useCallback(() => {
+    if (!messagesFromDetails.current) return
+    messagesFromDetails.current = false
+    backToMessagesEntry.current = true
+    setDetailsOpen(true)
+  }, [])
 
   const page: IdeaPageContextValue = {
     ideaKey,
@@ -530,9 +546,16 @@ function LoadedIdeaPage({
           size="sm"
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => {
-            // Focus the sheet itself so no control's tooltip pops up on open.
+            // Focus the sheet itself so no control's tooltip pops up on open; back from
+            // the messages, their button (where you were).
             event.preventDefault()
-            ;(event.currentTarget as HTMLElement | null)?.focus()
+            const content = event.currentTarget as HTMLElement | null
+            const back = backToMessagesEntry.current
+            backToMessagesEntry.current = false
+            const entry = back
+              ? content?.querySelector<HTMLElement>('[data-open-messages]')
+              : undefined
+            ;(entry ?? content)?.focus()
           }}
           onCloseAutoFocus={(event) => {
             if (!handingOff.current) return
@@ -569,6 +592,7 @@ function LoadedIdeaPage({
         <SubmitterMessagesSheet
           open={Boolean(search.submission)}
           onOpenChange={(open) => setSearch({ submission: open ? true : undefined })}
+          onClosed={afterMessagesClosed}
           submission={submission.data}
         />
       )}

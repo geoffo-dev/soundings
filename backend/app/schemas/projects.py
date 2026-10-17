@@ -9,7 +9,13 @@ from uuid import UUID
 from pydantic import AfterValidator, Field
 
 from app.models.enums import IdeaStatus, ProjectRole, ProjectVisibility, ResearchStep, Resolution
-from app.schemas.base import PROJECT_KEY_PATTERN, SLUG_PATTERN, RequestModel, ResponseModel
+from app.schemas.base import (
+    PROJECT_KEY_PATTERN,
+    SLUG_PATTERN,
+    RequestModel,
+    ResponseModel,
+    SingleLine,
+)
 from app.schemas.research import lifecycle
 from app.schemas.rubric import RubricCriterion
 from app.schemas.users import UserRef
@@ -196,7 +202,9 @@ class Project(ProjectSummary):
 class ProjectCreate(RequestModel):
     """Create a project with the default rubric and one admin (``admin_user_id``)."""
 
-    name: str = Field(min_length=1, max_length=80)
+    # Phase 11 security review N5: one line (it reaches email subjects and "The <project>
+    # team" in the submitter emails).
+    name: Annotated[str, SingleLine] = Field(min_length=1, max_length=80)
     slug: Annotated[str, AfterValidator(_not_reserved)] = Field(
         min_length=2,
         max_length=48,
@@ -221,7 +229,7 @@ class ProjectCreate(RequestModel):
 class ProjectUpdate(RequestModel):
     """Partial update; omitted fields are unchanged. ``slug`` and ``key`` are immutable."""
 
-    name: str | None = Field(default=None, min_length=1, max_length=80)
+    name: Annotated[str, SingleLine] | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=1000)
     visibility: ProjectVisibility | None = None
     allow_volunteer_owners: bool | None = None

@@ -266,7 +266,7 @@ having rows of their own ([contract-phase3 §3](api/contract-phase3.md#3-busines
 
 | Rule | Action | PA | PAd | Mem | Vwr | NMi | NMp | Pub | +Own | +Evl |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `idea.volunteer_owner` | "I'll own this" on an unowned idea | Y (c4, c13, c5) | Y (c13, c5) | Y (c3, c13, c5) | 403 | 403 | 404 | 401 | · | · |
+| `idea.volunteer_owner` | "I'll own this" on an unowned idea | Y (c4, c13, c5) | Y (c13, c5) | Y (c3, c32, c13, c5) | 403 | 403 | 404 | 401 | · | · |
 | `idea.release_owner` | Step down as owner (the idea becomes unowned) | Y | Y | 403 | 403 | 403 | 404 | 401 | + | · |
 | `idea.assign_owner` | Assign, change or clear an idea's owner | Y (c4) | Y (c4) | 403 | 403 | 403 | 404 | 401 | · | · |
 | `evaluator.manage` | Invite or remove evaluators | Y (c4, c6) | Y (c4, c6) | 403 | 403 | 403 | 404 | 401 | + (c4, c6) | · |
@@ -999,6 +999,7 @@ reinstating *B*; and rule 4 for a pricing document per principal kind.
 | c29 | Phase 10: the principal assesses **the section in question** (+Asr on that section; for `bid.view_price` the section holding the price question). Not written for call managers: their cells don't need it | 403 `not_section_assessor` (`bid.view_price`: the price is hidden and pricing documents are 404 / "present (restricted)", not an error) |
 | c30 | Phase 10 (review S14): deleting the call: it is a **draft or cancelled**, or **awarded and the principal is a platform admin** (the bidders' personal data shouldn't need the idea deleted); never open or assessing | 409 `bid_call_active` |
 | c31 | Phase 11: the principal is a **named person**: a person's own account, never an AI agent's service account, never the break-glass account (`is_named_person`, section 1a). Not written in the cells (a property of the principal, like c20/c21); applies to `public.message_submitter` (`NAMED_PEOPLE_ONLY`) | 403 `forbidden` |
+| c32 | Phase 11, security review M1 (lead default, to confirm): the idea did **not** come through the public form. Only on the member's cell of `idea.volunteer_owner`: the owner overlay opens the conversation with the submitter (`public.message_submitter`), so a member can't make themselves the owner of a public idea; a project admin names its owner (or volunteers). The same refusal whether a conversation exists or not, so it reveals none. Unknown origin fails (deny by default) | 403 `public_idea_owner_needs_admin` |
 
 ## 5. API keys
 

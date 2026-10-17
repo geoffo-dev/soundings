@@ -203,6 +203,11 @@ async def test_create_project_with_an_unusable_admin(
         {"name": "", "slug": "ab", "key": "AB"},
         {"name": "A", "slug": "ab", "key": "AB", "visibility": "public"},
         {"name": "A", "slug": "ab", "key": "AB", "unknown": 1},
+        # Security review N5: a project's name reaches email subjects ("The <project>
+        # team", the submitter emails): one line.
+        {"name": "Customer\r\nBcc: x@example.org", "slug": "ab", "key": "AB"},
+        {"name": "Customer\u2028Innovation", "slug": "ab", "key": "AB"},
+        {"name": "Customer\u202eInnovation", "slug": "ab", "key": "AB"},
     ],
 )
 async def test_create_project_validation(
@@ -366,6 +371,8 @@ async def test_update_project_errors(
         {"default_evaluation_days": 0},
         {"status_labels": {"new": ""}},
         {"status_labels": {"unknown": "X"}},
+        {"name": "Customer\nInnovation"},  # security review N5: one line
+        {"name": "Customer\u2029Innovation"},
     ):
         assert_problem(await as_admin.patch(f"{API}/cust", json=body), 422, "validation_error")
 

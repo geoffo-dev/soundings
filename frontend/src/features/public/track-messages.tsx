@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 
 import { useSendTrackingReply } from '@/api/public'
 import type { TrackedMessage, TrackedSubmission } from '@/api/types'
@@ -11,6 +11,7 @@ import { LiveRegion, useLiveRegion } from '@/features/idea/live-region'
 import {
   MESSAGE_MAX_LENGTH,
   REPLY_BLOCKED_COPY,
+  repliesLeftText,
   replyProblem,
 } from '@/features/moderation/message-copy'
 import { SHORTCUTS } from '@/lib/shortcuts'
@@ -24,9 +25,22 @@ import { PublicCard } from './public-layout'
  * signed "The <project> team" (public pages show no people), the submitter's read
  * "You"; plain text with its line breaks, never Markdown or links. The reply box
  * shows while `can_reply`; otherwise `reply_blocked` says why in plain words.
+ * `toReply` (the message email's Reply button, `/track?reply=1#…`: UX review m4) brings
+ * the reply box into view and focuses it once, or the section's heading when replying
+ * isn't possible just now.
  */
-export function TrackedMessages({ token, tracked }: { token: string; tracked: TrackedSubmission }) {
+export function TrackedMessages({
+  token,
+  tracked,
+  toReply = false,
+}: {
+  token: string
+  tracked: TrackedSubmission
+  toReply?: boolean
+}) {
   const headingId = useId()
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const boxRef = useRef<HTMLTextAreaElement>(null)
   const team = `The ${tracked.project.name} team`
   const { message: announcement, announce } = useLiveRegion()
   const listRef = useRef<HTMLOListElement>(null)
@@ -38,6 +52,17 @@ export function TrackedMessages({ token, tracked }: { token: string; tracked: Tr
     listRef.current?.lastElementChild?.scrollIntoView({ block: 'nearest' })
   }, [lastId])
 
+  const hasMessages = tracked.messages.length > 0
+  const tookReply = useRef(false)
+  useEffect(() => {
+    if (!toReply || !hasMessages || tookReply.current) return
+    tookReply.current = true
+    const target = boxRef.current ?? headingRef.current
+    if (!target) return
+    target.scrollIntoView({ block: 'center' })
+    target.focus({ preventScroll: true })
+  }, [toReply, hasMessages])
+
   if (tracked.messages.length === 0) return null
   const blocked = tracked.reply_blocked
   return (
@@ -45,7 +70,12 @@ export function TrackedMessages({ token, tracked }: { token: string; tracked: Tr
       <LiveRegion message={announcement} />
       <section aria-labelledby={headingId} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <h2 id={headingId} className="text-base font-semibold text-primary">
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            className="text-base font-semibold text-primary focus:outline-none"
+          >
             Messages
           </h2>
           <p className="text-sm text-muted">
@@ -62,7 +92,12 @@ export function TrackedMessages({ token, tracked }: { token: string; tracked: Tr
           ))}
         </ol>
         {tracked.can_reply ? (
-          <ReplyBox token={token} onSent={() => announce('Reply sent')} />
+          <ReplyBox
+            ref={boxRef}
+            token={token}
+            left={repliesLeftText(tracked.messages)}
+            onSent={() => announce('Reply sent')}
+          />
         ) : (
           blocked && (
             <p className="rounded-lg bg-subtle px-3 py-2.5 text-sm text-secondary">
@@ -98,10 +133,20 @@ function MessageItem({ message, team }: { message: TrackedMessage; team: string 
 
 const SEND_KEYS = SHORTCUTS.submitForm.keys
 
-function ReplyBox({ token, onSent }: { token: string; onSent: () => void }) {
+function ReplyBox({
+  ref: boxRef,
+  token,
+  left,
+  onSent,
+}: {
+  ref: RefObject<HTMLTextAreaElement | null>
+  token: string
+  /** "You can send 2 more replies until the team writes back." near a limit (UX review p9). */
+  left: string | null
+  onSent: () => void
+}) {
   const reply = useSendTrackingReply(token)
   const [body, setBody] = useState('')
-  const boxRef = useRef<HTMLTextAreaElement>(null)
   const problem = reply.isError ? replyProblem(reply.error) : undefined
   const submit = () => {
     const text = body.trim()
@@ -125,11 +170,14 @@ function ReplyBox({ token, onSent }: { token: string; onSent: () => void }) {
     <div className="flex flex-col gap-2 border-t border-subtle pt-4">
       <Field
         label="Reply to the team"
-        description={
+        description={[
           near
-            ? `${body.length.toLocaleString('en')}/${MESSAGE_MAX_LENGTH.toLocaleString('en')} characters`
-            : 'Only the team sees your reply.'
-        }
+            ? `${body.length.toLocaleString('en')}/${MESSAGE_MAX_LENGTH.toLocaleString('en')} characters.`
+            : 'Only the team sees your reply.',
+          left,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         error={problem}
       >
         <Textarea

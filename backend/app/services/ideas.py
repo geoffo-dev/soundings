@@ -297,10 +297,18 @@ async def idea_detail(
                 bid_count=int(bids or 0),
             )
     view_call, create_call = bid_call_flags(principal, resource.replace(bid_call=call_facts))
+    # Phase 11 (security review M1, c32): a member may volunteer only for an idea that
+    # didn't come through the public form (the owner reads the submitter's conversation).
+    can_volunteer = resource.idea is not None and can(
+        principal,
+        Rule.IDEA_VOLUNTEER_OWNER,
+        resource.replace(idea=resource.idea.knowing(via_public_form=bool(via_public_form))),
+    )
     permissions = permissions.model_copy(
         update={
             "can_view_bid_call": view_call,
             "can_create_bid_call": create_call and bool(has_proposal),
+            "can_volunteer": can_volunteer,
         }
     )
     fields["permissions"] = permissions
@@ -619,8 +627,18 @@ async def set_owner(
 
 
 async def volunteer(db: AsyncSession, principal: Principal, loaded: LoadedIdea) -> None:
-    """ "I'll own this": c3 (members), c4 (a real role), c13 (unowned), c5 (not closed)."""
-    require(principal, Rule.IDEA_VOLUNTEER_OWNER, loaded.resource)
+    """ "I'll own this": c3 (members), c32 (members: not an idea sent through the public
+    form, security review M1), c4 (a real role), c13 (unowned), c5 (not closed)."""
+    public = bool(
+        await db.scalar(select(exists().where(PublicSubmission.idea_id == loaded.idea.id)))
+    )
+    facts = loaded.resource.idea
+    assert facts is not None  # noqa: S101 - a loaded idea has its facts
+    require(
+        principal,
+        Rule.IDEA_VOLUNTEER_OWNER,
+        loaded.resource.replace(idea=facts.knowing(via_public_form=public)),
+    )
     await _change_owner(
         db,
         principal,

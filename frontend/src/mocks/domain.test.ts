@@ -289,6 +289,16 @@ describe('permissions booleans', () => {
     expect(ideaPermissions(db, unowned, user(USERS.carol)).can_volunteer).toBe(true) // admin
     expect(ideaPermissions(db, idea('CUST-6'), user(USERS.alice)).can_volunteer).toBe(true)
   })
+
+  it('leave the owner of an idea sent through the public form to an admin (c32)', () => {
+    const project = findProjectBySlug(db, 'sustainability')
+    if (!project) throw new Error('missing')
+    project.allow_volunteer_owners = true
+    // The owner reads the conversation with its sender (security review M1).
+    expect(ideaPermissions(db, idea('GREEN-14'), user(USERS.alice)).can_volunteer).toBe(false)
+    expect(ideaPermissions(db, idea('GREEN-14'), user(USERS.carol)).can_volunteer).toBe(true)
+    expect(ideaPermissions(db, idea('GREEN-5'), user(USERS.alice)).can_volunteer).toBe(true)
+  })
 })
 
 describe('large dataset', () => {
