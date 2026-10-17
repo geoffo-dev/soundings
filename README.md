@@ -1,13 +1,14 @@
 # Soundings
 
 **Soundings** is a calm, fast web app for an organisation's ideas. People submit ideas,
-anonymously too through a public form. Each idea gets one accountable **owner** and
-several **evaluators**, who score it **blind** against a short rubric. The scores roll
-up into a weighted aggregate with a "high disagreement" flag. Strong ideas become a
-commercial proposal over the project's own template, exported as a branded PDF or as
-Markdown. A project can add a research step: before the team invests, the owner (or
-someone they ask, from another team too) checks the idea isn't already being done
-elsewhere and records which teams were consulted. Once a proposal is agreed, a **call
+anonymously too through a public form; the team can message whoever sent one, who replies
+on their private tracking page, without anyone seeing their address. Each idea gets one
+accountable **owner** and several **evaluators**, who score it **blind** against a short
+rubric. The scores roll up into a weighted aggregate with a "high disagreement" flag.
+Strong ideas become a commercial proposal over the project's own template, exported as a
+branded PDF or as Markdown. A project can add a research step: before the team invests,
+the owner (or someone they ask, from another team too) checks the idea isn't already being
+done elsewhere and records which teams were consulted. Once a proposal is agreed, a **call
 for bids** collects the bids that come in with their documents, flags the ones missing a
 must-have, and has assessors score them section by section, blind, with a ranking and a
 report. AI agents in [kagent](https://kagent.dev) can act as an extra evaluator, research

@@ -573,6 +573,12 @@ both Deployments; a new password in the Secret or a new CA needs `kubectl -n sou
 rollout restart deploy`. Links in emails use the first of `baseUrls`, so list the
 address people use first.
 
+**Make `from` a no-reply mailbox** [Phase 11] (or one you handle as personal data). The
+emails to public submitters (the tracking link and the team's messages) carry no
+`Reply-To`, so a submitter who answers one by email writes to the `from` address: their
+address and words land in that mailbox, which Soundings' erasure and retention never reach.
+The emails say replies aren't read and point to the tracking page.
+
 **Common providers** (check your provider's current documentation; these are the usual
 settings):
 
@@ -836,8 +842,9 @@ form asks for no address at all. Submitters' confirmation and status emails (and
 11, the tracking-link and team-message emails) go through the normal outbox and worker
 ([Email](#email-phase-3)) in the project's branding; there is no unsubscribe header
 because the tracking page is where people stop them ("Stop these emails" in every status
-email's footer; "Stop emails about this idea" in the link and message emails, which lead to
-"Remove my email address"). The link and message emails carry no `Reply-To`, even when
+email's footer; "Stop emails about this idea" in the link email and "To stop all email about
+this idea, remove your email address on your tracking page" in message emails, both leading
+to "Remove my email address"). The link and message emails carry no `Reply-To`, even when
 `smtp.replyTo` is set: replies aren't read, the submitter answers on the tracking page.
 Confirmation links have the form
 `<publicBaseUrl>/<project slug>/verify#<token>` (links sent before 2 October 2026 as
@@ -1459,7 +1466,10 @@ submission and both **without** the operator's `SOUNDINGS_SMTP_REPLY_TO` (a repl
 carry their address and words into a mailbox erasure never reaches): `submission_link`
 (their private tracking link, once, when they first confirm their address) and
 `submission_message` (each team message, when the address is confirmed and email is set
-up; the outbox row holds the message's id, never its text).
+up; the outbox row holds the message's id, never its text). Without `Reply-To`, a
+submitter who answers one of these emails anyway writes to `smtp.from`: make it a no-reply
+mailbox, or handle that mailbox as personal data (erase from it by hand on request; see
+[SMTP settings](#smtp-settings-and-existingsecret)).
 
 Erasure removes the name, address, confirmation, update preference, the copy of what was
 sent, the tracking link (which stops working at once) and the **whole conversation**, and

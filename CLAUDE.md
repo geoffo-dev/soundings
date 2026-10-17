@@ -876,8 +876,15 @@ run: `curl -s localhost:8083/_fake/observations/<run id>`. There is no kagent or
   before-commit hook like the bid notifications, not feed events) goes to the owner and
   everyone who wrote, re-checked against the rule (SQL form in the inbox) when written, shown
   and sent; never the reply's text; no item while the idea is held (the queue shows "They
-  replied"); at most one immediate email per recipient and idea an hour
-  (`SUBMITTER_REPLIED_EMAIL_INTERVAL`, `fanout.py`). Not in the feed, search, ⌘K, MCP,
+  replied"); **one unread item per recipient and idea** (a reply while it is unread brings it
+  up to date: `NotificationWriter.coalesce_unread`; once read, the next reply adds one) and at
+  most one immediate email per recipient and idea an hour, counted from the last email's
+  outbox row (`SUBMITTER_REPLIED_EMAIL_INTERVAL`, `fanout.py`); subject `[KEY] The submitter
+  replied`, never the title (public text, review L1). **c32**: a member can't volunteer
+  (`POST /ideas/{idea}/volunteer`) for an idea sent through the public form (403
+  `public_idea_owner_needs_admin`; `IdeaFacts.via_public_form`): an admin names its owner, so
+  e2e specs that need a member as the owner of a public idea use `setOwner` as an admin. The
+  message email's Reply opens `/track?reply=1#<token>`. Not in the feed, search, ⌘K, MCP,
   exports or `last_activity_at`. Team messages are audited `submission.message` (the
   message id, never the text). The **tracking-link email** (`submission_link`) is queued with
   the first confirmation only (`email_verified_at` null → now, email set up, the sealed
@@ -1410,4 +1417,13 @@ lead's script supplies each agent's owned paths, ports and prefix; agents report
   e2e check, Helm, scripts (shellcheck 0.9 too), workflows, migrations, fake agent, `make
   gen-api` (no diff), `make image` (535 MB). Screenshots `docs/screenshots/phase-11/` (+
   `emails/`, `mock/`), phase-3 (+ the three new emails), phase-4 and the tour re-captured.
-  Not run: k3s (chart unchanged). Reviews (code, UX) and the phase summary are next.
+  Reviews (2026-10-17; `docs/phase-summaries/phase-11.md`, `docs/decisions.md` "Phase 11
+  review decisions"; `621fac8`, `c2ecc5b`): security M1 (a member volunteering to own a public
+  idea read the conversation: **c32**, admins name its owner, 403
+  `public_idea_owner_needs_admin`), L1 (the reply email's subject without the title), L2
+  (`smtp.from` a no-reply mailbox, documented), N1-N5 (the "-- " line, the inbox's rule check
+  per statement, the hourly limit's advisory lock, throttle before locks, `SingleLine` project
+  names); UX M1 ("They won't get an email"), M2 (one unread "The submitter replied" per
+  recipient and idea), m1 ("By email too" / "Tracking page only"), m2-m6 and p1-p9 (the
+  receipt leads with the confirmation, `/track?reply=1#…`, the form's help "Only the team's
+  admins…", the intro preview, one footer line, …). FINAL_STATUS Stop for the human's review.

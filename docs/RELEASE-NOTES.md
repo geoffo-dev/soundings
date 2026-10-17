@@ -12,19 +12,13 @@ Tour: [README](../README.md#a-tour). Guides: [user](user-guide.md),
 ## Unreleased
 
 **Not released.** Phase 11, **talking to public submitters** (the product owner's change
-of 2026-10-16), on top of 0.3.0. No version bump: whether and when to tag it is the product
-owner's call (`scripts/deploy.sh check-release` needs the versions bumped first). Waiting
-for the product owner's review.
+of 2026-10-16), on top of 0.3.0, with its reviews' fixes. No version bump: whether and when
+to tag it is the product owner's call (`scripts/deploy.sh check-release` needs the versions
+bumped first). Waiting for the product owner's review.
 
-**Verified on 2026-10-17** (the build machine, not a real CI runner): backend (10,524 tests, `test-slow`),
-frontend check (744 vitest) + `test:pw` (483), e2e in all three modes (default 381,
-`E2E_SSO=1` 402, `E2E_AI=1` 422 passed) and against `make demo` (420 passed; none failed
-anywhere), then CI's MCP, AI, bid and public smokes on that image (the public smoke with
-Mailpit: the link email, a message, the reply), every `make check-*`, `make gen-api` (no
-diff), `make image` (535 MB). Not run for this change: k3s (the chart is unchanged) and a
-real CI runner.
+VERIFIED_PARAGRAPH
 [Contract](api/contract-phase11.md), [ADR 0019](adr/0019-public-submitter-messages.md),
-[test plan](test-plans/phase-11.md).
+[test plan](test-plans/phase-11.md), [Phase 11 summary](phase-summaries/phase-11.md).
 
 ### What's new
 
@@ -33,21 +27,27 @@ real CI runner.
   **Messages** part, without anyone seeing their address. Messages are plain text (up to
   4,000 characters, never formatted), signed "The <project> team" (never a person's name),
   shown on the sender's tracking page and also emailed in the project's branding once
-  their address is confirmed and email is set up. Each one is in the audit log ("… messaged
-  the submitter of CUST-21"), never its text. Nobody else sees the conversation or that one
-  exists: not members, viewers, a guest researcher, API keys, MCP or AI agents, the feed,
-  search, ⌘K, exports or "recently updated". It works on closed ideas and on ideas still
-  waiting for review (ask before approving), read-only in an archived project.
+  their address is confirmed and email is set up; each message says "By email too" or
+  "Tracking page only", and before sending the sheet says plainly when they won't get an
+  email. Each one is in the audit log ("… messaged the submitter of CUST-21"), never its
+  text. Nobody else sees the conversation or that one exists: not members, viewers, a
+  guest researcher, API keys, MCP or AI agents, the feed, search, ⌘K, exports or "recently
+  updated". It works on closed ideas and on ideas still waiting for review (ask before
+  approving), read-only in an archived project.
 - **They reply on their tracking page**, once the team has written (at most 10 replies
-  after each team message, 10 a day); the tracking page shows the whole conversation
-  ("The <project> team" and "You"). **"The submitter replied"**, a new notification type
-  (preferences, inbox, digest, unsubscribe), goes to the idea's owner and everyone who has
-  written to them, at most one email per person and idea an hour, and never contains what
-  they wrote. While an idea waits for review the queue shows "They replied" instead.
+  after each team message, 10 a day; the page warns two replies before a limit); the
+  tracking page shows the whole conversation ("The <project> team" and "You"), and the
+  message email's **Reply** button opens it at the reply box. **"The submitter replied"**,
+  a new notification type (preferences, inbox, digest, unsubscribe), goes to the idea's
+  owner and everyone who has written to them: one inbox item per idea while unread, at
+  most one email per person and idea an hour, subject `[KEY] The submitter replied`, and
+  never what they wrote. While an idea waits for review the queue shows "They replied"
+  instead.
 - **The tracking link by email**: the first time a sender confirms their address, Soundings
   emails them their private tracking link ("Your link to follow your idea for <project>").
   The confirmation email still carries no link (anyone can type any address into the form);
-  it now says the link follows, and so do the receipt and the confirm page.
+  it now says the link follows, and so do the receipt ("Open the link we've just emailed
+  you") and the confirm page.
 - **"Remove my email address"** on the tracking page stops every email about the idea and
   deletes the address, keeping the link and the conversation. **Delete my details** and an
   admin's **Erase submitter details** now delete the conversation too, and so does the
@@ -56,19 +56,25 @@ real CI runner.
   30 an hour to senders in all; a conversation holds 100 messages; replies are limited to 30
   an hour per address.
 - The public form's email help says what the address is for (the link, and the team
-  contacting them about this idea) and that only administrators see it; Project settings →
-  Public form names its intro field **Intro text** and says it is shown at the top of the
-  form (Markdown).
+  writing to them about this idea; they reply on the tracking page) and that only the
+  team's admins see it; Project settings → Public form names its intro field **Intro text**,
+  says it is shown at the top of the form (Markdown) and previews it.
+- **Changed:** a member can no longer volunteer ("I'll own this") to own an idea sent
+  through the public form, since its owner reads the conversation: a project admin names
+  the owner (403 `public_idea_owner_needs_admin`; owners who volunteered before keep their
+  ideas). Project names refuse line breaks and other control characters (422), like idea
+  titles; existing names are kept.
 
 ### Known issues
 
 | Item | Detail |
 |---|---|
-| **Replies only on the tracking page** | Emails to the sender have no `Reply-To` and say replies aren't read; a sender who replies by email reaches nobody. By design: a reply by email would carry their address and words into a mailbox erasure never reaches. |
+| **Replies only on the tracking page** | Emails to the sender have no `Reply-To` and say replies aren't read; a sender who replies by email writes to `smtp.from`. Make it a no-reply mailbox, or handle it as personal data (the [operator guide](operator-guide.md#smtp-settings-and-existingsecret)): Soundings' erasure doesn't reach it. |
 | **No notification while an idea waits for review** | Held ideas are in nobody's inbox; a moderator who asked a question sees the answer as "They replied" in the review queue only. |
 | **Two narrow windows** | An erasure racing an email already being sent, and mail link rewriters (such as Safe Links) logging the whole `/track#` link, as for status emails since 0.1.0 ([ADR 0019](adr/0019-public-submitter-messages.md)). |
-| **Nothing retroactive** | Senders who confirmed their address before this release get no tracking-link email. |
-| The demo's message reads "Email queued" | Demo data only: priya's seeded message to CUST-21's sender reads as emailed (his address is confirmed), but the seed queues no email. |
+| **Nothing retroactive** | Senders who confirmed their address before this release get no tracking-link email; members who volunteered to own public ideas before it keep them. |
+| The demo's message reads "By email too" | Demo data only: priya's seeded message to CUST-21's sender reads as emailed (his address is confirmed), but the seed queues no email. |
+KNOWN_FINAL_ROWS
 | As in 0.3.0 | [0.3.0's known issues](#known-issues-in-030) otherwise apply. |
 
 ### Upgrading from 0.3.0
@@ -77,18 +83,23 @@ real CI runner.
   and `CHECK` constraints that accept the new notification type `submitter_replied` and the
   submitter email types `submission_link` and `submission_message` (anyone who had every
   notification type off gets the new one off too). It is expand only, so 0.3.0's pods keep
-  working during the rollout and `scripts/deploy.sh` can roll a failed deploy back. A
-  submitter erased by a 0.3.0 pod during that window leaves their conversation and the new
-  emails behind: the hourly cleanup deletes them. Downgrading below 0017 **deletes** every
-  message, the new emails and the `submitter_replied` notifications and preferences.
+  working during the rollout and `scripts/deploy.sh` can roll a failed deploy back; a
+  rollback across it is refused unless forced (`DEPLOY_FORCE=1`), as for every migration.
+  A submitter erased by a 0.3.0 pod during that window leaves their conversation and the
+  new emails behind: the hourly cleanup deletes them. Downgrading below 0017 **deletes**
+  every message, the new emails and the `submitter_replied` notifications and preferences.
 - **No new settings or Helm values.** The two new emails go through the usual outbox and
-  worker; they never carry `SOUNDINGS_SMTP_REPLY_TO`.
+  worker; they never carry `SOUNDINGS_SMTP_REPLY_TO`. Check that `smtp.from` is a no-reply
+  mailbox (above).
 - **API (additive)**: `GET`/`POST /api/v1/ideas/{idea}/submission/messages` (session only;
   API keys get 403), `POST /api/v1/public/track/messages` and `POST
   /api/v1/public/track/forget-email` (JSON only), new fields on the submission panel,
   the moderation queue, the tracking page and the confirm answer, the `submitter_replied`
   type and the `submission.message` audit action; MCP is unchanged
   ([contract-phase11](api/contract-phase11.md), its §20 for the changes after the contract).
+  Two behaviour changes for API clients: `POST /ideas/{idea}/volunteer` by a member on an
+  idea sent through the public form is 403 `public_idea_owner_needs_admin`, and a project
+  name with a line break is 422.
 
 ### Decisions to confirm (unreleased)
 
@@ -96,26 +107,48 @@ The product owner decided (a) messaging the submitter and (b) emailing the track
 once the address is confirmed ("Yeah maybe have both"), and that the form's intro needs no
 new feature ("oh both are there!"). The rest are the lead's defaults ("lead default, to
 confirm" in [decisions.md](decisions.md), sections I and J of "Phase 11 (product owner,
-2026-10-16)" and "2026-10-17 · Phase 11 build and integration"), built that way and easy to
-change:
+2026-10-16)", "2026-10-17 · Phase 11 build and integration" and "2026-10-17 · Phase 11
+review decisions"), built that way and easy to change:
 
-1. **Who**: the idea's owner, project and platform admins, in a session only; never AI
-   agents or the break-glass account; nobody else sees that a conversation exists.
-2. **Delivery**: every team message on the tracking page, also emailed to a confirmed
-   address whatever the status-email switch says; signed by the team, never a person.
-3. **Replies** only after the team has written, at most 10 after each team message.
-4. **Limits**: 20 a day per sender and 30 an hour per person for the team; 10 a day per
-   sender and 30 an hour per address for replies; 100 messages a conversation.
-5. **"The submitter replied"** to the owner and everyone who wrote, one email an hour per
-   person and idea at most, never the text; none while the idea waits for review.
-6. **The tracking-link email** on the first confirmation only, nothing retroactive.
-7. **"Remove my email address"** for the sender (what the 3-day rule does to an unconfirmed
-   address), and the message emails' footer "Stop emails about this idea" leads there.
+1. **D1, the tracking-link email** on the first confirmation only, nothing retroactive,
+   never in the confirmation email (which gains one sentence; the receipt and the confirm
+   page say the link follows).
+2. **D2, who**: the idea's owner, project and platform admins, in a session only; never AI
+   agents or the break-glass account (c31); nobody else sees that a conversation exists.
+3. **D2, delivery**: every team message on the tracking page, also emailed to a confirmed
+   address whatever the status-email switch says; signed by the team, never a person; no
+   `Reply-To` on the two new emails.
+4. **D2, replies** only after the team has written, and at most **10 after each team
+   message** (contract review S6; 409 `awaiting_team` either way).
+5. **D2, limits**: 20 a day per sender and 30 an hour per person for the team; 10 a day per
+   sender and 30 an hour per address for replies; **100 messages a conversation, all shown**
+   (contract review C1, instead of 200 with the latest 100 shown); the per-action limits
+   answer 429 **`too_many_attempts`** (not `rate_limited`, the session-write limiter's code).
+6. **D2, "The submitter replied"** to the owner and everyone who wrote, never the text;
+   **none while the idea waits for review** (the queue shows "They replied").
+7. **"Remove my email address"** for the sender (contract review M2: what the 3-day rule does
+   to an unconfirmed address), linked from both new emails' footers.
 8. **Erasure and retention**: the conversation goes with the sender's details (all three
-   ways); a closed idea's latest message counts as activity for the 180-day rule.
-9. **Not in** the feed, search, ⌘K, MCP, exports or the idea's activity time.
-10. **The conversation opens in a side sheet** from the submission panel (the panel is too
-    narrow for 4,000-character messages).
+   ways); a closed idea's latest message counts as activity for the 180-day rule; a rule 5
+   sweeps what an older release's erasure left.
+9. **Not in** the feed, search, ⌘K, MCP, exports or the idea's activity time; team
+   messages refused while public submission is off for the instance.
+10. **D3**: the intro needs no new feature (its label "Intro text", help and a preview).
+    **D4**: migration 0017 expand only, no settings or Helm values, no version bump.
+11. **The demo**: CUST-21's message is from priya (a project admin: CUST-21 has no owner),
+    with Sam's reply; earlier e2e counts unchanged.
+12. **The conversation opens in a side sheet** from the submission panel (the panel is too
+    narrow for 4,000-character messages), oldest at the top.
+13. **c32 (security review M1)**: members can't volunteer to own an idea sent through the
+    public form; admins name its owner.
+14. **One unread "The submitter replied" per recipient and idea** (UX review M2), brought up
+    to date by each reply; email at most one an hour.
+15. **The reply email's subject without the title** (`[KEY] The submitter replied`; security
+    review L1): the title is the submitter's own text.
+16. **"By email too" / "Tracking page only"** on each team message (UX review m1), instead
+    of "Email queued"; **"They won't get an email"** above the box when it reaches the
+    tracking page only (UX M1); the form says "Only the team's admins can see your address."
+    (UX m5).
 
 ## 0.3.0
 

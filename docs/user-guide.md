@@ -784,7 +784,10 @@ close them.
 **Their reply.** They answer on their tracking page, and only after the team has written
 (at most 10 replies after each of the team's messages). The idea's owner and everyone who
 has written to them get **"The submitter replied"** (inbox, and email at most once an hour
-per idea), which opens the conversation; it never contains what they wrote. While an idea
+per idea), which opens the conversation; it never contains what they wrote, and its email's
+subject is only "[KEY] The submitter replied". Each idea has one such item in your inbox
+while it is unread: a further reply brings it back to the top instead of adding another
+(once you've read it, the next reply adds a new one). While an idea
 waits for review nobody is notified: the review queue shows "They replied" on its card.
 
 **When you can't write.** The panel says why instead of showing the box: their details

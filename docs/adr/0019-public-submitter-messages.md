@@ -52,15 +52,32 @@ emails never show people. Soundings has no inbound email.
 7. **The submitter can stop all email and keep talking.** "Remove my email address" on the
    tracking page does what the 3-day rule does to an unconfirmed address (address, confirmation
    and opt-in cleared, every email of the idea to it deleted); the link and the conversation
-   stay. The emails' footer link, "Stop emails about this idea", leads there. Without it the
+   stay. The link email's footer link, "Stop emails about this idea", and the message email's
+   "To stop all email about this idea, remove your email address on your tracking page" lead
+   there. Without it the
    only way out of message emails would be "Delete my details", which also ends the link and
    the conversation.
+8. **The owner of a public idea is named by an admin** (the security review's M1, c32). The
+   owner reads and writes the conversation, so a member can't volunteer for an idea sent
+   through the public form (403 `public_idea_owner_needs_admin`, whether or not a
+   conversation exists, so the refusal reveals none); project and platform admins volunteer
+   or name the owner as before.
+9. **No submitter words in staff email subjects** (the security review's L1): "The submitter
+   replied" says `[KEY] The submitter replied`, without the title (a public idea's title is
+   the submitter's own text), and its card leaves the title out too. Its inbox item is one
+   per recipient and idea while unread (the UX review's M2), so a chatty submitter can't
+   flood a staff inbox; email stays at most one an hour.
 
 ## Consequences
 
 - The team can ask a question before approving a held idea and the submitter can answer; a
   submitter without a confirmed address still reads messages on their tracking page.
 - One table, two email types, one notification type; no new service, setting or Helm value.
+- Without `Reply-To`, a submitter who answers an email anyway writes to `SOUNDINGS_SMTP_FROM`:
+  operators should make it a no-reply mailbox, or handle it as personal data (operator guide,
+  the security review's L2).
+- Members who used to volunteer as owners of public ideas now ask an admin; owners who
+  volunteered before Phase 11 keep the idea (and its conversation).
 - A submitter who lost their link can't read replies until the team writes again (their email
   carries the link); erasing details ends the conversation for good.
 - Two narrow windows, both already true of Phase 4's status emails, stay: an erasure can race

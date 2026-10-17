@@ -31,7 +31,7 @@ import { fillPublicForm, humanCheckDone, Visitor } from '../tests/support/public
  *   panel's Messages, the conversation sheet with a message being written, and priya's
  *   inbox with "The submitter replied"; and, on a project of their own ("Home Delivery",
  *   HOME, archived afterwards; Nora Quinn, a new person, owns its ideas): the
- *   sheet for an unconfirmed address ("only on their tracking page"), the tracking page
+ *   sheet for an unconfirmed address ("They won't get an email"), the tracking page
  *   with the conversation and the reply box, the receipt of an idea sent with an address,
  *   and the confirm page after a first confirmation ("We've emailed you a private link").
  * - emails/<type>-<desktop-light|desktop-dark|390-light>.png: the three new emails as
@@ -159,7 +159,7 @@ const SHOTS: Shot[] = [
       await signInAs(page, team.owner)
       await page.goto(`/ideas/${unconfirmed.key}?submission=1`)
       const sheet = messagesSheet(page, 'Ana Silva')
-      await expect(sheet).toContainText('They’ll see it only on their tracking page')
+      await expect(sheet).toContainText('They won’t get an email')
       await expect(conversation(sheet)).toHaveCount(1)
     },
   },
@@ -191,9 +191,9 @@ const SHOTS: Shot[] = [
       })
       await humanCheckDone(page)
       await page.getByRole('button', { name: 'Send idea' }).click()
-      await expect(
-        page.getByText('Once you confirm your address, we’ll email you this link too.'),
-      ).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText('Open the link we’ve just emailed you')).toBeVisible({
+        timeout: 15_000,
+      })
     },
   },
   {

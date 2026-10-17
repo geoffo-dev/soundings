@@ -429,7 +429,7 @@ test('SM-05: “The submitter replied”: the inbox opens the conversation, one 
 
     const replied = await mailpit.waitForMessage(team.owner.email, {
       since,
-      subject: `[${idea.key}] The submitter replied about "${idea.title}"`,
+      subject: `[${idea.key}] The submitter replied`, // never the title (public text)
     })
     const mailed = text(replied)
     expect(mailed).toContain(sentence)
@@ -450,7 +450,15 @@ test('SM-05: “The submitter replied”: the inbox opens the conversation, one 
     await expect(messagesSheet(page, 'Sam Public')).toBeVisible()
     await expect(conversation(messagesSheet(page, 'Sam Public'))).toHaveCount(2)
 
-    // A second reply within the hour: the inbox only.
+    // Opening the row read it, so a second reply within the hour is a new inbox item (an
+    // unread one would be brought up to date instead), and the inbox only.
+    await expect
+      .poll(async () =>
+        (await team.owner.api.notifications())
+          .filter((item) => item.type === 'submitter_replied')
+          .map((item) => item.read_at !== null),
+      )
+      .toEqual([true])
     await visitor.replied(idea.token, 'And the station.')
     await expect
       .poll(async () =>
